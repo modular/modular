@@ -10,22 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Whisper audio encoder."""
+
 from __future__ import annotations
 
 import math
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, ops
-from max.nn.conv import Conv1D
-from max.nn.embedding import Embedding
-from max.nn.layer import Module
-from max.nn.linear import Linear
-from max.nn.norm import LayerNorm
-from max.nn.sequential import Sequential
+from max.graph import DeviceRef, TensorType, TensorValue, ops
+from max.nn._graph_ops import flash_attention
+from max.nn.legacy.conv import Conv1D
+from max.nn.legacy.embedding import Embedding
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import LayerNorm
+from max.nn.legacy.sequential import Sequential
 from transformers import AutoConfig
 
 
 class WhisperSdpaAttention(Module):
+    """The encoder's scaled dot-product attention."""
+
     def __init__(
         self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
     ) -> None:
@@ -38,20 +43,6 @@ class WhisperSdpaAttention(Module):
         self.wk = Linear(d_model, d_model, dtype, device, has_bias=False)
         self.wv = Linear(d_model, d_model, dtype, device, has_bias=True)
         self.wo = Linear(d_model, d_model, dtype, device, has_bias=True)
-
-    def scaled_dot_product_attention(
-        self, xq: TensorValue, xk: TensorValue, xv: TensorValue
-    ) -> TensorValue:
-        xq = xq.transpose(1, 2)
-        xk = xk.transpose(1, 2)
-        xv = xv.transpose(1, 2)
-
-        scale = math.sqrt(1.0 / self.head_dim)
-        scores = xq @ ops.transpose(xk, 2, 3)
-        # Note, the graph compiler currently requires the order of operands
-        # to be `scores * scale` in order to pattern match the fused attention
-        # operator.
-        return ops.softmax(scores * scale) @ xv
 
     def __call__(self, x: TensorValue) -> TensorValue:
         """Computes attention on x.
@@ -71,15 +62,15 @@ class WhisperSdpaAttention(Module):
         xk = ops.reshape(xk, [batch, seq_len, self.n_heads, self.head_dim])
         xv = ops.reshape(xv, [batch, seq_len, self.n_heads, self.head_dim])
 
-        output = (
-            self.scaled_dot_product_attention(xq, xk, xv)
-            .transpose(1, 2)
-            .reshape([batch, seq_len, -1])
+        output = flash_attention(
+            xq, xk, xv, scale=math.sqrt(1.0 / self.head_dim)
         )
-        return self.wo(output)
+        return self.wo(output.reshape([batch, seq_len, -1]))
 
 
 class MLP(Module):
+    """The encoder's feed-forward block."""
+
     def __init__(
         self, huggingface_config: AutoConfig, dtype: DType, device: DeviceRef
     ) -> None:
@@ -100,6 +91,7 @@ class MLP(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the feed-forward over ``x``."""
         x = self.fc1(x)
         x = ops.gelu(x)
         x = self.fc2(x)
@@ -123,6 +115,7 @@ class WhisperEncoderLayer(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the layer's attention, then its feed-forward."""
         attn_out = self.attention(self.attention_norm(x))
 
         h = x + attn_out
@@ -190,10 +183,22 @@ class WhisperEncoder(Module):
             huggingface_config.d_model, devices=[device], dtype=dtype, eps=1e-5
         )
 
+    def input_types(self) -> tuple[TensorType]:
+        """Returns the graph's input types: the audio input features."""
+        return (
+            TensorType(
+                DType.float32,
+                shape=["batch_size", "num_mel_bins", "sequence_length"],
+                device=DeviceRef.CPU(),
+            ),
+        )
+
     def __call__(self, input_features: TensorValue) -> tuple[TensorValue, ...]:
-        """
+        """Runs the encoder over the log-Mel features.
+
         Args:
-            input_features: Buffer of shape (batch_size, feature_size, sequence_length)
+            input_features: Buffer of shape (batch_size, feature_size,
+                sequence_length).
         """
         # Encoder stem: two convolution layers and the GELU activation function.
         inputs_embeds = ops.gelu(self.conv1(input_features))

@@ -1,0 +1,1970 @@
+Identify libfabric senders by source address, not an 8-bit wire field.
+
+NIXL 1.5.0's libfabric backend sends a transfer's notification before its
+data writes complete. EFA delivers out of order, so the target counts each
+transfer's writes before releasing the notification, and for that it has to
+know which peer every write completion came from. It learned that from an
+8-bit agent_idx field in the RDMA immediate data, so createAgentConnection()
+refuses the 257th peer an agent ever connects to, and nothing frees a spent
+index. A dKV agent in a 64-engine fleet spends them (CLIN-2055).
+
+The receiver now takes the sender from the source address libfabric reports
+on each completion (FI_SOURCE + fi_cq_readfrom), mapped to a peer through a
+per-rail table filled in at fi_av_insert() time. The agent index becomes a
+local uint32_t with no wire width, and the 256-peer check is gone.
+
+This changes the libfabric wire format: the imm_data agent-index field is
+reserved and sent as zero, and the handshake carries
+NIXL_LIBFABRIC_PROTO_VERSION = 2, which rejects a version-1 peer at
+connection setup. A patched agent cannot talk to an unpatched one, so every
+node in a cluster has to move together.
+
+This is a backport of ai-dynamo/nixl#2294, merged upstream after v1.5.0 as
+c2f4580b18. The diff is that merge's, with only the trailing space on blank
+context lines stripped by the repo's pre-commit hook.
+
+TODO(GEX-4374): drop once the fix ships in a tagged NIXL release.
+
+diff --git a/src/plugins/libfabric/libfabric_backend.cpp b/src/plugins/libfabric/libfabric_backend.cpp
+--- a/src/plugins/libfabric/libfabric_backend.cpp
++++ b/src/plugins/libfabric/libfabric_backend.cpp
+@@ -550,14 +550,14 @@ nixlLibfabricEngine::nixlLibfabricEngine(const nixlBackendInitParams *init_param
+         NIXL_DEBUG << "Set notification + handshake processors for rail 0";
+         rail_manager_.getRail(notification_rail_id)
+             .setNotificationCallback(
+-                [this](const std::string &serialized_notif, uint16_t sender_peer_idx) {
++                [this](const std::string &serialized_notif, uint32_t sender_peer_idx) {
+                     processNotification(serialized_notif, sender_peer_idx);
+                 });
+         rail_manager_.getRail(0).setHandshakeCallback(
+             [this](const std::string &payload) { handleHandshake(payload); });
+         rail_manager_.getRail(notification_rail_id)
+             .setXferErrorCallback([this](uint16_t notif_xfer_id,
+-                                         uint16_t sender_peer_idx,
++                                         uint32_t sender_peer_idx,
+                                          uint32_t final_completions) {
+                 handleXferError(notif_xfer_id, sender_peer_idx, final_completions);
+             });
+@@ -567,7 +567,7 @@ nixlLibfabricEngine::nixlLibfabricEngine(const nixlBackendInitParams *init_param
+                    << " rails";
+         for (size_t rail_id = 0; rail_id < rail_manager_.getNumRails(); ++rail_id) {
+             rail_manager_.getRail(rail_id).setXferIdCallback(
+-                [this](uint64_t imm_data, uint16_t sender_peer_idx) {
++                [this](uint64_t imm_data, uint32_t sender_peer_idx) {
+                     uint16_t xfer_id = NIXL_GET_XFER_ID_FROM_IMM(imm_data);
+                     addReceivedXferId(xfer_id, sender_peer_idx);
+                 });
+@@ -825,12 +825,6 @@ nixlLibfabricEngine::createAgentConnection(
+                   << ", remote: " << data_rail_endpoints.size() << ")";
+     }
+
+-    if (agent_names_.size() > NIXL_AGENT_INDEX_MASK) {
+-        NIXL_ERROR << "Cannot add agent '" << agent_name << "': agent index " << agent_names_.size()
+-                   << " exceeds 8-bit wire limit (" << NIXL_AGENT_INDEX_MASK << ")";
+-        return NIXL_ERR_NOT_SUPPORTED;
+-    }
+-
+     auto existing = connections_.find(agent_name);
+     if (existing != connections_.end()) {
+         NIXL_INFO << "Connection already exists for agent: " << agent_name
+@@ -844,17 +838,25 @@ nixlLibfabricEngine::createAgentConnection(
+         return NIXL_ERR_BACKEND;
+     }
+
++    // Claim the index first, so a partial insertAllAddresses() failure can't hand it to the
++    // next peer. The dead name a failure leaves is harmless: agent_names_ is used for its size.
++    agent_names_.push_back(agent_name);
++
+     conn->rail_remote_addr_list_.reserve(rail_manager_.getNumRails());
+
+     // Process all rails in one operation
+-    nixl_status_t data_status = rail_manager_.insertAllAddresses(
+-        data_rail_endpoints, conn->rail_remote_addr_list_, conn->src_ep_names_);
++    // The AV insert must happen before sendHandshakeTo() further down the call chain:
++    // the peer treats our handshake as proof that we can attribute its traffic.
++    nixl_status_t data_status =
++        rail_manager_.insertAllAddresses(data_rail_endpoints,
++                                         static_cast<uint32_t>(conn->agent_index_),
++                                         conn->rail_remote_addr_list_,
++                                         conn->src_ep_names_);
+     if (data_status != NIXL_SUCCESS) {
+         NIXL_ERROR << "insertAllAddresses failed for rails with status: " << data_status;
+         return data_status;
+     }
+
+-    agent_names_.push_back(agent_name);
+     for (size_t i = 0; i < agent_names_.size(); ++i) {
+         NIXL_DEBUG << "Index " << i << ": " << agent_names_[i];
+     }
+@@ -864,24 +866,29 @@ nixlLibfabricEngine::createAgentConnection(
+     // Drain any handshake the peer already sent us before we'd registered
+     // them locally.
+     if (agent_name != localAgent) {
+-        std::optional<uint16_t> buffered;
++        bool buffered = false;
++        std::optional<uint16_t> rejected_ver;
+         {
+             std::lock_guard<std::mutex> plk(pending_handshake_mutex_);
+-            auto hit = pending_inbound_handshakes_.find(agent_name);
+-            if (hit != pending_inbound_handshakes_.end()) {
+-                buffered = hit->second;
+-                pending_inbound_handshakes_.erase(hit);
++            buffered = (pending_inbound_handshakes_.erase(agent_name) > 0);
++            auto rejected = pending_rejected_handshakes_.find(agent_name);
++            if (rejected != pending_rejected_handshakes_.end()) {
++                rejected_ver = rejected->second;
++                pending_rejected_handshakes_.erase(rejected);
+             }
+         }
++        if (rejected_ver) {
++            std::lock_guard<std::mutex> hlk(conn->handshake_mutex_);
++            conn->rejected_peer_proto_ver_ = *rejected_ver;
++            conn->handshake_rejected_.store(true, std::memory_order_release);
++        }
+         if (buffered) {
+             {
+                 std::lock_guard<std::mutex> hlk(conn->handshake_mutex_);
+-                conn->local_agent_idx_at_remote_ = *buffered;
+                 conn->handshake_received_.store(true, std::memory_order_release);
+             }
+             conn->handshake_cv_.notify_all();
+-            NIXL_INFO << "Applied buffered handshake from '" << agent_name
+-                      << "' assigned_idx=" << *buffered;
++            NIXL_INFO << "Applied buffered handshake from '" << agent_name << "'";
+         }
+     }
+
+@@ -920,14 +927,16 @@ nixlLibfabricEngine::establishConnection(const std::string &remote_agent) const
+         const auto deadline = std::chrono::steady_clock::now() +
+             std::chrono::seconds(NIXL_LIBFABRIC_HANDSHAKE_TIMEOUT_S);
+
++        auto handshake_done = [&] {
++            return conn->handshake_received_.load(std::memory_order_acquire) ||
++                conn->handshake_rejected_.load(std::memory_order_acquire);
++        };
+         if (progress_thread_enabled_) {
+             std::unique_lock<std::mutex> lk(conn->handshake_mutex_);
+-            conn->handshake_cv_.wait_until(lk, deadline, [&] {
+-                return conn->handshake_received_.load(std::memory_order_acquire);
+-            });
++            conn->handshake_cv_.wait_until(lk, deadline, handshake_done);
+         } else {
+             while (std::chrono::steady_clock::now() < deadline) {
+-                if (conn->handshake_received_.load(std::memory_order_acquire)) {
++                if (handshake_done()) {
+                     break;
+                 }
+                 nixl_status_t progress_status = rail_manager_.progressActiveRails();
+@@ -939,10 +948,24 @@ nixlLibfabricEngine::establishConnection(const std::string &remote_agent) const
+             }
+         }
+
++        if (conn->handshake_rejected_.load(std::memory_order_acquire)) {
++            uint16_t peer_ver;
++            {
++                std::lock_guard<std::mutex> hlk(conn->handshake_mutex_);
++                peer_ver = conn->rejected_peer_proto_ver_;
++            }
++            NIXL_ERROR << "Peer '" << remote_agent << "' speaks libfabric-plugin protocol version "
++                       << peer_ver << ", we speak " << NIXL_LIBFABRIC_PROTO_VERSION
++                       << "; connection cannot be established. Upgrade both ends of the cluster "
++                          "to the same NIXL version.";
++            return NIXL_ERR_MISMATCH;
++        }
+         if (!conn->handshake_received_.load(std::memory_order_acquire)) {
+             NIXL_ERROR << "Handshake from peer '" << remote_agent << "' not received after "
+                        << NIXL_LIBFABRIC_HANDSHAKE_TIMEOUT_S
+-                       << "s; connection cannot be established.";
++                       << "s; connection cannot be established. The peer may be unreachable, "
++                          "or speak a different libfabric-plugin protocol version (we speak "
++                       << NIXL_LIBFABRIC_PROTO_VERSION << "); check the peer's log.";
+             return NIXL_ERR_REMOTE_DISCONNECT;
+         }
+     }
+@@ -1386,9 +1409,6 @@ nixlLibfabricEngine::postXferDescriptors(nixlLibfabricReq::OpType op_type,
+         uint64_t remote_registered_base = remote_md->remote_buf_addr_;
+
+         size_t desc_submitted_count = 0;
+-        // imm_data.agent_idx = the value the receiver expects (our index in
+-        // THEIR agent_names_), supplied by the handshake.
+-        const uint16_t imm_agent_idx = senderImmDataAgentIdx(*conn);
+         nixl_status_t status = rail_manager_.prepareAndSubmitTransfer(
+             op_type,
+             transfer_addr,
+@@ -1400,7 +1420,6 @@ nixlLibfabricEngine::postXferDescriptors(nixlLibfabricReq::OpType op_type,
+             remote_md->rail_remote_key_list_,
+             remote_md->remote_selected_endpoints_,
+             conn->rail_remote_addr_list_,
+-            imm_agent_idx,
+             backend_handle->post_xfer_id,
+             [backend_handle](nixl_status_t status) {
+                 backend_handle->complete_request(status);
+@@ -1881,13 +1900,10 @@ nixlLibfabricEngine::notifSendPriv(const std::string &remote_agent,
+                    << " payload_chunk_size=" << header.payload_length << "B"
+                    << " notif_xfer_id=" << header.notif_xfer_id;
+
+-        const uint16_t imm_agent_idx =
+-            senderImmDataAgentIdx(const_cast<nixlLibfabricConnection &>(*connection));
+         nixl_status_t status = rail_manager_.postControlMessage(
+             nixlLibfabricRailManager::ControlMessageType::NOTIFICATION,
+             control_request,
+-            connection->rail_remote_addr_list_[rail_id][0],
+-            imm_agent_idx);
++            connection->rail_remote_addr_list_[rail_id][0]);
+
+         if (status != NIXL_SUCCESS) {
+             NIXL_ERROR << "postControlMessage failed on rail " << rail_id << " for fragment "
+@@ -1940,9 +1956,6 @@ nixlLibfabricEngine::notifXferErrorPriv(const std::string &remote_agent,
+     memcpy(control_request->buffer, &payload, sizeof(payload));
+     control_request->buffer_size = sizeof(payload);
+
+-    const uint16_t imm_agent_idx =
+-        senderImmDataAgentIdx(const_cast<nixlLibfabricConnection &>(*connection));
+-
+     // A successful postControlMessage() only means fi_senddata() accepted the message, so watch
+     // the send completion as well: if it lands in the CQ as an error the target is left waiting
+     // and nothing else reports it. This runs later on the progress thread, by which time the
+@@ -1963,7 +1976,6 @@ nixlLibfabricEngine::notifXferErrorPriv(const std::string &remote_agent,
+         rail_manager_.postControlMessage(nixlLibfabricRailManager::ControlMessageType::XFER_ERROR,
+                                          control_request,
+                                          connection->rail_remote_addr_list_[rail_id][0],
+-                                         imm_agent_idx,
+                                          std::move(send_completion));
+     if (status != NIXL_SUCCESS) {
+         NIXL_ERROR << "Failed to send transfer-error message for XFER_ID=" << notif_xfer_id;
+@@ -2094,7 +2106,7 @@ nixlLibfabricEngine::progressThread() {
+
+ void
+ nixlLibfabricEngine::processNotification(const std::string &serialized_notif,
+-                                         uint16_t sender_peer_idx) {
++                                         uint32_t sender_peer_idx) {
+     NIXL_DEBUG << "Received notification size=" << serialized_notif.size()
+                << " sender_peer_idx=" << sender_peer_idx;
+
+@@ -2190,7 +2202,7 @@ nixlLibfabricEngine::processNotification(const std::string &serialized_notif,
+
+ void
+ nixlLibfabricEngine::handleXferError(uint16_t notif_xfer_id,
+-                                     uint16_t sender_peer_idx,
++                                     uint32_t sender_peer_idx,
+                                      uint32_t final_completions) {
+     {
+         std::lock_guard<std::mutex> lock(receiver_tracking_mutex_);
+@@ -2225,7 +2237,7 @@ nixlLibfabricEngine::handleXferError(uint16_t notif_xfer_id,
+  *****************************************/
+
+ void
+-nixlLibfabricEngine::addReceivedXferId(uint16_t xfer_id, uint16_t sender_peer_idx) {
++nixlLibfabricEngine::addReceivedXferId(uint16_t xfer_id, uint32_t sender_peer_idx) {
+     {
+         std::lock_guard<std::mutex> lock(receiver_tracking_mutex_);
+
+diff --git a/src/plugins/libfabric/libfabric_backend.h b/src/plugins/libfabric/libfabric_backend.h
+--- a/src/plugins/libfabric/libfabric_backend.h
++++ b/src/plugins/libfabric/libfabric_backend.h
+@@ -27,6 +27,7 @@
+ #include <atomic>
+ #include <chrono>
+ #include <unordered_map>
++#include <unordered_set>
+
+ #include "nixl.h"
+ #include "backend/backend_engine.h"
+@@ -262,21 +263,20 @@ private:
+     };
+
+     // O(1) lookup with composite key = (sender_peer_idx << 16) | notif_xfer_id.
+-    // The peer_idx half of the key is the SENDER's local index in OUR
+-    // agent_names_ table, which the sender learned via the handshake protocol
+-    // (NIXL_LIBFABRIC_MSG_HANDSHAKE). The sender embeds that value as the
+-    // agent_idx field of every imm_data.
++    // The peer_idx half of the key is the SENDER's index in OUR agent_names_ table,
++    // resolved from the completion's source address.
+     static inline uint64_t
+-    makePendingKey(uint16_t sender_peer_idx, uint16_t notif_xfer_id) {
++    makePendingKey(uint32_t sender_peer_idx, uint16_t notif_xfer_id) {
+         return (static_cast<uint64_t>(sender_peer_idx) << 16) | notif_xfer_id;
+     }
+
+     std::unordered_map<uint64_t, PendingNotification> pending_notifications_;
+
+-    // Handshake messagess that arrived before the local createAgentConnection had
+-    // registered the originator in connections_. Drained inside
+-    // createAgentConnection.
+-    std::unordered_map<std::string, uint16_t> pending_inbound_handshakes_;
++    // Agents whose handshake arrived before the local createAgentConnection had registered
++    // them in connections_. Drained inside createAgentConnection.
++    std::unordered_set<std::string> pending_inbound_handshakes_;
++    // Same, for handshakes rejected for their protocol version: agent name -> peer's version.
++    std::unordered_map<std::string, uint16_t> pending_rejected_handshakes_;
+     std::mutex pending_handshake_mutex_;
+
+     // Connection management helpers
+@@ -305,7 +305,7 @@ private:
+
+     // Receiver-side handler for NIXL_LIBFABRIC_MSG_XFER_ERROR
+     void
+-    handleXferError(uint16_t notif_xfer_id, uint16_t sender_peer_idx, uint32_t final_completions);
++    handleXferError(uint16_t notif_xfer_id, uint32_t sender_peer_idx, uint32_t final_completions);
+
+     // Tell the target once that this transfer failed, so it stops waiting for writes that never
+     // went out. Called only from checkXfer: an asynchronous post failure must not turn postXfer
+@@ -335,31 +335,25 @@ private:
+
+
+     // Engine message processing methods.
+-    // sender_peer_idx is the SENDER's index in OUR agent_names_ table,
+-    // decoded from the imm_data.
++    // sender_peer_idx is the SENDER's index in OUR agent_names_ table, resolved from the
++    // completion's source address.
+     void
+-    processNotification(const std::string &serialized_notif, uint16_t sender_peer_idx);
++    processNotification(const std::string &serialized_notif, uint32_t sender_peer_idx);
+
+-    // Send the per-peer handshake message to a peer we just created a connection
+-    // with, telling them what index we have assigned them in our agent_names_.
++    // Send the per-peer handshake message to a peer we just created a connection with. It
++    // tells the peer we hold its endpoints in our AV, so we can attribute its traffic.
+     // When we decide the peer may not have seen us, i.e. have never sent us a handshake,
+     // embed our own connection info in the message.
+     nixl_status_t
+     sendHandshakeTo(const nixlLibfabricConnection &conn) const;
+
+-    // Resolve the agent_idx the sender should ship to a given remote peer in
+-    // every imm_data field. Returns the handshake-supplied value.
+-    // establishConnection() guarantees the handshake is received before
+-    // marking the connection as CONNECTED; this function should never be
+-    // called without a valid handshake. Sending to ourselves (same-process
+-    // self-connection) returns 0 immediately.
+-    uint16_t
+-    senderImmDataAgentIdx(nixlLibfabricConnection &conn) const;
+-
+-    // Looks up the peer by agent_name and stores the assigned index on its connection
+-    // record. Will load peer's connection info from the handshake payload, if it's a new peer.
++    // Records that a peer has us in its address vectors, so we may start sending to it.
++    // Will load the peer's connection info from the handshake payload, if it's a new peer.
+     void
+     handleHandshake(const std::string &raw_payload);
++    // Marks a peer rejected for its protocol version; establishConnection() then fails fast.
++    void
++    rejectHandshake(const std::string &peer_agent_name, uint16_t peer_proto_ver);
+     nixl_status_t
+     loadMetadataHelper(const std::vector<uint64_t> &rail_keys,
+                        void *buffer,
+@@ -687,12 +681,12 @@ public:
+      * Thread-safe method to track received data transfers.
+      *
+      * @param[in] xfer_id 16-bit transfer ID that was received
+-     * @param[in] sender_peer_idx The SENDER's index in our agent_names_ table,
+-     *            extracted from the imm_data the sender shipped. Combined with
++     * @param[in] sender_peer_idx The SENDER's index in our agent_names_ table, resolved
++     *            from the source address of the write completion. Combined with
+      *            xfer_id to form the pending_notifications_ joint key.
+      */
+     void
+-    addReceivedXferId(uint16_t xfer_id, uint16_t sender_peer_idx);
++    addReceivedXferId(uint16_t xfer_id, uint32_t sender_peer_idx);
+
+     // Notification Queuing Helper Methods
+     /**
+diff --git a/src/plugins/libfabric/libfabric_connection.h b/src/plugins/libfabric/libfabric_connection.h
+--- a/src/plugins/libfabric/libfabric_connection.h
++++ b/src/plugins/libfabric/libfabric_connection.h
+@@ -46,11 +46,13 @@ struct nixlLibfabricConnection : public nixlBackendConnMD {
+     std::vector<char *> src_ep_names_; // Rail endpoint names
+     std::atomic<ConnectionState> overall_state_; // Current connection state
+
+-    // Handshake received state.
+-    // Read on the data path, block on handshake_cv_ until handshake_received_ is true.
+-    // The atomic gives lock-free fast-path checks for postXfer/notifSendPriv.
++    // Set once the peer holds our endpoints in its AV, so it can attribute our traffic.
++    // establishConnection() blocks on handshake_cv_ until this or handshake_rejected_ is set.
+     std::atomic<bool> handshake_received_{false};
+-    uint16_t local_agent_idx_at_remote_ = 0; // valid only when handshake_received_
++    // Set when the peer's protocol version is incompatible, so establishConnection() fails with
++    // NIXL_ERR_MISMATCH. rejected_peer_proto_ver_ is written under handshake_mutex_ first.
++    std::atomic<bool> handshake_rejected_{false};
++    uint16_t rejected_peer_proto_ver_ = 0;
+     std::mutex handshake_mutex_;
+     std::condition_variable handshake_cv_;
+ };
+diff --git a/src/plugins/libfabric/libfabric_handshake.cpp b/src/plugins/libfabric/libfabric_handshake.cpp
+--- a/src/plugins/libfabric/libfabric_handshake.cpp
++++ b/src/plugins/libfabric/libfabric_handshake.cpp
+@@ -27,20 +27,22 @@
+  *****************************************/
+
+ // Wire format for a handshake message body (serialized via nixlSerDes):
+-//   "idx"      : uint16 = assigned_idx (the index we have for this peer)
+-//   "name"     : string = agent_name of the SENDER (us). The receiver uses
+-//                 it to look up its connection record for us in connections_
+-//                 and patch local_agent_idx_at_remote_ there.
++//   "ver"      : uint16 = NIXL_LIBFABRIC_PROTO_VERSION of the sender
++//   "name"     : string = agent_name of the SENDER (us). The receiver uses it to find its
++//                 connection record for us, so a handshake needs no source-address lookup.
+ //   "has_conn" : uint8  = 1 if connection info is included, 0 otherwise
+ //   "conn"     : string = serialized connection info (only if has_conn == 1).
+ //                 Included when the peer hasn't sent us a handshake yet,
+ //                 meaning they likely don't have our endpoint addresses.
+ //
++// Protocol version 1 sent "idx" (the agent index for imm_data) instead of "ver". It is not
++// interoperable with version 2, so the version check rejects it at connection setup.
++//
+ // Sized to fit inside one libfabric control buffer
+ // (NIXL_LIBFABRIC_SEND_RECV_BUFFER_SIZE = 8 KiB).
+ nixl_status_t
+ nixlLibfabricEngine::sendHandshakeTo(const nixlLibfabricConnection &conn) const {
+-    const uint16_t assigned_idx = static_cast<uint16_t>(conn.agent_index_);
++    const uint16_t proto_ver = static_cast<uint16_t>(NIXL_LIBFABRIC_PROTO_VERSION);
+     const std::string &my_name = localAgent;
+
+     // Include connection info if peer hasn't sent us a handshake yet (meaning
+@@ -56,7 +58,7 @@ nixlLibfabricEngine::sendHandshakeTo(const nixlLibfabricConnection &conn) const
+     }
+
+     nixlSerDes sd;
+-    sd.addBuf(NIXL_HANDSHAKE_TAG_IDX, &assigned_idx, sizeof(assigned_idx));
++    sd.addBuf(NIXL_HANDSHAKE_TAG_VER, &proto_ver, sizeof(proto_ver));
+     sd.addStr(NIXL_HANDSHAKE_TAG_NAME, my_name);
+     uint8_t has_conn = piggybacked_conn_info.empty() ? 0 : 1;
+     sd.addBuf(NIXL_HANDSHAKE_TAG_HAS_CONN, &has_conn, sizeof(has_conn));
+@@ -83,32 +85,39 @@ nixlLibfabricEngine::sendHandshakeTo(const nixlLibfabricConnection &conn) const
+     std::memcpy(req->buffer, payload.data(), payload.size());
+     req->buffer_size = payload.size();
+
+-    NIXL_DEBUG << "Sending handshake to '" << conn.remoteAgent_ << "' assigned_idx=" << assigned_idx
++    NIXL_DEBUG << "Sending handshake to '" << conn.remoteAgent_ << "' proto_ver=" << proto_ver
+                << " (my agent_name='" << my_name
+                << "', piggybacked_conn_info_len=" << piggybacked_conn_info.size() << ")";
+     return rail_manager_.postControlMessage(nixlLibfabricRailManager::ControlMessageType::HANDSHAKE,
+                                             req,
+-                                            conn.rail_remote_addr_list_.at(kRailId)[0],
+-                                            /*agent_idx=*/0 /* not used for handshake decode */);
++                                            conn.rail_remote_addr_list_.at(kRailId)[0]);
+ }
+
+-uint16_t
+-nixlLibfabricEngine::senderImmDataAgentIdx(nixlLibfabricConnection &conn) const {
+-    // Self-connection: same process, no real wire; safe to ship 0, because self connection is
+-    // inserted the first.
+-    if (conn.remoteAgent_ == localAgent) {
+-        return 0;
++void
++nixlLibfabricEngine::rejectHandshake(const std::string &peer_agent_name, uint16_t peer_proto_ver) {
++    std::shared_ptr<nixlLibfabricConnection> conn;
++    {
++        std::lock_guard<std::mutex> lock(connection_state_mutex_);
++        auto it = connections_.find(peer_agent_name);
++        if (it != connections_.end() && it->second) {
++            conn = it->second;
++        }
+     }
+
+-    if (conn.handshake_received_.load(std::memory_order_acquire)) {
+-        return conn.local_agent_idx_at_remote_;
++    if (!conn) {
++        // Not registered yet: createAgentConnection applies it, like a buffered handshake.
++        // The piggybacked connection info of an incompatible peer is deliberately not loaded.
++        std::lock_guard<std::mutex> plk(pending_handshake_mutex_);
++        pending_rejected_handshakes_[peer_agent_name] = peer_proto_ver;
++        return;
+     }
+
+-    // Should not reach here if establishConnection() completed successfully.
+-    NIXL_ERROR << "senderImmDataAgentIdx called before handshake received for '"
+-               << conn.remoteAgent_ << "'; establishConnection() was likely not called. "
+-               << "See error logs above for connection and handshake.";
+-    return UINT16_MAX;
++    {
++        std::lock_guard<std::mutex> hlk(conn->handshake_mutex_);
++        conn->rejected_peer_proto_ver_ = peer_proto_ver;
++        conn->handshake_rejected_.store(true, std::memory_order_release);
++    }
++    conn->handshake_cv_.notify_all();
+ }
+
+ void
+@@ -120,16 +129,32 @@ nixlLibfabricEngine::handleHandshake(const std::string &raw_payload) {
+         return;
+     }
+
+-    uint16_t assigned_idx = 0;
+-    if (sd.getBuf(NIXL_HANDSHAKE_TAG_IDX, &assigned_idx, sizeof(assigned_idx)) != NIXL_SUCCESS) {
+-        NIXL_ERROR << "Handshake missing 'idx' field";
+-        return;
++    // nixlSerDes reads fields in order. A version-1 peer sends "idx" where we send "ver", so
++    // consume either one, then "name", to identify the peer before rejecting it.
++    uint16_t peer_proto_ver = 0;
++    if (sd.getBuf(NIXL_HANDSHAKE_TAG_VER, &peer_proto_ver, sizeof(peer_proto_ver)) !=
++        NIXL_SUCCESS) {
++        uint16_t v1_idx = 0;
++        if (sd.getBuf(NIXL_HANDSHAKE_TAG_V1_IDX, &v1_idx, sizeof(v1_idx)) != NIXL_SUCCESS) {
++            NIXL_ERROR << "Handshake has neither a '" << NIXL_HANDSHAKE_TAG_VER << "' nor an '"
++                       << NIXL_HANDSHAKE_TAG_V1_IDX << "' field; dropping it";
++            return;
++        }
++        peer_proto_ver = 1;
+     }
+     std::string peer_agent_name = sd.getStr(NIXL_HANDSHAKE_TAG_NAME);
+     if (peer_agent_name.empty()) {
+         NIXL_ERROR << "Handshake missing or empty 'name' field";
+         return;
+     }
++    if (peer_proto_ver != NIXL_LIBFABRIC_PROTO_VERSION) {
++        NIXL_ERROR << "Handshake from '" << peer_agent_name << "' speaks libfabric-plugin protocol "
++                   << "version " << peer_proto_ver << ", which is not interoperable with version "
++                   << NIXL_LIBFABRIC_PROTO_VERSION
++                   << ". Upgrade both ends of the cluster to the same NIXL version.";
++        rejectHandshake(peer_agent_name, peer_proto_ver);
++        return;
++    }
+     uint8_t has_conn = 0;
+     if (sd.getBuf(NIXL_HANDSHAKE_TAG_HAS_CONN, &has_conn, sizeof(has_conn)) != NIXL_SUCCESS) {
+         NIXL_ERROR << "Handshake missing 'has_conn' field";
+@@ -147,7 +172,7 @@ nixlLibfabricEngine::handleHandshake(const std::string &raw_payload) {
+     }
+
+     NIXL_DEBUG << "Received handshake from peer '" << peer_agent_name
+-               << "' assigned_idx=" << assigned_idx
++               << "' proto_ver=" << peer_proto_ver
+                << " piggybacked_conn_info_len=" << piggybacked_conn_info.size();
+
+     // Process the decoded handshake.
+@@ -163,10 +188,9 @@ nixlLibfabricEngine::handleHandshake(const std::string &raw_payload) {
+     if (!conn) {
+         {
+             std::lock_guard<std::mutex> plk(pending_handshake_mutex_);
+-            pending_inbound_handshakes_[peer_agent_name] = assigned_idx;
++            pending_inbound_handshakes_.insert(peer_agent_name);
+             NIXL_DEBUG << "Buffered handshake from not-yet-known peer '" << peer_agent_name
+-                       << "' (assigned_idx=" << assigned_idx
+-                       << "); will apply on createAgentConnection";
++                       << "'; will apply on createAgentConnection";
+         }
+
+         if (piggybacked_conn_info.empty()) {
+@@ -190,12 +214,11 @@ nixlLibfabricEngine::handleHandshake(const std::string &raw_payload) {
+     } else {
+         {
+             std::lock_guard<std::mutex> hlk(conn->handshake_mutex_);
+-            conn->local_agent_idx_at_remote_ = assigned_idx;
+             conn->handshake_received_.store(true, std::memory_order_release);
+         }
+         conn->handshake_cv_.notify_all();
+         NIXL_INFO << "Handshake stored: peer='" << peer_agent_name
+-                  << "' assigned_idx=" << assigned_idx
+-                  << " — subsequent sends to them will encode this in imm_data.agent_idx";
++                  << "' — it has our endpoints in its address vectors, so it can attribute "
++                     "our transfers and we may start sending";
+     }
+ }
+diff --git a/src/utils/libfabric/libfabric_common.h b/src/utils/libfabric/libfabric_common.h
+--- a/src/utils/libfabric/libfabric_common.h
++++ b/src/utils/libfabric/libfabric_common.h
+@@ -59,29 +59,37 @@
+ #define NIXL_LIBFABRIC_HANDSHAKE_TIMEOUT_S 60
+
+ // Handshake SerDes tag names
+-constexpr const char *NIXL_HANDSHAKE_TAG_IDX = "idx";
++constexpr const char *NIXL_HANDSHAKE_TAG_VER = "ver";
++// Sent by protocol-version-1 peers in place of "ver"; only read to recognise such a peer.
++constexpr const char *NIXL_HANDSHAKE_TAG_V1_IDX = "idx";
+ constexpr const char *NIXL_HANDSHAKE_TAG_NAME = "name";
+ constexpr const char *NIXL_HANDSHAKE_TAG_HAS_CONN = "has_conn";
+ constexpr const char *NIXL_HANDSHAKE_TAG_CONN = "conn";
+
++// Wire-protocol version of the libfabric plugin, exchanged in the handshake. Bump it on any
++// incompatible imm_data or control-message change. 1: 8-bit agent index in imm_data (sends
++// "idx", no "ver"). 2: senders are resolved from the completion's source address.
++#define NIXL_LIBFABRIC_PROTO_VERSION 2u
++
+ // The immediate data associated with an RDMA operation is 32 bits and is divided as follows:
+-// | 4-bit MSG TYPE flag | 8-bit agent index | 16-bit XFER_ID | 4-bit SEQ_ID |
++// | 4-bit MSG TYPE flag | 8-bit RESERVED | 16-bit XFER_ID | 4-bit SEQ_ID |
++// RESERVED held the 8-bit peer agent index in protocol version 1; it must now be zero.
+
+ // Optimized bit field constants (compile-time computed)
+ #define NIXL_MSG_TYPE_BITS 4
+-#define NIXL_AGENT_INDEX_BITS 8
++#define NIXL_IMM_RESERVED_BITS 8
+ #define NIXL_XFER_ID_BITS 16
+ #define NIXL_SEQ_ID_BITS 4
+
+ // Pre-computed shift amounts for better performance
+ #define NIXL_MSG_TYPE_SHIFT 0
+-#define NIXL_AGENT_INDEX_SHIFT 4
++#define NIXL_IMM_RESERVED_SHIFT 4
+ #define NIXL_XFER_ID_SHIFT 12
+ #define NIXL_SEQ_ID_SHIFT 28
+
+ // Pre-computed masks (compile-time constants)
+ #define NIXL_MSG_TYPE_MASK 0xFU // 0x0000000F (4 bits)
+-#define NIXL_AGENT_INDEX_MASK 0xFFU // 0x000000FF (8 bits)
++#define NIXL_IMM_RESERVED_MASK 0xFFU // 0x000000FF (8 bits)
+ #define NIXL_XFER_ID_MASK 0xFFFFU // 0x0000FFFF (16 bits)
+ #define NIXL_SEQ_ID_MASK 0xFU // 0x0000000F (4 bits)
+
+@@ -96,16 +104,14 @@ constexpr const char *NIXL_HANDSHAKE_TAG_CONN = "conn";
+
+ // Single-operation immediate data extraction (no intermediate shifts)
+ #define NIXL_GET_MSG_TYPE_FROM_IMM(data) ((data) & NIXL_MSG_TYPE_MASK)
+-#define NIXL_GET_AGENT_INDEX_FROM_IMM(data) \
+-    (((data) >> NIXL_AGENT_INDEX_SHIFT) & NIXL_AGENT_INDEX_MASK)
++#define NIXL_GET_IMM_RESERVED(data) (((data) >> NIXL_IMM_RESERVED_SHIFT) & NIXL_IMM_RESERVED_MASK)
+ #define NIXL_GET_XFER_ID_FROM_IMM(data) (((data) >> NIXL_XFER_ID_SHIFT) & NIXL_XFER_ID_MASK)
+ #define NIXL_GET_SEQ_ID_FROM_IMM(data) (((data) >> NIXL_SEQ_ID_SHIFT) & NIXL_SEQ_ID_MASK)
+
+ // Single-operation immediate data creation (minimal bit operations)
+-#define NIXL_MAKE_IMM_DATA(msg_type, agent_idx, xfer_id, seq_id)                   \
+-    (((uint64_t)(msg_type) & NIXL_MSG_TYPE_MASK) |                                 \
+-     (((uint64_t)(agent_idx) & NIXL_AGENT_INDEX_MASK) << NIXL_AGENT_INDEX_SHIFT) | \
+-     (((uint64_t)(xfer_id) & NIXL_XFER_ID_MASK) << NIXL_XFER_ID_SHIFT) |           \
++#define NIXL_MAKE_IMM_DATA(msg_type, xfer_id, seq_id)                    \
++    (((uint64_t)(msg_type) & NIXL_MSG_TYPE_MASK) |                       \
++     (((uint64_t)(xfer_id) & NIXL_XFER_ID_MASK) << NIXL_XFER_ID_SHIFT) | \
+      (((uint64_t)(seq_id) & NIXL_SEQ_ID_MASK) << NIXL_SEQ_ID_SHIFT))
+
+ #define NIXL_LIBFABRIC_CQ_BATCH_SIZE 16
+diff --git a/src/utils/libfabric/libfabric_rail.cpp b/src/utils/libfabric/libfabric_rail.cpp
+--- a/src/utils/libfabric/libfabric_rail.cpp
++++ b/src/utils/libfabric/libfabric_rail.cpp
+@@ -437,6 +437,7 @@ nixlLibfabricRail::nixlLibfabricRail(const std::string &device,
+     hints->caps = 0;
+     hints->caps = FI_MSG | FI_RMA | FI_HMEM; // Try with FI_HMEM first
+     hints->caps |= FI_LOCAL_COMM | FI_REMOTE_COMM;
++    hints->caps |= FI_SOURCE;
+     hints->mode = FI_CONTEXT;
+     hints->ep_attr->type = FI_EP_RDM;
+     // Configure memory registration mode based on provider capabilities
+@@ -469,9 +470,27 @@ nixlLibfabricRail::nixlLibfabricRail(const std::string &device,
+             // Retry without FI_HMEM
+             hints->caps = FI_MSG | FI_RMA;
+             hints->caps |= FI_LOCAL_COMM | FI_REMOTE_COMM;
++            hints->caps |= FI_SOURCE;
+
+             ret = fi_getinfo(FI_VERSION(1, 18), NULL, NULL, 0, hints, &info);
+             if (ret) {
++                // A provider that cannot support FI_SOURCE fails fi_getinfo rather than returning
++                // info without it. Probe once without FI_SOURCE to check whether it caused the
++                // failure.
++                hints->caps &= ~FI_SOURCE;
++                struct fi_info *probe = nullptr;
++                const int probe_ret = fi_getinfo(FI_VERSION(1, 18), NULL, NULL, 0, hints, &probe);
++                if (probe) {
++                    fi_freeinfo(probe);
++                }
++                if (probe_ret == 0) {
++                    NIXL_ERROR << "Provider " << provider << " does not support FI_SOURCE on rail "
++                               << rail_id
++                               << "; the libfabric backend cannot attribute incoming transfers "
++                                  "to a sender without it";
++                    throw std::runtime_error("FI_SOURCE not supported for rail " +
++                                             std::to_string(rail_id));
++                }
+                 NIXL_ERROR << "fi_getinfo failed for rail " << rail_id << ": " << fi_strerror(-ret);
+                 throw std::runtime_error("fi_getinfo failed for rail " + std::to_string(rail_id));
+             }
+@@ -520,6 +539,7 @@ nixlLibfabricRail::nixlLibfabricRail(const std::string &device,
+         }
+         // Create AV for this rail
+         struct fi_av_attr av_attr = {};
++        av_attr.type = FI_AV_TABLE;
+         ret = fi_av_open(domain, &av_attr, &av, NULL);
+         if (ret) {
+             NIXL_ERROR << "fi_av_open failed for rail " << rail_id << ": " << fi_strerror(-ret);
+@@ -740,7 +760,7 @@ nixlLibfabricRail::cleanup() {
+
+ void
+ nixlLibfabricRail::setNotificationCallback(
+-    std::function<void(const std::string &, uint16_t)> callback) {
++    std::function<void(const std::string &, uint32_t)> callback) {
+     notificationCallback = callback;
+ }
+
+@@ -760,13 +780,13 @@ nixlLibfabricRail::initPostQueue(size_t post_queue_size) {
+ }
+
+ void
+-nixlLibfabricRail::setXferIdCallback(std::function<void(uint64_t, uint16_t)> callback) {
++nixlLibfabricRail::setXferIdCallback(std::function<void(uint64_t, uint32_t)> callback) {
+     xferIdCallback = callback;
+ }
+
+ void
+ nixlLibfabricRail::setXferErrorCallback(
+-    std::function<void(uint16_t, uint16_t, uint32_t)> callback) {
++    std::function<void(uint16_t, uint32_t, uint32_t)> callback) {
+     xferErrorCallback = callback;
+ }
+
+@@ -775,6 +795,7 @@ nixl_status_t
+ nixlLibfabricRail::progressCompletionQueue() {
+     // Completion processing FIRST — process arrivals before posting new items
+     struct fi_cq_data_entry completions[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
++    fi_addr_t src_addrs[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
+
+     int ret;
+     struct fi_cq_err_entry err_entry;
+@@ -785,7 +806,7 @@ nixlLibfabricRail::progressCompletionQueue() {
+         std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+
+         // Non-blocking read (used by progress thread or fallback)
+-        ret = fi_cq_read(cq, completions, NIXL_LIBFABRIC_CQ_BATCH_SIZE);
++        ret = fi_cq_readfrom(cq, completions, NIXL_LIBFABRIC_CQ_BATCH_SIZE, src_addrs);
+
+         if (ret < 0 && ret != -FI_EAGAIN) {
+             // Handle error - but be careful about fi_cq_readerr
+@@ -796,7 +817,7 @@ nixlLibfabricRail::progressCompletionQueue() {
+     // CQ lock released here - completion is now local data
+
+     if (ret < 0 && ret != -FI_EAGAIN) {
+-        NIXL_ERROR << "fi_cq_read returned error " << ret << " on rail " << rail_id << ": "
++        NIXL_ERROR << "fi_cq_readfrom returned error " << ret << " on rail " << rail_id << ": "
+                    << fi_strerror(-ret);
+         if (err_ret > 0) {
+             NIXL_ERROR << "CQ read failed on rail " << rail_id
+@@ -825,16 +846,25 @@ nixlLibfabricRail::progressCompletionQueue() {
+     }
+
+     if (ret > 0) {
++        nixl_status_t first_error = NIXL_SUCCESS;
+         for (int i = 0; i < ret; ++i) {
+             // Process completion using local data. Callbacks have their own thread safety
+-            nixl_status_t status = processCompletionQueueEntry(&completions[i]);
++            nixl_status_t status = processCompletionQueueEntry(&completions[i], src_addrs[i]);
+             if (status != NIXL_SUCCESS) {
+                 NIXL_ERROR << "Failed to process completion " << i << " out of batch of " << ret
+-                           << " on rail " << rail_id;
+-                return status;
++                           << " on rail " << rail_id << " with status " << status;
++                // Keep draining: these entries are already dequeued, so stopping here would
++                // drop the valid ones behind the failure. Report the first error afterwards.
++                if (first_error == NIXL_SUCCESS) {
++                    first_error = status;
++                }
+             }
+         }
+
++        if (first_error != NIXL_SUCCESS) {
++            return first_error;
++        }
++
+         NIXL_DEBUG << "Processed " << ret << " completions on rail " << rail_id;
+     }
+
+@@ -852,19 +882,20 @@ nixlLibfabricRail::progressCompletionQueue() {
+
+ void
+ nixlLibfabricRail::pollForCompletions() {
+-    struct fi_cq_data_entry cq_buf[16];
++    struct fi_cq_data_entry cq_buf[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
++    fi_addr_t src_addrs[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
+     struct fi_cq_err_entry err_entry = {};
+     int cq_ret;
+     {
+         const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+-        cq_ret = fi_cq_read(cq, cq_buf, 16);
++        cq_ret = fi_cq_readfrom(cq, cq_buf, NIXL_LIBFABRIC_CQ_BATCH_SIZE, src_addrs);
+         if (cq_ret < 0 && cq_ret != -FI_EAGAIN) {
+             fi_cq_readerr(cq, &err_entry, 0);
+         }
+     }
+     if (cq_ret > 0) {
+         for (int c = 0; c < cq_ret; c++) {
+-            processCompletionQueueEntry(&cq_buf[c]);
++            processCompletionQueueEntry(&cq_buf[c], src_addrs[c]);
+         }
+     } else if (cq_ret < 0 && cq_ret != -FI_EAGAIN) {
+         NIXL_ERROR << "CQ error in drain interleave on rail " << rail_id << ": "
+@@ -874,7 +905,8 @@ nixlLibfabricRail::pollForCompletions() {
+
+ // Route completion to appropriate handler (rail-specific)
+ nixl_status_t
+-nixlLibfabricRail::processCompletionQueueEntry(struct fi_cq_data_entry *comp) const {
++nixlLibfabricRail::processCompletionQueueEntry(struct fi_cq_data_entry *comp,
++                                               fi_addr_t src_addr) const {
+     uint64_t flags = comp->flags;
+
+     NIXL_TRACE << "Routing completion from rail " << rail_id << " with flags=" << std::hex << flags
+@@ -887,8 +919,8 @@ nixlLibfabricRail::processCompletionQueueEntry(struct fi_cq_data_entry *comp) co
+         return processLocalSendCompletion(comp);
+
+     } else if (flags & FI_RECV) {
+-        // Receive completions - use immediate data
+-        return processRecvCompletion(comp);
++        // Receive completions - use immediate data and the source address
++        return processRecvCompletion(comp, src_addr);
+
+     } else if (flags & FI_WRITE) {
+         // Local write completions (fi_writemsg with remote completion) - use context
+@@ -900,7 +932,7 @@ nixlLibfabricRail::processCompletionQueueEntry(struct fi_cq_data_entry *comp) co
+
+     } else if (flags & FI_REMOTE_WRITE || flags & FI_REMOTE_CQ_DATA) {
+         // Remote write completions (from fi_writemsg with remote completion) - use immediate data
+-        return processRemoteWriteCompletion(comp);
++        return processRemoteWriteCompletion(comp, src_addr);
+
+     } else {
+         // Add more detailed warning for unknown completion flags
+@@ -995,7 +1027,7 @@ nixlLibfabricRail::processLocalTransferCompletion(struct fi_cq_data_entry *comp,
+
+ // Handle remote receive completions (conn_req, conn_ack, notification messages)
+ nixl_status_t
+-nixlLibfabricRail::processRecvCompletion(struct fi_cq_data_entry *comp) const {
++nixlLibfabricRail::processRecvCompletion(struct fi_cq_data_entry *comp, fi_addr_t src_addr) const {
+     // Get the request from context to access the received buffer
+     nixlLibfabricReq *req = findRequestFromContext(comp->op_context);
+     if (!req) {
+@@ -1004,14 +1036,25 @@ nixlLibfabricRail::processRecvCompletion(struct fi_cq_data_entry *comp) const {
+     }
+     // Decode the immediate data format
+     uint64_t msg_type = NIXL_GET_MSG_TYPE_FROM_IMM(comp->data);
+-    uint16_t agent_idx = NIXL_GET_AGENT_INDEX_FROM_IMM(comp->data);
+     uint32_t xfer_id = NIXL_GET_XFER_ID_FROM_IMM(comp->data);
+-    NIXL_TRACE << "Received control message type " << msg_type << " agent_idx=" << agent_idx
++    NIXL_TRACE << "Received control message type " << msg_type << " src_addr=" << src_addr
+                << " XFER_ID=" << xfer_id << " imm_data=" << std::hex << comp->data << std::dec;
+
+     nixl_status_t result = NIXL_SUCCESS;
+
+-    if (msg_type == NIXL_LIBFABRIC_MSG_NOTIFICTION) {
++    // HANDSHAKE needs no sender: it can arrive before we have inserted the peer into our AV,
++    // and it carries the sender's name in its payload.
++    const bool needs_sender =
++        (msg_type == NIXL_LIBFABRIC_MSG_NOTIFICTION || msg_type == NIXL_LIBFABRIC_MSG_XFER_ERROR);
++    const uint32_t agent_idx = needs_sender ? resolveSourceAddress(src_addr) : kUnknownAgentIdx;
++
++    if (needs_sender && agent_idx == kUnknownAgentIdx) {
++        NIXL_ERROR << "Cannot attribute control message type " << msg_type << " XFER_ID=" << xfer_id
++                   << " on rail " << rail_id << " to a peer: src_addr=" << src_addr
++                   << " is not a known sender. Dropping the message; the initiator will not "
++                      "see this transfer complete.";
++        // Handled by dropping it; not an error for whichever caller progressed the CQ.
++    } else if (msg_type == NIXL_LIBFABRIC_MSG_NOTIFICTION) {
+         NIXL_TRACE << "Processing notification request on rail " << rail_id
+                    << " Xfer_id :" << xfer_id;
+
+@@ -1083,15 +1126,24 @@ nixlLibfabricRail::processRecvCompletion(struct fi_cq_data_entry *comp) const {
+
+ // Handle remote write completions (data arrival notification)
+ nixl_status_t
+-nixlLibfabricRail::processRemoteWriteCompletion(struct fi_cq_data_entry *comp) const {
++nixlLibfabricRail::processRemoteWriteCompletion(struct fi_cq_data_entry *comp,
++                                                fi_addr_t src_addr) const {
+     // Decode the immediate data format
+     uint64_t msg_type = NIXL_GET_MSG_TYPE_FROM_IMM(comp->data);
+-    uint16_t agent_idx = NIXL_GET_AGENT_INDEX_FROM_IMM(comp->data);
+     uint32_t xfer_id = NIXL_GET_XFER_ID_FROM_IMM(comp->data);
+
+     // For remote write completions, we don't need to post a new receive
+     // The write operation doesn't consume a receive buffer
+     if (msg_type == NIXL_LIBFABRIC_MSG_TRANSFER) {
++        const uint32_t agent_idx = resolveSourceAddress(src_addr);
++        if (agent_idx == kUnknownAgentIdx) {
++            NIXL_ERROR << "Remote write completion on rail " << rail_id
++                       << " from unknown src_addr=" << src_addr << " XFER_ID=" << xfer_id
++                       << "; cannot credit it to a pending notification";
++            // Handled by dropping it; not an error for whichever caller progressed the CQ.
++            return NIXL_SUCCESS;
++        }
++
+         NIXL_TRACE << "Remote write completion on rail " << rail_id << " - received " << comp->len
+                    << " bytes" << " agent_idx=" << agent_idx << " XFER_ID=" << xfer_id
+                    << " imm_data=" << std::hex << comp->data << std::dec;
+@@ -1162,7 +1214,6 @@ nixlLibfabricRail::postSend(uint64_t immediate_data, fi_addr_t dest_addr, nixlLi
+     NIXL_TRACE << "Sending data on endpoint=" << endpoint << " buffer=" << req->buffer
+                << " size=" << req->buffer_size << " immediate_data=" << std::hex << immediate_data
+                << " msg_type=" << NIXL_GET_MSG_TYPE_FROM_IMM(immediate_data)
+-               << " agent_idx=" << NIXL_GET_AGENT_INDEX_FROM_IMM(immediate_data)
+                << " XFER_ID=" << NIXL_GET_XFER_ID_FROM_IMM(immediate_data)
+                << " dest_addr=" << dest_addr << std::dec << " context=" << &req->ctx;
+
+@@ -1734,7 +1785,9 @@ nixlLibfabricRail::deregisterMemory(struct fid_mr *mr) const {
+ // Address Vector Management Methods
+
+ nixl_status_t
+-nixlLibfabricRail::insertAddress(const void *addr, fi_addr_t *fi_addr_out) const {
++nixlLibfabricRail::insertAddress(const void *addr,
++                                 uint32_t agent_idx,
++                                 fi_addr_t *fi_addr_out) const {
+     if (!addr || !fi_addr_out) {
+         NIXL_ERROR << "Invalid parameters on rail " << rail_id;
+         return NIXL_ERR_INVALID_PARAM;
+@@ -1754,6 +1807,9 @@ nixlLibfabricRail::insertAddress(const void *addr, fi_addr_t *fi_addr_out) const
+         return NIXL_ERR_BACKEND;
+     }
+
++    // Kept together with the insert so the table cannot drift from the AV.
++    mapSourceAddress(*fi_addr_out, agent_idx);
++
+     return NIXL_SUCCESS;
+ }
+
+@@ -1778,9 +1834,56 @@ nixlLibfabricRail::removeAddress(fi_addr_t fi_addr) const {
+         return NIXL_ERR_BACKEND;
+     }
+
++    // Clear the mapping so a reused fi_addr is not misattributed to a different peer.
++    // Not reachable yet: cleanupConnection() has no callers; disconnect() never removes AV entries.
++    {
++        std::unique_lock<std::shared_mutex> lk(src_addr_mutex_);
++        if (fi_addr < src_addr_to_agent_.size()) {
++            src_addr_to_agent_[fi_addr] = kUnknownAgentIdx;
++        }
++    }
++
+     return NIXL_SUCCESS;
+ }
+
++void
++nixlLibfabricRail::mapSourceAddress(fi_addr_t fi_addr, uint32_t agent_idx) const {
++    if (fi_addr == FI_ADDR_NOTAVAIL) {
++        NIXL_ERROR << "Refusing to map invalid fi_addr " << fi_addr << " on rail " << rail_id;
++        return;
++    }
++
++    std::unique_lock<std::shared_mutex> lk(src_addr_mutex_);
++    if (fi_addr >= src_addr_to_agent_.size()) {
++        src_addr_to_agent_.resize(fi_addr + 1, kUnknownAgentIdx);
++    }
++
++    const uint32_t prev = src_addr_to_agent_[fi_addr];
++    if (prev != kUnknownAgentIdx && prev != agent_idx) {
++        // A reconnect: a duplicate fi_av_insert() returns the existing fi_addr under a fresh
++        // index. Last writer wins; transfers in flight under the old index are orphaned.
++        NIXL_WARN << "Re-mapping fi_addr " << fi_addr << " on rail " << rail_id
++                  << " from agent index " << prev << " to " << agent_idx;
++    }
++    src_addr_to_agent_[fi_addr] = agent_idx;
++
++    NIXL_TRACE << "Mapped fi_addr " << fi_addr << " -> agent index " << agent_idx << " on rail "
++               << rail_id;
++}
++
++uint32_t
++nixlLibfabricRail::resolveSourceAddress(fi_addr_t src_addr) const {
++    if (src_addr == FI_ADDR_NOTAVAIL) {
++        return kUnknownAgentIdx;
++    }
++
++    std::shared_lock<std::shared_mutex> lk(src_addr_mutex_);
++    if (src_addr >= src_addr_to_agent_.size()) {
++        return kUnknownAgentIdx;
++    }
++    return src_addr_to_agent_[src_addr];
++}
++
+ // Memory Descriptor Helper Methods
+
+ void *
+diff --git a/src/utils/libfabric/libfabric_rail.h b/src/utils/libfabric/libfabric_rail.h
+--- a/src/utils/libfabric/libfabric_rail.h
++++ b/src/utils/libfabric/libfabric_rail.h
+@@ -20,9 +20,11 @@
+
+ #include <vector>
+ #include <deque>
++#include <limits>
+ #include <string>
+ #include <functional>
+ #include <mutex>
++#include <shared_mutex>
+ #include <atomic>
+ #include <thread>
+ #include <ostream>
+@@ -439,15 +441,23 @@ public:
+     nixl_status_t
+     deregisterMemory(struct fid_mr *mr) const;
+
++    /** Sentinel for "no agent is mapped to this fi_addr". */
++    static constexpr uint32_t kUnknownAgentIdx = std::numeric_limits<uint32_t>::max();
++
+     // Address vector management methods
+-    /** Insert remote endpoint address into address vector */
++    /** Insert remote endpoint address into address vector, and map it to agent_idx */
+     nixl_status_t
+-    insertAddress(const void *addr, fi_addr_t *fi_addr_out) const;
++    insertAddress(const void *addr, uint32_t agent_idx, fi_addr_t *fi_addr_out) const;
+
+-    /** Remove address from address vector */
++    /** Remove address from address vector, and drop its source-address mapping */
+     nixl_status_t
+     removeAddress(fi_addr_t fi_addr) const;
+
++    /** Resolve a fi_cq_readfrom() source address to a local agent index. Returns
++     *  kUnknownAgentIdx if it is FI_ADDR_NOTAVAIL or unmapped; callers must then drop it. */
++    [[nodiscard]] uint32_t
++    resolveSourceAddress(fi_addr_t src_addr) const;
++
+     // Memory descriptor helper methods
+     /** Get libfabric memory descriptor for MR */
+     void *
+@@ -503,11 +513,10 @@ public:
+     // Callback registration methods
+     /** Set callback for notification message processing.
+      *  Signature: (serialized_notif, sender_agent_idx_in_our_table).
+-     *  sender_agent_idx is the agent_idx field decoded from the fi_senddata's
+-     *  imm_data — the sender's local index in our agent_names_ table, which
+-     *  the sender learned via NIXL_LIBFABRIC_MSG_HANDSHAKE. */
++     *  sender_agent_idx is the sender's local index in our agent_names_ table,
++     *  resolved from the completion's source address via resolveSourceAddress(). */
+     void
+-    setNotificationCallback(std::function<void(const std::string &, uint16_t)> callback);
++    setNotificationCallback(std::function<void(const std::string &, uint32_t)> callback);
+
+     /** Set callback for handshake-message processing.
+      *  Called with the serialized handshake payload on receipt of a
+@@ -542,11 +551,11 @@ public:
+     initPostQueue(size_t post_queue_size);
+
+     /** Set callback for XFER_ID tracking.
+-     *  Signature: (imm_data, sender_agent_idx_in_our_table). sender_agent_idx
+-     *  is decoded from the imm_data the sender shipped with fi_writemsg (with remote completion),
+-     *  via the handshake-negotiated agent_idx encoding. */
++     *  Signature: (imm_data, sender_agent_idx_in_our_table). sender_agent_idx is
++     *  resolved from the source address of the fi_writemsg (with remote completion)
++     *  completion; imm_data supplies only the message type and XFER_ID. */
+     void
+-    setXferIdCallback(std::function<void(uint64_t, uint16_t)> callback);
++    setXferIdCallback(std::function<void(uint64_t, uint32_t)> callback);
+
+     /** Set callback for transfer-error messages from an initiator.
+      *  Signature: (xfer_id, sender_agent_idx_in_our_table, final_completions).
+@@ -554,7 +563,7 @@ public:
+      *  the transfer failed on the initiator and that only final_completions of its writes will
+      *  ever arrive. */
+     void
+-    setXferErrorCallback(std::function<void(uint16_t, uint16_t, uint32_t)> callback);
++    setXferErrorCallback(std::function<void(uint16_t, uint32_t, uint32_t)> callback);
+
+     // Optimized resource management methods
+     /** Allocate control request with size validation */
+@@ -606,13 +615,17 @@ private:
+     // Whether a progress thread is handling CQ draining
+     bool progress_thread_enabled_ = false;
+
+-    // Callback functions. Receive completions carry the sender's agent_idx
+-    // (its index in OUR table, as told to it via the handshake) decoded from
+-    // the imm_data the sender shipped.
+-    std::function<void(const std::string &, uint16_t)> notificationCallback;
+-    std::function<void(uint64_t, uint16_t)> xferIdCallback;
++    // Callback functions. Receive completions carry the sender's index in OUR table,
++    // resolved from the completion's source address (see resolveSourceAddress()).
++    std::function<void(const std::string &, uint32_t)> notificationCallback;
++    std::function<void(uint64_t, uint32_t)> xferIdCallback;
+     std::function<void(const std::string &)> handshakeCallback;
+-    std::function<void(uint16_t, uint16_t, uint32_t)> xferErrorCallback;
++    std::function<void(uint16_t, uint32_t, uint32_t)> xferErrorCallback;
++
++    // fi_addr_t -> local agent index, indexed directly by fi_addr_t (dense, as the AV is
++    // FI_AV_TABLE). Written at connection setup, read on the completion path.
++    mutable std::vector<uint32_t> src_addr_to_agent_;
++    mutable std::shared_mutex src_addr_mutex_;
+
+     // Separate request pools for optimal performance
+     ControlRequestPool control_request_pool_;
+@@ -627,16 +640,21 @@ private:
+     void
+     pollForCompletions();
+
++    /** Record that fi_addr belongs to agent_idx. Called from insertAddress(). */
++    void
++    mapSourceAddress(fi_addr_t fi_addr, uint32_t agent_idx) const;
++
++    // src_addr is FI_ADDR_NOTAVAIL when the provider has none (always for local completions).
+     nixl_status_t
+-    processCompletionQueueEntry(struct fi_cq_data_entry *comp) const;
++    processCompletionQueueEntry(struct fi_cq_data_entry *comp, fi_addr_t src_addr) const;
+     nixl_status_t
+     processLocalSendCompletion(struct fi_cq_data_entry *comp) const;
+     nixl_status_t
+     processLocalTransferCompletion(struct fi_cq_data_entry *comp, const char *operation_type) const;
+     nixl_status_t
+-    processRecvCompletion(struct fi_cq_data_entry *comp) const;
++    processRecvCompletion(struct fi_cq_data_entry *comp, fi_addr_t src_addr) const;
+     nixl_status_t
+-    processRemoteWriteCompletion(struct fi_cq_data_entry *comp) const;
++    processRemoteWriteCompletion(struct fi_cq_data_entry *comp, fi_addr_t src_addr) const;
+ };
+
+
+diff --git a/src/utils/libfabric/libfabric_rail_manager.cpp b/src/utils/libfabric/libfabric_rail_manager.cpp
+--- a/src/utils/libfabric/libfabric_rail_manager.cpp
++++ b/src/utils/libfabric/libfabric_rail_manager.cpp
+@@ -387,7 +387,6 @@ nixlLibfabricRailManager::prepareAndSubmitTransfer(
+     const std::vector<uint64_t> &remote_keys,
+     const std::vector<size_t> &remote_selected_endpoints,
+     const std::unordered_map<size_t, std::vector<fi_addr_t>> &dest_addrs,
+-    uint16_t agent_idx,
+     uint16_t xfer_id,
+     std::function<void(nixl_status_t)> completion_callback,
+     size_t &submitted_count_out,
+@@ -453,7 +452,6 @@ nixlLibfabricRailManager::prepareAndSubmitTransfer(
+         if (rails_[rail_id]->isProgressThreadEnabled()) {
+             // PT-owns-endpoint: enqueue for progress thread to post
+             deferTransferRequest(op_type,
+-                                 agent_idx,
+                                  xfer_id,
+                                  fi_flags,
+                                  dest_addrs.at(rail_id)[remote_ep_id],
+@@ -466,8 +464,7 @@ nixlLibfabricRailManager::prepareAndSubmitTransfer(
+             // Direct post (PT OFF path)
+             // Generate next SEQ_ID for this specific write operation
+             uint8_t seq_id = LibfabricUtils::getNextSeqId();
+-            uint64_t imm_data =
+-                NIXL_MAKE_IMM_DATA(NIXL_LIBFABRIC_MSG_TRANSFER, agent_idx, xfer_id, seq_id);
++            uint64_t imm_data = NIXL_MAKE_IMM_DATA(NIXL_LIBFABRIC_MSG_TRANSFER, xfer_id, seq_id);
+             status = rails_[rail_id]->postWrite(req->local_addr,
+                                                 req->chunk_size,
+                                                 fi_mr_desc(req->local_mr),
+@@ -550,7 +547,6 @@ nixlLibfabricRailManager::prepareAndSubmitTransfer(
+             if (rails_[rail_id]->isProgressThreadEnabled()) {
+                 // PT-owns-endpoint: enqueue for progress thread to post
+                 deferTransferRequest(op_type,
+-                                     agent_idx,
+                                      xfer_id,
+                                      fi_flags,
+                                      dest_addrs.at(rail_id)[remote_ep_id],
+@@ -563,7 +559,7 @@ nixlLibfabricRailManager::prepareAndSubmitTransfer(
+                 // Generate next SEQ_ID for this specific transfer operation
+                 uint8_t seq_id = LibfabricUtils::getNextSeqId();
+                 uint64_t imm_data =
+-                    NIXL_MAKE_IMM_DATA(NIXL_LIBFABRIC_MSG_TRANSFER, agent_idx, xfer_id, seq_id);
++                    NIXL_MAKE_IMM_DATA(NIXL_LIBFABRIC_MSG_TRANSFER, xfer_id, seq_id);
+                 status = rails_[rail_id]->postWrite(req->local_addr,
+                                                     req->chunk_size,
+                                                     fi_mr_desc(req->local_mr),
+@@ -605,7 +601,6 @@ nixlLibfabricRailManager::prepareAndSubmitTransfer(
+
+ void
+ nixlLibfabricRailManager::deferTransferRequest(nixlLibfabricReq::OpType op_type,
+-                                               uint16_t agent_idx,
+                                                uint16_t xfer_id,
+                                                uint64_t fi_flags,
+                                                fi_addr_t dest_addr,
+@@ -615,7 +610,7 @@ nixlLibfabricRailManager::deferTransferRequest(nixlLibfabricReq::OpType op_type,
+                                                nixlLibfabricReq *req) {
+     uint8_t seq_id = (op_type == nixlLibfabricReq::WRITE) ? LibfabricUtils::getNextSeqId() : 0;
+     uint64_t imm_data = (op_type == nixlLibfabricReq::WRITE) ?
+-        NIXL_MAKE_IMM_DATA(NIXL_LIBFABRIC_MSG_TRANSFER, agent_idx, xfer_id, seq_id) :
++        NIXL_MAKE_IMM_DATA(NIXL_LIBFABRIC_MSG_TRANSFER, xfer_id, seq_id) :
+         0;
+     nixlLibfabricPostRequest pr{};
+     pr.type = (op_type == nixlLibfabricReq::WRITE) ? nixlLibfabricPostRequest::WRITE :
+@@ -932,6 +927,7 @@ nixlLibfabricRailManager::deregisterMemory(const std::vector<size_t> &selected_r
+ nixl_status_t
+ nixlLibfabricRailManager::insertAllAddresses(
+     const std::vector<std::array<char, LF_EP_NAME_MAX_LEN>> &endpoints,
++    uint32_t agent_idx,
+     std::unordered_map<size_t, std::vector<fi_addr_t>> &fi_addrs_out,
+     std::vector<char *> &ep_names_out) {
+     auto &rails = rails_;
+@@ -945,7 +941,8 @@ nixlLibfabricRailManager::insertAllAddresses(
+         fi_addrs_out[rail_id].reserve(endpoints.size());
+         for (const auto &endpoint : endpoints) {
+             fi_addr_t fi_addr;
+-            nixl_status_t status = rails[rail_id]->insertAddress(endpoint.data(), &fi_addr);
++            nixl_status_t status =
++                rails[rail_id]->insertAddress(endpoint.data(), agent_idx, &fi_addr);
+             if (status != NIXL_SUCCESS) {
+                 NIXL_ERROR << "Failed for rail " << rail_id;
+                 return status;
+@@ -1000,7 +997,6 @@ nixlLibfabricRailManager::postControlMessage(
+     ControlMessageType msg_type,
+     nixlLibfabricReq *req,
+     fi_addr_t dest_addr,
+-    uint16_t agent_idx,
+     std::function<void(nixl_status_t)> completion_callback) {
+     // Validation - use rail 0 for notifications
+     if (rails_.empty()) {
+@@ -1032,7 +1028,7 @@ nixlLibfabricRailManager::postControlMessage(
+     uint32_t xfer_id = req->xfer_id;
+     // For control messages, use SEQ_ID 0 since they don't need sequence tracking
+     // TODO: Add sequencing for connection establishment workflow.
+-    uint64_t imm_data = NIXL_MAKE_IMM_DATA(msg_type_value, agent_idx, xfer_id, 0);
++    uint64_t imm_data = NIXL_MAKE_IMM_DATA(msg_type_value, xfer_id, 0);
+
+     // Set completion callback if provided
+     if (completion_callback) {
+@@ -1040,8 +1036,8 @@ nixlLibfabricRailManager::postControlMessage(
+         NIXL_DEBUG << "Set completion callback for control message request " << req->xfer_id;
+     }
+
+-    NIXL_DEBUG << "Sending control message type " << msg_type_value << " agent_idx=" << agent_idx
+-               << " XFER_ID=" << xfer_id << " imm_data=" << imm_data << " on rail " << rail_id;
++    NIXL_DEBUG << "Sending control message type " << msg_type_value << " XFER_ID=" << xfer_id
++               << " imm_data=" << imm_data << " dest_addr=" << dest_addr << " on rail " << rail_id;
+
+     // Use rail 0 for notifications
+     nixl_status_t status = rails_[rail_id]->postSend(imm_data, dest_addr, req);
+diff --git a/src/utils/libfabric/libfabric_rail_manager.h b/src/utils/libfabric/libfabric_rail_manager.h
+--- a/src/utils/libfabric/libfabric_rail_manager.h
++++ b/src/utils/libfabric/libfabric_rail_manager.h
+@@ -181,6 +181,7 @@ public:
+     // Connection Management APIs
+     /** Insert addresses into address vectors for all rails
+      * @param endpoints Remote endpoint addresses to insert
++     * @param agent_idx Local index of the agent owning these endpoints, for sender lookup
+      * @param fi_addrs_out Libfabric address handles for inserted endpoints,
+      *                     indexed by local rail id.
+      * @param ep_names_out Local endpoint names for reference
+@@ -188,6 +189,7 @@ public:
+      */
+     nixl_status_t
+     insertAllAddresses(const std::vector<std::array<char, LF_EP_NAME_MAX_LEN>> &endpoints,
++                       uint32_t agent_idx,
+                        std::unordered_map<size_t, std::vector<fi_addr_t>> &fi_addrs_out,
+                        std::vector<char *> &ep_names_out);
+     /** Clean up connection resources for rails
+@@ -208,7 +210,6 @@ public:
+      * @param remote_keys Remote access keys
+      * @param remote_selected_endpoints Selected remote endpoints, where remote keys are registered
+      * @param dest_addrs Destination addresses for each rail
+-     * @param agent_idx Remote agent index for immediate data
+      * @param xfer_id Transfer ID for tracking
+      * @param completion_callback Callback for completion notification
+      * @param submitted_count_out Number of requests successfully submitted
+@@ -233,7 +234,6 @@ public:
+                              const std::vector<uint64_t> &remote_keys,
+                              const std::vector<size_t> &remote_selected_endpoints,
+                              const std::unordered_map<size_t, std::vector<fi_addr_t>> &dest_addrs,
+-                             uint16_t agent_idx,
+                              uint16_t xfer_id,
+                              std::function<void(nixl_status_t)> completion_callback,
+                              size_t &submitted_count_out,
+@@ -245,7 +245,6 @@ public:
+
+     void
+     deferTransferRequest(nixlLibfabricReq::OpType op_type,
+-                         uint16_t agent_idx,
+                          uint16_t xfer_id,
+                          uint64_t fi_flags,
+                          fi_addr_t dest_addr,
+@@ -280,7 +279,6 @@ public:
+      * @param msg_type Type of control message
+      * @param req Control request with data buffer
+      * @param dest_addr Destination address
+-     * @param agent_idx Agent index for message routing
+      * @param completion_callback Optional completion callback
+      * @return NIXL_SUCCESS on success, error code on failure
+      */
+@@ -288,7 +286,6 @@ public:
+     postControlMessage(ControlMessageType msg_type,
+                        nixlLibfabricReq *req,
+                        fi_addr_t dest_addr,
+-                       uint16_t agent_idx = 0,
+                        std::function<void(nixl_status_t)> completion_callback = nullptr);
+     // Progress APIs
+     /** Process completions on active rails only (optimized for CPU overhead)
+diff --git a/test/unit/utils/libfabric/libfabric_mock_stubs.h b/test/unit/utils/libfabric/libfabric_mock_stubs.h
+--- a/test/unit/utils/libfabric/libfabric_mock_stubs.h
++++ b/test/unit/utils/libfabric/libfabric_mock_stubs.h
+@@ -27,8 +27,10 @@
+
+ #include <cstdlib>
+ #include <cstring>
++#include <map>
+ #include <sstream>
+ #include <stdexcept>
++#include <string>
+
+ #include <rdma/fabric.h>
+ #include <rdma/fi_domain.h>
+@@ -36,6 +38,8 @@
+ #include <rdma/fi_cm.h>
+ #include <rdma/fi_rma.h>
+
++#include "libfabric/libfabric_common.h"
++
+ // helper template for allocating zeroed C structs (free()-able)
+ template<typename T>
+ T *
+@@ -61,7 +65,50 @@ static struct fi_ops fi_av_fid_ops_stub{
+     .close = fi_av_close_stub,
+ };
+
+-static fi_ops_av av_ops_stub = {};
++// Hands out dense fi_addr_t values like an FI_AV_TABLE provider, and the same address for a
++// repeated insert of the same bytes.
++static std::map<std::string, fi_addr_t> av_inserted_stub;
++static fi_addr_t av_next_fi_addr_stub = 0;
++
++// Unused by the other test that shares this header.
++[[maybe_unused]] static void
++mock_av_reset() {
++    av_inserted_stub.clear();
++    av_next_fi_addr_stub = 0;
++}
++
++static int
++fi_av_insert_stub(struct fid_av *av,
++                  const void *addr,
++                  size_t count,
++                  fi_addr_t *fi_addr,
++                  uint64_t flags,
++                  void *context) {
++    for (size_t i = 0; i < count; ++i) {
++        // Endpoint names are fixed-length opaque blobs; key on their bytes.
++        const std::string key(static_cast<const char *>(addr) + i * LF_EP_NAME_MAX_LEN,
++                              LF_EP_NAME_MAX_LEN);
++        auto it = av_inserted_stub.find(key);
++        if (it == av_inserted_stub.end()) {
++            it = av_inserted_stub.emplace(key, av_next_fi_addr_stub++).first;
++        }
++        fi_addr[i] = it->second;
++    }
++    return static_cast<int>(count);
++}
++
++static int
++fi_av_remove_stub(struct fid_av *av, fi_addr_t *fi_addr, size_t count, uint64_t flags) {
++    return 0;
++}
++
++static fi_ops_av av_ops_stub = {
++    .size = sizeof(fi_ops_av),
++    .insert = fi_av_insert_stub,
++    .insertsvc = nullptr,
++    .insertsym = nullptr,
++    .remove = fi_av_remove_stub,
++};
+
+ static int
+ fi_av_open_stub(struct fid_domain *domain,
+@@ -270,4 +317,47 @@ mock_fabric_create() {
+     return fabric;
+ }
+
++// Helper: build a chain of `count` fake EFA fi_info entries, as __wrap_fi_getinfo would
++// return. The caps include FI_SOURCE because the rail requests it.
++[[maybe_unused]] static struct fi_info *
++mock_fi_info_chain(size_t count, uint64_t link_speed) {
++    fi_info *head = nullptr;
++    fi_info *prev = nullptr;
++    for (size_t i = 0; i < count; ++i) {
++        fi_info *fi = malloc_zero<fi_info>();
++
++        fi->caps = FI_MSG | FI_RMA | FI_HMEM | FI_LOCAL_COMM | FI_REMOTE_COMM | FI_SOURCE;
++
++        fi->domain_attr = malloc_zero<fi_domain_attr>();
++        std::string name = "efa_" + std::to_string(i);
++        fi->domain_attr->name = strdup(name.c_str());
++
++        fi->fabric_attr = malloc_zero<fi_fabric_attr>();
++        fi->fabric_attr->prov_name = strdup("efa");
++        fi->fabric_attr->name = strdup("efa");
++
++        fi->ep_attr = malloc_zero<fi_ep_attr>();
++        fi->ep_attr->type = FI_EP_RDM;
++
++        fi->nic = malloc_zero<fid_nic>();
++        fi->nic->bus_attr = malloc_zero<fi_bus_attr>();
++        fi->nic->bus_attr->bus_type = FI_BUS_PCI;
++        fi->nic->bus_attr->attr.pci.domain_id = 0;
++        fi->nic->bus_attr->attr.pci.bus_id = static_cast<uint8_t>(i);
++        fi->nic->bus_attr->attr.pci.device_id = 0;
++        fi->nic->bus_attr->attr.pci.function_id = 0;
++
++        fi->nic->link_attr = malloc_zero<fi_link_attr>();
++        fi->nic->link_attr->speed = link_speed;
++
++        if (prev) {
++            prev->next = fi;
++        } else {
++            head = fi;
++        }
++        prev = fi;
++    }
++    return head;
++}
++
+ #endif // NIXL_TEST_UNIT_UTILS_LIBFABRIC_LIBFABRIC_MOCK_STUBS_H
+diff --git a/test/unit/utils/libfabric/meson.build b/test/unit/utils/libfabric/meson.build
+--- a/test/unit/utils/libfabric/meson.build
++++ b/test/unit/utils/libfabric/meson.build
+@@ -68,4 +68,21 @@ if get_option('buildtype') != 'release'
+
+     test('rail_active_refcount_test', rail_active_refcount_test_bin)
+
++    src_addr_resolution_test_link_args = [
++        '-Wl,--wrap=fi_getinfo',
++        '-Wl,--wrap=numa_max_node',
++        '-Wl,--wrap=numa_num_configured_nodes',
++        '-Wl,--wrap=fi_fabric' ]
++
++    src_addr_resolution_test_bin = executable('src_addr_resolution_test',
++               'src_addr_resolution_test.cpp',
++               dependencies: libfabric_utils_dep,
++               include_directories: [nixl_inc_dirs, utils_inc_dirs],
++               link_with: libfabric_utils_lib,
++               cpp_args: libfabric_test_cpp_args,
++               link_args: src_addr_resolution_test_link_args,
++               install: true)
++
++    test('src_addr_resolution_test', src_addr_resolution_test_bin)
++
+ endif
+diff --git a/test/unit/utils/libfabric/rail_active_refcount_test.cpp b/test/unit/utils/libfabric/rail_active_refcount_test.cpp
+--- a/test/unit/utils/libfabric/rail_active_refcount_test.cpp
++++ b/test/unit/utils/libfabric/rail_active_refcount_test.cpp
+@@ -51,41 +51,7 @@ __wrap_fi_getinfo(uint32_t /*version*/,
+                   const struct fi_info * /*hints*/,
+                   struct fi_info **info) {
+     // Build a linked list of NUM_FAKE_RAILS fake EFA devices
+-    fi_info *head = nullptr;
+-    fi_info *prev = nullptr;
+-    for (size_t i = 0; i < NUM_FAKE_RAILS; ++i) {
+-        fi_info *fi = malloc_zero<fi_info>();
+-
+-        fi->domain_attr = malloc_zero<fi_domain_attr>();
+-        std::string name = "efa_" + std::to_string(i);
+-        fi->domain_attr->name = strdup(name.c_str());
+-
+-        fi->fabric_attr = malloc_zero<fi_fabric_attr>();
+-        fi->fabric_attr->prov_name = strdup("efa");
+-        fi->fabric_attr->name = strdup("efa");
+-
+-        fi->ep_attr = malloc_zero<fi_ep_attr>();
+-        fi->ep_attr->type = FI_EP_RDM;
+-
+-        fi->nic = malloc_zero<fid_nic>();
+-        fi->nic->bus_attr = malloc_zero<fi_bus_attr>();
+-        fi->nic->bus_attr->bus_type = FI_BUS_PCI;
+-        fi->nic->bus_attr->attr.pci.domain_id = 0;
+-        fi->nic->bus_attr->attr.pci.bus_id = static_cast<uint8_t>(i);
+-        fi->nic->bus_attr->attr.pci.device_id = 0;
+-        fi->nic->bus_attr->attr.pci.function_id = 0;
+-
+-        fi->nic->link_attr = malloc_zero<fi_link_attr>();
+-        fi->nic->link_attr->speed = 100ull * NIXL_LIBFABRIC_GIGA;
+-
+-        if (prev) {
+-            prev->next = fi;
+-        } else {
+-            head = fi;
+-        }
+-        prev = fi;
+-    }
+-    *info = head;
++    *info = mock_fi_info_chain(NUM_FAKE_RAILS, 100ull * NIXL_LIBFABRIC_GIGA);
+     return 0;
+ }
+
+diff --git a/test/unit/utils/libfabric/src_addr_resolution_test.cpp b/test/unit/utils/libfabric/src_addr_resolution_test.cpp
+new file mode 100644
+--- /dev/null
++++ b/test/unit/utils/libfabric/src_addr_resolution_test.cpp
+@@ -0,0 +1,513 @@
++/*
++ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
++ * SPDX-FileCopyrightText: Copyright (c) 2025-2026 Amazon.com, Inc. and affiliates.
++ * SPDX-License-Identifier: Apache-2.0
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++/*
++ * Unit test for source-address based sender resolution (NIXL-150 / NIXL-166).
++ *
++ * The receiver used to learn which peer sent a notification or a remote write from an
++ * 8-bit agent index in the RDMA immediate data, which capped the number of peers at 256.
++ * It now resolves the sender from the source address libfabric reports on each completion
++ * (FI_SOURCE + fi_cq_readfrom). These tests cover the resolution table and the two
++ * completion handlers that consume it, with libfabric mocked out.
++ */
++
++#include "libfabric/libfabric_rail_manager.h"
++#include "libfabric/libfabric_common.h"
++#include "common/nixl_log.h"
++#include "libfabric_mock_stubs.h"
++
++#include <cassert>
++#include <iostream>
++#include <string>
++#include <vector>
++
++// Number of fake EFA devices to create
++static const size_t NUM_FAKE_RAILS = 4;
++
++// --- Unconditional __wrap_* functions ---
++
++extern "C" int
++__wrap_numa_max_node() {
++    return 1;
++}
++
++extern "C" int
++__wrap_numa_num_configured_nodes() {
++    return 2;
++}
++
++// When set, behave like a provider without FI_SOURCE: a requested secondary capability it
++// cannot support makes fi_getinfo fail with FI_ENODATA.
++static bool mock_reject_fi_source = false;
++
++// When set, behave like a provider without FI_HMEM, so the rail takes its retry path.
++static bool mock_reject_fi_hmem = false;
++
++// When set, every fi_getinfo call appends hints->caps here.
++static bool record_hint_caps = false;
++static std::vector<uint64_t> recorded_hint_caps;
++
++extern "C" int
++__wrap_fi_getinfo(uint32_t /*version*/,
++                  const char * /*node*/,
++                  const char * /*service*/,
++                  uint64_t /*flags*/,
++                  const struct fi_info *hints,
++                  struct fi_info **info) {
++    if (record_hint_caps && hints) {
++        recorded_hint_caps.push_back(hints->caps);
++    }
++    if (mock_reject_fi_hmem && hints && (hints->caps & FI_HMEM)) {
++        *info = nullptr;
++        return -FI_ENODATA;
++    }
++    if (mock_reject_fi_source && hints && (hints->caps & FI_SOURCE)) {
++        *info = nullptr;
++        return -FI_ENODATA;
++    }
++    *info = mock_fi_info_chain(NUM_FAKE_RAILS, 100ull * NIXL_LIBFABRIC_GIGA);
++    return 0;
++}
++
++extern "C" int
++__wrap_fi_fabric(struct fi_fabric_attr * /*attr*/, struct fid_fabric **fabric, void * /*context*/) {
++    *fabric = mock_fabric_create();
++    return 0;
++}
++
++// --- Fake completion queue ---
++//
++// Tests push completions plus their source addresses, then call
++// progressCompletionQueue() and inspect what the rail's callbacks saw.
++
++struct FakeCompletion {
++    struct fi_cq_data_entry entry;
++    fi_addr_t src_addr;
++};
++
++static std::vector<FakeCompletion> pending_completions;
++static size_t completions_consumed = 0;
++
++static ssize_t
++fi_cq_readfrom_stub(struct fid_cq * /*cq*/, void *buf, size_t count, fi_addr_t *src_addr) {
++    if (completions_consumed >= pending_completions.size()) {
++        return -FI_EAGAIN;
++    }
++    auto *entries = static_cast<struct fi_cq_data_entry *>(buf);
++    size_t n = 0;
++    while (n < count && completions_consumed < pending_completions.size()) {
++        const FakeCompletion &fc = pending_completions[completions_consumed++];
++        entries[n] = fc.entry;
++        // A caller that forgets to size the src_addr array to `count`, or that mixes up the
++        // two arrays, shows up here.
++        if (src_addr != nullptr) {
++            src_addr[n] = fc.src_addr;
++        }
++        ++n;
++    }
++    return static_cast<ssize_t>(n);
++}
++
++static ssize_t
++fi_cq_readerr_stub(struct fid_cq * /*cq*/, struct fi_cq_err_entry * /*buf*/, uint64_t /*flags*/) {
++    return -FI_EAGAIN;
++}
++
++static void
++queue_reset() {
++    pending_completions.clear();
++    completions_consumed = 0;
++}
++
++// --- Test helpers ---
++
++#define TEST_ASSERT(cond, msg)                                                           \
++    do {                                                                                 \
++        if (!(cond)) {                                                                   \
++            std::cerr << "FAIL: " << (msg) << " [" << __FILE__ << ":" << __LINE__ << "]" \
++                      << std::endl;                                                      \
++            return 1;                                                                    \
++        }                                                                                \
++    } while (0)
++
++// Distinct fake endpoint-name blobs, one per (agent, remote rail) pair.
++static std::vector<std::array<char, LF_EP_NAME_MAX_LEN>>
++makeEndpoints(const std::string &agent, size_t num_rails) {
++    std::vector<std::array<char, LF_EP_NAME_MAX_LEN>> eps(num_rails);
++    for (size_t r = 0; r < num_rails; ++r) {
++        eps[r].fill(0);
++        const std::string name = agent + ":rail" + std::to_string(r);
++        std::memcpy(eps[r].data(), name.c_str(), std::min(name.size(), eps[r].size() - 1));
++    }
++    return eps;
++}
++
++// --- Tests ---
++
++static int
++testInsertAndResolve(nixlLibfabricRailManager &mgr) {
++    NIXL_INFO << "  testInsertAndResolve";
++    mock_av_reset();
++
++    const nixlLibfabricRail &rail = mgr.getRail(0);
++    const auto eps = makeEndpoints("agentA", 1);
++
++    fi_addr_t fi_addr = FI_ADDR_UNSPEC;
++    nixl_status_t st = rail.insertAddress(eps[0].data(), 7, &fi_addr);
++    TEST_ASSERT(st == NIXL_SUCCESS, "insertAddress succeeded");
++    TEST_ASSERT(rail.resolveSourceAddress(fi_addr) == 7u, "resolves to the agent index given");
++
++    return 0;
++}
++
++static int
++testUnresolvableAddresses(nixlLibfabricRailManager &mgr) {
++    NIXL_INFO << "  testUnresolvableAddresses";
++    mock_av_reset();
++
++    const nixlLibfabricRail &rail = mgr.getRail(1);
++    const auto eps = makeEndpoints("agentB", 1);
++    fi_addr_t fi_addr = FI_ADDR_UNSPEC;
++    TEST_ASSERT(rail.insertAddress(eps[0].data(), 3, &fi_addr) == NIXL_SUCCESS, "insert ok");
++
++    // FI_ADDR_NOTAVAIL is what the provider reports when it cannot identify the sender --
++    // for instance a peer that is only in EFA's implicit AV. It must never resolve.
++    TEST_ASSERT(rail.resolveSourceAddress(FI_ADDR_NOTAVAIL) == nixlLibfabricRail::kUnknownAgentIdx,
++                "FI_ADDR_NOTAVAIL does not resolve");
++
++    // Past the end of the table.
++    TEST_ASSERT(rail.resolveSourceAddress(fi_addr + 1000) == nixlLibfabricRail::kUnknownAgentIdx,
++                "out-of-range fi_addr does not resolve");
++
++    return 0;
++}
++
++static int
++testSparseAndHighAgentIndex(nixlLibfabricRailManager &mgr) {
++    NIXL_INFO << "  testSparseAndHighAgentIndex";
++    mock_av_reset();
++
++    const nixlLibfabricRail &rail = mgr.getRail(2);
++
++    // The whole point of the change: an agent index far above the old 8-bit ceiling, and
++    // above 16 bits too, must round-trip.
++    const uint32_t big_idx = 70000;
++    const auto eps = makeEndpoints("agentBig", 1);
++    fi_addr_t fi_addr = FI_ADDR_UNSPEC;
++    TEST_ASSERT(rail.insertAddress(eps[0].data(), big_idx, &fi_addr) == NIXL_SUCCESS, "insert ok");
++    TEST_ASSERT(rail.resolveSourceAddress(fi_addr) == big_idx, "large agent index round-trips");
++
++    // Table growth: insert enough distinct endpoints that the vector has to resize past its
++    // initial size, and check both the first and the last mapping survive.
++    const size_t kMany = 600;
++    std::vector<fi_addr_t> addrs;
++    for (size_t i = 0; i < kMany; ++i) {
++        const auto e = makeEndpoints("agentMany" + std::to_string(i), 1);
++        fi_addr_t a = FI_ADDR_UNSPEC;
++        TEST_ASSERT(rail.insertAddress(e[0].data(), static_cast<uint32_t>(1000 + i), &a) ==
++                        NIXL_SUCCESS,
++                    "bulk insert ok");
++        addrs.push_back(a);
++    }
++    for (size_t i = 0; i < kMany; ++i) {
++        TEST_ASSERT(rail.resolveSourceAddress(addrs[i]) == static_cast<uint32_t>(1000 + i),
++                    "every bulk mapping survives table growth");
++    }
++    TEST_ASSERT(rail.resolveSourceAddress(fi_addr) == big_idx,
++                "earlier mapping survives table growth");
++
++    return 0;
++}
++
++static int
++testRemapAndRemove(nixlLibfabricRailManager &mgr) {
++    NIXL_INFO << "  testRemapAndRemove";
++    mock_av_reset();
++
++    const nixlLibfabricRail &rail = mgr.getRail(3);
++    const auto eps = makeEndpoints("agentC", 1);
++
++    fi_addr_t first = FI_ADDR_UNSPEC;
++    TEST_ASSERT(rail.insertAddress(eps[0].data(), 11, &first) == NIXL_SUCCESS, "first insert ok");
++
++    // Re-inserting the same endpoint returns the same fi_addr (what EFA does), which is the
++    // reconnect path: the agent got a fresh index. Last writer wins.
++    fi_addr_t second = FI_ADDR_UNSPEC;
++    TEST_ASSERT(rail.insertAddress(eps[0].data(), 12, &second) == NIXL_SUCCESS, "re-insert ok");
++    TEST_ASSERT(first == second, "duplicate insert returns the same fi_addr");
++    TEST_ASSERT(rail.resolveSourceAddress(first) == 12u, "re-map takes the new agent index");
++
++    // Removing the address must drop the mapping, otherwise a later completion whose
++    // fi_addr the provider recycles would be credited to the departed agent.
++    TEST_ASSERT(rail.removeAddress(first) == NIXL_SUCCESS, "removeAddress ok");
++    TEST_ASSERT(rail.resolveSourceAddress(first) == nixlLibfabricRail::kUnknownAgentIdx,
++                "mapping cleared after removeAddress");
++
++    return 0;
++}
++
++static int
++testInsertAllAddressesCrossProduct(nixlLibfabricRailManager &mgr) {
++    NIXL_INFO << "  testInsertAllAddressesCrossProduct";
++    mock_av_reset();
++
++    // Every endpoint of a peer lands in every local rail's AV. That cross product is what
++    // makes a write from any of the peer's rails, arriving on any of ours, resolvable.
++    const size_t num_rails = mgr.getNumRails();
++    const auto eps = makeEndpoints("peerX", num_rails);
++
++    std::unordered_map<size_t, std::vector<fi_addr_t>> fi_addrs;
++    std::vector<char *> ep_names;
++    nixl_status_t st = mgr.insertAllAddresses(eps, 4242, fi_addrs, ep_names);
++    TEST_ASSERT(st == NIXL_SUCCESS, "insertAllAddresses succeeded");
++    TEST_ASSERT(fi_addrs.size() == num_rails, "one address list per local rail");
++
++    for (size_t rail_id = 0; rail_id < num_rails; ++rail_id) {
++        TEST_ASSERT(fi_addrs.at(rail_id).size() == num_rails,
++                    "every remote endpoint inserted on every local rail");
++        for (fi_addr_t a : fi_addrs.at(rail_id)) {
++            TEST_ASSERT(mgr.getRail(rail_id).resolveSourceAddress(a) == 4242u,
++                        "each of the peer's endpoints resolves to the peer on each rail");
++        }
++    }
++
++    return 0;
++}
++
++static int
++testRemoteWriteCompletionAttribution(nixlLibfabricRailManager &mgr) {
++    NIXL_INFO << "  testRemoteWriteCompletionAttribution";
++    mock_av_reset();
++    queue_reset();
++
++    nixlLibfabricRail &rail = mgr.getRail(0);
++
++    // Two peers, so a mis-resolution shows up as the wrong index rather than as a crash.
++    const auto eps_p = makeEndpoints("peerP", 1);
++    const auto eps_q = makeEndpoints("peerQ", 1);
++    fi_addr_t addr_p = FI_ADDR_UNSPEC, addr_q = FI_ADDR_UNSPEC;
++    TEST_ASSERT(rail.insertAddress(eps_p[0].data(), 300, &addr_p) == NIXL_SUCCESS, "insert P");
++    TEST_ASSERT(rail.insertAddress(eps_q[0].data(), 90000, &addr_q) == NIXL_SUCCESS, "insert Q");
++
++    std::vector<std::pair<uint16_t, uint32_t>> seen; // (xfer_id, agent_idx)
++    rail.setXferIdCallback([&seen](uint64_t imm_data, uint32_t agent_idx) {
++        seen.emplace_back(static_cast<uint16_t>(NIXL_GET_XFER_ID_FROM_IMM(imm_data)), agent_idx);
++    });
++
++    auto make_write = [](uint16_t xfer_id, fi_addr_t src) {
++        FakeCompletion fc{};
++        fc.entry.flags = FI_REMOTE_WRITE | FI_REMOTE_CQ_DATA | FI_RMA;
++        fc.entry.len = 4096;
++        fc.entry.data = NIXL_MAKE_IMM_DATA(NIXL_LIBFABRIC_MSG_TRANSFER, xfer_id, 0);
++        fc.src_addr = src;
++        return fc;
++    };
++
++    pending_completions.push_back(make_write(11, addr_p));
++    pending_completions.push_back(make_write(22, addr_q));
++    pending_completions.push_back(make_write(33, addr_p));
++
++    nixl_status_t st = rail.progressCompletionQueue();
++    TEST_ASSERT(st == NIXL_SUCCESS, "progressCompletionQueue processed the batch");
++    TEST_ASSERT(seen.size() == 3, "all three write completions reached the callback");
++    TEST_ASSERT(seen[0].first == 11 && seen[0].second == 300u, "first credited to P");
++    TEST_ASSERT(seen[1].first == 22 && seen[1].second == 90000u,
++                "second credited to Q, with an index far above the old 8-bit ceiling");
++    TEST_ASSERT(seen[2].first == 33 && seen[2].second == 300u, "third credited to P");
++
++    // The reserved immediate-data field must go out as zero now that the agent index is
++    // gone from the wire.
++    TEST_ASSERT(NIXL_GET_IMM_RESERVED(pending_completions[0].entry.data) == 0,
++                "reserved imm_data field is zero");
++
++    // An unknown source address must not be attributed to anybody.
++    queue_reset();
++    seen.clear();
++    pending_completions.push_back(make_write(44, FI_ADDR_NOTAVAIL));
++    st = rail.progressCompletionQueue();
++    // Dropped locally; reporting it would fail whichever API call progressed the CQ.
++    TEST_ASSERT(st == NIXL_SUCCESS, "unattributable write completion is dropped, not an error");
++    TEST_ASSERT(seen.empty(), "unattributable write completion is not credited to any peer");
++
++    rail.setXferIdCallback(nullptr);
++    return 0;
++}
++
++static int
++testRecvCompletionAttribution(nixlLibfabricRailManager &mgr) {
++    NIXL_INFO << "  testRecvCompletionAttribution";
++    mock_av_reset();
++    queue_reset();
++
++    nixlLibfabricRail &rail = mgr.getRail(1);
++
++    const auto eps = makeEndpoints("peerR", 1);
++    fi_addr_t addr_r = FI_ADDR_UNSPEC;
++    TEST_ASSERT(rail.insertAddress(eps[0].data(), 65537, &addr_r) == NIXL_SUCCESS, "insert R");
++
++    std::vector<uint32_t> notif_senders;
++    std::vector<std::string> handshakes;
++    rail.setNotificationCallback(
++        [&notif_senders](const std::string &, uint32_t idx) { notif_senders.push_back(idx); });
++    rail.setHandshakeCallback(
++        [&handshakes](const std::string &payload) { handshakes.push_back(payload); });
++
++    // A receive completion refers to a posted control request by its context.
++    auto make_recv = [&rail](uint64_t msg_type, fi_addr_t src, const std::string &payload) {
++        nixlLibfabricReq *req = rail.allocateControlRequest(NIXL_LIBFABRIC_SEND_RECV_BUFFER_SIZE,
++                                                            /*req_id=*/1);
++        assert(req != nullptr);
++        std::memcpy(req->buffer, payload.data(), payload.size());
++        FakeCompletion fc{};
++        fc.entry.flags = FI_RECV | FI_MSG;
++        fc.entry.len = payload.size();
++        fc.entry.op_context = &req->ctx;
++        fc.entry.data = NIXL_MAKE_IMM_DATA(msg_type, /*xfer_id=*/5, 0);
++        fc.src_addr = src;
++        return fc;
++    };
++
++    pending_completions.push_back(
++        make_recv(NIXL_LIBFABRIC_MSG_NOTIFICTION, addr_r, std::string(64, 'n')));
++    nixl_status_t st = rail.progressCompletionQueue();
++    TEST_ASSERT(st == NIXL_SUCCESS, "notification processed");
++    TEST_ASSERT(notif_senders.size() == 1 && notif_senders[0] == 65537u,
++                "notification attributed to the resolved sender");
++
++    // A handshake is the one control message that may arrive from a peer we have not
++    // inserted yet -- it is what triggers the insert -- so it must be processed even
++    // though its source address does not resolve.
++    queue_reset();
++    pending_completions.push_back(
++        make_recv(NIXL_LIBFABRIC_MSG_HANDSHAKE, FI_ADDR_NOTAVAIL, std::string(32, 'h')));
++    st = rail.progressCompletionQueue();
++    TEST_ASSERT(st == NIXL_SUCCESS, "handshake from an unknown source is still processed");
++    TEST_ASSERT(handshakes.size() == 1, "handshake callback ran without source resolution");
++
++    // A notification from an unknown source cannot be correlated, so it is dropped.
++    queue_reset();
++    notif_senders.clear();
++    pending_completions.push_back(
++        make_recv(NIXL_LIBFABRIC_MSG_NOTIFICTION, FI_ADDR_NOTAVAIL, std::string(64, 'n')));
++    st = rail.progressCompletionQueue();
++    TEST_ASSERT(st == NIXL_SUCCESS, "unattributable notification is dropped, not an error");
++    TEST_ASSERT(notif_senders.empty(), "unattributable notification is not delivered");
++
++    rail.setNotificationCallback(nullptr);
++    rail.setHandshakeCallback(nullptr);
++    return 0;
++}
++
++static int
++testProviderWithoutFiSource() {
++    NIXL_INFO << "  testProviderWithoutFiSource";
++
++    // Both fi_getinfo attempts fail with FI_ENODATA. The rail must name FI_SOURCE as the
++    // cause instead of reporting a generic fi_getinfo failure.
++    mock_reject_fi_source = true;
++    std::string what;
++    try {
++        nixlLibfabricRail rail("efa_0", "efa", 0, FI_HMEM_SYSTEM);
++    }
++    catch (const std::runtime_error &e) {
++        what = e.what();
++    }
++    mock_reject_fi_source = false;
++
++    TEST_ASSERT(what.find("FI_SOURCE not supported") != std::string::npos,
++                "provider without FI_SOURCE is reported as such, got: '" + what + "'");
++    return 0;
++}
++
++// Builds a rail and returns the hints->caps of every fi_getinfo call it made.
++static std::vector<uint64_t>
++hintCapsOfRailInit() {
++    recorded_hint_caps.clear();
++    record_hint_caps = true;
++    nixlLibfabricRail rail("efa_0", "efa", 0, FI_HMEM_SYSTEM);
++    record_hint_caps = false;
++    return recorded_hint_caps;
++}
++
++static int
++testFiSourceRequested() {
++    NIXL_INFO << "  testFiSourceRequested";
++
++    // Both fi_getinfo paths must request FI_SOURCE. If one drops it, a provider can return
++    // info without it, and every completion then reports FI_ADDR_NOTAVAIL as its source.
++    std::vector<uint64_t> caps = hintCapsOfRailInit();
++    TEST_ASSERT(caps.size() == 1, "FI_HMEM path: expected 1 fi_getinfo call");
++    TEST_ASSERT((caps[0] & FI_HMEM) && (caps[0] & FI_SOURCE),
++                "FI_HMEM path requests FI_HMEM and FI_SOURCE");
++
++    mock_reject_fi_hmem = true;
++    caps = hintCapsOfRailInit();
++    mock_reject_fi_hmem = false;
++    TEST_ASSERT(caps.size() == 2, "retry path: expected 2 fi_getinfo calls");
++    TEST_ASSERT(!(caps[1] & FI_HMEM) && (caps[1] & FI_SOURCE),
++                "retry path requests FI_SOURCE without FI_HMEM");
++    return 0;
++}
++
++int
++main() {
++    NIXL_INFO << "=== Source Address Resolution Test ===";
++    NIXL_INFO << "Using mock stubs (__wrap_fi_getinfo, fi_av_insert, fi_cq_readfrom, ...)";
++
++    // Route CQ reads to the fake queue. Done before the manager is built so that the
++    // rail's own initialisation sees a consistent CQ.
++    cq_ops_stub.size = sizeof(fi_ops_cq);
++    cq_ops_stub.readfrom = fi_cq_readfrom_stub;
++    cq_ops_stub.readerr = fi_cq_readerr_stub;
++
++    nixlLibfabricRailManager mgr(0);
++    TEST_ASSERT(mgr.getNumRails() == NUM_FAKE_RAILS,
++                "expected " + std::to_string(NUM_FAKE_RAILS) + " rails");
++
++    int res;
++    if ((res = testInsertAndResolve(mgr)) != 0) {
++        return res;
++    }
++    if ((res = testUnresolvableAddresses(mgr)) != 0) {
++        return res;
++    }
++    if ((res = testSparseAndHighAgentIndex(mgr)) != 0) {
++        return res;
++    }
++    if ((res = testRemapAndRemove(mgr)) != 0) {
++        return res;
++    }
++    if ((res = testInsertAllAddressesCrossProduct(mgr)) != 0) {
++        return res;
++    }
++    if ((res = testRemoteWriteCompletionAttribution(mgr)) != 0) {
++        return res;
++    }
++    if ((res = testRecvCompletionAttribution(mgr)) != 0) {
++        return res;
++    }
++    if ((res = testFiSourceRequested()) != 0) {
++        return res;
++    }
++    if ((res = testProviderWithoutFiSource()) != 0) {
++        return res;
++    }
++
++    NIXL_INFO << "=== All source address resolution tests PASSED ===";
++    return 0;
++}

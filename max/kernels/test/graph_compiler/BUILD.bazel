@@ -1,7 +1,11 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "mojo_test")
 load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
+
+_LIT_TESTS = [
+    "test_platform_predicates_fail.mojo",
+]
 
 [
     mojo_test(
@@ -10,10 +14,24 @@ package(default_visibility = ["//max:consumers"])
         copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
         deps = [
             "//max:builtin_kernels",
+            "//max:builtin_primitives",
             "//max:extensibility",
             "//max:layout",
             "@mojo//:std",
         ],
     )
-    for src in glob(["**/*.mojo"])
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _LIT_TESTS,
+    )
 ]
+
+lit_tests(
+    name = "lit",
+    size = "small",
+    srcs = _LIT_TESTS,
+    mojo_deps = [
+        "//max:extensibility",
+        "@mojo//:std",
+    ],
+)

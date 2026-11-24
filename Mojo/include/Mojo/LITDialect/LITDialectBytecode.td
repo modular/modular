@@ -39,8 +39,7 @@ def TypeSignatureType : DialectType<(type
 
 def StructType : DialectType<(type
   ConcreteAttribute<"SymbolRefAttr">:$symbol,
-  TypedAttrArray:$paramValues,
-  ConcreteType<"TypeSignatureType">:$signature
+  TypedAttrArray:$paramValues
 )>;
 
 def TraitType : DialectType<(type

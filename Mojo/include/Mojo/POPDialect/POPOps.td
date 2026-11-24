@@ -200,7 +200,9 @@ class POP_ArithmeticBinaryOp<string mnemonic, list<Trait> traits = []> :
                        UnboundOrIndexOrArithmeticSIMD:$rhs);
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
+  let assemblyFormat = [{
+    $lhs `,` $rhs `:` qualified(type($result)) prop-dict attr-dict
+  }];
   let hasFolder = 1;
 }
 
@@ -283,7 +285,7 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
     ```mlir
     %c = pop.mul %a, %b : !kgen.scalar<type>
     %c = pop.mul %a, %b : !kgen.simd<size, type>
-    %c = pop.mul %a, %b {fastmathFlags = #pop<fmf fast>} : !kgen.simd<size, type>
+    %c = pop.mul %a, %b : !kgen.simd<size, type> <fastmathFlags = fast>
     ```
   }];
   let arguments = (ins UnboundOrIndexOrArithmeticSIMD:$lhs,
@@ -293,7 +295,9 @@ def POP_MulOp : POP_ArithmeticBinaryOp<"mul", [Commutative, Pure,
                        DefaultValuedAttr<POP_FastmathFlagsAttr,
                          "FastmathFlags::contract">:$fastmathFlags);
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
-  let assemblyFormat = "$lhs `,` $rhs attr-dict `:` qualified(type($result))";
+  let assemblyFormat = [{
+    $lhs `,` $rhs `:` qualified(type($result)) prop-dict attr-dict
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -509,7 +513,7 @@ class POP_ArithmeticTernaryOp<string mnemonic, list<Trait> traits = []> :
   let results = (outs UnboundOrIndexOrArithmeticSIMD:$result);
 
   let assemblyFormat = [{
-    $a `,` $b `,` $c attr-dict `:` qualified(type($result))
+    $a `,` $b `,` $c `:` qualified(type($result)) prop-dict attr-dict
   }];
   let hasFolder = 1;
 }
@@ -757,8 +761,8 @@ def POP_CastOp : POPOp<"cast", [Pure,
     %0 = pop.cast %a : !kgen.scalar<si32> to !kgen.scalar<f32>
     %1 = pop.cast %b : !kgen.scalar<ui64> to !kgen.scalar<si32>
     %2 = pop.cast %c : !kgen.simd<4, f64> to !kgen.simd<4, ui32>
-    %3 = pop.cast %c {fastmathFlags = #pop<fmf fast>} :
-        !kgen.scalar<f32> to !kgen.scalar<bf16>
+    %3 = pop.cast %c : !kgen.scalar<f32> to !kgen.scalar<bf16>
+        <fastmathFlags = fast>
     ```
   }];
 
@@ -768,8 +772,8 @@ def POP_CastOp : POPOp<"cast", [Pure,
       "FastmathFlags::none">:$fastmathFlags);
   let results = (outs UnboundOrBoolOrIndexOrArithmeticSIMD:$output);
   let assemblyFormat = [{
-    $input attr-dict `:`
-    qualified(type($input)) `to`  qualified(type($output))
+    $input `:` qualified(type($input)) `to` qualified(type($output))
+    prop-dict attr-dict
   }];
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
@@ -785,7 +789,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
   let summary = "extractelement operation";
   let description = [{
     Takes a SIMD vector and an index position and extracts the `!kgen.scalar` at
-    that position. The position must be of type index.
+    that position. The position must be of type `!kgen.scalar<index>`.
 
     If the position is out-of-bounds, the result is a poison value.
 
@@ -796,7 +800,7 @@ def POP_SIMDExtractElementOp : POPOp<"simd.extractelement", [Pure,
     ```
   }];
 
-  let arguments = (ins KGEN_SIMDType:$vector, Index:$position);
+  let arguments = (ins KGEN_SIMDType:$vector, IndexScalar:$position);
   let results = (outs ScalarType:$result);
 
   let assemblyFormat = [{
@@ -818,7 +822,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
   let description = [{
     Takes a source value, SIMD vector, and an index position and inserts the
     source value into the vector at the proper position. The position must be
-    of type index.
+    of type `!kgen.scalar<index>`.
 
     If the position is out-of-bounds, the result is a poison value.
 
@@ -830,7 +834,7 @@ def POP_SIMDInsertElementOp : POPOp<"simd.insertelement", [Pure,
   }];
 
   let arguments = (ins KGEN_SIMDType:$vector, ScalarType:$value,
-                       Index:$position);
+                       IndexScalar:$position);
   let results = (outs KGEN_SIMDType:$result);
 
   let assemblyFormat = [{
@@ -1020,6 +1024,14 @@ def POP_LoadOp : POPOp<"load", [
         return boolAttr.getValue();
       return true;
     }
+    /// Return true if this has an atomic ordering.
+    bool isAtomic() {
+      return getOrdering() != AtomicOrdering::NOT_ATOMIC;
+    }
+    /// Return true if this is atomic, or is known or might be volatile.
+    bool isAtomicOrMightBeVolatile() {
+      return isAtomic() || mightBeVolatile();
+    }
   }];
 }
 
@@ -1098,6 +1110,14 @@ def POP_StoreOp : POPOp<"store", [PointerElementType<"ptr", "arg">,
         return boolAttr.getValue();
       return true;
     }
+    /// Return true if this has an atomic ordering.
+    bool isAtomic() {
+      return getOrdering() != AtomicOrdering::NOT_ATOMIC;
+    }
+    /// Return true if this is atomic, or is known or might be volatile.
+    bool isAtomicOrMightBeVolatile() {
+      return isAtomic() || mightBeVolatile();
+    }
   }];
 }
 
@@ -1122,7 +1142,7 @@ def POP_MemcpyOp : POPOp<"memcpy", [
 
   let arguments = (ins Arg<PointerType, "", [MemWrite]>:$dst,
                        Arg<PointerType, "", [MemRead]>:$src,
-                       Index:$len,
+                       IndexScalar:$len,
                        AttrOfType<I1>:$isVolatile);
   let assemblyFormat = [{
     custom<I1Flag>($isVolatile, "\"volatile\"")
@@ -1173,7 +1193,7 @@ def POP_OffsetOp : POPOp<"offset", [Pure, AllTypesMatch<["result", "ptr"]>,
     ```
   }];
 
-  let arguments = (ins PointerType:$ptr, Index:$index);
+  let arguments = (ins PointerType:$ptr, IndexScalar:$index);
   let results = (outs PointerType:$result);
   let assemblyFormat = [{
     $ptr `[` $index `]` attr-dict `:` qualified(type($ptr))
@@ -1454,12 +1474,12 @@ def POP_ArrayGEPOp : POPOp<"array.gep", [Pure,
 
     ```mlir
     %arr = pop.stack_allocation 1 : !pop.array<4, i32>
-    %two = index.constant 2
+    %two = kgen.param.constant: scalar<index> = <2>
     %v2 = pop.array.gep %arr[%two] : <array<4, i32>>
     ```
   }];
 
-  let arguments = (ins PointerOf<POP_ArrayType>:$array, Index:$index);
+  let arguments = (ins PointerOf<POP_ArrayType>:$array, IndexScalar:$index);
   let results = (outs PointerType:$result);
   let assemblyFormat = "$array `[` $index `]` attr-dict `:` type($array)";
   let hasCanonicalizeMethod = 1;
@@ -1648,7 +1668,7 @@ def POP_AlignedAllocOp : POPOp<"aligned_alloc", [
     ```
   }];
 
-  let arguments = (ins Index:$align, Index:$size);
+  let arguments = (ins IndexScalar:$align, IndexScalar:$size);
   let results = (outs Res<PointerType, "", [MemAlloc]>:$ptr);
 
   let assemblyFormat = "$align `,` $size attr-dict `:` type($ptr)";
@@ -1735,8 +1755,28 @@ def POP_ExternalCallOp : POPOp<"external_call", [
 
     ```mlir
     pop.external_call @printf(%fmt, %v0, %v1)
-      attributes {numFixedArgs = 1 : index}
       : (!kgen.pointer<scalar<si8>>, !kgen.scalar<f32>, !kgen.scalar<ui32>) -> ()
+      <numFixedArgs = 1 : index>
+    ```
+
+    The `expandPackOperandIdx` attribute specifies the index of an operand of
+    `!kgen.struct` type that is to be expanded to its elements. This is the
+    equivalent of passing a variadic pack as `*args` to a function.
+    LowerArgConventions replaces this operand with its elements, one level
+    deep. Without this attribute, each operand is passed as one argument.
+    The attribute takes the place of the argument conventions of a function
+    signature: the op passes each other operand as one argument, by value, so
+    no other operand needs a convention.
+
+    `numFixedArgs` and `argAttrs` count the arguments after this expansion,
+    with one argument for each element of the pack. Thus the fixed arguments
+    can end inside the pack. In this example, the first element of `%pack` is
+    the only fixed argument, and its other two elements are variadic arguments:
+
+    ```mlir
+    pop.external_call @printf(%pack)
+      : (!kgen.struct<(pointer<scalar<si8>>, scalar<f32>, scalar<ui32>)>) -> ()
+      <numFixedArgs = 1 : index, expandPackOperandIdx = 0>
     ```
 
     The `funcAttrs` attribute specifies LLVM function attributes on the external
@@ -1749,14 +1789,14 @@ def POP_ExternalCallOp : POPOp<"external_call", [
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$func, Variadic<AnyType>:$operands,
     OptionalAttr<AttrOfType<Index>>:$numFixedArgs,
+    OptionalAttr<IndexAttr>:$expandPackOperandIdx,
     OptionalAttr<ArrayAttr>:$funcAttrs, OptionalAttr<DictArrayAttr>:$argAttrs,
     OptionalAttr<DictionaryAttr>:$resAttrs, OptionalAttr<AnyAttr>:$memory);
   let results = (outs Optional<AnyType>:$result);
 
   let assemblyFormat = [{
-    custom<ExternalCallee>($func) `(` operands `)`
-    attr-dict-with-keyword `:`
-    functional-type(operands, results)
+    custom<ExternalCallee>($func) `(` operands `)` `:`
+    functional-type(operands, results) prop-dict attr-dict-with-keyword
   }];
 
   let extraClassDeclaration = [{
@@ -1846,7 +1886,7 @@ def POP_GlobalAllocOp : POPOp<"global_alloc", [Pure,
     custom<IndexParamValue>($count) `x` custom<PointerOf>(type($result))
     (`align` custom<IndexParamValue>($alignment)^)?
     custom<OptionalGlobalAllocInitializer>($initializer, ref(type($result)))
-    attr-dict
+    prop-dict attr-dict
   }];
 
   let hasVerifier = 1;
@@ -1903,56 +1943,6 @@ def POP_GlobalConstantOp : POPOp<"global_constant",
   ];
 }
 
-//===----------------------------------------------------------------------===//
-// CompilerGlobalLoadOp
-//===----------------------------------------------------------------------===//
-
-def POP_CompilerGlobalLoadOp : POPOp<"compiler.global_load", [Pure,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "load the value of a global variable";
-  let description = [{
-    The `pop.compiler.global_load` operation loads a global variable by
-    name so it can be used by SSA value. This op is a compile time only
-    operation and expects to be folded away.
-
-    Example:
-
-    ```mlir
-    %0 = pop.compiler.global_load "foo" : !kgen.scalar<ui32>
-    ```
-  }];
-
-  let arguments = (ins StrAttr:$name);
-  let results = (outs AnyType:$result);
-
-  let assemblyFormat = "$name attr-dict `:` qualified(type($result))";
-}
-
-//===----------------------------------------------------------------------===//
-// CompilerGlobalStoreOp
-//===----------------------------------------------------------------------===//
-
-def POP_CompilerGlobalStoreOp : POPOp<"compiler.global_store", [
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "store a value into a global variable";
-  let description = [{
-    The `pop.compiler.global_store` operation stores a value into a global
-    variable by symbol name. It is a compile error if this op exists by the
-    time POP is lowered to LLVM.
-
-    Example:
-
-    ```mlir
-    %0 = pop.constant(0) : !kgen.scalar<ui32>
-    pop.compiler.global_store "foo", %0 : !kgen.scalar<ui32>
-    ```
-  }];
-
-  let arguments = (ins StrAttr:$name, AnyType:$value);
-
-  let assemblyFormat = "$name `,` $value `:` type($value) attr-dict";
-}
-
 
 //===----------------------------------------------------------------------===//
 // PointerToIndexOp
@@ -1969,13 +1959,13 @@ def POP_PointerToIndexOp : POPOp<"pointer_to_index", [Pure,
     Example:
 
     ```mlir
-    %addr0 = pop.pointer_to_index %ptr : !kgen.pointer<scalar<f32>> to index
-    %addr1 = pop.pointer_to_index %idx : !kgen.pointer<simd<4, type>> to index
+    %addr0 = pop.pointer_to_index %ptr : !kgen.pointer<scalar<f32>>
+    %addr1 = pop.pointer_to_index %idx : !kgen.pointer<simd<4, type>>
     ```
   }];
 
   let arguments = (ins PointerType:$value);
-  let results = (outs Index:$result);
+  let results = (outs IndexScalar:$result);
   let assemblyFormat = "$value attr-dict `:` type($value)";
   let hasFolder = 1;
   let hasCanonicalizeMethod = 1;
@@ -2001,7 +1991,7 @@ def POP_CastToBuiltinOp : POPOp<"cast_to_builtin", [Pure]> {
       %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
       %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
-      kgen.return %2 : !kgen.scalar<f32>
+      hlcf.return %2 : !kgen.scalar<f32>
     }
     ```
   }];
@@ -2037,7 +2027,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
       %0 = pop.cast_to_builtin %arg0 : !kgen.scalar<f32> to f32
       %1 = llvm.fadd %0, %0 : f32
       %2 = pop.cast_from_builtin %1 : f32 to !kgen.scalar<f32>
-      kgen.return %2 : !kgen.scalar<f32>
+      hlcf.return %2 : !kgen.scalar<f32>
     }
     ```
 
@@ -2052,7 +2042,7 @@ def POP_CastFromBuiltinOp : POPOp<"cast_from_builtin", [Pure,
       %N = kgen.param.constant: si32 = <N>
       %rhs = pop.cast_from_builtin %N : si32 to !kgen.scalar<si32>
       %result = pop.add %arg0, %rhs : !kgen.scalar<f32>
-      kgen.return %result : !kgen.scalar<f32>
+      hlcf.return %result : !kgen.scalar<f32>
     }
     ```
   }];
@@ -2087,19 +2077,31 @@ def POP_CallLLVMIntrinsicOp : POPOp<"call_llvm_intrinsic",[
       %0 = pop.call_llvm_intrinsic "llvm.round", (%arg0) :
         !kgen.scalar<f32> -> !kgen.scalar<f32>
     ```
+
+    The `expandPackOperandIdx` attribute specifies the index of an operand of
+    `!kgen.struct` type that is to be expanded to its elements. This is the
+    equivalent of passing a variadic pack as `*args` to a function.
+    LowerArgConventions replaces this operand with its elements, one level
+    deep. Without this attribute, each operand is passed as one argument.
+    The attribute takes the place of the argument conventions of a function
+    signature: the op passes each other operand as one argument, by value, so
+    no other operand needs a convention.
   }];
   let arguments = (ins
     AttrOfType<KGEN_StringType>:$intrin, Variadic<AnyType>:$args,
     DefaultValuedAttr<POP_FastmathFlagsAttr,
                       "FastmathFlags::none">:$fastmathFlags,
-    AttrOfType<I1>:$hasSideEffects);
+    AttrOfType<I1>:$hasSideEffects,
+    OptionalAttr<IndexAttr>:$expandPackOperandIdx);
 
   let results = (outs Optional<AnyType>:$results);
   let assemblyFormat = [{
     custom<I1Flag>($hasSideEffects, "\"side_effecting\"")
     custom<ParamValue>($intrin, "StringType::get($_ctxt)") `,` `(` $args `)`
-    attr-dict `:` functional-type($args, $results)
+    `:` functional-type($args, $results) prop-dict attr-dict
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2114,6 +2116,16 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     written, or referenced.
     Attempting to define or reference any symbol or any global behavior is
     considered undefined behavior at this time.
+
+    The `expandPackOperandIdx` attribute specifies the index of an operand of
+    `!kgen.struct` type that is to be expanded to its elements. This is the
+    equivalent of passing a variadic pack as `*args` to a function.
+    LowerArgConventions replaces this operand with its elements, one level
+    deep. Without this attribute, each operand is passed as one argument.
+    The attribute takes the place of the argument conventions of a function
+    signature: the op passes each other operand as one argument, by value, so
+    no other operand needs a convention. `operandAttrs` applies to the
+    operands after this expansion.
   }];
   let arguments = (ins
     Variadic<AnyType>:$operands,
@@ -2121,7 +2133,8 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     AttrOfType<KGEN_StringType>:$constraints,
     AttrOfType<I1>:$hasSideEffects,
     AttrOfType<I1>:$isStackAligned,
-    OptionalAttr<ArrayAttr>:$operandAttrs
+    OptionalAttr<ArrayAttr>:$operandAttrs,
+    OptionalAttr<IndexAttr>:$expandPackOperandIdx
   );
 
   let results = (outs Variadic<AnyType>:$res);
@@ -2133,8 +2146,10 @@ def POP_InlineAsmOp : POPOp<"inline_asm"> {
     attr-dict
     custom<ParamValue>($assembly, "StringType::get($_ctxt)") `,`
     custom<ParamValue>($constraints, "StringType::get($_ctxt)") `,`
-    `(` operands `)` `:` functional-type(operands, results)
+    `(` operands `)` `:` functional-type(operands, results) prop-dict
    }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -2347,7 +2362,7 @@ def POP_StringSizeOp : POPOp<"string.size", [Pure]> {
   }];
 
   let arguments = (ins KGEN_StringType:$str);
-  let results = (outs Index:$result);
+  let results = (outs IndexScalar:$result);
   let assemblyFormat = "$str attr-dict";
   let hasFolder = 1;
 }

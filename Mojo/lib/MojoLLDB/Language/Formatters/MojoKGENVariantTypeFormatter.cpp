@@ -85,7 +85,7 @@ bool MojoKGENVariantTypeSyntheticFrontEnd::MightHaveChildren() { return true; }
 
 llvm::Expected<size_t>
 MojoKGENVariantTypeSyntheticFrontEnd::GetIndexOfChildWithName(
-    lldb_private::ConstString targetName) {
+    llvm::StringRef targetName) {
   if (content->GetName() == targetName)
     return 0;
   return llvm::createStringError("Child not found");

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -o /dev/null -mojo-diagnose-missing-doc-strings -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -o /dev/null --diagnose-missing-doc-strings -verify-diagnostics %s
 
 # A private module (name starts with '_') should not trigger the
 # missing-doc-string diagnostic, even with no module-level doc string.

@@ -24,6 +24,7 @@
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
+#include "Support/RCRef.h"
 #include "Target/TargetTraits.h"
 #include "mlir/IR/Location.h"
 #include "llvm/ADT/ArrayRef.h"
@@ -41,6 +42,7 @@
 namespace llvm {
 class Function;
 class GlobalVariable;
+class MemoryBuffer;
 class Module;
 class PassBuilder;
 class TargetMachine;
@@ -48,15 +50,44 @@ class Triple;
 class raw_pwrite_stream;
 template <class C>
 struct object_creator;
+namespace cl {
+class LibraryOptionsContext;
+} // namespace cl
 } // namespace llvm
 
 namespace mlir {
 class Operation;
+class PassManager;
 } // namespace mlir
+
+namespace M::KGEN {
+// Forward-declared for `OffloadEmitContext`'s non-owning pointer, so the
+// pass-manager headers stay out of this widely-included header.
+struct PassManagerConfigOptions;
+class GeneratorOp;
+class FuncSymbolAttr;
+} // namespace M::KGEN
+
+namespace M::Cache {
+// Forward-declared so `OffloadEmitContext` can hold an `RCRef<TransformCache>`
+// without pulling the Cache/AsyncRT headers into this widely-included header;
+// consumers include `Cache/CachedTransform.h` for the definition.
+template <typename KeyInfo>
+class BlobCache;
+struct TransformCacheKey;
+using TransformCache = BlobCache<TransformCacheKey>;
+} // namespace M::Cache
 
 namespace M::KGEN {
 
 class MCLinker;
+
+/// Returns the values that emission options set for the LLVM options declared
+/// in TableGen. LLVM reads such an option from the `LLVMContext` of the code
+/// and from the target machine, not from a process-wide value. So every
+/// context that holds code to compile copies these values, and every target
+/// machine that `defaultCreateTargetMachine` creates refers to them.
+llvm::cl::LibraryOptionsContext &getEmissionLibraryOptions();
 
 /// Creates an LLVM TargetMachine from already-effective `options`.
 /// Runs entirely in the host's LLVM instance (it uses the target registry,
@@ -64,13 +95,6 @@ class MCLinker;
 /// should apply `TargetBackend::adjustOptionsForTargetMachine` first.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT);
-
-/// `defaultCreateTargetMachine`'s signature. Passed to a backend loaded from a
-/// separate shared library so `TargetMachine` creation runs against the host's
-/// LLVM target registry; a separately-loaded library has its own registry,
-/// which nothing initializes.
-using CreateTargetMachineFn = ErrorOr<std::unique_ptr<llvm::TargetMachine>> (*)(
-    const CompilationOptions &options, bool isJIT);
 
 /// Adds the AddressSanitizer / ThreadSanitizer passes when requested in
 /// `options`. Shared building blocks for `TargetBackend::addSanitizers` and the
@@ -105,6 +129,21 @@ struct EmitContext {
   LinkObject linkObject;
 };
 
+/// Ambient state for a backend that owns the offload lower+emit path
+/// (`ownsOffloadLowering`).
+struct OffloadEmitContext {
+  const CompilationOptions &options;
+  mlir::Location loc;
+  /// The kind this call should produce.
+  EmitAs kind;
+  /// Pass-manager config (`--mlir-print-ir-{before,after}*`, etc.) forwarded to
+  /// the offload lowering pipeline the backend runs internally. Non-owning.
+  PassManagerConfigOptions *pmOptions = nullptr;
+  /// Optional content-addressed cache for the backend's expensive
+  /// external-toolchain artifact; null keeps the backend uncached.
+  RCRef<Cache::TransformCache> transformCache = {};
+};
+
 /// Immutable description of an LLVM-level compilation target.
 class TargetBackend {
 public:
@@ -134,6 +173,24 @@ public:
   /// precedence over a direct match.
   virtual const TargetBackend *resolve(const llvm::Triple &triple) const {
     return matches(triple) ? this : nullptr;
+  }
+
+  /// Rewrite the standalone module sliced for a kernel before it is
+  /// elaborated. `source` is the generator the kernel was requested from; its
+  /// `sourceFuncTypeGenerator` still carries the signature the offload ABI
+  /// erased. The default does nothing.
+  virtual void preprocessGenerator(GeneratorOp entry, GeneratorOp source,
+                                   FuncSymbolAttr symbol,
+                                   mlir::ModuleOp module) const;
+
+  /// Appends the target's whole post-elaboration pipeline to `pm` and returns
+  /// true. A target that returns false gets the default pipeline instead. A
+  /// target pipeline replaces the default entirely, so it must include the
+  /// generic optimizations.
+  virtual bool
+  buildPostElaborationPipeline(mlir::PassManager &pm,
+                               const CompilationOptions &options) const {
+    return false;
   }
 
   virtual SplitStrategy
@@ -216,15 +273,15 @@ public:
                                        llvm::StringRef originalTriple) const {}
 
   /// Writes `module` as bitcode to `os`. The base implementation writes
-  /// standard LLVM bitcode; backends may override (e.g. Metal emits AIR
-  /// bitcode).
+  /// standard LLVM bitcode; backends with their own bitcode format
+  /// override it.
   virtual void emitBitcode(llvm::Module &module,
                            llvm::raw_pwrite_stream &os) const;
 
   /// Builds the backend's complete LLVM pass pipeline into `mpm`, returning
   /// true if it fully owns the pipeline (so the generic optimization pipeline
   /// is skipped). The default returns false; backends that need a fully custom
-  /// pipeline (e.g. Metal's AIR legalization) override it.
+  /// pipeline override it.
   virtual bool buildLLVMPipeline(llvm::ModulePassManager &mpm,
                                  llvm::PassBuilder &passBuilder,
                                  const CompilationOptions &options) const {
@@ -265,6 +322,20 @@ public:
   /// Appends backend-specific arguments to the link step.
   virtual void appendLinkArgs(llvm::SmallVectorImpl<llvm::StringRef> &args,
                               const CompilationOptions &options) const {}
+
+  /// Whether this backend owns the entire offload lower+emit path via
+  /// `lowerAndEmitOffload` (its artifact comes from an external toolchain, not
+  /// LLVM codegen); the LLVM-Module emit hooks below are then unreachable.
+  virtual bool ownsOffloadLowering() const { return false; }
+
+  /// Lowers and emits `module` as `ctx.kind`, returning the device artifact.
+  /// The target arch is `ctx.options.targetCpu`. Only called when
+  /// `ownsOffloadLowering()` is true.
+  virtual ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+  lowerAndEmitOffload(mlir::Operation *module,
+                      const OffloadEmitContext &ctx) const {
+    return Error("this backend does not own the offload lowering path");
+  }
 
   virtual ErrorOr<BufferRef> emitAssembly(llvm::Module &module,
                                           EmitContext &ctx) const = 0;

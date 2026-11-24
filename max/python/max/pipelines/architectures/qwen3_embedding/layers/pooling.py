@@ -42,8 +42,7 @@ def last_token_pool(
 
     # Compute last token index for each sequence (end_offset - 1)
     # Since end_offset is exclusive, the last token is at end_offset - 1
-    one = ops.constant(1, DType.uint32, device=hidden_states.device)
-    last_token_indices = end_offsets - one
+    last_token_indices = end_offsets - 1
 
     # Cast to int32 for gather operation
     last_token_indices_i32 = last_token_indices.cast(DType.int32)
@@ -75,8 +74,7 @@ def normalize_embeddings(embeddings: TensorValue) -> TensorValue:
     # ops.sum keeps dimensions, so result is [batch_size, 1]
     norm_squared = ops.sum(embeddings_squared, axis=-1)
     # Compute L2 norm (sqrt of sum of squares) with epsilon for numerical stability
-    epsilon = ops.constant(1e-12, DType.float32, embeddings_f32.device)
-    norm = ops.sqrt(norm_squared + epsilon)
+    norm = ops.sqrt(norm_squared + 1e-12)
     # Normalize: embeddings / norm
     # Broadcasting: [batch_size, hidden_size] / [batch_size, 1] -> [batch_size, hidden_size]
     embeddings_normalized = embeddings_f32 / norm

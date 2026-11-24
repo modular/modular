@@ -18,5 +18,5 @@ kgen.func @foo() {
   // kgen.param.constant has ConstantLike trait: a non-null mismatched scope
   // (from a different subprogram) must not trigger a verification error.
   %index1 = kgen.param.constant = <2> loc(fused<#lexical_block1>[#loc1])
-  kgen.return loc(#funcLoc)
+  hlcf.return loc(#funcLoc)
 } loc(#funcLoc)

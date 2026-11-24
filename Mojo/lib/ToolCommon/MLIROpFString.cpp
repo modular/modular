@@ -48,7 +48,7 @@
 //   type):
 //     kgen.func @__mojo_inline_mlir_op(%arg0: !kgen.scalar<si32>) {
 //       d.op %arg0 {t = 5} : !kgen.scalar<si32>
-//       kgen.return
+//       hlcf.return
 //     }
 //
 //   Resulting op (parsed, operands re-bound to the real SSA values):
@@ -59,6 +59,7 @@
 #include "Mojo/ToolCommon/MLIROpFString.h"
 
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Target/TargetTraits.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -196,6 +197,37 @@ LogicalResult substitutePlaceholders(llvm::StringRef tmpl,
 
 } // namespace
 
+namespace {
+/// Dialect namespace of the op in `body`, past any `%result =` prefix; empty
+/// when the body does not start with a `dialect.op` name. `isGenericForm` is
+/// set when the op name is quoted, i.e. the body already spells the op in
+/// generic syntax.
+///
+/// ```mlir
+/// %0 = nisa.alloc ...        // custom form, namespace `nisa`
+/// %0 = "nisa.alloc"(...)     // generic form, namespace `nisa`
+/// ```
+llvm::StringRef opDialectNamespace(llvm::StringRef body, bool &isGenericForm) {
+  body = body.ltrim();
+  if (body.starts_with("%")) {
+    size_t eq = body.find('=');
+    if (eq == llvm::StringRef::npos)
+      return {};
+    body = body.drop_front(eq + 1).ltrim();
+  }
+  isGenericForm = body.starts_with("\"");
+  if (isGenericForm)
+    body = body.drop_front();
+  size_t dot = body.find('.');
+  if (dot == llvm::StringRef::npos)
+    return {};
+  llvm::StringRef ns = body.take_front(dot);
+  return llvm::all_of(ns, [](char c) { return llvm::isAlnum(c) || c == '_'; })
+             ? ns
+             : llvm::StringRef();
+}
+} // namespace
+
 Operation *lowerFStringMLIROp(OpBuilder &builder, Location loc,
                               llvm::StringRef tmpl,
                               llvm::ArrayRef<Value> operands,
@@ -229,7 +261,30 @@ Operation *lowerFStringMLIROp(OpBuilder &builder, Location loc,
       os << "%arg" << i << ": ";
       v.getType().print(os);
     }
-    os << ") {\n  " << body << "\n  kgen.return\n}";
+    os << ") {\n  " << body << "\n  hlcf.return\n}";
+  }
+
+  bool isGenericForm = false;
+  llvm::StringRef opNamespace = opDialectNamespace(body, isGenericForm);
+  // The conversion hook takes the op in the dialect's own syntax, so an op
+  // already written in generic syntax is left alone.
+  if (!isGenericForm) {
+    if (const TargetTraits *traits =
+            TargetTraitsRegistry::get().traitsForDialect(opNamespace)) {
+      std::string generic, convertError;
+      if (!traits->inlineOpToGeneric(wrapped, generic, convertError)) {
+        errorMsg = convertError + inTmpl;
+        return nullptr;
+      }
+      wrapped = std::move(generic);
+    }
+  }
+  if (!opNamespace.empty() &&
+      !TargetTraitsRegistry::get().isKnownDialect(context, opNamespace)) {
+    // Generic form would otherwise parse as an unregistered op.
+    errorMsg = "dialect `" + opNamespace.str() +
+               "` is not registered and no target plugin owns it" + inTmpl;
+    return nullptr;
   }
 
   // `verifyAfterParse=false`: op verifiers that consult `getDefiningOp()`
@@ -257,7 +312,7 @@ Operation *lowerFStringMLIROp(OpBuilder &builder, Location loc,
     errorMsg = "no op" + inTmpl;
     return nullptr;
   }
-  // Expect exactly one user op plus the synthesized `kgen.return`; reject more
+  // Expect exactly one user op plus the synthesized `hlcf.return`; reject more
   // rather than silently keeping the first.
   size_t numOps = func.getBodyRegion().front().getOperations().size();
   if (numOps < 2) {

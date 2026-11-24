@@ -21,13 +21,14 @@ features like swizzling for bank conflict avoidance, L2 cache promotion hints, a
 support for various data types and memory layouts.
 """
 
-from .. import DeviceBuffer
+from max.gpu.host import DeviceBuffer
 from std.sys import size_of
 
-from std._gpu._utils import to_llvm_ptr
-
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
+from std.utils.coord import Coord, CoordLike
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
+
+from max.gpu._utils import to_llvm_ptr
 
 
 @fieldwise_init("implicit")
@@ -112,24 +113,25 @@ struct TensorMapDataType(TrivialRegisterPassable):
             DType.float8_e8m0fnu,
         ), "Unsupported dtype"
 
-        comptime if dtype == .float32:
-            return Self.FLOAT32
-        elif dtype == .float16:
-            return Self.FLOAT16
-        elif dtype == .uint16:
-            return Self.UINT16
-        elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
-            return Self.UINT8
-        elif dtype == .uint32:
-            return Self.UINT32
-        elif dtype == .int32:
-            return Self.INT32
-        elif dtype == .int64:
-            return Self.INT64
-        elif dtype == .uint64:
-            return Self.UINT64
-        else:
-            return Self.BFLOAT16
+        comptime match dtype:
+            case .float32:
+                return Self.FLOAT32
+            case .float16:
+                return Self.FLOAT16
+            case .uint16:
+                return Self.UINT16
+            case .float8_e4m3fn | .float8_e8m0fnu | .uint8:
+                return Self.UINT8
+            case .uint32:
+                return Self.UINT32
+            case .int32:
+                return Self.INT32
+            case .int64:
+                return Self.INT64
+            case .uint64:
+                return Self.UINT64
+            case _:
+                return Self.BFLOAT16
 
 
 @fieldwise_init("implicit")
@@ -177,7 +179,7 @@ struct TensorMapSwizzle(
     comptime SWIZZLE_128B = Self(3)
     """128-byte swizzle pattern."""
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __int__(self) -> Int:
         """Converts the swizzle mode to an integer value.
 
@@ -186,7 +188,7 @@ struct TensorMapSwizzle(
         """
         return Int(self._value)
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         """Checks if two swizzle modes are equal.
 
@@ -198,7 +200,7 @@ struct TensorMapSwizzle(
         """
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         """Checks if two swizzle modes are not equal.
 
@@ -210,7 +212,7 @@ struct TensorMapSwizzle(
         """
         return self._value != other._value
 
-    @always_inline
+    @inline(.always)
     def bytes(self) -> Int:
         """Gets the swizzle size in bytes.
 
@@ -219,23 +221,24 @@ struct TensorMapSwizzle(
         """
         return Int((2**self._value) * 16)
 
-    @always_inline
+    @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         """Writes the swizzle mode to a writer.
 
         Args:
             writer: The writer to write to.
         """
-        if self._value == 1:
-            writer.write("32B swizzle")
-        elif self._value == 2:
-            writer.write("64B swizzle")
-        elif self._value == 3:
-            writer.write("128B swizzle")
-        elif self._value == 0:
-            writer.write("no swizzle")
-        else:
-            writer.write("invalid swizzle")
+        match self._value:
+            case 1:
+                writer.write("32B swizzle")
+            case 2:
+                writer.write("64B swizzle")
+            case 3:
+                writer.write("128B swizzle")
+            case 0:
+                writer.write("no swizzle")
+            case _:
+                writer.write("invalid swizzle")
 
 
 @fieldwise_init("implicit")
@@ -309,7 +312,7 @@ struct TMADescriptor(DevicePassable, ImplicitlyCopyable):
         """
         return "TMADescriptor"
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Initializes an empty TMA descriptor.
 
@@ -334,18 +337,22 @@ def prefetch_tma_descriptor(desc_ptr: OpaquePointer[mut=False, _]):
     )
 
 
-@always_inline
+@inline(.always)
 def create_tma_descriptor[
     dtype: DType,
-    rank: Int,
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
+    box_types: TypeList[Trait=CoordLike, ...],
+    /,
+    *,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
     unpack_fp4: Bool = False,
 ](
     global_buf: DeviceBuffer[dtype],
-    global_shape: IndexList[rank],
-    global_strides: IndexList[rank],
-    shared_mem_shape: IndexList[rank],
+    global_shape: Coord[*shape_types],
+    global_strides: Coord[*stride_types],
+    shared_mem_shape: Coord[*box_types],
 ) raises -> TMADescriptor:
     """Creates a TMA descriptor for tiled memory operations.
 
@@ -359,7 +366,9 @@ def create_tma_descriptor[
 
     Parameters:
         dtype: The element data type of the tensor.
-        rank: The number of dimensions (1-5).
+        shape_types: The element types of `global_shape` (1 to 5 elements).
+        stride_types: The element types of `global_strides`.
+        box_types: The element types of `shared_mem_shape`.
         swizzle_mode: The swizzle pattern to apply in shared memory.
         l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
         unpack_fp4: When True, `global_buf` holds nibble-packed E2M1 (two
@@ -384,6 +393,13 @@ def create_tma_descriptor[
     Raises:
         An error if the descriptor creation fails.
     """
+    comptime rank = Coord[*shape_types].rank
+    comptime assert (
+        Coord[*stride_types].rank == rank
+    ), "global_strides must have the same rank as global_shape"
+    comptime assert (
+        Coord[*box_types].rank == rank
+    ), "shared_mem_shape must have the same rank as global_shape"
     # TMADescriptor is @align(64) so stack allocation is automatically 64-byte aligned.
     var tma_descriptor = TMADescriptor()
     var tensor_map_ptr = Pointer(to=tma_descriptor).unsafe_bitcast[NoneType]()
@@ -395,11 +411,11 @@ def create_tma_descriptor[
     var element_stride_arg = Array[Int32, rank](fill=1)
 
     comptime for i in range(rank):
-        global_dim_arg[i] = Int64(global_shape[rank - i - 1])
+        global_dim_arg[i] = Int64(Int(global_shape[rank - i - 1]))
         global_strides_arg[i] = Int64(
-            global_strides[rank - i - 1] * size_of[dtype]()
+            Int(global_strides[rank - i - 1]) * size_of[dtype]()
         )
-        box_dim_arg[i] = Int32(shared_mem_shape[rank - i - 1])
+        box_dim_arg[i] = Int32(Int(shared_mem_shape[rank - i - 1]))
 
     debug_assert(
         global_strides_arg[0] == Int64(size_of[dtype]()),

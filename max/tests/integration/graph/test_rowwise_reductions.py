@@ -12,32 +12,40 @@
 # ===----------------------------------------------------------------------=== #
 """Correctness tests for the row-wise reduction ops (Row API).
 
-Covers every non-composite reduction routed through MAX's own Mojo Row API:
+Covers every reduction that runs as a Mojo Row API kernel:
 the pure reductions (``reduce_sum/max/min/mean/product``, ``argmax``,
 ``argmin``, ``reduce_min_and_max``) and the last-axis norm-type ops
 (``softmax``, ``logsoftmax``, ``layer_norm``, ``rms_norm``,
-``row_mean_of_squares``). Each op is checked against a float32 torch reference
+``row_mean_of_squares``), plus graphs that fuse elementwise ops around a
+reduction into one generated kernel (``FUSED_OPS``). Each op is checked against
+a float32 torch reference
 across a few small column counts (even + odd), on the inner axis and -- for the
 pure arbitrary-axis reductions -- on a non-inner axis, in bfloat16, float16 and
 float32 where precision makes it meaningful, plus a CPU-only 8-byte-element
-group (see ``test_rowwise_wide_element_cpu``) for what only the widest element
-can reach.
+group (see :data:`WIDE_CPU_SPECS`) for what only the widest element can reach.
+``rms_norm``, ``softmax``, ``logsoftmax`` and the residual rms_norm pair
+(``rms_norm(rms_norm(x) + residual)``) also run on edge-case shapes
+(:data:`RMS_NORM_SPECS`, :data:`SOFTMAX_SPECS`,
+:data:`RESIDUAL_RMS_NORM_SPECS`): no rows, odd, many and long
+rows (the GPU split-K and CPU split-axis tiers), and ranks 1 and 5; for
+``rms_norm``, static row widths and both ``multiply_before_cast`` orders with a
+weight offset.
 
-Every case runs on both the CPU and, when an accelerator is present, the GPU --
-the GPU is where the cooperative tiers, the cross-thread combine and the split-K
-path live, so it is the priority target rather than an afterthought. One further
-inner-axis group is GPU-only: the ops whose monoid state is narrower than the
-4-byte word that combine exchanges (see
-``test_rowwise_inner_gpu_subword_state``), which no CPU case can reach.
+Every case runs on both the CPU and the GPU -- the GPU is where the cooperative
+tiers, the cross-thread combine and the split-K path live, so it is the priority
+target rather than an afterthought. Two further inner-axis groups are GPU-only:
+the ops whose monoid state is narrower than the 4-byte word that combine
+exchanges (:data:`GPU_SUBWORD_SPECS`) and the split-K cross-block join
+(:data:`GPU_SPLITK_SPECS`), neither of which any CPU case can reach.
 
 These are small, fast CI shapes. The bandwidth-oriented perf grid for the same
 ops lives in the manual benchmark at
 ``//utils/benchmarking/kepler/graph:reductions`` and is not run here.
 
-Each parametrization builds one symbolic-dimension graph and loads it once, then
-feeds several concrete shapes as data (per the guidance against per-case graph
-recompilation) -- so the compile count equals the number of parametrizations,
-not the number of shapes.
+Each parametrization compiles one symbolic-dimension graph and feeds several
+concrete shapes as data. The compiles are recorded by CPU build actions
+(``precompile_mefs = True`` in the BUILD file), so the GPU worker initializes
+the artifacts rather than compiling them.
 """
 
 from __future__ import annotations
@@ -47,25 +55,33 @@ import math
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Buffer, accelerator_count
+from _rowwise_reduction_specs import (
+    FUSED_OPS,
+    GPU_SPLITK_SPECS,
+    GPU_SUBWORD_SPECS,
+    INNER_SPECS,
+    NONINNER_SPECS,
+    RESIDUAL_RMS_NORM_EPS2,
+    RESIDUAL_RMS_NORM_SPECS,
+    RESIDUAL_RMS_NORM_WEIGHT_OFFSET2,
+    RMS_NORM_SPECS,
+    RMS_NORM_WEIGHT_OFFSET,
+    SOFTMAX_SPECS,
+    WIDE_CPU_SPECS,
+    ResidualRmsNormSpec,
+    RmsNormSpec,
+    RowwiseSpec,
+    SoftmaxSpec,
+    build_graph,
+    build_residual_rms_norm_graph,
+    build_rms_norm_graph,
+    build_softmax_graph,
+)
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
-from test_common.reduction_graphs import (
-    LAYER_NORM_EPS,
-    PURE_REDUCTIONS,
-    RMS_NORM_EPS,
-    build_reduction,
-)
-
-# GPU is the priority target: every cooperative tier (warp / block), the
-# cross-thread combine and the split-K path exist only there, while the CPU path
-# is a serial per-row walk. So the whole matrix below runs on both devices, with
-# the GPU half skipped when no accelerator is present.
-_DEVICES = [DeviceRef.CPU()] + (
-    [DeviceRef.GPU()] if accelerator_count() > 0 else []
-)
-_DEV_IDS = ["cpu", "gpu"][: len(_DEVICES)]
+from max.graph import DeviceRef, Graph, TensorType, ops
+from test_common.reduction_graphs import LAYER_NORM_EPS, RMS_NORM_EPS
 
 # Ops whose output is integer indices.
 _INT_OUT = {"argmax", "argmin"}
@@ -89,24 +105,6 @@ def _torch_dtype(dtype: DType) -> torch.dtype:
         DType.int64: torch.int64,
         DType.float64: torch.float64,
     }.get(dtype, torch.float32)
-
-
-def _build_graph(op: str, dtype: DType, axis: int, dev: DeviceRef) -> Graph:
-    """Build a single-reduction graph over `axis` with symbolic dimensions."""
-    x_t = TensorType(dtype, ["r", "c"], device=dev)
-    w_t = TensorType(dtype, ["c"], device=dev)
-    if op == "layer_norm":
-        input_types = [x_t, w_t, w_t]  # x, gamma, beta
-    elif op == "rms_norm":
-        input_types = [x_t, w_t]
-    else:
-        input_types = [x_t]
-
-    with Graph(f"{op}_ax{axis}", input_types=input_types) as graph:
-        x = graph.inputs[0].tensor
-        weights = [inp.tensor for inp in graph.inputs[1:]]
-        graph.output(build_reduction(op, x, axis, weights=weights))
-    return graph
 
 
 def _make_input(op: str, rows: int, cols: int, dtype: DType) -> torch.Tensor:
@@ -170,15 +168,20 @@ def _tol(op: str, dtype: DType) -> tuple[float, float, float]:
         # max/min and the selected argmax/argmin value are representable
         # exactly, so both dtypes match to a tight absolute tolerance.
         return 1e-3, 0.0, 0.0
-    if op == "reduce_sum":
+    if op in ("reduce_sum", "sum_plus_bias"):
         return (0.15, 5e-2, 2e-2) if half else (1e-2, 1e-3, 0.0)
     if op in ("reduce_mean", "row_mean_of_squares"):
         return (2e-2, 3e-2, 2e-2) if half else (1e-3, 1e-3, 0.0)
-    if op == "softmax":
+    if op in ("softmax", "softmax_spelled"):
         return (3e-3, 6e-2, 5e-3) if half else (1e-4, 1e-3, 0.0)
     if op == "logsoftmax":
         return (5e-2, 6e-2, 5e-3) if half else (1e-3, 1e-3, 0.0)
-    if op in ("layer_norm", "rms_norm"):
+    if op in (
+        "layer_norm",
+        "rms_norm",
+        "rms_norm_spelled",
+        "rms_norm_of_product",
+    ):
         return (4e-2, 6e-2, 1e-2) if half else (2e-3, 2e-3, 0.0)
     raise ValueError(f"no tolerance for {op!r}")
 
@@ -256,13 +259,16 @@ def _reference_and_check(
     got = _read_f32(outs[0])
     if op == "reduce_sum":
         ref = xf.sum(dim=axis).numpy()
+    elif op == "sum_plus_bias":
+        bias = weights[0].to(torch.float32)
+        ref = (xf.sum(dim=axis, keepdim=True) + bias).numpy()
     elif op == "reduce_max":
         ref = xf.amax(dim=axis).numpy()
     elif op == "reduce_min":
         ref = xf.amin(dim=axis).numpy()
     elif op == "reduce_mean":
         ref = xf.mean(dim=axis).numpy()
-    elif op == "softmax":
+    elif op in ("softmax", "softmax_spelled"):
         ref = torch.softmax(xf, dim=axis).numpy()
     elif op == "logsoftmax":
         ref = torch.log_softmax(xf, dim=axis).numpy()
@@ -277,208 +283,306 @@ def _reference_and_check(
         weight = weights[0].to(torch.float32)
         ms = xf.pow(2).mean(dim=-1, keepdim=True)
         ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * weight).numpy()
+    elif op in ("rms_norm_spelled", "rms_norm_of_product"):
+        if op == "rms_norm_of_product":
+            # The product rounds to the input dtype before the norm.
+            xf = (x * weights[0]).to(torch.float32)
+        gamma = weights[-1].to(torch.float32)
+        ms = xf.pow(2).mean(dim=axis, keepdim=True)
+        ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * gamma).numpy()
     else:
         raise ValueError(f"no reference for {op!r}")
     _assert_close(got, ref, op, dtype, label)
 
 
-# Inner-axis matrix: precision-sensitive ops in both dtypes; exact
-# selection/compare ops (max/min_and_max/arg) in bfloat16 only.
-#
-# reduce_min/reduce_mean/logsoftmax/argmin are deliberately absent: each is
-# redundant with a sibling already in this matrix (reduce_max, reduce_sum,
-# softmax, argmax respectively) -- same monoid/combine mechanics, differing
-# only in comparison direction or a trivial final step (a divide, or the
-# elementwise map after the shared OnlineLogSumExp reduce). A bug in the
-# shared scaffolder path shows up in the sibling that's still tested; the two
-# confirmed bugs that genuinely needed both directions tested (the bool
-# subword-state crash, the split-K join_parallel bug) have their own narrow
-# regression coverage below (`_GPU_SUBWORD_CASES`,
-# `test_rowwise_inner_gpu_splitk`) that still exercises both regardless of
-# this trim.
-_INNER_BOTH = [
-    "reduce_sum",
-    "reduce_product",
-    "softmax",
-    "layer_norm",
-    "rms_norm",
-    "row_mean_of_squares",
-]
-_INNER_BF16_ONLY = [
-    "reduce_max",
-    "argmax",
-    "reduce_min_and_max",
-]
-_INNER_CASES = (
-    [(op, DType.bfloat16) for op in _INNER_BOTH + _INNER_BF16_ONLY]
-    + [(op, DType.float32) for op in _INNER_BOTH]
-    + [(op, DType.float16) for op in _INNER_BOTH]
-)
-
-
-@pytest.mark.parametrize("dev", _DEVICES, ids=_DEV_IDS)
-@pytest.mark.parametrize(
-    "op,dtype", _INNER_CASES, ids=lambda v: v if isinstance(v, str) else str(v)
-)
-def test_rowwise_inner(
-    session: InferenceSession, op: str, dtype: DType, dev: DeviceRef
-) -> None:
-    model = session.load(_build_graph(op, dtype, axis=-1, dev=dev))
+@pytest.mark.parametrize("spec", INNER_SPECS, ids=lambda s: s.name)
+def test_rowwise_inner(session: InferenceSession, spec: RowwiseSpec) -> None:
+    model = session.load(build_graph(spec))
     for cols in _INNER_COLS:
-        x = _make_input(op, _INNER_ROWS, cols, dtype)
+        x = _make_input(spec.op, _INNER_ROWS, cols, spec.dtype)
         weights: list[torch.Tensor] = []
-        if op == "layer_norm":
+        if spec.op == "layer_norm":
             weights = [
-                _make_weight(1, cols, dtype),
-                (0.1 * torch.randn(cols)).to(_torch_dtype(dtype)),
+                _make_weight(1, cols, spec.dtype),
+                (0.1 * torch.randn(cols)).to(_torch_dtype(spec.dtype)),
             ]
-        elif op == "rms_norm":
-            weights = [_make_weight(1, cols, dtype)]
-        _reference_and_check(op, dtype, model, x, -1, weights, f"cols={cols}")
-
-
-# Non-inner (reduce over axis 0): the pure arbitrary-axis reductions. Precision-
-# sensitive sum in both dtypes; the rest in bfloat16 only. See the inner-axis
-# matrix above for why reduce_min/reduce_mean/argmin are absent (redundant
-# with reduce_max/reduce_sum/argmax).
-_NONINNER_CASES = [
-    (op, DType.bfloat16)
-    for op in [
-        "reduce_sum",
-        "reduce_max",
-        "reduce_product",
-        "argmax",
-        "reduce_min_and_max",
-    ]
-] + [(op, DType.float32) for op in ["reduce_sum"]]
-
-
-@pytest.mark.parametrize("dev", _DEVICES, ids=_DEV_IDS)
-@pytest.mark.parametrize(
-    "op,dtype",
-    _NONINNER_CASES,
-    ids=lambda v: v if isinstance(v, str) else str(v),
-)
-def test_rowwise_noninner(
-    session: InferenceSession, op: str, dtype: DType, dev: DeviceRef
-) -> None:
-    model = session.load(_build_graph(op, dtype, axis=0, dev=dev))
-    for rows, cols in _NONINNER_SHAPES:
-        x = _make_input(op, rows, cols, dtype)
-        _reference_and_check(op, dtype, model, x, 0, [], f"shape={rows}x{cols}")
-
-
-# 8-byte elements, both axes -- CPU only (MAX's reduce dtype set has no 64-bit
-# element on GPU). The widest element is what turns a wrong tile alignment into a
-# crash rather than a slow path: the alignment a body claims per tile is scaled
-# by the element size before it reaches the backend, so only on the widest
-# element can an off-by-a-factor claim reach a whole SIMD register and select an
-# alignment-checked instruction. Nothing narrower can catch that, which is why
-# every dtype above passed while float64 segfaulted. Both axes, since the claim
-# rides every load, and both 8-byte dtypes, since the claim is a function of the
-# element's width and not of its kind -- int64 faulted on the same ops.
-#
-# int64 skips reduce_mean and reduce_product: integer division and integer
-# overflow make them a comparison against the float32 reference rather than
-# against the alignment claim, which every other op here already pins.
-_WIDE_CASES = [(op, DType.float64) for op in PURE_REDUCTIONS] + [
-    (op, DType.int64)
-    for op in PURE_REDUCTIONS
-    if op not in ("reduce_mean", "reduce_product")
-]
-
-
-@pytest.mark.parametrize("axis", [-1, 0], ids=["inner", "noninner"])
-@pytest.mark.parametrize(
-    "op,dtype", _WIDE_CASES, ids=lambda v: v if isinstance(v, str) else str(v)
-)
-def test_rowwise_wide_element_cpu(
-    session: InferenceSession, op: str, dtype: DType, axis: int
-) -> None:
-    model = session.load(
-        _build_graph(op, dtype, axis=axis, dev=DeviceRef.CPU())
-    )
-    shapes = (
-        [(_INNER_ROWS, cols) for cols in _INNER_COLS]
-        if axis == -1
-        else _NONINNER_SHAPES
-    )
-    for rows, cols in shapes:
-        x = _make_input(op, rows, cols, dtype)
+        elif spec.op == "rms_norm":
+            weights = [_make_weight(1, cols, spec.dtype)]
+        elif spec.op in FUSED_OPS:
+            weights = _fused_inputs(spec.op, _INNER_ROWS, cols, -1, spec.dtype)
         _reference_and_check(
-            op, dtype, model, x, axis, [], f"shape={rows}x{cols}"
+            spec.op, spec.dtype, model, x, -1, weights, f"cols={cols}"
         )
 
 
-# Sub-word monoid state, on an accelerator. The Row scaffolder's cross-thread
-# combine (`Reducer.generic`, max/kernels/src/algorithm/gpu/rowwise.mojo) exists
-# only on GPU and exchanges the monoid's width-1 state in whole 4-byte words, so
-# a monoid whose state is narrower than one word is reachable only here -- the
-# CPU cases above cannot see it, and it is silent memory corruption rather than a
-# crash. Only the inner axis reaches the combine: a non-inner reduction lands on
-# the tiled tier, where `rowwise.pjoin` no-ops because each thread owns its own
-# output column.
-#
-# Which (op, dtype) pairs have a sub-word state, per each monoid's
-# `join_parallel` in max/kernels/src/algorithm/reduce_op.mojo:
-#   reduce_product  -- no hardware-fast scalar product exists, so every dtype
-#                      takes the combine; fp16/bf16 make the state 2 bytes.
-#   reduce_max/min  -- the fast-reducer dtype list covers only the 32/64-bit
-#                      dtypes, so `bool` (1 byte) falls through.
-#
-# The sub-word integers are the same bug class -- `int8`/`int16` are legal graph
-# op inputs for `reduce_max`/`reduce_min`/`reduce_min_and_max` and sit outside
-# every fast-reducer dtype list -- but the legacy kernels this commit still
-# precedes cannot compile them, so those cases belong with the commit that
-# routes each op through the Row API (`bool` is not legal for `min_and_max`).
-_GPU_SUBWORD_CASES = [
-    ("reduce_product", DType.float16),
-    ("reduce_product", DType.bfloat16),
-    ("reduce_max", DType.bool),
-    ("reduce_min", DType.bool),
-]
+def _fused_inputs(
+    op: str, rows: int, cols: int, axis: int, dtype: DType
+) -> list[torch.Tensor]:
+    """The inputs a fused graph takes besides the reduced one."""
+    if op == "sum_plus_bias":
+        shape = (rows, 1) if axis == -1 else (1, cols)
+        torch.manual_seed(1)
+        return [torch.randn(shape).to(_torch_dtype(dtype))]
+    if op in ("rms_norm_spelled", "rms_norm_of_product"):
+        gamma = (
+            _make_weight(1, cols, dtype)
+            if axis == -1
+            else _make_weight(1, rows, dtype).reshape(rows, 1)
+        )
+        if op == "rms_norm_spelled":
+            return [gamma]
+        torch.manual_seed(2)
+        return [torch.randn(rows, cols).to(_torch_dtype(dtype)), gamma]
+    if op == "softmax_spelled":
+        return []
+    raise ValueError(f"no inputs for {op!r}")
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="the GPU cross-thread combine needs a GPU"
-)
-@pytest.mark.parametrize(
-    "op,dtype",
-    _GPU_SUBWORD_CASES,
-    ids=lambda v: v if isinstance(v, str) else str(v),
-)
-def test_rowwise_inner_gpu_subword_state(
-    session: InferenceSession, op: str, dtype: DType
+@pytest.mark.parametrize("spec", NONINNER_SPECS, ids=lambda s: s.name)
+def test_rowwise_noninner(session: InferenceSession, spec: RowwiseSpec) -> None:
+    model = session.load(build_graph(spec))
+    for rows, cols in _NONINNER_SHAPES:
+        x = _make_input(spec.op, rows, cols, spec.dtype)
+        inputs = (
+            _fused_inputs(spec.op, rows, cols, 0, spec.dtype)
+            if spec.op in FUSED_OPS
+            else []
+        )
+        _reference_and_check(
+            spec.op, spec.dtype, model, x, 0, inputs, f"shape={rows}x{cols}"
+        )
+
+
+@pytest.mark.parametrize("spec", WIDE_CPU_SPECS, ids=lambda s: s.name)
+def test_rowwise_wide_element_cpu(
+    session: InferenceSession, spec: RowwiseSpec
 ) -> None:
-    model = session.load(_build_graph(op, dtype, axis=-1, dev=DeviceRef.GPU()))
+    model = session.load(build_graph(spec))
+    shapes = (
+        [(_INNER_ROWS, cols) for cols in _INNER_COLS]
+        if spec.axis == -1
+        else _NONINNER_SHAPES
+    )
+    for rows, cols in shapes:
+        x = _make_input(spec.op, rows, cols, spec.dtype)
+        _reference_and_check(
+            spec.op,
+            spec.dtype,
+            model,
+            x,
+            spec.axis,
+            [],
+            f"shape={rows}x{cols}",
+        )
+
+
+@pytest.mark.parametrize("spec", GPU_SUBWORD_SPECS, ids=lambda s: s.name)
+def test_rowwise_inner_gpu_subword_state(
+    session: InferenceSession, spec: RowwiseSpec
+) -> None:
+    model = session.load(build_graph(spec))
     for cols in _INNER_COLS:
-        x = _make_input(op, _INNER_ROWS, cols, dtype)
-        _reference_and_check(op, dtype, model, x, -1, [], f"cols={cols}")
+        x = _make_input(spec.op, _INNER_ROWS, cols, spec.dtype)
+        _reference_and_check(
+            spec.op, spec.dtype, model, x, -1, [], f"cols={cols}"
+        )
 
 
-# Split-K cross-block join, on an accelerator. A few-row, long-row shape routes
-# the inner-axis reduction through the split-K tier (`num_rows` under the SM
-# count and at least `_SPLITK_MIN_ROW` = 32768 elements per row at
-# `simd_width <= 4`, i.e. float32 here), whose cross-block finish in
-# `rowwise.pjoin` is the only place the scaffolder combines whole per-block
-# monoid states. Every other case in this file is orders of magnitude below that
-# element floor, so nothing else reaches it.
-#
-# argmax/argmin are what catch a mistake there: their cross-thread step ends by
-# publishing the winning index into the field the emit reads, so a finish that
-# skips it returns a real-but-not-extreme index -- a wrong answer that still
-# looks like a plausible one. reduce_max rides the same call with an exactly
-# representable result, so it pins the non-arg monoids on that path too.
+# A few-row, long-row shape is what routes the inner-axis reduction through the
+# split-K tier (`num_rows` under the SM count and at least `_SPLITK_MIN_ROW` =
+# 32768 elements per row at `simd_width <= 4`, i.e. float32 here), whose
+# cross-block finish in `rowwise.pjoin` is the only place the scaffolder combines
+# whole per-block monoid states. Every other case in this file is orders of
+# magnitude below that element floor, so nothing else reaches it.
 _SPLITK_ROWS = 8
 _SPLITK_COLS = 40960
 
 
-@pytest.mark.skipif(
-    accelerator_count() == 0, reason="the split-K tier is GPU-only"
-)
-@pytest.mark.parametrize("op", ["argmax", "argmin", "reduce_max"])
-def test_rowwise_inner_gpu_splitk(session: InferenceSession, op: str) -> None:
-    dtype = DType.float32
-    model = session.load(_build_graph(op, dtype, axis=-1, dev=DeviceRef.GPU()))
-    x = _make_input(op, _SPLITK_ROWS, _SPLITK_COLS, dtype)
-    _reference_and_check(op, dtype, model, x, -1, [], f"cols={_SPLITK_COLS}")
+@pytest.mark.parametrize("spec", GPU_SPLITK_SPECS, ids=lambda s: s.name)
+def test_rowwise_inner_gpu_splitk(
+    session: InferenceSession, spec: RowwiseSpec
+) -> None:
+    model = session.load(build_graph(spec))
+    x = _make_input(spec.op, _SPLITK_ROWS, _SPLITK_COLS, spec.dtype)
+    inputs = (
+        _fused_inputs(spec.op, _SPLITK_ROWS, _SPLITK_COLS, -1, spec.dtype)
+        if spec.op in FUSED_OPS
+        else []
+    )
+    _reference_and_check(
+        spec.op, spec.dtype, model, x, -1, inputs, f"cols={_SPLITK_COLS}"
+    )
+
+
+# Shapes for the rms_norm and softmax graphs, by input rank: no rows, short and
+# odd rows, widths on either side of powers of two, many rows, and few long
+# rows, which take the GPU split-K tier (rows of at least 224 KB) and the CPU
+# split-axis tier (rows of at least 262144 elements).
+_EDGE_SHAPES: dict[int, list[tuple[int, ...]]] = {
+    1: [(5,), (557,), (8193,)],
+    2: [
+        (0, 128),
+        (2, 5),
+        (2, 55),
+        (7, 557),
+        (2, 8191),
+        (2, 8192),
+        (2, 8193),
+        (2, 16384),
+        (2, 16385),
+        (3001, 128),
+        (24576, 256),
+        (1, 65536),
+        (3, 100003),
+        (16, 262144),
+        (1, 262147),
+        (2, 524288),
+    ],
+    5: [(3, 4, 10, 20, 8), (1, 5, 6, 10, 128)],
+}
+# Outer dims for a static row width: several rows per block, and a row count
+# that doesn't divide the block.
+_STATIC_OUTER = [(3, 41), (1, 513)]
+
+
+def _rms_norm_shapes(spec: RmsNormSpec) -> list[tuple[int, ...]]:
+    if spec.static_cols:
+        return [(*outer, spec.static_cols) for outer in _STATIC_OUTER]
+    return _EDGE_SHAPES[spec.rank]
+
+
+@pytest.mark.parametrize("spec", RMS_NORM_SPECS, ids=lambda s: s.name)
+def test_rms_norm_edges(session: InferenceSession, spec: RmsNormSpec) -> None:
+    model = session.load(build_rms_norm_graph(spec))
+    for shape in _rms_norm_shapes(spec):
+        torch.manual_seed(0)
+        x = torch.randn(shape).to(_torch_dtype(spec.dtype))
+        weight = _make_weight(1, shape[-1], spec.dtype)
+        got = _read_f32(_feed(model, [x, weight])[0])
+        xf = x.to(torch.float32)
+        ms = xf.pow(2).mean(dim=-1, keepdim=True)
+        scale = weight.to(torch.float32) + RMS_NORM_WEIGHT_OFFSET
+        ref = (xf * torch.rsqrt(ms + RMS_NORM_EPS) * scale).numpy()
+        _assert_close(got, ref, "rms_norm", spec.dtype, f"shape={shape}")
+
+
+def _rms_norm_ref(
+    x: torch.Tensor,
+    w: torch.Tensor,
+    eps: float,
+    offset: float,
+    multiply_before_cast: bool,
+) -> torch.Tensor:
+    """rms_norm in ``x``'s dtype, rounding where the kernel does."""
+    xf = x.to(torch.float32)
+    normed = xf * torch.rsqrt(xf.pow(2).mean(dim=-1, keepdim=True) + eps)
+    if multiply_before_cast:
+        return (normed * (w.to(torch.float32) + offset)).to(x.dtype)
+    return normed.to(x.dtype) * (w + torch.tensor(offset, dtype=x.dtype))
+
+
+@pytest.mark.parametrize("spec", RESIDUAL_RMS_NORM_SPECS, ids=lambda s: s.name)
+def test_residual_rms_norm_edges(
+    session: InferenceSession, spec: ResidualRmsNormSpec
+) -> None:
+    model = session.load(build_residual_rms_norm_graph(spec))
+    # One generated kernel computes both norms, as the hand-written one did.
+    rowwise = [s for s in model.kernel_summaries if "Rowwise(" in s]
+    assert len(rowwise) == 1, model.kernel_summaries
+    shapes = (
+        [(rows, spec.static_cols) for rows in (3, 513)]
+        if spec.static_cols
+        else _EDGE_SHAPES[2]
+    )
+    for shape in shapes:
+        torch.manual_seed(0)
+        dtype = _torch_dtype(spec.dtype)
+        x = torch.randn(shape).to(dtype)
+        residual = torch.randn(shape).to(dtype)
+        w1 = _make_weight(1, shape[-1], spec.dtype)
+        w2 = _make_weight(2, shape[-1], spec.dtype)
+        outs = [_read_f32(b) for b in _feed(model, [x, residual, w1, w2])]
+        h = (
+            _rms_norm_ref(
+                x,
+                w1,
+                RMS_NORM_EPS,
+                RMS_NORM_WEIGHT_OFFSET,
+                spec.multiply_before_cast,
+            )
+            + residual
+        )
+        y = _rms_norm_ref(
+            h,
+            w2,
+            RESIDUAL_RMS_NORM_EPS2,
+            RESIDUAL_RMS_NORM_WEIGHT_OFFSET2,
+            spec.multiply_before_cast,
+        )
+        label = f"shape={shape}"
+        _assert_close(
+            outs[0], y.to(torch.float32).numpy(), "rms_norm", spec.dtype, label
+        )
+        if spec.sum_output:
+            _assert_close(
+                outs[1],
+                h.to(torch.float32).numpy(),
+                "rms_norm",
+                spec.dtype,
+                label,
+            )
+
+
+@pytest.mark.parametrize("spec", SOFTMAX_SPECS, ids=lambda s: s.name)
+def test_softmax_edges(session: InferenceSession, spec: SoftmaxSpec) -> None:
+    model = session.load(build_softmax_graph(spec))
+    shapes = (
+        [(*outer, spec.static_cols) for outer in _STATIC_OUTER]
+        if spec.static_cols
+        else _EDGE_SHAPES[spec.rank]
+    )
+    for shape in shapes:
+        torch.manual_seed(0)
+        x = torch.randn(shape).to(_torch_dtype(spec.dtype))
+        got = _read_f32(_feed(model, [x])[0])
+        xf = x.to(torch.float32)
+        ref = (
+            torch.softmax(xf, dim=-1)
+            if spec.op == "softmax"
+            else torch.log_softmax(xf, dim=-1)
+        ).numpy()
+        _assert_close(got, ref, spec.op, spec.dtype, f"shape={shape}")
+
+
+@pytest.mark.parametrize("device", ["cpu", "gpu"])
+def test_per_row_output_next_to_a_map_phase(
+    session: InferenceSession, device: str
+) -> None:
+    """A sum the graph outputs, also read by a per-element and a per-row
+    consumer, fuses into one rowwise kernel: the per-row outputs are written
+    once per row, next to the map phase that writes every element."""
+    dev = DeviceRef.CPU() if device == "cpu" else DeviceRef.GPU()
+    x_t = TensorType(DType.float32, ["r", "c"], device=dev)
+    with Graph(f"per_row_output_{device}", input_types=[x_t]) as graph:
+        x = graph.inputs[0].tensor
+        s = ops.sum(x, axis=-1)
+        graph.output(x / s, s, s * 2.0)
+    model = session.load(graph)
+    # Without the fusion, the division runs in a kernel of its own.
+    summaries = model.kernel_summaries
+    rowwise = [k for k in summaries if "Rowwise(" in k]
+    assert len(rowwise) == 1, summaries
+    assert "mo.div" in rowwise[0] and "mo.mul" in rowwise[0], rowwise
+    assert sum("mo.div" in k for k in summaries) == 1, summaries
+
+    for shape in ((3, 129), (64, 4096)):
+        torch.manual_seed(0)
+        x_in = torch.randn(shape) + 2.0
+        y, s_out, t = (_read_f32(b) for b in _feed(model, [x_in]))
+        s_ref = x_in.sum(-1, keepdim=True).numpy()
+        label = f"device={device} shape={shape}"
+        np.testing.assert_allclose(s_out, s_ref, rtol=1e-4, err_msg=label)
+        np.testing.assert_allclose(t, s_ref * 2.0, rtol=1e-4, err_msg=label)
+        np.testing.assert_allclose(
+            y, x_in.numpy() / s_ref, rtol=1e-4, atol=1e-6, err_msg=label
+        )

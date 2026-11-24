@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "dspark_mistral_large4_modulev3",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("transformers"),
+        requirement("typing-extensions"),
+        "//max/python/max:tensor",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        # The drafter's module, geometry and cache leaf are the target
+        # package's.
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        # The export record the draft's graph sidecar is built from.
+        "//max/python/max/pipelines/speculative",
+    ],
+)

@@ -1,0 +1,6 @@
+# gazelle:default_visibility //GraphCompiler:__subpackages__,//:__pkg__
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//GraphCompiler:__subpackages__",
+])

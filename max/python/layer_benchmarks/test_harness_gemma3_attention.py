@@ -35,6 +35,7 @@ def runner() -> LayerTestRunner[
     AttentionDynamicParams,
     list[TextContext],
 ]:
+    """Creates the runner for Gemma3Attention."""
     return create_runner(GEMMA3_ATTENTION)
 
 
@@ -45,6 +46,7 @@ def test_benchmark_smoke(
         list[TextContext],
     ],
 ) -> None:
+    """Benchmarks one shape to check the harness runs."""
     results = runner.benchmark(_SMOKE_SHAPES, iterations=1, warmup=1)
     for _label, stats in results:
         assert stats.mean_ms > 0.0
@@ -58,6 +60,7 @@ def test_correctness(
     ],
 ) -> None:
     # Correctness only works for prefill (ctx_len=0), batch_size=1.
+    """Checks the runner's results against the reference."""
     shapes = [
         AttentionDynamicParams(batch_size=1, seq_len=11),
         AttentionDynamicParams(batch_size=1, seq_len=128),

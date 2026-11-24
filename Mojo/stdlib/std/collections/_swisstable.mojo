@@ -10,23 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Swiss Table core for hash-based collections.
+"""SwissTable core for hash-based collections.
 
-Provides the low-level Swiss Table implementation shared by `Dict` (ordered)
+Provides the low-level SwissTable implementation shared by `Dict` (ordered)
 and `HashMap` (unordered). This module is internal and not part of the public
 API.
 
-The Swiss Table design uses SIMD group probing on 16-byte control byte groups
+The SwissTable design uses SIMD group probing on 16-byte control byte groups
 for fast lookups. Each slot has a 1-byte control: EMPTY (0xFF), DELETED (0x80),
 or an h2 fingerprint (0x00-0x7F) derived from the top 7 bits of the hash.
 """
 
 from std.bit import count_trailing_zeros, next_power_of_two
-from std.hashlib import Hasher, default_hasher
+from std.hash import Hasher, default_hasher
 from std.math import ceildiv
 from std.memory import (
     alloc,
     dealloc,
+    Allocation,
     ThinAllocation,
     unsafe_memcpy,
     unsafe_memset,
@@ -37,7 +38,7 @@ from std.traits import IsTriviallyDeinitable
 from std.sys.intrinsics import likely
 
 # ===-----------------------------------------------------------------------===#
-# Swiss Table constants and helpers
+# SwissTable constants and helpers
 # ===-----------------------------------------------------------------------===#
 
 comptime CTRL_EMPTY: UInt8 = 0xFF
@@ -50,7 +51,7 @@ comptime INITIAL_CAPACITY: Int = 16
 """Minimum table capacity. Must be >= GROUP_WIDTH."""
 
 
-@always_inline
+@inline(.always)
 def h2(hash: UInt64) -> UInt8:
     """Extract the top 7 bits of the hash as a fingerprint (0x00-0x7F).
 
@@ -63,7 +64,7 @@ def h2(hash: UInt64) -> UInt8:
     return UInt8(hash >> 57)
 
 
-@always_inline
+@inline(.always)
 def is_occupied(ctrl: UInt8) -> Bool:
     """Check if a control byte represents an occupied slot.
 
@@ -94,7 +95,7 @@ struct Group(Copyable, Movable):
 
     var ctrl: SIMD[.uint8, GROUP_WIDTH]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, ptr: Pointer[UInt8, _]):
         """Load a group of control bytes from memory.
 
@@ -108,7 +109,7 @@ struct Group(Copyable, Movable):
     # which the interpreter can't handle, so we fall back to scalar loops for
     # comptime contexts (e.g., Dict used in `comptime` expressions).
 
-    @always_inline
+    @inline(.always)
     def match_h2(self, h2_val: UInt8) -> UInt16:
         """Return a bitmask of slots matching the given h2 fingerprint.
 
@@ -122,7 +123,7 @@ struct Group(Copyable, Movable):
             return Self._scalar_match(self.ctrl, h2_val)
         return pack_bits(self.ctrl.eq(SIMD[.uint8, GROUP_WIDTH](h2_val)))
 
-    @always_inline
+    @inline(.always)
     def match_empty(self) -> UInt16:
         """Return a bitmask of empty slots.
 
@@ -133,7 +134,7 @@ struct Group(Copyable, Movable):
             return Self._scalar_match(self.ctrl, CTRL_EMPTY)
         return pack_bits(self.ctrl.eq(SIMD[.uint8, GROUP_WIDTH](CTRL_EMPTY)))
 
-    @always_inline
+    @inline(.always)
     def match_empty_or_deleted(self) -> UInt16:
         """Return a bitmask of empty or deleted slots.
 
@@ -152,7 +153,7 @@ struct Group(Copyable, Movable):
             return result
         return pack_bits(self.ctrl.ge(SIMD[.uint8, GROUP_WIDTH](CTRL_DELETED)))
 
-    @always_inline
+    @inline(.always)
     def convert_special_to_empty_and_full_to_deleted(
         self,
     ) -> SIMD[.uint8, GROUP_WIDTH]:
@@ -181,7 +182,7 @@ struct Group(Copyable, Movable):
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _scalar_match(ctrl: SIMD[.uint8, GROUP_WIDTH], target: UInt8) -> UInt16:
         """Scalar fallback for compile-time evaluation.
 
@@ -206,20 +207,21 @@ struct Group(Copyable, Movable):
 
 
 @fieldwise_init
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `SwissTableEntry` with"
-    " non-`Deinitable` keys or values"
-)
 struct SwissTableEntry[
     K: KeyElement,
     V: Movable,
-    H: Hasher,
+    H: Hasher & Defaultable & Deinitable,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
-    Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
+    Deinitable where (
+        conforms_to(K, Deinitable) and conforms_to(V, Deinitable)
+    ) else (
+        "Use `deinit_with()` to explicitly destroy a `SwissTableEntry` with"
+        " non-`Deinitable` keys or values"
+    ),
     Movable,
 ):
-    """Store a key-value pair entry inside a Swiss Table-based collection.
+    """Store a key-value pair entry inside a SwissTable-based collection.
 
     Parameters:
         K: The key type. Must be `Movable`, `Hashable`, and `Equatable`.
@@ -247,7 +249,7 @@ struct SwissTableEntry[
         self.key = key^
         self.value = value^
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self, var key: Self.K, var value: Self.V, *, unsafe_hash: UInt64
     ):
@@ -308,20 +310,21 @@ struct SwissTableEntry[
 # ===-----------------------------------------------------------------------===#
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `SwissTable` with"
-    " non-`Deinitable` keys or values"
-)
 struct SwissTable[
     K: KeyElement,
     V: Movable,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Copyable where conforms_to(K, Copyable) and conforms_to(V, Copyable),
-    Deinitable where conforms_to(K, Deinitable) and conforms_to(V, Deinitable),
+    Deinitable where (
+        conforms_to(K, Deinitable) and conforms_to(V, Deinitable)
+    ) else (
+        "Use `deinit_with()` to explicitly destroy a `SwissTable` with"
+        " non-`Deinitable` keys or values"
+    ),
     Movable,
 ):
-    """Raw Swiss Table providing the hash table core for Dict and HashMap.
+    """Raw SwissTable providing the hash table core for Dict and HashMap.
 
     This struct manages the control byte array, slot array, probing, and
     resize logic. Higher-level types (`Dict`, `HashMap`) compose this with
@@ -362,18 +365,18 @@ struct SwissTable[
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
-        """Initialize an empty Swiss Table."""
+        """Initialize an empty SwissTable."""
         self._capacity = 0
         self._ctrl = type_of(self._ctrl).unsafe_dangling()
         self._slots = type_of(self._slots).unsafe_dangling()
         self._len = 0
         self._growth_left = 0
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, capacity: Int):
-        """Initialize an empty Swiss Table with a pre-reserved capacity.
+        """Initialize an empty SwissTable with a pre-reserved capacity.
 
         The capacity is defined by `next_power_of_two(ceildiv(capacity * 8, 7))`
         (minimum 16) to satisfy internal layout requirements.
@@ -389,12 +392,12 @@ struct SwissTable[
             next_power_of_two(ceildiv(capacity * 8, 7)), INITIAL_CAPACITY
         )
         self._ctrl = alloc(
-            Layout[UInt8](count=self._capacity + GROUP_WIDTH)
+            Layout[UInt8](length=self._capacity + GROUP_WIDTH)
         ).unsafe_leak()
         unsafe_memset(self._ctrl, CTRL_EMPTY, self._capacity + GROUP_WIDTH)
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
-                count=self._capacity
+                length=self._capacity
             )
         ).unsafe_leak()
         self._len = 0
@@ -403,7 +406,7 @@ struct SwissTable[
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.K, Copyable) and conforms_to(Self.V, Copyable):
-        """Copy an existing Swiss Table.
+        """Copy an existing SwissTable.
 
         Args:
             copy: The existing table to copy.
@@ -417,7 +420,7 @@ struct SwissTable[
         self._growth_left = copy._growth_left
 
         self._ctrl = alloc(
-            Layout[UInt8](count=self._capacity + GROUP_WIDTH)
+            Layout[UInt8](length=self._capacity + GROUP_WIDTH)
         ).unsafe_leak()
         unsafe_memcpy(
             dest=self._ctrl,
@@ -427,7 +430,7 @@ struct SwissTable[
 
         self._slots = alloc(
             Layout[SwissTableEntry[Self.K, Self.V, Self.H]](
-                count=self._capacity
+                length=self._capacity
             )
         ).unsafe_leak()
         for i in range(self._capacity):
@@ -472,16 +475,16 @@ struct SwissTable[
         if self._capacity > 0:
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._ctrl).unsafe_with_layout(
-                    {count = self._capacity + GROUP_WIDTH}
+                    {length = self._capacity + GROUP_WIDTH}
                 )
             )
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=self._slots).unsafe_with_layout(
-                    {count = self._capacity}
+                    {length = self._capacity}
                 )
             )
 
-    @always_inline
+    @inline(.always)
     def _delete_occupied_entries(
         mut self,
     ) where conforms_to(Self.K, Deinitable) and conforms_to(Self.V, Deinitable):
@@ -505,7 +508,7 @@ struct SwissTable[
                 if is_occupied(self._ctrl[unsafe_offset=i]):
                     (self._slots.unsafe_offset(i)).unsafe_deinit_pointee()
 
-    @always_inline
+    @inline(.always)
     def _delete_occupied_entries_with(
         mut self, destroy_func: Some[def(var Self.K, var Self.V)]
     ):
@@ -523,7 +526,7 @@ struct SwissTable[
     # Core operations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def set_ctrl(mut self, index: Int, value: UInt8):
         """Set a control byte, maintaining the mirror for wrap-around SIMD loads.
 
@@ -536,7 +539,7 @@ struct SwissTable[
         if index < GROUP_WIDTH:
             self._ctrl[unsafe_offset=self._capacity + index] = value
 
-    @always_inline
+    @inline(.always)
     def find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
         """Find a slot matching the given key, or the first EMPTY slot.
 
@@ -560,7 +563,7 @@ struct SwissTable[
             lambda (stored_key: Self.K) {imm key} -> Bool: (stored_key == key),
         )
 
-    @always_inline
+    @inline(.always)
     def find_slot_matching(
         self, hash: UInt64, key_matches: Some[def(Self.K) -> Bool]
     ) -> Tuple[Bool, Int]:
@@ -612,7 +615,7 @@ struct SwissTable[
 
             pos = (pos + GROUP_WIDTH) & (self._capacity - 1)
 
-    @always_inline
+    @inline(.always)
     def find_slot_or_deleted(
         self, hash: UInt64, key: Self.K
     ) -> Tuple[Bool, Int]:
@@ -679,7 +682,7 @@ struct SwissTable[
 
             pos = (pos + GROUP_WIDTH) & (self._capacity - 1)
 
-    @always_inline
+    @inline(.always)
     def find_empty_slot(self, hash: UInt64) -> Int:
         """Find the first EMPTY or DELETED slot for the given hash.
 
@@ -754,7 +757,7 @@ struct SwissTable[
         """
         return self._len <= self._capacity * 7 // 16
 
-    @no_inline
+    @inline(.never)
     def resize(mut self, new_capacity: Int) -> List[Tuple[Int, Int]]:
         """Double the table capacity and rehash all entries.
 
@@ -772,11 +775,11 @@ struct SwissTable[
         var old_capacity = self._capacity
 
         self._ctrl = alloc(
-            Layout[UInt8](count=new_capacity + GROUP_WIDTH)
+            Layout[UInt8](length=new_capacity + GROUP_WIDTH)
         ).unsafe_leak()
         unsafe_memset(self._ctrl, CTRL_EMPTY, new_capacity + GROUP_WIDTH)
         self._slots = alloc(
-            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](count=new_capacity)
+            Layout[SwissTableEntry[Self.K, Self.V, Self.H]](length=new_capacity)
         ).unsafe_leak()
         self._capacity = new_capacity
         self._growth_left = new_capacity * 7 // 8 - self._len
@@ -795,28 +798,28 @@ struct SwissTable[
         if old_capacity > 0:
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=old_ctrl).unsafe_with_layout(
-                    {count = old_capacity + GROUP_WIDTH}
+                    {length = old_capacity + GROUP_WIDTH}
                 )
             )
             dealloc(
                 ThinAllocation(unsafe_owned_ptr=old_slots).unsafe_with_layout(
-                    {count = old_capacity}
+                    {length = old_capacity}
                 )
             )
 
         return relocations^
 
-    @no_inline
-    def rehash_in_place(mut self) -> Pointer[Int32, MutUntrackedOrigin]:
+    @inline(.never)
+    def rehash_in_place(mut self) -> Allocation[Int32]:
         """Rehash in place without changing capacity (Abseil's drop-deletes).
 
         Reclaims DELETED tombstones by moving all entries to their ideal
-        probe positions. Returns a slot_map array (caller-freed) mapping
-        old slot indices to new ones.
+        probe positions. Returns a slot_map array mapping old slot indices
+        to new ones.
 
         Returns:
-            A pointer to a caller-owned Int32 array of size `_capacity`
-            mapping old_slot -> new_slot. The caller must free this.
+            An allocation holding an Int32 array of size `_capacity` mapping
+            old_slot -> new_slot. The caller must consume it with `dealloc`.
         """
         assert (
             self._len <= self._capacity * 7 // 16
@@ -836,9 +839,11 @@ struct SwissTable[
         )
 
         # Step 3: Relocate entries.
-        var slot_map = alloc(Layout[Int32](count=self._capacity)).unsafe_leak()
-        for i in range(self._capacity):
-            slot_map[unsafe_offset=i] = Int32(i)
+        var slot_map_alloc = alloc(Layout[Int32](length=self._capacity))
+        _ = slot_map_alloc.storage().unsafe_init_with(
+            lambda (i: Int) -> Int32: Int32(i)
+        )
+        var slot_map = slot_map_alloc.unsafe_ptr()
 
         for i in range(self._capacity):
             if self._ctrl[unsafe_offset=i] != CTRL_DELETED:
@@ -869,4 +874,4 @@ struct SwissTable[
         # Reset growth_left (all tombstones are now EMPTY).
         self._growth_left = self._capacity * 7 // 8 - self._len
 
-        return slot_map
+        return slot_map_alloc^

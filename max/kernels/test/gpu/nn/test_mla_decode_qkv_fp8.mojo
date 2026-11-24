@@ -34,39 +34,32 @@ The test:
 6. Compares results with tolerances accounting for FP8 quantization
 """
 
+from std.memory.alloc import unsafe_alloc
 from std.random import randn
-from std.sys import (
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import argv
 
 from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
-from nn.attention.gpu.mla import flare_mla_decoding
+from nn.attention.gpu.mla import AMDMLA, SM100MLA, flare_mla_decoding
 from nn.attention.mha_mask import (
     CausalMask,
+    MHAMask,
     NullMask,
     SlidingWindowCausalMask,
 )
-from nn.attention.mha_operand import LayoutTensorMHAOperand
+from nn.attention.mha_operand import TileTensorMHAOperand
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal, assert_raises
 from max.gpu.host.info import B200, _is_sm10x_gpu
-from std.utils.index import Index
 
 
 # ===-----------------------------------------------------------------------===#
@@ -90,7 +83,7 @@ struct MLAMaskType(TrivialRegisterPassable):
         return self.value != rhs.value
 
 
-@always_inline
+@inline(.always)
 def host_cast_fp8_to_bf16[
     fp8_t: DType,
     bf16_t: DType,
@@ -104,7 +97,7 @@ def host_cast_fp8_to_bf16[
         dst[i] = src[i].cast[bf16_t]()
 
 
-@always_inline
+@inline(.always)
 def host_quantize_bf16_to_fp8[
     bf16_t: DType,
     fp8_t: DType,
@@ -134,25 +127,12 @@ def test[
     num_heads: Int,
     group: Int = 1,
     batch_size: Int = 1,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](seq_len: Int, num_keys: Int, ctx: DeviceContext[],) raises:
     print(
-        "test_mla_decode_qkv_fp8",
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "q_type:",
-        q_type,
-        "kv_type:",
-        kv_type,
-        "output_type:",
-        output_type,
-        "num_heads:",
-        num_heads,
-        "mla_mask_type:",
-        mla_mask_type.value,
+        t"test_mla_decode_qkv_fp8 batch_size: {batch_size} seq_len:"
+        t" {seq_len} num_keys: {num_keys} q_type: {q_type} kv_type:"
+        t" {kv_type} output_type: {output_type} num_heads:"
+        t" {num_heads} mla_mask_type: {mla_mask_type.value}"
     )
 
     comptime assert (
@@ -242,49 +222,23 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
-    # LayoutTensors for FP8 K (needed by LayoutTensorMHAOperand)
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-
+    # BF16 tensors for the naive reference.
     # BF16 K reference device tensor (for mha_gpu_naive)
-    var k_bf16_device = LayoutTensor[output_type, k_layout](
-        k_bf16_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
+    var k_bf16_device = TileTensor(
+        k_bf16_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
 
     # BF16 dequantized Q device tensor for reference (for mha_gpu_naive)
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_bf16_dequant_device = LayoutTensor[output_type, q_fp8_layout](
-        q_bf16_dequant_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var q_bf16_dequant_device = TileTensor(
+        q_bf16_dequant_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    # Output ref layout (for mha_gpu_naive)
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_ref_device = LayoutTensor[output_type, output_layout](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
-    )
-
-    # Valid length (empty -- not using ragged) for mha_gpu_naive
-    var null_valid_length = LayoutTensor[
-        .uint32,
-        Layout.row_major(UNKNOWN_VALUE),
-        MutAnyOrigin,
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    # Output ref device tensor (for mha_gpu_naive)
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     # ---- Launch the native FP8 kernel via mla_decode_sm100_dispatch ----
@@ -302,18 +256,14 @@ def test[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(
-        q_fp8_tt,
-        k_fp8_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    @__allow_legacy_any_origin_fields
+    def kernel_launch(
+        ctx: DeviceContext[],
+    ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -323,7 +273,7 @@ def test[
                 scalar_args_buf_tt,
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
-            flare_mla_decoding[config=config](
+            flare_mla_decoding[config=config, kernels=SM100MLA](
                 out_tt.as_unsafe_any_origin(),
                 q_fp8_tt,
                 k_fp8_tt,
@@ -345,33 +295,17 @@ def test[
     # v_depth (512) elements per head since MLA only outputs V's portion.
     print("  Computing GPU naive reference...")
 
-    # Reference output needs full-depth layout for the naive kernel
-    comptime ref_output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
     var ref_full_o_size = batch_size * num_heads * seq_len * depth
     var output_ref_full_device_ptr = ctx.enqueue_create_buffer[output_type](
         ref_full_o_size
     )
-    var output_ref_full_device = LayoutTensor[output_type, ref_output_layout](
-        output_ref_full_device_ptr.unsafe_ptr(),
-        RuntimeLayout[ref_output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_full_device = TileTensor(
+        output_ref_full_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
     # Create BF16 K operand for reference
-    var k_bf16_operand = LayoutTensorMHAOperand(
-        TileTensor(
-            k_bf16_device.ptr.as_unsafe_any_origin(),
-            row_major(
-                Int(batch_size),
-                Int(num_keys),
-                Idx[kv_num_heads],
-                Idx[depth],
-            ),
-        )
-    )
+    var k_bf16_operand = TileTensorMHAOperand(k_bf16_device)
 
     comptime if mla_mask_type == MLAMaskType.CAUSAL:
         mha_gpu_naive[_is_cache_length_accurate=True](
@@ -380,7 +314,7 @@ def test[
             k_bf16_operand,
             CausalMask(),
             output_ref_full_device,
-            null_valid_length,
+            None,
             scale,
             batch_size,
             seq_len,
@@ -397,7 +331,7 @@ def test[
             k_bf16_operand,
             NullMask(),
             output_ref_full_device,
-            null_valid_length,
+            None,
             scale,
             batch_size,
             seq_len,
@@ -478,7 +412,7 @@ def bench[
     num_heads: Int,
     group: Int,
     batch_size: Int,
-](num_keys: Int, ctx: DeviceContext) raises:
+](num_keys: Int, ctx: DeviceContext[]) raises:
     """Benchmark native FP8 MLA decode kernel (no correctness check)."""
     comptime scale = Float32(0.125)
     comptime kv_num_heads = num_heads // group
@@ -544,14 +478,15 @@ def bench[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @always_inline
+    @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt, imm
     }:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -573,17 +508,8 @@ def bench[
     )
     var ustime = nstime / 1000.0
     print(
-        "bench: bs=",
-        batch_size,
-        " num_keys=",
-        num_keys,
-        " heads=",
-        num_heads,
-        " depth=",
-        depth,
-        " =>",
-        ustime,
-        "us",
+        t"bench: bs= {batch_size}  num_keys= {num_keys}  heads= {num_heads} "
+        t" depth= {depth}  => {ustime} us"
     )
 
     _ = mla_args
@@ -595,7 +521,7 @@ def bench[
 def test_decoding[
     batch_size: Int,
     mla_mask_type: MLAMaskType,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test[
         mla_mask_type,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -634,12 +560,12 @@ def test_decoding[
 # The dispatcher enables fold_q when num_q_heads * q_len <= BM(64) and q_len > 1.
 # Small head groups (num_heads in {8, 16}) at seq_len in {2, 4, 8} exercise the
 # M-dimension fold: BM=64 packs q_len_fold * num_q_heads rows of the same
-# batch element, collapsing grid.y to 1.
+# batch element, collapsing grid_y to 1.
 def test_decoding_fold[
     batch_size: Int,
     num_heads: Int,
     mla_mask_type: MLAMaskType,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test[
         mla_mask_type,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -666,7 +592,7 @@ def test_decoding_fold[
 def run_fold_both_masks[
     batch_size: Int,
     num_heads: Int,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test_decoding_fold[batch_size, num_heads, MLAMaskType.NO_MASK](
         ctx, seq_len, num_keys
     )
@@ -681,7 +607,7 @@ def run_fold_both_masks[
 def run_fold_warp_local[
     batch_size: Int,
     num_heads: Int,
-](ctx: DeviceContext, seq_len: Int) raises:
+](ctx: DeviceContext[], seq_len: Int) raises:
     run_fold_both_masks[batch_size, num_heads](ctx, seq_len, 256)
     test_decoding_fold[batch_size, num_heads, MLAMaskType.CAUSAL](
         ctx, seq_len, 2048
@@ -701,19 +627,11 @@ def test_sw[
     num_heads: Int,
     group: Int = 1,
     batch_size: Int = 1,
-](seq_len: Int, num_keys: Int, ctx: DeviceContext,) raises:
+](seq_len: Int, num_keys: Int, ctx: DeviceContext[],) raises:
     print(
-        "test_mla_decode_qkv_fp8 [SlidingWindow]",
-        "W:",
-        window_size,
-        "batch_size:",
-        batch_size,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "num_heads:",
-        num_heads,
+        t"test_mla_decode_qkv_fp8 [SlidingWindow] W: {window_size} batch_size:"
+        t" {batch_size} seq_len: {seq_len} num_keys: {num_keys} num_heads:"
+        t" {num_heads}"
     )
 
     comptime scale = Float32(0.125)
@@ -724,13 +642,13 @@ def test_sw[
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var o_size = batch_size * num_heads * seq_len * v_depth
 
-    var q_bf16_ptr = alloc[Scalar[output_type]](q_size)
-    var q_fp8_ptr = alloc[Scalar[q_type]](q_size)
-    var q_bf16_dequant_ptr = alloc[Scalar[output_type]](q_size)
-    var k_fp8_ptr = alloc[Scalar[kv_type]](k_size)
-    var k_bf16_ptr = alloc[Scalar[output_type]](k_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_bf16_ptr = unsafe_alloc[Scalar[output_type]](q_size)
+    var q_fp8_ptr = unsafe_alloc[Scalar[q_type]](q_size)
+    var q_bf16_dequant_ptr = unsafe_alloc[Scalar[output_type]](q_size)
+    var k_fp8_ptr = unsafe_alloc[Scalar[kv_type]](k_size)
+    var k_bf16_ptr = unsafe_alloc[Scalar[output_type]](k_size)
+    var output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
+    var flash_output_ptr = unsafe_alloc[Scalar[output_type]](o_size)
 
     randn[output_type](q_bf16_ptr, q_size)
     host_quantize_bf16_to_fp8[bf16_t=output_type, fp8_t=q_type](
@@ -782,43 +700,19 @@ def test_sw[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-    var k_bf16_device = LayoutTensor[output_type, k_layout](
-        k_bf16_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
+    var k_bf16_device = TileTensor(
+        k_bf16_device_ptr,
+        row_major((batch_size, num_keys, Idx[kv_num_heads], Idx[depth])),
     )
 
-    comptime q_fp8_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
-    var q_bf16_dequant_device = LayoutTensor[output_type, q_fp8_layout](
-        q_bf16_dequant_device_ptr.unsafe_ptr(),
-        RuntimeLayout[q_fp8_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var q_bf16_dequant_device = TileTensor(
+        q_bf16_dequant_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    comptime output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, v_depth)
-    )
-    var output_ref_device = LayoutTensor[output_type, output_layout](
-        output_ref_device_ptr.unsafe_ptr(),
-        RuntimeLayout[output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, v_depth)
-        ),
-    )
-
-    var null_valid_length = LayoutTensor[
-        .uint32,
-        Layout.row_major(UNKNOWN_VALUE),
-        MutAnyOrigin,
-    ](
-        None,
-        RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
+    var output_ref_device = TileTensor(
+        output_ref_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[v_depth])),
     )
 
     print("  Launching native FP8 kernel (SlidingWindow)...")
@@ -835,17 +729,13 @@ def test_sw[
     )
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(
-        q_fp8_tt,
-        k_fp8_tt,
-        out_tt,
-        scalar_args_buf_tt,
-    )
-    def kernel_launch(ctx: DeviceContext) raises:
+    @inline(.always)
+    @__allow_legacy_any_origin_fields
+    def kernel_launch(
+        ctx: DeviceContext[],
+    ) raises {var q_fp8_tt, var k_fp8_tt, var out_tt, var scalar_args_buf_tt}:
         comptime config = MHAConfig[q_type](num_heads, depth)
-        flare_mla_decoding[config=config](
+        flare_mla_decoding[config=config, kernels=SM100MLA](
             out_tt.as_unsafe_any_origin(),
             q_fp8_tt,
             k_fp8_tt,
@@ -863,31 +753,16 @@ def test_sw[
 
     print("  Computing GPU naive reference (SlidingWindow)...")
 
-    comptime ref_output_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, num_heads, depth)
-    )
     var ref_full_o_size = batch_size * num_heads * seq_len * depth
     var output_ref_full_device_ptr = ctx.enqueue_create_buffer[output_type](
         ref_full_o_size
     )
-    var output_ref_full_device = LayoutTensor[output_type, ref_output_layout](
-        output_ref_full_device_ptr.unsafe_ptr(),
-        RuntimeLayout[ref_output_layout].row_major(
-            Index(batch_size, seq_len, num_heads, depth)
-        ),
+    var output_ref_full_device = TileTensor(
+        output_ref_full_device_ptr,
+        row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    var k_bf16_operand = LayoutTensorMHAOperand(
-        TileTensor(
-            k_bf16_device.ptr.as_unsafe_any_origin(),
-            row_major(
-                Int(batch_size),
-                Int(num_keys),
-                Idx[kv_num_heads],
-                Idx[depth],
-            ),
-        )
-    )
+    var k_bf16_operand = TileTensorMHAOperand(k_bf16_device)
 
     mha_gpu_naive[_is_cache_length_accurate=True](
         q_bf16_dequant_device,
@@ -895,7 +770,7 @@ def test_sw[
         k_bf16_operand,
         SlidingWindowCausalMask[window_size](),
         output_ref_full_device,
-        null_valid_length,
+        None,
         scale,
         batch_size,
         seq_len,
@@ -909,7 +784,7 @@ def test_sw[
     ctx.synchronize()
     print("  Reference completed.")
 
-    var ref_full_output_ptr = alloc[Scalar[output_type]](ref_full_o_size)
+    var ref_full_output_ptr = unsafe_alloc[Scalar[output_type]](ref_full_o_size)
     ctx.enqueue_copy(ref_full_output_ptr, output_ref_full_device_ptr)
     ctx.synchronize()
 
@@ -923,12 +798,12 @@ def test_sw[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(v_depth):
-                    var expect = ref_full_output_ptr.load(
+                    var expect = ref_full_output_ptr.unsafe_load(
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
                     ).cast[.float64]()
-                    var actual = flash_output_ptr.load(
+                    var actual = flash_output_ptr.unsafe_load(
                         d
                         + v_depth * (h + s * num_heads)
                         + b * v_depth * num_heads * seq_len
@@ -956,14 +831,14 @@ def test_sw[
     _ = output_ref_device_ptr
     _ = output_ref_full_device_ptr
 
-    q_bf16_ptr.free()
-    q_fp8_ptr.free()
-    q_bf16_dequant_ptr.free()
-    k_fp8_ptr.free()
-    k_bf16_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
-    ref_full_output_ptr.free()
+    q_bf16_ptr.unsafe_free()
+    q_fp8_ptr.unsafe_free()
+    q_bf16_dequant_ptr.unsafe_free()
+    k_fp8_ptr.unsafe_free()
+    k_bf16_ptr.unsafe_free()
+    output_ptr.unsafe_free()
+    flash_output_ptr.unsafe_free()
+    ref_full_output_ptr.unsafe_free()
 
 
 # SlidingWindowCausalMask helper that wraps `test_sw` with the standard
@@ -972,7 +847,7 @@ def test_decoding_sw[
     batch_size: Int,
     num_heads: Int,
     window_size: Int,
-](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+](ctx: DeviceContext[], seq_len: Int, num_keys: Int) raises:
     test_sw[
         window_size,
         DType.float8_e4m3fn,  # q_type (FP8)
@@ -985,11 +860,67 @@ def test_decoding_sw[
     ](seq_len, num_keys, ctx)
 
 
+# Ragged-Q probe for an out-of-envelope AMD decode fold. Dense Q never reaches
+# the padded short-chunk buckets, so the gates that reject a fold there (the
+# head-aligned M-tile, the mask, the bucket ceiling) are only reachable with
+# ragged Q. The launch raises inside `AMDMLA.decode_dispatch` before it reads
+# the KV operand, so these tensors only have to satisfy its shape checks.
+def expect_amd_ragged_fold_raise[
+    num_heads: Int,
+    seq_len: Int,
+    mask_t: MHAMask,
+](ctx: DeviceContext[], mask: mask_t, num_keys: Int) raises:
+    """Asserts a ragged-Q AMD decode fold outside the envelope raises."""
+    comptime depth = 576
+    comptime v_depth = 512
+    comptime dtype = DType.float8_e4m3fn
+    comptime config = MHAConfig[dtype](num_heads, depth)
+    var q_device = ctx.enqueue_create_buffer[dtype](seq_len * num_heads * depth)
+    var out_device = ctx.enqueue_create_buffer[.bfloat16](
+        seq_len * num_heads * v_depth
+    )
+    var k_device = ctx.enqueue_create_buffer[dtype](num_keys * depth)
+    var offsets_device = ctx.enqueue_create_buffer[.uint32](2)
+    var scalars_device = ctx.enqueue_create_buffer[DType.int64](3)
+
+    var q_tt = TileTensor(
+        q_device, row_major((seq_len, Idx[num_heads], Idx[depth]))
+    )
+    var out_tt = TileTensor(
+        out_device,
+        row_major((seq_len, Idx[num_heads], Idx[v_depth])),
+    )
+    var offsets_tt = TileTensor(offsets_device, row_major(2))
+    var k_tt = TileTensor(
+        k_device, row_major((1, num_keys, Idx[1], Idx[depth]))
+    )
+    var scalars_tt = TileTensor(scalars_device, row_major((Idx[3],)))
+
+    AMDMLA.decode_dispatch[
+        mask_t=mask_t,
+        dtype=dtype,
+        kv_num_heads=1,
+        config=config,
+        ragged=True,
+    ](
+        out_tt,
+        q_tt,
+        TileTensorMHAOperand(k_tt),
+        mask,
+        offsets_tt,
+        seq_len,
+        num_keys,
+        Float32(0.125),
+        ctx,
+        scalars_tt,
+    )
+
+
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
-        comptime if has_amd_gpu_accelerator() or (
-            has_nvidia_gpu_accelerator()
+        comptime if ctx.target.is_amd_gpu() or (
+            ctx.target.is_nvidia_gpu()
             and _is_sm10x_gpu(ctx.default_device_info)
         ):
             # Basic functionality tests
@@ -1054,13 +985,13 @@ def main() raises:
 
             # fold-path configs.  num_q_heads * q_len <= BM(64) and
             # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs
-            # q_len_fold * num_q_heads M-rows into a single tile, so grid.y=1.
+            # q_len_fold * num_q_heads M-rows into a single tile, so grid_y=1.
             #
             # Fold path is implemented for NVIDIA SM10x only (mla_decode_qkv_fp8
             # struct fold_q comptime branch).  AMD backend does not yet support
             # the fold path — gate this block to NVIDIA SM10x at comptime so AMD
             # skips it cleanly.
-            comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+            comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
                 ctx.default_device_info
             ):
                 print(
@@ -1296,7 +1227,7 @@ def main() raises:
             # row-keyed split-K) is unreachable from the NVIDIA configs. Hence the
             # shared helpers, arch-specific config lists.
             # ===-------------------------------------------------=== #
-            comptime if has_amd_gpu_accelerator():
+            comptime if ctx.target.is_amd_gpu():
                 print("=== AMD MTP token-fold (M = H*S <= 128) ===")
 
                 # --- H=8/S=2 → M=16 (legacy (1,4)) ---
@@ -1443,32 +1374,58 @@ def main() raises:
                 test_decoding_fold[2, 8, MLAMaskType.NO_MASK](ctx, 2, 65536)
 
                 # --- Negative tests: unsupported folds MUST raise ---
-                # Supported: S=1 (any H), or S>1 with num_heads <= 16 AND
-                # S <= MLA_DECODE_MAX_SEQ_LEN AND num_heads*S <= 128. Anything
-                # outside must fail loudly at launch (never silently downgrade to
-                # a smaller-S kernel and drop tokens). Three ways out of the
-                # envelope: (a) M > 128, (b) num_heads > 16 (only the
-                # num_heads<=16 arm threads q_seq_len), and (c) S > 8 even when
-                # M <= 128 (the independent S cap, which binds for num_heads<16).
-                # The host-side `raise` fires in default builds (unlike the
-                # compiled-out `debug_assert`).
+                # Supported: S=1 (any H), or S>1 with num_heads <= 16 and
+                # num_heads*S <= AMD_MLA_DECODE_FOLD_M_MAX (= 16 * 128 = 2048).
+                # A padded short-chunk width (8 < S <= 128) additionally needs
+                # ragged Q, a head-aligned M-tile under the 64-row cliff and a
+                # mask that does not place the query span. Anything outside must
+                # fail loudly at launch (never silently downgrade to a smaller-S
+                # kernel and drop tokens). The host-side `raise` fires in default
+                # builds (unlike the compiled-out `debug_assert`).
+                #
+                # `test_decoding_fold` sends dense Q (`ragged=False`), whose
+                # launch takes its sequence length from the compiled width, so
+                # every one of these raises only through the `not ragged` term of
+                # the padded-chunk gate. Ragged-Q probes for the other gates
+                # follow them.
                 print("=== AMD MTP unsupported-fold rejection (must raise) ===")
 
-                # H=16/S=9 → M=144 (> 128: the fold cap; smallest over).
+                # H=16/S=9 → M=144, inside the fold cap but past the S=8 cap
+                # that binds dense Q (`not ragged`).
                 with assert_raises():
                     test_decoding_fold[1, 16, MLAMaskType.CAUSAL](ctx, 9, 256)
-                # H=16/S=12 → M=192 (well over the cap).
+                # H=16/S=12 → M=192: the same dense-Q S cap.
                 with assert_raises():
                     test_decoding_fold[1, 16, MLAMaskType.NO_MASK](ctx, 12, 256)
                 # H=32/S=2 → M=64 (<= 128): isolates the num_heads > 16 term (the
                 # 32x32x64 fold isn't implemented).
                 with assert_raises():
                     test_decoding_fold[1, 32, MLAMaskType.CAUSAL](ctx, 2, 256)
-                # H=8/S=10 → M=80 (<= 128) but S > MLA_DECODE_MAX_SEQ_LEN=8:
-                # isolates the S-cap term. Caught at the chokepoint, not the
-                # dispatch ladder's backstop (the ladder builds only S=1..8).
+                # H=8/S=10 → M=80, a legal ragged chunk (8 < S <= 128) that
+                # raises only because the Q is dense (`not ragged`).
                 with assert_raises():
                     test_decoding_fold[1, 8, MLAMaskType.CAUSAL](ctx, 10, 256)
+
+                # Ragged Q is the only form that reaches the padded short-chunk
+                # buckets, so the remaining gates need ragged probes.
+                # H=10/S=16 → M=160 is inside the fold cap, but 10 heads has no
+                # head-aligned M-tile under the 64-row cliff (16/32/48/64 are
+                # not multiples of 10), which the tile-offset row math requires.
+                with assert_raises():
+                    expect_amd_ragged_fold_raise[10, 16, CausalMask](
+                        ctx, CausalMask(), 256
+                    )
+                # A sliding-window causal mask places its key span from the
+                # query width, so it cannot take a padded bucket at S=16.
+                with assert_raises():
+                    expect_amd_ragged_fold_raise[
+                        12, 16, SlidingWindowCausalMask[256]
+                    ](ctx, SlidingWindowCausalMask[256](), 256)
+                # S=129 is past the bucket ladder's 128-token ceiling.
+                with assert_raises():
+                    expect_amd_ragged_fold_raise[12, 129, CausalMask](
+                        ctx, CausalMask(), 256
+                    )
                 print("unsupported folds correctly rejected.")
 
             print("All tests passed!")

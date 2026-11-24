@@ -55,13 +55,16 @@ static bool isEmpty(Region &region) {
 
 namespace {
 
-/// Canonicalize ifs with no bodies an N results to N selects. This also removes
-/// trivially dead ifs.
+/// Canonicalize elifs with no bodies an N results to N selects. This also
+/// removes trivially dead elifs.
 struct EmptyIfToSelect : public OpRewritePattern<HLCF::IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &b) const override {
+    // TODO: Generalize to multi-arm elif (empty arms yielding values).
+    if (!op.getElifRegions().empty())
+      return failure();
     auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
     auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
     if (!isEmpty(op.getThenRegion()) || !isEmpty(op.getElseRegion()) ||
@@ -82,14 +85,17 @@ struct EmptyIfToSelect : public OpRewritePattern<HLCF::IfOp> {
   }
 };
 
-/// Canonicalize ifs with a single operation in either then or else blocks into
-/// a select of the yields. The canonicalization hoists out the operation(s)
-/// therefore they're performed unconditionally.
+/// Canonicalize elifs with a single operation in either then or else blocks
+/// into a select of the yields. The canonicalization hoists out the
+/// operation(s) therefore they're performed unconditionally.
 struct IfToSelect : public OpRewritePattern<HLCF::IfOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &rewriter) const override {
+    // TODO: Generalize to multi-arm elif (nested selects of single-op arms).
+    if (!op.getElifRegions().empty())
+      return failure();
     if (op.getNumResults() != 1)
       return failure();
 
@@ -154,13 +160,16 @@ struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
 
   LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &b) const override {
+    // TODO: Generalize to multi-arm elif (nested selects of dominating yields).
+    if (!op.getElifRegions().empty())
+      return failure();
     auto thenYield = dyn_cast<HLCF::YieldOp>(op.getThenTerminator());
     auto elseYield = dyn_cast<HLCF::YieldOp>(op.getElseTerminator());
     // Constructing dominance info is cheap because we have single-block
     // regions.
     mlir::DominanceInfo domInfo;
     auto dominatesIf = [&](Value value) {
-      // Block arguments always dominate the IfOp, because it itself can never
+      // Block arguments always dominate the elif, because it itself can never
       // have block arguments. Otherwise, check dominance of the defining
       // operation.
       return isa<BlockArgument>(value) ||
@@ -183,7 +192,7 @@ struct IfYieldSelect : public OpRewritePattern<HLCF::IfOp> {
       return success(anyChanged);
     }
 
-    // The end of the IfOp is unreachable.
+    // The end of the elif is unreachable.
     if (!thenYield)
       return failure();
 
@@ -418,7 +427,7 @@ struct SimplifyCompareSelect : OpRewritePattern<mlir::index::CmpOp> {
   }
 };
 
-/// Given an if, the condition argument is known to be true within the 'then'
+/// Given an elif, the condition argument is known to be true within the 'then'
 /// region and false in the 'else' region. Propagate this by replacing the
 /// condition with a constant in both regions.
 struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
@@ -427,6 +436,9 @@ struct ConditionPropagation : OpRewritePattern<HLCF::IfOp> {
 
   LogicalResult matchAndRewrite(HLCF::IfOp op,
                                 PatternRewriter &b) const override {
+    // TODO: Generalize to multi-arm elif (propagate true/false into each arm).
+    if (!op.getElifRegions().empty())
+      return failure();
     // The pattern matches if the condition has uses in either region. Lazily
     // create the true and false constants.
     Value trueCst, falseCst;

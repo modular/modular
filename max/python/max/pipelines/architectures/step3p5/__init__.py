@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Step-3.5-Flash architecture, built on the Llama 3 model base."""
+
 from .arch import step3p5_arch
 from .model import Step3p5Inputs, Step3p5Model
 from .model_config import Step3p5Config

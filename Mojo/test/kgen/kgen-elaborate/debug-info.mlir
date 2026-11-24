@@ -38,19 +38,19 @@ kgen.generator @takeFnContextualType<ty: type, fn: () -> !kgen.param<ty>>() -> !
     lit.try.yield loc(#loc11)
   } loc(#loc11)
 
-  // CHECK: kgen.return %[[RES]] : index loc(#[[SP_LOC:.*]])
-  kgen.return %0 : !kgen.param<ty> loc(#loc10)
+  // CHECK: hlcf.return %[[RES]] : index loc(#[[SP_LOC:.*]])
+  hlcf.return %0 : !kgen.param<ty> loc(#loc10)
 // CHECK: } loc(#[[SP_LOC:.*]])
 } loc(#loc10)
 
 kgen.generator @sillyFn() -> index {
   %0 = kgen.param.constant = <42>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 kgen.generator @elaborateFnWithContextualType() -> index {
   %0 = kgen.call @takeFnContextualType<:type index, :() -> index @sillyFn>() : () -> index
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // CHECK-DAG: #[[FILE_LOC1:.*]] = loc("test.mlir":2:3)
@@ -74,7 +74,7 @@ kgen.generator @elaborateFnWithContextualType() -> index {
 #loc = loc(fused<#sp>["a.mlir":0:0])
 
 kgen.generator @entry() {
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // -----
@@ -97,14 +97,14 @@ kgen.generator @entry() {
 #locKernel = loc(fused<#kernelSP>["test.mlir":0:0])
 
 kgen.generator @kernel<dtype: dtype>(%arg0: !kgen.simd<4, dtype>) -> !kgen.simd<4, dtype> {
-  kgen.return %arg0 : !kgen.simd<4, dtype> loc(#locKernel)
+  hlcf.return %arg0 : !kgen.simd<4, dtype> loc(#locKernel)
 } loc(#locKernel)
 
 // CHECK-LABEL: kgen.func export @top
 kgen.generator export @top() {
   // CHECK-NEXT: kgen.param.constant{{.*}}!DICompositeType(tag: DW_TAG_array_type, name: \22!kgen.simd<4, ui32>\22
-  kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) capturing -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!kgen.simd<4, ui32>) -> (!kgen.simd<4, ui32>) @kernel<:dtype ui32>>>
-  kgen.return
+  kgen.param.constant: !kgen.struct<(string, index, (!kgen.pointer<none>) -> !kgen.none)> = <#kgen.compile_assembly<current_target(), =llvm, "", false, :(!kgen.simd<4, ui32>) -> (!kgen.simd<4, ui32>) @kernel<:dtype ui32>>>
+  hlcf.return
 }
 
 // -----
@@ -118,9 +118,9 @@ kgen.generator export @top() {
 // CHECK: } loc([[LOC:#.*]])
 // CHECK-NEXT: } loc([[MODULE_LOC:#.*]])
 
-kgen.generator @"mangled::original_name"() attributes {linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>} {
-  kgen.return loc(#export_loc)
-} loc(#export_loc)
+kgen.generator @"mangled::original_name"() {
+  hlcf.return loc(#export_loc)
+} <linkageName = #kgen.linkage_name<"my_export" : !kgen.string, false>> loc(#export_loc)
 
 // CHECK-DAG: [[EXPORT_SP:#.*]] = #debuginfo.subprogram
 // CHECK-SAME:  sourceName = <"original_name">
@@ -132,3 +132,37 @@ kgen.generator @"mangled::original_name"() attributes {linkageName = #kgen.linka
 > : !debuginfo.subroutine<() -> (): DW_CC_normal>
 
 #export_loc = loc(fused<#original_sp>["export.mlir":1:1])
+
+// -----
+
+// A generator named only by a debug attribute is not an operation dependency,
+// so the node completes before the value exists. Concretizing the location
+// then elaborates it on demand. Only the non-parametric elaborator emits the
+// callee.
+
+#file = #debuginfo.file<"pending.mlir" in "">
+
+kgen.generator @computeWidth() -> index {
+  %0 = kgen.param.constant = <7>
+  hlcf.return %0 : index
+}
+
+#applied = #kgen.param.expr<apply,
+    #kgen.gen<#kgen.func.symbol<@computeWidth>> : !lit.generator<() -> index>> : index
+
+#pendingSp = #debuginfo.subprogram<file = #file, sourceName = <"usesPendingParam">>
+    : !debuginfo.subroutine<() -> (!debuginfo.unresolved<!kgen.simd<#applied, index>>): DW_CC_normal>
+
+// CHECK-LABEL: kgen.func @usesPendingParam() -> index
+kgen.generator @usesPendingParam() -> index {
+  // CHECK: kgen.param.constant = <1>
+  %0 = kgen.param.constant = <1> loc(fused<#pendingSp>["pending.mlir":3:3])
+  hlcf.return %0 : index loc(fused<#pendingSp>["pending.mlir":3:3])
+} loc(fused<#pendingSp>["pending.mlir":2:3])
+
+kgen.generator export @pendingTop() {
+  %0 = kgen.call @usesPendingParam() : () -> index
+  hlcf.return
+}
+
+// CHECK: subroutine<() -> (!kgen.simd<7, index>)

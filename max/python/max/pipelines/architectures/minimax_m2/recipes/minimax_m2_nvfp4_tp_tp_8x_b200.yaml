@@ -22,4 +22,5 @@ model:
     device_memory_utilization: 0.8
 
 runtime:
+  prefer_module_v3: false
   max_batch_input_tokens: 1024

@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.random import randn_float64
-from std.sys import CompilationTarget
 
 from std.testing import assert_almost_equal, assert_equal, TestSuite
 

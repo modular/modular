@@ -10,16 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """User-facing input arguments for a MAX pipeline."""
 
 from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from max.config import ConfigFileModel, deep_merge_max_configs
+from cyclopts import Parameter
+from max.config import ConfigFileModel, ConfigModel, deep_merge_max_configs
 from max.driver import DeviceSpec
 from max.pipelines.diffusion.config import DenoisingCacheSettings
 from max.pipelines.kv_cache.config import KVCacheConfig
@@ -44,6 +44,7 @@ from max.pipelines.modeling.types.task import PipelineTask
 from max.pipelines.sampling import SamplingConfig
 from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import (
+    BaseModel,
     ConfigDict,
     Field,
     PrivateAttr,
@@ -56,7 +57,7 @@ _logger = logging.getLogger("max.pipelines")
 
 # Sub-configs whose CLI flags are flat but whose config-file form is nested,
 # mapped to their dotted path in the PipelineArgs schema.
-_FLAT_KWARG_SUBTREES: tuple[tuple[str, type[ConfigFileModel]], ...] = (
+_FLAT_KWARG_SUBTREES: tuple[tuple[str, type[ConfigModel]], ...] = (
     ("speculative", SpeculativeConfig),
     ("lora", LoRAConfig),
     ("profiling", ProfilingConfig),
@@ -66,8 +67,8 @@ _FLAT_KWARG_SUBTREES: tuple[tuple[str, type[ConfigFileModel]], ...] = (
     ("kv_cache", KVCacheConfig),
 )
 
-# Inherited from ConfigFileModel by every sub-config, so they identify no
-# subtree; both are consumed at the top level.
+# PipelineArgs' own config-file fields: consumed at the top level by
+# from_flat_kwargs, never part of a subtree.
 _SHARED_CONFIG_FIELDS = frozenset({"config_file", "section_name"})
 
 # ``denoising_cache`` is a PipelineArgs section and a runtime field name.
@@ -114,6 +115,76 @@ def _nest_flat_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
     return nested
 
 
+# Draft-model fields whose max serve flag is spelled differently from the
+# field name, mirroring click's _RENAMED_FLAGS and the --draft-devices alias.
+_DRAFT_FLAG_RENAMES = {
+    "device_specs": "devices",
+    "header_only_weights": "use-dummy-weights",
+}
+
+
+def _draft_flag_name(field_name: str) -> str:
+    """Spells a draft-model field's flat flag as ``max serve`` does."""
+    return "draft-" + _DRAFT_FLAG_RENAMES.get(field_name, field_name).replace(
+        "_", "-"
+    )
+
+
+def _flatten_set_fields(args: PipelineArgs) -> dict[str, Any]:
+    """Inverse of :func:`_nest_flat_kwargs` over a cyclopts-built instance.
+
+    The cascade CLI binds :class:`PipelineArgs` with cyclopts, which
+    constructs the instance directly from the parsed flat flags. That path
+    skips :meth:`PipelineArgs.from_flat_kwargs`, whose merge logic (draft
+    inheritance, config-file merge, manifest probing) every ``max serve``
+    flag relies on. This helper flattens the instance back into the flat
+    kwargs namespace so the serve entrypoint can rebuild it through
+    ``from_flat_kwargs`` and get ``max serve`` semantics.
+
+    Only fields the user actually supplied appear: cyclopts sets exactly
+    the parsed flags, so ``model_fields_set`` (recursively, per subtree)
+    marks them. Unset flags fall through to defaults and config files,
+    matching the click path where an absent flag never sends a value.
+    """
+    flat: dict[str, Any] = {}
+    for name, value in args:
+        if name not in args.model_fields_set:
+            continue
+        if name == "draft_model" and isinstance(value, MAXModelConfig):
+            # Emit draft_-prefixed flat kwargs so from_flat_kwargs runs
+            # _apply_draft_model_defaults (device/trust/parallelism
+            # inheritance), exactly like the click path's --draft-* flags.
+            for field in value.model_fields_set:
+                if field in MAXModelConfig.model_fields:
+                    flat[f"draft_{field}"] = getattr(value, field)
+        elif name in _SECTION_NAMES and isinstance(value, ConfigModel):
+            subtree_set = value.model_fields_set - _SHARED_CONFIG_FIELDS
+            for field in subtree_set:
+                flat[field] = _leaf_value(getattr(value, field))
+        else:
+            flat[name] = _leaf_value(value)
+    return flat
+
+
+def _leaf_value(value: Any) -> Any:
+    """Converts a nested pydantic sub-model into a dict of its set fields.
+
+    The config-file merges (``_deep_merge`` and
+    ``deep_merge_max_configs``) reconcile per field only when both
+    sides are dicts. A pydantic instance is a leaf to them. Emitting
+    the instance verbatim would replace the recipe's whole subtree.
+    For ``kv_connector_config``, that resets a recipe's connector
+    ``type`` to the default ``null``. KV offloading then switches off
+    silently.
+    """
+    if isinstance(value, BaseModel):
+        return {
+            field: _leaf_value(getattr(value, field))
+            for field in value.model_fields_set
+        }
+    return value
+
+
 class PipelineArgs(ConfigFileModel):
     """User-settable input arguments for a pipeline.
 
@@ -123,7 +194,7 @@ class PipelineArgs(ConfigFileModel):
     ``profiling``) and a small number of cohesive sub-config objects
     (``kv_cache``, ``lora``, ``speculative``, ``draft_model``).
 
-    Multi-component pipelines (e.g. diffusion) that require a pre-built
+    Multi-component pipelines (such as diffusion) that require a pre-built
     :class:`~max.pipelines.lib.model_manifest.ModelManifest` may pass
     ``models=<manifest>`` to the constructor. That manifest is stored as a
     private override and used verbatim by :meth:`PipelineConfig.from_args`
@@ -135,6 +206,18 @@ class PipelineArgs(ConfigFileModel):
     Instances are immutable: assigning to a field after construction raises
     a pydantic ``ValidationError``.
     """
+
+    # config_file/section_name are re-declared from ConfigFileModel only to
+    # add the cyclopts annotation: the cascade CLI must not route
+    # --config-file into this model's constructor, because the
+    # ConfigFileModel validator would load the YAML there and a
+    # PipelineConfig-shaped recipe (a ``model:`` section) fails pydantic as
+    # an extra field. The serve entrypoint takes the flag itself and passes
+    # it to from_flat_kwargs, which owns the merge. parse=False also stops
+    # every flattened sub-config from registering a duplicate --config-file.
+    config_file: Annotated[str | None, Parameter(parse=False)] = None
+
+    section_name: Annotated[str | None, Parameter(parse=False)] = None
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
@@ -170,10 +253,28 @@ class PipelineArgs(ConfigFileModel):
     tokenizer_impl: str | None = Field(
         default=None,
         description=(
-            "Cascade only: import path of the TokenizerWorker subclass to "
-            "construct for text-generation pipelines, as "
+            "Import path of an alternative tokenizer implementation, as "
             "``'module.path:ClassName'``. Left unset, uses the HuggingFace "
             "tokenizer."
+        ),
+    )
+
+    model_worker_impl: str | None = Field(
+        default=None,
+        description=(
+            "[--cascade] Import path of an alternative model worker "
+            "implementation, as ``'module.path:ClassName'``. Left unset, uses "
+            "the MAX Serve model worker."
+        ),
+    )
+
+    cascade: bool = Field(
+        default=False,
+        description=(
+            "Route ``max serve`` to the experimental Cascade server "
+            "(:func:`max.experimental.cascade.serve.main.serve`) "
+            "instead of the standard API server + model worker path. The "
+            "constructed ``PipelineArgs`` is forwarded verbatim."
         ),
     )
 
@@ -181,7 +282,7 @@ class PipelineArgs(ConfigFileModel):
     # Fields from MAXModelConfig
     # ------------------------------------------------------------------ #
 
-    model_path: str = Field(
+    model_path: Annotated[str, Parameter(alias="--model")] = Field(
         default="",
         description=(
             "Accepts either a Hugging Face repository ID "
@@ -242,9 +343,11 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
-    device_specs: list[DeviceSpec] = Field(
-        default_factory=_default_device_specs,
-        description=("Devices to run inference upon."),
+    device_specs: Annotated[list[DeviceSpec], Parameter(alias="--devices")] = (
+        Field(
+            default_factory=_default_device_specs,
+            description=("Devices to run inference upon."),
+        )
     )
 
     @field_validator("device_specs", mode="before")
@@ -257,6 +360,20 @@ class PipelineArgs(ConfigFileModel):
         description=(
             "Whether to force download a given file if it's already present in "
             "the local cache."
+        ),
+    )
+
+    header_only_weights: Annotated[
+        bool, Parameter(name="--use-dummy-weights")
+    ] = Field(
+        default=False,
+        description=(
+            "Stand in header-only, zero-filled sparse copies of the safetensors "
+            "checkpoint, built from the remote files' headers, instead of "
+            "downloading the weights. Compilation only needs tensor names, "
+            "shapes and dtypes, so this makes ``warm-cache --target`` "
+            "independent of checkpoint size. Only valid with ``--target`` "
+            "(compile-only mode); safetensors repos only."
         ),
     )
 
@@ -280,6 +397,24 @@ class PipelineArgs(ConfigFileModel):
         ),
     )
 
+    max_image_dimension: int = Field(
+        default=8192,
+        gt=0,
+        description=(
+            "Largest width or height, in pixels, accepted for a generated "
+            "image or video request. Larger requests are rejected as invalid."
+        ),
+    )
+
+    max_diffusion_steps: int = Field(
+        default=100,
+        gt=0,
+        description=(
+            "Largest denoising step count accepted for a generated image or "
+            "video request. Larger requests are rejected as invalid."
+        ),
+    )
+
     enable_echo: bool = Field(
         default=False,
         description="Whether the model should be built with echo capabilities.",
@@ -288,8 +423,8 @@ class PipelineArgs(ConfigFileModel):
     chat_template: Path | None = Field(
         default=None,
         description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config."
+            "Path to an optional custom chat template that overrides the one "
+            "from the Hugging Face model config."
         ),
     )
 
@@ -303,6 +438,28 @@ class PipelineArgs(ConfigFileModel):
         description=("Data-parallelism parameter."),
     )
 
+    decode_context_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Decode context parallel degree; only `max export` offers it."
+        ),
+    )
+
+    decode_context_parallel_interleave: int = Field(
+        default=1,
+        description=(
+            "Decode context parallel interleave; only `max export` offers it."
+        ),
+    )
+
+    prefill_context_parallel: bool | None = Field(
+        default=None,
+        description=(
+            "Whether prefill steps run prefill context parallelism; only "
+            "`max export` offers it."
+        ),
+    )
+
     pool_embeddings: bool = Field(
         default=True,
         description="Whether to pool embedding outputs.",
@@ -313,7 +470,7 @@ class PipelineArgs(ConfigFileModel):
         description=("Maximum sequence length the model can process."),
     )
 
-    kv_cache: KVCacheConfig = Field(
+    kv_cache: Annotated[KVCacheConfig, Parameter(name="*")] = Field(
         default_factory=KVCacheConfig,
         description="The ``KVCacheConfig`` instance.",
     )
@@ -322,27 +479,29 @@ class PipelineArgs(ConfigFileModel):
     # Sub-configs mirroring the PipelineConfig schema
     # ------------------------------------------------------------------ #
 
-    runtime: PipelineRuntimeConfig = Field(
+    runtime: Annotated[PipelineRuntimeConfig, Parameter(name="*")] = Field(
         default_factory=PipelineRuntimeConfig,
         description="Runtime and scheduling configuration.",
     )
 
-    denoising_cache: DenoisingCacheSettings = Field(
-        default_factory=DenoisingCacheSettings,
-        description=(
-            "Denoising-cache settings (TaylorSeer / FBCache) for diffusion "
-            "pipelines. Unset fields resolve against the architecture's "
-            "declared defaults when the PipelineConfig is constructed."
-        ),
+    denoising_cache: Annotated[DenoisingCacheSettings, Parameter(name="*")] = (
+        Field(
+            default_factory=DenoisingCacheSettings,
+            description=(
+                "Denoising-cache settings (TaylorSeer / FBCache) for diffusion "
+                "pipelines. Unset fields resolve against the architecture's "
+                "declared defaults when the PipelineConfig is constructed."
+            ),
+        )
     )
     """User denoising-cache settings. Construction fills unset fields."""
 
-    sampling: SamplingConfig = Field(
+    sampling: Annotated[SamplingConfig, Parameter(name="*")] = Field(
         default_factory=SamplingConfig,
         description="Token sampling configuration.",
     )
 
-    profiling: ProfilingConfig = Field(
+    profiling: Annotated[ProfilingConfig, Parameter(name="*")] = Field(
         default_factory=ProfilingConfig,
         description="Profiling configuration.",
     )
@@ -351,17 +510,80 @@ class PipelineArgs(ConfigFileModel):
     # Sub-config objects (kept cohesive)
     # ------------------------------------------------------------------ #
 
-    lora: LoRAConfig | None = Field(
+    lora: Annotated[LoRAConfig | None, Parameter(name="*")] = Field(
         default=None,
         description="The LoRA config.",
     )
 
-    speculative: SpeculativeConfig | None = Field(
+    # ------------------------------------------------------------------ #
+    # On-the-fly quantization (assembled into QuantConfig in from_args)
+    # ------------------------------------------------------------------ #
+
+    quantization_format: str | None = Field(
         default=None,
-        description="The SpeculativeConfig.",
+        description=(
+            "On-the-fly quantizer format, such as ``nvfp4``. When set with "
+            "``targets``, :class:`~max.pipelines.lib.PipelineConfig` carries "
+            "a :class:`~max.nn.quant_config.QuantConfig` with "
+            "``source=QUANTIZE``."
+        ),
     )
 
-    draft_model: MAXModelConfig | None = Field(
+    targets: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Tensor-name regexes of the linears to quantize (repeatable). "
+            "Required when ``quantization_format`` is set."
+        ),
+    )
+
+    error_report_dir: Path | None = Field(
+        default=None,
+        description=(
+            "Directory for per-weight quantization error dumps from "
+            "on-the-fly quantizers."
+        ),
+    )
+
+    verbose: bool = Field(
+        default=False,
+        description="Print the patched module before the quantizer count.",
+    )
+
+    mse_sweep_scales: bool = Field(
+        default=False,
+        description=(
+            "For NVFP4 on-the-fly quantizers, search multipliers of each "
+            "block's abs-max and keep the scale with the smallest "
+            "quantization MSE. Other formats ignore it."
+        ),
+    )
+
+    source_format: str | None = Field(
+        default=None,
+        description=(
+            "Assert that every targeted weight is stored as ``bf16`` or "
+            "``fp8``. When unset, each weight's own format decides."
+        ),
+    )
+
+    speculative: Annotated[SpeculativeConfig | None, Parameter(name="*")] = (
+        Field(
+            default=None,
+            description="The SpeculativeConfig.",
+        )
+    )
+
+    draft_model: Annotated[
+        MAXModelConfig | None,
+        Parameter(
+            name="*",
+            # Renames the same fields click renames for --draft-* flags
+            # (see _RENAMED_FLAGS in max._entrypoints.cli.config), so the
+            # draft spellings match max serve exactly.
+            name_transform=_draft_flag_name,
+        ),
+    ] = Field(
         default=None,
         description=(
             "Draft model configuration for speculative decoding. "
@@ -441,7 +663,7 @@ class PipelineArgs(ConfigFileModel):
 
         Owns the full flat-to-nested routing for CLI and legacy callers:
 
-        - Flat sub-config kwargs (e.g. ``max_batch_size``, ``enable_lora``,
+        - Flat sub-config kwargs (such as ``max_batch_size``, ``enable_lora``,
           ``num_speculative_tokens``) are nested under their sub-config
           section (``runtime``, ``lora``, ``speculative``, ...) before the
           ``--config-file`` merge, so CLI flags and config-file subtrees
@@ -450,14 +672,14 @@ class PipelineArgs(ConfigFileModel):
           schema shape) is folded into the flat model fields; explicit CLI
           kwargs win per field, ``--model-override`` entries win over both.
         - ``draft_``-prefixed kwargs build :attr:`draft_model`, inheriting
-          ``trust_remote_code``/``device_specs``/``data_parallel_degree``
-          from the target model when unset.
-        - Multi-component (e.g. diffusion) model paths are detected via
+          ``trust_remote_code``/``device_specs``/``data_parallel_degree``/
+          ``header_only_weights`` from the target model when unset.
+        - Multi-component (such as diffusion) model paths are detected via
           :meth:`ModelManifest.from_model_path` and carried as a manifest
           override.
 
         Args:
-            **kwargs: Flat keyword arguments, e.g. ``model_path``,
+            **kwargs: Flat keyword arguments, for example, ``model_path``,
                 ``kv_cache_size``, ``enable_lora``.
 
         Returns:
@@ -468,7 +690,7 @@ class PipelineArgs(ConfigFileModel):
         # Merge YAML config file values, then clear config_file so the
         # model_validator on ConfigFileModel doesn't reload it when the
         # instance is constructed below.
-        kwargs = cls.load_config_file(kwargs)  # type: ignore[operator]
+        kwargs = cls.load_config_file(kwargs)
         kwargs.pop("config_file", None)
 
         # The CLI generates a --models flag from PipelineConfig's field, so
@@ -567,36 +789,43 @@ class PipelineArgs(ConfigFileModel):
                 **{**draft_model_kwarg, **component_overrides.get("draft", {})}
             )
 
-        # Detect multi-component (e.g. diffusion) models, whose per-component
-        # configs cannot be represented by the flat model fields. Single-model
-        # ("main") manifests are dropped -- the flat fields carry the same
-        # information and remain the canonical source for from_args().
         if manifest is None and model_kwarg is None:
             model_path = kwargs.get("model_path")
             if model_path:
-                # KV-cache CLI flags are excluded from the probe, matching
-                # the flat path's historical behavior: they are merged into
-                # the main model's kv_cache during from_args(), and diffusion
-                # manifests forbid extra kwargs.
-                probe_kwargs = _strip_default_model_kwargs(
-                    {
-                        field: value
-                        for field, value in kwargs.items()
-                        if field in MAXModelConfig.model_fields
-                        and field not in ("model_path", "kv_cache")
-                    }
-                )
-                if isinstance(kwargs.get("kv_cache"), KVCacheConfig):
-                    probe_kwargs["kv_cache"] = kwargs["kv_cache"]
-                    probe_kwargs = _strip_default_model_kwargs(probe_kwargs)
-                revision = probe_kwargs.pop("huggingface_model_revision", None)
-                probe = ModelManifest.from_model_path(
-                    model_path,
-                    revision=revision,
-                    **probe_kwargs,
-                )
-                if "main" not in probe:
-                    manifest = probe
+                # TODO(Cascade): unskip this probe when Cascade gets rid of dummy pipelines
+                if kwargs.get("cascade"):
+                    _logger.warning(
+                        "HuggingFace manifest probing is disabled under "
+                        "``--cascade``; multi-component model detection is skipped "
+                        "for %r.",
+                        kwargs["model_path"],
+                    )
+                else:
+                    # KV-cache CLI flags are excluded from the probe, matching
+                    # the flat path's historical behavior: they are merged into
+                    # the main model's kv_cache during from_args(), and diffusion
+                    # manifests forbid extra kwargs.
+                    probe_kwargs = _strip_default_model_kwargs(
+                        {
+                            field: value
+                            for field, value in kwargs.items()
+                            if field in MAXModelConfig.model_fields
+                            and field not in ("model_path", "kv_cache")
+                        }
+                    )
+                    if isinstance(kwargs.get("kv_cache"), KVCacheConfig):
+                        probe_kwargs["kv_cache"] = kwargs["kv_cache"]
+                        probe_kwargs = _strip_default_model_kwargs(probe_kwargs)
+                    revision = probe_kwargs.pop(
+                        "huggingface_model_revision", None
+                    )
+                    probe = ModelManifest.from_model_path(
+                        model_path,
+                        revision=revision,
+                        **probe_kwargs,
+                    )
+                    if "main" not in probe:
+                        manifest = probe
         elif manifest is not None and "main" in manifest:
             # An explicitly passed manifest is the canonical model source, so
             # flat model kwargs and kv-cache flags must be merged into it --
@@ -675,3 +904,13 @@ class PipelineArgs(ConfigFileModel):
                     "for draft model"
                 )
             draft_kwargs["data_parallel_degree"] = data_parallel_degree
+
+        if "header_only_weights" not in draft_kwargs:
+            # A compile-only run stands in stubs for the whole pipeline, so
+            # the draft model cannot be the one model that downloads weights.
+            if target_kwargs.get("header_only_weights"):
+                _logger.info(
+                    "Inheriting header_only_weights=True from target model "
+                    "for draft model"
+                )
+                draft_kwargs["header_only_weights"] = True

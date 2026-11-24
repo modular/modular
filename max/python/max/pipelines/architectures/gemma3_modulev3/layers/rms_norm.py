@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Gemma3 RMSNorm for the ModuleV3 API."""
 
-from max.experimental.nn.norm import GemmaRMSNorm
+from max.nn.norm import GemmaRMSNorm
 
 
 class Gemma3RMSNorm(GemmaRMSNorm):

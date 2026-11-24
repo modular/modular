@@ -35,7 +35,10 @@ from __future__ import annotations
 
 from typing import Literal
 
-from max.benchmark.benchmark_shared.percentile_metrics import PercentileMetrics
+from max.benchmark.benchmark_shared.percentile_metrics import (
+    InteractivityMetrics,
+    PercentileMetrics,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 # Keep in sync with ``metrics.BenchmarkType`` (defined there to avoid a
@@ -54,15 +57,49 @@ class SummaryGroup(BaseModel):
 
     task_type: BenchmarkType | None = None
     max_concurrency: int | None = None
+    # GPUs the server used; the divisor behind
+    # ``total_tokens_per_second_per_gpu``. ``None`` when unknown.
+    num_gpus: int | None = None
     duration: float | None = None
     completed: int | None = None
     failures: int | None = None
     request_throughput: float | None = None
+    # Set only when the run was given ``--goodput`` targets, which the
+    # ``goodput_*_ms`` fields record; the rates are over the same requests
+    # and window as ``request_throughput``.
+    request_goodput: float | None = None
+    goodput_attainment: float | None = None
+    goodput_ttft_ms: float | None = None
+    goodput_tpot_ms: float | None = None
+    goodput_e2el_ms: float | None = None
     aggregate_tokens_per_minute: float | None = None
+    # (input + output) tokens/s over the measured window per GPU the server
+    # used. ``None`` when the GPU count is unknown or the window carried no
+    # tokens.
+    total_tokens_per_second_per_gpu: float | None = None
     mean_ttft_ms: float | None = None
     mean_tpot_ms: float | None = None
     mean_itl_ms: float | None = None
     total_generated_outputs: int | None = None
+
+
+class RequestMixGroup(BaseModel):
+    """Realized share of requests carrying each optional payload feature.
+
+    Checks a run's traffic against the production mix it is calibrated to,
+    rather than describing its performance. Each rate is over the measured
+    requests; a response-side rate is over the requests that offered the
+    feature.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    constrained_request_rate: float | None = None
+    constrained_conformance_rate: float | None = None
+    tool_request_rate: float | None = None
+    tool_call_response_rate: float | None = None
+    image_request_rate: float | None = None
+    lora_request_rate: float | None = None
 
 
 class GpuStatsGroup(BaseModel):
@@ -77,6 +114,11 @@ class GpuStatsGroup(BaseModel):
     peak_gpu_memory_mib: list[float] = Field(default_factory=list)
     available_gpu_memory_mib: list[float] = Field(default_factory=list)
     gpu_utilization: list[float] = Field(default_factory=list)
+    # ``gpu_utilization`` split by group, such as a disaggregated engine's
+    # prefill and decode GPUs, whose loads a single mean would hide.
+    gpu_utilization_by_group: dict[str, list[float]] = Field(
+        default_factory=dict
+    )
 
 
 class LatencyStatsGroup(BaseModel):
@@ -89,6 +131,13 @@ class LatencyStatsGroup(BaseModel):
     tpot_ms: PercentileMetrics | None = None
     itl_ms: PercentileMetrics | None = None
     step_tpot_ms: PercentileMetrics | None = None
+    # ``ttft_ms`` / ``tpot_ms`` restricted to the constrained and unconstrained
+    # halves of a mixed structured-output run. Each pair is ``None`` unless
+    # both its halves have samples.
+    ttft_ms_constrained: PercentileMetrics | None = None
+    ttft_ms_unconstrained: PercentileMetrics | None = None
+    tpot_ms_constrained: PercentileMetrics | None = None
+    tpot_ms_unconstrained: PercentileMetrics | None = None
 
 
 class ThroughputStatsGroup(BaseModel):
@@ -98,6 +147,14 @@ class ThroughputStatsGroup(BaseModel):
 
     input_throughput: PercentileMetrics | None = None
     output_throughput: PercentileMetrics | None = None
+    # Per-user interactivity, in tokens/s. ``interactivity_tok_s`` is
+    # content-bounded (first to last content chunk, TTFT excluded);
+    # ``full_response_interactivity_tok_s`` spans to request completion on
+    # the TPOT basis; ``e2e_normalized_interactivity_tok_s`` is content
+    # bounded with TTFT included.
+    interactivity_tok_s: InteractivityMetrics | None = None
+    full_response_interactivity_tok_s: InteractivityMetrics | None = None
+    e2e_normalized_interactivity_tok_s: InteractivityMetrics | None = None
 
 
 class CacheStatsGroup(BaseModel):
@@ -111,7 +168,7 @@ class CacheStatsGroup(BaseModel):
 
 
 class DiagnosticsGroup(BaseModel):
-    """Steady-state detection and error diagnostics for the iteration."""
+    """Steady-state detection, client health, client-read and error diagnostics."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -121,7 +178,24 @@ class DiagnosticsGroup(BaseModel):
     steady_state_mode: str | None = None
     steady_state_warning: str | None = None
     num_outliers_rejected: int | None = None
+    # The benchmark client's own event loop: how late its timer ran in ms,
+    # the worst single wakeup (process pauses included), the loop thread's
+    # CPU share in percent, and a warning when the client's delay reached
+    # the latencies the run reports.
+    client_loop_lag_ms: PercentileMetrics | None = None
+    client_loop_lag_max_ms: float | None = None
+    client_loop_busy: PercentileMetrics | None = None
+    client_warning: str | None = None
     errors: list[str] = Field(default_factory=list)
+    # How bunched the client's socket reads were, over the reads that carried
+    # generated text: a read carrying several events leaves their ITLs split
+    # evenly, so a large ``stream_reads_bunched`` share means the client, not
+    # the server, fell behind.
+    stream_reads: int | None = None
+    stream_reads_bunched: int | None = None
+    events_per_read_max: int | None = None
+    events_per_read_p99: float | None = None
+    events_per_read_mean: float | None = None
 
 
 class BenchmarkResultGroups(BaseModel):
@@ -129,12 +203,13 @@ class BenchmarkResultGroups(BaseModel):
 
     ``summary`` is always populated; the remaining groups are ``None``
     when the underlying result has nothing to report for that group
-    (e.g. ``cache_stats`` on a pixel-generation iteration).
+    (such as ``cache_stats`` on a pixel-generation iteration).
     """
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     summary: SummaryGroup
+    request_mix: RequestMixGroup | None = None
     gpu_stats: GpuStatsGroup | None = None
     latency_stats: LatencyStatsGroup | None = None
     throughput_stats: ThroughputStatsGroup | None = None

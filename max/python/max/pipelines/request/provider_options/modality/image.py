@@ -16,6 +16,14 @@ from pydantic import Field, model_validator
 
 from .common import PixelProviderOptionsBase
 
+MAX_NUM_IMAGES = 4
+"""The most images one image generation request can ask for.
+
+Every image in a request runs in one batch, so the cap bounds a request's
+batch size. FLUX.2 Klein fails at 8 images and runs 6, so 4 leaves margin
+for every model.
+"""
+
 
 class ImageProviderOptions(PixelProviderOptionsBase):
     """Options specific to image generation pipelines.
@@ -60,8 +68,12 @@ class ImageProviderOptions(PixelProviderOptionsBase):
 
     num_images: int = Field(
         1,
-        description="The number of images to generate. Defaults to 1.",
+        description=(
+            "The number of images to generate, from 1 to "
+            f"{MAX_NUM_IMAGES}. Defaults to 1."
+        ),
         ge=1,
+        le=MAX_NUM_IMAGES,
     )
 
     strength: float = Field(

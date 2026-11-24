@@ -1,0 +1,359 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""DeepSeek-V3.2 Transformer block (ModuleV3)."""
+
+from __future__ import annotations
+
+import functools
+import os
+from typing import Any
+
+from max import functional as F
+from max.nn import Module
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.multi_latent_attention import (
+    MLAPrefillMetadata,
+)
+from max.nn.common_layers.quant_linear import (
+    QuantizedMLP,
+    tensor_parallel_mlp,
+)
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
+from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantFormat
+from max.tensor import Tensor
+
+from ...deepseekV3_modulev3.layers.moe_gate import DeepseekV3TopKRouter
+from ...deepseekV3_modulev3.layers.transformer_block import (
+    ParallelismMode,
+    post_attention,
+    post_mlp,
+    residual_partial_sum,
+)
+from ..model_config import DeepseekV3_2Config, HiSparseInputs
+from .mlp import DeepseekV3_2MLP
+from .moe import (
+    DeepseekV3_2ExpertParallelMoE,
+    DeepseekV3_2LocalExpertsMoE,
+    DeepseekV3_2MoE,
+    DeepseekV3_2TensorParallelMoE,
+)
+from .moe_gate import DeepseekV3_2TopKRouter
+from .prefill_context_parallel import PrefillContextParallelStep
+from .rms_norm import MultiplyBeforeCastRMSNorm
+from .sparse_mla import (
+    QuantizedSparseLatentAttentionWithRope,
+    Selection,
+    tensor_parallel_sparse_latent_attention_with_rope,
+)
+
+BlockOutput = tuple[Tensor, Selection] | tuple[Tensor, Selection, Tensor]
+"""A block's output, its top-k selection, and with ``next_input_gamma`` the
+next block's input norm."""
+
+
+def _get_mlp(
+    config: DeepseekV3_2Config,
+    mode: ParallelismMode,
+    layer_idx: int,
+    ep_config: EPConfig | None = None,
+) -> Module[[Tensor], Tensor]:
+    """Returns either an MoE or MLP module for the given layer index.
+
+    Mirrors the V3 selection, with the V3.2 float32-accumulation variants and
+    V3.2's per-layer ``mlp_quantized_layers`` gate.
+    """
+    quant_cfg = config.quant_config
+    mlp_quantized = (
+        quant_cfg is not None and layer_idx in quant_cfg.mlp_quantized_layers
+    )
+    layer_quant_config = quant_cfg if mlp_quantized else None
+
+    use_moe = (
+        config.n_routed_experts is not None
+        and layer_idx >= config.first_k_dense_replace
+        and layer_idx % config.moe_layer_freq == 0
+    )
+    nvfp4_experts = (
+        layer_quant_config is not None
+        and layer_quant_config.format == QuantFormat.NVFP4
+    )
+    # One device holding every NVFP4 expert, as a pipeline stage does, runs
+    # the expert-parallel path's local kernels: its tokens need no exchange.
+    local_experts = (
+        use_moe
+        and nvfp4_experts
+        and ep_config is None
+        and config.mesh is not None
+        and config.mesh.num_devices == 1
+    )
+    # The graph-API model shards its router and shared expert into the plain
+    # DeepSeek-V3 ones, so its expert-parallel deployments run the gate GEMM
+    # in bfloat16 (casting the logits to float32) and the shared-expert
+    # SwiGLU in bfloat16. Match that for the NVFP4 checkpoints it serves; the
+    # others keep the float32 variants they were validated with. A device
+    # holding every expert takes them too, to match that path bit for bit.
+    plain_v3_numerics = local_experts or (
+        ep_config is not None
+        and quant_cfg is not None
+        and quant_cfg.format == QuantFormat.NVFP4
+    )
+    router_cls = (
+        DeepseekV3TopKRouter if plain_v3_numerics else DeepseekV3_2TopKRouter
+    )
+    gate_cls = functools.partial(
+        router_cls,
+        routed_scaling_factor=config.routed_scaling_factor,
+        scoring_func=config.scoring_func,
+        topk_method=config.topk_method,
+        n_group=config.n_group,
+        topk_group=config.topk_group,
+        norm_topk_prob=config.norm_topk_prob,
+        correction_bias_dtype=config.correction_bias_dtype,
+    )
+    if use_moe:
+        moe_kwargs: dict[str, Any] = dict(
+            hidden_dim=config.hidden_size,
+            num_experts=config.n_routed_experts,
+            num_experts_per_token=config.num_experts_per_tok,
+            moe_dim=config.moe_intermediate_size,
+            gate_cls=gate_cls,
+            has_shared_experts=True,
+            shared_experts_dim=config.n_shared_experts
+            * config.moe_intermediate_size,
+            quant_config=layer_quant_config,
+            # V2 passes the same float32-activation MLP here; the base class
+            # would otherwise give the shared expert a bf16 activation.
+            mlp_cls=QuantizedMLP if plain_v3_numerics else DeepseekV3_2MLP,
+        )
+        if ep_config is not None:
+            return DeepseekV3_2ExpertParallelMoE(
+                **moe_kwargs, ep_config=ep_config
+            )
+        if local_experts:
+            return DeepseekV3_2LocalExpertsMoE(**moe_kwargs)
+        if (
+            mode is not ParallelismMode.DP_EP
+            and config.mesh is not None
+            and config.mesh.num_devices > 1
+        ):
+            return DeepseekV3_2TensorParallelMoE(**moe_kwargs)
+        # Single device or pure data parallelism: replicated expert set.
+        return DeepseekV3_2MoE(**moe_kwargs)
+
+    mlp = DeepseekV3_2MLP(
+        hidden_dim=config.hidden_size,
+        feed_forward_length=config.intermediate_size,
+        quant_config=layer_quant_config,
+    )
+    if mode == ParallelismMode.TP_TP or (
+        config.ep_config is not None and config.ep_config.use_allreduce
+    ):
+        return tensor_parallel_mlp(mlp)
+    return mlp
+
+
+class DeepseekV3_2TransformerBlock(Module[..., BlockOutput]):
+    """Sparse MLA, MoE/MLP, and RMSNorm for DeepSeek V3.2.
+
+    Differs from the V3 block in that attention is sparse: a lightning indexer
+    picks the keys to attend, and the selection is threaded between layers so
+    ``shared`` layers can reuse the previous ``full`` layer's top-k. It shares
+    the V3 block's residual collectives but not its class, because ``forward``
+    additionally returns the top-k selection.
+    """
+
+    self_attn: QuantizedSparseLatentAttentionWithRope
+
+    def __init__(
+        self,
+        config: DeepseekV3_2Config,
+        layer_idx: int,
+        attention_scale: float,
+        ep_config: EPConfig | None = None,
+    ) -> None:
+        super().__init__()
+        self.config = config
+        num_devices = len(config.devices)
+        # Devices one attention replica spans: all of them without data
+        # parallelism, one per replica at DP == devices, and the ``tp`` axis
+        # of a ``(dp, tp)`` mesh in between.
+        attention_tp = num_devices // max(1, config.data_parallel_degree)
+
+        if num_devices <= 1:
+            self.mode = ParallelismMode.TP_TP
+        elif attention_tp == 1:
+            # One device per replica needs no residual collectives -- exactly
+            # the DP_EP arms of the hooks below -- with or without EP.
+            self.mode = ParallelismMode.DP_EP
+        elif config.ep_config is not None:
+            # TP attention within each replica; its collectives run over the
+            # ``tp`` axis only, and the experts span every device.
+            self.mode = ParallelismMode.TP_EP
+        else:
+            self.mode = ParallelismMode.TP_TP
+
+        if config.quant_config is None:
+            raise ValueError(
+                "DeepSeekV3.2 sparse attention requires a quantization config."
+            )
+        attn_quantized = layer_idx in config.quant_config.attn_quantized_layers
+        skip_topk = (
+            bool(config.indexer_types)
+            and config.indexer_types[layer_idx] == "shared"
+        )
+
+        self.self_attn = QuantizedSparseLatentAttentionWithRope(
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
+            hidden_size=config.hidden_size,
+            kv_params=config.mla_kv_params,
+            layer_idx=layer_idx,
+            scale=attention_scale,
+            q_lora_rank=config.q_lora_rank,
+            kv_lora_rank=config.kv_lora_rank,
+            qk_nope_head_dim=config.qk_nope_head_dim,
+            qk_rope_head_dim=config.qk_rope_head_dim,
+            v_head_dim=config.v_head_dim,
+            graph_mode=config.graph_mode,
+            buffer_size=config.max_batch_context_length,
+            quant_config=config.quant_config if attn_quantized else None,
+            quantize_o_proj=config.mla_o_proj_quantized,
+            index_n_heads=config.index_n_heads,
+            index_head_dim=config.index_head_dim,
+            index_topk=config.index_topk,
+            skip_topk=skip_topk,
+            indexer_rope_interleave=config.indexer_rope_interleave,
+            indexer_quant_config=config.quant_config,
+            dcp_size=config.decode_context_parallel_degree,
+            dcp_interleave=config.decode_context_parallel_interleave,
+            dcp_q_replicate=config.dcp_q_replicate,
+        )
+        if self.mode is not ParallelismMode.DP_EP:
+            tensor_parallel_sparse_latent_attention_with_rope(
+                self.self_attn, attention_tp
+            )
+
+        self.mlp = _get_mlp(config, self.mode, layer_idx, ep_config)
+        # The graph-API model's opt-in for the fused all-gather + next input
+        # norm. That fused norm multiplies before the cast, so with it opted
+        # in every input norm does too, as there.
+        fuse_allgather_norm = (
+            os.environ.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM") == "0"
+        )
+        input_norm_cls = (
+            MultiplyBeforeCastRMSNorm if fuse_allgather_norm else RMSNorm
+        )
+        self.input_layernorm = input_norm_cls(
+            dim=config.hidden_size, eps=config.rms_norm_eps
+        )
+        self.post_attention_layernorm = RMSNorm(
+            dim=config.hidden_size, eps=config.rms_norm_eps
+        )
+        # As in the graph-API model, TP attention with peer-to-peer EP fuses
+        # the post-attention reduce-scatter, residual add and norm into one
+        # collective launch. The fused collective spans a whole one-axis
+        # mesh, so data-parallel replicas of several devices run it unfused.
+        self.fuse_post_attention_norm = (
+            self.mode is ParallelismMode.TP_EP
+            and config.ep_config is not None
+            and not config.ep_config.use_allreduce
+            and attention_tp == num_devices
+        )
+        # Whether the caller may pass ``next_input_gamma``, to fuse the post-MLP
+        # all-gather with the next block's input norm.
+        self.carry_next_input_norm = (
+            fuse_allgather_norm and self.fuse_post_attention_norm
+        )
+
+    def forward(
+        self,
+        layer_idx: Tensor,
+        x: Tensor,
+        kv_collection: PagedCacheValues,
+        indexer_kv_collection: PagedCacheValues,
+        input_row_offsets: Tensor,
+        freqs_cis: Tensor,
+        mla_prefill_metadata: MLAPrefillMetadata | None = None,
+        ep: EPBuffers | None = None,
+        prev_topk_indices: Selection | None = None,
+        reuse_prev_topk: bool = False,
+        indexer_layer_idx: Tensor | None = None,
+        norm_x: Tensor | None = None,
+        next_input_gamma: Tensor | None = None,
+        selection_lag: int = 0,
+        pcp: PrefillContextParallelStep | None = None,
+        hisparse: HiSparseInputs | None = None,
+        hisparse_group_size: Tensor | None = None,
+    ) -> BlockOutput:
+        """Returns the block output and its top-k selection.
+
+        With ``pcp`` the attention runs prefill context parallelism; the
+        rest of the block is unchanged.
+
+        With ``next_input_gamma`` (only when :attr:`carry_next_input_norm`),
+        also returns the next block's input norm of the output, fused into
+        the post-MLP all-gather; that block then takes it as ``norm_x``
+        instead of normalizing ``x`` itself.
+        """
+        residual = x
+        if norm_x is None:
+            norm_x = self.input_layernorm(x)
+        attn_out, topk_indices = self.self_attn(
+            norm_x,
+            kv_collection,
+            indexer_kv_collection,
+            freqs_cis,
+            layer_idx,
+            input_row_offsets,
+            mla_prefill_metadata,
+            prev_topk_indices,
+            reuse_prev_topk,
+            indexer_layer_idx,
+            selection_lag,
+            pcp=pcp,
+            hisparse=hisparse,
+            hisparse_group_size=hisparse_group_size,
+        )
+
+        if self.fuse_post_attention_norm:
+            norm = self.post_attention_layernorm
+            norm_h, hidden_states = F.reduce_scatter_rms_norm(
+                residual_partial_sum(residual, attn_out),
+                norm.weight.cast(x.dtype),
+                norm.eps,
+            )
+        else:
+            hidden_states = post_attention(
+                self.mode, self.config, residual, attn_out
+            )
+            norm_h = self.post_attention_layernorm(hidden_states)
+        if isinstance(self.mlp, DeepseekV3_2ExpertParallelMoE):
+            mlp_out = self.mlp(norm_h, ep=ep)
+        else:
+            mlp_out = self.mlp(norm_h)
+        if next_input_gamma is not None:
+            assert self.carry_next_input_norm
+            next_norm, hidden_states = F.allgather_rms_norm(
+                hidden_states + mlp_out,
+                next_input_gamma,
+                self.input_layernorm.eps,
+            )
+            return (
+                F.rebind(hidden_states, x.shape),
+                topk_indices,
+                F.rebind(next_norm, x.shape),
+            )
+        hidden_states = post_mlp(self.mode, self.config, hidden_states, mlp_out)
+        return F.rebind(hidden_states, x.shape), topk_indices

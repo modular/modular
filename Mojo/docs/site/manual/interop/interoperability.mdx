@@ -1,0 +1,166 @@
+---
+title: Language interoperability
+sidebar_label: Language interoperability
+description: >
+  Use Mojo alongside the languages you already use. Mojo calls, and accepts
+  calls from, many languages that follow the C ABI on a given platform.
+---
+
+Use Mojo without leaving behind your current code with interoperability.
+Mojo works side-by-side with many languages. Call functions and share data,
+while keeping your familiar library and tools. This lets you move your
+code into Mojo at a pace that works for you.
+
+Interoperability has three typical goals:
+
+- **More performance.** Migrate performance-critical code ("hot loops")
+  into Mojo without rewriting the rest of your application. This lets you
+  keep your existing infrastructure while taking advantage of Mojo's
+  optimizations.
+- **Broader adoption.** With Mojo, you don't need to rewrite everything.
+  Adopt Mojo incrementally, migrate part of an application at a time.
+- **Expanded libraries.** Mojo can call into other languages. Use
+  libraries written in non-Mojo languages from Mojo without
+  reimplementing their functionality.
+
+The C Application Binary Interface (C ABI) supports interop across many
+languages and platforms. With it, you call functions and share data across
+language boundaries. Mojo's Python interoperability uses it too, as it's
+built on CPython's C API.
+
+{/* markdownlint-disable MD013 MD033 */}
+
+<figure>
+  <img src={require('../images/interop/three-ways-light.png').default}
+       className="light" alt="Three panels. Your app, written in C, C++, Rust, or Python, calls a Mojo library's exported functions through the C ABI. Existing code and new Mojo modules call each other through the C ABI during an incremental migration. A Mojo program calls foreign libraries written in C, C++, Rust, Python, and other languages through the C ABI." />
+  <img src={require('../images/interop/three-ways-dark.png').default}
+       className="dark" alt="Three panels. Your app, written in C, C++, Rust, or Python, calls a Mojo library's exported functions through the C ABI. Existing code and new Mojo modules call each other through the C ABI during an incremental migration. A Mojo program calls foreign libraries written in C, C++, Rust, Python, and other languages through the C ABI." />
+  <figcaption><b>Figure 1.</b> Three ways to use Mojo with other languages.</figcaption>
+</figure>
+
+{/* markdownlint-enable MD013 MD033 */}
+
+## What is the C ABI?
+
+When code compiled separately calls a function, both sides must agree on
+a set of rules:
+
+- Which registers hold arguments
+- Where do return values go
+- How are data types laid out in memory
+- How are function names made to appear in the finished binary
+
+These rules are part of an *application binary interface* (ABI). Code
+compiled from different languages can call only each other when both sides
+follow compatible ABI conventions.
+
+Programming languages normally use their own protocols. For example, C++
+compilers use *name mangling* to encode function information in *symbol
+names*. GCC, Clang, and MSVC use schemes that aren't always compatible with
+each other. Rust's default ABI isn't guaranteed to remain stable between
+compiler versions. These can't provide a universal interface between
+languages.
+
+### Platforms
+
+Using a *platform*-specific C ABI, rather than a language-specific ABI,
+has become the common choice for several reasons:
+
+- **Operating systems support it.** System libraries expose C
+  interfaces, making the C ABI widely supported across platforms.
+- **It's stable.** Changing a platform's C ABI might break existing
+  compiled programs and libraries, so platforms rarely change it.
+- **Nearly every language supports it.** C++ and Rust provide
+  `extern "C"`, Python's standard interpreter exposes a
+  [C API](https://docs.python.org/3/c-api/index.html), and
+  Mojo provides the
+  [`abi("C")`](/docs/reference/function-declarations/#abi-c) effect
+  and the [`@export`](/docs/reference/decorators/export) decorator.
+
+There's no single, universal C ABI. Each platform defines its own
+conventions. For example, x86-64 Linux generally follows the System V AMD64
+ABI, while 64-bit ARM platforms follow variants of the AAPCS64 standard,
+including Apple's platform-specific conventions.
+
+Interoperability works because compilers targeting the same platform follow
+compatible rules. The compiler handles most platform-specific
+differences, but some will affect your code. For example, the size of C's
+`long` type depends on the target platform. Mojo's
+[`std.ffi`](/docs/std/ffi/) module provides aliases like `c_long` that
+match the platform's C types regardless of their size, so you don't have to
+account for those differences manually.
+
+### Data representations
+
+A C ABI supports a small set of data representations: numbers, pointers,
+function pointers, and structs with C-compatible layouts. It doesn't define
+ownership, lifetimes, or error handling, so both sides must agree on who
+frees memory, how long pointers stay valid, and how failures are reported.
+
+For the full list of `std.ffi` type aliases, see [C-compatible data
+types](/docs/manual/interop/data-types).
+
+## Example: Call Mojo from C
+
+This example builds a Mojo library and calls one of its functions from C,
+without a wrapper or binding layer. It demonstrates a common use case:
+writing performance-critical code in Mojo and calling it from an existing
+application written in C, C++, Rust, or Python.
+
+Three pieces make this work:
+
+- `@export("add")` exports the function with the C symbol name `add`.
+- `abi("C")` uses the platform's C calling convention.
+- `c_long` matches C's `long` type on the target platform.
+
+The function adds two numbers, keeping the focus on calling Mojo
+from another language:
+
+```mojo title="mylib.mojo"
+from std.ffi import c_long  # 64-bit on macOS and Linux
+
+@export("add")
+def add(x: c_long, y: c_long) abi("C") -> c_long:
+    return x + y
+```
+
+A C program can call the exported Mojo `add()` function:
+
+```c title="main.c"
+#include <stdio.h>
+
+extern long add(long a, long b);
+
+int main(void) {
+    printf("sum = %ld\n", add(5, 103));  /* 108 */
+    return 0;
+}
+```
+
+Build and run on Linux:
+
+```text
+mojo build mylib.mojo --emit shared-lib -o libmylib.so
+cc main.c -o main -L. -lmylib -Wl,-rpath,'$ORIGIN'
+./main
+```
+
+On macOS:
+
+```text
+mojo build mylib.mojo --emit shared-lib -o libmylib.dylib
+install_name_tool -id @rpath/libmylib.dylib libmylib.dylib
+cc main.c -o main -L. -lmylib -Wl,-rpath,@loader_path
+./main
+```
+
+Both print:
+
+```output
+sum = 108
+```
+
+C calls the Mojo function just like any other C function. The calling
+code doesn't need to know it was written in Mojo. Other languages that
+support the C ABI, including C++, Rust, and Python through `ctypes`, can
+call the same library.

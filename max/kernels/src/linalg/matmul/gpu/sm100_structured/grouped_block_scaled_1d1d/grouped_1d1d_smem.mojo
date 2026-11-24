@@ -20,12 +20,10 @@ the standard GroupedBlockScaledSmem:
 2. No CLC pipeline storage - uses 3-warp specialization (no scheduler warp)
 3. Simpler barrier structure optimized for the 1D-1D workload
 
-Tile storage is shared via BlockScaledTileCore from block_scaled_smem.mojo.
+Tile storage is shared via BlockScaledTileCore from block_scaled_tile_core.mojo.
 """
 
-from std.sys import size_of
-
-from ..block_scaled.block_scaled_smem import BlockScaledTileCore
+from ..structured_kernels.block_scaled_tile_core import BlockScaledTileCore
 from ..structured_kernels.config import BlockScaledMatmulConfig
 from structured_kernels.pipeline_storage import (
     BarrierPair,
@@ -69,7 +67,6 @@ struct SchedulerSmem:
     """
 
     comptime NUM_SLOTS = 2  # 2-slot ProducerConsumer
-    comptime MAX_TILES = Self.NUM_SLOTS  # backward compat alias
     # Group cache sized to fit the B200 SMEM limit under worst-case MXFP8
     # 2SM configs (base SMEM is already ~232.5 KB, leaving <1 KB for us).
     # 32 covers the common MoE decode regime and the larger Kimi-style 49
@@ -90,31 +87,31 @@ struct SchedulerSmem:
     var expert_ids_storage: Self.ExpertIdsArray.Storage
     var expert_scales_storage: Self.ExpertScalesArray.Storage
 
-    @always_inline
+    @inline(.always)
     def slots(ref[AddressSpace.SHARED] self) -> SMemPtr[SchedulerSlot]:
         return Self.SlotArray(self.slot_storage).ptr
 
-    @always_inline
+    @inline(.always)
     def group_offsets_ptr(ref[AddressSpace.SHARED] self) -> SMemPtr[UInt32]:
         return Self.GroupOffsetsArray(self.group_offsets_storage).ptr
 
-    @always_inline
+    @inline(.always)
     def expert_ids_ptr(ref[AddressSpace.SHARED] self) -> SMemPtr[Int32]:
         return Self.ExpertIdsArray(self.expert_ids_storage).ptr
 
-    @always_inline
+    @inline(.always)
     def expert_scales_ptr(ref[AddressSpace.SHARED] self) -> SMemPtr[Float32]:
         return Self.ExpertScalesArray(self.expert_scales_storage).ptr
 
     # ── 2-slot ProducerConsumer accessors ──
     # Reuse mbar[0]/mbar[1] as full, mbar[2]/mbar[3] as empty.
-    @always_inline
+    @inline(.always)
     def full_mbar(ref[AddressSpace.SHARED] self) -> MbarPtr:
         return self.barriers.ptr()
 
-    @always_inline
+    @inline(.always)
     def empty_mbar(ref[AddressSpace.SHARED] self) -> MbarPtr:
-        return self.barriers.ptr() + 2
+        return self.barriers.ptr().unsafe_offset(2)
 
 
 struct Grouped1D1DSmem[
@@ -187,96 +184,96 @@ struct Grouped1D1DSmem[
     var scheduler: SchedulerSmem
 
     # ========== SFB Barrier Accessors ==========
-    @always_inline
+    @inline(.always)
     def sfb_load_mbars_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get pointer to SFB-load mbarrier array (SFB Load→MMA)."""
         return self.sfb_load_barriers.ptr()
 
-    @always_inline
+    @inline(.always)
     def sfb_tma_mbars_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get pointer to SFB TMA pipeline mbarrier array (SfbTMALoad↔MMA)."""
         return self.sfb_tma_barriers.ptr()
 
     # ========== Scheduler Accessors ==========
-    @always_inline
+    @inline(.always)
     def sched_slots(
         ref[AddressSpace.SHARED] self,
     ) -> SMemPtr[SchedulerSlot]:
         return self.scheduler.slots()
 
-    @always_inline
+    @inline(.always)
     def sched_full_mbar(ref[AddressSpace.SHARED] self) -> MbarPtr:
         return self.scheduler.full_mbar()
 
-    @always_inline
+    @inline(.always)
     def sched_empty_mbar(ref[AddressSpace.SHARED] self) -> MbarPtr:
         return self.scheduler.empty_mbar()
 
-    @always_inline
+    @inline(.always)
     def sched_group_offsets(
         ref[AddressSpace.SHARED] self,
     ) -> SMemPtr[UInt32]:
         return self.scheduler.group_offsets_ptr()
 
-    @always_inline
+    @inline(.always)
     def sched_expert_ids(
         ref[AddressSpace.SHARED] self,
     ) -> SMemPtr[Int32]:
         return self.scheduler.expert_ids_ptr()
 
-    @always_inline
+    @inline(.always)
     def sched_expert_scales(
         ref[AddressSpace.SHARED] self,
     ) -> SMemPtr[Float32]:
         return self.scheduler.expert_scales_ptr()
 
     # ========== Tile Accessors (forwarding) ==========
-    @always_inline
+    @inline(.always)
     def a_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.ATileArray:
         """Get A tile array accessor."""
         return self.core.a_tiles()
 
-    @always_inline
+    @inline(.always)
     def b_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.BTileArray:
         """Get B tile array accessor."""
         return self.core.b_tiles()
 
-    @always_inline
+    @inline(.always)
     def c_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.CTileArray:
         """Get C tile array accessor."""
         return self.core.c_tiles()
 
-    @always_inline
+    @inline(.always)
     def sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.SFATileArray:
         """Get SFA tile array accessor."""
         return self.core.sfa_tiles()
 
-    @always_inline
+    @inline(.always)
     def sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.Core.SFBTileArray:
         """Get SFB tile array accessor."""
         return self.core.sfb_tiles()
 
     # ========== Size Utilities (forwarding) ==========
     @staticmethod
-    @always_inline
+    @inline(.always)
     def ab_pipeline_size() -> Int:
         """Total size of A+B tiles for all pipeline stages (in elements)."""
         return Self.Core.ab_pipeline_size()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def sf_pipeline_size() -> Int:
         """Total size of SFA+SFB tiles for all pipeline stages (in elements)."""
         return Self.Core.sf_pipeline_size()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def c_output_size() -> Int:
         """Size of C tiles for all output stages (in elements)."""
         return Self.Core.c_output_size()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def total_tile_size() -> Int:
         """Total tile storage size (A+B+SFA+SFB+C) in elements."""
         return Self.Core.total_tile_size()

@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Weight adapters for Olmo2 models."""
 
 from __future__ import annotations
 
@@ -39,6 +40,7 @@ OLMO2_GGUF_MAPPING = {
 def convert_gguf_state_dict(
     state_dict: dict[str, Weights], **unused_kwargs
 ) -> dict[str, WeightData]:
+    """Renames OLMo2 GGUF tensors to their MAX module names."""
     new_state_dict: dict[str, WeightData] = {}
     # Map the weight names.
     for gguf_name, value in state_dict.items():

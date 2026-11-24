@@ -13,11 +13,12 @@
 """mutable ops tests."""
 
 import os
+import re
 from pathlib import Path
 
 import numpy as np
 import pytest
-from conftest import buffer_types, shapes, tensor_types
+from conftest import buffer_types, mismatched_devices, shapes, tensor_types
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max import mlir
@@ -149,7 +150,7 @@ def test_load(buffer_type: BufferType) -> None:
 
         graph.output()
         graph._mlir_op.verify()
-        assert "rmo.mo.mutable.load" in str(graph)
+        assert "mo.mutable.load" in str(graph)
         assert "mo.chain.create" in str(graph)
 
 
@@ -177,8 +178,85 @@ def test_store(tensor_type: TensorType, buffer_type: BufferType) -> None:
 
         graph.output()
         graph._mlir_op.verify()
-        assert "rmo.mo.mutable.store" in str(graph)
+        assert "mo.mutable.store" in str(graph)
         assert "mo.chain.create" in str(graph)
+
+
+def test_store_rebinds_symbolic_shape() -> None:
+    """A source whose symbolic dims differ from the buffer's is rebound."""
+    device = DeviceRef.CPU()
+    with Graph(
+        "buffer_store",
+        input_types=[
+            TensorType(DType.float32, ["n", 4], device),
+            BufferType(DType.float32, ["m", 4], device),
+        ],
+    ) as graph:
+        tensor, buffer = graph.inputs[0].tensor, graph.inputs[1].buffer
+        ops.buffer_store(buffer, tensor)
+        graph.output()
+        graph._mlir_op.verify()
+        assert "rmo.rebind_tensor_shape" in str(graph)
+        assert "mo.mutable.store" in str(graph)
+
+
+def test_store_static_shape_mismatch() -> None:
+    device = DeviceRef.CPU()
+    with Graph(
+        "buffer_store",
+        input_types=[
+            TensorType(DType.float32, [3, 4], device),
+            BufferType(DType.float32, [2, 4], device),
+        ],
+    ) as graph:
+        tensor, buffer = graph.inputs[0].tensor, graph.inputs[1].buffer
+        with pytest.raises(ValueError, match="expected source to have shape"):
+            ops.buffer_store(buffer, tensor)
+
+
+@given(tensor_type=tensor_type, devices=mismatched_devices())
+def test_store_mismatched_devices(
+    tensor_type: TensorType, devices: tuple[DeviceRef, DeviceRef]
+) -> None:
+    tensor_device, buffer_device = devices
+    with Graph(
+        "buffer_store",
+        input_types=[
+            TensorType(tensor_type.dtype, tensor_type.shape, tensor_device),
+            BufferType(tensor_type.dtype, tensor_type.shape, buffer_device),
+        ],
+    ) as graph:
+        tensor, buffer = graph.inputs[0].tensor, graph.inputs[1].buffer
+        with pytest.raises(ValueError, match="same device"):
+            ops.buffer_store(buffer, tensor)
+
+
+def test_store_dtype_mismatch() -> None:
+    device = DeviceRef.CPU()
+    with Graph(
+        "buffer_store",
+        input_types=[
+            TensorType(DType.int32, [2, 4], device),
+            BufferType(DType.float32, [2, 4], device),
+        ],
+    ) as graph:
+        tensor, buffer = graph.inputs[0].tensor, graph.inputs[1].buffer
+        with pytest.raises(ValueError):
+            ops.buffer_store(buffer, tensor)
+
+
+def test_store_slice_dtype_mismatch() -> None:
+    device = DeviceRef.CPU()
+    with Graph(
+        "buffer_store_slice",
+        input_types=[
+            TensorType(DType.int32, [1, 4], device),
+            BufferType(DType.float32, [2, 4], device),
+        ],
+    ) as graph:
+        tensor, buffer = graph.inputs[0].tensor, graph.inputs[1].buffer
+        with pytest.raises(ValueError):
+            ops.buffer_store_slice(buffer, tensor, [slice(0, 1)])
 
 
 @given(buffer_type=...)
@@ -210,8 +288,8 @@ def test_load_store(buffer_type: BufferType) -> None:
         graph.output()
         graph._mlir_op.verify()
         assert "mo.chain.create" in str(graph)
-        assert "rmo.mo.mutable.load" in str(graph)
-        assert "rmo.mo.mutable.store" in str(graph)
+        assert "mo.mutable.load" in str(graph)
+        assert "mo.mutable.store" in str(graph)
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)
@@ -240,9 +318,9 @@ def test_load_store_ellipsis_slice(
 
         graph.output()
         graph._mlir_op.verify()
-        assert "rmo.mo.mutable.load" in str(graph)
-        assert "rmo.mo.mutable.store" in str(graph)
-        assert "rmo.mo.mutable.store.slice" not in str(graph)
+        assert "mo.mutable.load" in str(graph)
+        assert "mo.mutable.store" in str(graph)
+        assert "mo.mutable.store.slice" not in str(graph)
         assert "mo.chain.create" in str(graph)
 
 
@@ -287,9 +365,9 @@ def test_load_store_slice(
 
         graph.output()
         graph._mlir_op.verify()
-        assert "rmo.mo.mutable.load" in str(graph)
-        assert "rmo.mo.mutable.store" in str(graph)
-        assert "rmo.mo.mutable.store.slice" in str(graph)
+        assert "mo.mutable.load" in str(graph)
+        assert "mo.mutable.store" in str(graph)
+        assert "mo.mutable.store.slice" in str(graph)
         assert "mo.chain.create" in str(graph)
 
 
@@ -315,8 +393,8 @@ def test_no_implicit_load(
         with pytest.raises(TypeError):  # unary ops
             abs(buffer)  # type: ignore
 
-        assert "rmo.mo.mutable.load" not in str(graph)
-        assert "rmo.mo.slice" not in str(graph)
+        assert "mo.mutable.load" not in str(graph)
+        assert not re.search(r"\bmo\.slice\b", str(graph))
 
 
 @given(tensor_type=tensor_type, buffer_type=buffer_type)

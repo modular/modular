@@ -22,7 +22,7 @@ from max.nn.quant_config import QuantConfig
 
 
 def _weight_entry_dtype(value: Any) -> DType | None:
-    """Return ``value.dtype`` when present (e.g. :class:`~max.graph.weights.WeightData`)."""
+    """Return ``value.dtype`` when present (such as :class:`~max.graph.weights.WeightData`)."""
     dt = getattr(value, "dtype", None)
     return dt if isinstance(dt, DType) else None
 
@@ -36,7 +36,7 @@ def infer_kimi_nvfp4_weight_flags(
     """Infer NVFP4 vs BF16 regions from MAX-adapted Kimi checkpoint keys.
 
     Args:
-        state_dict: Weight map after :func:`convert_kimik2_5_safetensor_state_dict`
+        state_dict: Weight map after :func:`kimik2_5_weight_rules`
             (``language_model.layers.*`` prefix).
         first_k_dense_replace: First layer index that uses MoE (HF ``text_config``).
         quant_config: Parsed quantization config, if any.
@@ -46,12 +46,12 @@ def infer_kimi_nvfp4_weight_flags(
 
         ``shared_experts_weight_dtype`` is ``None`` when shared experts match routed
         packed NVFP4 weights, or :class:`~max.dtype.DType.bfloat16` when shared experts
-        omit ModelOpt scales (e.g. ``nvidia/Kimi-K2.6-NVFP4``). Apply via
+        omit ModelOpt scales (such as ``nvidia/Kimi-K2.6-NVFP4``). Apply via
         :func:`dataclasses.replace` on ``quant_config`` when not ``None``.
 
         ``dense_mlp_layers_without_quant`` lists dense-prefix layer indices whose
         ``gate_proj.weight`` is not packed NVFP4 (``dtype != uint8``) or is
-        missing ``weight_scale`` while still ``uint8`` (e.g. layer ``0`` on
+        missing ``weight_scale`` while still ``uint8`` (such as layer ``0`` on
         ``nvidia/Kimi-K2.6-NVFP4``).
     """
     # Run layout checks for NVFP4/MXFP4 (``is_fp4``), and also when parsing

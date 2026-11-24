@@ -46,16 +46,7 @@ from std.random import rand, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
-from layout import (
-    Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major,
-)
-from std.utils.index import IndexList
+from layout import Idx, TileTensor, row_major
 from nn.attention.gpu.mha import (
     flash_attention,
     get_mha_decoding_num_partitions,
@@ -193,7 +184,7 @@ def run_one_case(
     # `vl_dev` across the launches (so a finding is the real OOB, not a UAF).
     var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(spec.valid_length))
-    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
+    var vl = TileTensor(vl_dev, row_major[1]())
     var mask = CausalPaddingMask(vl)
 
     flash_attention(o, q, k, v, mask, scale, ctx)
@@ -285,7 +276,7 @@ def run_schedule_case(ctx: DeviceContext, spec: CaseSpec, repeats: Int) raises:
 
     var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
+    var vl = TileTensor(vl_dev, row_major[1]())
     var mask = CausalPaddingMask(vl)
     var np = Optional[Int](2)  # force split-K
 
@@ -364,7 +355,7 @@ def run_determinism_case(
 
     var vl_dev = ctx.enqueue_create_buffer[.uint32](1)
     ctx.enqueue_memset(vl_dev, UInt32(num_keys))  # full (no padding)
-    var vl = LayoutTensor[.uint32, Layout.row_major(1)](vl_dev.unsafe_ptr())
+    var vl = TileTensor(vl_dev, row_major[1]())
     var mask = CausalPaddingMask(vl)
 
     # Distinct output buffers so reruns do not serialize on one buffer (WAW)
@@ -474,9 +465,9 @@ def _run_mha_composition(
     # Fillers (slots 1..) from `filler_seed`.
     if batch_size > 1:
         seed(filler_seed)
-        rand(q_host.unsafe_ptr() + probe_q, q_size - probe_q)
-        rand(k_host.unsafe_ptr() + probe_kv, kv_size - probe_kv)
-        rand(v_host.unsafe_ptr() + probe_kv, kv_size - probe_kv)
+        rand(q_host.unsafe_ptr().unsafe_offset(probe_q), q_size - probe_q)
+        rand(k_host.unsafe_ptr().unsafe_offset(probe_kv), kv_size - probe_kv)
+        rand(v_host.unsafe_ptr().unsafe_offset(probe_kv), kv_size - probe_kv)
 
     # valid_lengths: the probe attends to all keys (full); fillers get varied
     # lengths (they exercise different masking but are not compared).
@@ -510,11 +501,7 @@ def _run_mha_composition(
         o_dev, row_major((batch_size, seq_len, Idx[num_heads], Idx[depth]))
     )
     # Runtime-sized [batch_size] valid_lengths (mask indexes valid_lengths[b]).
-    comptime vl_layout = Layout(UNKNOWN_VALUE)
-    var vl = LayoutTensor[.uint32, vl_layout](
-        vl_dev.unsafe_ptr(),
-        RuntimeLayout[vl_layout].row_major(IndexList[1](batch_size)),
-    )
+    var vl = TileTensor(vl_dev, row_major(batch_size))
     var mask = CausalPaddingMask(vl)
 
     flash_attention(o, q, k, v, mask, scale, ctx, num_partitions=np)
@@ -589,14 +576,8 @@ def run_batch_variance_negctl_case(ctx: DeviceContext, spec: CaseSpec) raises:
         NEG_BS_HI, NEG_NUM_KEYS, ctx
     )
     print(
-        "FUZZ_NEGCTL num_keys=",
-        NEG_NUM_KEYS,
-        "np(bs=1)=",
-        np_lo,
-        "np(bs=",
-        NEG_BS_HI,
-        ")=",
-        np_hi,
+        t"FUZZ_NEGCTL num_keys= {NEG_NUM_KEYS} np(bs=1)= {np_lo} np(bs="
+        t" {NEG_BS_HI} )= {np_hi}"
     )
     if np_lo == np_hi:
         raise Error(
@@ -657,14 +638,8 @@ def main() raises:
         var specs = gen_specs(the_budget, safe=False)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "seq_len=",
-                specs[i].seq_len,
-                "num_keys=",
-                specs[i].num_keys,
-                "valid_length=",
-                specs[i].valid_length,
+                t"FUZZ_SPEC idx= {i} seq_len= {specs[i].seq_len} num_keys="
+                t" {specs[i].num_keys} valid_length= {specs[i].valid_length}"
             )
         return
 
@@ -674,7 +649,7 @@ def main() raises:
         var sl = flag_int(args, "--seq_len", 1)
         var nk = flag_int(args, "--num_keys", 16)
         var vl = flag_int(args, "--valid_length", 8)
-        print("FUZZ_SINGLE seq_len=", sl, "num_keys=", nk, "valid_length=", vl)
+        print(t"FUZZ_SINGLE seq_len= {sl} num_keys= {nk} valid_length= {vl}")
         with DeviceContext() as ctx:
             if batch_negctl:
                 run_batch_variance_negctl_case(ctx, CaseSpec(sl, nk, vl))
@@ -691,13 +666,8 @@ def main() raises:
 
     # Default: in-process standalone fuzz over the SAFE space.
     print(
-        "=== fuzz_mha_causal seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "depth=",
-        depth,
-        "(in-process, safe space) ===",
+        t"=== fuzz_mha_causal seed= {the_seed} budget= {the_budget} depth="
+        t" {depth} (in-process, safe space) ==="
     )
     var specs = gen_specs(the_budget, safe=True)
     with DeviceContext() as ctx:

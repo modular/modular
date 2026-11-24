@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -I%S/inputs %s
 
 # Regression test: a plain dotted `import a.b.c` is built into its gated
 # ImportOp chain at parse time, so every segment it binds (`a`, `a.b`, `a.b.c`)

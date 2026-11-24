@@ -11,15 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.ffi import c_int
+from std.io.io import _fdopen
+from std.sys import stdout
+from std.sys._libc import close, dup
 from std.tempfile import NamedTemporaryFile
 
 from std.reflection import call_location, SourceLocation
-from std.testing import TestSuite
+from std.testing import TestSuite, assert_equal, assert_true
 
 from std.utils import IndexList
 
 
-@always_inline
+@inline(.always)
 def _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
     return Error(loc.prefix(String("AssertionError: ", msg)))
 
@@ -43,7 +47,7 @@ struct PrintChecker(Movable):
     var cursor: Int
     var call_location: SourceLocation
 
-    @always_inline
+    @inline(.always)
     def __init__(out self) raises:
         self.tmp = NamedTemporaryFile("rw")
         self.call_location = call_location()
@@ -52,8 +56,10 @@ struct PrintChecker(Movable):
     def __enter__(var self) -> Self:
         return self^
 
-    def stream(self) -> FileDescriptor:
-        return FileDescriptor(self.tmp._file_handle._get_raw_fd())
+    def stream(
+        self,
+    ) -> BorrowedFileDescriptor[origin_of(self.tmp._file_handle)]:
+        return BorrowedFileDescriptor(self.tmp._file_handle)
 
     def check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)
@@ -156,6 +162,27 @@ def test_print_sep() raises:
         var dyn_string: String = ":"
         print("1", "2", sep=dyn_string, file=checker.stream())
         checker.check_line("1:2")
+
+
+def _lowest_free_fd() -> c_int:
+    var fd = dup(stdout._raw())
+    _ = close(fd)
+    return fd
+
+
+def test_fdopen_releases_descriptor() raises:
+    var before = _lowest_free_fd()
+    var stream = _fdopen["w"](stdout)
+    assert_true(stream.handle)
+    # The duplicate is live while the stream is.
+    assert_true(_lowest_free_fd() > before)
+    _ = stream^
+    assert_equal(_lowest_free_fd(), before)
+
+    # Dropping a temporary releases it too, so repeated use cannot leak.
+    for _ in range(4096):
+        _ = _fdopen["w"](stdout)
+    assert_equal(_lowest_free_fd(), before)
 
 
 def main() raises:

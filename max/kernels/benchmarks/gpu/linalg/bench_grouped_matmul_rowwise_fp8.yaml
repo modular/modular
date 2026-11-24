@@ -1,0 +1,74 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+#
+# Rowwise (per-output-channel weight scale, per-token activation scale) FP8
+# grouped matmul through `grouped_matmul_rowwise_dynamic_scaled_fp8`, at the
+# Llama-4-Scout FP8-dynamic MoE shapes: 16 experts, gate_up weights transposed
+# to [E, 16384, 5120] and down to [E, 5120, 8192], at decode (1, 2, 4 and 16
+# tokens on each expert) and at prefill (128 on each, i.e. 2048 tokens: the
+# scalar kernel the baseline arm runs needs ~330 ms per call for the gate_up
+# prefill at 128, and kbench stops a binary group that runs past its per-item
+# timeout, which it does at 256 tokens per expert).
+#
+# `out_type` picks the kernel of the op: on SM100 a bf16 output takes the
+# persistent tensor-core grouped GEMM, fp32 output takes the tiled CUDA-core
+# kernel, and on a non-SM100 GPU (e.g. MI355) every row takes the CUDA-core
+# kernel. Filter with `--filter out_type=DType.float32` (or bfloat16) to plot
+# one arm.
+#
+# kbench evaluates each value as a Python expression, so the token and expert
+# lists are quoted twice to reach the benchmark as one string each.
+##===----------------------------------------------------------------------===##
+
+name: bench_grouped_matmul_rowwise_fp8
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_grouped_matmul_rowwise_fp8.mojo
+
+moe: &moe
+  ASSERT: none
+  num_experts: 16
+  out_type: [DType.bfloat16, DType.float32]
+  $num_active_experts: 16
+  $expert_ids: "'[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]'"
+
+# Llama-4-Scout `gate_up`: one fused gate+up projection, so N = 2 * moe_dim.
+gate_up: &gate_up
+  N: 16384
+  K: 5120
+
+# Llama-4-Scout `down`: back to the model width.
+down: &down
+  N: 5120
+  K: 8192
+
+params:
+- <<: [*moe, *gate_up]
+  $num_tokens_by_expert: "'[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]'"
+- <<: [*moe, *gate_up]
+  $num_tokens_by_expert: "'[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]'"
+- <<: [*moe, *gate_up]
+  $num_tokens_by_expert: "'[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]'"
+- <<: [*moe, *gate_up]
+  $num_tokens_by_expert: "'[16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16]'"
+- <<: [*moe, *gate_up]
+  $num_tokens_by_expert: "'[128,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]'"
+
+- <<: [*moe, *down]
+  $num_tokens_by_expert: "'[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]'"
+- <<: [*moe, *down]
+  $num_tokens_by_expert: "'[2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2]'"
+- <<: [*moe, *down]
+  $num_tokens_by_expert: "'[4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4]'"
+- <<: [*moe, *down]
+  $num_tokens_by_expert: "'[16,16,16,16,16,16,16,16,16,16,16,16,16,16,16,16]'"
+- <<: [*moe, *down]
+  $num_tokens_by_expert: "'[128,128,128,128,128,128,128,128,128,128,128,128,128,128,128,128]'"

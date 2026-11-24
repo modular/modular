@@ -24,8 +24,8 @@ from std._plugin import CurrentPlugin
 from std.collections import Array, List
 from std.collections.string.string_span import _unsafe_strlen
 from std.format.tstring import TString
-from std.io import FileDescriptor
-from std.ffi import c_char, c_int, external_call, get_errno
+from std.io import IOError, RawFileDescriptor
+from std.ffi import c_char, c_int, external_call
 from std.reflection import SourceLocation, call_location
 from std._gpu import thread_idx, block_idx
 from std.sys import CompilationTarget, is_gpu, is_apple_gpu
@@ -91,30 +91,17 @@ struct _DirHandle:
 
     var _handle: OpaquePointer[MutUntrackedOrigin]
 
-    def __init__(out self, var path: String) raises:
+    def __init__(out self, var path: String) raises IOError:
         """Construct the _DirHandle using the path provided.
 
         Args:
           path: The path to open.
         """
-        if not isdir(path):
-            raise Error("the directory '", path, "' does not exist")
-
-        var handle = external_call[
-            "opendir", OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
-        ](path.as_c_string_slice())
-
-        if not handle:
-            var err = get_errno()
-            raise Error(
-                "unable to open the directory '",
-                path,
-                "'",
-                " Err: ",
-                String(err),
-            )
-
-        self._handle = handle.value()
+        __guard case .Some(handle) = external_call[
+            "opendir", Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
+        ](path.as_c_string_span()) else:
+            raise IOError.last_os_error("opendir")._with_subject(.path(path))
+        self._handle = handle
 
     def __deinit__(deinit self):
         """Closes the handle opened via popen."""
@@ -140,16 +127,13 @@ struct _DirHandle:
         """
         var res = List[String]()
 
-        while True:
-            var ep = external_call[
-                "readdir", OptionalPointer[_dirent_linux, MutUntrackedOrigin]
-            ](self._handle)
-            if not ep:
-                break
-            ref name = ep.unsafe_value().unsafe_take_pointee().name
+        while case .Some(ep) = external_call[
+            "readdir", Optional[Pointer[_dirent_linux, MutUntrackedOrigin]]
+        ](self._handle):
+            ref name = ep.unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span[Byte, origin_of(name)](
+            var name_str = StringSpan(
+                unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_linux.MAX_NAME_SIZE)
@@ -170,16 +154,13 @@ struct _DirHandle:
         """
         var res = List[String]()
 
-        while True:
-            var ep = external_call[
-                "readdir", OptionalPointer[_dirent_macos, MutUntrackedOrigin]
-            ](self._handle)
-            if not ep:
-                break
-            ref name = ep.unsafe_value().unsafe_take_pointee().name
+        while case .Some(ep) = external_call[
+            "readdir", Optional[Pointer[_dirent_macos, MutUntrackedOrigin]]
+        ](self._handle):
+            ref name = ep.unsafe_take_pointee().name
             var name_ptr = name.unsafe_ptr().unsafe_bitcast[Byte]()
-            var name_str = StringSlice[origin_of(name)](
-                unsafe_from_utf8=Span[Byte, origin_of(name)](
+            var name_str = StringSpan(
+                unsafe_from_utf8=Span(
                     unsafe_ptr=name_ptr,
                     length=Int(
                         _unsafe_strlen(name_ptr, _dirent_macos.MAX_NAME_SIZE)
@@ -213,7 +194,9 @@ def getuid() -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-def listdir[PathLike: stdPathLike](path: PathLike) raises -> List[String]:
+def listdir[
+    PathLike: stdPathLike
+](path: PathLike) raises IOError -> List[String]:
     """Gets the list of entries contained in the path provided.
 
     Parameters:
@@ -237,7 +220,7 @@ def listdir[PathLike: stdPathLike](path: PathLike) raises -> List[String]:
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _abort_base() -> Never:
     __mlir_op.`llvm.intr.trap`()
 
@@ -246,7 +229,7 @@ def _abort_base() -> Never:
         pass
 
 
-@always_inline
+@inline(.always)
 def abort() -> Never:
     """Terminates execution, using a target dependent trap instruction if
     available.
@@ -261,7 +244,7 @@ def abort() -> Never:
     _abort_base()
 
 
-@no_inline
+@inline(.never)
 def _abort_report[
     *, prefix: StaticString
 ](loc: SourceLocation, message: Some[Writable]):
@@ -273,6 +256,10 @@ def _abort_report[
 
     comptime if is_apple_gpu():
         # FIXME: Remove after MOCO-3697 is fixed.
+        pass
+    elif is_gpu() and not CurrentPlugin.print_emit_fn:
+        # A GPU target without a print hook, such as one named only by its
+        # triple, has no way to report the message; `abort` still traps.
         pass
     elif is_gpu():
         # On GPU, gate the print to a single thread to avoid flooding the
@@ -318,7 +305,7 @@ def _abort_report[
         )
 
 
-@always_inline
+@inline(.always)
 def _abort_impl[
     *, prefix: StaticString
 ](
@@ -335,7 +322,7 @@ def _abort_impl[
     abort()
 
 
-@always_inline
+@inline(.always)
 def abort[
     *, prefix: StaticString = "ABORT:"
 ](message: String, *, location: Optional[SourceLocation] = {}) -> Never:
@@ -351,7 +338,7 @@ def abort[
     _abort_impl[prefix=prefix](message, location=location)
 
 
-@always_inline
+@inline(.always)
 def abort[
     *, prefix: StaticString = "ABORT:"
 ](message: TString, *, location: Optional[SourceLocation] = {}) -> Never:
@@ -370,7 +357,7 @@ def abort[
 # ===----------------------------------------------------------------------=== #
 # remove/unlink
 # ===----------------------------------------------------------------------=== #
-def remove[PathLike: stdPathLike](path: PathLike) raises:
+def remove[PathLike: stdPathLike](path: PathLike) raises IOError:
     """Removes the specified file.
 
     If the path is a directory or it can not be deleted, an error is raised.
@@ -387,14 +374,13 @@ def remove[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["unlink", Int32](fspath.as_c_string_slice())
+    var error = external_call["unlink", Int32](fspath.as_c_string_span())
 
     if error != 0:
-        var err = get_errno()
-        raise Error("Can not remove file: ", fspath, " Err: ", String(err))
+        raise IOError.last_os_error("unlink")._with_subject(.path(fspath))
 
 
-def unlink[PathLike: stdPathLike](path: PathLike) raises:
+def unlink[PathLike: stdPathLike](path: PathLike) raises IOError:
     """Removes the specified file.
 
     If the path is a directory or it can not be deleted, an error is raised.
@@ -420,7 +406,7 @@ def unlink[PathLike: stdPathLike](path: PathLike) raises:
 
 def symlink[
     TargetType: stdPathLike, LinkType: stdPathLike
-](target: TargetType, linkpath: LinkType) raises:
+](target: TargetType, linkpath: LinkType) raises IOError:
     """Creates a symlink.
 
     If linkpath already exists it will not be overwritten.
@@ -441,19 +427,15 @@ def symlink[
     var linkpath_fspath = linkpath.__fspath__()
 
     var error = external_call["symlink", c_int](
-        target_fspath.as_c_string_slice(),
-        linkpath_fspath.as_c_string_slice(),
+        target_fspath.as_c_string_span(),
+        linkpath_fspath.as_c_string_span(),
     )
 
     if error != 0:
-        var err = get_errno()
-        raise Error(
-            "Can not create symlink from ",
-            linkpath_fspath,
-            " to ",
-            target_fspath,
-            " Err: ",
-            String(err),
+        # TODO(MSTDL-3436): Include `target` once `IOError` can carry two
+        # paths.
+        raise IOError.last_os_error("symlink")._with_subject(
+            .path(linkpath_fspath)
         )
 
 
@@ -464,7 +446,7 @@ def symlink[
 
 def link[
     OldType: stdPathLike, NewType: stdPathLike
-](oldpath: OldType, newpath: NewType) raises:
+](oldpath: OldType, newpath: NewType) raises IOError:
     """Creates a new hard-link to an existing file.
 
     Parameters:
@@ -482,20 +464,14 @@ def link[
     var newpath_fspath = newpath.__fspath__()
 
     var error = external_call["link", Int32](
-        oldpath_fspath.as_c_string_slice(),
-        newpath_fspath.as_c_string_slice(),
+        oldpath_fspath.as_c_string_span(),
+        newpath_fspath.as_c_string_span(),
     )
 
     if error != 0:
-        var err = get_errno()
-        raise Error(
-            "Can not create link from ",
-            newpath_fspath,
-            " to ",
-            oldpath_fspath,
-            " Err: ",
-            String(err),
-        )
+        # TODO(MSTDL-3436): Include `oldpath` once `IOError` can carry two
+        # paths.
+        raise IOError.last_os_error("link")._with_subject(.path(newpath_fspath))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -503,7 +479,9 @@ def link[
 # ===----------------------------------------------------------------------=== #
 
 
-def mkdir[PathLike: stdPathLike](path: PathLike, mode: Int = 0o777) raises:
+def mkdir[
+    PathLike: stdPathLike
+](path: PathLike, mode: Int = 0o777) raises IOError:
     """Creates a directory at the specified path.
 
     If the directory can not be created an error is raised.
@@ -521,15 +499,14 @@ def mkdir[PathLike: stdPathLike](path: PathLike, mode: Int = 0o777) raises:
     """
 
     var fspath = path.__fspath__()
-    var error = external_call["mkdir", Int32](fspath.as_c_string_slice(), mode)
+    var error = external_call["mkdir", Int32](fspath.as_c_string_span(), mode)
     if error != 0:
-        var err = get_errno()
-        raise Error("Can not create directory: ", fspath, " Err: ", String(err))
+        raise IOError.last_os_error("mkdir")._with_subject(.path(fspath))
 
 
 def makedirs[
     PathLike: stdPathLike
-](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) raises -> None:
+](path: PathLike, mode: Int = 0o777, exist_ok: Bool = False) raises IOError:
     """Creates a specified leaf directory along with any necessary intermediate
     directories that don't already exist.
 
@@ -555,20 +532,15 @@ def makedirs[
             pass
         # xxx/newdir/. exists if xxx/newdir exists
         if tail == ".":
-            return None
+            return
     try:
         mkdir(path, mode)
     except e:
-        if not exist_ok:
-            raise Error(
-                e,
-                "\nset `makedirs(path, exist_ok=True)` to allow existing dirs",
-            )
-        if not isdir(path):
-            raise Error("path not created: ", path.__fspath__(), "\n", e)
+        if not exist_ok or not isdir(path):
+            raise e
 
 
-def rmdir[PathLike: stdPathLike](path: PathLike) raises:
+def rmdir[PathLike: stdPathLike](path: PathLike) raises IOError:
     """Removes the specified directory.
 
     If the path is not a directory or it can not be deleted, an error is raised.
@@ -584,13 +556,12 @@ def rmdir[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["rmdir", Int32](fspath.as_c_string_slice())
+    var error = external_call["rmdir", Int32](fspath.as_c_string_span())
     if error != 0:
-        var err = get_errno()
-        raise Error("Can not remove directory: ", fspath, " Err: ", String(err))
+        raise IOError.last_os_error("rmdir")._with_subject(.path(fspath))
 
 
-def removedirs[PathLike: stdPathLike](path: PathLike) raises -> None:
+def removedirs[PathLike: stdPathLike](path: PathLike) raises IOError:
     """Removes a leaf directory and all empty intermediate ones.
 
     Directories corresponding to rightmost path segments will be pruned away
@@ -648,7 +619,9 @@ def isatty(fd: Int) -> Bool:
         ```
     """
 
-    return FileDescriptor(fd).isatty()
+    if fd < 0:
+        return False
+    return RawFileDescriptor(c_int(fd)).isatty()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -656,7 +629,7 @@ def isatty(fd: Int) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-def chdir[PathLike: stdPathLike](path: PathLike) raises:
+def chdir[PathLike: stdPathLike](path: PathLike) raises IOError:
     """Changes the current working directory.
 
     Parameters:
@@ -669,7 +642,6 @@ def chdir[PathLike: stdPathLike](path: PathLike) raises:
         If the operation fails.
     """
     var fspath = path.__fspath__()
-    var error = external_call["chdir", Int32](fspath.as_c_string_slice())
+    var error = external_call["chdir", Int32](fspath.as_c_string_span())
     if error != 0:
-        var err = get_errno()
-        raise Error("chdir failed: ", fspath, " Err: ", String(err))
+        raise IOError.last_os_error("chdir")._with_subject(.path(fspath))

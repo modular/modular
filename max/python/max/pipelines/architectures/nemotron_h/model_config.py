@@ -19,10 +19,18 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import ClassVar
 
+from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParams,
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
+from max.nn.outputs import ReturnLogits
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -38,6 +46,7 @@ from max.pipelines.lib.interfaces import (
     ArchConfigWithKVCache,
     ArchConfigWithStoredKVParams,
 )
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.modeling.config_enums import (
     SupportedEncoding,
     supported_encoding_dtype,
@@ -45,6 +54,31 @@ from max.pipelines.modeling.config_enums import (
 from transformers.models.auto.configuration_auto import AutoConfig
 
 logger = logging.getLogger("max.pipelines")
+
+ATTN_CACHE_KEY = "attn"
+STATE_CACHE_KEY = "state"
+"""The two children of a Nemotron-H cache tree."""
+
+CONV_LEAF_ID = "mamba/conv"
+SSM_LEAF_ID = "mamba/ssm"
+"""The two leaves one Mamba-2 state spans, in declaration order."""
+
+
+def _ssm_state_dtype() -> DType:
+    """SSM state-pool STORAGE dtype: bf16 on Apple GPUs, fp32 elsewhere.
+
+    The Mamba-2 SSD scan always accumulates its recurrence in fp32 registers;
+    this only selects the storage dtype of the persistent state pool. On
+    Apple silicon the pool read+write dominates the decode-step traffic, and
+    only the Apple GPU kernel implements the bf16 load -> fp32-accumulate ->
+    round-on-store path, so bf16 is gated to Apple (matching the kernel-side
+    guard in ``mamba2_ssd_chunk_scan_varlen_fwd_inplace``).
+    """
+    try:
+        is_apple = accelerator_api() == "metal"
+    except Exception:
+        is_apple = False
+    return DType.bfloat16 if is_apple else DType.float32
 
 
 def build_fp8_quant_config(
@@ -55,7 +89,7 @@ def build_fp8_quant_config(
 
     Nemotron-H FP8 (modelopt ``quant_algo=FP8``) stores, per quantized Linear,
     an ``F8_E4M3`` weight plus a scalar ``weight_scale`` and ``input_scale``
-    (both fp32) — i.e. per-tensor static activation+weight scaling. Returns
+    (both fp32), that is, per-tensor static activation+weight scaling. Returns
     ``None`` if the checkpoint is not FP8 (no ``weight_scale`` tensors).
 
     The generic ``mlp_quantized_layers`` / ``attn_quantized_layers`` machinery
@@ -121,7 +155,7 @@ def parse_hybrid_pattern(pattern: str) -> list[str]:
     """Map a Nemotron-H ``hybrid_override_pattern`` to per-layer kinds.
 
     ``M`` -> ``"mamba"``, ``*`` -> ``"attention"``, ``-`` -> ``"mlp"``,
-    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, e.g. 30B-A3B).
+    ``E`` -> ``"moe"`` (the Nemotron-3 MoE hybrids, for example, 30B-A3B).
     """
     kinds: list[str] = []
     for ch in pattern:
@@ -207,8 +241,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     mamba_proj_bias: bool = False
     time_step_limit: tuple[float, float] = (0.0, float("inf"))
 
-    # KV cache (full-attention layers only)
-    kv_params: KVCacheParams
+    kv_params: MultiKVCacheParams
+    """The cache tree: the attention layers' KV beside the Mamba state."""
 
     # FP8: set of (kind, layer_idx) modules quantized to FP8 per-tensor static.
     # ``fp8_mamba_layers``: mamba layers whose in/out_proj are FP8.
@@ -220,16 +254,32 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
     fp8_mamba_layers: set[int] = field(default_factory=set)
     fp8_mlp_layers: set[int] = field(default_factory=set)
     fp8_moe_layers: set[int] = field(default_factory=set)
+    # ``fp8_attention_layers``: attention layers whose q/k/v/o are FP8 (the 8B
+    # Reasoning checkpoint).
+    fp8_attention_layers: set[int] = field(default_factory=set)
     is_fp8: bool = False
 
     quantization_encoding: SupportedEncoding | None = None
 
+    quant_config: QuantConfig | None = None
+    """The per-tensor static FP8 scheme of the FP8 layers, from the
+    checkpoint (:meth:`finalize`)."""
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+
+    @property
+    def attn_kv_params(self) -> KVCacheParams:
+        """The attention child of :attr:`kv_params`."""
+        return self.kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
+
     @property
     def mamba_intermediate_size(self) -> int:
+        """The mixer's width, from the head count and the head width."""
         return self.mamba_num_heads * self.mamba_head_dim
 
     @property
     def conv_dim(self) -> int:
+        """The width the causal convolution runs at."""
         return (
             self.mamba_intermediate_size
             + 2 * self.n_groups * self.ssm_state_size
@@ -237,6 +287,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def mamba_in_proj_out(self) -> int:
+        """The width the mixer's input projection produces."""
         # [gate=intermediate, hidden_states_B_C=conv_dim, dt=nheads]
         return (
             self.mamba_intermediate_size + self.conv_dim + self.mamba_num_heads
@@ -244,22 +295,26 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
 
     @property
     def attention_q_dim(self) -> int:
+        """The query width across all attention heads."""
         return self.num_attention_heads * self.attention_head_dim
 
     @property
     def attention_kv_dim(self) -> int:
+        """The key and value width across all key/value heads."""
         return self.num_key_value_heads * self.attention_head_dim
 
     @property
     def mamba_layer_indices(self) -> list[int]:
+        """The indices of the layers whose mixer is Mamba-2."""
         return [i for i, k in enumerate(self.layer_kinds) if k == "mamba"]
 
     @property
     def attention_layer_indices(self) -> list[int]:
+        """The indices of the layers whose mixer is attention."""
         return [i for i, k in enumerate(self.layer_kinds) if k == "attention"]
 
     def populate_fp8_layers(self, state_dict: Mapping[str, WeightData]) -> None:
-        """Record which mamba/MLP layers are FP8 from the checkpoint.
+        """Record which mamba/MLP/MoE/attention layers are FP8 from the checkpoint.
 
         A Linear is FP8 iff its ``weight_scale`` is present in the checkpoint
         (the exact inverse of the modelopt ``exclude_modules`` list). Names are
@@ -269,6 +324,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         fp8_mamba: set[int] = set()
         fp8_mlp: set[int] = set()
         fp8_moe: set[int] = set()
+        fp8_attention: set[int] = set()
         for name in state_dict:
             if not name.endswith("weight_scale"):
                 continue
@@ -282,6 +338,8 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
                     fp8_mamba.add(li)
                 elif proj in ("up_proj", "down_proj"):
                     fp8_mlp.add(li)
+                elif proj in ("q_proj", "k_proj", "v_proj", "o_proj"):
+                    fp8_attention.add(li)
                 # MoE routed/shared experts nest one level deeper:
                 # blocks.{i}.mixer.experts.{j}.{up,down}_proj.weight_scale and
                 # blocks.{i}.mixer.shared_experts.{up,down}_proj.weight_scale.
@@ -290,14 +348,34 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         self.fp8_mamba_layers = fp8_mamba
         self.fp8_mlp_layers = fp8_mlp
         self.fp8_moe_layers = fp8_moe
-        self.is_fp8 = bool(fp8_mamba or fp8_mlp or fp8_moe)
+        self.fp8_attention_layers = fp8_attention
+        self.is_fp8 = bool(fp8_mamba or fp8_mlp or fp8_moe or fp8_attention)
         logger.info(
             f"Nemotron-H FP8: {len(fp8_mamba)} mamba layers,"
-            f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers quantized"
+            f" {len(fp8_mlp)} MLP layers, {len(fp8_moe)} MoE layers,"
+            f" {len(fp8_attention)} attention layers quantized"
         )
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, WeightData],
+        outputs: ModelOutputConfig,
+    ) -> None:
+        """Completes the config in place from the checkpoint.
+
+        Records which layers are FP8 and their scheme, from the checkpoint's
+        ``weight_scale`` tensors, and the logits the pipeline returns.
+        """
+        self.populate_fp8_layers(state_dict)
+        self.quant_config = build_fp8_quant_config(
+            huggingface_config, state_dict
+        )
+        self.return_logits = outputs.return_logits
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """The checkpoint's hidden layer count."""
         return huggingface_config.num_hidden_layers
 
     @classmethod
@@ -306,6 +384,7 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         huggingface_config: AutoConfig,
         model_config: MAXModelConfig,
     ) -> int:
+        """The configured maximum length, capped at the model's default."""
         max_seq_len = model_config.max_length
         if max_seq_len:
             return max_seq_len
@@ -320,11 +399,13 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         cache_dtype: DType,
         *,
         allow_kv_head_replication: bool = False,
-    ) -> KVCacheParams:
-        """Allocate KV cache only for the (4) full-attention layers.
+    ) -> MultiKVCacheParams:
+        """Returns the attention leaf beside the Mamba state.
 
-        The forward pass maps each attention layer to a sequential KV cache
-        index (0, 1, 2, ...), independent of the absolute layer index.
+        KV is allocated only for the full-attention layers. The forward pass
+        maps each attention layer to a sequential KV cache index (0, 1, 2,
+        ...), independent of the absolute layer index; the Mamba layers do
+        the same in the state leaves.
 
         The reference configuration uses an FP8 KV cache for this checkpoint.
         Select the same default while preserving explicit cache-format
@@ -338,16 +419,51 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
             and kv_cache_config.kv_cache_format is None
         ):
             cache_dtype = DType.float8_e4m3fn
-        kinds = parse_hybrid_pattern(huggingface_config.hybrid_override_pattern)
+        hf = huggingface_config
+        kinds = parse_hybrid_pattern(hf.hybrid_override_pattern)
         num_attention_layers = sum(1 for k in kinds if k == "attention")
-        return kv_cache_config.to_params(
+        num_mamba_layers = sum(1 for k in kinds if k == "mamba")
+        attn = kv_cache_config.to_params(
             allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
-            n_kv_heads=huggingface_config.num_key_value_heads,
-            head_dim=resolve_attention_head_dim(huggingface_config),
+            n_kv_heads=hf.num_key_value_heads,
+            head_dim=resolve_attention_head_dim(hf),
             num_layers=num_attention_layers,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+        )
+        regions = (
+            # Separate leaves because the conv and SSM kernels each index
+            # their own uniformly strided pool, at different dtypes. The model
+            # dtype is always bf16 (see from_hf), so the conv state is too.
+            RecurrentStateRegion(
+                leaf_id=CONV_LEAF_ID,
+                num_layers=num_mamba_layers,
+                row_shape=(
+                    hf.mamba_num_heads * hf.mamba_head_dim
+                    + 2 * hf.n_groups * hf.ssm_state_size,
+                    hf.conv_kernel - 1,
+                ),
+                dtype=DType.bfloat16,
+            ),
+            RecurrentStateRegion(
+                leaf_id=SSM_LEAF_ID,
+                num_layers=num_mamba_layers,
+                row_shape=(
+                    hf.mamba_num_heads,
+                    hf.mamba_head_dim,
+                    hf.ssm_state_size,
+                ),
+                dtype=_ssm_state_dtype(),
+            ),
+        )
+        state = RecurrentStateParams(
+            regions=regions,
+            devices=attn.devices,
+            data_parallel_degree=attn.data_parallel_degree,
+        )
+        return MultiKVCacheParams.from_params(
+            {ATTN_CACHE_KEY: attn, STATE_CACHE_KEY: state}
         )
 
     @classmethod
@@ -406,11 +522,12 @@ class NemotronHConfig(ArchConfigWithStoredKVParams, ArchConfigWithKVCache):
         pipeline_config: PipelineConfig,
         huggingface_config: AutoConfig,
         dtype: DType,
-        kv_params: KVCacheParams,
+        kv_params: MultiKVCacheParams,
         devices: list[DeviceRef],
         *,
         max_seq_len: int,
     ) -> NemotronHConfig:
+        """Builds the config from the checkpoint's ``config.json``."""
         # The model (activation / embedding / norm / attention) dtype is always
         # bf16; FP8 is applied PER-MODULE to specific Linears via quant_config,
         # NOT model-wide. So ignore an fp8 resolved encoding for the model dtype

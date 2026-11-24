@@ -108,7 +108,6 @@ struct MicroBenchmark {
     };
     inline Iterator begin() { return Iterator(this); }
     inline Iterator end() { return Iterator(); }
-    std::chrono::nanoseconds getDuration() const { return duration; }
     size_t getBatchSize() const { return batchSize; }
     void reportError(const Error &err) { error = err.copy(); }
     inline bool hasError() const { return error.isError(); }

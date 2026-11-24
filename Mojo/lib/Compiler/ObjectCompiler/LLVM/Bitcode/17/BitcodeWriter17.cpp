@@ -27,6 +27,7 @@
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
@@ -360,6 +361,10 @@ private:
                            SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIProperty(const DIProperty *N, SmallVectorImpl<uint64_t> &Record,
                        unsigned Abbrev);
+  void writeDILayerLoc(const DILayerLoc *N, SmallVectorImpl<uint64_t> &Record,
+                       unsigned Abbrev);
+  void writeDILayerLocList(const DILayerLocList *N,
+                           SmallVectorImpl<uint64_t> &Record, unsigned Abbrev);
   void writeDIImportedEntity(const DIImportedEntity *N,
                              SmallVectorImpl<uint64_t> &Record,
                              unsigned Abbrev);
@@ -960,7 +965,27 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
     Record.push_back(VE.getAttributeGroupID(Pair));
     Record.push_back(AttrListIndex);
 
+    auto pushStringAttr = [&](StringRef Kind, StringRef Val) {
+      Record.push_back(Val.empty() ? 3 : 4);
+      Record.append(Kind.begin(), Kind.end());
+      Record.push_back(0);
+      if (!Val.empty()) {
+        Record.append(Val.begin(), Val.end());
+        Record.push_back(0);
+      }
+    };
+
     for (Attribute Attr : AS) {
+      // LLVM 17 has no `denormal_fpenv` attribute and reads the denormal mode
+      // from these strings. A mode equal to LLVM 17's default is left out.
+      if (Attr.hasAttribute(Attribute::DenormalFPEnv)) {
+        DenormalFPEnv Env = Attr.getDenormalFPEnv();
+        if (Env.DefaultMode != DenormalMode::getDefault())
+          pushStringAttr("denormal-fp-math", Env.DefaultMode.str());
+        if (Env.F32Mode != Env.DefaultMode)
+          pushStringAttr("denormal-fp-math-f32", Env.F32Mode.str());
+        continue;
+      }
       if (Attr.isEnumAttribute() || Attr.isIntAttribute()) {
         uint64_t AttrKindEncoding = getAttrKindEncoding(Attr.getKindAsEnum());
         if (AttrKindEncoding != M::KGEN::LLVM::UNSUPPORTED_ATTR_KIND_ENCODING) {
@@ -974,16 +999,7 @@ void ModuleBitcodeWriter::writeAttributeGroupTable() {
           }
         }
       } else if (Attr.isStringAttribute()) {
-        StringRef Kind = Attr.getKindAsString();
-        StringRef Val = Attr.getValueAsString();
-
-        Record.push_back(Val.empty() ? 3 : 4);
-        Record.append(Kind.begin(), Kind.end());
-        Record.push_back(0);
-        if (!Val.empty()) {
-          Record.append(Val.begin(), Val.end());
-          Record.push_back(0);
-        }
+        pushStringAttr(Attr.getKindAsString(), Attr.getValueAsString());
       } else if (Attr.isTypeAttribute()) {
         Type *Ty = Attr.getValueAsType();
         Record.push_back(Ty ? 6 : 5);
@@ -2453,6 +2469,21 @@ void ModuleBitcodeWriter::writeDIProperty(const DIProperty *,
   llvm_unreachable("DIProperty cannot be encoded in this bitcode version");
 }
 
+// DILocation irlayers postdate this bitcode format, whose readers have no
+// METADATA_LAYERLOC or METADATA_LAYERLOC_LIST record. Mojo debug info never
+// builds them.
+void ModuleBitcodeWriter::writeDILayerLoc(const DILayerLoc *,
+                                          SmallVectorImpl<uint64_t> &,
+                                          unsigned) {
+  llvm_unreachable("DILayerLoc cannot be encoded in this bitcode version");
+}
+
+void ModuleBitcodeWriter::writeDILayerLocList(const DILayerLocList *,
+                                              SmallVectorImpl<uint64_t> &,
+                                              unsigned) {
+  llvm_unreachable("DILayerLocList cannot be encoded in this bitcode version");
+}
+
 void ModuleBitcodeWriter::writeDIImportedEntity(
     const DIImportedEntity *N, SmallVectorImpl<uint64_t> &Record,
     unsigned Abbrev) {
@@ -3619,8 +3650,9 @@ void ModuleBitcodeWriter::writeInstruction(const Instruction &I,
     FunctionType *FTy = CI.getFunctionType();
 
     // PointerRewriter typed the emask callee `i8*`; the call's explicit type
-    // must match it, else the AIR reader rejects "explicit call type does not
-    // match pointee". Gated to the emask family; every other call is unchanged.
+    // must match it, else the platform bitcode reader rejects "explicit call
+    // type does not match pointee". Gated to the emask family; every other
+    // call is unchanged.
     if (const Function *F = dyn_cast<Function>(CI.getCalledOperand())) {
       StringRef CalleeName = F->getName();
       if (CalleeName.starts_with("llvm.agx3.") &&

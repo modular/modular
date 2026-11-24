@@ -35,53 +35,10 @@ LoopOp HLCF::getParentLoop(Operation *op, StringAttr label) {
   return loop;
 }
 
-/// Check if the child loop is nested in the parentToCheck loop.
-bool HLCF::isParentLoop(LoopOp child, LoopOp parentToCheck) {
-  LoopOp parent = child;
-  while (parent && parent != parentToCheck)
-    parent = parent->getParentOfType<LoopOp>();
-  return parent == parentToCheck;
-}
-
 /// Get the parent operation of a terminator.
 Operation *HLCF::getParentNode(HLCF::ControlFlowTerminator term) {
   Operation *op = term->getParentOp();
   while (!term.isParentNode(op))
     op = op->getParentOp();
   return op;
-}
-
-HLCF::IfOp HLCF::replaceElifWithIfOps(ElifOp elifOp) {
-  ImplicitLocOpBuilder builder(elifOp->getLoc(), elifOp);
-  builder.setInsertionPoint(elifOp);
-
-  // First condition is an SSA operand; build the outermost if from it.
-  HLCF::IfOp outerMostIfOp =
-      HLCF::IfOp::create(builder, elifOp.getResultTypes(), elifOp.getCond());
-  outerMostIfOp.getThenRegion().takeBody(elifOp.getThenRegion());
-  Region *currentRegion = &outerMostIfOp.getElseRegion();
-
-  // Nest additional (cond, then) pairs into the current else region.
-  for (Region &region : elifOp.getElifRegions()) {
-    currentRegion->takeBody(region);
-    builder.setInsertionPointToEnd(&currentRegion->front());
-    Operation *terminator = currentRegion->front().getTerminator();
-    if (auto elifYieldOp = dyn_cast<HLCF::ElifYieldOp>(terminator)) {
-      auto newIfOp = HLCF::IfOp::create(builder, elifOp.getResultTypes(),
-                                        elifYieldOp->getOperand(0));
-      IRRewriter rewriter{builder};
-      rewriter.replaceOp(elifYieldOp,
-                         HLCF::YieldOp::create(builder, newIfOp.getResults()));
-      currentRegion = &newIfOp.getThenRegion();
-      continue;
-    }
-    // Moved a then region into If's Then region; continue into its Else.
-    auto ifOpParent = terminator->getParentOfType<HLCF::IfOp>();
-    currentRegion = &ifOpParent.getElseRegion();
-  }
-  currentRegion->takeBody(elifOp.getElseRegion());
-  builder.setInsertionPoint(elifOp);
-  IRRewriter rewriter{builder};
-  rewriter.replaceOp(elifOp, outerMostIfOp);
-  return outerMostIfOp;
 }

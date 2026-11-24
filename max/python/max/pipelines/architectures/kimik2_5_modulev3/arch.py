@@ -10,18 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Kimi K2.5 with the ModuleV3 registry."""
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from . import weight_adapters
 from .batch_processor import KimiK2_5BatchProcessor
 from .context import KimiK2_5TextAndVisionContext
-from .memory_planner import KimiK25MemoryPlanner
-from .model import KimiK2_5Model
+from .layers.language_model import KimiK2_5Decoder
+from .layers.vision.transformer import KimiK2_5VisionEncoder
 from .model_config import KimiK2_5Config
 from .tokenizer import KimiK2_5VLTokenizer
+from .weight_adapters import kimik2_5_weight_rules
 
 # Kimi-K2.5 (ModuleV3). The vision encoder runs single-device; the DeepseekV3
 # language tower is multi-GPU (TP attention + EP MoE), so multi_gpu_supported
@@ -38,20 +39,21 @@ kimik2_5_modulev3_arch = SupportedArchitecture(
     supported_encodings=KimiK2_5Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    pipeline_model=KimiK2_5Model,
+    modules={
+        GraphRole.DECODER: KimiK2_5Decoder,
+        GraphRole.VISION: KimiK2_5VisionEncoder,
+    },
     batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
-    },
+    weight_rules=kimik2_5_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
 )
 
 kimivl_modulev3_arch = SupportedArchitecture(
@@ -64,18 +66,19 @@ kimivl_modulev3_arch = SupportedArchitecture(
     supported_encodings=KimiK2_5Config.SUPPORTED_ENCODINGS,
     multi_gpu_supported=True,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    pipeline_model=KimiK2_5Model,
+    modules={
+        GraphRole.DECODER: KimiK2_5Decoder,
+        GraphRole.VISION: KimiK2_5VisionEncoder,
+    },
     batching=KimiK2_5BatchProcessor,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_kimivl_safetensor_state_dict,
-    },
+    weight_rules=kimik2_5_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
     tool_parser="kimik2_5",
     reasoning_parser="kimik2_5",
-    memory_planner=KimiK25MemoryPlanner,
 )

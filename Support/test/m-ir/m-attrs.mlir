@@ -52,6 +52,16 @@
 // CHECK: #M.target<triple = "a", arch = "b", features = "+foo">
 "some.op"() {a = #M.target<triple = "a", arch = "b", stdlib_plugin = "default", features = "+foo">} : () -> ()
 
+// `opaque_plugin` is a payload MDialect stores but never interprets, so it has
+// to survive both formats byte-for-byte whatever typed attribute the producing
+// dialect put there.
+// CHECK: #M.target<triple = "a", arch = "b", opaque_plugin = 7 : i32>
+"some.op"() {a = #M.target<triple = "a", arch = "b", opaque_plugin = 7 : i32>} : () -> ()
+
+// A typed payload keeps its type annotation through the bytecode round-trip.
+// CHECK: #M.target<triple = "a", arch = "b", opaque_plugin = dense<[1, 2]> : tensor<2xi32>>
+"some.op"() {a = #M.target<triple = "a", arch = "b", opaque_plugin = dense<[1, 2]> : tensor<2xi32>>} : () -> ()
+
 // CHECK: #M.device_ref<"foo", 3>
 "some.op"() {a = #M.device_ref<"foo", 3>} : () -> ()
 

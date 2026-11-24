@@ -16,11 +16,16 @@ from std.random import random_float64
 
 from max.algorithm.functional import parallelize_over_rows
 from std.benchmark import Bench, Bencher, BenchId
-from layout import Coord, Idx, DefaultEngine, TileTensor, row_major
+from layout import (
+    Idx,
+    DefaultEngine,
+    TileTensor,
+    row_major,
+)
 from nn.toppminp import min_p_sampling, top_p_sampling
 from std.testing import assert_equal
 
-from std.utils import IndexList
+from std.utils.coord import Coord
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -57,9 +62,9 @@ struct TestCase[_dtype: DType, _out_idx_type: DType, _is_top_p: Bool](
 def time_kernel(
     mut m: Bench, kernel_name: String, func: Some[def() raises -> None]
 ) raises:
-    @always_inline
+    @inline(.always)
     def bench_func(mut m: Bencher) raises {imm}:
-        @always_inline
+        @inline(.always)
         def kernel_launch() raises {imm}:
             func()
 
@@ -78,9 +83,10 @@ def fill_random[
     comptime min_val = -1e6
     comptime max_val = 1e6
     var total_elements = buffer.num_elements()
+    var flat = buffer.reshape(row_major(total_elements))
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.raw_store(i, random_value.cast[dtype]())
+        flat[i] = random_value.cast[dtype]()
 
 
 def fill_iota[
@@ -102,30 +108,22 @@ def test_is_sorted_descending[
     var sorted_flag = Span(_sorted_flag)
 
     def process_rows(start_batch: Int, end_batch: Int) {var}:
+        var buf_flat = buf.reshape(row_major(buf.num_elements()))
         # Process a chunk of batches
         for batch_id in range(start_batch, end_batch):
             var offset = batch_id * vocab_size
             for i in range(vocab_size - 1):
-                if buf.raw_load(offset + i) < buf.raw_load(offset + i + 1):
-                    print(
-                        "[",
-                        batch_id,
-                        "][",
-                        i,
-                        "]: ",
-                        buf.raw_load(offset + i),
-                        " < ",
-                        buf.raw_load(offset + i + 1),
-                    )
+                var cur = buf_flat.load[width=1]((offset + i,))
+                var nxt = buf_flat.load[width=1]((offset + i + 1,))
+                if cur < nxt:
+                    print(t"[ {batch_id} ][ {i} ]:  {cur}  <  {nxt}")
                     sorted_flag[batch_id] = False
                     break
 
     comptime parallelism_grain_size = 1
-    # Create shape with batch_size as the second dimension
-    var shape = IndexList[1](
-        batch_size,
+    parallelize_over_rows(
+        process_rows, Coord(batch_size), 0, parallelism_grain_size
     )
-    parallelize_over_rows(process_rows, shape, 0, parallelism_grain_size)
 
     # Check if all batches are sorted by AND-ing all flags
     var all_sorted = True
@@ -136,21 +134,14 @@ def test_is_sorted_descending[
 
 
 def print_test_case(test_case: TestCase):
+    var kind = "Top-P" if test_case.is_top_p else "Min-P"
     print(
-        "==== Running",
-        "Top-P" if test_case.is_top_p else "Min-P",
-        ", dtype=",
-        test_case.dtype,
-        ", out_idx_type=",
-        test_case.out_idx_type,
-        "sampling with batch_size=",
-        test_case.batch_size,
-        ", vocab_size=",
-        test_case.vocab_size,
-        ", temperature=",
-        test_case.temperature,
-        ", p_threshold=",
-        test_case.p_threshold,
+        t"==== Running {kind} ,"
+        t" dtype= {test_case.dtype} , out_idx_type="
+        t" {test_case.out_idx_type} sampling with batch_size="
+        t" {test_case.batch_size} , vocab_size= {test_case.vocab_size} ,"
+        t" temperature= {test_case.temperature} , p_threshold="
+        t" {test_case.p_threshold}"
     )
 
 
@@ -168,6 +159,7 @@ def test_case_sampling[
     var p_threshold = test_case.p_threshold
 
     var m = Bench()
+    _ = m
 
     # Create input tensors
     var in_logits_ptr = List(
@@ -175,14 +167,14 @@ def test_case_sampling[
     )
     var in_logits = TileTensor(
         in_logits_ptr,
-        row_major(Coord(batch_size, vocab_size)),
+        row_major(batch_size, vocab_size),
     )
     var token_ids_ptr = List(
         length=batch_size * 1, fill=Scalar[out_idx_type](0)
     )
     var token_ids = TileTensor(
         token_ids_ptr,
-        row_major(Coord(batch_size, Idx[1])),
+        row_major(batch_size, Idx[1]),
     )
     var p_thresholds_ptr = List(length=batch_size, fill=Scalar[dtype](0))
     var p_thresholds = TileTensor(
@@ -193,11 +185,11 @@ def test_case_sampling[
     # Fill tensors
     fill_fn(in_logits)
     for i in range(batch_size):
-        p_thresholds.raw_store(i, p_threshold)
+        p_thresholds[i] = p_threshold
 
     comptime if DEBUG_BENCH:
 
-        @always_inline
+        @inline(.always)
         def run_func() raises {var}:
             if is_top_p:
                 top_p_sampling(

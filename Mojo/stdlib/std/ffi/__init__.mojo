@@ -21,7 +21,7 @@ foreign code. It includes:
   at runtime and calling their functions.
 - **External function calls**: `external_call()` for calling C functions
   by name with compile-time resolution.
-- **String interop**: `CStringSlice` for working with null-terminated C strings.
+- **String interop**: `CStringSpan` for working with null-terminated C strings.
 
 Example:
 
@@ -56,18 +56,22 @@ from std.sys._libc_errno import ErrNo, get_errno, set_errno
 
 from std.memory import OwnedPointer, Pointer
 from std.memory.alloc import dealloc, ThinAllocation
-from std.memory.unsafe_pointer import unsafe_cast
+from std.memory.pointer import unsafe_cast
 
 from std.sys.info import CompilationTarget, is_32bit, is_64bit, size_of
-from .cstring import CStringSlice
+from .cstring import CStringSpan
 from .unsafe_union import UnsafeUnion
 
 # ===-----------------------------------------------------------------------===#
 # Primitive C type aliases
 # ===-----------------------------------------------------------------------===#
 
-comptime c_char = Int8
-"""C `char` type."""
+comptime c_char = Scalar[_c_char_dtype()]
+"""C `char` type.
+
+Plain `char`'s signedness is implementation-defined and differs by ABI.
+Use `c_uchar` for a field explicitly declared `unsigned char`, which is always
+unsigned."""
 
 comptime c_uchar = UInt8
 """C `unsigned char` type."""
@@ -125,8 +129,35 @@ comptime c_float = Float32
 comptime c_double = Float64
 """C `double` type."""
 
-comptime c_pid_t = Int
+comptime c_pid_t = c_int
 """C `pid_t` type."""
+
+comptime _null[
+    mut: Bool,
+    //,
+    T: AnyType,
+    origin: Origin[mut=mut] = MutUntrackedOrigin,
+    *,
+    address_space: AddressSpace = .GENERIC,
+] = Optional[Pointer[T, origin, address_space=address_space]]()
+"""An empty `Optional[Pointer[T, origin]]`, equivalent to the C `NULL`.
+
+```mojo
+from std.ffi import _null
+
+def maybe_write(nullable: Optional[MutPointer[Int, _]]):
+    if case .Some(ptr) = nullable:
+        ptr[] = 42
+
+maybe_write(_null[Int])
+```
+
+Parameters:
+    mut: The mutability of the pointer.
+    T: The pointee type.
+    origin: The origin of the pointer.
+    address_space: The address space of the pointer.
+"""
 
 comptime MAX_PATH = _get_max_path()
 """Maximum path length for the current platform."""
@@ -140,6 +171,16 @@ def _get_max_path() -> Int:
     # Default POSIX limit
     else:
         return 256
+
+
+def _c_char_dtype() -> DType:
+    # Plain `char` is unsigned by default under AAPCS64 (Linux on ARM), and
+    # signed by default everywhere else this codebase targets (x86-64
+    # Linux, Apple's ARM64 ABI).
+    comptime if CompilationTarget.is_linux() and CompilationTarget.is_arm():
+        return DType.uint8
+    else:
+        return DType.int8
 
 
 def _c_long_dtype[unsigned: Bool = False]() -> DType:
@@ -223,7 +264,7 @@ struct _DLCallable[
     """An immutable borrow of the owning handle. Its presence forces the
     compiler to keep the handle alive for the lifetime of this callable."""
 
-    @always_inline
+    @inline(.always)
     def __call__[*T: AnyType](self, *args: *T) -> Self.return_type:
         """Invokes the underlying C function with the given arguments.
 
@@ -246,7 +287,7 @@ struct _DLCallable[
         # cannot be directly reinterpreted as a function-pointer value
         # (`.unsafe_bitcast` only changes the pointee type).
         var typed_fn = Pointer(to=self._opaque).unsafe_bitcast[
-            def(* a: * T) thin abi("C") -> Self.return_type
+            def(*a: *T) thin abi("C") -> Self.return_type
         ]()[]
         # The `_lib` field's origin parameter keeps `OwnedDLHandle` borrowed
         # for the lifetime of `self`, which spans this entire method — so
@@ -254,7 +295,7 @@ struct _DLCallable[
         return typed_fn(*args)
 
 
-struct OwnedDLHandle(Movable):
+struct OwnedDLHandle(Boolable, Movable):
     """Represents an owned handle to a dynamically linked library with RAII
     semantics.
 
@@ -280,7 +321,7 @@ struct OwnedDLHandle(Movable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, flags: Int = DEFAULT_RTLD) raises:
         """Initialize an owned handle to all global symbols in the current
         process.
@@ -312,7 +353,7 @@ struct OwnedDLHandle(Movable):
         self._handle = _DLHandle(path, flags)
 
     @doc_hidden
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, unsafe_uninitialized: Bool):
         self._handle = _DLHandle({})
 
@@ -410,17 +451,16 @@ struct OwnedDLHandle(Movable):
             ' `get_function[def(Arg) abi("C") -> Ret](name)` to'
             " `get_function[Ret](name)`."
         )
-        var ptr = self._handle.get_symbol[NoneType](
-            cstr_name=name.as_c_string_slice()
-        )
-        if not ptr:
+        __guard case .Some(ptr) = self._handle.get_symbol[NoneType](
+            cstr_name=name.as_c_string_span()
+        ) else:
             raise Error(t"symbol not found: {name}")
         return _DLCallable[return_type, origin_of(self)](
-            ptr.unsafe_value().unsafe_origin_cast[MutUntrackedOrigin](),
+            ptr,
             Pointer(to=self),
         )
 
-    @always_inline
+    @inline(.always)
     def _get_function[
         func_name: StaticString, result_type: TrivialRegisterPassable
     ](self) -> result_type:
@@ -436,10 +476,10 @@ struct OwnedDLHandle(Movable):
         """
         return self._handle._get_function[func_name, result_type]()
 
-    @always_inline
+    @inline(.always)
     def _get_function[
         result_type: TrivialRegisterPassable
-    ](self, *, cstr_name: CStringSlice[_]) -> result_type:
+    ](self, *, cstr_name: CStringSpan[_]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -456,7 +496,7 @@ struct OwnedDLHandle(Movable):
 
     def get_symbol[
         mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
-    ](ref[origin] self, name: StringSlice) -> Optional[
+    ](ref[origin] self, name: StringSpan) -> Optional[
         Pointer[result_type, origin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -472,8 +512,8 @@ struct OwnedDLHandle(Movable):
 
         var lib = OwnedDLHandle("libcounters.so")
         var counter = lib.get_symbol[c_int]("live_connections")
-        if counter:
-            print(counter.value()[])
+        if case .Some(ptr) = counter:
+            print(ptr[])
         ```
 
         Parameters:
@@ -489,12 +529,12 @@ struct OwnedDLHandle(Movable):
         """
         var name_copy = String(name)
         return self.get_symbol[result_type](
-            cstr_name=name_copy.as_c_string_slice()
+            cstr_name=name_copy.as_c_string_span()
         )
 
     def get_symbol[
         mut: Bool, origin: Origin[mut=mut], //, result_type: AnyType
-    ](ref[origin] self, *, cstr_name: CStringSlice[_]) -> Optional[
+    ](ref[origin] self, *, cstr_name: CStringSpan[_]) -> Optional[
         Pointer[result_type, origin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -514,19 +554,16 @@ struct OwnedDLHandle(Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        var res = self._handle.get_symbol[result_type](cstr_name=cstr_name)
-        if not res:
+        __guard case .Some(res) = self._handle.get_symbol[result_type](
+            cstr_name=cstr_name
+        ) else:
             return None
-        # `_DLHandle` is non-owning, so it can only hand back an untracked
-        # origin. Re-tie the pointer to this owning handle, which is the borrow
-        # `_DLHandle` has no way to express.
-        return (
-            res.unsafe_value()
-            .unsafe_mut_cast[mut]()
-            .unsafe_origin_cast[origin]()
-        )
+        # `_DLHandle` is non-owning, so it can only hand back an
+        # untracked origin. Re-tie the pointer to this owning handle,
+        # which is the borrow `_DLHandle` has no way to express.
+        return res.unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
 
-    @always_inline
+    @inline(.always)
     def call[
         name: StaticString,
         return_type: RegisterPassable = NoneType,
@@ -585,10 +622,10 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         library. For safer usage, prefer `OwnedDLHandle`.
     """
 
-    var handle: OptionalPointer[NoneType, MutUntrackedOrigin]
+    var handle: Optional[Pointer[NoneType, MutUntrackedOrigin]]
     """The handle to the dynamic library."""
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, flags: Int = DEFAULT_RTLD) raises:
         """Initialize a dynamic library handle to all global symbols in the
         current process.
@@ -604,7 +641,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             If `dlopen(nullptr, flags)` fails.
         """
         self = Self._dlopen(
-            OptionalPointer[c_char, ImmUntrackedOrigin](), flags
+            Optional[Pointer[c_char, ImmUntrackedOrigin]](), flags
         )
 
     def __init__[
@@ -626,7 +663,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
         var fspath = path.__fspath__()
         var file = (
-            fspath.as_c_string_slice()
+            fspath.as_c_string_span()
             .ptr()
             .as_imm()
             .unsafe_origin_cast[ImmUntrackedOrigin]()
@@ -640,13 +677,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
 
     @staticmethod
     def _dlopen(
-        file: OptionalPointer[mut=False, c_char, ImmUntrackedOrigin], flags: Int
+        file: Optional[ImmPointer[c_char, ImmUntrackedOrigin]], flags: Int
     ) raises -> _DLHandle:
         var handle = dlopen(file, Int32(flags))
         if not handle:
             var error_message = dlerror()
-            var message = StringSlice(
-                unsafe_from_utf8=CStringSlice(
+            var message = StringSpan(
+                unsafe_from_utf8=CStringSpan(
                     unsafe_from_ptr=error_message.value().as_imm()
                 )
             ) if error_message else {}
@@ -664,7 +701,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
         var opaque_function_ptr = dlsym(
             self.handle,
-            name.as_c_string_slice().ptr(),
+            name.as_c_string_span().ptr(),
         )
 
         return Bool(opaque_function_ptr)
@@ -679,7 +716,8 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             using `OwnedDLHandle` which automatically manages the library
             lifetime.
         """
-        _ = dlclose(self.handle)
+        if self.handle:
+            _ = dlclose(self.handle)
         self.handle = {}
 
     def __bool__(self) -> Bool:
@@ -717,10 +755,10 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         )
 
         return self._get_function[result_type](
-            cstr_name=name.as_c_string_slice()
+            cstr_name=name.as_c_string_span()
         )
 
-    @always_inline
+    @inline(.always)
     def _get_function[
         func_name: StaticString, result_type: TrivialRegisterPassable
     ](self) -> result_type:
@@ -737,13 +775,13 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # Force unique the func_name so we know that it is nul-terminated.
         comptime func_name_literal = get_static_string[func_name]()
         return self._get_function[result_type](
-            cstr_name=func_name_literal.as_c_string_slice(),
+            cstr_name=func_name_literal.as_c_string_span(),
         )
 
-    @always_inline
+    @inline(.always)
     def _get_function[
         result_type: TrivialRegisterPassable
-    ](self, *, cstr_name: CStringSlice[_]) -> result_type:
+    ](self, *, cstr_name: CStringSpan[_]) -> result_type:
         """Returns a handle to the function with the given name in the dynamic
         library.
 
@@ -756,18 +794,15 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             A handle to the function.
         """
-        var opaque_function_ptr = self.get_symbol[NoneType](cstr_name=cstr_name)
-
-        if not opaque_function_ptr:
+        __guard case .Some(opaque_function_ptr) = self.get_symbol[NoneType](
+            cstr_name=cstr_name
+        ) else:
             abort(t"symbol not found: {cstr_name}")
-
-        return Pointer(to=opaque_function_ptr.value()).unsafe_bitcast[
-            result_type
-        ]()[]
+        return Pointer(to=opaque_function_ptr).unsafe_bitcast[result_type]()[]
 
     def get_symbol[
         result_type: AnyType,
-    ](self, name: StringSlice) -> Optional[
+    ](self, name: StringSpan) -> Optional[
         Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -784,12 +819,12 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         """
         var name_copy = String(name)
         return self.get_symbol[result_type](
-            cstr_name=name_copy.as_c_string_slice()
+            cstr_name=name_copy.as_c_string_span()
         )
 
     def get_symbol[
         result_type: AnyType
-    ](self, *, cstr_name: CStringSlice[_]) -> Optional[
+    ](self, *, cstr_name: CStringSpan[_]) -> Optional[
         Pointer[result_type, MutUntrackedOrigin]
     ]:
         """Returns a pointer to the symbol with the given name in the dynamic
@@ -838,9 +873,9 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
             # symbols should specify a nullable pointer as the result_type.
             abort(t"symbol resolved to NULL: {cstr_name}")
 
-        return res.value()
+        return res
 
-    @always_inline
+    @inline(.always)
     def call[
         name: StaticString,
         return_type: RegisterPassable = NoneType,
@@ -869,11 +904,11 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         # `_DLCallable.__call__`. The call is synchronous, so the handle stays
         # alive across it without a borrow.
         return self._get_function[
-            name, def(* a: * T) thin abi("C") -> return_type
+            name, def(*a: *T) thin abi("C") -> return_type
         ]()(*args)
 
 
-@always_inline
+@inline(.always)
 def _get_dylib_function[
     dylib_global: _Global[StorageType=OwnedDLHandle, ...],
     func_name: StaticString,
@@ -888,7 +923,7 @@ def _get_dylib_function[
     var new_func = dylib._get_function[func_name, result_type]()
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
-        StringSlice(func_cache_name),
+        StringSpan(func_cache_name),
         Pointer(to=new_func).unsafe_bitcast[
             OpaquePointer[MutUntrackedOrigin]
         ]()[],
@@ -1032,7 +1067,9 @@ struct _Global[
         pass
 
     @staticmethod
-    def _init_wrapper() -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+    def _init_wrapper() -> (
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
+    ):
         # Heap allocate space to store this "global"
         # TODO:
         #   Any way to avoid the move, e.g. by calling this function
@@ -1045,16 +1082,16 @@ struct _Global[
 
     @staticmethod
     def _deinit_wrapper(
-        opaque_ptr: OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+        opaque_ptr: Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
     ):
         # Deinitialize and deallocate the storage.
-        if opaque_ptr:
+        if case .Some(opaque_ptr) = opaque_ptr:
             dealloc(
                 ThinAllocation(
-                    unsafe_owned_ptr=opaque_ptr.unsafe_value().unsafe_bitcast[
+                    unsafe_owned_ptr=opaque_ptr.unsafe_bitcast[
                         Self.StorageType
                     ]()
-                ).unsafe_with_layout({count = 1})
+                ).unsafe_with_layout({length = 1})
             )
 
     @staticmethod
@@ -1063,9 +1100,9 @@ struct _Global[
             Self.name, Self._init_wrapper, Self._deinit_wrapper
         ]()
 
-        comptime if Self.on_error_msg:
+        comptime if case .Some(on_error_msg) = Self.on_error_msg:
             if not ptr:
-                raise Self.on_error_msg.value()()
+                raise on_error_msg()
 
         return unsafe_cast[Type=Self.StorageType](ptr).value()
 
@@ -1084,31 +1121,33 @@ struct _Global[
     def get_or_create_indexed_ptr(idx: Int) raises -> Self.ResultType:
         var ptr = external_call[
             "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-            OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+            Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
         ](
             idx,
             Self._init_wrapper,
             Self._deinit_wrapper,
         )
 
-        comptime if Self.on_error_msg:
+        comptime if case .Some(on_error_msg) = Self.on_error_msg:
             if not ptr:
-                raise Self.on_error_msg.value()()
+                raise on_error_msg()
 
         return unsafe_cast[Type=Self.StorageType](ptr).value()
 
 
-@always_inline
+@inline(.always)
 def _get_global[
     name: StaticString,
-    init_fn: def() thin -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+    init_fn: def() thin -> Optional[
+        Pointer[NoneType, UntrackedOrigin[mut=True]]
+    ],
     destroy_fn: def(
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]]
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
     ) thin -> None,
-]() -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+]() -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     return external_call[
         "KGEN_CompilerRT_GetOrCreateGlobal",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ](
         name,
         init_fn,
@@ -1116,13 +1155,13 @@ def _get_global[
     )
 
 
-@always_inline
+@inline(.always)
 def _get_global_or_null(
-    name: StringSlice,
-) -> OptionalPointer[NoneType, UntrackedOrigin[mut=True]]:
+    name: StringSpan,
+) -> Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]:
     return external_call[
         "KGEN_CompilerRT_GetGlobalOrNull",
-        OptionalPointer[NoneType, UntrackedOrigin[mut=True]],
+        Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]],
     ](name.as_bytes().unsafe_ptr(), name.byte_length())
 
 
@@ -1131,7 +1170,7 @@ def _get_global_or_null(
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def external_call[
     callee: StaticString,
     return_type: RegisterPassable,
@@ -1155,7 +1194,7 @@ def external_call[
     # int open(const char *path, int oflag, ...);
     var path_str = path
     var fd = external_call["open", c_int, num_fixed_args=2](
-        path_str.as_c_string_slice(), c_int(flags), c_int(0o666)
+        path_str.as_c_string_span(), c_int(flags), c_int(0o666)
     )
     ```
 
@@ -1188,10 +1227,10 @@ def external_call[
     comptime if types.contains[String]():
         comptime assert False, (
             "Passing a `String` to `external_call` is never correct. Instead,"
-            " first call `as_c_string_slice()` to pass a C-FFI compatible"
-            " `CStringSlice` type (synonymous with C's `const char*`). Example"
+            " first call `as_c_string_span()` to pass a C-FFI compatible"
+            " `CStringSpan` type (synonymous with C's `const char*`). Example"
             ' `external_call["foo", NoneType]("some'
-            ' string".as_c_string_slice())'
+            ' string".as_c_string_span())'
         )
 
     # The argument pack will contain references for each value in the pack,
@@ -1215,23 +1254,28 @@ def external_call[
             __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
                 numFixedArgs=fixed_args.__mlir_index__(),
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=None,
             ](loaded_pack)
         else:
-            __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
-                loaded_pack
-            )
+            __mlir_op.`pop.external_call`[
+                func=callee_kgen_string,
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
+                _type=None,
+            ](loaded_pack)
         return rebind_var[return_type](NoneType())
     else:
         comptime if declares_variadic:
             return __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
                 numFixedArgs=fixed_args.__mlir_index__(),
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=return_type,
             ](loaded_pack)
         else:
             return __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=return_type,
             ](loaded_pack)
 
@@ -1241,7 +1285,7 @@ def external_call[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _external_call_const[
     callee: StaticString,
     return_type: TrivialRegisterPassable,
@@ -1280,5 +1324,6 @@ def _external_call_const[
             `targetMem0 = none, `,
             `targetMem1 = none>`,
         ],
+        expandPackOperandIdx=__mlir_attr.`0 : index`,
         _type=return_type,
     ](loaded_pack)

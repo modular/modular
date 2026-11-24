@@ -112,9 +112,9 @@ struct TVMFFIErrorCell(
     # Unused fields omitted (update_backtrace, cause_chain, extra_context)
 
     def write_to(self, mut writer: Some[std.format.Writer]):
-        writer.write(StringSlice(unsafe_from_utf8=self.kind))
+        writer.write(StringSpan(unsafe_from_utf8=self.kind))
         writer.write(": ")
-        writer.write(StringSlice(unsafe_from_utf8=self.message))
+        writer.write(StringSpan(unsafe_from_utf8=self.message))
 
     def write_repr_to(self, mut writer: Some[std.format.Writer]):
         writer.write("TVMFFIErrorCell('")
@@ -137,6 +137,6 @@ def take_latest_error() raises -> TVMFFIErrorCell:
     """Retrieves the last TVM FFI error message."""
     var error_ptr = Optional[Pointer[TVMFFIObject, MutAnyOrigin]]()
     _tvm_ffi_error_move_from_raised(error_ptr)
-    if not error_ptr:
-        raise Error("TVM FFI: No error.")
-    return error_ptr.unsafe_value()[][TVMFFIErrorCell]
+    if case .Some(ptr) = error_ptr:
+        return ptr[][TVMFFIErrorCell]
+    raise Error("TVM FFI: No error.")

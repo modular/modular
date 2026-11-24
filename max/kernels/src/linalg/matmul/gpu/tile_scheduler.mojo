@@ -25,13 +25,15 @@ from std.math.uutils import udivmod
 from max.gpu import block_idx, grid_dim
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord
 
 from ...utils_gpu import block_swizzle
 
 
 @fieldwise_init
-struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
+struct RasterOrder(
+    EnumLike, Equatable, Hashable, TrivialRegisterPassable, Writable
+):
     """Rasterization order for mapping thread blocks to output tiles.
 
     Controls the traversal direction of the 2D output tile grid. `AlongN`
@@ -45,15 +47,36 @@ struct RasterOrder(Equatable, Hashable, TrivialRegisterPassable, Writable):
     comptime AlongN = Self(0)
     comptime AlongM = Self(1)
 
-    @always_inline
+    comptime _enum_case_names = ParameterList.of[
+        "AlongN".value,
+        "AlongM".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, Tuple[]
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "RasterOrder has no payload"
+
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         if self._value == 0:
             writer.write("rasterN")
@@ -81,7 +104,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
     comptime INVALID_WORK_INFO = Self(0, 0, 0, 0, False)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
     ):
@@ -91,19 +114,19 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         self.num_k_tiles = 0
         self.is_valid_tile = False
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def is_final_split(self, k_tiles_per_output_tile: UInt32) -> Bool:
         return (self.k_start + self.num_k_tiles) == k_tiles_per_output_tile
 
-    @always_inline
+    @inline(.always)
     def get_k_start(self) -> UInt32:
         return self.k_start
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
@@ -121,7 +144,7 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
 
 
 @fieldwise_init
-struct MatmulSchedule(TrivialRegisterPassable):
+struct MatmulSchedule(EnumLike, TrivialRegisterPassable):
     """Tile scheduling strategy for GPU matmul kernels.
 
     Selects how thread blocks are mapped to output tiles across the grid.
@@ -138,11 +161,34 @@ struct MatmulSchedule(TrivialRegisterPassable):
     comptime TILE2D = Self(2)
     comptime DS_SCHEDULER = Self(3)
 
-    @always_inline
+    comptime _enum_case_names = ParameterList.of[
+        "NONE".value,
+        "TILE1D".value,
+        "TILE2D".value,
+        "DS_SCHEDULER".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, Tuple[]
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "MatmulSchedule has no payload"
+
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
@@ -153,10 +199,10 @@ struct MatmulSchedule(TrivialRegisterPassable):
 
 
 struct TileScheduler[
-    problem_shape: IndexList[3],
-    tile_shape: IndexList[3],
-    grid_shape: IndexList[2],
-    cluster: IndexList[3] = Index(1, 1, 1),
+    problem_shape: Tuple[Int, Int, Int],
+    tile_shape: Coord[Int, Int, Int],
+    grid_shape: Tuple[Int, Int],
+    cluster: Tuple[Int, Int, Int] = (1, 1, 1),
     raster_dim: UInt32 = 1,
     schedule: MatmulSchedule = MatmulSchedule.TILE2D,
 ](TrivialRegisterPassable):
@@ -178,14 +224,14 @@ struct TileScheduler[
     # grid_shape[0], [1] map to x, y, to N and M in output matrix.
     # tile_shape[0], [1] map to M and N
     # wave_shape[0], [1] map to M and N
-    comptime wave_shape = Index[dtype=DType.uint32](
+    comptime wave_shape = (
         Self.tile_shape[0] * Self.grid_shape[1],
         Self.tile_shape[1] * Self.grid_shape[0],
     )
     # This has to match the grid dimension for the kernel launch.
     comptime num_grids: UInt32 = UInt32(Self.grid_shape[0] * Self.grid_shape[1])
     var idx: UInt32
-    var prob_shape: IndexList[3]  # M x N x K
+    var prob_shape: Coord[Int, Int, Int]  # M x N x K
     var num_waves_m: UInt32
     var num_waves_n: UInt32
     var log_num_waves_n: FastDiv[.uint32]
@@ -200,8 +246,8 @@ struct TileScheduler[
         ceildiv(Self.problem_shape[1], Self.tile_shape[1])
     )
 
-    @always_inline
-    def __init__(out self, prob_shape: IndexList[3]):
+    @inline(.always)
+    def __init__(out self, prob_shape: Coord[Int, Int, Int]):
         comptime if Self.schedule == MatmulSchedule.TILE2D:
             comptime assert _check_cluster(
                 Self.cluster, Self.raster_dim
@@ -236,7 +282,7 @@ struct TileScheduler[
                 block_idx.y
             )
 
-    @always_inline
+    @inline(.always)
     def get_current_work_info(mut self) -> WorkInfo:
         comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             var m_block_idx: UInt32 = 0
@@ -263,11 +309,11 @@ struct TileScheduler[
                 is_valid,
             )
 
-    @always_inline
+    @inline(.always)
     def advance(mut self):
         self.idx += Self.num_grids
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work(mut self) -> WorkInfo:
         comptime if Self.schedule == MatmulSchedule.DS_SCHEDULER:
             return self.fetch_next_work_ds()
@@ -275,7 +321,7 @@ struct TileScheduler[
             self.advance()
             return self.get_current_work_info()
 
-    @always_inline
+    @inline(.always)
     def _index_to_mn(self) -> Tuple[Int, Int]:
         """Map the thread block's index to coordinates of work tile."""
 
@@ -284,25 +330,25 @@ struct TileScheduler[
 
         return self._index_to_mn_tile1d()
 
-    @always_inline
+    @inline(.always)
     def _index_to_mn_tile1d(self) -> Tuple[Int, Int]:
         # Grid dim as if there is no persist kernel
-        var logical_grid_dim = Index[dtype=DType.uint32](
-            ceildiv(self.prob_shape[1], Self.tile_shape[1]),
-            ceildiv(self.prob_shape[0], Self.tile_shape[0]),
+        var logical_grid_dim = (
+            UInt32(ceildiv(self.prob_shape[1], Self.tile_shape[1])),
+            UInt32(ceildiv(self.prob_shape[0], Self.tile_shape[0])),
         )
 
-        var by, bx = udivmod(Int(self.idx), logical_grid_dim[0])
+        var by, bx = udivmod(Int(self.idx), Int(logical_grid_dim[0]))
         var block_xy_swizzle = block_swizzle(
-            Index[dtype=DType.uint32](bx, by), logical_grid_dim
+            (UInt32(bx), UInt32(by)), logical_grid_dim
         )
 
-        var m: Int = block_xy_swizzle[1] * Self.tile_shape[0]
-        var n: Int = block_xy_swizzle[0] * Self.tile_shape[1]
+        var m: Int = Int(block_xy_swizzle[1]) * Self.tile_shape[0]
+        var n: Int = Int(block_xy_swizzle[0]) * Self.tile_shape[1]
 
         return (m, n)
 
-    @always_inline
+    @inline(.always)
     def _index_to_mn_tile2d(self) -> Tuple[Int, Int]:
         # We consider a sweep on busy SMs a wave, not all SMs
         comptime log_num_grids = FastDiv[.uint32](Int(Self.num_grids))
@@ -333,13 +379,13 @@ struct TileScheduler[
             Int(wave_n + n_in_wave * FastUInt(Self.tile_shape[1])),
         )
 
-    @always_inline
+    @inline(.always)
     def num_output_tiles(self) -> Int:
         return ceildiv(self.prob_shape[0], Self.wave_shape[0]) * ceildiv(
             self.prob_shape[1], Self.wave_shape[1]
         )
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work_ds(mut self) -> WorkInfo:
         var m_block_idx: UInt32 = 0
         var n_block_idx: UInt32 = 0
@@ -357,7 +403,7 @@ struct TileScheduler[
         )
 
     # Calculates swizzled M and N block indices for better cache utilization
-    @always_inline
+    @inline(.always)
     def _get_swizzled_block_idx(
         self, num_m_blocks: UInt32, block_idx: Int
     ) -> Tuple[UInt32, UInt32]:
@@ -387,7 +433,7 @@ struct TileScheduler[
         return (m_block_idx, n_block_idx)
 
     # Gets the next (m_block_idx, n_block_idx) pair for the current thread block to process
-    @always_inline
+    @inline(.always)
     def _get_next_block(
         mut self, mut m_block_idx: UInt32, mut n_block_idx: UInt32
     ) -> Bool:
@@ -411,7 +457,9 @@ struct TileScheduler[
         return True
 
 
-def _check_cluster(cluster_dims: IndexList[3], raster_dim: UInt32) -> Bool:
+def _check_cluster(
+    cluster_dims: Tuple[Int, Int, Int], raster_dim: UInt32
+) -> Bool:
     """Check if block cluster is along the raster dimension."""
 
     comptime for i in range(3):

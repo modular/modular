@@ -5,13 +5,13 @@
 This library contains low level support for domain independent parallel CPU
 computation. It is intended to support building high performance runtimes, as
 well as hosting parallel compiler infrastructure like MLIR and LLD. AsyncRT
-currently contains two major pieces of functionality:
-AsyncRT/Support and [AsyncRT/Runtime](AsyncRTRuntime.md).
+currently contains three pieces of functionality: AsyncRT/Support,
+[AsyncRT/Runtime](AsyncRTRuntime.md), and AsyncRT/CompilerSupport.
 
-AsyncRT/Support provides low-level concurrent containers, reference counting
-support, atomics support algorithm helpers etc - which are all dependency free
-(just depending on the C++ standard library like `<atomic>`). These routines
-are usable for a wide range of concurrent algorithms and applications.
+AsyncRT/Support provides low-level concurrent containers, location and
+diagnostic encoding, and thread affinity helpers - depending on little beyond
+the C++ standard library, the Modular Support library, and LLVM Support. These
+routines are usable for a wide range of concurrent algorithms and applications.
 
 AsyncRT/Runtime provides a more opinionated low-level concurrency library,
 including a thread pool and machinery for partitioning memory allocation. It
@@ -20,6 +20,10 @@ complete control over the machine, allowing multiple instances of it can run on
 the same machine, and allowing client control over many policies. For more
 information on it, see its [dedicated documentation page](AsyncRTRuntime.md)
 
+AsyncRT/CompilerSupport holds the glue that lets compiler infrastructure use
+AsyncRT: an MLIR-backed location decoder, and an implementation of the LLVM
+thread pool interface that wraps an AsyncRT `CPUDevice`.
+
 ## Introduction to AsyncRT/Support
 
 TO WRITE:
@@ -27,8 +31,9 @@ TO WRITE:
 - Browse the API:
   [include/AsyncRT/Support](../include/AsyncRT/Support/)
 
-- `RCRef<>`, `ReferenceCounted<>`. These compose but RCRef<> works
-  with other types as well, including notably `AsyncValue`.
+- `RCRef<>`, `ReferenceCounted<>` (these live in
+  [Support](../../Support/include/Support/RCRef.h), not here). These compose
+  but RCRef<> works with other types as well, including notably `AsyncValue`.
 
 - RCRef is intentionally move-only, but has a `.copy()` method to avoid
   accidental implicit atomic reference counts.

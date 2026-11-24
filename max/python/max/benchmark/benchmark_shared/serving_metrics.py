@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import statistics
 import warnings
 from collections.abc import Mapping, Sequence
@@ -23,6 +24,7 @@ from collections.abc import Set as AbstractSet
 from itertools import pairwise
 from typing import TYPE_CHECKING, TypeGuard
 
+from max.benchmark.benchmark_shared.goodput import GoodputTargets
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     PixelGenAggregates,
@@ -32,11 +34,14 @@ from max.benchmark.benchmark_shared.metrics import (
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
+    interactivity_from_per_request_durations,
 )
 from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncOutput,
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
+    ServerTokenStats,
+    compute_chunk_tpots,
     measured_window_duration,
 )
 from max.benchmark.benchmark_shared.steady_state import (
@@ -63,6 +68,24 @@ def compute_output_len(
     tokenizer: PreTrainedTokenizerBase,
     output: RequestFuncOutput,
 ) -> int:
+    """Returns the number of tokens the server generated for ``output``.
+
+    Prefers the server's ``usage.completion_tokens``. Re-tokenizing the
+    streamed text undercounts whenever generated tokens stream no text, such
+    as special tokens past a forced EOS, or merge into fewer tokens on
+    re-encoding; the text count is the fallback for servers that report no
+    usage.
+
+    Args:
+        tokenizer: The tokenizer used to count tokens in the streamed text.
+        output: One request's output.
+
+    Returns:
+        The generated token count.
+    """
+    completion_tokens = output.server_token_stats.completion_tokens
+    if completion_tokens is not None:
+        return completion_tokens
     return len(
         tokenizer.encode(output.generated_text, add_special_tokens=False)
     )
@@ -103,46 +126,93 @@ def _warn_on_request_failures(
 def _aggregate_gpu_stats(
     collect_gpu_stats: bool,
     gpu_metrics: list[dict[str, GPUStats]] | None,
-) -> tuple[list[float], list[float], list[float]]:
+    gpu_device_groups: Mapping[str, str] | None = None,
+) -> tuple[list[float], list[float], list[float], dict[str, list[float]]]:
+    """Reduce GPU snapshots to per-device peak memory, free memory, and use.
+
+    Also splits per-device utilization by ``gpu_device_groups`` (device to
+    group, such as a disaggregated engine's role), keeping each group in the
+    order its first device appears in that mapping.
+    """
     peak_gpu_memory_mib: list[float] = []
     available_gpu_memory_mib: list[float] = []
     gpu_utilization: list[float] = []
+    gpu_utilization_by_group: dict[str, list[float]] = {}
 
     if not collect_gpu_stats or not gpu_metrics:
-        return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
+        return (
+            peak_gpu_memory_mib,
+            available_gpu_memory_mib,
+            gpu_utilization,
+            gpu_utilization_by_group,
+        )
 
-    # Simplification: We assume that whatever devices are available at the
-    # start of benchmarking stays the same throughout the run. If someone is
-    # hotplugging GPUs during a benchmark this may not be true.
-    all_devices = list(gpu_metrics[0].keys())
+    # The device set can vary across snapshots: a remote DCGM scrape spans
+    # several exporter pods, one may miss an interval, and a pod can restart
+    # mid-run. Aggregate over the union of every snapshot's devices, and score
+    # each device only over the snapshots that actually contain it -- never
+    # index a device absent from a snapshot (no KeyError) and never fold a
+    # gap in as a zero. Sorted for deterministic output.
+    all_devices = sorted(set().union(*(s.keys() for s in gpu_metrics)))
     if not all_devices:
         logger.warning("No GPUs found, so there are no GPU stats to report")
-        return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
+        return (
+            peak_gpu_memory_mib,
+            available_gpu_memory_mib,
+            gpu_utilization,
+            gpu_utilization_by_group,
+        )
 
     bytes_per_mib = 1024 * 1024
+    saw_memory_stats = False
+    utilization_by_device: dict[str, float] = {}
     for device_name in all_devices:
-        peak_gpu_memory_mib.append(
-            max(
-                snapshot[device_name].memory.used_bytes
-                for snapshot in gpu_metrics
+        present = [s[device_name] for s in gpu_metrics if device_name in s]
+        # Some drivers report no memory info (for example, NVML on DGX
+        # Spark), only utilization and clocks. Leave those devices out of
+        # the memory series. Counting them as zero would skew it. As a
+        # result, the memory lists and gpu_utilization aren't index-aligned
+        # by device when only some devices report memory.
+        memory_present = [
+            m for m in (stats.memory for stats in present) if m is not None
+        ]
+        if memory_present:
+            peak_gpu_memory_mib.append(
+                max(m.used_bytes for m in memory_present) / bytes_per_mib
             )
-            / bytes_per_mib
+            available_gpu_memory_mib.append(
+                min(m.free_bytes for m in memory_present) / bytes_per_mib
+            )
+            saw_memory_stats = True
+        utilization = statistics.mean(
+            stats.utilization.gpu_usage_percent for stats in present
         )
-        available_gpu_memory_mib.append(
-            min(
-                snapshot[device_name].memory.free_bytes
-                for snapshot in gpu_metrics
-            )
-            / bytes_per_mib
-        )
-        gpu_utilization.append(
-            statistics.mean(
-                snapshot[device_name].utilization.gpu_usage_percent
-                for snapshot in gpu_metrics
-            )
+        gpu_utilization.append(utilization)
+        utilization_by_device[device_name] = utilization
+
+    if not saw_memory_stats:
+        logger.warning(
+            "Skipping GPU memory metrics: this driver doesn't report GPU "
+            "memory info"
         )
 
-    return peak_gpu_memory_mib, available_gpu_memory_mib, gpu_utilization
+    # One entry per device, so the reported mean GPU utilization (mean of this
+    # list) is the mean across every device the source reports. A Prometheus
+    # selector narrows that to the engine's own GPUs; a direct DCGM scrape
+    # (--gpu-metrics-host) reports every GPU on the node, so a node whose GPUs
+    # are partly idle reads low there, and the console table's device count is
+    # what shows it (8 devices for a tp4 engine on one node).
+    for device_name, group in (gpu_device_groups or {}).items():
+        if device_name in utilization_by_device:
+            gpu_utilization_by_group.setdefault(group, []).append(
+                utilization_by_device[device_name]
+            )
+    return (
+        peak_gpu_memory_mib,
+        available_gpu_memory_mib,
+        gpu_utilization,
+        gpu_utilization_by_group,
+    )
 
 
 def _per_turn_cache_retentions(
@@ -249,10 +319,29 @@ def calculate_metrics(
     kv_block_size: int,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
     *,
+    gpu_device_groups: Mapping[str, str] | None = None,
     reject_outliers: bool = False,
     record_request_text: bool = False,
     all_outputs: Sequence[RequestFuncOutput] | None = None,
+    goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
 ) -> BenchmarkResult:
+    """Computes serving metrics from the finished requests.
+
+    ``num_gpus`` is the number of GPUs the server used; it derives
+    ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
+    result. ``None`` leaves both unreported.
+    """
+    # A caller that builds metrics straight from request outputs skips the
+    # post-run pass that turns these offsets into TPOT. Say so, rather than
+    # report a run whose per-chunk TPOT quietly went missing. One end offset
+    # describes no interval, so a single-chunk response has no TPOT to lose.
+    if any(len(output.pending_tpot_ends) > 1 for output in outputs):
+        logger.warning(
+            "Some responses still carry per-chunk TPOT offsets, so"
+            " compute_chunk_tpots() did not run and their per-chunk TPOT is"
+            " missing from these metrics."
+        )
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -261,9 +350,32 @@ def calculate_metrics(
     step_tpots: list[float] = []
     ttfts: list[float] = []
     latencies: list[float] = []
+    # Content-bounded per-request inter-token latency,
+    # ``sum(itl) / (output_len - 1)``: first content chunk to last content
+    # chunk, TTFT excluded -- the latency basis of ``interactivity_tok_s``.
+    content_itls: list[float] = []
+    # Content-bounded per-request e2e latency,
+    # ``(ttft + sum(itl)) / output_len``: request start to last content
+    # chunk, TTFT included -- the latency basis of
+    # ``e2e_normalized_interactivity_tok_s``.
+    e2e_norm_latencies: list[float] = []
     input_throughputs: list[float] = []
     output_throughputs: list[float] = []
     per_turn_cached_token_rates: list[float] = []
+    # TTFT/TPOT split by whether the request carried a response_format:
+    # matcher construction lands in TTFT, the per-step bitmask fill in TPOT.
+    constrained_ttfts: list[float] = []
+    unconstrained_ttfts: list[float] = []
+    constrained_tpots: list[float] = []
+    unconstrained_tpots: list[float] = []
+    constrained_requests = 0
+    conforming_constrained_requests = 0
+    judged_constrained_requests = 0
+    tool_requests = 0
+    tool_call_responses = 0
+    image_requests = 0
+    lora_requests = 0
+    good_requests = 0
     total_server_cached_tokens: int = 0
     total_server_prompt_tokens: int = 0
 
@@ -333,16 +445,52 @@ def calculate_metrics(
         max_output = max(max_output, output_len)
         max_total = max(max_total, o.prompt_len + output_len)
 
-        if output_len > 1:
-            tpots.append((o.latency - o.ttft) / (output_len - 1))
+        tpot = (
+            (o.latency - o.ttft) / (output_len - 1) if output_len > 1 else None
+        )
+        if tpot is not None:
+            tpots.append(tpot)
+        # ``ttft`` stays 0.0 when the endpoint reports no per-request TTFT;
+        # treat that as missing so a TTFT target is not met for free.
+        if goodput_targets is not None and goodput_targets.is_met(
+            ttft_s=o.ttft if o.ttft > 0 else None,
+            tpot_s=tpot,
+            latency_s=o.latency,
+        ):
+            good_requests += 1
         step_tpots += o.tpot
         itls += o.itl
         ttfts.append(o.ttft)
+        if o.response_format_constrained:
+            constrained_requests += 1
+            if o.response_format_conformed is not None:
+                judged_constrained_requests += 1
+                if o.response_format_conformed:
+                    conforming_constrained_requests += 1
+            constrained_ttfts.append(o.ttft)
+            if tpot is not None:
+                constrained_tpots.append(tpot)
+        else:
+            unconstrained_ttfts.append(o.ttft)
+            if tpot is not None:
+                unconstrained_tpots.append(tpot)
+        if o.tools_offered:
+            tool_requests += 1
+            if o.tool_call_returned:
+                tool_call_responses += 1
+        if o.carries_image:
+            image_requests += 1
+        if o.lora_id is not None:
+            lora_requests += 1
         if o.ttft > 0:
             input_throughputs.append(o.prompt_len / o.ttft)
         if (o.latency - o.ttft) > 0:
             output_throughputs.append((output_len - 1) / (o.latency - o.ttft))
         latencies.append(o.latency)
+        if output_len > 1:
+            content_itls.append(sum(o.itl) / (output_len - 1))
+        if output_len > 0:
+            e2e_norm_latencies.append((o.ttft + sum(o.itl)) / output_len)
         if o.server_token_stats.prompt_tokens:
             per_turn_cached_token_rates.append(
                 o.server_token_stats.cached_tokens
@@ -350,6 +498,14 @@ def calculate_metrics(
             )
             total_server_cached_tokens += o.server_token_stats.cached_tokens
             total_server_prompt_tokens += o.server_token_stats.prompt_tokens
+
+    # A split only says something when both halves have samples: with one
+    # side empty the other just restates ``ttft_ms`` / ``tpot_ms``, down to
+    # the confidence warning. TPOT is gated separately because a request that
+    # emits a single token has a TTFT but no TPOT, so the two pairs can have
+    # different populations.
+    mixed_ttft = bool(constrained_ttfts) and bool(unconstrained_ttfts)
+    mixed_tpot = bool(constrained_tpots) and bool(unconstrained_tpots)
 
     # Records span every request the run dispatched, not the window the
     # aggregates were computed over: the steady-state path passes a
@@ -430,9 +586,11 @@ def calculate_metrics(
         peak_gpu_memory_mib,
         available_gpu_memory_mib,
         gpu_utilization,
+        gpu_utilization_by_group,
     ) = _aggregate_gpu_stats(
         collect_gpu_stats=collect_gpu_stats,
         gpu_metrics=gpu_metrics,
+        gpu_device_groups=gpu_device_groups,
     )
 
     global_cached_token_rate: float = (
@@ -453,6 +611,54 @@ def calculate_metrics(
     per_turn_cache_retention: RatePercentileMetrics | None = (
         RatePercentileMetrics(per_turn_cache_retentions, as_percent=True)
         if len(per_turn_cache_retentions) > 0
+        else None
+    )
+
+    # Interactivity, from the unrejected per-request series: the published
+    # figures apply no outlier rejection, so they must not inherit the
+    # steady-state path's. ``tpots`` here is still the raw series; the
+    # rejection block below rebinds it for ``tpot_ms``. Like the other
+    # per-request metrics these cover the measured (skip-trimmed) requests,
+    # while the per-GPU throughput below spans all successful requests.
+    interactivity = interactivity_from_per_request_durations(content_itls)
+    full_response_interactivity = interactivity_from_per_request_durations(
+        tpots
+    )
+    e2e_interactivity = interactivity_from_per_request_durations(
+        e2e_norm_latencies
+    )
+
+    # Per-GPU total token throughput over the whole run: first submit to last
+    # complete across every successful request, ignoring the skip trim and the
+    # steady-state window, to match the untrimmed tput_per_gpu that agentic
+    # serving benchmarks publish. ``None`` when the GPU count is unknown (see
+    # ``BenchmarkResult.num_gpus``).
+    per_gpu_requests: list[RequestFuncOutput] = (
+        [o for o in all_outputs if o.success and not o.cancelled]
+        if all_outputs is not None
+        else [o for o, _ in successful]
+    )
+    full_span = measured_window_duration(
+        per_gpu_requests, fallback=measured_duration
+    )
+    # Per request, so one request with server usage cannot zero out the
+    # client counts of the requests without it.
+    full_input = sum(
+        o.server_token_stats.prompt_tokens
+        if o.server_token_stats.prompt_tokens is not None
+        else o.prompt_len
+        for o in per_gpu_requests
+    )
+    counted_output_lens = {id(o): output_len for o, output_len in successful}
+    full_output = sum(
+        counted_output_lens[id(o)]
+        if id(o) in counted_output_lens
+        else compute_output_len(tokenizer, o)
+        for o in per_gpu_requests
+    )
+    total_tokens_per_second_per_gpu = (
+        (full_input + full_output) / full_span / num_gpus
+        if num_gpus and per_gpu_requests and full_span > 0
         else None
     )
 
@@ -479,6 +685,18 @@ def calculate_metrics(
         failures=failures,
         request_throughput=measured_count / measured_duration,
         excluded_successful=total_successful - measured_count,
+        # Over the same requests and window as ``request_throughput``, so
+        # the two rates compare directly. Taken before outlier rejection,
+        # which drops samples from the latency series, not requests.
+        goodput_ttft_ms=goodput_targets.ttft_ms if goodput_targets else None,
+        goodput_tpot_ms=goodput_targets.tpot_ms if goodput_targets else None,
+        goodput_e2el_ms=goodput_targets.e2el_ms if goodput_targets else None,
+        request_goodput=good_requests / measured_duration
+        if goodput_targets and measured
+        else None,
+        goodput_attainment=good_requests / measured_count
+        if goodput_targets and measured
+        else None,
         # A metric is ``None`` when it has no samples (empty data list),
         # rather than a NaN-filled placeholder: NaN serializes to JSON
         # ``null`` (both via ``model_dump_json`` and BigQuery ingest),
@@ -509,6 +727,42 @@ def calculate_metrics(
         tpot_ms=StandardPercentileMetrics(tpots, scale_factor=1000.0, unit="ms")
         if tpots
         else None,
+        ttft_ms_constrained=StandardPercentileMetrics(
+            constrained_ttfts, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_ttft
+        else None,
+        ttft_ms_unconstrained=StandardPercentileMetrics(
+            unconstrained_ttfts, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_ttft
+        else None,
+        tpot_ms_constrained=StandardPercentileMetrics(
+            constrained_tpots, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_tpot
+        else None,
+        tpot_ms_unconstrained=StandardPercentileMetrics(
+            unconstrained_tpots, scale_factor=1000.0, unit="ms"
+        )
+        if mixed_tpot
+        else None,
+        constrained_request_rate=(
+            constrained_requests / len(measured) if measured else None
+        ),
+        constrained_conformance_rate=(
+            conforming_constrained_requests / judged_constrained_requests
+            if judged_constrained_requests
+            else None
+        ),
+        tool_request_rate=(tool_requests / len(measured) if measured else None),
+        tool_call_response_rate=(
+            tool_call_responses / tool_requests if tool_requests else None
+        ),
+        image_request_rate=(
+            image_requests / len(measured) if measured else None
+        ),
+        lora_request_rate=(lora_requests / len(measured) if measured else None),
         step_tpot_ms=StandardPercentileMetrics(
             step_tpots, scale_factor=1000.0, unit="ms"
         )
@@ -517,6 +771,10 @@ def calculate_metrics(
         itl_ms=StandardPercentileMetrics(itls, scale_factor=1000.0, unit="ms")
         if itls
         else None,
+        interactivity_tok_s=interactivity,
+        full_response_interactivity_tok_s=full_response_interactivity,
+        e2e_normalized_interactivity_tok_s=e2e_interactivity,
+        total_tokens_per_second_per_gpu=total_tokens_per_second_per_gpu,
         max_input=max_input,
         max_output=max_output,
         max_total=max_total,
@@ -536,9 +794,11 @@ def calculate_metrics(
     return BenchmarkResult(
         task_type="text",
         max_concurrency=max_concurrency or len(outputs),
+        num_gpus=num_gpus,
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
+        gpu_utilization_by_group=gpu_utilization_by_group,
         cpu_metrics=cpu_metrics,
         metrics_by_endpoint=metrics_by_endpoint or {},
         text_data=text_data,
@@ -553,7 +813,9 @@ def calculate_pixel_generation_metrics(
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
+    gpu_device_groups: Mapping[str, str] | None = None,
 ) -> BenchmarkResult:
+    """Computes pixel generation metrics from the finished requests."""
     completed = 0
     failures = 0
     latencies: list[float] = []
@@ -583,9 +845,11 @@ def calculate_pixel_generation_metrics(
         peak_gpu_memory_mib,
         available_gpu_memory_mib,
         gpu_utilization,
+        gpu_utilization_by_group,
     ) = _aggregate_gpu_stats(
         collect_gpu_stats=collect_gpu_stats,
         gpu_metrics=gpu_metrics,
+        gpu_device_groups=gpu_device_groups,
     )
 
     # Use the first-submit -> last-complete window so setup/teardown
@@ -617,6 +881,7 @@ def calculate_pixel_generation_metrics(
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
+        gpu_utilization_by_group=gpu_utilization_by_group,
         cpu_metrics=cpu_metrics,
         metrics_by_endpoint=metrics_by_endpoint or {},
         pixel_data=pixel_data,
@@ -647,6 +912,7 @@ def build_pixel_generation_result(
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
+    gpu_device_groups: Mapping[str, str] | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result dict for pixel-generation tasks."""
     if not _is_pixel_generation_outputs(outputs):
@@ -662,8 +928,96 @@ def build_pixel_generation_result(
         max_concurrency=max_concurrency,
         collect_gpu_stats=collect_gpu_stats,
         metrics_by_endpoint=metrics_by_endpoint,
+        gpu_device_groups=gpu_device_groups,
     )
     return metrics
+
+
+def _session_sort_key(sid: str) -> tuple[int, int, str]:
+    """Sorts numeric session ids first by integer value, then anonymous ids."""
+    try:
+        return (0, int(sid), "")
+    except ValueError:
+        return (1, 0, sid)
+
+
+def _nearest_rank(counts: Mapping[int, int], quantile: float) -> float:
+    """Returns the nearest-rank *quantile* of a ``{value: count}`` multiset."""
+    rank = math.ceil(quantile * sum(counts.values()))
+    seen = 0
+    for value in sorted(counts):
+        seen += counts[value]
+        if seen >= rank:
+            return float(value)
+    return float(max(counts))
+
+
+def _stream_read_stats(
+    outputs: Sequence[BaseRequestFuncOutput],
+) -> tuple[int, int, int, float, float] | None:
+    """Pools the client's socket reads and the text events each one carried.
+
+    Returns ``(reads, bunched_reads, max, p99, mean)`` over the reads that
+    carried generated text, or ``None`` when no request streamed any: a run
+    with nothing to say must not report zeros that read as measurements.
+    """
+    counts: dict[int, int] = {}
+    for output in outputs:
+        if not isinstance(output, RequestFuncOutput):
+            continue
+        for size, reads in output.stream_events_per_read.items():
+            counts[size] = counts.get(size, 0) + reads
+    reads_total = sum(counts.values())
+    if not reads_total:
+        return None
+    return (
+        reads_total,
+        sum(n for size, n in counts.items() if size > 1),
+        max(counts),
+        _nearest_rank(counts, 0.99),
+        sum(size * n for size, n in counts.items()) / reads_total,
+    )
+
+
+def _itl_unresolved(outputs: Sequence[BaseRequestFuncOutput]) -> int:
+    """Counts the text events a request's first read left without an ITL.
+
+    A request's first text read gives its other text events no gap to measure,
+    so its sample count falls short of one per text event after the first. This
+    is that shortfall, over the outputs whose ITL the run reports.
+    """
+    return sum(
+        output.itl_unresolved
+        for output in outputs
+        if isinstance(output, RequestFuncOutput)
+    )
+
+
+def run_cache_hit_rate(
+    outputs: Sequence[BaseRequestFuncOutput],
+) -> float | None:
+    """Prefix-cache hit rate over every completed request of a run.
+
+    Unlike ``global_cached_token_rate`` this keeps the requests that the
+    head/tail trim and steady-state detection drop, so it covers the same
+    window as the server's own counters.
+
+    Args:
+        outputs: The run's request outputs.
+
+    Returns:
+        Cached prompt tokens over prompt tokens, or None when no request's
+        usage carried cached-token counts.
+    """
+    cached = prompt = 0
+    for o in outputs:
+        if not isinstance(o, RequestFuncOutput) or not o.success:
+            continue
+        stats = o.server_token_stats
+        if stats.cached_tokens_reported and stats.prompt_tokens:
+            cached += stats.cached_tokens
+            prompt += stats.prompt_tokens
+    return cached / prompt if prompt else None
 
 
 def build_text_generation_result(
@@ -682,27 +1036,58 @@ def build_text_generation_result(
     spec_decode_stats: SpecDecodeStats | None = None,
     kv_block_size: int = 128,
     record_request_text: bool = False,
+    gpu_device_groups: Mapping[str, str] | None = None,
+    outputs_by_session: Mapping[str, Sequence[RequestFuncOutput]] | None = None,
+    steady_state_filtering: bool = True,
+    goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
+    disable_tqdm: bool | None = None,
 ) -> BenchmarkResult:
     """Compute metrics and build the result for text-generation tasks.
 
     Uses a single reported metric set selected by the following strategy:
 
-    - Run MAD-based steady-state detection (``detect_steady_state``).
+    - Exclude failed requests from the metrics when at least one request
+      succeeded. They stay in ``request_records``. A run where nothing
+      succeeded keeps them, so it still reports and fails on its failures.
+    - Run MAD-based steady-state detection (``detect_steady_state``),
+      unless ``steady_state_filtering`` is ``False``.
     - If detection succeeds: compute metrics over the detected steady-state
       window with ``skip_first=0``, ``skip_last=0``, and per-request
       outlier rejection via the Iglewicz-Hoaglin modified z-score
       (``reject_outliers=True``). Duration is the wall-clock span of the
       window (first submit to last complete of the window requests).
-    - If detection is skipped (concurrency==1) or fails: fall back to the
-      full-run path with the caller-supplied head/tail trim and no outlier
-      rejection. This guarantees identical behavior to the previous
-      implementation for non-steady-state runs.
+    - If detection is disabled, skipped (concurrency==1) or fails: fall back
+      to the full-run path with the caller-supplied head/tail trim and no
+      outlier rejection. This guarantees identical behavior to the previous
+      implementation for non-steady-state runs. When disabled,
+      ``steady_state_mode`` is ``"disabled"`` and the other detection
+      diagnostics are ``None``.
 
     Lightweight detection diagnostics (``steady_state_detected``,
     ``steady_state_window_count``, ``steady_state_mode``,
     ``steady_state_warning``, ``num_outliers_rejected``) are attached to
     the returned ``BenchmarkResult`` for observability without duplicating
-    the full metric set.
+    the full metric set. So are the client's socket-read statistics
+    (``stream_reads``, ``stream_reads_bunched``, ``events_per_read_*``,
+    ``itl_unresolved``), which say whether the ITLs came from one event per
+    read or from reads the client fell behind on, and how many text events a
+    read left without a sample.
+
+    Per-request server token stats are attached grouped by session (numeric
+    session ids in integer order) when ``outputs_by_session`` is given, else
+    as one flat list in output order.
+
+    With ``goodput_targets``, the result also reports ``request_goodput`` and
+    ``goodput_attainment`` over the same requests and duration as
+    ``request_throughput``.
+
+    ``num_gpus`` (the number of GPUs the server used) derives
+    ``text_data.total_tokens_per_second_per_gpu`` and is stored on the
+    result; ``None`` leaves both unreported.
+
+    ``disable_tqdm`` hides the per-chunk TPOT progress bar; ``None``
+    autodetects.
     """
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -710,23 +1095,72 @@ def build_text_generation_result(
             " in text-generation benchmark flow."
         )
 
-    steady = detect_steady_state(outputs, max_concurrency=max_concurrency)
+    # Tokenizing the recorded chunks here, rather than per chunk on the event
+    # loop, keeps the client out of the way of the streams it measures. It has
+    # to run before steady-state detection, which reads ``tpot``.
+    compute_chunk_tpots(outputs, tokenizer, disable_tqdm=disable_tqdm)
+
+    # FIXME (CENG-1381): Failed requests are excluded so that replies the server
+    # ends without any text don't fail the run. Remove this once those replies
+    # stop being reported as failures, so real failures count again.
+    failed = [o for o in outputs if not o.success and not o.cancelled]
+    metric_outputs: Sequence[RequestFuncOutput] = outputs
+    if failed and any(o.success and not o.cancelled for o in outputs):
+        logger.warning(
+            "Excluding %d failed requests from metrics; they remain in"
+            " request_records.",
+            len(failed),
+        )
+        metric_outputs = [o for o in outputs if o.success or o.cancelled]
+
+    # Over the same outputs the other metrics use, so a failed request's reads
+    # do not skew them.
+    read_stats = _stream_read_stats(metric_outputs)
+    itl_unresolved: int | None = None
+    if read_stats is None:
+        (
+            stream_reads,
+            stream_reads_bunched,
+            events_per_read_max,
+            events_per_read_p99,
+            events_per_read_mean,
+        ) = (None, None, None, None, None)
+    else:
+        (
+            stream_reads,
+            stream_reads_bunched,
+            events_per_read_max,
+            events_per_read_p99,
+            events_per_read_mean,
+        ) = read_stats
+        itl_unresolved = _itl_unresolved(metric_outputs)
+
+    steady = (
+        detect_steady_state(metric_outputs, max_concurrency=max_concurrency)
+        if steady_state_filtering
+        else None
+    )
 
     # Persist detection mode for downstream consumers; None when detection
     # was skipped (concurrency=1) so the default "full" isn't mistaken for
     # a real result.
-    mode: str | None = (
-        steady.mode if (steady.detected or steady.warning is not None) else None
-    )
+    mode: str | None
+    if steady is None:
+        mode = "disabled"
+    elif steady.detected or steady.warning is not None:
+        mode = steady.mode
+    else:
+        mode = None
 
-    num_outliers_rejected = 0
+    num_outliers_rejected: int | None = 0 if steady is not None else None
 
-    if steady.detected:
+    if steady is not None and steady.detected:
         # Build the steady-state sub-list and compute its wall-clock span.
+        # The window's indices are positions in the list the detector saw.
         ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
             out
-            for i, out in enumerate(outputs)
+            for i, out in enumerate(metric_outputs)
             if i in ss_index_set and out.success and not out.cancelled
         ]
         ss_valid = [
@@ -780,10 +1214,13 @@ def build_text_generation_result(
             max_concurrent_conversations=max_concurrent_conversations,
             collect_gpu_stats=collect_gpu_stats,
             metrics_by_endpoint=metrics_by_endpoint,
+            gpu_device_groups=gpu_device_groups,
             kv_block_size=kv_block_size,
             reject_outliers=True,
             record_request_text=record_request_text,
             all_outputs=outputs,
+            goodput_targets=goodput_targets,
+            num_gpus=num_gpus,
         )
 
         # Diagnostic: number of per-request TTFT outliers rejected in the
@@ -799,25 +1236,28 @@ def build_text_generation_result(
         )
 
     else:
-        # Detection did not run or did not converge. Only surface this at
-        # WARNING level when the run actually produced successful requests.
-        # When there are none (a serving/run failure, e.g. the "0 of 10000
-        # valid" case in PERF-2615), the steady-state detector is the wrong
-        # messenger: the failure is already reflected in the failure count and
-        # the reported metrics, so a "too few valid requests" warning is
-        # misleading noise on top of an already-failed run. Genuine cases with
-        # some successful-but-unusable requests still warn.
-        n_success = sum(1 for o in outputs if o.success and not o.cancelled)
-        if steady.warning and n_success > 0:
-            logger.warning(f"Steady-state detection: {steady.warning}")
-        elif n_success == 0:
-            logger.info(
-                "Steady-state detection skipped: run produced no successful"
-                " requests; reporting full-run metrics over all outputs."
-            )
+        # Detection was disabled, did not run, or did not converge. Only
+        # surface a failed detection at WARNING level when the run actually
+        # produced successful requests. When there are none (a serving/run
+        # failure, e.g. the "0 of 10000 valid" case in PERF-2615), the
+        # steady-state detector is the wrong messenger: the failure is already
+        # reflected in the failure count and the reported metrics, so a "too
+        # few valid requests" warning is misleading noise on top of an
+        # already-failed run. Genuine cases with some successful-but-unusable
+        # requests still warn.
+        if steady is not None:
+            n_success = sum(1 for o in outputs if o.success and not o.cancelled)
+            if steady.warning and n_success > 0:
+                logger.warning(f"Steady-state detection: {steady.warning}")
+            elif n_success == 0:
+                logger.info(
+                    "Steady-state detection skipped: run produced no"
+                    " successful requests; reporting full-run metrics over"
+                    " all outputs."
+                )
 
         text_metrics = calculate_metrics(
-            outputs=outputs,
+            outputs=metric_outputs,
             dur_s=benchmark_duration,
             tokenizer=tokenizer,
             gpu_metrics=gpu_metrics,
@@ -828,22 +1268,47 @@ def build_text_generation_result(
             max_concurrent_conversations=max_concurrent_conversations,
             collect_gpu_stats=collect_gpu_stats,
             metrics_by_endpoint=metrics_by_endpoint,
+            gpu_device_groups=gpu_device_groups,
             kv_block_size=kv_block_size,
             reject_outliers=False,
             record_request_text=record_request_text,
+            all_outputs=outputs,
+            goodput_targets=goodput_targets,
+            num_gpus=num_gpus,
         )
 
     for warn in text_metrics.confidence_warnings():
         logger.warning(f"Confidence: {warn}")
 
-    return text_metrics.model_copy(
-        update={
-            "steady_state_detected": steady.detected,
-            "steady_state_window_count": steady.steady_state_count,
-            "steady_state_mode": mode,
-            "steady_state_warning": steady.warning,
-            "num_outliers_rejected": num_outliers_rejected,
-            "spec_decode_stats": spec_decode_stats,
-            "task_type": "text",
+    session_server_stats: dict[str, list[ServerTokenStats]] | None = None
+    aggregate_server_stats: list[ServerTokenStats] | None = None
+    if outputs_by_session is not None:
+        session_server_stats = {
+            sid: [out.server_token_stats for out in outs]
+            for sid, outs in sorted(
+                outputs_by_session.items(),
+                key=lambda kv: _session_sort_key(kv[0]),
+            )
         }
+    else:
+        aggregate_server_stats = [out.server_token_stats for out in outputs]
+
+    return text_metrics.updated(
+        session_server_stats=session_server_stats,
+        aggregate_server_stats=aggregate_server_stats,
+        steady_state_detected=steady.detected if steady else None,
+        steady_state_window_count=(
+            steady.steady_state_count if steady else None
+        ),
+        steady_state_mode=mode,
+        steady_state_warning=steady.warning if steady else None,
+        num_outliers_rejected=num_outliers_rejected,
+        stream_reads=stream_reads,
+        stream_reads_bunched=stream_reads_bunched,
+        events_per_read_max=events_per_read_max,
+        events_per_read_p99=events_per_read_p99,
+        events_per_read_mean=events_per_read_mean,
+        itl_unresolved=itl_unresolved,
+        spec_decode_stats=spec_decode_stats,
+        task_type="text",
     )

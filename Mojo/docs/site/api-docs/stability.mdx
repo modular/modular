@@ -140,7 +140,6 @@ Some decorators exist only to support language migration, compiler
 implementation, or standard library development. Avoid decorators named
 like:
 
-- `@__parameter`, `@__copy_capture`: legacy closure support
 - `@__allow_legacy_custom_self_types`
 - `@__name`
 - `@__llvm_arg_metadata`
@@ -149,8 +148,8 @@ like:
 Consider any decorators beginning with `@__` as internal and unstable,
 unless the manual explicitly documents them as public.
 
-### `async`/`await` is unstable
+### `__async`/`__await` is unstable
 
-Lastly, Mojo's async system isn't fully built out. So although the `async` and
-`await` keywords aren't prefixed, consider them unstable as well.
-Any async behavior may be subject to change.
+Lastly, Mojo's async system isn't fully built out. The `__async` and `__await`
+keywords carry a double underscore prefix to mark them as unstable, and any
+async behavior may be subject to change.

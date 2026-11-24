@@ -29,7 +29,6 @@ Usage:
 from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, global_idx
 from max.gpu.host import DeviceContext, HostBuffer
 from max.gpu.host.info import MI355X
-from max.gpu.memory import CacheOperation
 from std.math import align_up, ceildiv, isnan
 from std.memory import bitcast
 from std.random import random_ui64, seed
@@ -38,7 +37,6 @@ from std.utils import StaticTuple
 
 from internal_utils import assert_almost_equal
 from layout import (
-    Coord,
     Idx,
     TensorLayout,
     TensorEngine,
@@ -88,12 +86,12 @@ def block_scaled_matmul_fp8_ref(
 
     var k_groups = K // MXFP8_SF_VECTOR_SIZE
 
-    var am_scales_ptr = a_scales_ptr + m * k_groups
-    var bn_scales_ptr = b_scales_ptr + n * k_groups
+    var am_scales_ptr = a_scales_ptr.unsafe_offset(m * k_groups)
+    var bn_scales_ptr = b_scales_ptr.unsafe_offset(n * k_groups)
 
     # One byte per element at MXFP8, so the row stride is K (not K // 2).
-    var am_ptr = (a_ptr + m * K).bitcast[Float8_e4m3fn]()
-    var bn_ptr = (b_ptr + n * K).bitcast[Float8_e4m3fn]()
+    var am_ptr = a_ptr.unsafe_offset(m * K).unsafe_bitcast[Float8_e4m3fn]()
+    var bn_ptr = b_ptr.unsafe_offset(n * K).unsafe_bitcast[Float8_e4m3fn]()
 
     var accum = Float32(0)
 
@@ -107,8 +105,8 @@ def block_scaled_matmul_fp8_ref(
             part += am_ptr[ki].cast[.float32]() * bn_ptr[ki].cast[.float32]()
         accum += part * a_scale * b_scale
 
-        am_ptr += MXFP8_SF_VECTOR_SIZE
-        bn_ptr += MXFP8_SF_VECTOR_SIZE
+        am_ptr = am_ptr.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
+        bn_ptr = bn_ptr.unsafe_offset(MXFP8_SF_VECTOR_SIZE)
 
     c_ptr[m * N + n] = accum
 
@@ -190,7 +188,7 @@ def _preb_fp8_grid_kernel[
         N,
         K_BYTES,
     ](
-        c, a, b_pre, sfa, sfb, Int(block_idx.x), Int(block_idx.y)
+        c, a, b_pre, sfa, sfb, block_idx.x, block_idx.y
     )
 
 
@@ -214,7 +212,7 @@ def _rand_e4m3_byte() -> UInt8:
 
 def _fnv1a64[dtype: DType](buf: HostBuffer[dtype], n: Int) -> UInt64:
     """FNV-1a over the buffer's raw bytes."""
-    var ptr = buf.unsafe_ptr().bitcast[UInt8]()
+    var ptr = buf.unsafe_ptr().unsafe_bitcast[UInt8]()
     var h = UInt64(0xCBF29CE484222325)
     for i in range(n * size_of[dtype]()):
         h = (h ^ UInt64(Int(ptr[i]))) * UInt64(0x100000001B3)
@@ -253,24 +251,8 @@ def _test_case[
     comptime padded_M = ceildiv(M_static, 32) * 32
 
     print(
-        "  ",
-        name,
-        " M=",
-        M_static,
-        " N=",
-        N_static,
-        " K=",
-        K_static,
-        " BM=",
-        BM,
-        " BN=",
-        BN,
-        " BK_ELEMS=",
-        BK_ELEMS,
-        " WN=",
-        WN,
-        " b_prefetch=",
-        b_prefetch,
+        t"   {name}  M= {M_static}  N= {N_static}  K= {K_static}  BM= {BM}  BN="
+        t" {BN}  BK_ELEMS= {BK_ELEMS}  WN= {WN}  b_prefetch= {b_prefetch}"
     )
 
     # ---- Host buffers + random init ----
@@ -293,10 +275,10 @@ def _test_case[
         sfb_h[i] = UInt8(random_ui64(125, 129))
 
     var sfa_h_tt = TileTensor(
-        sfa_h, row_major(Coord(Idx[1], Idx[M_static], Idx[scale_K]))
+        sfa_h, row_major(Idx[1], Idx[M_static], Idx[scale_K])
     )
     var sfb_h_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[1], Idx[N_static], Idx[scale_K]))
+        sfb_h, row_major(Idx[1], Idx[N_static], Idx[scale_K])
     )
     # The scale layout is format-independent, so the FP4 default is reused.
     _ = Shuffler[1].preshuffle_scale_4d[MN=M_static, K_SCALES=scale_K](
@@ -327,7 +309,7 @@ def _test_case[
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
     # ---- GPU preshuffle B -> b_pre_d (matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3 strides) ----
-    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, K_BYTES]()).as_immut()
+    var b_raw_tt = TileTensor(b_d, row_major[1, N_static, K_BYTES]()).as_imm()
     var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[1].b_5d_grouped_layout[N=N_static, K_BYTES=K_BYTES],
@@ -352,22 +334,20 @@ def _test_case[
     )
 
     # ---- Preb kernel under test ----
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(M_static, Idx[K_BYTES]))
-    ).as_immut()
+    var a_tt = TileTensor(a_d, row_major(M_static, Idx[K_BYTES])).as_imm()
     var b_pre_tt = TileTensor(
         b_pre_d, row_major[1, N_static * K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     # Preshuffled scale buffers wrapped row-major: the kernel addresses the
     # bytes through `PreshuffledScaleLoader`, so this layout is bookkeeping.
     var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[padded_M, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[N_static, scale_K](),
-    ).as_immut()
+    ).as_imm()
     var c_tt = TileTensor(c_d, row_major[M_static, N_static]())
 
     comptime kernel = _preb_fp8_grid_kernel[
@@ -460,16 +440,8 @@ def _test_grouped_case[
     var max_padded_M = align_up(max_tokens, 32)
 
     print(
-        "  ",
-        name,
-        " experts=",
-        num_active,
-        " total_tokens=",
-        total_tokens,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"   {name}  experts= {num_active}  total_tokens= {total_tokens}  N="
+        t" {N}  K= {K}"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
@@ -525,7 +497,7 @@ def _test_grouped_case[
     # B weights + B scales: preshuffled once, as at session.load in production.
     var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES],
@@ -534,7 +506,7 @@ def _test_grouped_case[
         b_raw_tt, b_pre_dst_tt, ctx
     )
     var sfb_raw_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K]))
+        sfb_h, row_major(Idx[num_experts], Idx[N], Idx[scale_K])
     )
     _ = Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         sfb_raw_tt, sfb_pre_h
@@ -543,14 +515,12 @@ def _test_grouped_case[
 
     # A scales: per-expert fixed-stride slots, same launcher as the FP4 path.
     var sfa_raw_tt = TileTensor(
-        sfa_d, row_major(Coord(total_tokens, Idx[scale_K]))
-    ).as_immut()
+        sfa_d, row_major(total_tokens, Idx[scale_K])
+    ).as_imm()
     var sfa_pre_tt = TileTensor(
-        sfa_pre_d, row_major(Coord(num_experts * max_padded_M, Idx[scale_K]))
+        sfa_pre_d, row_major(num_experts * max_padded_M, Idx[scale_K])
     )
-    var a_off_pre_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_immut()
+    var a_off_pre_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         sfa_raw_tt,
         sfa_pre_tt,
@@ -570,15 +540,15 @@ def _test_grouped_case[
             continue
         var eid = Int(eid_h[slot])
         ctx.enqueue_function[block_scaled_matmul_fp8_ref](
-            (a_d.unsafe_ptr() + tok_start * K_BYTES).as_imm(),
-            (b_d.unsafe_ptr() + eid * N * K_BYTES).as_imm(),
-            (sfa_d.unsafe_ptr() + tok_start * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            a_d.unsafe_ptr().unsafe_offset(tok_start * K_BYTES).as_imm(),
+            b_d.unsafe_ptr().unsafe_offset(eid * N * K_BYTES).as_imm(),
+            (sfa_d.unsafe_ptr().unsafe_offset(tok_start * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            (sfb_d.unsafe_ptr() + eid * N * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            (sfb_d.unsafe_ptr().unsafe_offset(eid * N * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            c_ref_d.unsafe_ptr() + tok_start * N,
+            c_ref_d.unsafe_ptr().unsafe_offset(tok_start * N),
             Int32(m_slot),
             Int32(N),
             Int32(K),
@@ -587,25 +557,21 @@ def _test_grouped_case[
         )
 
     # Public dispatcher at matrix_format=CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3.
-    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    ).as_immut()
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[K_BYTES])).as_imm()
     var b_pre_flat = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    ).as_immut()
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts * N, scale_K](),
-    ).as_immut()
-    var a_off_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_immut()
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active))).as_immut()
+    ).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
+    var eid_tt = TileTensor(eid_d, row_major(num_active)).as_imm()
 
     block_scaled_grouped_matmul_amd_preb[lane_bytes=FP8_LANE_BYTES](
         c_tt,
@@ -677,18 +643,8 @@ def _probe_grouped_determinism[
     var n_elem = total_tokens * N
 
     print(
-        "  ",
-        name,
-        " etm=",
-        estimated_total_m,
-        " tokens=",
-        total_tokens,
-        " experts=",
-        num_active,
-        " N=",
-        N,
-        " K=",
-        K,
+        t"   {name}  etm= {estimated_total_m}  tokens= {total_tokens}  experts="
+        t" {num_active}  N= {N}  K= {K}"
     )
 
     var a_h = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
@@ -742,7 +698,7 @@ def _probe_grouped_determinism[
 
     var b_raw_tt = TileTensor(
         b_d, row_major[num_experts, N, K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     var b_pre_dst_tt = TileTensor(
         b_pre_d,
         Shuffler[num_experts].b_5d_grouped_layout[N=N, K_BYTES=K_BYTES],
@@ -751,7 +707,7 @@ def _probe_grouped_determinism[
         b_raw_tt, b_pre_dst_tt, ctx
     )
     var sfb_raw_tt = TileTensor(
-        sfb_h, row_major(Coord(Idx[num_experts], Idx[N], Idx[scale_K]))
+        sfb_h, row_major(Idx[num_experts], Idx[N], Idx[scale_K])
     )
     _ = Shuffler[num_experts].preshuffle_scale_4d[MN=N, K_SCALES=scale_K](
         sfb_raw_tt, sfb_pre_h
@@ -759,14 +715,12 @@ def _probe_grouped_determinism[
     ctx.enqueue_copy(sfb_pre_d, sfb_pre_h)
 
     var sfa_raw_tt = TileTensor(
-        sfa_d, row_major(Coord(total_tokens, Idx[scale_K]))
-    ).as_immut()
+        sfa_d, row_major(total_tokens, Idx[scale_K])
+    ).as_imm()
     var sfa_pre_tt = TileTensor(
-        sfa_pre_d, row_major(Coord(num_experts * max_padded_M, Idx[scale_K]))
+        sfa_pre_d, row_major(num_experts * max_padded_M, Idx[scale_K])
     )
-    var a_off_pre_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_immut()
+    var a_off_pre_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
     Shuffler[1].preshuffle_grouped_scale_4d_gpu[K_SCALES=scale_K](
         sfa_raw_tt,
         sfa_pre_tt,
@@ -786,15 +740,15 @@ def _probe_grouped_determinism[
             continue
         var eid = Int(eid_h[slot])
         ctx.enqueue_function[block_scaled_matmul_fp8_ref](
-            (a_d.unsafe_ptr() + tok_start * K_BYTES).as_imm(),
-            (b_d.unsafe_ptr() + eid * N * K_BYTES).as_imm(),
-            (sfa_d.unsafe_ptr() + tok_start * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            a_d.unsafe_ptr().unsafe_offset(tok_start * K_BYTES).as_imm(),
+            b_d.unsafe_ptr().unsafe_offset(eid * N * K_BYTES).as_imm(),
+            (sfa_d.unsafe_ptr().unsafe_offset(tok_start * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            (sfb_d.unsafe_ptr() + eid * N * scale_K)
-            .bitcast[Float8_e8m0fnu]()
+            (sfb_d.unsafe_ptr().unsafe_offset(eid * N * scale_K))
+            .unsafe_bitcast[Float8_e8m0fnu]()
             .as_imm(),
-            c_ref_d.unsafe_ptr() + tok_start * N,
+            c_ref_d.unsafe_ptr().unsafe_offset(tok_start * N),
             Int32(m_slot),
             Int32(N),
             Int32(K),
@@ -802,25 +756,21 @@ def _probe_grouped_determinism[
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
-    var c_tt = TileTensor(c_d, row_major(Coord(total_tokens, Idx[N])))
-    var a_tt = TileTensor(
-        a_d, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    ).as_immut()
+    var c_tt = TileTensor(c_d, row_major(total_tokens, Idx[N]))
+    var a_tt = TileTensor(a_d, row_major(total_tokens, Idx[K_BYTES])).as_imm()
     var b_pre_flat = TileTensor(
         b_pre_d, row_major[num_experts, N * K_BYTES]()
-    ).as_immut()
+    ).as_imm()
     var sfa_tt = TileTensor(
         sfa_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
-        row_major(Coord(num_experts * max_padded_M, Idx[scale_K])),
-    ).as_immut()
+        row_major(num_experts * max_padded_M, Idx[scale_K]),
+    ).as_imm()
     var sfb_tt = TileTensor(
         sfb_pre_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
         row_major[num_experts * N, scale_K](),
-    ).as_immut()
-    var a_off_tt = TileTensor(
-        a_off_d, row_major(Coord(num_active + 1))
-    ).as_immut()
-    var eid_tt = TileTensor(eid_d, row_major(Coord(num_active))).as_immut()
+    ).as_imm()
+    var a_off_tt = TileTensor(a_off_d, row_major(num_active + 1)).as_imm()
+    var eid_tt = TileTensor(eid_d, row_major(num_active)).as_imm()
 
     var c_h = ctx.enqueue_create_host_buffer[.float32](n_elem)
     var c_ref_h = ctx.enqueue_create_host_buffer[.float32](n_elem)
@@ -870,12 +820,8 @@ def _probe_grouped_determinism[
     # Loose absolute bound: catch a wrong-but-stable result, not fp8 rounding.
     var ref_ok = max_err <= 0.5
     print(
-        "     byte-identical:",
-        all_equal,
-        "| nans:",
-        nans,
-        "| max_err_vs_ref:",
-        max_err,
+        t"     byte-identical: {all_equal} | nans: {nans} | max_err_vs_ref:"
+        t" {max_err}"
     )
     var ok = all_equal and nans == 0 and ref_ok
     print("     PASS" if ok else "     FAIL")

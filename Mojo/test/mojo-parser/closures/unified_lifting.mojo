@@ -71,7 +71,7 @@ def outer() -> Int:
 # COM: Verify that the lifted function can be wrapped as a closure
 
 # COM: this is the top-level wrapper struct
-# CHECK: lit.struct.decl @"def() thin -> Int_PtrWrapper"
+# CHECK: lit.struct.decl @"inflated$def() thin -> ::SIMD[DType.int, 1]|{{[0-9a-f]+}}"
 # CHECK: lit.fn @"stateless()`{{.*}}"()
 
 

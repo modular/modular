@@ -16,6 +16,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 namespace M {
 struct ErrorLimit {
@@ -24,8 +25,9 @@ struct ErrorLimit {
 };
 
 /// Emit error with a limit check.
-void emitLimitedError(function_ref<InFlightDiagnostic()> emitError,
-                      ErrorLimit &limit);
+MODULAR_CXX_EXPORT void
+emitLimitedError(function_ref<InFlightDiagnostic()> emitError,
+                 ErrorLimit &limit);
 
 /// Helper function to check if a location is from the mojo startup module or
 /// not.

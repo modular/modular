@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Provides some canonical client data"""
+"""Provides some canonical client data."""
 
 from typing import Any
 
@@ -21,6 +21,7 @@ def simple_openai_request(
     content: str = "Say this is a test!",
     stream: bool = False,
 ) -> dict[str, Any]:
+    """Builds a minimal OpenAI chat-completion request body."""
     return {
         "model": model_name,
         "messages": [{"role": "user", "content": content}],
@@ -29,20 +30,8 @@ def simple_openai_request(
     }
 
 
-def simple_openai_stream_request() -> dict[str, Any]:
-    """
-    A simple streaming request.
-    Verify via:
-    curl https://api.openai.com/v1/chat/completions -H "Content-Type: application/json" -H "Authorization: Bearer $OPENAI_API_KEY" -d '{ "model": "gpt-3.5-turbo", "messages": [{"role": "user", "content": "Say this is a test!"}], "stream": true}'
-    """
-    return {
-        "model": "gpt-3.5-turbo",
-        "messages": [{"role": "user", "content": "Say This is a test!"}],
-        "stream": "true",
-    }
-
-
 def simple_kserve_request() -> dict[str, Any]:
+    """Builds a minimal KServe v2 inference request body."""
     return {
         "inputs": [
             {
@@ -63,6 +52,7 @@ def simple_kserve_request() -> dict[str, Any]:
 
 
 def simple_kserve_response() -> dict[str, Any]:
+    """Builds a KServe v2 inference response body."""
     return {
         "id": "infer-add",
         "model_name": "Add",

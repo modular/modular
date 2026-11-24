@@ -587,37 +587,6 @@ bool IndexArrayElementsAttr::classof(Attribute attr) {
 // Attribute Conversion
 //===----------------------------------------------------------------------===//
 
-/// Convert a `DenseElementsAttr` to an `ArrayElementsAttr`. Pass through any
-/// other kind of attribute. This should be the only place where the splatness
-/// and bitpacked-ness of the attribute are handled.
-Attribute M::convertDenseElements(Attribute attr) {
-  auto denseElements = dyn_cast<DenseElementsAttr>(attr);
-  if (!denseElements || !denseElements.getElementType().isIntOrFloat())
-    return attr;
-  if (denseElements.getType().getElementTypeBitWidth() % 8 == 0) {
-    ArrayRef<char> charData = denseElements.getRawData();
-    ArrayRef<uint8_t> data(reinterpret_cast<const uint8_t *>(charData.data()),
-                           charData.size());
-    // If the data is byte-aligned and is not splat, just pass it along.
-    if (!denseElements.isSplat())
-      return ArrayElementsAttr::get(data, denseElements.getType());
-
-    // Replicate the splat.
-    std::vector<uint8_t> replicated(data.size() * denseElements.size(), 0);
-    for (unsigned i = 0, e = denseElements.size(); i < e; ++i)
-      memcpy(replicated.data() + i * data.size(), data.data(), data.size());
-    return ArrayElementsAttr::get(replicated, denseElements.getType());
-  }
-
-  // Unpack the data.
-  if (llvm::isa<FloatType>(denseElements.getElementType())) {
-    auto values = llvm::to_vector(denseElements.getValues<APFloat>());
-    return FloatArrayElementsAttr::get(denseElements.getType(), values);
-  }
-  auto values = llvm::to_vector(denseElements.getValues<APInt>());
-  return IntArrayElementsAttr::get(denseElements.getType(), values);
-}
-
 ElementsAttr M::getInlineAttrForTensorDataCopy(ShapedType type,
                                                ArrayRef<char> data) {
   return ArrayElementsAttr::get(
@@ -643,12 +612,6 @@ SmallVector<int64_t> M::getIntBlob(IntArrayElementsAttr intElemsAttr) {
   return llvm::map_to_vector(
       intElemsAttr.getValues(),
       [](const llvm::APInt &dim) { return dim.getSExtValue(); });
-}
-
-SmallVector<float> M::getFloatBlob(FloatArrayElementsAttr floatElemsAttr) {
-  return llvm::map_to_vector(
-      floatElemsAttr.getValues(),
-      [](const llvm::APFloat &dim) { return dim.convertToFloat(); });
 }
 
 //===----------------------------------------------------------------------===//
@@ -1059,24 +1022,6 @@ int32_t DataLayout::getFloatABIAlign(int32_t bitwidth) const {
   return llvm::PowerOf2Ceil(llvm::divideCeil(bitwidth, CHAR_BIT));
 }
 
-int32_t DataLayout::getVectorABIAlign(int32_t numElts,
-                                      int32_t eltBitWidth) const {
-  int32_t size = numElts * eltBitWidth;
-  // Binary search for a corresponding entry by vector bitwidth.
-  auto it = llvm::partition_point(
-      vecAbiAlign, [&](const std::pair<int32_t, int32_t> &entry) {
-        return entry.first < size;
-      });
-
-  // If we found an entry for the alignment of a vector of this size, use it.
-  if (it != vecAbiAlign.end() && it->first == size)
-    return it->second;
-
-  // Otherwise, the default alignment is the power of 2 equal to or greater than
-  // the size rounded up to the nearest byte.
-  return llvm::PowerOf2Ceil(llvm::divideCeil(size, CHAR_BIT));
-}
-
 int32_t DataLayout::getStructABIAlign() const { return structAbiAlign; }
 
 //===----------------------------------------------------------------------===//
@@ -1197,8 +1142,8 @@ M::getTargetInfoFor(MLIRContext *ctx, StringRef targetTriple, StringRef arch,
   // The plugin name is only set on targets built from Mojo; targets built here
   // get the default.
   return TargetInfoAttr::get(ctx, llvm::Triple(targetTriple), arch, "default",
-                             resolvedFeatures, std::move(*dl),
-                             machine->getRelocationModel(),
+                             /*opaque_plugin=*/{}, resolvedFeatures,
+                             std::move(*dl), machine->getRelocationModel(),
                              simdWidthFromFeatures(StringRef(resolvedFeatures)),
                              pointerBitWidth, tuneCpu, acceleratorArch, abi);
 }
@@ -1276,7 +1221,8 @@ TargetInfoAttr M::fromRuntimeTargetInfo(MLIRContext *ctx,
                                         const TargetInfo &runtimeTargetInfo) {
   return TargetInfoAttr::get(
       ctx, runtimeTargetInfo.triple, runtimeTargetInfo.arch,
-      /*stdlib_plugin=*/"default", encodeFeatures(runtimeTargetInfo),
+      /*stdlib_plugin=*/"default", /*opaque_plugin=*/{},
+      encodeFeatures(runtimeTargetInfo),
       /*data_layout=*/{}, /*relocation_model=*/llvm::Reloc::Static,
       /*simd_bit_width=*/0, /*index_width=*/std::nullopt,
       /*tune_cpu=*/{}, /*accelerator_arch=*/{}, runtimeTargetInfo.abi);
@@ -1327,8 +1273,17 @@ struct FieldParser<llvm::Reloc::Model> {
 
 namespace llvm {
 /// Provide the ability to hash triples for attribute uniquing.
+///
+/// Hash exactly the components compared by `Triple::operator==` so that equal
+/// triples hash equal, without materializing the normalized triple string on
+/// every attribute hash.
 static hash_code hash_value(const llvm::Triple &triple) {
-  return hash_value(triple.normalize());
+  return hash_combine(static_cast<unsigned>(triple.getArch()),
+                      triple.getSubArch(),
+                      static_cast<unsigned>(triple.getVendor()),
+                      static_cast<unsigned>(triple.getOS()),
+                      static_cast<unsigned>(triple.getEnvironment()),
+                      static_cast<unsigned>(triple.getObjectFormat()));
 }
 
 /// Allow the attribute printer to print a target triple.

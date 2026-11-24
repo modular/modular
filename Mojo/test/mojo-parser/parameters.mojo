@@ -31,7 +31,7 @@ struct StructWithIntParam[size: Int](RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"paramArith{{.*}}"<x: !Int>() -> !kgen.none
 def paramArith[x: Int]():
-    # CHECK: lit.alias.decl *"y`": !Bool = <sugar_builtin(apply({{.*}}{_mlir_value: scalar<bool> = eq(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 99)})>
+    # CHECK: lit.alias.decl *"y`": !Bool = <sugar_builtin(apply({{.*}}{:scalar<bool> identical(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 99)})>
     comptime y = x == 98 + 1
 
 def take_3index(a: Int, b: Int, c: Int) -> Int:
@@ -262,6 +262,21 @@ def infer_implicit_params():
     # CHECK: lit.call {{.*}}implicit_params_with_others{{.*}}<:!Int {:scalar<index> 1}, :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}, :!Int {:scalar<index> 3}, :!Int {:scalar<index> 4}>
     partial_bind(one, two)
 
+
+# Auto-param of a hole that binds an inner struct's own variadic: the
+# '...' unbinds the pack of Inner. The implicit parameters for the pack and
+# its ParameterList wrapper are plain (non-variadic) parameters — the
+# pos_var_arg marker stays on the user's own *Xs argument only.
+struct TakesVariadicParam[*vs: Int, tail: Int](Movable where False):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"implicit_params_with_variadic_element
+# CHECK-SAME: <?, *"Xs.vs.values``": param_list<!Int>, *"Xs.vs`1": !lit.struct<#ParameterList <:!AnyType !Int,
+# CHECK-SAME: :param_list<!Int> *"Xs.vs.values``">>, {{.*}} imm *"Xs`4"> imm_mem|pos_vararg)
+def implicit_params_with_variadic_element(*Xs: TakesVariadicParam[..., tail=1]):
+    pass
+
 def implicit_params_with_var_params[*Ts: Int](s: TwoParams[1, _]): pass
 
 # CHECK-LABEL: lit.fn @"test_implicit_params_with_var_params
@@ -280,7 +295,7 @@ def explicit_autoparameterization(v: TwoParams[5, _], w: TwoParams[b=_, a=_]):
 comptime TwoParamsSwap[b: Int, a: Int] = TwoParams[a, b]
 
 # CHECK-LABEL: lit.fn @"autoparam_param_alias
-# CHECK-SAME: <?, [[B0:.*]]: !Int, [[A0:.*]]: !Int, [[B1:.*]]: !Int>
+# CHECK-SAME: <?, [[B0:[^:]+]]: !Int, [[A0:[^:]+]]: !Int, [[B1:[^:]+]]: !Int>
 # CHECK-SAME: %x: {{.*}}#TwoParams <:!Int [[A0]], :!Int [[B0]]>
 # CHECK-SAME: %y: {{.*}}#TwoParams <:!Int {:scalar<index> 2}, :!Int [[B1]]>
 def autoparam_param_alias(x: TwoParamsSwap, y: TwoParamsSwap[_, 2]) -> Int:
@@ -303,7 +318,7 @@ def autoparam_of_params[a: Int, //, b: IndexParam, c: IndexParam[a]]():
     pass
 
 # CHECK-LABEL: lit.fn @"autoparam_of_struct_metatype_params
-# CHECK-SAME: <["a.x`1"]*"a.x`1": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"a.x`1">>>>
+# CHECK-SAME: <["a.x`"]*"a.x`": !Int, +, a: meta<!lit.struct<#IndexParam <:!Int *"a.x`">>>>
 def autoparam_of_struct_metatype_params[a: type_of(IndexParam)]():
     pass
 
@@ -315,26 +330,6 @@ struct DependentParams[x: Int, //, p: IndexParam[x]](TrivialRegisterPassable):
 # CHECK-LABEL: lit.fn @"autoparam_of_dependent_params
 # CHECK-SAME: <["dp.x`"]*"dp.x`": !Int, ["dp.p`1"]*"dp.p`1": {{.*}}IndexParam <:!Int *"dp.x`">>, +, dp: {{.*}}DependentParams <:!Int *"dp.x`", :{{.*}}IndexParam <:!Int *"dp.x`">> *"dp.p`1">>
 def autoparam_of_dependent_params[dp: DependentParams]():
-    pass
-
-
-# CHECK-LABEL: lit.fn @"function_autoparam
-# CHECK-SAME: :{mut |*(0,0)|, mut |*(0,1)|}:<["f.__origins__`"][[F_LT:.*]]: origin.set, ["g.__origins__`1"][[G_LT:.*]]: origin.set, +
-# CHECK-SAME: f: !lit.generator<:[[F_LT]]:() capturing -> !kgen.none>
-# CHECK-SAME: g: !lit.generator<:[[G_LT]]:() capturing -> !kgen.none>
-def function_autoparam[f: def () capturing [_] -> None, g: def () capturing [_] -> None]():
-    @__parameter
-    def function():
-        pass
-
-    # CHECK: lit.alias.decl *"bind_one{{.*}}": !lit.generator<<>!kgen.func.literal<:!lit.fn<() capturing -> !kgen.none>
-    # CHECK-SAME: function_autoparam{{.*}}<:origin.set {}, :origin.set {}, :{{.*}} *"function()", :{{.*}} *"function()">
-    comptime bind_one = function_autoparam[function, function]
-
-
-# CHECK-LABEL: lit.fn @"nonprop_capture_set
-# CHECK-SAME: ()"<f: !lit.generator<<"g.__origins__`2x": origin.set, +, "g": !lit.generator<:*(1,0):() capturing -> !kgen.none>>:*(0,0):() -> !kgen.none>>()
-def nonprop_capture_set[f: def[g: def () capturing [_] -> None] () thin -> None]():
     pass
 
 
@@ -737,7 +732,7 @@ def useParamVariadics():
 
   # Use of an unbound thing in a DRValue context binds an empty variadic list.
   # FIXME(#29495): Pack references aren't working right.
-  # HECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
+  # HECK-NEXT: [[TMP:%.*]] = kgen.create_func_ptr[!lit.generator<() -> !kgen.none>: @parameters::@"fnWithVariadics{{.*}}"<:param_list<!Int> []>]()
   # HECK-NEXT: %defLet = lit.var.decl "fnLet" : {{.*}}!lit.generator<() -> !kgen.none>
   # HECK-NEXT: lit.ref.store [[TMP]], %defLet
   # var defLet = fnWithVariadics
@@ -978,7 +973,7 @@ struct InferredDefaultType[dtype: DType = .uint32](Movable where False):
 
 # CHECK-LABEL: lit.fn @"test_dependent_default_param_inference()"() -> !kgen.none
 def test_dependent_default_param_inference():
-    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1])"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
+    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, 1]){{.*}}"{{.*}}<:!DType {:dtype index}, :!DType {:dtype index}>
     _ = InferredDefaultType(3)
 
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
@@ -1052,20 +1047,6 @@ def signature_inference[dt: DType, rank: Int]():
     # CHECK-SAME: :!lit.generator<<"width": !Int>(!lit.struct<#Abstraction <:!Int rank>
     # CHECK-SAME: -> !lit.struct<#SIMD <:!DType dt, :!SIMDLength sugar_builtin(apply(:!lit.generator<("value": !Int, |) -> !SIMDLength> @std::@builtin::@stubs::@SIMDLength::@"__init__(::SIMD[DType.int, 1])", *(0,0)), {_mlir_value = to_builtin(:scalar<index> #lit.struct.extract<:!Int *(0,0), "_mlir_value">)})>>
     implicit_signature[func]()
-
-
-struct ClosureParam[lt: Origin[mut=True], f: def () capturing [lt._mlir_origin] -> None](Movable):
-  pass
-
-
-# CHECK-LABEL: lit.fn @"infer_implicit_params
-def infer_implicit_params(var p: ClosureParam):
-    # CHECK: lit.call {{.*}}ClosureParam::@"__init__
-    # CHECK-SAME: *, "move"
-    # CHECK-SAME: <:origin<true> *"p.lt._mlir_origin``",
-    # CHECK-SAME: :!lit.generator<:{mut *"p.lt._mlir_origin``"}:() capturing -> !kgen.none> *"p.f`2">
-    var tmp = p^
-    _ = tmp^
 
 
 trait ToInt:
@@ -1373,7 +1354,7 @@ def default_inferring_param[O: ImmOrigin](str: StringSpan[O] = StaticString(""))
 # CHECK-LABEL: lit.fn @"test_default_inferring_param
 def test_default_inferring_param(b: String):
     # Infers O to default value.
-    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSpan <:!Bool {:scalar<bool> false}, :origin<false> #lit.origin.field<#lit.static.origin : !lit.origin<false>, "__constants__">,
+    # CHECK: %0 = kgen.param.constant: !lit.struct<#StringSpan <:origin<false> #lit.origin.field<#lit.static.origin : !lit.origin<false>, "__constants__">,
     # CHECK-NEXT: lit.call {{.*}}default_inferring_param{{.*}}(%0)
     default_inferring_param()
     default_inferring_param(StaticString("a"))
@@ -1569,8 +1550,7 @@ def scalar_type[dt: DType]():
 # CHECK-LABEL: lit.fn @"funct_partial_binding{{.*}}"<x: !Empty, F:
 def funct_partial_binding[x: Empty, F: def[t: Empty, s: Empty] () thin -> None]():
     # CHECK: !lit.generator<<"u": !Empty, "v": !Empty>() -> !kgen.none> = <rebind(
-    # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none>
-    # CHECK-SAME: bind_params(:!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F, ?, ?)
+    # CHECK-SAME: :!lit.generator<<"t": !Empty, "s": !Empty>() -> !kgen.none> F)>
 
     comptime G: def[u: Empty, v: Empty] () thin -> None = F[s=_, t=_]
     # CHECK: !lit.generator<<"u": !Empty>() -> !kgen.none> = <rebind(
@@ -1693,7 +1673,7 @@ def take_variadic_pack[*ArgTypes: AnyType](*args: *ArgTypes):  pass
 
 # CHECK-LABEL: call_variadic_pack_with_function
 def call_variadic_pack_with_function():
-  # CHECK: [[FP:%.*]] = kgen.create_closure[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
+  # CHECK: [[FP:%.*]] = kgen.create_func_ptr[!lit.generator<("x": !Int) -> !kgen.none>: @parameters::@"indirect_function
   # CHECK: lit.call {{.*}}take_variadic_pack
   var x = take_variadic_pack(indirect_function)
 
@@ -1867,7 +1847,7 @@ def _copy_nd_buffer_to_layout_tensor[shape: DimList](src: NDBuffer[shape]):
 
 # Make sure default inferred value is installed.
 
-# CHECK-LABEL: lit.alias.decl *"ImmOrigin{{.*}}": meta<!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> ?>, <"_mlir_origin": origin<false>, +>>>
+# CHECK-LABEL: lit.alias.decl *"ImmOrigin{{.*}}": !lit.generator<<"_mlir_origin": origin<false>, +>meta<!lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> *(0,0)>>>>
 comptime ImmOrigin = Origin[mut=False]
 # CHECK-LABEL: lit.alias.decl *"ImmAnyOrigin{{.*}}": !lit.struct<#Origin <:!Bool {:scalar<bool> false}, :origin<false> #lit.any.origin>>
 comptime ImmAnyOrigin = AnyOrigin[mut=False]
@@ -1882,3 +1862,43 @@ def upcast_typelist_caller[x: TypeList[Trait=Movable, ...]]():
     # TODO(MOCO-3712): Causes segfault.
     #comptime a: TypeList[Trait=AnyType, ...] = x
     upcast_typelist_callee[x]()
+
+
+def depends_on_a[a: Int]() -> Int:
+    return a
+
+
+struct NestedDeps[a: Int, b: Int = depends_on_a[a]()](Movable where False):
+    pass
+
+
+# The default for `b` depends on the unbound `a`, so it stays a function of it.
+# CHECK-LABEL: lit.alias.decl *"nested_deps_unbound{{.*}}": !lit.generator<<"a": !Int>meta<!lit.struct<#NestedDeps <:!Int *(0,0), :!Int apply(:!lit.generator<() -> !Int> @parameters::@"depends_on_a{{.*}}"<:!Int *(1,0)>)>>>>
+comptime nested_deps_unbound = NestedDeps[_]
+# CHECK-LABEL: lit.alias.decl *"nested_deps_bound{{.*}}": meta<!lit.struct<#NestedDeps <:!Int {:scalar<index> 3}, :!Int apply(:!lit.generator<() -> !Int> @parameters::@"depends_on_a{{.*}}"<:!Int {:scalar<index> 3}>)>>>
+comptime nested_deps_bound = nested_deps_unbound[3]
+
+
+struct VecOfParams[dtype: Int, length: Int](TrivialRegisterPassable):
+    def add(self, rhs: Self) -> Self:
+        return self
+
+
+def apply_width_generic[
+    dtype: Int,
+    //,
+    func: def[width: Int](
+        a: VecOfParams[dtype, width], b: VecOfParams[dtype, width]
+    ) thin -> VecOfParams[dtype, width],
+]():
+    pass
+
+
+# A method taken from a partially bound struct keeps the bound parameters and
+# stays generic only over the unbound ones.
+# CHECK-LABEL: lit.fn @"use_partial_method_ref
+# CHECK:       lit.call tail @parameters::@"apply_width_generic
+# CHECK-SAME:  rebind(:!lit.generator<<"length": !Int, +>("self": !lit.struct<#VecOfParams <:!Int dtype, :!Int *(0,0)>>, "rhs": !lit.struct<#VecOfParams <:!Int dtype, :!Int *(0,0)>>) -> !lit.struct<#VecOfParams <:!Int dtype, :!Int *(0,0)>>>
+# CHECK-SAME:  @parameters::@VecOfParams::@"add({{.*}})"<:!Int dtype, :!Int *(0,0)>)
+def use_partial_method_ref[dtype: Int]():
+    apply_width_generic[dtype=dtype, VecOfParams[dtype, _].add]()

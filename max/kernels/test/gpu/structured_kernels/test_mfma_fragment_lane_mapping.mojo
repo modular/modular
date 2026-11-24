@@ -33,14 +33,10 @@ If it fails, the lane-mapping doc is wrong, and all FP8-cast logic
 downstream is built on bad assumptions.
 """
 
-from max.gpu import lane_id, thread_idx
+from max.gpu import lane_id
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import mma as gpu_mma
-from std.memory import AddressSpace
 from std.testing import assert_equal
-
-from layout.tile_layout import row_major
-from layout.tile_tensor import stack_allocation as tt_stack_allocation
 
 
 # v_mfma_f32_32x32x16_bf16 accumulator layout (reference kernel.cpp lines 124-165,
@@ -143,9 +139,9 @@ def _fp8_a_k_for(lane: Int, elt: Int) -> Int:
 # ===========================================================================
 # Kernel: BF16 32x32x16 — uniform C value (sum-of-k validation)
 # ===========================================================================
-def kernel_bf16_32x32x16(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_bf16_32x32x16[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """Per-lane test of v_mfma_f32_32x32x16_bf16 with uniform output.
 
     A[m, k] = 1.0   (per-lane: a_frag[elt] = 1.0)
@@ -182,9 +178,9 @@ def kernel_bf16_32x32x16(
 # ===========================================================================
 # Kernel: BF16 32x32x16 — non-uniform C (validates row/col fragment layout)
 # ===========================================================================
-def kernel_bf16_32x32x16_col(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_bf16_32x32x16_col[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """Stress per-lane (row, col) decomposition of the C fragment.
 
     A[m, k] = 1.0
@@ -210,9 +206,9 @@ def kernel_bf16_32x32x16_col(
         dump_ptr[lid * C_FRAG + p] = c_frag[p]
 
 
-def kernel_bf16_32x32x16_row(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_bf16_32x32x16_row[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """Stress per-lane row mapping by placing the M-index in A.
 
     A[m, k] = m     (every K-element of row m has value m)
@@ -241,9 +237,9 @@ def kernel_bf16_32x32x16_row(
 # ===========================================================================
 # Kernel: FP8 32x32x64 — non-uniform variants
 # ===========================================================================
-def kernel_fp8_32x32x64_col(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_fp8_32x32x64_col[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """FP8 analogue of `kernel_bf16_32x32x16_col`.
 
     A[m, k] = 1.0
@@ -270,9 +266,9 @@ def kernel_fp8_32x32x64_col(
         dump_ptr[lid * C_FRAG + p] = c_frag[p]
 
 
-def kernel_fp8_32x32x64_row(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_fp8_32x32x64_row[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """FP8 analogue of `kernel_bf16_32x32x16_row`. Tests row mapping.
 
     A[m, k] = quantized(m / 32), exact-FP8 nearest representable.
@@ -298,9 +294,9 @@ def kernel_fp8_32x32x64_row(
 # ===========================================================================
 # Kernel: BF16 32x32x16 swap_a_b
 # ===========================================================================
-def kernel_bf16_32x32x16_swap(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_bf16_32x32x16_swap[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """Emulates swap_a_b by calling gpu_mma with A and B swapped.
 
     Set the *other* operand to be the K-pattern; A becomes B and B becomes A.
@@ -336,9 +332,9 @@ def kernel_bf16_32x32x16_swap(
 # ===========================================================================
 # Kernel: FP8 32x32x64
 # ===========================================================================
-def kernel_fp8_32x32x64(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_fp8_32x32x64[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """Per-lane test of v_mfma_scale_f32_32x32x64_f8f6f4 (e4m3fn).
 
     A[m, k] = 1.0
@@ -373,9 +369,9 @@ def kernel_fp8_32x32x64(
 # ===========================================================================
 # Kernel: FP8 32x32x64 swap_a_b
 # ===========================================================================
-def kernel_fp8_32x32x64_swap(
-    dump_ptr: MutPointer[Float32, MutAnyOrigin],
-):
+def kernel_fp8_32x32x64_swap[
+    dump_origin: MutOrigin,
+](dump_ptr: MutPointer[Float32, dump_origin],):
     """Emulates swap_a_b for FP8 32x32x64. Same idea as BF16 swap test."""
     var lid = Int(lane_id())
 
@@ -413,7 +409,7 @@ def test_bf16_32x32x16(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_bf16_32x32x16](
+    ctx.enqueue_function[kernel_bf16_32x32x16[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -434,26 +430,13 @@ def test_bf16_32x32x16(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 32x32x16: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 32x32x16: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
-        "  BF16 32x32x16: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  BF16 32x32x16: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^
@@ -471,7 +454,7 @@ def test_bf16_32x32x16_col(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_bf16_32x32x16_col](
+    ctx.enqueue_function[kernel_bf16_32x32x16_col[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -491,18 +474,9 @@ def test_bf16_32x32x16_col(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 col: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 col: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  BF16 32x32x16 col: mismatches=",
@@ -526,7 +500,7 @@ def test_bf16_32x32x16_row(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_bf16_32x32x16_row](
+    ctx.enqueue_function[kernel_bf16_32x32x16_row[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -546,18 +520,9 @@ def test_bf16_32x32x16_row(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 row: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 row: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  BF16 32x32x16 row: mismatches=",
@@ -571,7 +536,7 @@ def test_bf16_32x32x16_row(ctx: DeviceContext) raises:
     print("  PASSED")
 
 
-@always_inline
+@inline(.always)
 def _fp8_quantize(x: Float32) -> Float32:
     """Round-trip a value through FP8 e4m3fn to get the nearest representable value.
 
@@ -591,7 +556,7 @@ def test_fp8_32x32x64_col(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_fp8_32x32x64_col](
+    ctx.enqueue_function[kernel_fp8_32x32x64_col[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -615,18 +580,9 @@ def test_fp8_32x32x64_col(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 col: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 col: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  FP8 32x32x64 col: mismatches=",
@@ -650,7 +606,7 @@ def test_fp8_32x32x64_row(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_fp8_32x32x64_row](
+    ctx.enqueue_function[kernel_fp8_32x32x64_row[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -672,18 +628,9 @@ def test_fp8_32x32x64_row(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 row: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 row: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
         "  FP8 32x32x64 row: mismatches=",
@@ -706,7 +653,7 @@ def test_bf16_32x32x16_swap(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_bf16_32x32x16_swap](
+    ctx.enqueue_function[kernel_bf16_32x32x16_swap[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -727,22 +674,12 @@ def test_bf16_32x32x16_swap(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  BF16 swap: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  BF16 swap: MISMATCH lane= {lane}  p= {p}  got="
+                        t" {got}  expected= {expected}"
                     )
     print(
-        "  BF16 32x32x16 swap: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  BF16 32x32x16 swap: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^
@@ -759,7 +696,7 @@ def test_fp8_32x32x64(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_fp8_32x32x64](
+    ctx.enqueue_function[kernel_fp8_32x32x64[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -781,26 +718,13 @@ def test_fp8_32x32x64(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 32x32x64: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " (row=",
-                        _c_row_for(lane, p),
-                        " col=",
-                        _c_col_for(lane),
-                        ") got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 32x32x64: MISMATCH lane= {lane}  p= {p}  (row="
+                        t" {_c_row_for(lane, p)}  col= {_c_col_for(lane)} )"
+                        t" got= {got}  expected= {expected}"
                     )
     print(
-        "  FP8 32x32x64: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  FP8 32x32x64: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^
@@ -817,7 +741,7 @@ def test_fp8_32x32x64_swap(ctx: DeviceContext) raises:
         for i in range(C_DUMP_SIZE):
             init_h[i] = Float32(0)
 
-    ctx.enqueue_function[kernel_fp8_32x32x64_swap](
+    ctx.enqueue_function[kernel_fp8_32x32x64_swap[origin_of(dev_dump)]](
         dev_dump, grid_dim=1, block_dim=64
     )
     ctx.enqueue_copy(host_dump, dev_dump)
@@ -837,22 +761,12 @@ def test_fp8_32x32x64_swap(ctx: DeviceContext) raises:
                 mismatches += 1
                 if mismatches <= 5:
                     print(
-                        "  FP8 swap: MISMATCH lane=",
-                        lane,
-                        " p=",
-                        p,
-                        " got=",
-                        got,
-                        " expected=",
-                        expected,
+                        t"  FP8 swap: MISMATCH lane= {lane}  p= {p}  got="
+                        t" {got}  expected= {expected}"
                     )
     print(
-        "  FP8 32x32x64 swap: mismatches=",
-        mismatches,
-        " max_diff=",
-        max_diff,
-        " expected=",
-        expected,
+        t"  FP8 32x32x64 swap: mismatches= {mismatches}  max_diff= {max_diff} "
+        t" expected= {expected}"
     )
     assert_equal(mismatches, 0)
     _ = dev_dump^

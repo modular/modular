@@ -43,6 +43,10 @@ from max.benchmark.benchmark_shared.model_csv import (
     strip_leading_hierarchy_key,
 )
 from pydantic import BaseModel
+from tests.benchmark.benchmark_fakes import (
+    write_blob,
+    write_engine_result_set,
+)
 
 # --- Data-driven flattening --------------------------------------------------
 
@@ -191,14 +195,10 @@ def test_load_result_rows_bad_toplevel(tmp_path: Path) -> None:
         load_result_rows(path)
 
 
-def _write_blob(path: Path, **fields: object) -> None:
-    path.write_text(json.dumps(fields))
-
-
 def test_convert_end_to_end_summary(tmp_path: Path) -> None:
     a = tmp_path / "results-1-median.json"
     b = tmp_path / "results-2-median.json"
-    _write_blob(
+    write_blob(
         a,
         date="2026-07-29",
         model_id="m",
@@ -208,7 +208,7 @@ def test_convert_end_to_end_summary(tmp_path: Path) -> None:
         prefill_stats={"maxserve_batch_input_tokens_mean": 42.0},
         input_lens=[1, 2, 3],
     )
-    _write_blob(
+    write_blob(
         b,
         date="2026-07-29",
         model_id="m",
@@ -235,7 +235,7 @@ def test_convert_end_to_end_summary(tmp_path: Path) -> None:
 
 def test_convert_with_group_adds_columns(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(
+    write_blob(
         a,
         max_concurrency=1,
         request_throughput=10.0,
@@ -249,9 +249,9 @@ def test_convert_with_group_adds_columns(tmp_path: Path) -> None:
 def test_convert_missing_cell_is_empty(tmp_path: Path) -> None:
     a = tmp_path / "a.json"
     b = tmp_path / "b.json"
-    _write_blob(a, max_concurrency=1, mean_ttft_ms=100.0)
+    write_blob(a, max_concurrency=1, mean_ttft_ms=100.0)
     # b lacks mean_ttft_ms.
-    _write_blob(b, max_concurrency=2)
+    write_blob(b, max_concurrency=2)
     out = tmp_path / "out.csv"
     columns = convert([a, b], out)
     with open(out) as f:
@@ -268,7 +268,7 @@ def test_convert_no_inputs_raises(tmp_path: Path) -> None:
 
 def test_convert_dry_run_does_not_write(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(a, max_concurrency=1, request_throughput=10.0)
+    write_blob(a, max_concurrency=1, request_throughput=10.0)
     out = tmp_path / "out.csv"
     columns = convert([a], out, dry_run=True)
     # Selection is still computed and returned, but no file is created.
@@ -278,51 +278,6 @@ def test_convert_dry_run_does_not_write(tmp_path: Path) -> None:
 
 
 # --- Engine profile (ResultSetInContext output from engine benchmarks) -------
-
-
-def _write_engine_json(path: Path) -> None:
-    """Writes a minimal engine ResultSetInContext document."""
-    path.write_text(
-        json.dumps(
-            {
-                "run_context": {"config_id": None, "git_commit": "abc"},
-                "results": [
-                    {
-                        "iteration_config": {
-                            "batch_size": 4,
-                            "context_len": 0,
-                            "input_len": 128,
-                            "output_len": 64,
-                        },
-                        "result": {
-                            "total_latency_ms": {
-                                "mean": 10.0,
-                                "std": 1.0,
-                                "p50": 9.0,
-                                "p90": 12.0,
-                                "p95": 13.0,
-                                "p99": 15.0,
-                                "unit": "ms",
-                                "confidence_info": None,
-                            },
-                            "prefill_latency_ms": {"mean": 3.0, "p90": 3.5},
-                            "decode_latency_ms": {"mean": 7.0, "p90": 8.0},
-                            "tokens_per_second": 500.0,
-                            "input_tokens_per_second": 300.0,
-                            "output_tokens_per_second": 200.0,
-                            "gpu": {
-                                "peak_memory_mib": 40000.0,
-                                "avg_utilization_percent": 90.0,
-                                "kernel_time_ms": 5.0,
-                                "device_count": 1,
-                                "per_gpu_metrics": None,
-                            },
-                        },
-                    }
-                ],
-            }
-        )
-    )
 
 
 def test_engine_profile_summary_selects_engine_columns() -> None:
@@ -368,7 +323,7 @@ def test_engine_profile_unknown_group_lists_engine_groups() -> None:
 
 def test_convert_engine_profile_end_to_end(tmp_path: Path) -> None:
     src = tmp_path / "engine-results.json"
-    _write_engine_json(src)
+    write_engine_result_set(src)
     out = tmp_path / "engine.csv"
     columns = convert([src], out, profile=ENGINE_PROFILE)
 

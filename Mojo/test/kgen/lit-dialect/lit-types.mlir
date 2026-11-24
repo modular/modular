@@ -7,26 +7,26 @@ lit.struct.decl @MyStructParams<a, b: dtype, c: type> {}
 // CHECK-LABEL: @UseStruct
 // CHECK-SAME: !lit.struct<@MyStructParams<a, :dtype b, :type c>>
 kgen.generator @UseStruct<a, b: dtype, c: type>(%arg0: !lit.struct<@MyStructParams<a, :dtype b, :type c>>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @metatype
 // CHECK-SAME: !kgen.pointer<!lit.struct<@MyStruct>>
 kgen.generator @metatype(%arg0: !kgen.pointer<!lit.struct<@MyStruct>>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @declref_metatype
 // CHECK-SAME: !lit.struct<@MyStruct>
 kgen.generator @declref_metatype(%arg0: !lit.struct<@MyStruct>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.trait.decl @TParam<MT: type, T: !kgen.param<MT>>
 lit.trait.decl @TParam<MT: type, T: !kgen.param<MT>> {
   // CHECK-NEXT: lit.fn @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none
   lit.fn @f(%self: !kgen.param<:!kgen.param<MT> T>) -> !kgen.none {
-    kgen.unreachable
+    hlcf.unreachable
   }
 }
 
@@ -35,7 +35,7 @@ lit.trait.decl @MyTrait {}
 // CHECK-LABEL: @trait_metatype
 // CHECK-SAME: !kgen.param<:trait<@MyTrait> T>
 lit.fn @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.param<:trait<@MyTrait> T>) {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK: !lit.type_signature
@@ -50,23 +50,23 @@ lit.fn @trait_metatype<T: trait<@MyTrait>>(%arg0: !kgen.param<:trait<@MyTrait> T
 // CHECK-LABEL: @type_sig
 // CHECK-SAME: !lit.type_signature<index, array<*(0,0), index>>
 kgen.generator @type_sig(%arg0: !lit.type_signature<index, array<*(0,0), index>>) {
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @nested_index<a>(%arg0: !lit.type_signature<index, index = *(0,0)>) {
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @subst_type<T: type>(%arg0: !kgen.param<T>) {
-  kgen.return
+  hlcf.return
 }
 
 kgen.generator @return_type() -> !lit.type_signature<index, index = *(0,0)> {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 kgen.generator @return_sig() -> !lit.generator<<index, index = *(0,0)>() -> ()> {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // CHECK-LABEL: @bind_nested
@@ -79,7 +79,7 @@ kgen.generator @bind_nested() {
   kgen.param.declare result0: !lit.type_signature<index, index = *(0,0)> = <apply(:() -> !lit.type_signature<index, index = *(0,0)> @return_type)>
   // CHECK: result1: !lit.generator<<index, index = *(0,0)>() -> ()> = <apply(:() -> !kgen.generator<!lit.generator<<index, index = *(0,0)>() -> ()>> @return_sig)>
   kgen.param.declare result1: !lit.generator<<index, index = *(0,0)>() -> ()> = <apply(:() -> !lit.generator<<index, index = *(0,0)>() -> ()> @return_sig)>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @passing_kinds
@@ -93,7 +93,7 @@ kgen.generator @passing_kinds(
     // CHECK-SAME: !lit.generator<<i8, i8, i8, ?, i8>() -> ()>
     %arg3: !lit.generator<<i8, i8, i8, ?, i8>() -> ()>
 ) {
-  kgen.return
+  hlcf.return
 }
 
 // Test that passing kind printing/parsing works correctly for long signatures.
@@ -110,14 +110,14 @@ kgen.generator @passing_kinds(
 // CHECK-SAME: "f": index owned, "g": index owned, "h": index owned, "i": index owned,
 // CHECK-SAME: "j": index owned, "k": index owned, "l": index owned, "m": index owned
 lit.fn @long_sig(%t: !t) {
-    kgen.return
+    hlcf.return
 }
 
 lit.trait.decl @Trait {
 }
 
 kgen.generator @method() {
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @trait
@@ -128,13 +128,13 @@ kgen.generator @trait() {
   kgen.param.declare type_same: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<1, :dtype f32, :type i32>]>
   // CHECK-NEXT: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<2, :dtype f64, :type i64>]>
   kgen.param.declare type_diff: trait<@Trait> = <[@MyStructParams<1, :dtype f32, :type i32>, @MyStructParams<2, :dtype f64, :type i64>]>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @ref_types
 // CHECK: %arg0: !lit.ref<index, imm #lit.any.origin, 4>
 kgen.generator @ref_types(%arg0: !lit.ref<index, imm #lit.any.origin, 4>) {
-  kgen.unreachable
+  hlcf.unreachable
 }
 
 // FIXME: This isn't valid IR!
@@ -142,14 +142,14 @@ kgen.generator @ref_types(%arg0: !lit.ref<index, imm #lit.any.origin, 4>) {
 kgen.generator @escape_meta_type_param_names<type: meta<!lit.struct<@Trait>>>() {
   // CHECK: kgen.param.declare T: meta<!lit.struct<@Trait>> = <type>
   kgen.param.declare T: meta<!lit.struct<@Trait>> = <*"type">
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @escape_trait_param_names<type: trait<@Trait>>()
 kgen.generator @escape_trait_param_names<type: trait<@Trait>>() {
   // CHECK: kgen.param.declare T: trait<@Trait> = <*"type">
   kgen.param.declare T: trait<@Trait> = <*"type">
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @generator_types
@@ -168,7 +168,7 @@ kgen.func @generator_types() {
   kgen.param.declare body_constraint: type = <!lit.generator<<dtype, {<true, loc("body-gen.mlir":1:1)>, <true, loc("body-gen.mlir":1:2)>}>index>>
   // CHECK-NEXT: type = <!lit.generator<<{<true, {{.*}}>, <true, {{.*}}>}>index>>
   kgen.param.declare body_constraint_no_params: type = <!lit.generator<<{<true, loc("body-gen.mlir":1:1)>, <true, loc("body-gen.mlir":1:2)>}>index>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @fn_types
@@ -181,7 +181,7 @@ kgen.generator @fn_types<x: index, y: index>() {
   kgen.param.declare type2: type = <!kgen.func<!lit.fn<(index, i8) -> ()>>>
   // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
   kgen.param.declare type3: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: kgen.generator @meta_type
@@ -192,7 +192,7 @@ kgen.generator @meta_type() {
   kgen.param.declare my_struct_params: meta<!lit.struct<@MyStructParams<1, :dtype f32, :type i32>>> = <@MyStructParams<1, :dtype f32, :type i32>>
   // CHECK: kgen.param.declare my_trait: meta<!lit.trait<@MyTrait>> = <@MyTrait>
   kgen.param.declare my_trait: meta<!lit.trait<@MyTrait>> = <@MyTrait>
-  kgen.return
+  hlcf.return
 }
 
 // Test TraitType with constraints (conditional trait conformance).
@@ -227,5 +227,5 @@ kgen.generator @trait_constraints<x: index>() {
   // CHECK: kgen.param.declare combined: type = <trait<@MyTrait, @Trait where #kgen.constraint<{{.*}}>>>
   kgen.param.declare combined: type = <!lit.trait<@MyTrait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, 1 : index> : !kgen.scalar<bool>, loc("t":3:1)>, @Trait where #kgen.constraint<#kgen.param.expr<lt, 0 : index, #kgen.param.decl.ref<"x"> : index> : !kgen.scalar<bool>, loc("t":3:2)>, @TParam where #kgen.constraint<false, loc("t":3:3)>>>
 
-  kgen.return
+  hlcf.return
 }

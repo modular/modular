@@ -81,6 +81,7 @@ modular_py_library(
         "//max/python/max/config",
         "//max/python/max/profiler",
         "//max/python/max/serve:config",
+        "//max/python/max/serve:tool_call_validation",
         requirement("aiohttp"),
         requirement("cyclopts"),
         requirement("datasets"),

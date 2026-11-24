@@ -20,7 +20,6 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from test_common.modular_graph_test import ACCURACY_ATOL, ACCURACY_RTOL
 
 
 def test_reduce_add(session: InferenceSession) -> None:
@@ -56,14 +55,16 @@ def test_reduce_add(session: InferenceSession) -> None:
         assert isinstance(max_result, Buffer)
         max_result_np = max_result.to_numpy()
 
-        # Compute expected result with torch
         expected = torch.sum(input_data, dim=1).numpy()
 
+        # A float32 sum of up to 64 N(0, 1) terms rounds by about 1e-5 in
+        # any add order, and a row sum can land near zero where a relative
+        # tolerance alone does not cover that.
         np.testing.assert_allclose(
             max_result_np,
             expected,
-            rtol=ACCURACY_RTOL,
-            atol=ACCURACY_ATOL,
+            rtol=1e-5,
+            atol=1e-4,
         )
 
     check_reduce_add()

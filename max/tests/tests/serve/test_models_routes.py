@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from max.pipelines.lib.memory_estimation import MemoryPlan
+from max.pipelines.lib.memory_plan import MemoryPlan
 from max.serve.request import register_request
 from max.serve.router import openai_routes
 

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin._format_float import _write_float
+from std.memory import bitcast
 from std.testing import assert_equal, TestSuite
 
 
@@ -186,6 +187,66 @@ def test_float32() raises:
         var mojo_f32_str = String()
         _write_float(mojo_f32_str, entry.value)
         assert_equal(entry.key, mojo_f32_str)
+
+
+def _format[
+    dtype: DType
+](x: Scalar[dtype]) -> String where dtype.is_floating_point():
+    var s = String()
+    _write_float(s, x)
+    return s
+
+
+def test_float32_round_to_nearest_even() raises:
+    def check(bits: UInt32, expected: StaticString) raises:
+        assert_equal(_format(bitcast[DType.float32](bits)), expected)
+
+    # An odd significand excludes the interval endpoint 33560530.
+    check(0x4C0005F5, "33560532.0")
+    # Subnormal and small normal values whose parity check misread the cache.
+    check(0x000031B5, "1.7832e-41")
+    check(0x009337DF, "1.3519861e-38")
+    # 3.37890625 is halfway between two 8-digit candidates.
+    check(0x40584000, "3.3789062")
+    # 2^-12 is the one float32 whose shorter interval round-up ties.
+    check(0x39800000, "0.00024414062")
+
+
+def test_float64_round_to_nearest_even() raises:
+    def check(bits: UInt64, expected: StaticString) raises:
+        assert_equal(_format(bitcast[DType.float64](bits)), expected)
+
+    # An odd significand excludes the interval endpoint.
+    check(0x43676F8B18D45A03, "5.2772541376417816e+16")
+    # Halfway between two 17-digit candidates.
+    check(0x42E27113B91F0E44, "162214972029042.12")
+    # 2^-25 is the one float64 whose shorter interval round-up ties.
+    check(0x3E60000000000000, "2.9802322387695312e-08")
+
+
+def test_float32_round_trip() raises:
+    var bits = UInt32(1)
+    while bits < 0x7F800000:
+        var x = bitcast[DType.float32](bits)
+        var s = _format(x)
+        assert_equal(atof(s).cast[DType.float32](), x, s)
+        bits += 99991
+
+
+def test_float64_round_trip() raises:
+    # [2^54, 2^55) has an ulp of 4, so its odd significands often land on a
+    # decimal tie.
+    for i in range(2000):
+        var x = bitcast[DType.float64](UInt64(0x4350000000000000 + i))
+        var s = _format(x)
+        assert_equal(atof(s), x, s)
+
+    var bits = UInt64(1)
+    while bits < 0x7FF0000000000000:
+        var x = bitcast[DType.float64](bits)
+        var s = _format(x)
+        assert_equal(atof(s), x, s)
+        bits += 0xFFF_FFFF_FFFF_FD
 
 
 def main() raises:

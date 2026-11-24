@@ -18,9 +18,9 @@ from std.testing import assert_equal, assert_true, TestSuite
 
 def test_none_end_folds() raises:
     var all_def_slice = slice(0, None, 1)
-    assert_equal(all_def_slice.start.value(), 0)
+    assert_equal(all_def_slice.start, Optional(0))
     assert_true(all_def_slice.end is None)
-    assert_equal(all_def_slice.step.value(), 1)
+    assert_equal(all_def_slice.step, Optional(1))
 
 
 # This requires parameter inference of StartT.

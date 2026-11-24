@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Fetches object data from S3."""
+
 
 def fetch_bytes_from_s3(s3_path: str) -> bytes:
     """Fetch bytes from an S3 path.

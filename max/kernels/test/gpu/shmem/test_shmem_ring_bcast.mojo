@@ -14,17 +14,20 @@
 # RUN: %mojo %s
 
 from std.ffi import c_int, c_size_t
+from std.memory.alloc import unsafe_alloc
 
 from max.gpu.host import DeviceBuffer
 from shmem import *
 from std.testing import assert_equal
 
 
-def ring_bcast(
-    data: Pointer[c_int, MutAnyOrigin],
+def ring_bcast[
+    data_origin: MutOrigin, psync_origin: MutOrigin
+](
+    data: Pointer[c_int, data_origin],
     nelem_dev: Int32,
     root: c_int,
-    psync: Pointer[UInt64, MutAnyOrigin],
+    psync: Pointer[UInt64, psync_origin],
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var nelem = Int(nelem_dev)
@@ -52,7 +55,7 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
     var destination = ctx.enqueue_create_buffer[.int32](1)
 
     var data = ctx.enqueue_create_buffer[.int32](data_len)
-    var data_h = alloc[Int32](data_len)
+    var data_h = unsafe_alloc[Int32](data_len)
     var psync = shmem_calloc[.uint64](1)
 
     for i in range(data_len):
@@ -62,7 +65,9 @@ def test_ring_bcast(ctx: SHMEMContext) raises:
 
     var root: Int32 = 0
     ctx.barrier_all()
-    ctx.enqueue_function_collective_checked[ring_bcast](
+    ctx.enqueue_function_collective_checked[
+        ring_bcast[origin_of(data), type_of(psync).origin]
+    ](
         data,
         Int32(data_len),
         root,

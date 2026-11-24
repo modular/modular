@@ -15,7 +15,8 @@
 #define KGEN_MOJOPARSER_TRAITS_H
 
 #include "Mojo/LITDialect/LITOps.h"
-#include "Mojo/MojoParser/ASTDecl.h"
+#include "Mojo/MojoParser/ASTType.h"
+#include "Support/Compiler/Diags.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
 namespace M::KGEN {
@@ -23,22 +24,23 @@ class GetWitnessAttr;
 } // namespace M::KGEN
 
 namespace M::KGEN::LIT {
-class ASTDecl;
+class ConformanceASTDecl;
+class DeclResolver;
 class SharedState;
 class FnTypeGeneratorType;
-class MojoInflightDiag;
+class ConformanceWitnessASTDecl;
 
-/// Check conformance of a struct against a given trait decl, build the
-/// conformance op along the way. Inherited methods are not checked, so to
-/// verify full conformance of an inheriting trait decl, its full ancestor chain
-/// of decls must also be checked here too. This logic is left for the caller so
-/// optimizations is possible when the struct is already known to conform to
-/// certain ancestors. On success, the `ConformanceOp` will be populated.
-LogicalResult verifyAndBuildConformance(ASTDecl &structDecl,
-                                        TraitSymbolAttr parent,
-                                        std::optional<MojoInflightDiag> &diag,
-                                        ConformanceOp op,
-                                        ASTDecl &conformanceDecl);
+/// Check the trait requirement `member` stands for and install its witness.
+/// The first member found unsatisfied checks the rest and reports them all in
+/// one error. After that, or after a signature error, the conformance is
+/// erroneous and later members fail silently.
+LogicalResult verifyConformanceMember(ConformanceWitnessASTDecl &member);
+
+/// Resolve only the witness named `witnessName`. Tables without member decls
+/// (closure wrappers, bytecode) are complete once the conformance itself is
+/// body resolved.
+LogicalResult resolveConformanceMember(ConformanceASTDecl &conformanceDecl,
+                                       StringAttr witnessName);
 
 /// Canonicalize the list of symbols that form a trait composition.
 void canonicalizeTraitCompositionSymbols(
@@ -57,10 +59,22 @@ SmallVector<TraitSymbolAttr>
 reduceTraitCompositionSymbols(SharedState &shared,
                               ArrayRef<TraitSymbolAttr> symbols);
 
-/// Given a type expression and scope-level assumptions, compute the effective
-/// trait bound implied by any `conforms_to(type, Trait)` constraints.
+/// Return the universal parametric closure trait symbol of a trait composition,
+/// or null if `trait` is null or contains no such symbol.
+///
+/// FIXME: what if there are multiple closure traits? We need to be more clever
+/// to line them up.
+TraitSymbolAttr extractClosureSymbol(SharedState &shared, TraitType trait);
+
+// TODO: we need a proper design to support this correctly.
+LogicalResult checkAtMostOneClosureTrait(SharedState &shared,
+                                         ArrayRef<TraitSymbolAttr> symbols,
+                                         SMLoc loc, SourceRange range = {});
+
+/// Given a type expression and a scope-level assumption set, compute the
+/// effective trait bound implied by any `conforms_to(type, Trait)` clauses.
 TraitType getTraitBoundFromAssumptions(TypedAttr typeAttr, SharedState &shared,
-                                       ArrayRef<ConstraintAttr> assumptions);
+                                       TypedAttr assumptions);
 
 /// Fuse one or more constraints on the same symbol into a single constraint. A
 /// single constraint is returned unchanged; multiple constraints are conjoined
@@ -86,15 +100,22 @@ FnTypeGeneratorType specializeSignature(FnTypeGeneratorType traitFnSignature,
 /// The GetWitnessAttr may be immediately evaluated if the type-value was
 /// already resolved. If the type does not conform to the trait, returns an
 /// empty TypedAttr.
-FailureOr<TypedAttr> getUniqueWitnessForTypeIfConforms(
-    SharedState &shared, ASTType type, TraitType trait, StringRef entryName,
-    ArrayRef<ConstraintAttr> callerAssumptions, SMLoc errorLoc);
+FailureOr<TypedAttr>
+getUniqueWitnessForTypeIfConforms(SharedState &shared, ASTType type,
+                                  TraitType trait, StringRef entryName,
+                                  TypedAttr callerAssumptions, SMLoc errorLoc);
 
 /// Populate a ParameterEvaluator with the bindings from a trait symbol. Returns
 /// std::nullopt if the trait symbol has no param values (the common case before
 /// we expose parametric trait support to users).
 std::optional<ParameterEvaluator>
 populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol, SharedState &shared);
+
+/// Populate a ParameterEvaluator with the parameters `structType` binds on
+/// `structDecl`. Parameters left unbound by `structType` get no binding.
+ParameterEvaluator populateStructBindingEvaluator(StructDeclOp structDecl,
+                                                  ASTType structType,
+                                                  SharedState &shared);
 } // namespace M::KGEN::LIT
 
 #endif // KGEN_MOJOPARSER_TRAITS_H

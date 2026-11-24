@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-"""Custom Click Options used in pipelines"""
+"""Click parameter type for ``--devices``."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ from max.pipelines.lib.device_specs import (
 
 # TODO: This whole interface will eventually be deprecated once we move away from
 # click.
-class DevicesOptionType(click.ParamType):
+class DevicesOptionType(click.ParamType[DeviceHandle]):
     name = "devices"
 
     @staticmethod

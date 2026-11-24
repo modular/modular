@@ -1,16 +1,6 @@
-load(
-    "//bazel:api.bzl",
-    "gentbl_cc_library",
-    "gentbl_mlir_dialect",
-    "gentbl_modular_passes",
-    "mlir_nanobind",
-    "modular_cc_library",
-    "modular_nanobind_library",
-    "modular_shared_library",
-    "pkg_files",
-    "td_library",
-)
+load("//bazel:api.bzl", "modular_cc_library", "modular_nanobind_library", "modular_shared_library", "pkg_files")
 load("//bazel:config.bzl", "ASYNCRT_PROFILING_LOCAL_DEFINES", "CONFIG_SECTION_LOCAL_DEFINES")
+load("//bazel:tablegen.bzl", "gentbl_cc_library", "gentbl_mlir_dialect", "gentbl_modular_passes", "mlir_nanobind", "td_library")
 
 # gazelle:default_visibility //visibility:public
 # gazelle:default_features layering_check,parse_headers
@@ -52,7 +42,7 @@ modular_cc_library(
     name = "Base",
     srcs = [
         "lib/AlignedAlloc.cpp",
-        "lib/Config.cpp",
+        "lib/BumpAllocator.cpp",
         "lib/Debugger.cpp",
         "lib/Error.cpp",
         "lib/ErrorOr.cpp",
@@ -65,8 +55,8 @@ modular_cc_library(
     hdrs = [
         "include/Support/AlignedAlloc.h",
         "include/Support/AssertStream.h",
+        "include/Support/BumpAllocator.h",
         "include/Support/CommandLine.h",
-        "include/Support/Config.h",
         "include/Support/Debugger.h",
         "include/Support/Error.h",
         "include/Support/ErrorOr.h",
@@ -97,13 +87,23 @@ modular_cc_library(
     }),
     deps = [
         ":ConcurrentAppendingVector",
-        ":Globals",
+        ":Globals.static",
         ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
+        "@llvm-project//llvm:config",
+        "@llvm-project//mlir:SupportLLVM",
+    ],
+)
+
+modular_cc_library(
+    name = "Config",
+    srcs = ["lib/Config.cpp"],
+    hdrs = ["include/Support/Config.h"],
+    deps = [
+        ":SymbolExport",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
-        "@llvm-project//mlir:Support",
     ],
 )
 
@@ -112,14 +112,25 @@ modular_cc_library(
     srcs = ["lib/HashUtils.cpp"],
     hdrs = ["include/Support/HashUtils.h"],
     deps = [
+        ":SymbolExport",
+        "@llvm-project//llvm:Support",
+        "@xxhash",
+    ],
+)
+
+modular_cc_library(
+    name = "BytecodeHash",
+    srcs = ["lib/BytecodeHash.cpp"],
+    hdrs = ["include/Support/BytecodeHash.h"],
+    deps = [
         ":Base",
         ":Compiler",
+        ":HashUtils",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-        "@xxhash",
     ],
 )
 
@@ -129,6 +140,7 @@ modular_cc_library(
     hdrs = ["include/Support/Base64.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -137,9 +149,21 @@ modular_cc_library(
     name = "BinaryID",
     srcs = ["lib/BinaryID.cpp"],
     hdrs = ["include/Support/BinaryID.h"],
+    # Each shared library keeps its own hidden copy: getBinaryID() reports the
+    # build ID of the binary that contains it.
+    tags = ["LINKABLE_MORE_THAN_ONCE"],
     deps = [
         "@llvm-project//llvm:Support",
     ],
+)
+
+# Portable <dlfcn.h>: on Windows the sources provide dlopen/dlsym/dlclose/
+# dlerror over LoadLibrary/GetProcAddress; elsewhere the header forwards to
+# the system <dlfcn.h> and the sources compile empty.
+modular_cc_library(
+    name = "DLFcn",
+    srcs = ["lib/DLFcn.cpp"],
+    hdrs = ["include/Support/DLFcn.h"],
 )
 
 modular_cc_library(
@@ -161,8 +185,10 @@ modular_cc_library(
     local_defines = CONFIG_SECTION_LOCAL_DEFINES,
     deps = [
         ":Base",
+        ":Config",
         ":Configuration",
         ":Filesystem",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
@@ -177,6 +203,7 @@ modular_cc_library(
         ":ADT",
         ":Base",
         ":Filesystem",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -187,6 +214,7 @@ modular_cc_library(
     hdrs = ["include/Support/DeviceSpecs.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
     ],
@@ -198,6 +226,7 @@ modular_cc_library(
     hdrs = ["include/Support/CPUCache.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -223,6 +252,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Filesystem",
+        ":SymbolExport",
         "@llvm-project//llvm:Option",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Support",
@@ -241,7 +271,7 @@ modular_cc_library(
     deps = [
         ":ADT",
         ":Base",
-        ":Globals",
+        ":Globals.static",
         ":SymbolExport",
         ":TypeID",
         "@llvm-project//llvm:Support",
@@ -255,7 +285,8 @@ modular_cc_library(
     deps = [
         ":Base",
         ":ConcurrentAppendingVector",
-        ":Globals",
+        ":Globals.static",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -271,7 +302,8 @@ modular_cc_library(
     ),
     deps = [
         ":Base",
-        ":Globals",
+        ":Globals.static",
+        ":SymbolExport",
         ":TypeID",
         "@llvm-project//llvm:Support",
     ],
@@ -285,11 +317,13 @@ modular_cc_library(
     # CUDA compilation driver resolves the dlopened NVPTX compiler with it, and
     # the mojo driver hands its runfiles down to the lldb it spawns.
     visibility = [
+        "//AsyncRT:__pkg__",
         "//MLRT:__subpackages__",
         "//Mojo/tools/mojo:__pkg__",
         "//max/python/max:__pkg__",
     ],
     deps = [
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
         "@rules_cc//cc/runfiles",
     ],
@@ -317,7 +351,8 @@ modular_cc_library(
         ":BazelRunfiles",
         ":CacheLog",
         ":Filesystem",
-        ":Globals",
+        ":Globals.static",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -338,6 +373,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":Configuration",
+        ":SymbolExport",
         "//Config",
         "@crashpad//:client",
         "@llvm-project//llvm:Support",
@@ -358,8 +394,9 @@ modular_cc_library(
     ]),
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:SupportFileUtilities",
     ],
 )
 
@@ -369,6 +406,7 @@ modular_cc_library(
     hdrs = ["include/Support/IPInt.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -380,6 +418,7 @@ modular_cc_library(
     deps = [
         ":Base",
         ":IPInt",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -400,6 +439,7 @@ modular_cc_library(
     hdrs = ["include/Support/URI.h"],
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -413,8 +453,8 @@ modular_cc_library(
     ]),
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:IR",
     ],
 )
 
@@ -424,6 +464,7 @@ modular_cc_library(
     hdrs = glob(["include/Support/Threading/*.h"]),
     deps = [
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -435,11 +476,15 @@ modular_cc_library(
     defines = ASYNCRT_PROFILING_LOCAL_DEFINES,
     deps = [
         ":Base",
-        ":Globals",
-        ":MArchTargetMinimal",
+        ":Globals.static",
+        ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:Support",
-    ],
+    ] + select({
+        # Profiling builds write the host's description into the trace header.
+        "//bazel/internal:profiling_off": [],
+        "//conditions:default": [":MArchTargetMinimal"],
+    }),
 )
 
 # Minimal range-annotation and profiler-control API: per-copy
@@ -453,18 +498,22 @@ modular_cc_library(
 modular_cc_library(
     name = "ProfilingRanges",
     srcs = [
+        "lib/Profiling/CaptureLabels.cpp",
         "lib/Profiling/ExternalProfilerAnnotation.cpp",
         "lib/Profiling/Ranges.cpp",
     ],
     hdrs = [
+        "include/Support/Profiling/CaptureLabels.h",
         "include/Support/Profiling/ExternalProfilerAnnotation.h",
         "include/Support/Profiling/Ranges.h",
+        "include/Support/Profiling/TraceActivity.h",
     ],
     deps = [
         # Holds the process-global gates + cached sink, so every statically
         # linked copy of the shim observes the same state (see Ranges.h).
-        ":Globals",
+        ":Globals.static",
         ":Base",
+        ":SymbolExport",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -476,9 +525,16 @@ modular_cc_library(
 # archive order.
 modular_cc_library(
     name = "ProfilingRangesHeaders",
-    hdrs = ["include/Support/Profiling/Ranges.h"],
+    hdrs = [
+        "include/Support/Profiling/Ranges.h",
+        "include/Support/Profiling/TraceActivity.h",
+    ],
     visibility = ["//max/internal/profiler:__pkg__"],
-    deps = [":Base"],
+    deps = [
+        ":Base",
+        ":SymbolExport",
+        "@llvm-project//llvm:Support",
+    ],
 )
 
 # The C ABI between :ProfilerHostGlue and the runtime-loaded profiler plugin
@@ -509,13 +565,15 @@ modular_cc_library(
         "//conditions:default": ["MODULAR_TRACY_BUILD=0"],
     }),
     visibility = [
+        "//AsyncRT:__pkg__",
         "//MLRT:__pkg__",
         "//Mojo:__pkg__",
         "//mach/crates/max-sys-internal:__pkg__",
-        "//max/internal:__pkg__",
         "//max/internal/profiler:__pkg__",
-        "//max/python/max/_core/internal:__subpackages__",
+        "//max/lib/max_license:__pkg__",
+        "//max/python/max/_core/max_license:__subpackages__",
         "//max/tests/internal/profiler:__pkg__",
+        "//plugins:__subpackages__",
     ],
     deps = [
         # Configuration backs the max-debug.profiling-enabled auto-start knob
@@ -540,7 +598,11 @@ modular_cc_library(
     name = "ExternalProfilerAnnotationHostGlue",
     srcs = ["lib/ExternalProfilerAnnotationHostGlue.cpp"],
     visibility = [
+        "//AsyncRT:__pkg__",
         "//Mojo:__pkg__",
+        # The shim-absent test cannot live next to the shim: its fixture is
+        # that nothing places the shim beside the test binary.
+        "//Support/unittests/internal/ExternalProfilerAnnotation:__pkg__",
         "//max/internal/profiler:__pkg__",
     ],
     deps = [
@@ -571,14 +633,13 @@ PROFILING_DEPS = [
     # Configuration backs the session.debug.profiling_* settings that
     # Range.cpp reads at enable()/disable() time.
     ":Configuration",
-    ":Globals",
-    ":MArchTargetMinimal",
+    ":Globals.static",
     ":SymbolExport",
     "//Config",
     "@llvm-project//llvm:Support",
 ] + select({
     # Tracy without CUDA support
-    "//:tracy_enabled": ["@tracy//:Tracy"],
+    "//:tracy_enabled": ["@tracy//:Tracy.import"],
     "//conditions:default": [],
 }) + select({
     # Tracy CUDA support - only when both Tracy and NVIDIA GPU are enabled.
@@ -589,9 +650,9 @@ PROFILING_DEPS = [
     # TracyCUDA.hpp inline functions) via on-demand dlopen of libcudart.so,
     # avoiding a hard NEEDED entry.
     "//:tracy_cuda_enabled": [
-        "//bazel/third-party:cuda_cupti_headers",
-        "//bazel/third-party:cuda_runtime_headers",
-        "//bazel/third-party:libcudart_stub",
+        "//bazel/public-patches:cuda_cupti_headers",
+        "//bazel/public-patches:cuda_runtime_headers",
+        ":libcudart_stub",
     ],
     "//conditions:default": [],
 }) + select({
@@ -599,14 +660,14 @@ PROFILING_DEPS = [
     # rocprofiler_headers is needed for compiling rocprofiler-sdk types
     # used in the Profiling sources.
     "//:tracy_rocm_enabled": [
-        "//bazel/third-party:rocprofiler_headers",
+        "//bazel/public-patches:rocprofiler_headers",
     ],
     "//conditions:default": [],
 })
 
 # Modular's Tracy profiler integration (CPU zones + the TracyCuda/TracyRocm
-# GPU backends). The FILES live under Support/internal/ so they follow the
-# standardized internal-directory exclusion and are never part of any
+# GPU backends). The headers live under Support/max_license/ and the GPU backend
+# sources under Support/internal/, so neither is part of the public
 # open-source export; this target keeps the long-standing name so the many
 # compiler-stack consumers keep their dep label and the OSS build keeps
 # stubbing it by name in oss/modular/bazel/api.bzl.
@@ -617,16 +678,22 @@ modular_cc_library(
         "internal/Tracy/TracyRocm.cpp",
     ],
     hdrs = [
-        "internal/Tracy/Tracy.h",
-        "internal/Tracy/TracyCuda.h",
-        "internal/Tracy/TracyRocm.h",
-        "internal/Tracy/TracyZone.h",
+        "max_license/Profiling/ProfileRange.h",
+        "max_license/Tracy/Tracy.h",
+        "max_license/Tracy/TracyCuda.h",
+        "max_license/Tracy/TracyRocm.h",
+        "max_license/Tracy/TracyZone.h",
     ],
     # TracyRocm.cpp uses a constructor to promote Tracy symbols to RTLD_GLOBAL
     # so that the rocprofiler-sdk plugin can resolve them via dlsym.
     copts = ["-Wno-global-constructors"],
-    defines = PROFILING_DEFINES,
-    deps = PROFILING_DEPS,
+    # Passed as defines so every M_PROFILE_RANGE call site sees the same
+    # expansion.
+    defines = PROFILING_DEFINES + select({
+        "//:profile_ranges_disabled": ["MODULAR_PROFILE_RANGES=0"],
+        "//conditions:default": ["MODULAR_PROFILE_RANGES=1"],
+    }),
+    deps = PROFILING_DEPS + [":ProfilingRanges"],
 )
 
 modular_cc_library(
@@ -639,6 +706,7 @@ modular_cc_library(
         ":DeviceSpecs",
         ":MArchTargetMinimal",
         ":MDialect",
+        ":SymbolExport",
         ":Threading",
         "@llvm-project//clang:basic",
         "@llvm-project//llvm:AllTargetsAsmParsers",
@@ -668,12 +736,9 @@ modular_cc_library(
         ":Base",
         ":CPUCache",
         ":DeviceSpecs",
+        ":SymbolExport",
         ":Threading",
         "@llvm-project//clang:basic",
-        "@llvm-project//llvm:AllTargetsAsmParsers",
-        "@llvm-project//llvm:AllTargetsCodeGens",
-        "@llvm-project//llvm:AllTargetsDisassemblers",
-        "@llvm-project//llvm:AllTargetsMCAs",
         "@llvm-project//llvm:Support",
         "@llvm-project//llvm:TargetParser",
     ],
@@ -689,6 +754,7 @@ modular_cc_library(
         ":Buffer",
         ":Filesystem",
         ":ML",
+        ":SymbolExport",
         ":TimeProfiler",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:BytecodeOpInterface",
@@ -696,7 +762,9 @@ modular_cc_library(
         "@llvm-project//mlir:BytecodeWriter",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Rewrite",
         "@llvm-project//mlir:Support",
+        "@llvm-project//mlir:TransformUtils",
     ],
 )
 
@@ -726,11 +794,10 @@ modular_cc_library(
     }),
     deps = [
         ":Base",
-        ":Base64",
         ":Configuration",
         ":Filesystem",
-        ":MArchTarget",
         ":MArchTargetMinimal",
+        ":SymbolExport",
         ":Threading",
         "//Config",
         "@llvm-project//llvm:Support",
@@ -865,6 +932,7 @@ modular_cc_library(
         ":MDialectIncGen",
         ":ML",
         ":MTypeInterfaces",
+        ":SymbolExport",
         "//Config",
         "@llvm-project//llvm:MC",
         "@llvm-project//llvm:Support",
@@ -945,6 +1013,7 @@ modular_cc_library(
         ":DebugInfoIncGen",
         ":DebugInfoTypeInterfaces",
         ":MDialect",
+        ":SymbolExport",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//llvm:CodeGen",
         "@llvm-project//llvm:Support",
@@ -1061,8 +1130,10 @@ modular_cc_library(
     hdrs = glob(["include/Support/DebugInfoDialect/Transforms/*.h"]),
     deps = [
         ":Base",
+        ":Compiler",
         ":DebugInfoDialect",
         ":DebugInfoTransformPasses",
+        ":SymbolExport",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FunctionInterfaces",
@@ -1083,10 +1154,12 @@ modular_cc_library(
     hdrs = glob(["include/Support/DebugInfoDialect/DebugInfoToLLVM/*.h"]),
     deps = [
         ":Base",
+        ":Compiler",
         ":DebugInfoDialect",
         ":DebugInfoToLLVMIncGen",
         ":DebugInfoTransforms",
         ":MDialect",
+        ":SymbolExport",
         "@llvm-project//llvm:BinaryFormat",
         "@llvm-project//llvm:Core",
         "@llvm-project//llvm:Support",
@@ -1120,25 +1193,11 @@ modular_shared_library(
     hdrs = glob(["include/Support/Globals/*.h"]) + [
         "include/Support/ContextGlobal.h",
     ],
-    # Always link and expose the FallbackTypeIDResolver::registerImplicitTypeID
-    # function. This is used by downstream libraries to decide whether MLIR types
-    # in different SOs are the same type or not.
-    #
-    # See https://github.com/llvm/llvm-project/pull/126999#issuecomment-2661526333
-    # for more details and breadcrumbs.
-    linkopts = select({
-        "@platforms//os:linux": [
-            "-Wl,--undefined=_ZN4mlir6detail22FallbackTypeIDResolver22registerImplicitTypeIDEN4llvm9StringRefE",
-        ],
-        "@platforms//os:macos": [
-            "-Wl,-u,__ZN4mlir6detail22FallbackTypeIDResolver22registerImplicitTypeIDEN4llvm9StringRefE",
-        ],
-    }),
+    dynamic_deps = ["//bazel/internal:LLVMSupport"],
     output_name = "MSupportGlobals",
     deps = [
         ":SymbolExport",
         "@llvm-project//llvm:Support",
-        "@llvm-project//mlir:Support",
     ],
     # TODO: Missing define conditionals for symbol visibility
     # NOTE: This library should not have any deps to avoid shared object linking issues
@@ -1166,11 +1225,11 @@ modular_cc_library(
     hdrs = [
         "include/Support/Log.h",
         "include/Support/LogChannels.h",
-        "include/Support/SpanGuard.h",
     ],
     deps = [
         "Configuration",
         ":MpscRingBuffer",
+        ":SymbolExport",
         ":Threading",
         "@fmt",
         "@llvm-project//llvm:Support",
@@ -1188,6 +1247,32 @@ modular_cc_library(
 )
 
 modular_cc_library(
+    name = "RequestContext",
+    hdrs = ["include/Support/RequestContext.h"],
+    deps = [":Globals.static"],
+)
+
+modular_cc_library(
+    name = "RequestLog",
+    hdrs = ["include/Support/RequestLog.h"],
+    deps = [
+        ":Log",
+        ":RequestContext",
+    ],
+)
+
+# Sits above :RequestLog rather than in :Log: the span records go through
+# MLOG_KV_REQ so a reader can filter a span pair down to one request.
+modular_cc_library(
+    name = "SpanGuard",
+    hdrs = ["include/Support/SpanGuard.h"],
+    deps = [
+        ":Log",
+        ":RequestLog",
+    ],
+)
+
+modular_cc_library(
     name = "Metrics",
     srcs = ["lib/Metrics.cpp"],
     hdrs = ["include/Support/Metrics.h"],
@@ -1200,7 +1285,7 @@ modular_cc_library(
 mlir_nanobind(
     name = "MDialectNanobindInc",
     srcs = glob(["include/Support/MDialect/*.td"]),
-    allowlist = "//max/python/max/_core/internal/modules/dialects:allowlist.txt",
+    allowlist = "//max/python/max/_core/max_license/modules/dialects:allowlist.txt",
     output_dir = "include/Support/MDialect/Nanobind",
     deps = [
         ":MTdFiles",
@@ -1219,4 +1304,153 @@ modular_nanobind_library(
         "@llvm-project//mlir:MLIRBindingsPythonNanobindHeaders",
         "@llvm-project//mlir:Support",
     ],
+)
+
+# On-demand CUDA runtime stub for Tracy GPU profiling and libkineto (Linux
+# only). The trampolines dlopen libcudart.so lazily; if it is absent each
+# returns cudaErrorInsufficientDriver so the consumer skips GPU profiling
+# rather than failing to load. Linking against this instead of libcudart.so
+# keeps the hard NEEDED entry out of the consumer's DSO.
+#
+# Declared here rather than in //bazel/third-party because the source is part
+# of the MAX License tier and ships with the source-available export, which
+# does not carry third-party.
+modular_shared_library(
+    name = "cudart_stub",
+    srcs = ["max_license/libcudart_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "cudart-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
+    deps = ["//bazel/public-patches:cuda_runtime_headers"],
+)
+
+alias(
+    name = "libcudart_stub",
+    actual = select({
+        "@platforms//os:linux": ":cudart_stub.import",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
+)
+
+# Static variant for the profiler plugin, which links the trampolines in so
+# libMAXProfilerPlugin.so stays a single self-contained file. alwayslink: the
+# symbols are referenced only by a sibling archive, so member inclusion must
+# not depend on link order.
+modular_cc_library(
+    name = "libcudart_stub_static",
+    srcs = ["max_license/libcudart_stub.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+    deps = ["//bazel/public-patches:cuda_runtime_headers"],
+    alwayslink = True,
+)
+
+# On-demand CUDA driver stub for Tracy GPU profiling and libkineto (Linux
+# only).
+#
+# Provides the CUDA driver API symbols that Tracy and libkineto-consuming
+# code call directly — cuGetErrorString and cuStreamIsCapturing for Tracy,
+# plus cuCtxGetCurrent for the M::Profiling CUDA-context probe — using the
+# same dlopen strategy as MLRT's CUDADriver (RTLD_NOW | RTLD_GLOBAL). The
+# real libcuda.so.1 is opened lazily on the first call; if it is absent the
+# functions return CUDA_ERROR_NOT_INITIALIZED so the consumer silently
+# skips GPU profiling.
+modular_shared_library(
+    name = "cuda_stub",
+    srcs = ["max_license/libcuda_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "cuda-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
+)
+
+alias(
+    name = "libcuda_stub",
+    actual = select({
+        "@platforms//os:linux": ":cuda_stub.import",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
+)
+
+# On-demand CUPTI stub for Tracy GPU profiling and libkineto (Linux only).
+#
+# Provides every CUPTI API symbol that Tracy and libkineto link against via an
+# on-demand dlopen of libcupti.so (RTLD_NOW | RTLD_GLOBAL).  The real
+# libcupti.so is opened lazily on the first call; if it is absent every
+# function returns CUPTI_ERROR_NOT_INITIALIZED so the consumer silently skips
+# GPU profiling.  Tracy contributes 12 symbols; libkineto contributes ~44
+# additional ones across activity, callbacks, events, metrics, target, and
+# the Profiler API — see the file-level comment in libcupti_stub.cpp.
+modular_shared_library(
+    name = "cupti_stub",
+    srcs = ["max_license/libcupti_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "cupti-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
+    deps = [
+        # cuda_cupti_headers provides <cupti.h> plus the sub-headers (events,
+        # metrics, profiler_target, target) used by the trampolines'
+        # `decltype(&::name)` lookups.  cuda_runtime_headers is pulled in by
+        # cupti.h's `#include <cuda.h>` chain; it also supplies the synthesized
+        # `crt/host_config.h` (cuda_cudart.BUILD's crt_host_config_h genrule) on
+        # both x86_64 and aarch64, so no separate shim is needed.
+        "//bazel/public-patches:cuda_cupti_headers",
+        "//bazel/public-patches:cuda_runtime_headers",
+    ],
+)
+
+alias(
+    name = "libcupti_stub",
+    actual = select({
+        "@platforms//os:linux": ":cupti_stub.import",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
+)
+
+# Static variants of the CUDA driver and CUPTI stubs, for the profiler plugin;
+# see libcudart_stub_static above.
+modular_cc_library(
+    name = "libcuda_stub_static",
+    srcs = ["max_license/libcuda_stub.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+    alwayslink = True,
+)
+
+modular_cc_library(
+    name = "libcupti_stub_static",
+    srcs = ["max_license/libcupti_stub.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//max/internal/profiler:__pkg__"],
+    deps = [
+        "//bazel/public-patches:cuda_cupti_headers",
+        "//bazel/public-patches:cuda_runtime_headers",
+    ],
+    alwayslink = True,
+)
+
+# On-demand rocprofiler-sdk stub for Tracy GPU profiling (Linux only).
+#
+# Provides the eleven rocprofiler-sdk API symbols that Tracy calls directly via
+# an on-demand dlopen of librocprofiler-sdk.so (RTLD_NOW | RTLD_GLOBAL).  The
+# real librocprofiler-sdk.so is opened lazily on the first call; if it is
+# absent every function returns ROCPROFILER_STATUS_ERROR so Tracy silently
+# skips ROCm GPU profiling.
+modular_shared_library(
+    name = "rocprofiler_tracy_stub",
+    srcs = ["max_license/librocprofiler_tracy_stub.cpp"],
+    copts = ["-fvisibility=default"],
+    output_name = "rocprofiler-tracy-stub",
+    target_compatible_with = ["@platforms//os:linux"],
+    with_import = True,
+)
+
+alias(
+    name = "librocprofiler_tracy_stub",
+    actual = select({
+        "@platforms//os:linux": ":rocprofiler_tracy_stub.import",
+        "//conditions:default": "//bazel/public-patches:empty_lib",
+    }),
 )

@@ -21,9 +21,10 @@ the same dataset but with MiniMax's vendor prompt, so its numbers are not
 comparable to the AutoExacto leaderboard.
 
 Those harnesses write their own log formats, so this module translates them into
-the ``results.jsonl`` / ``score.json`` / ``$GITHUB_ENV`` shape the rest of
-``model_evals`` uses (see :mod:`eval_common`), which is what lets the existing
-workflow job-summary machinery pick the scores up unchanged.
+the ``results.jsonl`` / ``score.json`` / ``config.json`` / ``$GITHUB_ENV`` shape
+the rest of ``model_evals`` uses (see :mod:`eval_common`), which is what lets
+the existing workflow job-summary machinery and the results uploader
+(``internal/upload_results.py``) read the runs like any other eval's.
 
 Parsing is pure — it takes an already-loaded log and returns rows plus a
 summary — so it unit-tests without a harness, a server or a network.
@@ -32,38 +33,41 @@ summary — so it unit-tests without a harness, a server or a network.
 from __future__ import annotations
 
 import argparse
+import collections
+import dataclasses
 import json
 import os
-import re
 import statistics
 from typing import Any
 
 #: Datasets this module can normalize.
-DATASETS = ("gpqa_diamond", "taubench_airline")
+DATASETS = ("gpqa_diamond", "taubench_airline", "vgi_bench")
 
 #: Share of questions that may share one correct-answer letter before the score
 #: stops measuring knowledge. Four options, so chance is 0.25; anything past
 #: half means a model biased toward that letter scores well for free.
 MAX_TARGET_LETTER_SHARE = 0.5
 
+#: ``stop_reason`` values meaning the response was cut off by a length limit.
+#: The openbench harness normalizes the OpenAI finish_reason "length" onto
+#: inspect_ai's "max_tokens" enum value, so only the latter occurs in its logs
+#: (verified against inspect_ai 0.3.125); "length" is kept for a harness that
+#: does not normalize. inspect_ai records a ``context_length_exceeded`` error
+#: as "model_length", a response that never produced an answer, so it counts
+#: against `stop_ratio` too rather than passing as a normal finish.
+TRUNCATION_STOP_REASONS = frozenset({"length", "max_tokens", "model_length"})
+
 
 def target_letter_counts(rows: list[dict[str, Any]]) -> dict[str, int]:
-    """Counts how often each letter is the correct answer.
+    """Counts how often each letter is the correct answer, once per question.
 
-    A correctly-scored row's ``answer`` is the target; a wrong row names the
-    target in its scorer explanation.
+    Rows are per epoch, so a question's repeats are counted once.
     """
+    targets = {
+        row.get("prompt_index"): row.get("correct_letter") for row in rows
+    }
     counts: dict[str, int] = {}
-    for row in rows:
-        target: str | None = None
-        if row.get("value") == 1:
-            answer = row.get("answer")
-            target = answer if isinstance(answer, str) else None
-        else:
-            match = re.search(
-                r"target was '([A-Z])'", str(row.get("explanation") or "")
-            )
-            target = match.group(1) if match else None
+    for target in targets.values():
         if target:
             counts[target] = counts.get(target, 0) + 1
     return counts
@@ -74,12 +78,12 @@ def answer_position_warning(rows: list[dict[str, Any]]) -> str | None:
 
     openbench's gpqa_diamond calls ``random.seed(0)`` inside its per-record
     mapper before shuffling the options, so every question gets the same
-    permutation and the correct answer is always the same letter. Measured on
-    the full 198-question set: all 198 targets came back 'B'. The score then
-    reflects the model's position bias as much as its knowledge, and a model
-    that always answers that letter scores near 100%. Detected here rather than
-    corrected, because correcting it would diverge from the methodology this
-    runner exists to reproduce.
+    permutation and the correct answer is always the same letter: all 198
+    targets come back 'B'. The score then reflects the model's position bias
+    as much as its knowledge, and a model that always answers that letter
+    scores near 100%. The GPQA runner now uses OpenRouter's per-question
+    shuffle (see ``exacto_gpqa_openrouter``), so this guards logs from
+    openbench's task or from any other task with the same flaw.
 
     Returns:
         A warning string, or ``None`` when the answer positions look spread.
@@ -111,18 +115,75 @@ def _metric(score: dict[str, Any], name: str) -> float | None:
     return float(value) if isinstance(value, (int, float)) else None
 
 
+def _message_text(message: dict[str, Any]) -> tuple[str | None, str | None]:
+    """Splits an Inspect assistant message into its text and its reasoning.
+
+    Inspect keeps reasoning the server returned separately as ``reasoning``
+    content blocks beside the ``text`` ones.
+    """
+    content = message.get("content")
+    if not isinstance(content, list):
+        return content, None
+    text = "".join(
+        b.get("text") or "" for b in content if b.get("type") == "text"
+    )
+    reasoning = "".join(
+        b.get("reasoning") or ""
+        for b in content
+        if b.get("type") == "reasoning"
+    )
+    return text or None, reasoning or None
+
+
+def _openbench_row(sample: dict[str, Any]) -> dict[str, Any]:
+    """Flattens one Inspect sample, a question in one epoch, into a row.
+
+    The fields the results uploader maps carry ``gpqa_eval``'s key names.
+    Inspect numbers questions and epochs from 1; the indexes here count
+    from 0.
+    """
+    output = sample.get("output") or {}
+    choices = output.get("choices") or []
+    choice = choices[0] if choices else {}
+    response, reasoning = _message_text(choice.get("message") or {})
+    # The task has one scorer, so its name doesn't matter.
+    score = next(iter((sample.get("scores") or {}).values()), None) or {}
+    sample_id, epoch, target = (
+        sample.get("id"),
+        sample.get("epoch"),
+        sample.get("target"),
+    )
+    stop_reason = choice.get("stop_reason")
+    error = sample.get("error")
+    return {
+        "prompt_index": sample_id - 1 if isinstance(sample_id, int) else None,
+        "repeat_index": epoch - 1 if isinstance(epoch, int) else 0,
+        "correct_letter": target if isinstance(target, str) else None,
+        # Empty when the scorer parsed no answer; None when nothing scored it.
+        "predicted": score.get("answer") or ("" if score else None),
+        # "C" is Inspect's CORRECT.
+        "correct": score.get("value") in ("C", 1),
+        "explanation": score.get("explanation"),
+        "response": response,
+        "reasoning": reasoning,
+        "finish_reason": (
+            "length" if stop_reason in TRUNCATION_STOP_REASONS else stop_reason
+        ),
+        "completion_tokens": (output.get("usage") or {}).get("output_tokens"),
+        "error": error.get("message") if isinstance(error, dict) else error,
+    }
+
+
 def parse_openbench_log(
     log: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Converts an openbench (Inspect) eval log into rows plus a summary.
 
     Reads the ``--log-format json`` payload openbench writes for
-    ``bench eval gpqa_diamond``. Per-question rows come from ``reductions``,
-    which holds one entry per question *after* the epoch reducer has averaged
-    its epochs together — that reduced value is what the reported accuracy is
-    computed from, so it is the honest per-question record. Token and
-    finish-reason stats come from the unreduced ``samples`` list, since those
-    are per request.
+    ``bench eval gpqa_diamond``. Rows come from the unreduced ``samples``
+    list, one per request (a question in one epoch), response text included;
+    the reported metrics come from the log's own results, which score each
+    question's epochs reduced to one value.
 
     Args:
         log: Parsed openbench JSON log.
@@ -138,30 +199,18 @@ def parse_openbench_log(
     results = log.get("results") or {}
 
     rows: list[dict[str, Any]] = []
-    for reduction in log.get("reductions") or []:
-        for sample in reduction.get("samples") or []:
-            rows.append(
-                {
-                    "sample_id": sample.get("sample_id"),
-                    "value": sample.get("value"),
-                    "answer": sample.get("answer"),
-                    "explanation": sample.get("explanation"),
-                    "scorer": reduction.get("scorer"),
-                }
-            )
-
     output_tokens: list[int] = []
     finish_stop = 0
     finish_length = 0
     for sample in log.get("samples") or []:
+        rows.append(_openbench_row(sample))
         output = sample.get("output") or {}
         usage = output.get("usage") or {}
         tokens = usage.get("output_tokens")
         if isinstance(tokens, int):
             output_tokens.append(tokens)
         for choice in output.get("choices") or []:
-            # Inspect normalizes the OpenAI finish_reason onto stop_reason.
-            if choice.get("stop_reason") == "length":
+            if choice.get("stop_reason") in TRUNCATION_STOP_REASONS:
                 finish_length += 1
             else:
                 finish_stop += 1
@@ -185,6 +234,9 @@ def parse_openbench_log(
     eval_meta = log.get("eval") or {}
     config = eval_meta.get("config") or {}
     dataset = eval_meta.get("dataset") or {}
+    plan_config = (log.get("plan") or {}).get("config") or {}
+    # The task names the harness it reproduces; openbench's own tasks do not.
+    task_metadata = eval_meta.get("metadata") or {}
 
     summary: dict[str, Any] = {
         "accuracy": _metric(score, "accuracy"),
@@ -206,7 +258,19 @@ def parse_openbench_log(
         "finish_length": finish_length,
         "stop_ratio": (finish_stop / graded) if graded else None,
         # Provenance: the knobs that make a score comparable to OpenRouter's.
-        "harness": "openbench",
+        "harness": task_metadata.get("harness", "openbench"),
+        "harness_commit": task_metadata.get("harness_commit"),
+        "dataset_revision": task_metadata.get("dataset_revision"),
+        # Set by tasks that, like the harness, send media from a manifest: two
+        # runs saw the same videos only if they record the same hash.
+        "media_manifest_hash": task_metadata.get("media_manifest_hash"),
+        # The harness scores a request the server rejected (a 400 for an
+        # unfetchable video, say) as a wrong answer rather than an error, so
+        # these are in the accuracy but not in `errors`.
+        "model_errors_scored_wrong": sum(
+            str(row.get("explanation") or "").startswith("Model error:")
+            for row in rows
+        ),
         "harness_status": log.get("status"),
         "task": eval_meta.get("task"),
         "dataset_name": dataset.get("name"),
@@ -216,9 +280,8 @@ def parse_openbench_log(
         "epochs": config.get("epochs"),
         "epochs_reducer": config.get("epochs_reducer"),
         "limit": config.get("limit"),
-        "temperature": ((log.get("plan") or {}).get("config") or {}).get(
-            "temperature"
-        ),
+        "temperature": plan_config.get("temperature"),
+        "reasoning_effort": plan_config.get("reasoning_effort"),
         "inspect_version": (eval_meta.get("packages") or {}).get("inspect_ai"),
     }
     return rows, summary
@@ -231,6 +294,148 @@ def parse_openbench_log(
 TAU2_ERROR_TERMINATIONS = frozenset(
     {"too_many_errors", "agent_error", "user_error"}
 )
+
+
+def tau2_turns(
+    messages: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Splits a tau2 conversation into its opening and the agent's turns.
+
+    A turn is one agent model call, an assistant message carrying the model's
+    response in ``raw_data``, in the form the results uploader writes to
+    ``turns.parquet``: what the model returned, its token usage, and what
+    each of its tool calls returned. The messages before the first call,
+    tau2's canned greeting and the simulated user's request, are the opening;
+    each later user message is the reply of the turn before it. tau2 keeps
+    only prompt and completion token counts and never truncates a tool's
+    output. A tool output the user requested (telecom) is a reply too.
+
+    Args:
+        messages: A simulation's ``messages``.
+
+    Returns:
+        The opening's ``role``/``content`` messages, and the turns.
+    """
+    opening: list[dict[str, Any]] = []
+    turns: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        raw = message.get("raw_data") or {}
+        content = message.get("content")
+        if role == "assistant" and raw:
+            usage = message.get("usage") or {}
+            generated = raw.get("message") or {}
+            turns.append(
+                {
+                    "timestamp": message.get("timestamp"),
+                    "finish_reason": raw.get("finish_reason"),
+                    "prompt_tokens": usage.get("prompt_tokens"),
+                    "completion_tokens": usage.get("completion_tokens"),
+                    "reasoning": generated.get("reasoning_content")
+                    or generated.get("reasoning"),
+                    "response": content,
+                    "tool_calls": [
+                        {
+                            "id": call.get("id"),
+                            "name": call.get("name"),
+                            "arguments": _json_text(call.get("arguments")),
+                        }
+                        for call in message.get("tool_calls") or []
+                    ],
+                    "reply": None,
+                }
+            )
+        elif role == "tool" and message.get("requestor") != "user":
+            _add_tool_output(
+                opening,
+                turns,
+                message.get("id"),
+                {
+                    "output": content,
+                    "error": content if message.get("error") else None,
+                },
+            )
+        else:
+            _add_message(opening, turns, role, content)
+    return opening, turns
+
+
+def _json_text(value: object) -> object:
+    return (
+        value if value is None or isinstance(value, str) else json.dumps(value)
+    )
+
+
+def _add_tool_output(
+    opening: list[dict[str, Any]],
+    turns: list[dict[str, Any]],
+    call_id: object,
+    fields: dict[str, Any],
+) -> None:
+    if not turns:
+        opening.append({"role": "tool", "content": fields["output"]})
+        return
+    calls = turns[-1]["tool_calls"]
+    call = next((c for c in calls if c["id"] == call_id), None)
+    if call is None:
+        # The model saw this output, so it is kept even with no call to match.
+        call = {"id": call_id}
+        calls.append(call)
+    call.update(fields)
+
+
+def _add_message(
+    opening: list[dict[str, Any]],
+    turns: list[dict[str, Any]],
+    role: object,
+    content: object,
+) -> None:
+    if not turns:
+        opening.append({"role": role, "content": content})
+        return
+    previous = turns[-1]["reply"]
+    turns[-1]["reply"] = (
+        content if previous is None else f"{previous}\n{content or ''}"
+    )
+
+
+def _empty_user_turns(messages: list[dict[str, Any]]) -> list[str]:
+    """Returns the ``finish_reason`` of each empty simulator attempt.
+
+    The runner's tau2 patch records them on the turn that followed, whether a
+    retry recovered or the task ended as a ``user_error``.
+    """
+    reasons: list[str] = []
+    for message in messages:
+        if message.get("role") == "user":
+            raw = message.get("raw_data") or {}
+            reasons.extend(str(r) for r in raw.get("exacto_empty_turns") or [])
+    return reasons
+
+
+@dataclasses.dataclass(frozen=True)
+class AgentTurns:
+    """What the agent generated over one simulation.
+
+    ``output_tokens`` and ``max_turn_output_tokens`` are ``None`` when a turn
+    came back without usage, since a partial sum would undercount silently.
+    """
+
+    turns: int
+    output_tokens: int | None
+    max_turn_output_tokens: int | None
+    length_capped_turns: int
+
+
+def _agent_turns(turns: list[dict[str, Any]]) -> AgentTurns:
+    """Counts the agent's turns, from :func:`tau2_turns`, and their tokens."""
+    tokens = [turn["completion_tokens"] for turn in turns]
+    length_capped = sum(turn["finish_reason"] == "length" for turn in turns)
+    if not all(isinstance(n, int) for n in tokens):
+        return AgentTurns(len(turns), None, None, length_capped)
+    return AgentTurns(
+        len(turns), sum(tokens), max(tokens, default=0), length_capped
+    )
 
 
 def parse_tau2_log(
@@ -256,8 +461,19 @@ def parse_tau2_log(
     rows: list[dict[str, Any]] = []
     rewards: list[float] = []
     errors = 0
+    request_errors = 0
     hit_step_cap = 0
+    empty_user_finish: collections.Counter[str] = collections.Counter()
+    output_tokens: list[int] = []
+    length_capped_turns = 0
     for sim in simulations:
+        empty_user_turns = _empty_user_turns(sim.get("messages") or [])
+        opening, turns = tau2_turns(sim.get("messages") or [])
+        agent = _agent_turns(turns)
+        if agent.output_tokens is not None:
+            output_tokens.append(agent.output_tokens)
+        length_capped_turns += agent.length_capped_turns
+        empty_user_finish.update(empty_user_turns)
         reward_info = sim.get("reward_info") or {}
         reward = reward_info.get("reward")
         termination = sim.get("termination_reason")
@@ -265,18 +481,46 @@ def parse_tau2_log(
             rewards.append(float(reward))
         if termination in TAU2_ERROR_TERMINATIONS:
             errors += 1
+        # Set by the runner's patch when a request failed outright, such as
+        # an HTTP 400, instead of the run aborting.
+        request_error = (reward_info.get("info") or {}).get(
+            "exacto_request_error"
+        )
+        if request_error:
+            request_errors += 1
         if termination == "max_steps":
             hit_step_cap += 1
         db_check = reward_info.get("db_check") or {}
+        task_id = str(sim.get("task_id"))
         rows.append(
             {
+                # Airline task ids number the domain's tasks from 0; a split
+                # runs them in its own order.
+                "prompt_index": int(task_id) if task_id.isdigit() else None,
+                "repeat_index": sim.get("trial"),
                 "task_id": sim.get("task_id"),
                 "trial": sim.get("trial"),
                 "reward": reward,
                 "db_match": db_check.get("db_match"),
                 "termination_reason": termination,
+                # A simulation ends on its termination reason, so that stands
+                # in for the finish reason a single-response eval records.
+                "finish_reason": termination,
+                "completion_tokens": agent.output_tokens,
+                "max_turn_completion_tokens": agent.max_turn_output_tokens,
+                "agent_turns": agent.turns,
+                "length_capped_turns": agent.length_capped_turns,
+                "error": request_error
+                or (
+                    termination
+                    if termination in TAU2_ERROR_TERMINATIONS
+                    else None
+                ),
                 "duration": sim.get("duration"),
                 "agent_cost": sim.get("agent_cost"),
+                "empty_user_turns": len(empty_user_turns),
+                "opening": opening,
+                "turns": turns,
             }
         )
 
@@ -293,6 +537,8 @@ def parse_tau2_log(
     agent_info = info.get("agent_info") or {}
     user_info = info.get("user_info") or {}
     env_info = info.get("environment_info") or {}
+    agent_base = _server_url((agent_info.get("llm_args") or {}).get("api_base"))
+    user_base = _server_url((user_info.get("llm_args") or {}).get("api_base"))
 
     summary: dict[str, Any] = {
         "accuracy": accuracy,
@@ -304,11 +550,17 @@ def parse_tau2_log(
         "total": len(simulations),
         "completed": len(rewards),
         "errors": errors,
+        # The subset of errors where a request failed, such as an HTTP 400.
+        "request_errors": request_errors,
         "hit_step_cap": hit_step_cap,
-        # tau2 records per-simulation cost, not token counts, so the token
-        # metrics the other evals report are not available here.
-        "mean_output_tokens": 0.0,
-        "p50_output_tokens": 0.0,
+        # Per simulation: every agent turn's output tokens, summed.
+        "mean_output_tokens": (
+            statistics.fmean(output_tokens) if output_tokens else 0.0
+        ),
+        "p50_output_tokens": (
+            statistics.median(output_tokens) if output_tokens else 0.0
+        ),
+        "length_capped_turns": length_capped_turns,
         "stop_ratio": None,
         # Provenance: the knobs that make a score comparable to OpenRouter's.
         "harness": "tau2-bench-verified",
@@ -322,6 +574,18 @@ def parse_tau2_log(
         "agent_llm_args": agent_info.get("llm_args"),
         "user_llm": user_info.get("llm"),
         "user_llm_args": user_info.get("llm_args"),
+        # The simulator plays half of each conversation, so scores compare only
+        # across runs on the same one. None: a provider with its own endpoint.
+        "user_api_base": user_base,
+        # Empty simulator replies the runner retried, keyed by finish_reason so
+        # a token cap ("length") stands out from a real stop.
+        "empty_user_turns": sum(empty_user_finish.values()),
+        "empty_user_turn_finish_reasons": dict(empty_user_finish),
+        "self_simulated": bool(
+            agent_base
+            and user_base == agent_base
+            and user_info.get("llm") == agent_info.get("llm")
+        ),
         "harness_commit": info.get("git_commit"),
     }
     return rows, summary
@@ -329,12 +593,6 @@ def parse_tau2_log(
 
 def load_json(path: str) -> dict[str, Any]:
     """Loads a JSON harness log from ``path``."""
-    with open(path) as f:
-        return json.load(f)
-
-
-def load_openbench_log(path: str) -> dict[str, Any]:
-    """Loads an openbench JSON eval log from ``path``."""
     with open(path) as f:
         return json.load(f)
 
@@ -375,23 +633,88 @@ def format_score_line(dataset: str, summary: dict[str, Any]) -> str:
 DEFAULT_MAX_ERROR_RATE = 0.10
 
 
+def _server_url(url: object) -> object:
+    """Drops the ``/v1`` the runners add, as eval_common's base URLs omit it."""
+    if not isinstance(url, str):
+        return url
+    return url.rstrip("/").removesuffix("/v1")
+
+
+def _sample_size(rows: list[dict[str, Any]], full: object) -> int | None:
+    """Returns how many questions ``rows`` cover, or ``None`` for all ``full``.
+
+    Counted from the rows rather than the harness's limit, which can be a
+    range. When ``full`` is unknown the count is kept, so a subset run is
+    never recorded as the full set.
+    """
+    ran = len({row.get("prompt_index") for row in rows})
+    return None if isinstance(full, int) and ran >= full else ran
+
+
+def eval_config(
+    harness: str, summary: dict[str, Any], rows: list[dict[str, Any]]
+) -> dict[str, Any]:
+    """Returns the run's ``config.json``, which the results uploader reads.
+
+    Mirrors :func:`eval_common.dump_config` for what a harness log records:
+    the endpoint, the sampling settings the runners check for parity with
+    OpenRouter, and the size of a subset run (``None`` for the full set).
+    """
+    if harness == "openbench":
+        return {
+            "base_url": _server_url(summary.get("base_url")),
+            "temperature": summary.get("temperature"),
+            "reasoning_effort": summary.get("reasoning_effort"),
+            "sample_size": _sample_size(rows, summary.get("dataset_samples")),
+        }
+    agent_args = summary.get("agent_llm_args") or {}
+    user_args = summary.get("user_llm_args") or {}
+    # A self-simulated run's simulator is the endpoint under test, already in
+    # base_url, so these stay unset and its config hash is unchanged.
+    own_simulator = not summary.get("self_simulated")
+    return {
+        "base_url": _server_url(agent_args.get("api_base")),
+        "temperature": agent_args.get("temperature"),
+        "reasoning_effort": agent_args.get("reasoning_effort"),
+        "user_llm": summary.get("user_llm"),
+        "user_api_base": summary.get("user_api_base")
+        if own_simulator
+        else None,
+        "user_max_tokens": user_args.get("max_tokens")
+        if own_simulator
+        else None,
+        # Left unset when off, so runs from before the switch existed, which
+        # never sent reasoning back, keep their config hash.
+        "reasoning_passback": True
+        if summary.get("reasoning_passback")
+        else None,
+        "sample_size": _sample_size(rows, summary.get("full_task_count")),
+    }
+
+
 def write_outputs(
     out_dir: str,
     dataset: str,
     rows: list[dict[str, Any]],
     summary: dict[str, Any],
     metric_prefix: str,
+    config: dict[str, Any] | None = None,
 ) -> None:
-    """Writes ``results.jsonl`` + ``score.json`` and appends the CI metric keys.
+    """Writes ``results.jsonl``, ``score.json`` and ``config.json``, and
+    appends the CI metric keys.
 
     Mirrors :func:`eval_common.write_outputs` for a harness-normalized summary.
+    A harness that stopped early gets no ``results.jsonl``: Inspect keeps only
+    the samples that finished before it aborted, and the results uploader
+    would record them as a complete run.
 
     Args:
         out_dir: Directory to create and write into.
         dataset: One of :data:`DATASETS`, used for the score line's label.
-        rows: Per-question records.
+        rows: Per-response records.
         summary: Normalized summary from a ``parse_*`` function.
         metric_prefix: Prefix for the ``$GITHUB_ENV`` metric keys.
+        config: Written as ``config.json`` when given; see :func:`eval_config`.
     """
     # Contamination is recorded before score.json is written, or the file ships
     # without it and every downstream reader (the job summary included) reports
@@ -401,10 +724,20 @@ def write_outputs(
         summary["target_letter_counts"] = target_letter_counts(rows)
 
     os.makedirs(out_dir, exist_ok=True)
-    with open(os.path.join(out_dir, "results.jsonl"), "w") as f:
-        f.write("\n".join(json.dumps(r) for r in rows))
+    results_path = os.path.join(out_dir, "results.jsonl")
+    # tau2 records no status: a tau2 run that stops early fails the runner
+    # before it gets here.
+    if summary.get("harness_status") in (None, "success"):
+        with open(results_path, "w") as f:
+            f.write("\n".join(json.dumps(r) for r in rows))
+    elif os.path.exists(results_path):
+        # A rerun into the same --out-dir must not keep the last run's rows.
+        os.remove(results_path)
     with open(os.path.join(out_dir, "score.json"), "w") as f:
         json.dump(summary, f, indent=2)
+    if config is not None:
+        with open(os.path.join(out_dir, "config.json"), "w") as f:
+            json.dump(config, f, indent=2)
 
     print(format_score_line(dataset, summary))
     if position_warning:
@@ -467,25 +800,39 @@ def _enforce_error_budget(summary: dict[str, Any]) -> None:
     Mirrors :func:`eval_common.enforce_error_budget`, including the
     ``EVAL_MAX_ERROR_RATE`` override, so an endpoint that rejects most requests
     cannot report a passing-looking 0.0.
+
+    Requests the server rejected are held to the same budget. They score 0 in
+    the accuracy, as the harness scores them, so they never reach ``errors``;
+    without this check a server that refuses most videos reports a deflated
+    score and exits 0.
     """
     total = summary.get("total")
-    errors = summary.get("errors")
-    if not isinstance(total, int) or not isinstance(errors, int) or total <= 0:
+    if not isinstance(total, int) or total <= 0:
         return
     budget = float(
         os.environ.get("EVAL_MAX_ERROR_RATE") or DEFAULT_MAX_ERROR_RATE
     )
     if budget <= 0:
         return
-    rate = errors / total
-    if rate <= budget:
-        return
-    print(
-        f"::error::{errors}/{total} samples errored ({rate:.1%}), above the "
-        f"{budget:.0%} budget. Errors score as incorrect, so this run's score "
-        f"reflects infrastructure, not model quality."
-    )
-    raise SystemExit(1)
+    errors = summary.get("errors")
+    if isinstance(errors, int) and errors / total > budget:
+        print(
+            f"::error::{errors}/{total} samples errored "
+            f"({errors / total:.1%}), above the {budget:.0%} budget. Errors "
+            "score as incorrect, so this run's score reflects infrastructure, "
+            "not model quality."
+        )
+        raise SystemExit(1)
+    rejected = summary.get("model_errors_scored_wrong")
+    if isinstance(rejected, int) and rejected / total > budget:
+        print(
+            f"::error::the server rejected {rejected}/{total} requests "
+            f"({rejected / total:.1%}), above the {budget:.0%} budget. They "
+            "score 0 as the harness scores them, so this run's score reflects "
+            "the endpoint, not model quality. Check the explanations in "
+            "results.jsonl."
+        )
+        raise SystemExit(1)
 
 
 def parse_reference(
@@ -528,7 +875,7 @@ def merge_endpoint_meta(
 
     A score is only evidence if you can say what produced it. Quantization, KV
     cache dtype and speculative decoding all move accuracy (see the
-    max-serve-evaluator eval-pitfalls notes), and none of them are visible in
+    mach-evaluator eval-pitfalls notes), and none of them are visible in
     the harness log, so the runner probes the endpoint and passes what it found
     through here. Stored under ``endpoint`` rather than merged flat so a field
     the server volunteers can never shadow a harness field.
@@ -623,6 +970,15 @@ def main(argv: list[str] | None = None) -> None:
         "--endpoint-meta",
         help="JSON file describing what served the model, recorded verbatim.",
     )
+    parser.add_argument(
+        "--reasoning-passback",
+        choices=["on", "off"],
+        help=(
+            "tau2 only: whether the runner sent each earlier agent turn's "
+            "reasoning back. It changes the prompt a reasoning model sees, so "
+            "scores compare only across runs with the same setting."
+        ),
+    )
     args = parser.parse_args(argv)
 
     log = load_json(args.log)
@@ -640,7 +996,16 @@ def main(argv: list[str] | None = None) -> None:
         summary["reference_user_llm"] = args.reference_user_llm
     if args.full_task_count:
         summary["full_task_count"] = args.full_task_count
-    write_outputs(args.out_dir, args.dataset, rows, summary, args.metric_prefix)
+    if args.reasoning_passback:
+        summary["reasoning_passback"] = args.reasoning_passback == "on"
+    write_outputs(
+        args.out_dir,
+        args.dataset,
+        rows,
+        summary,
+        args.metric_prefix,
+        eval_config(args.harness, summary, rows),
+    )
 
 
 if __name__ == "__main__":

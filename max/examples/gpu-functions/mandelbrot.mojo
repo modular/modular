@@ -14,7 +14,7 @@
 from std.math import ceildiv
 from std.sys import has_accelerator
 
-from std.complex import ComplexSIMD, ComplexScalar
+from std.complex import ComplexScalar
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
@@ -102,7 +102,7 @@ def mandelbrot(
 
 def draw_mandelbrot(tensor: TileTensor[int_dtype, type_of(layout), ...]) raises:
     """A helper function to visualize the Mandelbrot set in ASCII art."""
-    comptime sr = StringSlice("....,c8M@jawrpogOQEPGJ")
+    comptime sr = StringSpan("....,c8M@jawrpogOQEPGJ")
     for row in range(GRID_HEIGHT):
         for col in range(GRID_WIDTH):
             var v = tensor[row, col]

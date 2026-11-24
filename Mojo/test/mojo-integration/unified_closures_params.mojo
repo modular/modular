@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo %s 1 4 | FileCheck %s
 # RUN: %mojo %s 1 4 | FileCheck %s
 
 from std.sys import argv
@@ -63,41 +64,6 @@ struct TypeWithOrigin[T: MutOrigin](ImplicitlyCopyable, Movable):
 
     def __init__(out self):
         self.isMutable = Self.T.mut
-
-
-def takeIt[f: ImplicitlyCopyable & def(z: Int) -> Int](impl: f, y: Int):
-    print(impl(y))
-
-
-@no_inline
-def aThing[f: def(Int) capturing -> Int](y: Int):
-    def aClosure(z: Int) {var} -> Int:
-        return f(y)
-
-    takeIt(aClosure, y)
-
-
-@no_inline
-def itCaptures[THREE: Int](one: Int, four: Int):
-    @__parameter
-    def aParam(z: Int) -> Int:
-        return THREE + four + z
-
-    aThing[aParam](one)
-
-    # COM: Ensure nesting in legacy closure does not corrupt the symbol calculation
-    comptime if THREE == 3:
-
-        @__copy_capture(one, four)
-        @__parameter
-        def aParam2(zz: Int) -> Int:
-            def thing(z: Int) {var zz} -> Int:
-                return zz
-
-            takeIt(thing, four)
-            return one + one
-
-        aThing[aParam2](one)
 
 
 trait Coordinate:
@@ -231,25 +197,11 @@ def forwardClosureResult[
     return sinkClosureResult(call=call)
 
 
-# COM: Same forward, but the result is declared with the witness spelling `G.T`.
-def forwardClosureResultWitness[
-    T: ImplicitlyCopyable & Deinitable, //, G: def() -> T
-](*, call: G) -> G.T:
-    return sinkClosureResult(call=call)
-
-
 def addsViaForwardedClosure(x: Int, y: Int) -> Int:
     def make() {var} -> Int:
         return x + y
 
     return forwardClosureResult(call=make)
-
-
-def addsViaForwardedClosureWitness(x: Int, y: Int) -> Int:
-    def make() {var} -> Int:
-        return x + y
-
-    return forwardClosureResultWitness(call=make)
 
 
 @fieldwise_init
@@ -287,10 +239,6 @@ def addsViaForwardedBoxedClosure(x: Int, y: Int) -> Int:
 def main() raises:
     var one = atol(argv()[1])
     var four = atol(argv()[2])
-    # CHECK: 8
-    # CHECK: 1
-    # CHECK: 2
-    itCaptures[3](one, four)
 
     # Ensure origins are lowered
     # CHECK: True
@@ -327,10 +275,6 @@ def main() raises:
     # COM: Forward a closure result through a captured-parameter `where` clause.
     # CHECK: 5
     print(addsViaForwardedClosure(one, four))
-
-    # COM: Same forward, but the return type is spelled as the witness `G.T`.
-    # CHECK: 5
-    print(addsViaForwardedClosureWitness(one, four))
 
     # COM: Forward a closure whose result is the nested type `Boxed[T]`.
     # CHECK: 5

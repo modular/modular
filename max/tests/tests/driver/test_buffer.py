@@ -24,7 +24,16 @@ import pytest
 import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
-from max.driver import CPU, Accelerator, Buffer, Usage, accelerator_count
+from max._core.driver import _batch_copy_rows
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    DeviceQueue,
+    Usage,
+    accelerator_count,
+    batch_inplace_copy,
+)
 from max.dtype import DType
 
 
@@ -266,6 +275,194 @@ def test_contiguous_tensor() -> None:
     assert cont_tensor[0, 1].item() == 2
     assert cont_tensor[1, 0].item() == 4
     assert cont_tensor[1, 1].item() == 5
+
+
+def test_strides_of_a_fresh_buffer_are_row_major() -> None:
+    # Strides are in elements, outermost first, and a freshly allocated buffer
+    # is row-major: each dimension's stride is the product of the ones inside.
+    assert Buffer(DType.int32, (4,)).strides == (1,)
+    assert Buffer(DType.int32, (3, 5)).strides == (5, 1)
+    assert Buffer(DType.int32, (2, 3, 5)).strides == (15, 5, 1)
+    # Element units, not bytes: the dtype does not enter.
+    assert Buffer(DType.uint8, (3, 5)).strides == (5, 1)
+    assert Buffer(DType.float64, (3, 5)).strides == (5, 1)
+
+
+def test_strides_are_independent_of_dtype_width() -> None:
+    for dtype in (DType.uint8, DType.int32, DType.float64):
+        assert Buffer(dtype, (7, 11)).strides == (11, 1)
+
+
+def test_slice_keeps_the_strides_of_its_parent() -> None:
+    # Dropping the tail of each row leaves the row spacing alone, so the outer
+    # stride stays wider than the inner extent. That gap is the whole point of
+    # exposing strides.
+    parent = Buffer(DType.uint8, (8, 10))
+    assert parent.strides == (10, 1)
+
+    rows = parent[:, :6]
+    assert rows.shape == (8, 6)
+    assert rows.strides == (10, 1)
+    assert not rows.is_contiguous
+
+    # Narrowing the outer dimension instead does not change any stride.
+    fewer = parent[:4, :]
+    assert fewer.shape == (4, 10)
+    assert fewer.strides == (10, 1)
+    assert fewer.is_contiguous
+
+
+def test_strides_survive_a_view_of_a_strided_buffer() -> None:
+    # A view may reinterpret what sits inside a row, but it cannot close the
+    # gap between rows, so the outer stride is carried across unchanged.
+    strided = Buffer(DType.uint8, (8, 12))[:, :8]
+    assert strided.strides == (12, 1)
+
+    # Same dtype, inner dimension refactored: 8 -> (2, 4).
+    reshaped = strided.view(DType.uint8, (8, 2, 4))
+    assert reshaped.shape == (8, 2, 4)
+    assert reshaped.strides == (12, 4, 1)
+
+    # Wider dtype: the outer stride is rescaled into the new element size.
+    as_i32 = strided.view(DType.int32, (8, 2))
+    assert as_i32.shape == (8, 2)
+    assert as_i32.strides == (3, 1)
+
+
+def test_view_of_a_contiguous_buffer_is_row_major() -> None:
+    # The contiguous path is unchanged: strides come straight from the shape.
+    buf = Buffer(DType.uint8, (8, 12))
+    assert buf.view(DType.uint8, (8, 3, 4)).strides == (12, 4, 1)
+    assert buf.view(DType.int32, (8, 3)).strides == (3, 1)
+    assert buf.view(DType.uint8, (96,)).strides == (1,)
+
+
+def test_view_of_a_strided_buffer_must_keep_the_outer_dimension() -> None:
+    # Collapsing dimension 0 would have to express the inter-row gap somewhere,
+    # and a shape cannot.
+    strided = Buffer(DType.uint8, (8, 12))[:, :8]
+    with pytest.raises(ValueError, match="must keep dimension 0"):
+        strided.view(DType.uint8, (64,))
+    with pytest.raises(ValueError, match="must keep dimension 0"):
+        strided.view(DType.uint8, (4, 16))
+    with pytest.raises(ValueError, match="must keep dimension 0"):
+        strided.view(DType.uint8, (16, 4))
+
+
+def test_view_of_a_strided_buffer_rejects_an_unrepresentable_stride() -> None:
+    # An outer stride of 10 bytes is not a whole number of int32s, so there is
+    # no stride in the new element type to report.
+    strided = Buffer(DType.uint8, (8, 10))[:, :8]
+    assert strided.strides == (10, 1)
+    with pytest.raises(ValueError, match="whole number"):
+        strided.view(DType.int32, (8, 2))
+
+
+def test_view_still_rejects_a_size_mismatch() -> None:
+    for buf in (
+        Buffer(DType.uint8, (8, 12)),
+        Buffer(DType.uint8, (8, 12))[:, :8],
+    ):
+        with pytest.raises((ValueError, RuntimeError)):
+            buf.view(DType.uint8, (8, 7))
+
+
+def test_strided_view_addresses_the_rows_its_stride_implies() -> None:
+    # The payoff: reading through a strided view lands on the parent's rows,
+    # skipping the tail each row leaves behind.
+    parent = Buffer.from_numpy(np.arange(8 * 10, dtype=np.uint8).reshape(8, 10))
+    rows = parent[:, :6]
+    assert rows.strides == (10, 1)
+    np.testing.assert_array_equal(
+        rows.contiguous().to_numpy(),
+        np.arange(8 * 10, dtype=np.uint8).reshape(8, 10)[:, :6],
+    )
+
+    # Re-typing inside the row keeps that addressing.
+    as_pairs = rows.view(DType.uint8, (8, 3, 2))
+    assert as_pairs.strides == (10, 2, 1)
+    np.testing.assert_array_equal(
+        as_pairs.contiguous().to_numpy(),
+        np.arange(8 * 10, dtype=np.uint8)
+        .reshape(8, 10)[:, :6]
+        .reshape(8, 3, 2),
+    )
+
+
+def test_view_rejects_a_stride_inside_a_row() -> None:
+    # A step within a row leaves gaps a re-typed row cannot describe, so the
+    # view is refused rather than quietly re-addressed as packed.
+    every_other = Buffer.from_numpy(
+        np.arange(16, dtype=np.uint8).reshape(4, 4)
+    )[:, ::2]
+    assert every_other.shape == (4, 2)
+    assert every_other.strides == (4, 2)
+    with pytest.raises(ValueError, match="rows are not packed"):
+        every_other.view(DType.uint8, (4, 2))
+
+
+def test_view_rejects_a_backwards_buffer() -> None:
+    parent = Buffer.from_numpy(np.arange(16, dtype=np.uint8).reshape(4, 4))
+
+    # Reversed inside the row: a negative step is a stride like any other, and
+    # it is not the packed one.
+    with pytest.raises(ValueError, match="rows are not packed"):
+        parent[:, ::-1].view(DType.uint8, (4, 4))
+
+    # Reversed across rows: dimension 0 would have to walk backwards.
+    with pytest.raises(ValueError, match="steps backwards"):
+        parent[::-1, :].view(DType.uint8, (4, 4))
+
+
+def test_view_of_a_single_row_slice_is_unconstrained() -> None:
+    # Picking one expert out of a stacked MoE weight, as the Gemma4 adapter
+    # does: the slice keeps a dim-0 stride that steps over the experts after
+    # it, but with one row that stride addresses nothing.
+    stacked = Buffer.from_numpy(
+        np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)
+    )
+    one = stacked[1:2, :2, :]
+    assert one.shape == (1, 2, 5)
+    assert not one.is_contiguous
+
+    flat = one.view(DType.uint8, (2, 5))
+    assert flat.strides == (5, 1)
+    np.testing.assert_array_equal(
+        flat.to_numpy(),
+        np.arange(3 * 4 * 5, dtype=np.uint8).reshape(3, 4, 5)[1, :2, :],
+    )
+
+
+def test_view_of_a_strided_buffer_rejects_an_unaligned_start() -> None:
+    # Starting mid-element sends the view down the rebasing path, where the new
+    # storage is cut to the view's extent and the stride would read past it.
+    strided = Buffer(DType.uint8, (8, 12))[:, 2:10]
+    assert strided.strides == (12, 1)
+    with pytest.raises(ValueError, match="starts mid-element"):
+        strided.view(DType.int32, (8, 2))
+
+    # Aligning the same slice leaves the view working.
+    aligned = Buffer(DType.uint8, (8, 12))[:, 4:12]
+    assert aligned.view(DType.int32, (8, 2)).strides == (3, 1)
+
+
+def test_view_carries_the_outer_stride_of_a_higher_rank_slice() -> None:
+    # The dimension carrying the stride need not be the sliced one: narrowing
+    # the middle dimension still leaves each row's interior packed.
+    parent = Buffer(DType.uint8, (5, 8, 3))
+    narrowed = parent[:, :6, :]
+    assert narrowed.strides == (24, 3, 1)
+
+    folded = narrowed.view(DType.uint8, (5, 18))
+    assert folded.strides == (24, 1)
+
+
+def test_reversed_slice_reports_negative_strides() -> None:
+    # Reversed slices are the reason `is_contiguous` is not just a stride
+    # comparison; make sure `strides` reports them rather than hiding them.
+    reversed_rows = Buffer(DType.int32, (3, 3))[::-1, :]
+    assert not reversed_rows.is_contiguous
+    assert reversed_rows.strides[0] < 0
 
 
 def test_modify_contiguous_tensor() -> None:
@@ -726,6 +923,30 @@ def test_view() -> None:
     # Check that shape deduction fails if the last axis is the wrong size.
     with pytest.raises(ValueError):
         _ = tensor8.view(DType.int64)
+
+
+def test_view_of_a_rank0_buffer_to_a_same_size_dtype_aliases_its_bits() -> None:
+    signed = np.array([-1, -2, -3], dtype=np.int32)
+    buffer = Buffer.from_numpy(signed.copy())
+    # An indexed element has a nonzero start offset the view must preserve.
+    reinterpreted = buffer[1].view(DType.uint32)
+    assert reinterpreted.shape == ()
+    assert reinterpreted.dtype is DType.uint32
+    assert reinterpreted.item() == signed.view(np.uint32)[1]
+
+    reinterpreted[()] = 2**32 - 7
+    expected = signed.view(np.uint32).copy()
+    expected[1] = 2**32 - 7
+    np.testing.assert_array_equal(buffer.to_numpy(), expected.view(np.int32))
+
+
+@pytest.mark.parametrize("dtype", [DType.int8, DType.int64])
+def test_view_of_a_rank0_buffer_to_a_different_size_dtype_raises(
+    dtype: DType,
+) -> None:
+    scalar = Buffer.scalar(5, DType.int32)
+    with pytest.raises(ValueError, match="rank-0"):
+        scalar.view(dtype)
 
 
 def test_from_dlpack_noncontiguous() -> None:
@@ -1219,3 +1440,355 @@ def test_unaligned_cross_dtype_view_offsets_storage() -> None:
     # Little-endian: bytes (3, 4) -> 0x0403, bytes (5, 6) -> 0x0605.
     assert as_i16[0].item() == 0x0403
     assert as_i16[1].item() == 0x0605
+
+
+def test_inplace_copy_from_is_a_no_op_between_views_of_one_buffer() -> None:
+    """Same memory on both sides moves nothing, so nothing is enqueued.
+
+    The values cannot show the elision -- both sides name the same bytes --
+    so this pins the correctness half: skipping must leave the buffer alone
+    rather than tear it.
+    """
+    backing = Buffer.from_numpy(np.arange(4, dtype=np.int32))
+
+    backing.inplace_copy_from(backing)
+    np.testing.assert_array_equal(backing.to_numpy(), [0, 1, 2, 3])
+
+    backing[:2].inplace_copy_from(backing[:2])
+    np.testing.assert_array_equal(backing.to_numpy(), [0, 1, 2, 3])
+
+
+def test_inplace_copy_from_still_copies_between_distinct_buffers() -> None:
+    """The elision is for one allocation, not for equal contents."""
+    destination = Buffer.from_numpy(np.zeros(4, dtype=np.int32))
+    source = Buffer.from_numpy(np.arange(4, dtype=np.int32))
+
+    assert destination._data_ptr() != source._data_ptr()
+    destination.inplace_copy_from(source)
+
+    np.testing.assert_array_equal(destination.to_numpy(), [0, 1, 2, 3])
+
+
+def test_batch_inplace_copy_skips_a_zero_byte_pair() -> None:
+    """A zero-byte pair is skipped, and the copy beside it still lands."""
+    backing = Buffer.from_numpy(np.array([42, 7], dtype=np.int64))
+    empty_dst = backing[:0].view(DType.int64, (1, 0))
+    empty_src = Buffer(dtype=DType.int64, shape=(1, 0), device=CPU())
+    other_src = Buffer.from_numpy(np.array([99], dtype=np.int64))
+    other_dst = Buffer.from_numpy(np.zeros(1, dtype=np.int64))
+
+    assert empty_dst.shape == (1, 0)
+    assert empty_src.shape == (1, 0)
+    assert empty_dst._data_ptr() != empty_src._data_ptr()
+
+    batch_inplace_copy([empty_dst, other_dst], [empty_src, other_src])
+
+    np.testing.assert_array_equal(backing.to_numpy(), [42, 7])
+    np.testing.assert_array_equal(other_dst.to_numpy(), [99])
+
+
+def test_batch_inplace_copy_lands_a_repeated_pair() -> None:
+    """A pair repeated in one batch still lands."""
+    src = Buffer.from_numpy(np.array([1, 2, 3, 4], dtype=np.uint32))
+    dst = Buffer.from_numpy(np.zeros(4, dtype=np.uint32))
+
+    batch_inplace_copy([dst, dst[:], dst], [src, src[:], src])
+
+    np.testing.assert_array_equal(dst.to_numpy(), [1, 2, 3, 4])
+
+
+def test_batch_copy_rows_matches_a_copy_of_row_views() -> None:
+    """Rows land where per-row views would put them, across buffers."""
+
+    def pages(base: int) -> list[Buffer]:
+        return [
+            Buffer.from_numpy(
+                np.arange(
+                    base + 24 * i, base + 24 * (i + 1), dtype=np.uint8
+                ).reshape(6, 4)
+            )
+            for i in range(2)
+        ]
+
+    srcs, by_rows, by_views = pages(100), pages(0), pages(0)
+    plan = [(0, 5, 0), (0, 1, 3), (1, 2, 2), (0, 4, 4), (1, 0, 5)]
+
+    _batch_copy_rows(
+        [by_rows[b] for b, _, _ in plan],
+        [srcs[b] for b, _, _ in plan],
+        [d for _, d, _ in plan],
+        [s for _, _, s in plan],
+    )
+    batch_inplace_copy(
+        [by_views[b][d, :] for b, d, _ in plan],
+        [srcs[b][s, :] for b, _, s in plan],
+    )
+
+    for got, want in zip(by_rows, by_views, strict=True):
+        np.testing.assert_array_equal(got.to_numpy(), want.to_numpy())
+    assert (by_rows[0].to_numpy()[2] == np.arange(8, 12)).all()
+
+
+def test_batch_copy_rows_rejects_a_row_out_of_range() -> None:
+    buf = Buffer.from_numpy(np.zeros((2, 4), dtype=np.uint8))
+    with pytest.raises(IndexError):
+        _batch_copy_rows([buf], [buf], [2], [0])
+    with pytest.raises(ValueError):
+        _batch_copy_rows([buf], [buf], [0, 1], [0])
+
+
+def test_inplace_copy_from_still_copies_an_offset_view() -> None:
+    """Two views of one buffer at different offsets are different memory."""
+    backing = Buffer.from_numpy(np.arange(4, dtype=np.int32))
+
+    backing[:2].inplace_copy_from(backing[2:])
+
+    np.testing.assert_array_equal(backing.to_numpy(), [2, 3, 2, 3])
+
+
+def test_to_cpu_needs_no_after() -> None:
+    buf = Buffer(DType.int32, (8,), device=CPU())
+    assert buf.to(CPU()) is buf
+    assert buf.to([CPU()])[0] is buf
+
+
+def test_to_cpu_from_another_cpu_queue_requires_after() -> None:
+    cpu = CPU()
+    side = DeviceQueue(cpu)
+    if side == cpu.default_queue:
+        pytest.skip("this device context's CPU queues compare equal")
+    on_side = Buffer(DType.int32, (8,), stream=side)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to(cpu)
+    with pytest.raises(ValueError, match="after"):
+        on_side.to([cpu])
+
+
+def test_to_cpu_from_another_cpu_queue_is_an_ordered_view() -> None:
+    cpu = CPU()
+    side = DeviceQueue(cpu)
+    n = 1 << 20
+    on_side = Buffer(DType.int32, (n,), stream=side)
+    on_side.inplace_copy_from(Buffer.from_numpy(np.full(n, 1, np.int32)))
+
+    view = on_side.to(cpu, after=side.record_event())
+    assert view._data_ptr() == on_side._data_ptr()
+    assert view.stream == cpu.default_queue
+    assert (view.to_numpy() == 1).all()
+
+    view.inplace_copy_from(Buffer.from_numpy(np.full(n, 2, np.int32)))
+    cpu.default_queue.synchronize()
+    assert (on_side.to_numpy() == 2).all()
+
+
+# Large enough that freeing it unmaps the pages, so a late read faults.
+_TEMP_SOURCE_ELEMENTS = 1 << 20
+
+
+def _cpu_destination(side_queue: bool) -> tuple[Buffer, DeviceQueue]:
+    shape = (_TEMP_SOURCE_ELEMENTS,)
+    if side_queue:
+        queue = DeviceQueue(CPU())
+        return Buffer(DType.int32, shape, stream=queue), queue
+    return Buffer(DType.int32, shape, device=CPU()), CPU().default_queue
+
+
+@pytest.mark.parametrize("side_queue", [False, True])
+def test_cpu_inplace_copy_keeps_a_temporary_source_alive(
+    side_queue: bool,
+) -> None:
+    dst, queue = _cpu_destination(side_queue)
+
+    dst.inplace_copy_from(
+        Buffer.from_numpy(np.full(_TEMP_SOURCE_ELEMENTS, 1, np.int32))
+    )
+    queue.synchronize()
+
+    assert (dst.to_numpy() == 1).all()
+
+
+@pytest.mark.parametrize("side_queue", [False, True])
+def test_cpu_batch_inplace_copy_keeps_a_temporary_source_alive(
+    side_queue: bool,
+) -> None:
+    dst, queue = _cpu_destination(side_queue)
+
+    batch_inplace_copy(
+        [dst], [Buffer.from_numpy(np.full(_TEMP_SOURCE_ELEMENTS, 1, np.int32))]
+    )
+    queue.synchronize()
+
+    assert (dst.to_numpy() == 1).all()
+
+
+@pytest.mark.parametrize("value", [0, 0xA5, 255])
+def test_memset_changes_only_slice_bytes(value: int) -> None:
+    buf = Buffer.from_numpy(np.full((3, 8), 0x55, dtype=np.uint8))
+    buf[1, :].memset(value)
+    expected = np.full((3, 8), 0x55, dtype=np.uint8)
+    expected[1] = value
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+def test_memset_clears_typed_slice_and_empty_buffer() -> None:
+    buf = Buffer.from_numpy(np.full((3, 4), np.nan, dtype=np.float32))
+    buf[1, :].memset(0)
+    assert np.isnan(buf.to_numpy()[0]).all()
+    np.testing.assert_array_equal(buf.to_numpy()[1], 0)
+    assert np.isnan(buf.to_numpy()[2]).all()
+    Buffer.zeros((0,), DType.uint8).memset(0)
+
+
+@pytest.mark.parametrize("value", [-1, 256])
+def test_memset_rejects_non_byte_value(value: int) -> None:
+    buf = Buffer.from_numpy(np.full(8, 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="between 0 and 255"):
+        buf.memset(value)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def test_memset_rejects_strided_slice() -> None:
+    buf = Buffer.from_numpy(np.full((3, 8), 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="contiguous"):
+        buf[:, ::2].memset(0)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def test_memset_rejects_a_strided_leading_dim() -> None:
+    buf = Buffer.from_numpy(np.full((4, 2), 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="contiguous"):
+        buf[::2, :].memset(0)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def test_memset_rejects_a_non_integer_value() -> None:
+    buf = Buffer.from_numpy(np.full(8, 0x55, dtype=np.uint8))
+    with pytest.raises(TypeError):
+        buf.memset(1.5)  # type: ignore[arg-type]
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+@pytest.mark.parametrize(
+    "dtype",
+    [
+        DType.int8,
+        DType.int16,
+        DType.int32,
+        DType.int64,
+        DType.float16,
+        DType.bfloat16,
+        DType.float32,
+        DType.float64,
+        DType.float8_e4m3fn,
+    ],
+)
+def test_memset_writes_a_byte_pattern_not_an_element_value(
+    dtype: DType,
+) -> None:
+    buf = Buffer.zeros((3, 4), dtype)
+    buf[1:, :].memset(0x7F)
+    raw = buf.view(DType.uint8, (3, 4 * dtype.size_in_bytes)).to_numpy()
+    np.testing.assert_array_equal(raw[0], 0)
+    np.testing.assert_array_equal(raw[1:], 0x7F)
+
+
+def test_memset_fills_a_rank_zero_buffer() -> None:
+    buf = Buffer.from_numpy(np.array(7, dtype=np.int32))
+    buf.memset(0xFF)
+    assert buf.item() == -1
+
+
+def test_memset_through_an_aligned_typed_view_at_an_offset() -> None:
+    # The view folds its byte offset into a start offset on the same storage.
+    buf = Buffer.from_numpy(np.full(16, 0x55, dtype=np.uint8))
+    buf[4:12].view(DType.int32, (2,)).memset(0xA5)
+    expected = np.full(16, 0x55, dtype=np.uint8)
+    expected[4:12] = 0xA5
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+def test_memset_through_an_unaligned_typed_view() -> None:
+    # An offset that is not a multiple of the itemsize materializes a storage
+    # view, so the fill must start at that view's byte offset.
+    buf = Buffer.from_numpy(np.full(16, 0x55, dtype=np.uint8))
+    buf[3:11].view(DType.int32, (2,)).memset(0xA5)
+    expected = np.full(16, 0x55, dtype=np.uint8)
+    expected[3:11] = 0xA5
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+def test_memset_through_a_slice_of_a_slice() -> None:
+    host = np.arange(4 * 3 * 5, dtype=np.uint8).reshape(4, 3, 5)
+    buf = Buffer.from_numpy(host.copy())
+    buf[1:3, :, :][1, 1:, :].memset(0)
+    expected = host.copy()
+    expected[2, 1:] = 0
+    np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+
+_MEMSET_DTYPES = [np.uint8, np.int16, np.float32, np.float64]
+
+
+@settings(deadline=None, max_examples=200)
+@given(
+    shape=st.lists(st.integers(1, 5), min_size=1, max_size=3),
+    np_dtype=st.sampled_from(_MEMSET_DTYPES),
+    value=st.integers(0, 255),
+    data=st.data(),
+)
+def test_memset_matches_numpy_on_any_contiguous_slice(
+    shape: list[int],
+    np_dtype: type[np.generic],
+    value: int,
+    data: st.DataObject,
+) -> None:
+    """Fixes leading dims by index, slices the next, keeps the rest whole."""
+    num_fixed = data.draw(st.integers(0, len(shape) - 1))
+    index: list[int | slice] = [
+        data.draw(st.integers(0, dim - 1)) for dim in shape[:num_fixed]
+    ]
+    start = data.draw(st.integers(0, shape[num_fixed]))
+    stop = data.draw(st.integers(start, shape[num_fixed]))
+    index.append(slice(start, stop))
+    index += [slice(None)] * (len(shape) - num_fixed - 1)
+
+    itemsize = np.dtype(np_dtype).itemsize
+    num_bytes = math.prod(shape) * itemsize
+    host = np.arange(num_bytes, dtype=np.uint8).view(np_dtype).reshape(shape)
+    buf = Buffer.from_numpy(host.copy())
+    buf[tuple(index)].memset(value)
+
+    expected = host.copy()
+    expected[tuple(index)].view(np.uint8)[...] = value
+    np.testing.assert_array_equal(
+        buf.to_numpy().view(np.uint8), expected.view(np.uint8)
+    )
+
+
+def test_memset_rejects_a_value_beyond_c_int() -> None:
+    buf = Buffer.from_numpy(np.full(8, 0x55, dtype=np.uint8))
+    with pytest.raises(ValueError, match="between 0 and 255"):
+        buf.memset(2**40)
+    np.testing.assert_array_equal(buf.to_numpy(), 0x55)
+
+
+def _f4_bytes(buf: Buffer) -> np.ndarray:
+    return buf.view(DType.uint8, (4,)).to_numpy()
+
+
+@pytest.mark.parametrize("start,stop", [(1, 4), (0, 3), (3, 6)])
+def test_memset_rejects_a_sub_byte_slice_that_splits_a_byte(
+    start: int, stop: int
+) -> None:
+    buf = Buffer.zeros((8,), DType.float4_e2m1fn)
+    buf.view(DType.uint8, (4,)).memset(0x55)
+    with pytest.raises(ValueError, match="byte-aligned"):
+        buf[start:stop].memset(0)
+    np.testing.assert_array_equal(_f4_bytes(buf), 0x55)
+
+
+def test_memset_fills_a_byte_aligned_sub_byte_slice() -> None:
+    buf = Buffer.zeros((8,), DType.float4_e2m1fn)
+    buf.view(DType.uint8, (4,)).memset(0x55)
+    buf[2:6].memset(0)
+    np.testing.assert_array_equal(_f4_bytes(buf), [0x55, 0, 0, 0x55])

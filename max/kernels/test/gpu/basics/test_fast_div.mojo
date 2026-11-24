@@ -18,9 +18,8 @@ from max.gpu.host import DeviceContext
 from std.testing import *
 
 from std.utils.fast_div import FastDiv
-from std.utils.index import Index, IndexList
 
-from layout import TileTensor, Coord, Idx, row_major
+from layout import TileTensor, Coord, row_major
 
 
 def test_fast_div() raises:
@@ -95,7 +94,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
     var out_divisors_buffer = TileTensor(out_divisors, row_major(length))
     var out_remainders_buffer = TileTensor(out_remainders, row_major(length))
 
-    @always_inline
+    @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](idx0: Coord) {var}:
         comptime fast_div = FastDiv[type](4)
         var idx = idx0[0].value()
@@ -107,7 +106,7 @@ def run_elementwise[type: DType](ctx: DeviceContext) raises:
             Scalar[fast_div.uint_type](idx) % fast_div
         ).cast[type]()
 
-    elementwise[simd_width=1, target="gpu"](func, Coord(length), ctx)
+    elementwise[simd_width=1](func, Coord(length), ctx)
 
     ctx.enqueue_copy(divisors._storage, out_divisors)
     ctx.enqueue_copy(remainders._storage, out_remainders)

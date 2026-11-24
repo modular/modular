@@ -10,41 +10,99 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for Gemma3 ModuleV3 pipeline models."""
+"""Text batching and vision encoding for registered Gemma3 modules."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from collections.abc import Sequence
+from typing import Any
 
-from max.driver import Buffer
-from max.nn.kv_cache import KVCacheInputsInterface
-from max.pipelines.context import TextContext
-from max.pipelines.lib.interfaces.batch_processor import (
-    ModuleV3SingleReplicaBatchProcessor,
+from max.driver import Buffer, Device
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph.buffer_utils import cast_dlpack_to
+from max.pipelines.context import ImageMetadata, TextAndVisionContext
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.vision_batching import (
+    VisionStacker,
 )
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
+from max.tensor.compilation import CompiledCallable
 
-if TYPE_CHECKING:
-    from .model import Gemma3Inputs
+from .modules import _unquantized_dtype
+from .multimodal_config import Gemma3ForConditionalGenerationConfig
 
 
-class Gemma3ModuleV3BatchProcessor(
-    ModuleV3SingleReplicaBatchProcessor[TextContext, "Gemma3Inputs"]
-):
-    """Ragged batching for Gemma3 ModuleV3 models (single GPU, no signals)."""
+class Gemma3MultiModalModuleV3BatchProcessor(DecoderBatchProcessor):
+    """Encodes cache-selected images; shared batching prepares decoder inputs."""
 
-    def _make_inputs(
+    _vision_model: CompiledCallable[Any, Any] | None = None
+    _empty_embeddings: list[Buffer] | None = None
+
+    def bind_vision_encoder(
         self,
         *,
-        tokens: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
-    ) -> Gemma3Inputs:
-        from .model import Gemma3Inputs
+        vision_model: CompiledCallable[Any, Any],
+        session: InferenceSession,
+    ) -> None:
+        """Binds the framework-compiled vision tower."""
+        self._vision_model = vision_model
 
-        return Gemma3Inputs(
-            tokens=tokens,
-            input_row_offsets=input_row_offsets,
-            return_n_logits=return_n_logits,
-            kv_cache_inputs=kv_cache_inputs,
+    def pack_vision_inputs(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> Buffer:
+        """Stacks the selected images into the vision graph's pixel batch."""
+        images = [
+            image.pixel_values
+            for _, selected in selection
+            for image in selected
+        ]
+        return cast_dlpack_to(
+            VisionStacker().stack(images),
+            DType.float32,
+            DType.bfloat16,
+            devices[0],
         )
+
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[TextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: Buffer,
+    ) -> VisionEncodeResult:
+        """Encodes images and checks that their token spans match the output."""
+        assert self._vision_model is not None
+        output = self._vision_model(packed).driver_tensor
+        assert isinstance(output, Buffer)
+        counts = [
+            image.embedding_rows
+            for _, selected in selection
+            for image in selected
+        ]
+        if output.shape[0] != sum(counts):
+            raise ValueError(
+                "Gemma3 vision embedding count does not match image tokens"
+            )
+        return VisionEncodeResult(
+            embeddings=[output.to(device) for device in devices],
+            per_image_token_counts=counts,
+        )
+
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Returns the zero-row embeddings bound for text-only steps."""
+        assert isinstance(self.config, Gemma3ForConditionalGenerationConfig)
+        if self._empty_embeddings is None:
+            self._empty_embeddings = [
+                Buffer.zeros(
+                    shape=[0, self.config.text_config.hidden_size],
+                    dtype=_unquantized_dtype(self.config),
+                ).to(device)
+                for device in devices
+            ]
+        return self._empty_embeddings

@@ -46,7 +46,7 @@ def _chunk(
     prompt_token_count: int | None = None,
     cached_token_count: int | None = None,
     token_log_probabilities: list[float] | None = None,
-    top_log_probabilities: list[dict[str, float]] | None = None,
+    top_log_probabilities: list[dict[int, tuple[str, float]]] | None = None,
 ) -> TokenGeneratorOutput:
     return TokenGeneratorOutput(
         status=status,
@@ -92,7 +92,7 @@ def test_merge_outputs_field_semantics() -> None:
             cached_token_count=3,
             reasoning_token_count=1,
             token_log_probabilities=[-0.1, -0.2],
-            top_log_probabilities=[{"a": -0.1}, {"b": -0.2}],
+            top_log_probabilities=[{1: ("a", -0.1)}, {2: ("b", -0.2)}],
         ),
         _chunk(
             decoded_tokens="lo",
@@ -100,7 +100,7 @@ def test_merge_outputs_field_semantics() -> None:
             reasoning_token_count=2,
             stop_sequence="STOP",
             token_log_probabilities=[-0.3],
-            top_log_probabilities=[{"c": -0.3}],
+            top_log_probabilities=[{3: ("c", -0.3)}],
         ),
         _chunk(
             status=GenerationStatus.END_OF_SEQUENCE,
@@ -117,9 +117,9 @@ def test_merge_outputs_field_semantics() -> None:
     assert merged.stop_sequence == "STOP"
     assert merged.token_log_probabilities == [-0.1, -0.2, -0.3]
     assert merged.top_log_probabilities == [
-        {"a": -0.1},
-        {"b": -0.2},
-        {"c": -0.3},
+        {1: ("a", -0.1)},
+        {2: ("b", -0.2)},
+        {3: ("c", -0.3)},
     ]
 
 
@@ -326,11 +326,11 @@ def test_stop_truncation_never_touches_reasoning_text() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_settings_stream_min_chunk_tokens_default_is_one() -> None:
+def test_settings_stream_min_chunk_tokens_default_is_ten() -> None:
     if "MAX_SERVE_STREAM_MIN_CHUNK_TOKENS" in os.environ:
         del os.environ["MAX_SERVE_STREAM_MIN_CHUNK_TOKENS"]
     settings = Settings()
-    assert settings.stream_min_chunk_tokens == 1
+    assert settings.stream_min_chunk_tokens == 10
 
 
 def test_settings_stream_min_chunk_tokens_env_override() -> None:

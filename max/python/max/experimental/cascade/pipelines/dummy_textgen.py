@@ -26,6 +26,7 @@ from max.experimental.cascade.interfaces.gen_ai import (
     GenAIChunk,
     GenAIRequest,
     Modality,
+    RawTextChunk,
     TextGenOptions,
 )
 from max.experimental.cascade.interfaces.pipeline import GenAIPipeline
@@ -60,10 +61,10 @@ class AsciiTokenizer(Worker):
     @worker_method()
     async def decode_streaming(
         self, token_iter: AsyncIterable[int]
-    ) -> AsyncIterator[str]:
-        """Convert a token stream into a stream of single-character strings."""
+    ) -> AsyncIterator[RawTextChunk]:
+        """Convert a token stream into one single-character delta per token."""
         async for token in token_iter:
-            yield chr(token)
+            yield RawTextChunk(text=chr(token), num_tokens=1)
 
 
 class Transformer(Worker):
@@ -103,10 +104,12 @@ class DummyTextGenPipeline(GenAIPipeline):
     ) -> AsyncIterable[GenAIChunk]:
         """Run text generation from a conversation."""
         tokens = await self.tokenizer.encode(req.messages)
-        gen_tokens = await self.transformer.decode(req.text, tokens)
+        gen_tokens = await self.transformer.decode(
+            req.text.model_copy(update={"stop": None}), tokens
+        )
         text = await self.tokenizer.decode_streaming(gen_tokens)
         return await self.parser.parse_stream(
-            text, req.tools_enabled, req.tool_schemas()
+            text, req.tools_enabled, req.tool_schemas(), req.text.stop
         )
 
 

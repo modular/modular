@@ -68,6 +68,53 @@ def test_always_inline_no_debug():
     pass
 
 
+# ===----------------------------------------------------------------------=== #
+# @inline
+# ===----------------------------------------------------------------------=== #
+
+
+# CHECK: lit.fn @"test_inline_always()"() -> index always_inline
+@inline(.always)
+def test_inline_always() -> __mlir_type.index:
+    return Int(1).__mlir_index__()
+
+
+# CHECK: lit.fn @"test_inline_never()"() -> index no_inline
+@inline(.never)
+def test_inline_never() -> __mlir_type.index:
+    return Int(2).__mlir_index__()
+
+
+# COM: automatic is the default level, so it prints no keyword at all.
+# CHECK: lit.fn @"test_inline_automatic()"() -> index attributes
+@inline(.automatic)
+def test_inline_automatic() -> __mlir_type.index:
+    return Int(3).__mlir_index__()
+
+
+# CHECK: lit.fn @"test_inline_nodebug()"() -> index always_inline_no_debug
+@inline(.nodebug)
+def test_inline_nodebug() -> __mlir_type.index:
+    return Int(7).__mlir_index__()
+
+
+# COM: Two inline decorators that agree are not a conflict.
+# CHECK: lit.fn @"test_inline_agrees()"() -> index always_inline
+@inline(.always)
+@always_inline
+def test_inline_agrees() -> __mlir_type.index:
+    return Int(5).__mlir_index__()
+
+
+# COM: A parameter is not known here, so the level rides along as the field
+# COM: reads that produce it until elaboration binds `policy`.
+# CHECK-LABEL: lit.fn @"test_inline_parametric
+# CHECK-SAME: inline<#lit.struct.extract<:!alias_Int1 #lit.struct.extract<:!InlineLevel policy, "_value">, "_mlir_value">
+@inline(policy)
+def test_inline_parametric[policy: InlineLevel]():
+    pass
+
+
 # CHECK-LABEL: lit.fn @"math{{.*}} always_inline_builtin
 @always_inline("builtin")
 def math(a: __mlir_type.index, b: __mlir_type.index) -> __mlir_type.index:
@@ -187,9 +234,9 @@ def register_internal(x: StaticString):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder1
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder1">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder1
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder1">
 @register_internal("custom.op")
 @deprecated("DecoratorOrder1")
 @fieldwise_init
@@ -199,9 +246,9 @@ struct DecoratorOrder1(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder2
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder2">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder2
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder2">
 @deprecated("DecoratorOrder2")
 @register_internal("custom.op")
 @fieldwise_init
@@ -211,9 +258,9 @@ struct DecoratorOrder2(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder3
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder3">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder3
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder3">
 @fieldwise_init
 @deprecated("DecoratorOrder3")
 @register_internal("custom.op")
@@ -223,9 +270,9 @@ struct DecoratorOrder3(TrivialRegisterPassable):
 
 # CHECK-LABEL: lit.struct.decl @DecoratorOrder4
 # CHECK-SAME: register_passable_trivial
-# CHECK-SAME: deprecationInfo = #lit.deprecation<"DecoratorOrder4">
 # CHECK: decorators <{{.*}}:string "custom.op"
 # CHECK: lit.fn @"__init__(::SIMD[DType.int, 1])"(%a: !alias_Int1) -> !DecoratorOrder4
+# CHECK: } <{{.*}}deprecationInfo = <"DecoratorOrder4">
 @fieldwise_init
 @register_internal("custom.op")
 @deprecated("DecoratorOrder4")
@@ -366,7 +413,7 @@ struct ValueReg(ImplicitlyCopyable, RegisterPassable):
 
 
 # COM: Ensure that "self" is a valid field name.
-# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable) attributes
+# CHECK-LABEL: lit.struct.decl @Foo(!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable)
 @fieldwise_init
 struct Foo(ImplicitlyCopyable):
     var a: Int
@@ -451,10 +498,10 @@ struct RaisingFieldwiseInit(ImplicitlyCopyable):
 # ===----------------------------------------------------------------------=== #
 
 struct InteriorOriginReturnTest(Movable where False):
-    var data: UnsafePointer[Int, UntrackedOrigin[mut=True]]
+    var data: Pointer[Int, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[Int, UntrackedOrigin[mut=True]].unsafe_dangling()
+        self.data = Pointer[Int, UntrackedOrigin[mut=True]].unsafe_dangling()
 
 # CHECK-LABEL: lit.fn @"with_interior_origins(decorators::InteriorOriginReturnTest)"
 # CHECK-SAME: defines_interior_origins

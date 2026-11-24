@@ -15,7 +15,7 @@ from std.memory.alloc import alloc, dealloc, Layout
 
 def main():
     # start-alloc-multiple
-    var allocation = alloc(Layout[Float64](count=6))
+    var allocation = alloc(Layout[Float64](length=6))
     var float_ptr = allocation.unsafe_ptr()
     for offset in range(6):
         float_ptr.unsafe_offset(offset).unsafe_write(0.0)

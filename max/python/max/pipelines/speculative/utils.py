@@ -86,7 +86,7 @@ class _SpeculativeDecodingMetrics:
         given that all previous draft tokens (0..i-1) were accepted. Empty when
         no verifications were performed: such a batch carries no acceptance
         information, and a row of zeros would dilute every consumer that
-        averages these rates (e.g. the per-position histograms).
+        averages these rates (such as the per-position histograms).
         """
         if self.num_verifications == 0 or self.accepted_per_position is None:
             return []

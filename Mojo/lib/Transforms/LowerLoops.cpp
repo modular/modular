@@ -60,7 +60,8 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
 
   // Create HLCF::LoopOp.
   auto loop = LoopOp::create(rewriter, forLoop->getLoc(),
-                             forLoop->getResultTypes(), forLoop.getIterArgs());
+                             forLoop->getResultTypes(), forLoop.getIterArgs(),
+                             /*label=*/StringAttr{});
 
   // Create the block for the new LoopOp.
   Block *loopBlock = rewriter.createBlock(&loop.getBody());
@@ -127,7 +128,7 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
   Value cmpCond = KGEN::POP::CastFromBuiltinOp::create(
                       rewriter, forLoop->getLoc(), boolTy, cmpOp)
                       .getResult();
-  auto ifOp = IfOp::create(rewriter, forLoop->getLoc(), ValueRange{}, cmpCond);
+  auto ifOp = IfOp::create(rewriter, forLoop->getLoc(), TypeRange{}, cmpCond);
 
   rewriter.createBlock(&ifOp.getThenRegion());
   YieldOp::create(rewriter, forLoop->getLoc());
@@ -137,17 +138,15 @@ LogicalResult LowerLoops::lowerForLoop(ForOp forLoop) {
       body.getArguments().drop_front().take_front(forLoop.getNumResults()),
       loop.getLabelAttr());
 
-  // ForOp's terminator has to be a ForYieldOp.
-  auto y = cast<ForYieldOp>(body.getTerminator());
-  // Turn ForYieldOp to ContinueOp.
-  rewriter.setInsertionPointAfter(y.getOperation());
-
-  // Create `hlcf.continue` with the reordered operands.
-  auto cont = HLCF::ContinueOp::create(rewriter, y.getLoc(),
-                                       y->getResultTypes(), y.getOperands());
-
-  // Replace `hlcf.for.yield with `hlcf.continue`.
-  rewriter.replaceOp(y, cont);
+  // Turn a normal iteration into a continue. Preserve terminators such as
+  // hlcf.unreachable that leave the loop body without another iteration.
+  if (auto y = dyn_cast<ForYieldOp>(body.getTerminator())) {
+    rewriter.setInsertionPointAfter(y);
+    auto cont = HLCF::ContinueOp::create(rewriter, y.getLoc(),
+                                         y->getResultTypes(), y.getOperands(),
+                                         /*label=*/StringAttr{});
+    rewriter.replaceOp(y, cont);
+  }
 
   // Replace ForOp's results with LoopOp's
   forLoop->replaceAllUsesWith(loop.getResults());

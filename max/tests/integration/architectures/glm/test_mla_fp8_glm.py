@@ -26,17 +26,20 @@ The test builds the FP8 layer at GLM dims, runs a forward pass on B200 through
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
 from max.graph.weights import WeightData
-from max.kv_cache import PagedKVCacheManager
-from max.nn.attention.multi_latent_attention import LatentAttentionWithRope
-from max.nn.attention.multi_latent_attention_fp8 import (
+from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.legacy.attention.multi_latent_attention import (
+    LatentAttentionWithRope,
+)
+from max.nn.legacy.attention.multi_latent_attention_fp8 import (
     LatentAttentionWithRopeFp8,
 )
-from max.nn.kv_cache import KVCacheParams, MLAKVCacheParams
+from max.nn.legacy.rotary_embedding import DeepseekYarnRotaryEmbedding
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -45,10 +48,8 @@ from max.nn.quant_config import (
     ScaleOrigin,
     WeightScaleSpec,
 )
-from max.nn.rotary_embedding import (
-    DeepseekYarnRopeScalingParams,
-    DeepseekYarnRotaryEmbedding,
-)
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
+from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 
@@ -230,13 +231,12 @@ def _fp8_quant_config() -> QuantConfig:
     )
 
 
-def _run_layer(
+def _load_layer(
     layer: LatentAttentionWithRope | LatentAttentionWithRopeFp8,
     kv_params: KVCacheParams,
-    input_tensor: torch.Tensor,
     device0: Accelerator,
-) -> torch.Tensor:
-    """Build a Graph that calls `layer` once, compile, and execute."""
+) -> tuple[InferenceSession, Model]:
+    """Build a Graph that calls `layer` once, and compile it."""
     rope = _make_rope()
     layer.rope = rope
     session = InferenceSession(devices=[device0])
@@ -257,11 +257,7 @@ def _run_layer(
     ) as graph:
         hidden_states = graph.inputs[0].tensor
         input_row_offsets = graph.inputs[1].tensor
-        kv_collection = (
-            kv_params.get_symbolic_inputs()
-            .unflatten(iter(graph.inputs[2:]))
-            .inputs[0]
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(graph.inputs[2:]))[0]
         result = layer(
             ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
             hidden_states,
@@ -271,14 +267,23 @@ def _run_layer(
         )
         graph.output(result)
 
-    compiled = session.load(graph, weights_registry=layer.state_dict())
+    return session, session.load(graph, weights_registry=layer.state_dict())
+
+
+def _run_layer(
+    session: InferenceSession,
+    compiled: Model,
+    kv_params: KVCacheParams,
+    input_tensor: torch.Tensor,
+    device0: Accelerator,
+) -> torch.Tensor:
     kv_manager = PagedKVCacheManager(
         params=kv_params, total_num_pages=8, session=session, max_batch_size=4
     )
     ctx = create_text_context(np.empty(SEQ_LEN))
     kv_manager.claim(ctx)
     kv_manager.alloc(ctx)
-    kv_inputs = kv_manager.runtime_inputs_for_leaf([[ctx]]).inputs[0]
+    kv_inputs = kv_manager.runtime_inputs_for_leaf([[ctx]])[0]
     row_offsets_buf = Buffer(DType.uint32, [2])
     row_offsets_buf[0] = 0
     row_offsets_buf[1] = SEQ_LEN
@@ -289,7 +294,9 @@ def _run_layer(
         .to(device0)
     )
     max_output = compiled.execute(
-        input_dev, row_offsets_buf.to(device0), *kv_inputs.flatten()
+        input_dev,
+        row_offsets_buf.to(device0),
+        *tree.leaves(kv_inputs),
     )
     return from_dlpack(max_output[0]).to(torch.bfloat16).to("cpu")
 
@@ -343,8 +350,14 @@ def test_fp8_mla_matches_bf16_reference() -> None:
     torch.manual_seed(7)
     input_tensor = torch.randn(SEQ_LEN, HIDDEN_SIZE, dtype=torch.bfloat16)
 
-    fp8_out = _run_layer(fp8_layer, kv_params, input_tensor, device0)
-    bf16_out = _run_layer(bf16_layer, kv_params, input_tensor, device0)
+    fp8_session, fp8_model = _load_layer(fp8_layer, kv_params, device0)
+    bf16_session, bf16_model = _load_layer(bf16_layer, kv_params, device0)
+    fp8_out = _run_layer(
+        fp8_session, fp8_model, kv_params, input_tensor, device0
+    )
+    bf16_out = _run_layer(
+        bf16_session, bf16_model, kv_params, input_tensor, device0
+    )
 
     assert torch.isfinite(fp8_out.float()).all(), "FP8 output non-finite"
     diff = (fp8_out.float() - bf16_out.float()).abs()

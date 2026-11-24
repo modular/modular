@@ -19,4 +19,3 @@ from std.math.fast import exp_approx_f32
 ```
 """
 from .math import exp_approx_f32
-from .math import _exp2_approx_f32 as exp2_approx_f32

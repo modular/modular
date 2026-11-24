@@ -32,17 +32,17 @@ def _neon_dotprod[
     comptime assert c_type == .int32, "the type of C must be int32"
     comptime assert width == 4
 
-    @__parameter
-    @always_inline
-    def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
+    @inline(.always)
+    def call_intrinsic[intrin: StaticString]() {imm} -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
-    comptime if a_type == .uint8 and b_type == .uint8:
-        return call_intrinsic["llvm.aarch64.neon.udot.v4i32.v16i8"]()
-    elif a_type == .int8 and b_type == .int8:
-        return call_intrinsic["llvm.aarch64.neon.sdot.v4i32.v16i8"]()
-    else:
-        comptime assert False, "unsupported A and B types"
+    comptime match (a_type, b_type):
+        case (.uint8, .uint8):
+            return call_intrinsic["llvm.aarch64.neon.udot.v4i32.v16i8"]()
+        case (.int8, .int8):
+            return call_intrinsic["llvm.aarch64.neon.sdot.v4i32.v16i8"]()
+        case _:
+            comptime assert False, "unsupported A and B types"
 
 
 def _neon_dotprod_lane[
@@ -82,16 +82,16 @@ def _neon_matmul[
     comptime assert c_type == .int32, "the type of C must be int32"
     comptime assert width == 4
 
-    @__parameter
-    @always_inline
-    def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
+    @inline(.always)
+    def call_intrinsic[intrin: StaticString]() {imm} -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
-    comptime if a_type == .uint8 and b_type == .uint8:
-        return call_intrinsic["llvm.aarch64.neon.ummla.v4i32.v16i8"]()
-    elif a_type == .uint8 and b_type == .int8:
-        return call_intrinsic["llvm.aarch64.neon.usmmla.v4i32.v16i8"]()
-    elif a_type == .int8 and b_type == .int8:
-        return call_intrinsic["llvm.aarch64.neon.smmla.v4i32.v16i8"]()
-    else:
-        comptime assert False, "unsupported A and B types"
+    comptime match (a_type, b_type):
+        case (.uint8, .uint8):
+            return call_intrinsic["llvm.aarch64.neon.ummla.v4i32.v16i8"]()
+        case (.uint8, .int8):
+            return call_intrinsic["llvm.aarch64.neon.usmmla.v4i32.v16i8"]()
+        case (.int8, .int8):
+            return call_intrinsic["llvm.aarch64.neon.smmla.v4i32.v16i8"]()
+        case _:
+            comptime assert False, "unsupported A and B types"

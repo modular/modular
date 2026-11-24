@@ -19,9 +19,10 @@ from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import gather_reduce
 
 from std.utils import IndexList
+from std.utils.index import Index
 
 
-@always_inline
+@inline(.always)
 def add(x: SIMD, y: type_of(x)) -> type_of(x):
     return x + y
 
@@ -36,9 +37,9 @@ def bench_gather_reduce(mut b: Bencher):
     var num_indices = clear_size // (
         size_of[type]() * embedding_dim * multi_hot_dim
     )
-    var input_shape = IndexList[2](num_rows, embedding_dim)
-    var output_shape = IndexList[2](num_indices, embedding_dim)
-    var indices_shape = IndexList[2](num_indices, multi_hot_dim)
+    var input_shape = Index(num_rows, embedding_dim)
+    var output_shape = Index(num_indices, embedding_dim)
+    var indices_shape = Index(num_indices, multi_hot_dim)
     var input_storage = List(
         length=input_shape.flattened_length(), fill=Scalar[type](1)
     )

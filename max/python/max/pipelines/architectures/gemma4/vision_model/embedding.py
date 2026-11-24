@@ -10,6 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Gemma 4's vision patch embedding."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -17,8 +19,8 @@ from collections.abc import Iterable
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, Weight, ops
 from max.graph.weight import ShardingStrategy
-from max.nn.layer import Module
-from max.nn.linear import Linear
+from max.nn.legacy.layer import Module
+from max.nn.legacy.linear import Linear
 
 from ..model_config import Gemma4ForConditionalGenerationConfig
 
@@ -83,9 +85,7 @@ class Gemma4VisionPatchEmbedder(Module):
         """
         # 1. Normalise pixel values from [0, 1] to [-1, 1].
         patches = ops.cast(patches_flat, self.dtype)
-        patches = patches * ops.constant(
-            2.0, self.dtype, device=self.device
-        ) - ops.constant(1.0, self.dtype, device=self.device)
+        patches = patches * 2.0 - 1.0
 
         # 2. Linear projection: [total_patches, 3*ps²] → [total_patches, hidden]
         hidden = self.input_proj(patches)
@@ -100,8 +100,9 @@ class Gemma4VisionPatchEmbedder(Module):
         )
 
         x_ids = ops.cast(pixel_position_ids[:, 0], DType.int64)
-        y_ids = ops.cast(pixel_position_ids[:, 1], DType.int64) + ops.constant(
-            self.position_embedding_size, DType.int64, device=self.device
+        y_ids = (
+            ops.cast(pixel_position_ids[:, 1], DType.int64)
+            + self.position_embedding_size
         )
 
         emb_x = ops.gather(table_flat, x_ids, axis=0)
@@ -112,6 +113,7 @@ class Gemma4VisionPatchEmbedder(Module):
 
     @property
     def sharding_strategy(self) -> ShardingStrategy | None:
+        """How the input projection is split across devices."""
         return self.input_proj.weight.sharding_strategy
 
     @sharding_strategy.setter
@@ -122,6 +124,7 @@ class Gemma4VisionPatchEmbedder(Module):
     def shard(
         self, devices: Iterable[DeviceRef]
     ) -> list[Gemma4VisionPatchEmbedder]:
+        """Splits the input projection across ``devices``."""
         assert self.sharding_strategy
 
         input_proj_shards = self.input_proj.weight.shard(devices)

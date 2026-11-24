@@ -11,11 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import has_nvidia_gpu_accelerator
-
 from std.benchmark import Bench
 from max.gpu.host import DeviceBuffer, DeviceContext
-from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import TileTensor, Coord, Idx, row_major
+from layout.layout import Layout
 from layout._fillers import random
 from matmul_kernels import (
     run_cublas,
@@ -29,13 +28,14 @@ from matmul_kernels import (
 )
 from std.testing import assert_almost_equal
 from std.utils import IndexList
+from std.utils.index import Index
 
 comptime run_gemm_kernel_type = def(
     mut m: Bench,
-    ctx: DeviceContext,
-    a: LayoutTensor,
-    b: LayoutTensor,
-    c: LayoutTensor,
+    ctx: DeviceContext[],
+    a: TileTensor,
+    b: TileTensor,
+    c: TileTensor[mut=True, ...],
 ) thin raises -> None
 
 
@@ -46,7 +46,7 @@ struct test_matmul[
     c_layout: Layout,
     enable_tc: Bool,
 ]:
-    var ctx: DeviceContext
+    var ctx: DeviceContext[]
     var M: Int
     var N: Int
     var K: Int
@@ -56,15 +56,14 @@ struct test_matmul[
     var c_device_buffer: DeviceBuffer[Self.dtype]
     var c_device_buffer_ref: DeviceBuffer[Self.dtype]
 
-    def __init__(out self, mut m: Bench, ctx: DeviceContext) raises:
+    def __init__(out self, mut m: Bench, ctx: DeviceContext[]) raises:
         self.ctx = ctx
-        self.M = Self.a_layout.shape[0].value()
-        self.N = Self.b_layout.shape[1].value()
-        self.K = Self.b_layout.shape[0].value()
-        var a_shape = IndexList[2](self.M, self.K)
-        var b_shape = IndexList[2](self.K, self.N)
-        var c_shape = IndexList[2](self.M, self.N)
-        comptime layout_2d = Layout.row_major[2]()
+        self.M = Self.a_layout.static_shape[0]
+        self.N = Self.b_layout.static_shape[1]
+        self.K = Self.b_layout.static_shape[0]
+        var a_shape = Index(self.M, self.K)
+        var b_shape = Index(self.K, self.N)
+        var c_shape = Index(self.M, self.N)
 
         self.a_device_buffer = ctx.enqueue_create_buffer[Self.dtype](
             a_shape.flattened_length()
@@ -80,24 +79,14 @@ struct test_matmul[
         )
 
         with self.a_device_buffer.map_to_host() as a_host_buffer:
-            random(
-                LayoutTensor[Self.dtype, layout_2d](
-                    a_host_buffer, RuntimeLayout[layout_2d].row_major(a_shape)
-                )
-            )
+            random(TileTensor(a_host_buffer, row_major(len(a_host_buffer))))
         with self.b_device_buffer.map_to_host() as b_host_buffer:
-            random(
-                LayoutTensor[Self.dtype, layout_2d](
-                    b_host_buffer, RuntimeLayout[layout_2d].row_major(b_shape)
-                )
-            )
+            random(TileTensor(b_host_buffer, row_major(len(b_host_buffer))))
         with self.c_device_buffer.map_to_host() as c_host_buffer:
-            _ = LayoutTensor[Self.dtype, layout_2d](
-                c_host_buffer, RuntimeLayout[layout_2d].row_major(c_shape)
-            ).fill(0)
+            _ = TileTensor(c_host_buffer, row_major(len(c_host_buffer))).fill(0)
         with self.c_device_buffer_ref.map_to_host() as c_host_ref_buffer:
-            _ = LayoutTensor[Self.dtype, layout_2d](
-                c_host_ref_buffer, RuntimeLayout[layout_2d].row_major(c_shape)
+            _ = TileTensor(
+                c_host_ref_buffer, row_major(len(c_host_ref_buffer))
             ).fill(0)
 
         run_cublas[Self.dtype, Self.enable_tc](
@@ -116,31 +105,38 @@ struct test_matmul[
 
         var ctx = self.ctx
 
-        def create_tensor[
-            layout: Layout
-        ](
-            m: Int,
-            n: Int,
-            ptr: Pointer[Scalar[Self.dtype], _],
-            out result: LayoutTensor[Self.dtype, layout, ptr.origin],
-        ):
-            var dynamic_layout = type_of(result.runtime_layout)(
-                type_of(result.runtime_layout.shape)(m, n),
-                type_of(result.runtime_layout.stride)(n, 1),
+        var a = TileTensor(
+            self.a_device_buffer, row_major(len(self.a_device_buffer))
+        ).reshape(
+            Coord(
+                Idx[Self.a_layout.static_shape[0]],
+                Idx[Self.a_layout.static_shape[1]],
             )
-            return {ptr, dynamic_layout}
+        )
+        var b = TileTensor(
+            self.b_device_buffer, row_major(len(self.b_device_buffer))
+        ).reshape(
+            Coord(
+                Idx[Self.b_layout.static_shape[0]],
+                Idx[Self.b_layout.static_shape[1]],
+            )
+        )
+        var c = TileTensor(
+            self.c_device_buffer, row_major(len(self.c_device_buffer))
+        ).reshape(
+            Coord(
+                Idx[Self.c_layout.static_shape[0]],
+                Idx[Self.c_layout.static_shape[1]],
+            )
+        )
 
-        var a = create_tensor[Self.a_layout](
-            self.M, self.K, self.a_device_buffer.unsafe_ptr()
+        gemm(
+            m,
+            ctx,
+            a.as_imm(),
+            b.as_imm(),
+            c,
         )
-        var b = create_tensor[Self.b_layout](
-            self.K, self.N, self.b_device_buffer.unsafe_ptr()
-        )
-        var c = create_tensor[Self.c_layout](
-            self.M, self.N, self.c_device_buffer.unsafe_ptr()
-        )
-
-        gemm(m, ctx, a, b, c)
 
         with self.c_device_buffer_ref.map_to_host() as c_host_ref:
             with self.c_device_buffer.map_to_host() as c_host:
@@ -161,9 +157,9 @@ def main() raises:
 
     var m = Bench()
     with DeviceContext() as ctx:
-        comptime a_layout = Layout.row_major(M, K)
-        comptime b_layout = Layout.row_major(K, N)
-        comptime c_layout = Layout.row_major(M, N)
+        comptime a_layout = row_major[M, K]()
+        comptime b_layout = row_major[K, N]()
+        comptime c_layout = row_major[M, N]()
 
         var test = test_matmul[
             DType.float32, a_layout, b_layout, c_layout, False
@@ -173,39 +169,24 @@ def main() raises:
             DType.float32, a_layout, b_layout, c_layout, True
         ](m, ctx)
 
-        comptime k1 = run_gemm_kernel_1[
-            DType.float32, a_layout, b_layout, c_layout, 32, 32
-        ]
+        comptime k1 = run_gemm_kernel_1[DType.float32, 32, 32]
 
-        comptime k2 = run_gemm_kernel_2[
-            DType.float32, a_layout, b_layout, c_layout, 32, 32
-        ]
+        comptime k2 = run_gemm_kernel_2[DType.float32, 32, 32]
 
-        comptime k3 = run_gemm_kernel_3[
-            DType.float32, a_layout, b_layout, c_layout, 32, 32, 32
-        ]
+        comptime k3 = run_gemm_kernel_3[DType.float32, 32, 32, 32]
 
-        comptime k4 = run_gemm_kernel_4[
-            DType.float32, a_layout, b_layout, c_layout, 64, 64, 8, 8
-        ]
+        comptime k4 = run_gemm_kernel_4[DType.float32, 64, 64, 8, 8]
 
-        comptime k5 = run_gemm_kernel_5[
-            DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
-        ]
+        comptime k5 = run_gemm_kernel_5[DType.float32, 128, 128, 8, 8, 8]
 
-        comptime k6 = run_gemm_kernel_6[
-            DType.float32, a_layout, b_layout, c_layout, 128, 128, 8, 8, 8
-        ]
+        comptime k6 = run_gemm_kernel_6[DType.float32, 128, 128, 8, 8, 8]
 
         comptime MMA_M = 16
-        comptime MMA_N = 8 if has_nvidia_gpu_accelerator() else 16
-        comptime MMA_K = 8 if has_nvidia_gpu_accelerator() else 4
+        comptime MMA_N = 8 if ctx.target.is_nvidia_gpu() else 16
+        comptime MMA_K = 8 if ctx.target.is_nvidia_gpu() else 4
 
         comptime k_tc = run_gemm_kernel_tc[
             DType.float32,
-            a_layout,
-            b_layout,
-            c_layout,
             64,  # BM: The block size in the M dimension
             64,  # BN: The block size in the N dimension
             32,  # BK: The block size in the K dimension

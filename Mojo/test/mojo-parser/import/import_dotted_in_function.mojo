@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # Test that imports inside a function body work.
 
@@ -124,11 +124,12 @@ def test_comma_import_in_function():
 
 # // -----
 
-# A relative import (`from .util import util_fn`) inside a function body of a
-# packaged module works; rel_fn's body lives in inputs/fn_scope_rel_pkg.
+# A relative import (`from .foo import hello`) inside a function body of a
+# packaged module works; rel_fn's body lives in
+# inputs/test_from_relative_self_import.
 
 
-from fn_scope_rel_pkg.user import rel_fn
+from test_from_relative_self_import.bar import rel_fn
 
 
 def test_relative_import_in_function():

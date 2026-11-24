@@ -28,20 +28,20 @@ For example, this will open the debugger for the `traits_with_builtin.mojo`
 test:
 
 ```bash
-bd //Mojo/tools/kgen-translate -- -import-mojo KGEN/test/mojo-parser/traits_with_builtin.mojo
+bd //Mojo/tools/kgen-translate -- -import-mojo Mojo/test/mojo-parser/traits_with_builtin.mojo
 ```
 
 Generally, test files contain a `# RUN:` line which contains the command to add
 after `vscode-debug`, like:
 
 ```cpp
-## RUN: kgen-translate --mojo-disable-builtins -import-mojo %s | FileCheck %s
+## RUN: kgen-translate --disable-builtins -import-mojo %s | FileCheck %s
 ```
 
 To make it work in vscode, put `--vscode` after the `bd`. For example:
 
 ```python
-bd --vscode //Mojo/tools/kgen-translate -- -import-mojo KGEN/test/mojo-parser/traits_with_builtin.mojo
+bd --vscode //Mojo/tools/kgen-translate -- -import-mojo Mojo/test/mojo-parser/traits_with_builtin.mojo
 ```
 
 ## Printing
@@ -106,7 +106,7 @@ information:
 
 ```cpp
 if (auto fileLineColLoc = dyn_cast<mlir::FileLineColLoc>(mlirLoc)) {
-  // Prints: /Users/verdagon/modular/KGEN/test/mojo-parser/traits_without_builtin.mojo:24:33
+  // Prints: /Users/verdagon/modular/Mojo/test/mojo-parser/traits_without_builtin.mojo:24:33
   llvm::outs() << fileLineColLoc.getFilename().str() << ":"
       << fileLineColLoc.getLine() << ":"
       << fileLineColLoc.getColumn() << "\n";
@@ -167,12 +167,13 @@ by giving your breakpoint itself a condition:
 
 ![ExpressionBreakpoint.jpg](mdnb-data/manual-parser-debugging/ExpressionBreakpoint.jpg)
 
-In Mojo/include/Mojo/Support/Debugging.h there are two helpful methods:
+There are two helpful debugging methods available:
 
-- `waitForDebuggerToAttach` will make the current debugging session pause, like
-  a breakpoint.
-- `attachToNewRemoteDebugSession` will start a new debugging session, if there’s
-  a VS Code window open and the Mojo extension is installed.
+- `waitForDebuggerToAttach` (in `Support/include/Support/Debugger.h`) will make
+  the current process pause, giving you time to attach a debugger.
+- `attachToNewRemoteDebugSession` (in `Mojo/include/Mojo/Support/Debugging.h`)
+  will start a new debugging session, if there's a VS Code window open and the
+  Mojo extension is installed.
 
 ## Waiter Breakpoints
 
@@ -225,12 +226,12 @@ getting triggered by a lot of unrelated operations, another alternative is to
 aggressively reduce and simplify your test case.
 
 For example, try taking out the standard library and builtins by passing
-`kgen-translate %s --mojo-disable-builtins -import-mojo`. This might require
-some effort, because things like `Optional`, `List`, and even `Int` won’t be
-available. Look at `KGEN/test/test-packages/std/builtin/stubs.mojo` for
+`kgen-translate %s --disable-builtins -import-mojo`. This might require
+some effort, because things like `Optional`, `List`, and even `Int` won't be
+available. Look at `Mojo/test/test-packages/std/builtin/stubs.mojo` for
 inspiration on how to nicely fake those.
 
-For an example, see `KGEN/test/mojo-parser/trait_metatype_roundtrip.mojo`.
+For an example, see `Mojo/test/mojo-parser/trait_metatype_roundtrip.mojo`.
 
 Caveat: The Mojo compiler hard-codes `AnyType`, so if you make your own trait
 named `AnyType` it might not work as expected. Also, Mojo secretly automatically

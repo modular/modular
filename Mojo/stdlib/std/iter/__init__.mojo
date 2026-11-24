@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Iteration traits and utilities: Iterable, IterableOwned, Iterator,
-enumerate, zip, map.
+enumerate, zip, map, filter.
 
 This package defines the core iteration protocol for Mojo through the
 `Iterable`, `IterableOwned`, and `Iterator` traits. Types that conform to
 these traits can be used with `for` loops and iteration utilities like
-`enumerate()`, `zip()`, and `map()`.
+`enumerate()`, `zip()`, `map()`, and `filter()`.
 
 The iteration protocol consists of three key traits:
 
@@ -218,7 +218,7 @@ trait Iterator(Deinitable, Movable):
             return None
 
 
-@always_inline
+@inline(.always)
 def iter(
     var iterable: Some[IterableOwned],
 ) -> type_of(iterable).IteratorOwnedType:
@@ -233,7 +233,7 @@ def iter(
     return iterable^.__iter__()
 
 
-@always_inline
+@inline(.always)
 def iter[
     IterableType: Iterable
 ](ref iterable: IterableType) -> IterableType.IteratorType[origin_of(iterable)]:
@@ -251,7 +251,7 @@ def iter[
     return iterable.__iter__()
 
 
-@always_inline
+@inline(.always)
 def next[
     IteratorType: Iterator
 ](mut iterator: IteratorType) raises StopIteration -> IteratorType.Element:
@@ -307,7 +307,7 @@ struct _Empty[T: Movable](
         return Tuple(0, Optional(0))
 
 
-@always_inline
+@inline(.always)
 def empty[T: Movable]() -> _Empty[T]:
     """Creates an iterator that yields nothing.
 
@@ -364,7 +364,7 @@ struct _Once[T: Movable & Deinitable](
         return self._inner.bounds()
 
 
-@always_inline
+@inline(.always)
 def once[T: Movable & Deinitable, //](var element: T, /) -> _Once[T]:
     """Creates an iterator that yields an element exactly once.
 
@@ -416,7 +416,7 @@ struct _Enumerate[InnerIteratorType: Iterator](
     ):
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
@@ -431,7 +431,7 @@ struct _Enumerate[InnerIteratorType: Iterator](
         return self._inner.bounds()
 
 
-@always_inline
+@inline(.always)
 def enumerate[
     IterableType: Iterable
 ](ref iterable: IterableType, *, start: Int = 0) -> _Enumerate[
@@ -461,7 +461,7 @@ def enumerate[
     return _Enumerate(iter(iterable), start=start)
 
 
-@always_inline
+@inline(.always)
 def enumerate(
     var iterable: Some[IterableOwned], *, start: Int = 0
 ) -> _Enumerate[type_of(iterable).IteratorOwnedType]:
@@ -518,7 +518,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         *TypeList[Trait=Iterator, Self.Ts.values]().map[Self._mapper]()
     ]
 
-    @always_inline
+    @inline(.always)
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
@@ -526,7 +526,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     ):
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
@@ -548,7 +548,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                     Pointer(to=res[i]).unsafe_deinit_pointee()
 
             std.memory.forget_deinit(res^)
-            raise StopIteration
+            raise
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var res_lower = Int.MAX
@@ -556,8 +556,8 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
         comptime for i in range(Self._InjectedValues.__len__()):
             var lower, upper = self._values[i].bounds()
             res_lower = min(res_lower, lower)
-            if upper:
-                res_upper = min(res_upper.or_else(Int.MAX), upper.value())
+            if case .Some(upper) = upper:
+                res_upper = min(res_upper.or_else(Int.MAX), upper)
 
         return (res_lower, res_upper)
 
@@ -628,13 +628,12 @@ def zip[
     """
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
 
-    @__parameter
-    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]) {mut res}:
         Pointer(to=res._values[idx]).unsafe_write(
             rebind_var[type_of(res._values[idx])](iter(elt^))
         )
 
-    iterables^.consume_elements[init_elt]()
+    iterables^.consume_elements(init_elt)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -647,10 +646,14 @@ struct _MapIterator[
     OutputType: Copyable,
     InnerIteratorType: Iterator,
     //,
-    function: def(var InnerIteratorType.Element) thin -> OutputType,
+    Function: def(var InnerIteratorType.Element) -> OutputType,
 ](
-    Copyable where conforms_to(InnerIteratorType, Copyable),
-    Iterable where conforms_to(InnerIteratorType, Copyable),
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
     IterableOwned,
     Iterator,
 ):
@@ -661,35 +664,36 @@ struct _MapIterator[
     comptime IteratorOwnedType: Iterator = Self
 
     var _inner: Self.InnerIteratorType
+    var _function: Self.Function
 
     def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)] where conforms_to(
         Self.InnerIteratorType, Copyable
-    ):
+    ) and conforms_to(Self.Function, Copyable):
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
     def __next__(mut self) raises StopIteration -> Self.Element:
-        return Self.function(next(self._inner))
+        return self._function(next(self._inner))
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self._inner.bounds()
 
 
-@always_inline
+@inline(.always)
 def map[
     origin: ImmOrigin,
     IterableType: Iterable,
     ResultType: Copyable,
     //,
-    function: def(
-        var IterableType.IteratorType[origin].Element
-    ) thin -> ResultType,
-](ref[origin] iterable: IterableType) -> _MapIterator[function]:
+    Function: def(var IterableType.IteratorType[origin].Element) -> ResultType,
+](ref[origin] iterable: IterableType, var function: Function) -> _MapIterator[
+    Function
+]:
     """Returns an iterator that applies `function` to each element of the input
     iterable.
 
@@ -697,10 +701,11 @@ def map[
         origin: The origin of the iterable.
         IterableType: The type of the iterable.
         ResultType: The return type of the function.
-        function: The function to apply to each element.
+        Function: The type of the function to apply to each element.
 
     Args:
         iterable: The iterable to map over.
+        function: The function to apply to each element.
 
     Returns:
         A map iterator that yields the results of applying `function` to each
@@ -710,7 +715,7 @@ def map[
 
     ```mojo
     var l = [1, 2, 3]
-    var m = map[lambda (x: Int) -> Int: x + 1](l)
+    var m = map(l, lambda (x: Int) -> Int: x + 1)
 
     # outputs:
     # 2
@@ -720,42 +725,156 @@ def map[
         print(elem)
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't ve needed, something isn't getting
-    # substituted through associated types right.
     return {
-        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable))
+        iter(iterable),
+        function^,
     }
 
 
-@always_inline
+@inline(.always)
 def map[
     IterableType: IterableOwned,
     ResultType: Copyable,
     //,
-    function: def(
-        var IterableType.IteratorOwnedType.Element
-    ) thin -> ResultType,
-](var iterable: IterableType) -> _MapIterator[function]:
+    Function: def(var IterableType.IteratorOwnedType.Element) -> ResultType,
+](var iterable: IterableType, var function: Function) -> _MapIterator[Function]:
     """Returns an iterator that applies `function` to each element of the input
     iterable, consuming the iterable.
 
     Parameters:
         IterableType: The type of the iterable.
         ResultType: The return type of the function.
-        function: The function to apply to each element.
+        Function: The type of the function to apply to each element.
 
     Args:
         iterable: The iterable to consume and map over.
+        function: The function to apply to each element.
 
     Returns:
         A map iterator that yields the results of applying `function` to each
         element.
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
+    return {iter(iterable^), function^}
+
+
+# ===-----------------------------------------------------------------------===#
+# filter
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct _FilterIterator[
+    InnerIteratorType: Iterator,
+    //,
+    Function: def(InnerIteratorType.Element) -> Bool,
+](
+    Copyable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    Iterable where conforms_to(InnerIteratorType, Copyable) and conforms_to(
+        Function, Copyable
+    ),
+    IterableOwned,
+    Iterator,
+) where conforms_to(
+    InnerIteratorType.Element, Deinitable
+):
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _function: Self.Function
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ) and conforms_to(Self.Function, Copyable):
+        return self.copy()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        while True:
+            var element = next(self._inner)
+            if self._function(element):
+                return element^
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        return (0, self._inner.bounds()[1])
+
+
+@inline(.always)
+def filter[
+    origin: ImmOrigin,
+    IterableType: Iterable,
+    //,
+    Function: def(IterableType.IteratorType[origin].Element) -> Bool,
+](
+    ref[origin] iterable: IterableType, var function: Function
+) -> _FilterIterator[Function] where conforms_to(
+    IterableType.IteratorType[origin].Element, Deinitable
+):
+    """Returns an iterator that yields the elements of the input iterable for
+    which `function` returns `True`.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+        Function: The type of the predicate.
+
+    Args:
+        iterable: The iterable to filter.
+        function: The predicate that decides whether to keep each element.
+
+    Returns:
+        A filter iterator that yields the elements `function` accepts.
+
+    Examples:
+
+    ```mojo
+    var l = [1, 2, 3, 4]
+
+    # outputs:
+    # 2
+    # 4
+    for elem in filter(l, lambda (x: Int) -> Bool: x % 2 == 0):
+        print(elem)
+    ```
+    """
     return {
-        rebind_var[_MapIterator[function].InnerIteratorType](iter(iterable^))
+        iter(iterable),
+        function^,
     }
+
+
+@inline(.always)
+def filter[
+    IterableType: IterableOwned,
+    //,
+    Function: def(IterableType.IteratorOwnedType.Element) -> Bool,
+](var iterable: IterableType, var function: Function) -> _FilterIterator[
+    Function
+] where conforms_to(IterableType.IteratorOwnedType.Element, Deinitable):
+    """Returns an iterator that yields the elements of the input iterable for
+    which `function` returns `True`, consuming the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+        Function: The type of the predicate.
+
+    Args:
+        iterable: The iterable to consume and filter.
+        function: The predicate that decides whether to keep each element.
+
+    Returns:
+        A filter iterator that yields the elements `function` accepts.
+    """
+    return {iter(iterable^), function^}
 
 
 # ===-----------------------------------------------------------------------===#
@@ -794,7 +913,7 @@ struct _PeekableIterator[InnerIterator: Iterator](
     ) and conforms_to(Self.InnerIterator.Element, Copyable):
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
@@ -806,8 +925,8 @@ struct _PeekableIterator[InnerIterator: Iterator](
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var peek_len = 1 if self._next else 0
         var lower, upper = self._inner.bounds()
-        if upper:
-            return (lower + peek_len, upper.value() + peek_len)
+        if case .Some(upper) = upper:
+            return (lower + peek_len, upper + peek_len)
         else:
             return (lower + peek_len, None)
 
@@ -907,7 +1026,7 @@ struct _ChainedIterator[*Ts: Iterator](
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> Self.Element:
         comptime for i in range(Self._Iterators.__len__()):
             if self._idx <= i:
@@ -926,12 +1045,11 @@ struct _ChainedIterator[*Ts: Iterator](
 
             var lb, ub = self._iterators[i].bounds()
             final_lb = final_lb + min(lb, Int.MAX - final_lb)
-            if final_ub and ub:
-                final_ub = final_ub.unsafe_value() + min(
-                    ub.unsafe_value(), Int.MAX - final_ub.unsafe_value()
-                )
-            else:
-                final_ub = None
+            match (final_ub, ub):
+                case (.Some(total), .Some(upper)):
+                    final_ub = total + min(upper, Int.MAX - total)
+                case _:
+                    final_ub = None
         return final_lb, final_ub
 
 
@@ -981,13 +1099,12 @@ def chain[
     __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
     res._idx = 0
 
-    @__parameter
-    def init_elt[idx: Int](var elt: iterables.Ts[idx]):
+    def init_elt[idx: Int](var elt: iterables.Ts[idx]) {mut res}:
         Pointer(to=res._iterators[idx]).unsafe_write(
             rebind_var[type_of(res._iterators[idx])](iter(elt^))
         )
 
-    iterables^.consume_elements[init_elt]()
+    iterables^.consume_elements(init_elt)
 
 
 # ===-----------------------------------------------------------------------===#

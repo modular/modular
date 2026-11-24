@@ -52,6 +52,9 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
 
   bool crashReportingEnabled = Telemetry::isCrashReportingEnabled(settings);
 
+  // Unconditional: writing the annotation does not depend on Crashpad starting.
+  installLLVMFatalErrorHandler();
+
   // Enable crash logging, if appropriate.
   if (!isProductionBuild() && !crashReportingEnabled)
     Init::registerDevelopmentSignalHandler(programName);
@@ -60,8 +63,8 @@ ErrorOr<ContextRef> createContextImpl(StringRef programName,
     // The crash lane must carry the same machine/session IDs as the usage
     // telemetry lane so crash reports can be joined with usage events.
     const auto &localIDs = Telemetry::createLocalIDs();
-    initCrashpadForProgram(programName, localIDs.machine, localIDs.session,
-                           &settings);
+    initCrashpadForProgram(programName, localIDs.machine,
+                           localIDs.machineSource, localIDs.session, &settings);
   }
 
   // TelemetryContext created and added to the Context here as Config is

@@ -1,0 +1,13 @@
+{
+  "target": "argsort",
+  "spec": {
+    "n": 512,
+    "ascending": 1,
+    "dist": 0,
+    "data_seed": 12345
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "Two 256-element blocks: original kernel fails the exact sorted-value reference; fixed kernel passes on B200.",
+  "findings": []
+}

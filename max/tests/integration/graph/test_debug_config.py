@@ -118,6 +118,9 @@ class TestValuePropertyDefaults:
     def test_ir_output_dir_default(self) -> None:
         assert InferenceSession.debug.ir_output_dir == ""
 
+    def test_uninitialized_read_mode_default(self) -> None:
+        assert InferenceSession.debug.uninitialized_read_mode == ""
+
 
 class TestValuePropertySetters:
     """Value properties should accept and return the assigned value."""
@@ -138,6 +141,64 @@ class TestValuePropertySetters:
         dir_path = str(tmp_path)
         InferenceSession.debug.ir_output_dir = dir_path
         assert InferenceSession.debug.ir_output_dir == dir_path
+
+    def test_uninitialized_read_mode_set(self) -> None:
+        InferenceSession.debug.uninitialized_read_mode = "report"
+        assert InferenceSession.debug.uninitialized_read_mode == "report"
+
+
+# ---------------------------------------------------------------------------
+# Uninitialized-read mode wiring into InferenceSession
+# ---------------------------------------------------------------------------
+
+
+def _session_mojo_defines(
+    monkeypatch: pytest.MonkeyPatch,
+) -> dict[str, bool | int | str]:
+    """Builds a session and returns the Mojo defines its constructor set."""
+    # The check appends to this env var; delenv restores it on teardown.
+    monkeypatch.delenv("MODULAR_DEBUG_DEVICE_ALLOCATOR", raising=False)
+    defines: dict[str, bool | int | str] = {}
+
+    def record(
+        self: InferenceSession, key: str, value: bool | int | str
+    ) -> None:
+        defines[key] = value
+
+    monkeypatch.setattr(InferenceSession, "_set_mojo_define", record)
+    InferenceSession()
+    return defines
+
+
+class TestUninitializedReadMode:
+    """The mode is validated and mapped to a Mojo define when a session is built."""
+
+    @pytest.mark.parametrize(
+        ("mode", "define"),
+        [("", "true"), ("abort", "true"), ("report", "report")],
+    )
+    def test_mode_maps_to_mojo_define(
+        self, monkeypatch: pytest.MonkeyPatch, mode: str, define: str
+    ) -> None:
+        InferenceSession.debug.uninitialized_read_check = True
+        InferenceSession.debug.uninitialized_read_mode = mode
+        defines = _session_mojo_defines(monkeypatch)
+        assert defines["MOJO_STDLIB_SIMD_UNINIT_CHECK"] == define
+
+    def test_mode_ignored_without_check(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        InferenceSession.debug.uninitialized_read_mode = "report"
+        defines = _session_mojo_defines(monkeypatch)
+        assert "MOJO_STDLIB_SIMD_UNINIT_CHECK" not in defines
+
+    def test_invalid_mode_rejected(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        InferenceSession.debug.uninitialized_read_check = True
+        InferenceSession.debug.uninitialized_read_mode = "warn"
+        with pytest.raises(ValueError, match="Invalid uninitialized read mode"):
+            _session_mojo_defines(monkeypatch)
 
 
 def _run_with_env(

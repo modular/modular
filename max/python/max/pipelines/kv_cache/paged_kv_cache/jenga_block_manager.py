@@ -23,35 +23,196 @@ different caches. This allows the memory to be fungible between the caches.
 from __future__ import annotations
 
 import logging
+import os
+import time
 from bisect import bisect_left
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from itertools import chain
 
-from max.nn.kv_cache import KVCacheGroupId
-from max.nn.kv_cache.metrics import KVCacheMetrics
+from max._core.driver import _batch_copy_rows
+from max._kv_core import longest_joint_prefix_hit
+from max.driver import Buffer
+from max.nn.kv_cache import KVCacheGroupId, KVLeafRegion
+from max.nn.kv_cache.cache_params import KVCacheMemory
+from max.nn.kv_cache.metrics import (
+    ConnectorLookupAnswer,
+    ConnectorLookupDrop,
+    KVCacheMetrics,
+)
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.kv_connector import BlockCount, KVConnector
+from max.pipelines.kv_cache.kv_connector import (
+    BlockCount,
+    CompletedLookup,
+    CompletedTransfer,
+    KVConnector,
+    KVLoadAbandoned,
+    KVLoadFailed,
+    KVLoadRefused,
+    KVLookup,
+    KVProbe,
+    KVTransfer,
+    writeback_blocks_of,
+)
 from max.pipelines.modeling.types import RequestID
 from max.profiler import traced
 from max.support.math import ceildiv
 
-from .block_manager import (
-    CompletedTransfer,
-    KVConnectorTransfer,
+from ..checkpoint import (
+    Checkpointer,
+    CheckpointerFactory,
+    CheckpointEvent,
+    CheckpointEventKind,
+)
+from ._common import (
     PrefixCacheHits,
     _compute_seq_len,
+    _OnloadSplice,
     _resolve_only_use_kv_connector_last_level_cache,
     compute_block_hashes,
 )
 from .block_utils import InsufficientBlocksError, KVHashAlgo, LittleKVCacheBlock
-from .jenga_block_pool import JengaBlockPool
+from .jenga_block_pool import (
+    _TOP_BLOCK_FRACTION,
+    JengaBlockPool,
+    _pristine_pool_can_satisfy,
+    min_huge_bid_for_top_fraction,
+)
 from .kv_group_coordinator import (
     FullKVGroupCoordinator,
     KVGroupCoordinatorInterface,
     SlidingWindowKVGroupCoordinator,
 )
+from .recurrent_coordinator import (
+    RecurrentKVGroupCoordinator,
+)
+from .scratch_coordinator import (
+    ScratchKVGroupCoordinator,
+)
 
 logger = logging.getLogger("max.pipelines")
+
+# A request waits this long on one lookup before it is served as a miss. Half
+# the dKV client's 10 s plan TTL, so an answer still leaves time to load it.
+# Each re-ask gets its own deadline.
+_CONNECTOR_LOOKUP_TIMEOUT_S = 5.0
+
+# How long a peer write-back that has not landed holds back the offloads that
+# follow it in their chains. Past that they settle unordered, which costs only
+# the brief hole the hold exists to close, while holding them for good would
+# pin their pages for good. Kept below dKV's TRANSFER_DEADLINE (5 s,
+# dkv-connector-pyo3/src/transfer.rs), past which a poll force-settles a
+# transfer inline on the scheduler thread: a run whose write-back went out in
+# the same `offload` call is released a second before its own deadline, and a
+# run posted a forward later is released earlier still, so the poll that
+# registers it normally finds its copy landed.
+_PEER_WRITEBACK_HOLD_TIMEOUT_S = 4.0
+
+# How often one request's connector lookup is asked again because the device
+# hit it was asked past shrank before the answer was read. Past that a shrink
+# is computed, so constant eviction cannot hold the request out of the batch
+# for good.
+_MAX_CONNECTOR_LOOKUP_REASKS = 2
+
+# How often the scheduler may hand back one request's answered lookup. Its own
+# budget, so a request passed over in its queue keeps the re-asks a later
+# shrink needs. Past that an answer is kept, so a queue that keeps passing the
+# request over cannot hold it out of the batch for good.
+_MAX_CONNECTOR_LOOKUP_HAND_BACKS = 2
+
+# An answered lookup younger than this is kept for a request still waiting in
+# its queue rather than handed back, because asking again costs another
+# leased read with its pins and G2 stages. One older is asked again when it is
+# consumed, counted as a hand back, because its lease may lapse before the
+# load reaches the store and a refused load serves the request as a miss.
+# Counted from the lookup's start, which precedes its lease, so at least 3 s
+# of the 10 s lease remain, several forward passes for a request popped just
+# under it to load. The lease is the shorter of dkv-connector's
+# DEFAULT_PLAN_TTL and the server's DKV_READER_LEASE_DEADLINE, and neither
+# reaches Python, so this has to follow them by hand.
+_LOOKUP_HAND_BACK_AGE_S = 7.0
+
+# A pricing probe still unanswered this long after its start is read as
+# unanswered for good, so a connector that never answers holds no pricing up.
+# Set to the lookup hold, which bounds how long the request's turn in its
+# queue keeps the prompts behind it waiting.
+_PRESENCE_PROBE_AGE_S = 5.0
+
+# A probed miss older than this no longer skips a lease. Two requests
+# sharing a prefix that both probe a miss at once are the DP balancer's
+# common case, and the first to run offloads that prefix while the second
+# waits its turn, so a miss is trusted only for about as long as a prefill
+# chunk and its offload take to land in the store. Past that the lease
+# decides, as it did without the probe.
+_PROBED_MISS_AGE_S = 1.0
+
+# A probed co-located run older than this no longer moves where a lease
+# starts its overlapped peer read. A run goes stale only through eviction,
+# and a run that shrank costs the lease one serial peer read from where the
+# co-located run really ends, so it is trusted longer than a miss. Set to
+# Mach's bound for the same run, engine-kv's PREFETCH_FRESH.
+_PROBED_RUN_AGE_S = 5.0
+
+ASYNC_PRESENCE_ENV_VAR = "MAX_SERVE_CONNECTOR_ASYNC_PRESENCE"
+"""Whether DP balance pricing starts the connector's presence probe.
+
+1 by default. 0 asks the blocking probe on the scheduler thread, as before
+the started form existed, and with no started probe no miss spares a lease.
+"""
+
+PROBED_MISS_SKIP_ENV_VAR = "MAX_SERVE_CONNECTOR_PROBED_MISS_SKIP"
+"""Whether a fresh miss from the started probe spares the first lease.
+
+1 by default. 0 keeps pricing on the started probe but leaves every lease to
+run, so a request whose prefix a sibling is still offloading loads it rather
+than computing it again. It also stops a connector whose probe is its lookup,
+such as the tiered one, from loading from the probe's answer, so its first
+allocation looks up again.
+"""
+
+# TODO(sgarcia): Make this the default or remove it once a dKV workload
+# shows what it does to the shrink_reask drops, connector_lookup_shrink_depths
+# and connector_lookup_shrink_cap_blocks.
+REFRESH_LOOKUP_DEVICE_HIT_ENV_VAR = (
+    "MAX_SERVE_CONNECTOR_LOOKUP_REFRESH_DEVICE_HIT"
+)
+"""Whether a deferred lookup refreshes the device hit it was asked past.
+
+0 by default, which only counts the hit, so eviction can shrink it while the
+connector answers and the answer is then asked again or dropped. 1 moves
+this replica's pages of the hit to the recently used end of the LRU as each
+lookup starts and holds none of them, so eviction reaches the hit after
+every older commit. The hit can still shrink under enough pressure, and the
+re-ask path still covers that.
+"""
+
+
+def _env_flag(name: str, default: bool = True) -> bool:
+    value = os.getenv(name, "1" if default else "0")
+    if value not in ("0", "1"):
+        raise ValueError(f"{name} must be 0 or 1, got {value!r}")
+    return value == "1"
+
+
+@dataclass(frozen=True)
+class _QueuedOffload:
+    """One entry the next ``offload`` sends, and what orders it.
+
+    ``parent_hash`` is the hash of the block before the entry in its request's
+    chain, the same on every leaf, or ``None`` for an entry that starts the
+    chain or does not stream, as a checkpoint does. ``writeback`` marks
+    peer-filled hashes written back to the connector's own tier, which
+    ``offload`` counts in the write-back metrics as it walks them.
+    ``orphaned`` marks a write-back whose request let its pages go, by a
+    rollback or a release before the copy landed: a hash missing by the
+    offload is then a block nobody wrote back, counted as dropped rather than
+    evicted.
+    """
+
+    hashes: Mapping[str, Sequence[bytes]]
+    parent_hash: bytes | None = None
+    writeback: bool = False
+    orphaned: bool = False
 
 
 @dataclass
@@ -61,46 +222,542 @@ class _PendingTransfer:
     ``blocks`` are pinned per leaf until the copy lands, so nothing evicts or
     reuses them mid-copy. ``commit_hashes`` is set only for onloads, whose
     prefix-cache publish is deferred until the H2D has actually landed.
+    ``parent_hash`` is the hash before an offloaded run, or before an
+    onload's first block, in its chain, and ``publishes`` what a peer
+    write-back, or an offload held behind one, publishes once it settles. An
+    offload whose ``parent_hash`` is unpublished settles behind it, until a
+    write-back's ``hold_deadline`` passes.
     """
 
-    event: KVConnectorTransfer
+    event: KVTransfer
     blocks: dict[str, list[LittleKVCacheBlock]]
     commit_hashes: list[bytes] | None = None
+    splice: _OnloadSplice | None = None
+    parent_hash: bytes | None = None
+    publishes: frozenset[bytes] = frozenset()
+    hold_deadline: float | None = None
+    hold_expired: bool = False
+    held_since: float | None = None
+
+    def pinned_blocks(self) -> Iterator[LittleKVCacheBlock]:
+        """Every block this transfer pins, across all its leaves."""
+        return chain.from_iterable(self.blocks.values())
+
+
+class _PendingLookup:
+    """A connector lookup one ``alloc`` started for a later one to consume.
+
+    Asked over the request's hashes from ``first_block`` on, counted from its
+    committed index, because the device tier was expected to serve the blocks
+    before that. The ``alloc`` that consumes it takes the device hit for real
+    and reads the answer from wherever that hit ends.
+
+    It reads answered once the connector answers, once polling the handle
+    raises, or once it has been out for ``_CONNECTOR_LOOKUP_TIMEOUT_S``. The
+    last two hand the handle back at once and read as a miss, so a request
+    is never held out of the batch for good and an idle engine does not
+    keep polling a lookup that will never answer.
+
+    ``on_drop`` counts the drop when the handle goes back, including a
+    give-up inside a poll. ``hint`` is the cache hint the lookup was asked
+    with, kept to label that count.
+    """
+
+    def __init__(
+        self,
+        connector: KVConnector,
+        handle: KVLookup,
+        first_block: int,
+        started_at: float,
+        hint: bytes | None,
+        on_drop: Callable[
+            [_PendingLookup, ConnectorLookupDrop, int | None], None
+        ],
+    ) -> None:
+        self.handle = handle
+        self.first_block = first_block
+        self.hint = hint
+        self.missed = False
+        # The run the answer offered, once a drop count has read it.
+        self.answer_run: int | None = None
+        self._connector = connector
+        self._on_drop = on_drop
+        self._started_at = started_at
+        self._answered = False
+        self._returned = False
+        self._masks: Mapping[str, Sequence[bool]] | None = None
+
+    def masks(self) -> Mapping[str, Sequence[bool]]:
+        """Returns the connector's answer, reading the handle only once.
+
+        A handle is read once by contract, but the answer is read both by
+        :meth:`JengaBlockManager.active_length_after_alloc` and by the
+        ``alloc`` that loads from it.
+        """
+        if self._masks is None:
+            self._masks = self.handle.masks()
+        return self._masks
+
+    def is_answered(self) -> bool:
+        """Returns whether the lookup can be consumed.
+
+        Never blocks and never raises.
+        """
+        if self._answered:
+            return True
+
+        try:
+            complete = self.handle.is_complete()
+        except Exception:
+            logger.exception(
+                "polling a %s lookup failed, so its request is served as a "
+                "cache miss",
+                self._connector.name,
+            )
+            self._give_up("poll_failed")
+            return True
+
+        if complete:
+            self._answered = True
+        elif time.monotonic() - self._started_at >= _CONNECTOR_LOOKUP_TIMEOUT_S:
+            logger.warning(
+                "a %s lookup did not answer within %.1f s, so its request is "
+                "served as a cache miss",
+                self._connector.name,
+                _CONNECTOR_LOOKUP_TIMEOUT_S,
+            )
+            self._give_up("timeout")
+        return self._answered
+
+    def age_s(self) -> float:
+        """Returns how long ago the lookup started, in seconds."""
+        return time.monotonic() - self._started_at
+
+    def is_stale(self) -> bool:
+        """Returns whether the answer is too old to load.
+
+        Never polls the handle, so asking before an alloc takes nothing.
+        """
+        return (
+            self._answered
+            and not self.missed
+            and self.age_s() >= _LOOKUP_HAND_BACK_AGE_S
+        )
+
+    def known_masks(self) -> Mapping[str, Sequence[bool]] | None:
+        """Returns the answer if it is in hand, or ``None``.
+
+        Never polls the handle, so counting a drop cannot change when an
+        answer is seen. ``None`` for a lookup given up on and for one not
+        yet seen to answer.
+        """
+        if self.missed:
+            return None
+        if (
+            self._masks is None
+            and not self._answered
+            and not isinstance(self.handle, CompletedLookup)
+        ):
+            return None
+        return self.masks()
+
+    def abandon(
+        self, reason: ConnectorLookupDrop, blocks: int | None = None
+    ) -> None:
+        """Hands the handle back, once however often this is called.
+
+        Only the call that hands it back counts the drop, under ``reason``,
+        costing ``blocks`` when the caller measured them.
+        """
+        if self._returned:
+            return
+        self._returned = True
+        try:
+            self._on_drop(self, reason, blocks)
+        finally:
+            self._connector.abandon_lookup(self.handle)
+
+    def _give_up(self, reason: ConnectorLookupDrop) -> None:
+        """Hands the handle back and reads as a miss from now on."""
+        self.missed = True
+        self._answered = True
+        self.abandon(reason)
+
+
+class _PendingProbe:
+    """A connector probe started when a request was priced, read later.
+
+    Asked over ``hashes``, the request's whole chain, so the answer covers
+    wherever the request's device hit ends when it is read. Pricing reads
+    it again while the request waits in its pool, and the request's first
+    allocation reads it to skip the lease a miss would have found nothing
+    with, and hands the lease the co-located run it found. It is never
+    waited on: a handle that has not answered, that raised when polled, or
+    that answered nothing reads as no answer, and the lease decides what
+    the connector holds as it did without a probe.
+    """
+
+    _logged_failure = False
+
+    def __init__(
+        self,
+        connector: KVConnector,
+        handle: KVProbe,
+        hashes: list[bytes],
+        started_at: float,
+    ) -> None:
+        self.hashes = hashes
+        self._connector = connector
+        self._handle = handle
+        self._started_at = started_at
+        self._answers: Sequence[Mapping[str, Sequence[bool]]] | None = None
+        self._runs: Sequence[Mapping[str, int]] | None = None
+        self._answered = False
+
+    def age_s(self) -> float:
+        """Returns how long ago the probe started, in seconds."""
+        return time.monotonic() - self._started_at
+
+    def is_answered(self) -> bool:
+        """Returns whether the probe is done answering. Never blocks or raises.
+
+        Sticky: a probe read as done is never polled again, so one that
+        answers after its age ran out stays unanswered.
+        """
+        if self._answered:
+            return True
+        try:
+            if self._handle.is_complete():
+                self._answers = self._handle.masks()
+                self._answered = True
+                self._runs = self._read_runs()
+        except Exception:
+            # Once per process, since a connector that fails one read fails
+            # every request's, and the scheduler thread logs each.
+            log = (
+                logger.debug
+                if _PendingProbe._logged_failure
+                else logger.exception
+            )
+            _PendingProbe._logged_failure = True
+            log(
+                "reading a %s presence answer failed, so its request is "
+                "priced from the device tier alone",
+                self._connector.name,
+                exc_info=True,
+            )
+            self._answered = True
+        if not self._answered and self.age_s() >= _PRESENCE_PROBE_AGE_S:
+            self._answered = True
+        return self._answered
+
+    def answers(self) -> Sequence[Mapping[str, Sequence[bool]]] | None:
+        """Returns the probe's answer per replica, or ``None`` without one."""
+        if not self.is_answered():
+            return None
+        return self._answers
+
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Returns the co-located run per replica and leaf, or ``None``."""
+        if not self.is_answered():
+            return None
+        return self._runs
+
+    def _read_runs(self) -> Sequence[Mapping[str, int]] | None:
+        """Reads the answered handle's co-located runs, ``None`` if it raises.
+
+        The runs only move where a lease starts its peer read, so a handle
+        that fails here keeps its masks.
+        """
+        try:
+            return self._handle.colocated_runs()
+        except Exception:
+            logger.debug(
+                "reading a %s presence answer's co-located runs failed",
+                self._connector.name,
+                exc_info=True,
+            )
+            return None
+
+
+class _PendingLookupTransfer:
+    """What ``alloc`` returns while the connector is still answering a lookup.
+
+    Nothing is in flight into device memory, so there is nothing to pin and
+    nothing to drain. It reads complete once the lookup can be consumed,
+    which is the scheduler's cue to run ``alloc`` again.
+    """
+
+    def __init__(self, lookup: _PendingLookup) -> None:
+        self._lookup = lookup
+        self._polled = False
+
+    def is_complete(self) -> bool:
+        """Returns whether the lookup can be consumed.
+
+        Never blocks and never raises. The first poll repeats the unanswered
+        reading ``alloc`` took rather than asking again. A lookup can answer
+        on another thread between the two, and the caller polls straight
+        after ``alloc`` to decide whether to cordon a request that holds no
+        pages yet, so reading it answered there would run the request with
+        nothing allocated.
+        """
+        if not self._polled:
+            self._polled = True
+            return False
+        return self._lookup.is_answered()
+
+    def synchronize(self) -> None:
+        """Returns at once, since no copy is in flight to wait for."""
+        return
+
+
+def _answer_past(
+    pending: _PendingLookup, num_device_blocks: int
+) -> dict[str, Sequence[bool]]:
+    """Returns the part of an answer past a device hit of that many blocks.
+
+    The lookup was asked from its ``first_block``, so a device hit that grew
+    while it was out has already served the start of the answer.
+    """
+    offset = num_device_blocks - pending.first_block
+    return {leaf_id: mask[offset:] for leaf_id, mask in pending.masks().items()}
+
+
+@dataclass(frozen=True)
+class _PageCopy:
+    """One leaf's page, fetched from another replica's device memory.
+
+    ``src_replica`` is per page so leaves of the same hit may come from
+    different replicas.
+    """
+
+    leaf_id: str
+    dst_bid: int
+    src_bid: int
+    src_replica: int
+
+
+def create_pools(
+    leaf_infos: Mapping[str, KVLeafInfo],
+    num_huge_blocks: int,
+    num_replicas: int = 1,
+) -> list[JengaBlockPool]:
+    """Returns one pool per replica, each tiling the same huge blocks."""
+    ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
+    min_huge_bid = min_huge_bid_for_top_fraction(
+        num_huge_blocks, _TOP_BLOCK_FRACTION
+    )
+    if min_huge_bid:
+        logger.warning(
+            "MODULAR_KV_JENGA_DEBUG_TOP_BLOCK_FRACTION=%s: allocating only"
+            " huge blocks %d..%d, so KV capacity is cut to that share. For"
+            " tests only.",
+            _TOP_BLOCK_FRACTION,
+            min_huge_bid,
+            num_huge_blocks - 1,
+        )
+    return [
+        JengaBlockPool(num_huge_blocks, ratios, min_huge_bid=min_huge_bid)
+        for _ in range(num_replicas)
+    ]
+
+
+def _max_seq_len_fitting_in_geometry(
+    leaves: Mapping[str, KVLeafRegion],
+    block_size: int,
+    allocatable_huge_blocks: int,
+    cache_ratios: Mapping[str, int],
+    *,
+    enable_prefix_caching: bool,
+) -> int | None:
+    """Returns the longest single request an empty pool of this geometry serves.
+
+    Binary search over the fit, which is monotonic because no leaf's demand
+    decreases with length. ``None`` when no length exhausts the pool, which
+    happens when every leaf's demand plateaus (sliding windows, states).
+
+    Args:
+        leaves: The leaves the pool serves.
+        block_size: Tokens per page.
+        allocatable_huge_blocks: Huge blocks excluding the null block.
+        cache_ratios: Little pages of each leaf per huge block.
+        enable_prefix_caching: Whether states hold a checkpoint block.
+    """
+
+    def fits(seq_len: int) -> bool:
+        num_blocks = ceildiv(seq_len, block_size)
+        demand = {
+            leaf_id: leaf.blocks_to_reserve(
+                num_blocks, enable_prefix_caching=enable_prefix_caching
+            )
+            for leaf_id, leaf in leaves.items()
+        }
+        return _pristine_pool_can_satisfy(
+            allocatable_huge_blocks, cache_ratios, demand
+        )
+
+    # No request outruns one leaf given the whole budget at the largest ratio,
+    # so that bounds the search; fitting at the bound means no finite bound.
+    upper_bound = (
+        allocatable_huge_blocks * block_size * max(cache_ratios.values())
+    )
+    search_space = upper_bound + 2
+    idx = bisect_left(
+        range(search_space), True, key=lambda seq_len: not fits(seq_len)
+    )
+    return (idx - 1) if idx < search_space else None
+
+
+def create_groups(
+    leaf_infos: Mapping[str, KVLeafInfo],
+    pools: Sequence[JengaBlockPool],
+    page_size: int,
+    *,
+    enable_prefix_caching: bool,
+) -> dict[str, KVGroupCoordinatorInterface]:
+    """Returns one coordinator per leaf, keyed by leaf id.
+
+    One per LEAF, not one per attention group. A coordinator holding several
+    leaves had to reconcile them itself -- a hash only some of them held was
+    unusable, so every residency question was an AND over its leaves -- and
+    that is the same reconcile the manager already runs across coordinators.
+    Splitting them means the rule is written once: the joint prefix hit over
+    one-leaf coordinators agrees with what a multi-leaf coordinator computed
+    internally, because ANDing inside a group then across groups is ANDing.
+
+    TODO: "group" now means "leaf" everywhere in this module. Rename the
+    concept -- ``create_groups``, ``KVGroupCoordinatorInterface``,
+    ``self._groups`` -- in a follow-up. Kept here so this change stays
+    structural and reviewable.
+    """
+    return {
+        leaf_id: create_kv_group_coordinator(
+            pools,
+            leaf_id,
+            leaf.group_id,
+            page_size,
+            enable_prefix_caching=enable_prefix_caching,
+        )
+        for leaf_id, leaf in leaf_infos.items()
+    }
 
 
 def create_kv_group_coordinator(
     pools: Sequence[JengaBlockPool],
-    leaf_ids: Sequence[str],
+    leaf_id: str,
     group_id: KVCacheGroupId,
     page_size: int,
+    *,
+    enable_prefix_caching: bool = False,
 ) -> KVGroupCoordinatorInterface:
-    """Returns the coordinator matching the group's attention pattern."""
+    """Returns the group implementation matching the leaves' access pattern."""
     if group_id.is_sliding_window():
         return SlidingWindowKVGroupCoordinator(
             pools=pools,
-            leaf_ids=leaf_ids,
+            leaf_id=leaf_id,
             group_id=group_id,
             page_size=page_size,
             window_size=group_id.window_size,
         )
-    return FullKVGroupCoordinator(
-        pools=pools, leaf_ids=leaf_ids, group_id=group_id
-    )
+    if group_id.is_full():
+        return FullKVGroupCoordinator(
+            pools=pools,
+            leaf_id=leaf_id,
+            group_id=group_id,
+            page_size=page_size,
+        )
+    if group_id.is_recurrent():
+        return RecurrentKVGroupCoordinator(
+            pools=pools,
+            leaf_id=leaf_id,
+            group_id=group_id,
+            page_size=page_size,
+            enable_prefix_caching=enable_prefix_caching,
+        )
+    if group_id.is_scratch():
+        return ScratchKVGroupCoordinator(
+            pools=pools,
+            leaf_id=leaf_id,
+            group_id=group_id,
+            page_size=page_size,
+        )
+    raise ValueError(f"no coordinator holds a {group_id} group")
 
 
 @dataclass(frozen=True)
-class KVLeaf:
-    """One cache's share of the pool, and the pages each request holds in it.
+class _RequestResumableState:
+    """Where a request can resume."""
 
-    Every leaf of a group is written in lockstep, so a request's row is the
-    same length in all of them.
+    boundaries: tuple[int, ...] = ()
+    """Page boundaries, counted in blocks, lowest first. Each cache keeps the
+    blocks needed to resume at any of them."""
+
+    committed_idx: int = -1
+    """The request's committed index when ``boundaries`` was computed. If it
+    has not changed, nothing new was committed, so ``boundaries`` is reused."""
+
+
+@dataclass
+class RequestCacheState:
+    """Everything the manager tracks for one live request."""
+
+    replica_idx: int
+
+    hashes: list[bytes] = field(default_factory=list)
+    """The chained key of each full block of the request's tokens."""
+
+    committed_idx: int = 0
+    """How far the published prefix reaches, in tokens."""
+
+    skips_connector: bool = False
+    """Whether a connector load failed for this request.
+
+    It then reads from the device tier alone until released, so a transport
+    that keeps failing costs it one attempt rather than one per admission.
     """
 
-    leaf_id: str
-    group_id: KVCacheGroupId
-    req_to_blocks: dict[RequestID, list[LittleKVCacheBlock]] = field(
-        default_factory=dict
-    )
+    failed_onload: tuple[_OnloadSplice, KVLoadFailed] | None = None
+    """An onload whose copy failed after it was spliced in, for the next
+    ``alloc`` to roll back."""
+
+    pending_lookup: _PendingLookup | None = None
+    """A connector lookup started for this request and not yet consumed."""
+
+    connector_lookup_reasks: int = 0
+    """How often the connector was asked again because the device hit
+    shrank under a lookup, which ``_MAX_CONNECTOR_LOOKUP_REASKS`` bounds."""
+
+    connector_lookup_hand_backs: int = 0
+    """How often the scheduler handed back an answered lookup, which
+    ``_MAX_CONNECTOR_LOOKUP_HAND_BACKS`` bounds."""
+
+    resumable: _RequestResumableState = _RequestResumableState()
+    """Where the request can currently resume."""
+
+    peer_loaded_hashes: dict[str, list[bytes]] = field(default_factory=dict)
+    """The hashes, per streamed leaf, a landed onload read from a remote peer
+    rather than the connector's own tier, which are written back to that tier
+    once queued for offload. An onload that landed inside an ``alloc`` waits
+    here until that alloc ends or rolls it back, either of which queues it."""
+
+    peer_onload: _OnloadSplice | None = None
+    """The in-flight onload whose transfer reports peer-filled blocks. Its
+    landing records them only while it is still this one, so an onload rolled
+    back before it landed records nothing."""
+
+    def lookup_is_stale(self) -> bool:
+        """Returns whether the answer is too old to load and is asked again.
+
+        Only while the request has hand backs left, so one whose queue keeps
+        passing it over loads its last answer rather than asking for good.
+        """
+        return (
+            self.pending_lookup is not None
+            and self.pending_lookup.is_stale()
+            and self.connector_lookup_hand_backs
+            < _MAX_CONNECTOR_LOOKUP_HAND_BACKS
+        )
 
 
 @dataclass(frozen=True)
@@ -114,23 +771,82 @@ class KVLeafInfo:
     group_id: KVCacheGroupId
 
 
+@dataclass(frozen=True, slots=True)
+class _LeafOccupancy:
+    """What one leaf holds of a replica's pool, in its own small pages."""
+
+    used: int
+    """Pages a request holds."""
+
+    evictable: int
+    """Unreferenced pages still in the prefix cache, which allocation evicts."""
+
+    empty: int
+    """Pages the leaf can allocate without evicting one of its own commits."""
+
+    total: int
+    """Pages the leaf would have if it held every allocatable huge block."""
+
+    used_huge_blocks: int
+    """Huge blocks typed to the leaf that a request holds."""
+
+    evictable_huge_blocks: int
+    """Huge blocks no request holds that are still typed to the leaf."""
+
+    @property
+    def pressure_pct(self) -> float:
+        """Returns the share of the leaf's pages neither evictable nor empty."""
+        return BlockCount(
+            free=self.evictable + self.empty, total=self.total
+        ).used_pct
+
+
+@dataclass(frozen=True, slots=True)
+class _PoolOccupancy:
+    """A snapshot of one replica's pool, per leaf."""
+
+    leaves: dict[str, _LeafOccupancy]
+
+    empty_huge_blocks: int
+    """Huge blocks no leaf has ever claimed."""
+
+
 class JengaBlockManager:
     """Assigns blocks to requests and manages prefix cache hits."""
 
+    def allocate_block(
+        self, replica_idx: int, leaf_id: str
+    ) -> LittleKVCacheBlock:
+        """Allocates bookkeeping-only blocks when there is no slab owner.
+
+        The device cache manager overrides this to initialize its memory.
+        All request mutations and allocations run on the scheduler thread.
+        """
+        return self.pools[replica_idx].alloc_block(leaf_id)
+
     def __init__(
         self,
-        leaf_infos: Mapping[str, KVLeafInfo],
-        num_huge_blocks: int,
+        pools: Sequence[JengaBlockPool],
         block_size: int,
         enable_prefix_caching: bool = True,
-        num_replicas: int = 1,
         kv_hash_algo: KVHashAlgo = "ahash64",
         kv_hash_seed: bytes | None = None,
         max_num_input_tokens: int | None = None,
         num_draft_tokens: int = 0,
         num_draft_tokens_per_step: int = 0,
         connector: KVConnector | None = None,
+        replica_kv_memory: Sequence[Mapping[str, KVCacheMemory]] | None = None,
+        enable_dp_cross_replica_prefix_copy: bool = True,
+        *,
+        groups: Mapping[str, KVGroupCoordinatorInterface],
+        leaves: Mapping[str, KVLeafRegion],
     ) -> None:
+        """Assigns blocks out of ``pools``, one per replica.
+
+        ``groups`` decides which blocks a request holds; ``leaves`` says what
+        each one costs and how the graph reaches it. ``block_size`` is in
+        tokens.
+        """
         self._block_size = block_size
         self._enable_prefix_caching = enable_prefix_caching
         self._only_use_kv_connector_last_level_cache = (
@@ -142,55 +858,78 @@ class JengaBlockManager:
         self._num_draft_tokens = num_draft_tokens
         self._num_draft_tokens_per_step = num_draft_tokens_per_step
         self._metrics = KVCacheMetrics()
-        self._num_replicas = num_replicas
 
-        ratios = {leaf_id: leaf.ratio for leaf_id, leaf in leaf_infos.items()}
-        self.pools = [
-            JengaBlockPool(num_huge_blocks, ratios) for _ in range(num_replicas)
-        ]
+        self.pools = list(pools)
+        self._num_replicas = len(self.pools)
 
-        self._leaves = {
-            leaf_id: KVLeaf(
-                leaf_id,
-                group_id=leaf_info.group_id,
-            )
-            for leaf_id, leaf_info in leaf_infos.items()
-        }
-
-        # Deduplicate in first-appearance order rather than through a set:
-        # groups are claimed and scanned in this order, so a set would make
-        # which cache gets which page depend on the run's hash seed.
-        group_ids = dict.fromkeys(
-            leaf.group_id for leaf in self._leaves.values()
+        # Per-replica device memory, keyed by leaf, used to copy committed
+        # prefix blocks between replicas. None when the caller has no buffers.
+        self._replica_kv_memory = replica_kv_memory
+        self._cross_replica_copy_enabled = (
+            enable_dp_cross_replica_prefix_copy
+            and self._num_replicas > 1
+            and replica_kv_memory is not None
         )
-        self._groups: dict[KVCacheGroupId, KVGroupCoordinatorInterface] = {
-            group_id: create_kv_group_coordinator(
-                self.pools,
-                [
-                    leaf.leaf_id
-                    for leaf in self._leaves.values()
-                    if leaf.group_id == group_id
-                ],
-                group_id,
-                self._block_size,
-            )
-            for group_id in group_ids
-        }
 
-        self._req_to_hashes: dict[RequestID, list[bytes]] = {}
-        self._req_to_committed_idx: dict[RequestID, int] = {}
-        self._req_to_replica: dict[RequestID, int] = {}
+        for leaf_id, group in groups.items():
+            assert list(group.pools) == self.pools, (
+                f"leaf {leaf_id} draws from other pools than this"
+                " manager's; both come from the same slabs or neither does"
+            )
+        # One coordinator per leaf, keyed by leaf id -- see `create_groups`.
+        self._groups: dict[str, KVGroupCoordinatorInterface] = dict(groups)
+        self._leaves = dict(leaves)
+        self._leaf_ids = list(self._groups)
+        # A leaf carrying no hash cannot be looked up, committed, or handed to
+        # an external tier, so every content-addressed path iterates these
+        # instead. Allocation and admission still cover all of them.
+        self._cacheable_groups = {
+            leaf_id: group
+            for leaf_id, group in self._groups.items()
+            if not group.group_id.is_scratch()
+        }
+        self._cacheable_leaf_ids = list(self._cacheable_groups)
+        self._requests: dict[RequestID, RequestCacheState] = {}
+        # Pricing probes by request, claimed or not: a request is priced
+        # before it is claimed, and its probe is read at its first alloc.
+        self._pending_probes: dict[RequestID, _PendingProbe] = {}
+        # Pricing's hash chain by request, until a claim takes it over. An
+        # unrun request's tokens do not change, so neither does its chain.
+        self._priced_hashes: dict[RequestID, list[bytes]] = {}
+        self._async_presence = _env_flag(ASYNC_PRESENCE_ENV_VAR)
+        self._probed_miss_skip = _env_flag(PROBED_MISS_SKIP_ENV_VAR)
+        self._refresh_lookup_device_hit = _env_flag(
+            REFRESH_LOOKUP_DEVICE_HIT_ENV_VAR, default=False
+        )
 
         # State for the KVConnector.
         self._connector = connector
+        # One bound method every lookup shares, so starting one allocates
+        # nothing to count its drop.
+        self._on_lookup_drop = self._count_lookup_drop
+        # Admission recency touches, applied once the forward has launched so
+        # they stay off the allocation path. Only recency: a block being loaded
+        # is pinned by the load. A device hit's host copy is not, so one at
+        # the tier's LRU tail can be evicted by an offload that runs first,
+        # which costs a later refetch and is accepted.
+        self._deferred_touches: list[tuple[list[bytes], int]] = []
+
+        self.with_checkpointer(Checkpointer.factory().disabled().build())
 
         self._pending_transfers: list[list[_PendingTransfer]] = [
-            [] for _ in range(num_replicas)
+            [] for _ in range(self._num_replicas)
         ]
-        # Runs of newly committed hashes awaiting an `offload` call.
-        self._pending_offloads: list[list[list[bytes]]] = [
-            [] for _ in range(num_replicas)
+        # What the next `offload` call sends, per replica: committed runs and
+        # peer write-backs, each with its parent hash, and checkpoints.
+        self._pending_offloads: list[list[_QueuedOffload]] = [
+            [] for _ in range(self._num_replicas)
         ]
+        # Queued write-backs plus tracked transfers that publish something,
+        # on every replica. While none exist nothing can be held, so the hold
+        # scans are skipped, as with the option off.
+        self._holders_outstanding = 0
+        # Blocks of abandoned loads, kept out of use for the life of the engine.
+        self._quarantined_blocks = 0
 
     # ============================================================================
     # Request Lifecycle APIs
@@ -200,138 +939,709 @@ class JengaBlockManager:
     def claim(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """Pins a request to one replica, which owns it until it is released."""
         req_id = ctx.request_id
-        existing = self._req_to_replica.get(req_id)
+        existing = self._requests.get(req_id)
         if existing is not None:
             raise ValueError(
-                f"Request is already claimed, on replica {existing}: {req_id}"
+                f"Request is already claimed, on replica "
+                f"{existing.replica_idx}: {req_id}"
             )
-        self._req_to_replica[req_id] = replica_idx
-        self._req_to_hashes[req_id] = []
-        self._req_to_committed_idx[req_id] = 0
-        for leaf in self._leaves.values():
-            leaf.req_to_blocks[req_id] = []
+        self._requests[req_id] = RequestCacheState(
+            replica_idx=replica_idx,
+            hashes=list(self._priced_hashes.pop(req_id, ())),
+        )
+        for group in self._groups.values():
+            group.claim(req_id)
+
+    @property
+    def groups(self) -> Mapping[str, KVGroupCoordinatorInterface]:
+        """The per-leaf coordinators this manager owns, keyed by leaf id."""
+        return self._groups
+
+    def populate_checkpointer(
+        self, factory: CheckpointerFactory
+    ) -> CheckpointerFactory:
+        """Populates ``factory`` with the queries this cache answers.
+
+        Disables the factory unless this cache has a connector and prefix
+        caching enabled: checkpoints are persisted through the connector, and
+        only committed blocks can be checkpointed.
+
+        Returns:
+            ``factory``, for chaining.
+        """
+        if self._connector is None or not self._enable_prefix_caching:
+            return factory.disabled()
+
+        def candidate_at_or_before(
+            request_id: RequestID, position: int
+        ) -> int | None:
+            # Only a boundary the request can resume from is resident.
+            state = self._requests.get(request_id)
+            if state is None:
+                return None
+            fits = [
+                p
+                for b in state.resumable.boundaries
+                if (p := b * self._block_size) <= position
+            ]
+            return fits[-1] if fits else None
+
+        return factory.with_candidate_at_or_before(candidate_at_or_before)
+
+    def with_checkpointer(self, checkpointer: Checkpointer) -> None:
+        """Sets the checkpointer that decides where this cache checkpoints.
+
+        A cache with a full prefix dependency is offloaded as each block
+        commits. Every other cacheable leaf is offloaded only at checkpoints,
+        unless the checkpointer takes none, in which case it streams too.
+        """
+        self._checkpointer = checkpointer
+        checkpoints = any(
+            checkpointer.handles(kind) for kind in CheckpointEventKind
+        )
+        self._streamed_leaf_ids = [
+            leaf_id
+            for leaf_id, group in self._cacheable_groups.items()
+            if group.has_full_prefix_dependency or not checkpoints
+        ]
 
     def contains(self, ctx: TextContext) -> bool:
         """Returns whether the request is registered with the block manager."""
-        return ctx.request_id in self._req_to_replica
+        return ctx.request_id in self._requests
 
     @traced
     def release(self, ctx: TextContext) -> None:
         """Frees every page the request holds, in every cache."""
+        ctx.kv_cache_write_ranges.clear()
         req_id = ctx.request_id
-        pool = self.pools[self._replica_of(ctx)]
+        replica_idx = self._replica_of(ctx)
 
-        for leaf in self._leaves.values():
-            # Free in reverse so the tail blocks become eviction candidates
-            # first: a later request sharing this prefix wants the head.
-            for block in reversed(leaf.req_to_blocks.pop(req_id)):
-                pool.free_block(block)
+        self._checkpointer.record(
+            CheckpointEvent(
+                req_id, CheckpointEventKind.RELEASE, ctx.tokens.processed_length
+            )
+        )
+        # Normally queued when the onload landed; this covers an alloc that
+        # raised before queueing what it landed. Best effort: another request
+        # may have device-hit those blocks and posted a tail past them in the
+        # meantime, which nothing held because this write-back was in neither
+        # queue.
+        self._queue_peer_writeback(self._requests[req_id])
+        self.offload(replica_idx)
 
-        del self._req_to_replica[req_id]
-        del self._req_to_hashes[req_id]
-        del self._req_to_committed_idx[req_id]
+        for group in self._groups.values():
+            group.release(req_id, replica_idx)
+
+        self._apply_deferred_touches()
+        self._touch_committed_sequence(ctx)
+
+        # The pages are already free, so the request goes before the hand
+        # back and one that raises cannot leave it claimed over them.
+        state = self._requests.pop(req_id)
+        self._pending_probes.pop(req_id, None)
+        self._priced_hashes.pop(req_id, None)
+        self._abandon_pending_lookup(state, "release")
+        self._record_lookup_retries(state)
+
+    def abandon_presence(self, ctx: TextContext) -> None:
+        """Drops the request's pricing probe, for one released unclaimed."""
+        self._pending_probes.pop(ctx.request_id, None)
+        self._priced_hashes.pop(ctx.request_id, None)
+
+    def awaits_presence(self, ctx: TextContext) -> bool:
+        """Returns whether the request's pricing probe is still out."""
+        probe = self._pending_probes.get(ctx.request_id)
+        return probe is not None and not probe.is_answered()
+
+    def _abandon_pending_lookup(
+        self, state: RequestCacheState, reason: ConnectorLookupDrop
+    ) -> None:
+        """Hands back a lookup the request started and will never load from."""
+        pending, state.pending_lookup = state.pending_lookup, None
+        if pending is not None:
+            pending.abandon(reason)
+
+    def _count_lookup_drop(
+        self,
+        pending: _PendingLookup,
+        reason: ConnectorLookupDrop,
+        blocks: int | None,
+    ) -> None:
+        """Counts a lookup whose handle goes back without a load.
+
+        ``blocks`` is what a drop at the load measured past the device hit
+        then. Elsewhere the drop costs the run the answer offered.
+        """
+        run = self._answer_run(pending)
+        answer: ConnectorLookupAnswer = (
+            "unseen" if run is None else "offered" if run else "empty"
+        )
+        self._record_lookup_drop(
+            reason,
+            answer,
+            (run or 0) if blocks is None else blocks,
+            hinted=self._routes_hint(pending.hint),
+        )
+
+    def _answer_run(self, pending: _PendingLookup) -> int | None:
+        """Returns the run a lookup's answer offered, in prompt blocks.
+
+        Counted from the lookup's ``first_block``, which is where the device
+        hit ended when it was asked. ``None`` without an answer in hand, or
+        with one too broken to read, which the load could not have used
+        either. Read once per lookup, and never raises, because it runs on
+        paths that are already unwinding.
+        """
+        if pending.answer_run is not None:
+            return pending.answer_run
+        try:
+            masks = pending.known_masks()
+            if masks is None:
+                return None
+            pending.answer_run = self._longest_connector_hit(masks)
+        except (KeyboardInterrupt, SystemExit):
+            raise
+        except BaseException:
+            # BaseException because a pyo3 PanicException is not an Exception.
+            logger.debug(
+                "counting a dropped lookup could not read its answer",
+                exc_info=True,
+            )
+            return None
+        return pending.answer_run
+
+    def _routes_hint(self, hint: bytes | None) -> bool:
+        """Returns whether a lookup asked with ``hint`` was routed by it."""
+        return (
+            hint is not None
+            and self._connector is not None
+            and self._connector.routes_hint(hint)
+        )
+
+    def _record_lookup_drop(
+        self,
+        reason: ConnectorLookupDrop,
+        answer: ConnectorLookupAnswer,
+        blocks: int,
+        *,
+        hinted: bool,
+    ) -> None:
+        """Counts one dropped lookup answer and the ``blocks`` it cost."""
+        drops = self._metrics.connector_lookup_drops
+        key = (reason, answer, hinted)
+        drops[key] = drops.get(key, 0) + 1
+        if blocks:
+            dropped = self._metrics.connector_lookup_dropped_blocks
+            blocks_key = (reason, hinted)
+            dropped[blocks_key] = dropped.get(blocks_key, 0) + blocks
+
+    def _record_lookup_shrink(self, depth: int) -> None:
+        """Counts a device hit that shrank ``depth`` blocks under a lookup."""
+        shrinks = self._metrics.connector_lookup_shrink_depths
+        shrinks[depth] = shrinks.get(depth, 0) + 1
+
+    def _record_lookup_retries(self, state: RequestCacheState) -> None:
+        """Records a released claim's re-asks and hand backs, when it had any.
+
+        Claims with none are skipped, so the common release costs two
+        compares and the distributions describe the claims that retried.
+        """
+        if state.connector_lookup_reasks:
+            reasks = self._metrics.connector_lookup_reasks_per_request
+            count = state.connector_lookup_reasks
+            reasks[count] = reasks.get(count, 0) + 1
+        if state.connector_lookup_hand_backs:
+            hand_backs = self._metrics.connector_lookup_hand_backs_per_request
+            count = state.connector_lookup_hand_backs
+            hand_backs[count] = hand_backs.get(count, 0) + 1
+
+    def _apply_deferred_touches(self) -> None:
+        """Sends the connector the admission touches queued since the last."""
+        touches, self._deferred_touches = self._deferred_touches, []
+        connector = self._connector
+        for hashes, replica_idx in touches:
+            assert connector is not None
+            connector.touch(hashes, replica_idx=replica_idx)
+
+    def _touch_committed_sequence(self, ctx: TextContext) -> None:
+        """Re-ranks the request's whole committed sequence in the external tier.
+
+        See ``BlockManager._touch_committed_sequence``: the connector orders a
+        group by the keys of one call, and a sequence is committed over several,
+        so each later commit outranks the earlier ones until this runs
+        (CLIN-1893). Best-effort; ``touch`` never raises into the caller.
+        """
+        if self._connector is None or not self._enable_prefix_caching:
+            return
+        state = self._state_of(ctx)
+        num_committed_blocks = state.committed_idx // self._block_size
+        if not num_committed_blocks:
+            return
+        self._connector.touch(
+            state.hashes[:num_committed_blocks],
+            replica_idx=self._replica_of(ctx),
+        )
 
     # ============================================================================
     # Allocation & Reuse APIs
     # ============================================================================
 
     @traced
-    def alloc(self, ctx: TextContext) -> KVConnectorTransfer:
+    def alloc(
+        self, ctx: TextContext, *, defer_lookup: bool = False
+    ) -> KVTransfer:
         """Gives every cache the pages the next forward needs.
+
+        Args:
+            ctx: The request, already claimed on a replica.
+            defer_lookup: Whether the caller holds the request out of the
+                batch while the returned transfer is incomplete and calls
+                ``alloc`` again once it completes. Only then does a
+                connector lookup run off this thread, because the request
+                holds no pages until that next call. A caller that reads
+                the request's blocks right after this one leaves it off and
+                gets the synchronous lookup, and a lookup an earlier call
+                left outstanding is then handed back rather than waited on.
+
+        Returns:
+            The transfer the caller polls before the request runs, already
+            complete when nothing was onloaded. With ``defer_lookup`` it may
+            instead track a lookup the connector has not answered, in which
+            case the request holds no pages and the next ``alloc`` finishes
+            the reuse.
 
         Raises:
             InsufficientBlocksError: If the pool cannot serve all of the
                 request's caches at once, in which case it draws nothing.
+            RuntimeError: If the request was run past an onload whose copy
+                failed, rather than held out of the batch until it landed.
         """
         replica_idx = self._replica_of(ctx)
 
         # Drain landed transfers first: their pinned pages are only returned
         # here, so skipping this leaks every offload source for the run.
         self.poll_transfers()
+        self._rollback_failed_onload(ctx, replica_idx)
 
-        transfer = self._reuse_blocks_from_prefix_cache(ctx, replica_idx)
+        committed_before = self._state_of(ctx).committed_idx
+        transfer = self._reuse_blocks_from_prefix_cache(
+            ctx, replica_idx, defer_lookup=defer_lookup
+        )
+        # The connector has not answered yet. Nothing is spliced or drawn, so
+        # there is no demand to size and nothing to roll back, and the caller
+        # holds the request out until the transfer completes.
+        if self._state_of(ctx).pending_lookup is not None:
+            return transfer
 
         self._metrics.input_tokens += ctx.tokens.active_length
 
         # Check if we have enough blocks available to satisfy the demand.
         pool = self.pools[replica_idx]
-        demand = {
-            leaf_id: self._num_blocks_to_allocate(ctx, leaf_id)
-            for leaf_id in self._leaves
-        }
+        num_required_blocks = self._num_required_blocks(ctx)
+        demand: dict[str, int] = {}
+        for group in self._groups.values():
+            demand.update(
+                group.blocks_to_allocate(ctx.request_id, num_required_blocks)
+            )
         if not pool.can_satisfy_demand(demand):
+            self._rollback_prefix_reuse(ctx, replica_idx, committed_before)
             raise InsufficientBlocksError(
                 f"Serving {demand} needs more huge blocks than are available"
             )
 
-        # Allocate the new blocks for the request.
-        for leaf_id, num_new_blocks in demand.items():
-            req_blocks = self._leaves[leaf_id].req_to_blocks[ctx.request_id]
-            for _ in range(num_new_blocks):
-                req_blocks.append(pool.alloc_block(leaf_id))
+        for group in self._groups.values():
+            group.grow(
+                ctx.request_id,
+                num_required_blocks,
+                replica_idx,
+                allocation_owner=self,
+            )
 
+        # An onload that landed in place is queued as the alloc ends, or by
+        # the rollback if the alloc rolls it back.
+        self._queue_peer_writeback(self._state_of(ctx))
         return transfer
 
     @traced
+    def starts_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether a deferred ``alloc`` would start a connector lookup.
+
+        Reads the same state the reuse would and takes nothing, so a caller
+        can decide whether it can afford the lookup before one is started.
+        A request whose outstanding lookup is consumed rather than started
+        reads ``False``, and so does one whose connector answers in place,
+        because that lookup never holds the request out. An answer too old
+        to load, or one the device hit it was asked past shrank under, is
+        asked again rather than consumed, so it reads ``True``, until the
+        request's re-asks after a shrink run out and the rest is computed.
+        A first chunk whose pricing probe answered a miss past its device
+        hit reads ``False``, since that alloc leases nothing.
+        """
+        state = self._state_of(ctx)
+        if (
+            self._connector is None
+            or not self._enable_prefix_caching
+            or ctx.tokens.processed_length != 0
+            or state.skips_connector
+            or not self._connector.defers_lookup(self._replica_of(ctx))
+        ):
+            return False
+
+        self._compute_hashes_for_request(ctx)
+        desired_hashes = state.hashes[state.committed_idx // self._block_size :]
+        num_device_blocks = self._count_device_prefix_blocks(
+            desired_hashes, self._replica_of(ctx)
+        )
+        pending = state.pending_lookup
+        if pending is None or state.lookup_is_stale():
+            remaining = desired_hashes[num_device_blocks:]
+            if not remaining or pending is not None:
+                return bool(remaining)
+            # A pricing probe that answered this chunk a miss leaves nothing
+            # to lease, so the deferred alloc starts no lookup.
+            first = state.committed_idx // self._block_size + num_device_blocks
+            return (
+                self._probed_run(ctx, self._replica_of(ctx), first, remaining)
+                != 0
+            )
+        return (
+            pending.is_answered()
+            and not pending.missed
+            and num_device_blocks < pending.first_block
+            and state.connector_lookup_reasks < _MAX_CONNECTOR_LOOKUP_REASKS
+        )
+
+    def start_lookup(self, ctx: TextContext) -> KVTransfer:
+        """Starts the lookup a deferred ``alloc`` would start, taking no pages.
+
+        For a request that has to wait its turn anyway, so the connector
+        answers while it waits. An answer that comes back at once is kept
+        for the ``alloc`` that admits the request rather than consumed here.
+
+        Returns:
+            The transfer to poll, which reads complete once the lookup can
+            be consumed, or a complete one when there was nothing to ask.
+        """
+        state = self._state_of(ctx)
+        self._compute_hashes_for_request(ctx)
+        self._connector_lookup_is_ready(
+            ctx,
+            state.hashes[state.committed_idx // self._block_size :],
+            self._replica_of(ctx),
+            start=True,
+        )
+        if state.pending_lookup is None:
+            return CompletedTransfer()
+        return _PendingLookupTransfer(state.pending_lookup)
+
+    def awaits_lookup(self, ctx: TextContext) -> bool:
+        """Returns whether the request's last ``alloc`` left a lookup out.
+
+        Such a request holds no pages, and the next ``alloc`` after the
+        lookup answers takes them. A lookup that answered inside the
+        ``alloc`` was consumed there and reads ``False``.
+        """
+        return self._state_of(ctx).pending_lookup is not None
+
+    def active_length_after_alloc(self, ctx: TextContext) -> int:
+        """Returns how many tokens the request's next deferred ``alloc`` leaves.
+
+        Settles landed transfers first and polls the request's lookup, as
+        ``alloc`` does, but takes no pages for the request, so a caller can
+        check it against a budget before ``alloc`` changes it. A failed
+        onload reads as rolled back to its whole prompt, crediting none of
+        the device hit ``alloc`` then takes again. An answered lookup reads
+        as loading the longest run its answer serves past the device hit.
+        A load the connector refuses or fails, or one the pool has no room
+        for, leaves the request more. Anything else reads the active length
+        the request has now, which reuse only shrinks, and so does a request
+        never claimed.
+        """
+        self.poll_transfers()
+        state = self._requests.get(ctx.request_id)
+        if state is None:
+            return ctx.tokens.active_length
+        if state.failed_onload is not None:
+            return ctx.tokens.processed_length + ctx.tokens.active_length
+
+        pending = state.pending_lookup
+        if (
+            pending is None
+            or not self._enable_prefix_caching
+            or ctx.tokens.processed_length != 0
+            or not pending.is_answered()
+            or state.lookup_is_stale()
+        ):
+            return ctx.tokens.active_length
+
+        self._compute_hashes_for_request(ctx)
+        desired_hashes = state.hashes[state.committed_idx // self._block_size :]
+        num_device_blocks = self._count_device_prefix_blocks(
+            desired_hashes, self._replica_of(ctx)
+        )
+        num_loaded = 0
+        if (
+            not pending.missed
+            and not state.skips_connector
+            and num_device_blocks >= pending.first_block
+        ):
+            num_loaded = self._longest_connector_hit(
+                _answer_past(pending, num_device_blocks)
+            )
+        reused = (
+            state.committed_idx
+            + (num_device_blocks + num_loaded) * self._block_size
+        )
+        return ctx.tokens.active_length - reused
+
+    def hand_back_lookup(self, ctx: TextContext) -> bool:
+        """Hands back the request's lookup without loading from it.
+
+        Only once its answer is ``_LOOKUP_HAND_BACK_AGE_S`` old, because a
+        fresher one can still be loaded once the request reaches the head of
+        its queue, and asking again costs another leased read. The request
+        then reads as starting a fresh lookup, and the hand back is counted
+        against ``_MAX_CONNECTOR_LOOKUP_HAND_BACKS``, so a request passed over
+        again and again keeps its last answer and loads it, or is served as a
+        miss, rather than asking for good. A no-op when it has none out, and
+        when its lookup already gave up, so a store that did not answer is
+        not asked again for that request.
+
+        Returns ``False`` when it kept a fresh answer, which a later call may
+        still hand back, and ``True`` when there is nothing left to hand
+        back.
+        """
+        state = self._state_of(ctx)
+        pending = state.pending_lookup
+        if (
+            pending is None
+            or pending.missed
+            or state.connector_lookup_hand_backs
+            >= _MAX_CONNECTOR_LOOKUP_HAND_BACKS
+        ):
+            return True
+        if pending.age_s() < _LOOKUP_HAND_BACK_AGE_S:
+            return False
+
+        state.connector_lookup_hand_backs += 1
+        self._abandon_pending_lookup(state, "hand_back")
+        return True
+
     def alloc_dummy(self, ctx: TextContext, replica_idx: int = 0) -> None:
         """Claims a dummy request and points it at the replica's null page."""
         self.claim(ctx, replica_idx)
-        pool = self.pools[replica_idx]
         seq_len = _compute_seq_len(
             ctx,
             num_draft_tokens=self._num_draft_tokens,
             num_draft_tokens_per_step=self._num_draft_tokens_per_step,
         )
         num_required_blocks = ceildiv(seq_len, self._block_size)
-        for leaf_id, leaf in self._leaves.items():
-            null_block = pool.null_little_blocks[leaf_id]
-            leaf.req_to_blocks[ctx.request_id] = [
-                null_block
-            ] * num_required_blocks
+        for group in self._groups.values():
+            group.grow_with_padding(
+                ctx.request_id, num_required_blocks, replica_idx
+            )
 
     @traced
     def step(self, ctx: TextContext) -> None:
-        """Records what the forward just wrote, and slides every window."""
-        replica_idx = self._replica_of(ctx)
-        pool = self.pools[replica_idx]
-        if self._enable_prefix_caching:
-            self._commit_blocks_into_prefix_cache(ctx, pool)
+        """Records what the forward just wrote and slides every window.
 
-        rows = {
-            leaf_id: leaf.req_to_blocks[ctx.request_id]
-            for leaf_id, leaf in self._leaves.items()
-        }
+        Each cache then frees the blocks the request no longer needs, keeping
+        what resuming at ``resumable``'s boundaries needs.
+        """
+        # The scheduler polls an onload itself, so the request can run on a
+        # copy that landed after the last drain. Draining it here queues its
+        # write-back ahead of the tail this step commits. The drain covers
+        # every replica's transfers, so the first such step in a batch lands
+        # the others too; revisit if `poll_transfers` grows costly.
+        if self._state_of(ctx).peer_onload is not None:
+            self.poll_transfers()
+        self._apply_deferred_touches()
+        replica_idx = self._replica_of(ctx)
+        write_ranges = ctx.kv_cache_write_ranges
+        ctx.kv_cache_write_ranges = {}
+        for leaf_id, (start, end) in write_ranges.items():
+            group = self._groups[leaf_id]
+            if not isinstance(group, SlidingWindowKVGroupCoordinator):
+                raise ValueError("Partial writes require a sliding-window leaf")
+            if not 0 <= start <= end <= ctx.tokens.processed_length:
+                raise ValueError("Write range exceeds processed tokens")
+        for leaf_id, (start, end) in write_ranges.items():
+            group = self._groups[leaf_id]
+            assert isinstance(group, SlidingWindowKVGroupCoordinator)
+            group.record_write_range(ctx.request_id, start, end)
+        for leaf_id, group in self._groups.items():
+            if (
+                isinstance(group, SlidingWindowKVGroupCoordinator)
+                and leaf_id not in write_ranges
+            ):
+                group.record_full_write(
+                    ctx.request_id, ctx.tokens.processed_length
+                )
+        keep: tuple[int, ...] = ()
+        if self._enable_prefix_caching:
+            self._commit_blocks_into_prefix_cache(ctx, replica_idx)
+            keep = self._update_resumable(ctx)
+
         num_filled_blocks = self._num_filled_blocks(ctx)
         for group in self._groups.values():
-            group.null_pad_blocks(rows, num_filled_blocks, replica_idx)
+            group.advance(
+                ctx.request_id, num_filled_blocks, replica_idx, keep=keep
+            )
+
+    def _update_resumable(self, ctx: TextContext) -> tuple[int, ...]:
+        """Returns where the request can resume, and records it on the request.
+
+        That is the committed boundary and, on the step that commits past the
+        end of a page-aligned prompt, the boundary a replay of it resumes from,
+        each only if every cache holds what resuming there needs.
+        """
+        state = self._state_of(ctx)
+        last = state.resumable
+        if (
+            last.committed_idx == state.committed_idx
+            and len(last.boundaries) <= 1
+        ):
+            return last.boundaries
+        candidates: list[int] = []
+        if self._checkpointer.handles(CheckpointEventKind.END_OF_PROMPT) and (
+            replay := self._distinct_replay_boundary(
+                ctx, last.committed_idx, state.committed_idx
+            )
+        ):
+            candidates.append(replay)
+        candidates.append(state.committed_idx // self._block_size)
+        state.resumable = _RequestResumableState(
+            tuple(
+                b for b in candidates if self._resumable_at(ctx.request_id, b)
+            ),
+            state.committed_idx,
+        )
+        return state.resumable.boundaries
+
+    def _distinct_replay_boundary(
+        self, ctx: TextContext, start: int, end: int
+    ) -> int | None:
+        """Returns where a replay resumes, if not where the prompt's end commits.
+
+        Only for a prompt that ends after ``start`` and at or before ``end``.
+        A replay recomputes the prompt's last token, so it resumes at the
+        start of the page holding that token. Unless the prompt ends on a page
+        boundary, that is the boundary its end commits, and this returns
+        ``None``.
+        """
+        prompt_end = ctx.tokens.prompt_length
+        if prompt_end % self._block_size or not start < prompt_end <= end:
+            return None
+        return prompt_end // self._block_size - 1 or None
+
+    def _publishes_states(self, ctx: TextContext) -> bool:
+        """Whether the forward that just ran may publish its recurrent state.
+
+        Not when it ends a page-aligned prompt whose replay can already
+        resume; the request keeps that state and continues in place.
+        """
+        state = self._state_of(ctx)
+        replay = self._distinct_replay_boundary(
+            ctx, state.committed_idx, ctx.tokens.processed_length
+        )
+        return not (
+            self._checkpointer.handles(CheckpointEventKind.END_OF_PROMPT)
+            and replay in state.resumable.boundaries
+        )
 
     def get_prefix_cache_hit_counts(
         self, ctx: TextContext
     ) -> list[PrefixCacheHits]:
         """Counts the number of prefix cache hits for a request per replica.
 
+        With cross-replica copies on, the replicas holding the longest local
+        run also count what copies from peers would add, without checking
+        there is room to copy it in; the rest count what they hold. The
+        external count comes from one connector probe over the whole chain. A
+        connector that can start its probe has it started on the first call,
+        and the request counts its device tier alone until the probe
+        answers (see :meth:`awaits_presence`). The probe is kept for the
+        request's first deferred allocation. A probe that covers only one
+        representative leaf can count more than an admit serves when
+        another leaf holds less. A connector with no probe is asked with an
+        advisory ``lookup`` per replica instead.
+
         Returns:
             A list of PrefixCacheHits for each replica.
         """
-        desired_hashes = self._compute_block_hashes(ctx, [])
-        hit_counts: list[PrefixCacheHits] = []
-        for replica_idx in range(self._num_replicas):
-            num_hit_blocks = self._find_longest_device_prefix_cache_hit(
-                desired_hashes, replica_idx
+        connector = self._connector
+        probe = self._pending_probes.get(ctx.request_id)
+        desired_hashes = (
+            probe.hashes
+            if probe is not None
+            else self._priced_hashes.get(ctx.request_id)
+        )
+        if desired_hashes is None:
+            desired_hashes = self._compute_block_hashes(ctx, [])
+            self._priced_hashes[ctx.request_id] = desired_hashes
+        device_hits = [
+            self._find_longest_device_prefix_cache_hit(
+                desired_hashes, replica_idx, False
             )
-            # Ask the connector to load the hashes that are remaining.
-            (num_hit_host_blocks, num_hit_disk_blocks) = (
-                self._connector.count_cached_prefix(
-                    desired_hashes[num_hit_blocks:]
+            for replica_idx in range(self._num_replicas)
+        ]
+        if self._cross_replica_copy_enabled:
+            # Crediting copies to every replica would price them all the same
+            # and route requests away from the replica holding their prefix.
+            best = max(device_hits)
+            cross = self._find_longest_cross_replica_hit(
+                desired_hashes, device_hits.index(best), best
+            )
+            device_hits = [
+                cross if num_hit_blocks == best else num_hit_blocks
+                for num_hit_blocks in device_hits
+            ]
+        probed = None
+        if connector is not None and any(
+            num_hit_blocks < len(desired_hashes)
+            for num_hit_blocks in device_hits
+        ):
+            if probe is None:
+                probe = self._start_presence_probe(ctx, desired_hashes)
+            if probe is not None:
+                probed = probe.answers()
+            else:
+                probed = connector.probe(
+                    desired_hashes,
+                    range(self._num_replicas),
+                    hint=ctx.dkv_cache_hint,
                 )
-                if self._connector is not None
-                else (0, 0)
-            )
+
+        hit_counts: list[PrefixCacheHits] = []
+        for replica_idx, num_hit_blocks in enumerate(device_hits):
+            remaining = desired_hashes[num_hit_blocks:]
+            if connector is None or not remaining:
+                num_external_blocks = 0
+            elif probed is not None:
+                num_external_blocks = self._longest_connector_hit(
+                    {
+                        leaf_id: mask[num_hit_blocks:]
+                        for leaf_id, mask in probed[replica_idx].items()
+                    },
+                    covered_only=True,
+                )
+            elif probe is not None:
+                # Out, or answered nothing: the external run is unknown and
+                # priced as none rather than asked for on this thread.
+                num_external_blocks = 0
+            else:
+                num_external_blocks = (
+                    self._find_longest_connector_prefix_cache_hit(
+                        remaining,
+                        replica_idx,
+                        ctx.dkv_cache_hint,
+                        chain_start=num_hit_blocks,
+                    )
+                )
             hit_counts.append(
                 PrefixCacheHits(
                     device_blocks=num_hit_blocks,
-                    host_blocks=num_hit_host_blocks,
-                    disk_blocks=num_hit_disk_blocks,
+                    external_blocks=num_external_blocks,
                 )
             )
         return hit_counts
@@ -349,29 +1659,82 @@ class JengaBlockManager:
 
     @traced
     def offload(self, replica_idx: int = 0) -> None:
-        """Offloads the recently produced KV states to the connector."""
+        """Offloads the recently committed blocks and the pending checkpoints.
+
+        A checkpoint offloads what each leaf needs to resume at it, except
+        the leaves streamed as they commit. A leaf with a full prefix
+        dependency stops at its first missing block, since a reload needs
+        everything before it. A windowed leaf skips a missing block instead:
+        each block it published is a whole page of valid KV, and a window
+        reload needs only its own window, so the blocks past a gap (a page
+        never fully written, or one evicted since it was queued) still serve
+        the windows that do not contain it. A request holds its committed
+        blocks until it is released, which offloads first, and keeps what a
+        checkpoint reads until after the next offload, so only a streamed
+        leaf that frees blocks as it slides can have evicted one.
+        """
         connector = self._connector
         if connector is None:
             return
+        for checkpoint in self._checkpointer.checkpoint():
+            state = self._requests[checkpoint.request_id]
+            num_blocks = checkpoint.position // self._block_size
+            needed: dict[str, Sequence[bytes]] = {}
+            for leaf_id, group in self._cacheable_groups.items():
+                if leaf_id in self._streamed_leaf_ids:
+                    continue
+                held = group.blocks_held_of_connector_hit(num_blocks)
+                needed[leaf_id] = state.hashes[num_blocks - held : num_blocks]
+            if needed:
+                self._pending_offloads[state.replica_idx].append(
+                    _QueuedOffload(needed)
+                )
+        if not self._pending_offloads[replica_idx]:
+            return
         pool = self.pools[replica_idx]
-        for hashes in self._pending_offloads[replica_idx]:
+        # A run whose parent is unpublished is held, here at posting as
+        # `poll_transfers` holds it later. A checkpoint carries no parent and
+        # is never held: write-back covers streamed leaves only.
+        now = time.monotonic()
+        unpublished = (
+            self._unpublished_hashes(now, skip_queued=replica_idx)
+            if self._holders_outstanding
+            else set()
+        )
+        for queued in self._pending_offloads[replica_idx]:
             src: dict[str, list[LittleKVCacheBlock]] = {
-                leaf_id: [] for leaf_id in self._leaves
+                leaf_id: [] for leaf_id in self._cacheable_leaf_ids
             }
-            block_hashes: list[bytes] = []
-            for block_hash in hashes:
-                if any(
-                    block_hash not in pool.prefix_caches[leaf_id]
-                    for leaf_id in self._leaves
-                ):
-                    # Evicted from at least one leaf since it was committed, so
-                    # the row is no longer whole: truncate the run here.
-                    break
-                for leaf_id in self._leaves:
-                    block = pool.prefix_caches[leaf_id][block_hash]
+            block_hashes: dict[str, list[bytes]] = {
+                leaf_id: [] for leaf_id in self._cacheable_leaf_ids
+            }
+            writeback = queued.writeback
+            parent_hash = queued.parent_hash
+            for leaf_id, hashes in queued.hashes.items():
+                prefix_cache = pool.prefix_caches[leaf_id]
+                stops_at_gap = self._cacheable_groups[
+                    leaf_id
+                ].has_full_prefix_dependency
+                for block_hash in hashes:
+                    block = prefix_cache.get(block_hash)
+                    if block is None:
+                        if stops_at_gap:
+                            break
+                        continue
                     src[leaf_id].append(block)
-                block_hashes.append(block_hash)
-            if not block_hashes:
+                    block_hashes[leaf_id].append(block_hash)
+                if writeback:
+                    sent = len(block_hashes[leaf_id])
+                    self._metrics.dkv_peer_writeback_blocks += sent
+                    if queued.orphaned:
+                        self._metrics.dkv_peer_writeback_blocks_dropped += (
+                            len(hashes) - sent
+                        )
+                    else:
+                        self._metrics.dkv_peer_writeback_blocks_evicted += (
+                            len(hashes) - sent
+                        )
+            if not any(block_hashes.values()):
                 continue
             bids = {
                 leaf_id: [b.bid for b in bids] for leaf_id, bids in src.items()
@@ -381,10 +1744,52 @@ class JengaBlockManager:
                 block_hashes,
                 replica_idx=replica_idx,
             )
-            # An asynchronous connector reads these pages on its own engine, so
-            # pin them until the D2H lands. A synchronous one is already done.
-            if not event.is_complete():
-                self._track_transfer(event, src, replica_idx)
+            # Use the event to determine which pages the connector needs to read
+            # and track only those in the transfer. A held one is not polled
+            # here either, since a connector may publish an offload on the
+            # first poll that sees its copy land. One that took no page
+            # publishes nothing and holds nothing.
+            took_pages = any(event.g0_blocks_per_leaf.values())
+            held = (
+                took_pages
+                and parent_hash is not None
+                and parent_hash in unpublished
+            )
+            if held or not event.is_complete():
+                by_bid = {
+                    leaf_id: {block.bid: block for block in blocks}
+                    for leaf_id, blocks in src.items()
+                }
+                taken_blocks = {
+                    leaf_id: [by_bid[leaf_id][bid] for bid in taken]
+                    for leaf_id, taken in event.g0_blocks_per_leaf.items()
+                }
+                publishes: frozenset[bytes] = frozenset()
+                if writeback or held:
+                    hash_of = {
+                        leaf_id: dict(zip(bids[leaf_id], hashes, strict=True))
+                        for leaf_id, hashes in block_hashes.items()
+                    }
+                    publishes = frozenset(
+                        hash_of[leaf_id][bid]
+                        for leaf_id, taken in event.g0_blocks_per_leaf.items()
+                        for bid in taken
+                    )
+                    unpublished |= publishes
+                self._track_transfer(
+                    event,
+                    taken_blocks,
+                    replica_idx,
+                    parent_hash=parent_hash,
+                    publishes=publishes,
+                    hold_deadline=now + _PEER_WRITEBACK_HOLD_TIMEOUT_S
+                    if writeback and publishes
+                    else None,
+                    held_since=now if held else None,
+                )
+        self._holders_outstanding -= sum(
+            queued.writeback for queued in self._pending_offloads[replica_idx]
+        )
         self._pending_offloads[replica_idx].clear()
 
     def poll_transfers(self) -> None:
@@ -392,142 +1797,551 @@ class JengaBlockManager:
 
         For each pending async transfer, check if it has completed. If so, we
         may commit the hashes into the prefix cache and then unpin the blocks.
+        A failed onload is unpinned without a commit and left for its request's
+        next ``alloc`` to roll back.
         """
+        if self._connector is not None:
+            self._connector.poll_transfers()
         for replica_idx, pending_list in enumerate(self._pending_transfers):
             if not pending_list:
                 continue
             pool = self.pools[replica_idx]
             still_pending: list[_PendingTransfer] = []
-            for pending in pending_list:
-                if not pending.event.is_complete():
+            # A connector may publish an offload the moment a poll sees its
+            # copy land, as dKV registers it. So an offload whose run follows
+            # a block a peer write-back, or an offload held behind one, has
+            # yet to publish is not polled until that settles. That orders
+            # registration only on one replica: dKV queues a register on the
+            # polling client's FIFO settle worker, and each DP replica has its
+            # own, so across replicas it orders polls rather than registers.
+            #
+            # Only write-backs start a hold. A write-back carries the whole
+            # pulled prefix, so its copy can outlast a forward, while a plain
+            # run normally lands before the next one is posted; plain runs on
+            # one chain are left unordered. Holding every run behind any
+            # in-flight parent would close that rarer window too, at the cost
+            # of a hold on nearly every decode offload. Holding everything
+            # posted after a write-back on its replica, and leaning on the
+            # FIFO settle worker, would be simpler but stalls unrelated
+            # chains and still misses other replicas.
+            now = time.monotonic()
+            unpublished = (
+                self._unpublished_hashes(now, skip_pending=replica_idx)
+                if self._holders_outstanding
+                else set()
+            )
+            unreached = iter(pending_list)
+            for pending in unreached:
+                # Counted whether or not the copy has landed since, so a hold
+                # that lapsed between two polls still counts, once.
+                if (
+                    pending.hold_deadline is not None
+                    and now >= pending.hold_deadline
+                    and not pending.hold_expired
+                ):
+                    pending.hold_expired = True
+                    self._metrics.dkv_peer_writeback_hold_expired += 1
+                if (
+                    pending.commit_hashes is None
+                    and pending.parent_hash is not None
+                    and pending.parent_hash in unpublished
+                ):
+                    if pending.held_since is None:
+                        pending.held_since = now
                     still_pending.append(pending)
+                    unpublished.update(pending.publishes)
+                    continue
+                if pending.held_since is not None:
+                    self._metrics.dkv_peer_writeback_held_offloads += 1
+                    self._metrics.dkv_peer_writeback_hold_ms_total += (
+                        now - pending.held_since
+                    ) * 1000
+                    pending.held_since = None
+                try:
+                    complete = pending.event.is_complete()
+                except KVLoadFailed as failure:
+                    # The pages hold no valid KV, so none is published. A copy
+                    # that settled on the way to failing lets them go back, and
+                    # one the connector abandoned may still write them, so they
+                    # keep their pin for good instead.
+                    if isinstance(failure, KVLoadAbandoned):
+                        self._quarantine(pool, pending.pinned_blocks(), failure)
+                    else:
+                        for block in pending.pinned_blocks():
+                            pool.free_block(block)
+                    self._holders_outstanding -= bool(pending.publishes)
+                    if pending.splice is not None:
+                        self._fail_onload(pending.splice, failure)
+                    continue
+                except BaseException:
+                    # A poll that raises has settled its own transfer, and the
+                    # blocks it was filling hold no valid KV. Unpin them
+                    # without committing, and put back the entries this pass
+                    # never reached -- leaving them on a list it already drained
+                    # would free their blocks a second time.
+                    for block in pending.pinned_blocks():
+                        pool.free_block(block)
+                    self._holders_outstanding -= bool(pending.publishes)
+                    self._pending_transfers[replica_idx] = still_pending + list(
+                        unreached
+                    )
+                    raise
+                if not complete:
+                    still_pending.append(pending)
+                    # An offload held at posting keeps holding the runs past
+                    # it until its own copy lands, even once its own hold has
+                    # lifted, so the chain still registers in order. That wait
+                    # is a plain copy's, so only a write-back needs a deadline.
+                    if self._holds(pending, now):
+                        unpublished.update(pending.publishes)
                     continue
                 if pending.commit_hashes is not None:
                     self._commit_onloaded_blocks(
                         pool, pending.blocks, pending.commit_hashes
                     )
-                for leaf_blocks in pending.blocks.values():
-                    for block in leaf_blocks:
-                        pool.free_block(block)
+                    splice = pending.splice
+                    state = (
+                        self._requests.get(splice.request_id)
+                        if splice is not None
+                        else None
+                    )
+                    if state is not None and state.peer_onload is splice:
+                        state.peer_onload = None
+                        self._record_peer_loads(
+                            state,
+                            pending.event,
+                            pending.blocks,
+                            pending.commit_hashes,
+                        )
+                        self._queue_peer_writeback(state)
+                    else:
+                        self._queue_orphaned_writeback(replica_idx, pending)
+                for block in pending.pinned_blocks():
+                    pool.free_block(block)
+                self._holders_outstanding -= bool(pending.publishes)
             self._pending_transfers[replica_idx] = still_pending
+
+    def _unpublished_hashes(
+        self,
+        now: float,
+        *,
+        skip_pending: int | None = None,
+        skip_queued: int | None = None,
+    ) -> set[bytes]:
+        """Returns what write-backs and the offloads they hold must publish.
+
+        Covers every replica's peer write-backs and the offloads held behind
+        them, in flight or queued. DP replicas share one co-located dKV and
+        copy prefixes across, so a run on one replica can follow pulled blocks
+        another is writing back.
+        ``skip_pending`` and ``skip_queued`` leave out the replica whose
+        transfers or queue the caller walks itself, in order.
+        """
+        unpublished: set[bytes] = set()
+        for idx, pending_list in enumerate(self._pending_transfers):
+            if idx != skip_pending:
+                for pending in pending_list:
+                    if self._holds(pending, now):
+                        unpublished.update(pending.publishes)
+        for idx, queue in enumerate(self._pending_offloads):
+            if idx != skip_queued:
+                for queued in queue:
+                    if queued.writeback:
+                        for hashes in queued.hashes.values():
+                            unpublished.update(hashes)
+        return unpublished
+
+    @staticmethod
+    def _holds(pending: _PendingTransfer, now: float) -> bool:
+        """Whether an unsettled offload still holds the runs that follow it."""
+        return bool(pending.publishes) and (
+            pending.hold_deadline is None or now < pending.hold_deadline
+        )
 
     def pending_transfers_exist(self, replica_idx: int = 0) -> bool:
         """Returns whether any async transfer is in flight on the replica."""
         return bool(self._pending_transfers[replica_idx])
 
-    @traced
-    def _lookup_connector_prefix_cache_hit(
+    def _find_longest_connector_prefix_cache_hit(
         self,
         desired: Sequence[bytes],
         replica_idx: int,
         hint: bytes | None,
-    ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVConnectorTransfer]:
-        """Loads the desired hashes from the connector's prefix cache.
+        chain_start: int,
+    ) -> int:
+        """Returns how many of ``desired`` the connector can serve at once.
 
-        Fresh device pages are allocated for the hashes the connector can
-        serve and filled by its ``load``. The connector may serve some but not
-        all of the desired hashes.
-
-        ``hint`` is the request's raw ``dkv_cache_hint``, passed through to the
-        connector; see :meth:`KVConnector.load`.
-
-        Eg:
-        ```
-        > desired_hashes = [h1, h2, h3, h4, h5, h6, h7, h8, h9, h10]
-        > staging_blocks = {
-        >   'sliding_window_group(1024)': [42, 43, 44, 45],
-        >   'full_group': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        > }
-        > event = connector.load(staging_blocks, desired_hashes)
-        > # Cache hit on 8 of 10 hashes
-        > assert event.g0_blocks_per_leaf == {
-        >   'sliding_window_group(1024)': [0, 0, 0, 0, 42, 43, 44, 45],
-        >   'full_group': [1, 2, 3, 4, 5, 6, 7, 8]
-        > }
-        ```
-
-        Returns:
-            A tuple containing:
-                The number of blocks loaded from the connector
-                The blocks that the contents are being loaded into, per leaf
-                The transfer tracking the copy
+        One lookup over the whole tree, reconciled by the same rules the
+        device tier runs over its own block pools. ``desired`` begins
+        ``chain_start`` blocks from the root.
         """
-        connector = self._connector
-        empty: dict[str, list[LittleKVCacheBlock]] = {
-            leaf_id: [] for leaf_id in self._leaves
-        }
-        if connector is None or not desired:
-            return 0, empty, CompletedTransfer.load(list(self._leaves))
-
-        pool = self.pools[replica_idx]
-
-        # Only try to load from connector if we have enough device blocks to
-        # hold the desired hashes.
-        num_blocks_needed = {
-            leaf_id: group.num_blocks_needed_for_connector_load(len(desired))
-            for group in self._groups.values()
-            for leaf_id in group.leaf_ids
-        }
-        # If there are insufficient blocks available, we will be unable to schedule
-        # this request. Return zero connector cache hits and let the caller raise
-        # InsufficientBlocksError after releasing all resources owned by this request.
-        if not pool.can_satisfy_demand(num_blocks_needed):
-            return 0, empty, CompletedTransfer.load(list(self._leaves))
-
-        staging_blocks = {
-            leaf_id: [pool.alloc_block(leaf_id) for _ in range(num_blocks)]
-            for leaf_id, num_blocks in num_blocks_needed.items()
-        }
-        event = connector.load(
-            {
-                leaf_id: [b.bid for b in leaf_blocks]
-                for leaf_id, leaf_blocks in staging_blocks.items()
-            },
+        assert self._connector is not None
+        resident = self._connector.lookup(
             desired,
             replica_idx=replica_idx,
             hint=hint,
+            chain_start=chain_start,
         )
-        # Note that for SWA groups, we expect the connector to pad the blocks
-        # with 0 to denote the null blocks. As such, the length of the blocks
-        # for each leaf should be the same.
-        unique_num_loaded = {
-            len(blocks) for blocks in event.g0_blocks_per_leaf.values()
+        return self._longest_connector_hit(resident)
+
+    def _start_presence_probe(
+        self, ctx: TextContext, hashes: list[bytes]
+    ) -> _PendingProbe | None:
+        """Starts the request's pricing probe over its whole chain.
+
+        ``None`` when the connector has no started probe, which leaves the
+        request to the blocking one.
+        """
+        assert self._connector is not None
+        if not self._async_presence:
+            return None
+        # Taken before the connector is asked, since the start waits for the
+        # connector lock and a miss must not be trusted for that wait too.
+        started_at = time.monotonic()
+        # TODO(CLIN-2105): A request requeued under KV pressure is released,
+        # which drops its probe, and priced again on the next pass, so it
+        # starts one presence call per pass for as long as it stays requeued.
+        # Keep the probe across the requeue if that rate shows up in dKV's
+        # presence RPCs.
+        handle = self._connector.start_probe(
+            hashes, range(self._num_replicas), hint=ctx.dkv_cache_hint
+        )
+        if handle is None:
+            return None
+        probe = _PendingProbe(self._connector, handle, hashes, started_at)
+        self._pending_probes[ctx.request_id] = probe
+        return probe
+
+    def _probed_run(
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        first: int,
+        remaining: Sequence[bytes],
+    ) -> int | None:
+        """Returns how deep a run the request's pricing probe reports.
+
+        Read from block ``first`` of the request's chain over ``remaining``,
+        the blocks its device hit leaves. ``None`` when there is no probe,
+        it has not answered, answered nothing, is too old to trust a miss
+        from, or was asked over another chain, in which case a lease
+        decides what the connector holds as it would have without a probe.
+        """
+        probe = self._pending_probes.get(ctx.request_id)
+        if (
+            not self._probed_miss_skip
+            or probe is None
+            or probe.age_s() >= _PROBED_MISS_AGE_S
+        ):
+            return None
+        answers = probe.answers()
+        if answers is None or replica_idx >= len(answers):
+            return None
+        last = first + len(remaining)
+        if probe.hashes[first:last] != list(remaining):
+            return None
+        covered = {
+            leaf_id: mask[first:last]
+            for leaf_id, mask in answers[replica_idx].items()
+            if leaf_id in self._cacheable_groups
         }
-        if len(unique_num_loaded) != 1:
-            raise ValueError(
-                "Expected all leaves to have the same number of loaded blocks, "
-                f"but got {event.g0_blocks_per_leaf} from KVConnector.load(...)"
+        # An answer covering no leaf says nothing, where reconciling it
+        # would read as a miss and spare a lease that may have found a run.
+        if not covered:
+            return None
+        return min(
+            self._longest_connector_hit(covered, covered_only=True),
+            len(remaining),
+        )
+
+    def _probed_colocated_runs(
+        self,
+        ctx: TextContext,
+        replica_idx: int,
+        first: int,
+        remaining: Sequence[bytes],
+    ) -> dict[str, int] | None:
+        """Returns the co-located run past the device hit the probe found.
+
+        Per leaf, counted from block ``first`` of the request's chain over
+        ``remaining``, as the lease asks. A leaf whose run ends at or before
+        ``first`` is left out, since the probe cannot say what the store holds
+        from there. ``None`` without a probe that answered runs, is younger
+        than ``_PROBED_RUN_AGE_S`` and was asked over this chain, or when no
+        leaf is left. The probe's masks need not have answered.
+        """
+        probe = self._pending_probes.get(ctx.request_id)
+        if probe is None or probe.age_s() >= _PROBED_RUN_AGE_S:
+            return None
+        answers = probe.colocated_runs()
+        if answers is None or replica_idx >= len(answers):
+            return None
+        last = first + len(remaining)
+        if probe.hashes[first:last] != list(remaining):
+            return None
+        runs = {
+            leaf_id: min(run - first, len(remaining))
+            for leaf_id, run in answers[replica_idx].items()
+            if leaf_id in self._cacheable_groups and run > first
+        }
+        return runs or None
+
+    def _longest_connector_hit(
+        self,
+        resident: Mapping[str, Sequence[bool]],
+        covered_only: bool = False,
+    ) -> int:
+        """Returns how deep a run the connector's ``resident`` masks serve.
+
+        ``covered_only`` reconciles only the leaves ``resident`` answers
+        for, which a pricing probe may narrow to one representative leaf.
+        A lookup the manager loads from has to answer for every leaf.
+        """
+        # Restricted to the cacheable leaves rather than passed straight
+        # through: a connector answering for a leaf this manager does not
+        # reconcile would otherwise decide part of the hit.
+        return longest_joint_prefix_hit(
+            [
+                (
+                    group.group_id.prefix_hit_shape(self._block_size),
+                    resident[leaf_id],
+                )
+                for leaf_id, group in self._cacheable_groups.items()
+                if not covered_only or leaf_id in resident
+            ]
+        )
+
+    @traced
+    def _lookup_connector_prefix_cache_hit(
+        self,
+        request_id: RequestID,
+        desired: Sequence[bytes],
+        replica_idx: int,
+        hint: bytes | None,
+        num_device_blocks: int,
+        defer_lookup: bool,
+    ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVTransfer]:
+        """Loads the prefix of ``desired`` the connector's tiers can serve.
+
+        Two phases: ask what the connector holds and settle how deep a prefix
+        that is worth, then hand it the pages and the hashes to put in them.
+        Knowing the depth first means each leaf is allocated exactly what it
+        reads -- a windowed leaf gets its window, not the whole run -- and
+        the slots it has slid past get the null block here, the same row
+        :meth:`SlidingWindowKVGroupCoordinator.claim_hit_blocks` builds for
+        the device tier. Both phases get the same ``hint``.
+        ``num_device_blocks`` is the device hit spliced in ahead of the load,
+        which a failed copy rolls back along with it. With ``defer_lookup``
+        a connector whose lookup is a round trip is never asked on this
+        thread.
+
+        A lookup an earlier deferred ``alloc`` started is consumed here
+        rather than asked again, and handed back however this exits, raising
+        included.
+
+        Returns:
+            How many blocks were loaded, the blocks they are landing in per
+            leaf, and the transfer tracking the copy.
+        """
+        state = self._requests[request_id]
+        pending, state.pending_lookup = state.pending_lookup, None
+        try:
+            return self._load_connector_prefix_cache_hit(
+                request_id,
+                desired,
+                replica_idx,
+                hint,
+                num_device_blocks,
+                pending,
+                defer_lookup,
             )
-        num_loaded = unique_num_loaded.pop()
+        except BaseException:
+            if pending is not None:
+                pending.abandon("exception")
+            raise
 
-        # Give the surplus blocks back.
-        for leaf_id in self._leaves:
-            all_bids = {b.bid for b in staging_blocks[leaf_id]}
-            loaded_bids = {bid for bid in event.g0_blocks_per_leaf[leaf_id]}
-            unused = all_bids - loaded_bids
-            for bid in unused:
-                block = pool.block(leaf_id, bid)
-                pool.free_block(block)
+    def _load_connector_prefix_cache_hit(
+        self,
+        request_id: RequestID,
+        desired: Sequence[bytes],
+        replica_idx: int,
+        hint: bytes | None,
+        num_device_blocks: int,
+        pending: _PendingLookup | None,
+        defer_lookup: bool,
+    ) -> tuple[int, dict[str, list[LittleKVCacheBlock]], KVTransfer]:
+        """Runs :meth:`_lookup_connector_prefix_cache_hit` over ``pending``.
 
-        if num_loaded == 0:
-            return 0, empty, CompletedTransfer.load(list(self._leaves))
-
-        logger.debug(
-            f"KVConnector loaded {num_loaded} / {len(desired)} hashes. Blocks: {event.g0_blocks_per_leaf}"
-        )
-        loaded_blocks = {
-            leaf_id: [pool.block(leaf_id, bid) for bid in blocks]
-            for leaf_id, blocks in event.g0_blocks_per_leaf.items()
+        Hands ``pending`` back on every path that returns without loading
+        from it, and leaves a raise to the caller to hand it back.
+        """
+        connector = self._connector
+        empty: dict[str, list[LittleKVCacheBlock]] = {
+            leaf_id: [] for leaf_id in self._cacheable_leaf_ids
         }
+        miss = (0, empty, CompletedTransfer())
+        state = self._requests[request_id]
+        if connector is None or not desired or state.skips_connector:
+            if pending is not None:
+                if desired:
+                    pending.abandon("skip")
+                else:
+                    pending.abandon("covered", blocks=0)
+            return miss
+        # Already handed back, because polling it raised or it ran past its
+        # deadline.
+        if pending is not None and pending.missed:
+            return miss
 
-        loaded_hashes = list(desired[:num_loaded])
-        if event.is_complete():
-            self._commit_onloaded_blocks(pool, loaded_blocks, loaded_hashes)
+        # A device hit deeper than the one the lookup was asked past leaves
+        # a suffix of the answer to read, and a shallower one leaves a gap no
+        # answer covers. A deferred alloc asks about that gap on this thread
+        # only when the connector answers in place, and otherwise serves it
+        # as a miss with the hit kept.
+        if pending is not None and num_device_blocks < pending.first_block:
+            self._record_lookup_shrink(pending.first_block - num_device_blocks)
+            pending.abandon("shrink_at_load")
+            pending = None
+
+        lookup: KVLookup | None = None
+        if pending is None:
+            if defer_lookup and connector.defers_lookup(replica_idx):
+                return miss
+            resident = connector.lookup(
+                desired,
+                replica_idx=replica_idx,
+                hint=hint,
+                chain_start=state.committed_idx // self._block_size
+                + num_device_blocks,
+            )
         else:
-            self._track_transfer(
-                event, loaded_blocks, replica_idx, commit_hashes=loaded_hashes
+            lookup = pending.handle
+            resident = _answer_past(pending, num_device_blocks)
+        aligned = self._longest_connector_hit(resident)
+
+        pool = self.pools[replica_idx]
+        # What each leaf READS of a hit that deep, which for a windowed leaf is
+        # its window rather than the whole prefix.
+        held = {
+            leaf_id: group.blocks_held_of_connector_hit(aligned)
+            for leaf_id, group in self._cacheable_groups.items()
+        }
+        # Too few blocks to schedule this request at all. Report no hit and let
+        # the caller raise InsufficientBlocksError once it has released what
+        # the request owns.
+        if aligned == 0 or not pool.can_satisfy_demand(held):
+            if pending is not None:
+                # A run the device hit grew over is covered, so
+                # nothing_to_load always means the answer was empty.
+                reason: ConnectorLookupDrop = (
+                    "no_room"
+                    if aligned
+                    else "covered"
+                    if self._answer_run(pending)
+                    else "nothing_to_load"
+                )
+                pending.abandon(reason, blocks=aligned)
+            elif aligned:
+                # A lookup asked in place that found nothing is a miss with
+                # no answer to drop, so only a run the pool refused counts.
+                self._record_lookup_drop(
+                    "no_room",
+                    "offered",
+                    aligned,
+                    hinted=self._routes_hint(hint),
+                )
+            return miss
+
+        rows = {
+            leaf_id: [
+                self.allocate_block(replica_idx, leaf_id)
+                for _ in range(num_blocks)
+            ]
+            for leaf_id, num_blocks in held.items()
+        }
+        row_bids = {
+            leaf_id: [block.bid for block in blocks]
+            for leaf_id, blocks in rows.items()
+        }
+        row_hashes = {
+            leaf_id: list(desired[aligned - held[leaf_id] : aligned])
+            for leaf_id in rows
+        }
+        try:
+            if lookup is None:
+                event = connector.load(
+                    row_bids, row_hashes, replica_idx=replica_idx, hint=hint
+                )
+            else:
+                event = connector.load_lookup(
+                    lookup,
+                    row_bids,
+                    row_hashes,
+                    replica_idx=replica_idx,
+                    hint=hint,
+                )
+            landed = event.is_complete()
+        except (KVLoadRefused, KVLoadFailed) as err:
+            # Evicted between the two calls, no room to stage the copy, or a
+            # transport fault while posting or on this first poll; nothing is
+            # spliced yet, and nothing is in flight into the rows unless the
+            # connector abandoned a copy it posted, whose rows it may still
+            # write. There is no shorter hit to fall back to: a windowed leaf's
+            # remaining run no longer ends where the prefix does.
+            if isinstance(err, KVLoadFailed):
+                self._skip_connector_after_failure(request_id, err)
+                reason = "load_failed"
+            else:
+                logger.warning("serving a request as a cache miss: %s", err)
+                reason = "load_refused"
+            if pending is not None:
+                pending.abandon(reason, blocks=aligned)
+            else:
+                self._record_lookup_drop(
+                    reason, "offered", aligned, hinted=self._routes_hint(hint)
+                )
+            if isinstance(err, KVLoadAbandoned):
+                self._quarantine(pool, chain.from_iterable(rows.values()), err)
+            else:
+                for blocks in rows.values():
+                    for block in blocks:
+                        pool.free_block(block)
+            return miss
+
+        # Every leaf's row has to be `aligned` long: the groups splice them onto
+        # rows that stay in lockstep.
+        loaded_blocks = {
+            leaf_id: [pool.null_little_blocks[leaf_id]]
+            * (aligned - held[leaf_id])
+            + rows[leaf_id]
+            for leaf_id in rows
+        }
+        loaded_hashes = list(desired[:aligned])
+        if landed:
+            self._commit_onloaded_blocks(pool, loaded_blocks, loaded_hashes)
+            self._record_peer_loads(state, event, loaded_blocks, loaded_hashes)
+        else:
+            start_idx = state.committed_idx
+            splice = _OnloadSplice(
+                request_id=request_id,
+                start_idx=start_idx,
+                end_idx=start_idx
+                + (num_device_blocks + aligned) * self._block_size,
             )
-        return num_loaded, loaded_blocks, event
+            if writeback_blocks_of(event):
+                state.peer_onload = splice
+            first_loaded = start_idx // self._block_size + num_device_blocks
+            self._track_transfer(
+                event,
+                loaded_blocks,
+                replica_idx,
+                commit_hashes=loaded_hashes,
+                splice=splice,
+                parent_hash=state.hashes[first_loaded - 1]
+                if first_loaded
+                else None,
+            )
+        return aligned, loaded_blocks, event
 
     def _commit_onloaded_blocks(
         self,
@@ -546,12 +2360,224 @@ class JengaBlockManager:
                 ):
                     pool.commit_into_prefix_cache(block_hash, block)
 
+    def _record_peer_loads(
+        self,
+        state: RequestCacheState,
+        event: KVTransfer,
+        blocks: Mapping[str, list[LittleKVCacheBlock]],
+        hashes: Sequence[bytes],
+    ) -> None:
+        """Records which of a landed onload's hashes a remote peer served.
+
+        Write-back covers the streamed, full-attention leaves only, which
+        offload their whole prefix as it commits. That is complete today:
+        MAX sends no peer hint for a tree with a sliding leaf (see
+        ``DKVConnector._usable_hint``), so a windowed leaf is never
+        peer-filled. ``blocks`` is each leaf's row, positional with
+        ``hashes``.
+        """
+        for leaf_id, pulled in self._peer_filled(event, blocks, hashes).items():
+            state.peer_loaded_hashes.setdefault(leaf_id, []).extend(pulled)
+
+    def _peer_filled(
+        self,
+        event: KVTransfer,
+        blocks: Mapping[str, list[LittleKVCacheBlock]],
+        hashes: Sequence[bytes],
+    ) -> dict[str, list[bytes]]:
+        """Returns the hashes a remote peer filled, per streamed leaf."""
+        served = writeback_blocks_of(event)
+        pulled: dict[str, list[bytes]] = {}
+        for leaf_id in self._streamed_leaf_ids:
+            bids = set(served.get(leaf_id, ()))
+            if bids:
+                pulled[leaf_id] = [
+                    block_hash
+                    for block, block_hash in zip(
+                        blocks[leaf_id], hashes, strict=True
+                    )
+                    if not block.is_null and block.bid in bids
+                ]
+        return pulled
+
+    def _queue_orphaned_writeback(
+        self, replica_idx: int, pending: _PendingTransfer
+    ) -> None:
+        """Queues the write-back of an onload whose request let it go.
+
+        Its request was released, or rolled the onload back, before the copy
+        landed. The pulled blocks are published all the same, and a later
+        request can device-hit them and compute past them, so they are
+        written back like any other. ``offload``'s walk checks they are still
+        cached, and counts one gone by then as dropped.
+        """
+        assert pending.commit_hashes is not None
+        hashes = pending.commit_hashes
+        pulled = self._peer_filled(pending.event, pending.blocks, hashes)
+        if not any(pulled.values()):
+            return
+        first = min(
+            hashes.index(leaf_hashes[0])
+            for leaf_hashes in pulled.values()
+            if leaf_hashes
+        )
+        self._pending_offloads[replica_idx].append(
+            _QueuedOffload(
+                pulled,
+                parent_hash=hashes[first - 1] if first else pending.parent_hash,
+                writeback=True,
+                orphaned=True,
+            )
+        )
+        self._holders_outstanding += 1
+
+    def _queue_peer_writeback(
+        self, state: RequestCacheState, *, orphaned: bool = False
+    ) -> None:
+        """Queues the request's peer-filled hashes for the next offload.
+
+        Queued as the onload lands, or as its alloc rolls it back, so the
+        co-located dKV takes them before the blocks computed past them: a
+        store holding the request's head and its computed tail without the
+        peer-filled middle would read as owning a prefix it cannot serve.
+        ``offload`` reads the pages back through the prefix cache and pins
+        what it takes, so they are still valid when the copy runs, whether
+        the request still holds them, its release offloads before freeing
+        them, or a rollback left them cached. One evicted before then is
+        skipped, and counted as dropped for a rollback's ``orphaned``
+        write-back, whose pages nobody else held, or as evicted otherwise.
+        """
+        if any(state.peer_loaded_hashes.values()):
+            first = min(
+                state.hashes.index(hashes[0])
+                for hashes in state.peer_loaded_hashes.values()
+                if hashes
+            )
+            self._pending_offloads[state.replica_idx].append(
+                _QueuedOffload(
+                    state.peer_loaded_hashes,
+                    parent_hash=state.hashes[first - 1] if first else None,
+                    writeback=True,
+                    orphaned=orphaned,
+                )
+            )
+            self._holders_outstanding += 1
+            state.peer_loaded_hashes = {}
+
+    def _skip_connector_after_failure(
+        self, request_id: RequestID, failure: KVLoadFailed
+    ) -> None:
+        """Counts a failed load and serves its request without the connector."""
+        assert self._connector is not None
+        logger.warning(
+            "%s load for request %s failed; recomputing its prefix without "
+            "the connector: %s",
+            self._connector.name,
+            request_id,
+            failure,
+        )
+        self._metrics.connector_load_failures += 1
+        # A request released while its copy was in flight has no claim left
+        # to skip the connector for.
+        state = self._requests.get(request_id)
+        if state is not None:
+            state.skips_connector = True
+
+    def _quarantine(
+        self,
+        pool: JengaBlockPool,
+        blocks: Iterable[LittleKVCacheBlock],
+        failure: KVLoadAbandoned,
+    ) -> None:
+        """Keeps the blocks of an abandoned load out of use for good.
+
+        They are never freed, so neither the free list nor eviction can hand
+        them to another request while the copy the connector gave up on may
+        still write them. Nothing reports when it stops, so they stay out for
+        the life of the engine. A null block pads a windowed leaf and no copy
+        writes it, so it goes back as usual and is not counted.
+        """
+        count = 0
+        for block in blocks:
+            if block.is_null:
+                pool.free_block(block)
+            else:
+                count += 1
+        self._quarantined_blocks += count
+        assert self._connector is not None
+        logger.warning(
+            "%s gave up on a load whose copy may still write its %d device "
+            "blocks, so they stay out of use for the life of the engine, "
+            "%d blocks in all: %s",
+            self._connector.name,
+            count,
+            self._quarantined_blocks,
+            failure,
+        )
+
+    def _fail_onload(
+        self, splice: _OnloadSplice, failure: KVLoadFailed
+    ) -> None:
+        """Leaves a failed onload for its request's next alloc to roll back."""
+        self._skip_connector_after_failure(splice.request_id, failure)
+        state = self._requests.get(splice.request_id)
+        if state is not None:
+            state.failed_onload = (splice, failure)
+
+    def _rollback_failed_onload(
+        self, ctx: TextContext, replica_idx: int
+    ) -> None:
+        """Undoes the prefix an onload spliced in, if its copy failed.
+
+        The request goes back to a fresh claim, device hit included, and the
+        reuse that follows in :meth:`alloc` takes the device hit again without
+        the connector. A reuse only splices into a request that has processed
+        nothing, so a fresh claim is exactly where it started. Trimming the
+        rows instead would not be: splicing past a windowed leaf's window
+        frees the device hit's pages there, and a recurrent leaf keeps its
+        live block, so the device hit would land behind it.
+
+        Raises:
+            RuntimeError: If the request moved past the splice before its copy
+                failed, which only a caller that never held it back can let
+                happen. It has read the failed pages by then, so there is no
+                clean prefix to recompute from.
+        """
+        state = self._state_of(ctx)
+        if state.failed_onload is None:
+            return
+        splice, failure = state.failed_onload
+        state.failed_onload = None
+        state.peer_onload = None
+        if (
+            state.committed_idx != splice.end_idx
+            or ctx.tokens.processed_length != splice.end_idx
+        ):
+            raise RuntimeError(
+                f"request {ctx.request_id} ran past an onload whose copy "
+                "failed, so its KV cannot be trusted"
+            ) from failure
+        for group in self._groups.values():
+            group.release(ctx.request_id, replica_idx)
+            group.claim(ctx.request_id)
+        state.committed_idx = 0
+        state.resumable = _RequestResumableState()
+        ctx.tokens.rewind_processing(ctx.tokens.processed_length)
+        self._metrics.cache_tokens -= splice.end_idx - splice.start_idx
+        ctx.cached_prefix_length = 0
+        ctx.cached_prefix_external_length = 0
+
     def _track_transfer(
         self,
-        event: KVConnectorTransfer,
+        event: KVTransfer,
         blocks: Mapping[str, list[LittleKVCacheBlock]],
         replica_idx: int,
         commit_hashes: list[bytes] | None = None,
+        splice: _OnloadSplice | None = None,
+        parent_hash: bytes | None = None,
+        publishes: frozenset[bytes] = frozenset(),
+        hold_deadline: float | None = None,
+        held_since: float | None = None,
     ) -> None:
         """Tracks an async connector transfer and the pages it pins.
 
@@ -575,8 +2601,14 @@ class JengaBlockManager:
                     for leaf_id, leaf_blocks in blocks.items()
                 },
                 commit_hashes=commit_hashes,
+                splice=splice,
+                parent_hash=parent_hash,
+                publishes=publishes,
+                hold_deadline=hold_deadline,
+                held_since=held_since,
             )
         )
+        self._holders_outstanding += bool(publishes)
 
     # ============================================================================
     # Misc
@@ -585,82 +2617,75 @@ class JengaBlockManager:
     @property
     def metrics(self) -> KVCacheMetrics:
         """Returns the block manager's metrics."""
-        return self._metrics
+        metrics = self._metrics
+        if self._connector is not None:
+            metrics += self._connector.metrics
+        return self._with_levels(metrics)
 
-    def reset_metrics(self) -> None:
-        """Resets the block manager's metrics to zero."""
+    def take_metrics(self) -> KVCacheMetrics:
+        """Reads and clears this manager's and its connector's metrics."""
+        metrics = self._metrics
         self._metrics = KVCacheMetrics()
+        if self._connector is not None:
+            metrics += self._connector.take_metrics()
+        return self._with_levels(metrics)
+
+    def _with_levels(self, metrics: KVCacheMetrics) -> KVCacheMetrics:
+        """Returns a copy of ``metrics`` carrying this manager's levels.
+
+        Levels are read fresh for every snapshot rather than kept in the
+        per-window deltas that ``take_metrics`` clears.
+        """
+        return replace(
+            metrics, connector_quarantined_blocks=self._quarantined_blocks
+        )
 
     @property
     def effective_max_seq_length(self) -> int | None:
-        """Returns the longest single-request sequence every leaf could serve simultaneously.
-
-        ``None`` if there is no finite bound (every leaf is sliding-window
-        and each window fits the budget). Binary search over
-        :meth:`_fits_in_cache`, which is monotonic in ``seq_len``: a leaf's
-        block requirement never decreases -- it grows for full attention,
-        and plateaus once a sliding window is fully covered. That makes this
-        equivalent to the largest ``seq_len`` for which every leaf still
-        fits, without needing to simulate how the shared huge-block budget
-        gets partitioned across leaves.
-        """
-        # Nothing can outrun a single leaf handed the entire budget at the
-        # most generous ratio, so that is a safe ceiling to search up to.
-        # Still fitting AT the ceiling means there is no finite bound: every
-        # leaf must be sliding-window, since only their demand plateaus.
-        upper_bound = (
-            self.huge_block_count().total
-            * self._block_size
-            * max(self.pools[0].cache_ratios.values())
+        """Returns the longest single request an empty pool serves."""
+        pool = self.pools[0]
+        return _max_seq_len_fitting_in_geometry(
+            self._leaves,
+            self._block_size,
+            self.huge_block_count().total,
+            pool.cache_ratios,
+            enable_prefix_caching=self._enable_prefix_caching,
         )
-        search_space = upper_bound + 2
-        idx = bisect_left(
-            range(search_space),
-            True,
-            key=lambda seq_len: not self._fits_in_cache(seq_len),
-        )
-        return (idx - 1) if idx < search_space else None
 
-    def _blocks_demanded(self, seq_len: int) -> dict[str, int]:
-        """Returns the pages each leaf holds for a ``seq_len``-token request."""
-        demand = {}
-        for leaf_id, leaf in self._leaves.items():
-            num_blocks = ceildiv(seq_len, self._block_size)
-            if leaf.group_id.is_sliding_window():
-                # A window only keeps its most recent tokens resident, so its
-                # demand stops growing once the window itself is covered.
-                num_blocks = min(
-                    num_blocks,
-                    ceildiv(leaf.group_id.window_size, self._block_size),
-                )
-            demand[leaf_id] = num_blocks
-        return demand
+    def _blocks_to_reserve(self, seq_len: int) -> dict[str, int]:
+        """Returns the blocks each leaf draws for a ``seq_len``-token request."""
+        num_blocks = ceildiv(seq_len, self._block_size)
+        return {
+            leaf_id: leaf.blocks_to_reserve(
+                num_blocks, enable_prefix_caching=self._enable_prefix_caching
+            )
+            for leaf_id, leaf in self._leaves.items()
+        }
 
     def _fits_in_cache(self, seq_len: int) -> bool:
         """Whether an empty pool could serve one ``seq_len``-token request."""
         return self.pools[0].can_satisfy_demand(
-            self._blocks_demanded(seq_len), at_capacity=True
+            self._blocks_to_reserve(seq_len), at_capacity=True
         )
 
     def get_req_blocks_per_leaf(self, ctx: TextContext) -> dict[str, list[int]]:
         """Returns the pages the request holds, per leaf.
 
-        Distinct from :meth:`PagedKVCacheManagerInterface.get_req_blocks`
-        (a single flat ``list[int]``, sized for one leaf): Jenga's caches
-        aren't interchangeable, so this returns one list per leaf instead.
+        Each leaf tiles huge blocks at its own ratio, so one leaf's block ids
+        say nothing about another's.
         """
         self._replica_of(ctx)
         return {
-            leaf_id: [block.bid for block in leaf.req_to_blocks[ctx.request_id]]
-            for leaf_id, leaf in self._leaves.items()
+            leaf_id: [block.bid for block in blocks]
+            for group in self._groups.values()
+            for leaf_id, blocks in group.blocks_of(ctx.request_id).items()
         }
 
-    def get_req_blocks(self, ctx: TextContext) -> list[int]:
-        """Returns block IDs the request holds for the first leaf.
-
-        TODO: Delete this method after refactoring downstream callers.
-        """
-        return next(iter(self.get_req_blocks_per_leaf(ctx).values()))
+    def num_req_blocks(self, ctx: TextContext) -> int:
+        """Returns the request's length in pages, its longest leaf row."""
+        return max(
+            len(blocks) for blocks in self.get_req_blocks_per_leaf(ctx).values()
+        )
 
     def huge_block_count(self, replica_idx: int = 0) -> BlockCount:
         """Returns the huge-block occupancy for the given replica.
@@ -670,48 +2695,73 @@ class JengaBlockManager:
         """
         pool = self.pools[replica_idx]
         return BlockCount(
-            free=len(pool.free_huge_blocks), total=len(pool.huge_blocks)
+            free=pool.num_free_huge_blocks,
+            total=pool.num_allocatable_huge_blocks,
         )
 
     def little_block_count(self, replica_idx: int = 0) -> dict[str, BlockCount]:
         """Returns each leaf's little-block occupancy for the given replica."""
         pool = self.pools[replica_idx]
-        total_huge_blocks = len(pool.huge_blocks)
+        total_huge_blocks = pool.num_allocatable_huge_blocks
         return {
             leaf_id: BlockCount(
                 free=pool.num_free_blocks(leaf_id),
                 total=total_huge_blocks * pool.cache_ratios[leaf_id],
             )
-            for leaf_id in self._leaves
+            for leaf_id in self._leaf_ids
         }
+
+    def occupancy(self, replica_idx: int = 0) -> _PoolOccupancy:
+        """Returns each leaf's pages and huge blocks on the given replica.
+
+        Scans the whole pool, so call it for periodic logging, not per batch.
+        """
+        pool = self.pools[replica_idx]
+        total_huge_blocks = pool.num_allocatable_huge_blocks
+        leaves = {}
+        for leaf_id in self._leaf_ids:
+            used, evictable, empty, used_huge, evictable_huge = pool.occupancy(
+                leaf_id
+            )
+            leaves[leaf_id] = _LeafOccupancy(
+                used=used,
+                evictable=evictable,
+                empty=empty,
+                total=total_huge_blocks * pool.cache_ratios[leaf_id],
+                used_huge_blocks=used_huge,
+                evictable_huge_blocks=evictable_huge,
+            )
+        return _PoolOccupancy(
+            leaves=leaves, empty_huge_blocks=pool.num_pristine_huge_blocks
+        )
 
     # ============================================================================
     # Internal
     # ============================================================================
 
-    def _replica_of(self, ctx: TextContext) -> int:
-        """Returns the replica the request was claimed on."""
-        replica_idx = self._req_to_replica.get(ctx.request_id)
-        if replica_idx is None:
+    def _state_of(self, ctx: TextContext) -> RequestCacheState:
+        """Returns the request's tracked state, or raises if it is unclaimed."""
+        state = self._requests.get(ctx.request_id)
+        if state is None:
             raise ValueError(
                 f"Request is not claimed, so it holds no pages to work with: "
                 f"{ctx.request_id}"
             )
-        return replica_idx
+        return state
 
-    def _num_blocks_to_allocate(self, ctx: TextContext, leaf_id: str) -> int:
-        """Returns how many pages of ``leaf_id`` the next forward still needs."""
-        num_current_blocks = len(
-            self._leaves[leaf_id].req_to_blocks[ctx.request_id]
-        )
+    def _replica_of(self, ctx: TextContext) -> int:
+        """Returns the replica the request was claimed on."""
+        return self._state_of(ctx).replica_idx
+
+    def _num_required_blocks(self, ctx: TextContext) -> int:
+        """Returns how far into a request's row the next forward reaches."""
         seq_len = _compute_seq_len(
             ctx,
             num_draft_tokens=self._num_draft_tokens,
             num_draft_tokens_per_step=self._num_draft_tokens_per_step,
             max_num_input_tokens=self._max_num_input_tokens,
         )
-        num_required_blocks = ceildiv(seq_len, self._block_size)
-        return max(num_required_blocks - num_current_blocks, 0)
+        return ceildiv(seq_len, self._block_size)
 
     def _num_filled_blocks(self, ctx: TextContext) -> int:
         """Returns how many of the request's blocks a forward has filled."""
@@ -732,44 +2782,122 @@ class JengaBlockManager:
     @traced
     def _compute_hashes_for_request(self, ctx: TextContext) -> list[bytes]:
         """Extends the request's hash chain to cover its newest full blocks."""
-        hashes = self._req_to_hashes[ctx.request_id]
-        hashes.extend(self._compute_block_hashes(ctx, hashes))
+        hashes = self._state_of(ctx).hashes
+        hashes.extend(
+            compute_block_hashes(
+                ctx,
+                hashes,
+                self._block_size,
+                self._kv_hash_algo,
+                self._kv_hash_seed,
+            )
+        )
         return hashes
+
+    def _resumable_at(self, req_id: RequestID, num_blocks: int) -> bool:
+        """Returns whether every cache can resume after ``num_blocks`` blocks.
+
+        Only published blocks count. Each cache applies the same rule as its
+        prefix-cache lookup.
+        """
+        num_committed_blocks = (
+            self._requests[req_id].committed_idx // self._block_size
+        )
+        if not 0 < num_blocks <= num_committed_blocks:
+            return False
+        for group in self._cacheable_groups.values():
+            row = group.blocks_of(req_id)[group.leaf_id][:num_blocks]
+            published = [
+                not block.is_null and block.block_hash is not None
+                for block in row
+            ]
+            hit = group.group_id.longest_hit(self._block_size, published)
+            if hit != num_blocks:
+                return False
+        return True
 
     def _find_longest_device_prefix_cache_hit(
         self,
         desired_hashes: Sequence[bytes],
-        replica_idx: int = 0,
+        replica_idx: int,
+        allow_cross_replica: bool,
     ) -> int:
-        # Global caches first: they read their whole history, so their run from
-        # the root is the tightest bound available and it costs the cheapest
-        # scan to find.
-        if KVCacheGroupId.full() in self._groups:
-            num_hit_blocks = self._groups[
-                KVCacheGroupId.full()
-            ].longest_cache_hit(desired_hashes, replica_idx)
-            desired_hashes = desired_hashes[:num_hit_blocks]
-
-        windowed = [
-            group
-            for group in self._groups.values()
-            if group.group_id.is_sliding_window()
-        ]
-        while windowed and desired_hashes:
-            old_num_hit_blocks = len(desired_hashes)
-            for window_group in windowed:
-                num_hit_blocks = window_group.longest_cache_hit(
-                    desired_hashes, replica_idx
+        """Returns how many blocks every leaf can serve at once."""
+        # A full leaf's hit is its run from the root, which bounds the joint
+        # hit, so the other leaves are read only that far (vLLM's rule). Every
+        # leaf's answer under a bound depends only on the blocks below it, so
+        # this settles where reading the whole chain would.
+        for group in self._cacheable_groups.values():
+            if group.group_id.is_full():
+                desired_hashes = desired_hashes[
+                    : group.resident_run(
+                        desired_hashes, replica_idx, allow_cross_replica
+                    )
+                ]
+        return longest_joint_prefix_hit(
+            [
+                (
+                    group.group_id.prefix_hit_shape(self._block_size),
+                    [True] * len(desired_hashes)
+                    if group.group_id.is_full()
+                    else group.residency(
+                        desired_hashes, replica_idx, allow_cross_replica
+                    ),
                 )
-                desired_hashes = desired_hashes[:num_hit_blocks]
+                for group in self._cacheable_groups.values()
+            ]
+        )
 
-            shrank = len(desired_hashes) < old_num_hit_blocks
-            # A lone window group is its own fixed point.
-            # Only a model with two different window sizes needs another pass.
-            if not shrank or len(windowed) == 1:
-                break
+    def _find_longest_cross_replica_hit(
+        self,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int,
+        num_local_hit_blocks: int,
+    ) -> int:
+        """Returns the hit counting peer replicas, given the local hit.
 
-        return len(desired_hashes)
+        Answers as :meth:`_find_longest_device_prefix_cache_hit` with
+        ``allow_cross_replica`` does, but reads only the blocks that can
+        decide a longer run.
+        """
+        start = num_local_hit_blocks
+        bound = len(desired_hashes)
+        for group in self._cacheable_groups.values():
+            if group.group_id.is_full():
+                bound = start + group.resident_run(
+                    desired_hashes[start:bound], replica_idx, True
+                )
+        if bound <= start:
+            return start
+        # Every full leaf holds the local run already, and a run ending past
+        # it reads no block more than a window below it, so the blocks under
+        # ``low`` cannot change whether a longer run exists.
+        reach = max(
+            (
+                group.group_id.blocks_in_window(self._block_size)
+                for group in self._cacheable_groups.values()
+                if group.group_id.is_sliding_window()
+            ),
+            default=1,
+        )
+        low = max(0, start + 1 - reach)
+        return max(
+            start,
+            longest_joint_prefix_hit(
+                [
+                    (
+                        group.group_id.prefix_hit_shape(self._block_size),
+                        [True] * bound
+                        if group.group_id.is_full()
+                        else [True] * low
+                        + group.residency(
+                            desired_hashes[low:bound], replica_idx, True
+                        ),
+                    )
+                    for group in self._cacheable_groups.values()
+                ]
+            ),
+        )
 
     def _lookup_device_prefix_cache_hit(
         self,
@@ -783,27 +2911,146 @@ class JengaBlockManager:
             The caller splices the pages onto the request.
         """
         if self._only_use_kv_connector_last_level_cache:
-            return {leaf_id: [] for leaf_id in self._leaves}, 0
+            return {leaf_id: [] for leaf_id in self._groups}, 0
 
         num_hit_blocks = self._find_longest_device_prefix_cache_hit(
-            desired_hashes, replica_idx
+            desired_hashes, replica_idx, False
         )
-        hit_hashes = desired_hashes[:num_hit_blocks]
+        if self._cross_replica_copy_enabled:
+            num_cross_hit_blocks = self._find_longest_cross_replica_hit(
+                desired_hashes, replica_idx, num_hit_blocks
+            )
+            if num_cross_hit_blocks > num_hit_blocks and (
+                self._copy_prefix_from_peers(
+                    desired_hashes[:num_cross_hit_blocks], replica_idx
+                )
+            ):
+                num_hit_blocks = num_cross_hit_blocks
 
+        hit_hashes = desired_hashes[:num_hit_blocks]
         hit_blocks: dict[str, list[LittleKVCacheBlock]] = {}
         for group in self._groups.values():
-            hit_blocks.update(
-                group.claim_hit_blocks(
-                    hit_hashes,
-                    replica_idx,
-                )
-            )
-
+            hit_blocks.update(group.claim_hit_blocks(hit_hashes, replica_idx))
         return hit_blocks, num_hit_blocks
 
+    def _copy_prefix_from_peers(
+        self, hit_hashes: Sequence[bytes], replica_idx: int
+    ) -> bool:
+        """Copies the pages of ``hit_hashes`` that only peer replicas hold.
+
+        All or nothing: a page copied for one leaf buys no hit unless every
+        leaf can serve the same run, so nothing is copied unless every
+        missing page fits. Every local page of the hit is held until the
+        end, so allocating for a copy cannot evict it.
+
+        Returns:
+            Whether every leaf now holds its share of ``hit_hashes`` locally.
+        """
+        pool = self.pools[replica_idx]
+        local: list[LittleKVCacheBlock] = []
+        missing: list[tuple[str, bytes, int]] = []
+        demand: dict[str, int] = {}
+        for leaf_id, group in self._cacheable_groups.items():
+            cache = pool.prefix_caches[leaf_id]
+            for block_hash in group.claimable_hashes(hit_hashes):
+                block = cache.get(block_hash)
+                if block is not None:
+                    local.append(block)
+                    continue
+                src = group.find_replica_with_hash(
+                    block_hash, replica_idx, allow_cross_replica=True
+                )
+                if src is None:
+                    return False
+                missing.append((leaf_id, block_hash, src))
+                demand[leaf_id] = demand.get(leaf_id, 0) + 1
+        # Holding the local pages only shrinks the room, so a refusal here
+        # needs no holds to undo.
+        if not pool.can_satisfy_demand(demand):
+            return False
+
+        held: list[LittleKVCacheBlock] = []
+        copies: list[_PageCopy] = []
+        staged: list[tuple[bytes, LittleKVCacheBlock]] = []
+        try:
+            for block in local:
+                pool.touch(block)
+                held.append(block)
+            if not pool.can_satisfy_demand(demand):
+                return False
+            for leaf_id, block_hash, src in missing:
+                dst = self.allocate_block(replica_idx, leaf_id)
+                held.append(dst)
+                copies.append(
+                    _PageCopy(
+                        leaf_id=leaf_id,
+                        dst_bid=dst.bid,
+                        src_bid=self.pools[src]
+                        .prefix_caches[leaf_id][block_hash]
+                        .bid,
+                        src_replica=src,
+                    )
+                )
+                staged.append((block_hash, dst))
+
+            num_bytes = self._submit_page_copies(replica_idx, copies)
+
+            # Publish only once the copies are enqueued: a committed hash is
+            # visible to every request, so its page must already be filled.
+            for block_hash, dst in staged:
+                pool.commit_into_prefix_cache(block_hash, dst)
+            self._metrics.cross_replica_blocks_copied += len(copies)
+            self._metrics.cross_replica_bytes_copied += num_bytes
+            return True
+        except InsufficientBlocksError:
+            return False
+        finally:
+            for block in held:
+                pool.free_block(block)
+
+    def _submit_page_copies(
+        self, dst_replica: int, copies: Sequence[_PageCopy]
+    ) -> int:
+        """Batch-copies pages from other replicas into ``dst_replica``.
+
+        Pages are passed as row indices, not Python views, so a long prefix
+        costs no per-page buffer objects. Destinations all live on
+        ``dst_replica``, so mixed sources still cost one submission.
+
+        Returns:
+            How many bytes the copy moves. Each leaf is measured at its own
+            page size, which is the only comparable unit here: one block of
+            the prefix is a page in every leaf of its group, and those pages
+            are not the same size.
+        """
+        if not copies:
+            return 0
+        assert self._replica_kv_memory is not None
+
+        num_bytes = 0
+        dsts: list[Buffer] = []
+        srcs: list[Buffer] = []
+        dst_rows: list[int] = []
+        src_rows: list[int] = []
+        for page in copies:
+            src_unit = self._replica_kv_memory[page.src_replica][page.leaf_id]
+            dst_unit = self._replica_kv_memory[dst_replica][page.leaf_id]
+            # Every TP shard is fanned out with its own point-to-point copy.
+            for src_buf, dst_buf in zip(
+                src_unit.buffers, dst_unit.buffers, strict=True
+            ):
+                dsts.append(dst_buf)
+                srcs.append(src_buf)
+                dst_rows.append(page.dst_bid)
+                src_rows.append(page.src_bid)
+            num_bytes += src_unit.bytes_per_page * len(src_unit.buffers)
+
+        _batch_copy_rows(dsts, srcs, dst_rows, src_rows)
+        return num_bytes
+
     def _reuse_blocks_from_prefix_cache(
-        self, ctx: TextContext, replica_idx: int = 0
-    ) -> KVConnectorTransfer:
+        self, ctx: TextContext, replica_idx: int = 0, *, defer_lookup: bool
+    ) -> KVTransfer:
         """Splices the longest prefix-cache hit into the request.
 
         The device hit is extended by whatever the connector's external tiers
@@ -812,18 +3059,25 @@ class JengaBlockManager:
 
         Returns:
             The transfer tracking the onload's copy, already complete when
-            nothing was onloaded.
+            nothing was onloaded. With ``defer_lookup`` it may instead track
+            a connector lookup that has not answered, in which case nothing
+            was spliced and the request's ``pending_lookup`` is set.
         """
         # Only try to reuse blocks if the ctx is fresh (ie: no tokens are processed)
         if not self._enable_prefix_caching or ctx.tokens.processed_length != 0:
-            return CompletedTransfer.load(list(self._leaves))
+            return CompletedTransfer()
 
         self._compute_hashes_for_request(ctx)
 
-        committed_blocks = (
-            self._req_to_committed_idx[ctx.request_id] // self._block_size
-        )
-        desired_hashes = self._req_to_hashes[ctx.request_id][committed_blocks:]
+        state = self._state_of(ctx)
+        committed_blocks = state.committed_idx // self._block_size
+        desired_hashes = state.hashes[committed_blocks:]
+
+        if not self._connector_lookup_is_ready(
+            ctx, desired_hashes, replica_idx, start=defer_lookup
+        ):
+            assert state.pending_lookup is not None
+            return _PendingLookupTransfer(state.pending_lookup)
 
         hit_blocks, num_hit_blocks = self._lookup_device_prefix_cache_hit(
             desired_hashes, replica_idx
@@ -831,12 +3085,30 @@ class JengaBlockManager:
         # Ask the connector to load the hashes that are remaining.
         num_loaded, loaded_blocks, transfer = (
             self._lookup_connector_prefix_cache_hit(
+                ctx.request_id,
                 desired_hashes[num_hit_blocks:],
                 replica_idx,
                 hint=ctx.dkv_cache_hint,
+                num_device_blocks=num_hit_blocks,
+                defer_lookup=defer_lookup,
             )
         )
         num_reused = num_hit_blocks + num_loaded
+
+        # Refresh the connector's recency over everything this request reuses,
+        # committed + device + connector-loaded, which is the run BlockManager
+        # touches on the legacy path. Gating on the device hit alone would skip
+        # the touch entirely under
+        # MODULAR_ONLY_USE_KV_CONNECTOR_LAST_LEVEL_CACHE, where the device tier
+        # never reports one -- so the path would go unexercised in exactly the
+        # configuration that leans on the connector hardest.
+        if self._connector is not None and committed_blocks + num_reused:
+            self._deferred_touches.append(
+                (
+                    self._state_of(ctx).hashes[: committed_blocks + num_reused],
+                    replica_idx,
+                )
+            )
 
         self._metrics.device_blocks_served += num_hit_blocks
         self._metrics.cache_tokens += num_reused * self._block_size
@@ -850,31 +3122,13 @@ class JengaBlockManager:
         # beyond it belongs to a chunk that is about to be re-planned.
         self._release_uncommitted_blocks(ctx, replica_idx)
 
-        # Add the device hit and connector loaded blocks to the request.
-        pool = self.pools[replica_idx]
-        for leaf_id, leaf in self._leaves.items():
-            req_blocks = leaf.req_to_blocks[ctx.request_id]
-            hit_blocks_for_leaf = hit_blocks[leaf_id]
-            loaded_blocks_for_leaf = loaded_blocks[leaf_id]
-
-            # If we got a hit from the connector and the first block of that
-            # is a null block (due to SWA null padding), then the device hits
-            # are no longer necessary. We need to free up those blocks and
-            # replace them with null blocks.
-            if loaded_blocks_for_leaf and loaded_blocks_for_leaf[0].is_null:
-                for block in hit_blocks_for_leaf:
-                    pool.free_block(block)
-                null_block = pool.null_little_blocks[leaf_id]
-                hit_blocks_for_leaf = [null_block] * len(hit_blocks_for_leaf)
-
-            req_blocks.extend(hit_blocks_for_leaf)
-            req_blocks.extend(loaded_blocks_for_leaf)
+        for group in self._groups.values():
+            group.extend(ctx.request_id, hit_blocks, loaded_blocks, replica_idx)
 
         committed_idx = (
-            self._req_to_committed_idx[ctx.request_id]
-            + num_reused * self._block_size
+            self._state_of(ctx).committed_idx + num_reused * self._block_size
         )
-        self._req_to_committed_idx[ctx.request_id] = committed_idx
+        self._state_of(ctx).committed_idx = committed_idx
 
         skip_amount = committed_idx - ctx.tokens.processed_length
         ctx.tokens.skip_processing(skip_amount)
@@ -885,19 +3139,270 @@ class JengaBlockManager:
         )
         return transfer
 
+    def _connector_lookup_is_ready(
+        self,
+        ctx: TextContext,
+        desired_hashes: Sequence[bytes],
+        replica_idx: int,
+        *,
+        start: bool,
+    ) -> bool:
+        """Returns whether this request's reuse can go ahead without waiting.
+
+        Starts a lookup when ``start`` is set and none is outstanding, and
+        starts it over when the device hit it was asked past shrank while it
+        was out or its answer grew too old to load. ``True`` when there is
+        nothing to ask, when the outstanding lookup can be consumed, or when
+        the request's reuse runs the synchronous lookup instead. A lookup
+        still outstanding when ``start`` is not set is handed back so that
+        the synchronous lookup runs, because that caller reads the request's
+        blocks as soon as ``alloc`` returns.
+        """
+        state = self._state_of(ctx)
+        connector = self._connector
+        # An answer the request waited on in its queue past the hand back age
+        # is asked again from the current device hit, with the request held
+        # out again, rather than loaded under a lease that may lapse first.
+        pending = state.pending_lookup
+        if (
+            start
+            and pending is not None
+            and pending.is_answered()
+            and state.lookup_is_stale()
+        ):
+            self._abandon_pending_lookup(state, "stale_reask")
+            state.connector_lookup_hand_backs += 1
+            pending = None
+        if pending is None:
+            if not start or connector is None or state.skips_connector:
+                return True
+            # Counted rather than claimed, so nothing is held while the
+            # connector answers. The alloc that consumes the answer takes the
+            # device hit for real and reads the answer from where it ends.
+            num_device_blocks = self._count_device_prefix_blocks(
+                desired_hashes, replica_idx
+            )
+            remaining = desired_hashes[num_device_blocks:]
+            if not remaining:
+                return True
+            # The pricing probe is read once, here, and the lookup it does
+            # not spare supersedes it. A miss leaves nothing to lease, and
+            # the reuse serves the chunk from the device hit alone.
+            first = state.committed_idx // self._block_size + num_device_blocks
+            probed = self._probed_run(ctx, replica_idx, first, remaining)
+            colocated_runs = self._probed_colocated_runs(
+                ctx, replica_idx, first, remaining
+            )
+            probe = self._pending_probes.pop(ctx.request_id, None)
+            # A probe that is the connector's lookup, read fresh enough to
+            # trust, is loaded from rather than asked again, and a miss it
+            # reports reads as a miss without asking either.
+            if probed is not None and connector.probe_is_lookup():
+                assert probe is not None
+                answers = probe.answers()
+                assert answers is not None
+                last = first + len(remaining)
+                state.pending_lookup = _PendingLookup(
+                    connector,
+                    CompletedLookup(
+                        {
+                            leaf_id: mask[first:last]
+                            for leaf_id, mask in answers[replica_idx].items()
+                        }
+                    ),
+                    first_block=num_device_blocks,
+                    started_at=time.monotonic() - probe.age_s(),
+                    # The probe was asked with the same hint.
+                    hint=ctx.dkv_cache_hint,
+                    on_drop=self._on_lookup_drop,
+                )
+                return True
+            if probed == 0:
+                return True
+            pending = self._start_connector_lookup(
+                ctx,
+                remaining,
+                replica_idx,
+                first_block=num_device_blocks,
+                colocated_runs=colocated_runs,
+            )
+            return pending.is_answered()
+
+        if not pending.is_answered():
+            if start:
+                return False
+            state.pending_lookup = None
+            pending.abandon("sync_alloc")
+            return True
+        if not start or pending.missed:
+            return True
+
+        # The answer starts where the device hit ended when it was asked. A
+        # hit that shrank meanwhile, typically an eviction, leaves a gap no
+        # mask covers, so the lookup is started over from the shorter count
+        # with the request still held out. This has to be settled before the
+        # hit is taken, because taking it can enqueue a cross-replica copy
+        # into the pages it claims, and those must stay held until the copy
+        # lands. A hit that keeps shrinking stops being chased after
+        # ``_MAX_CONNECTOR_LOOKUP_REASKS`` of these and the rest is computed.
+        num_device_blocks = self._count_device_prefix_blocks(
+            desired_hashes, replica_idx
+        )
+        if num_device_blocks >= pending.first_block:
+            return True
+        shrink = pending.first_block - num_device_blocks
+        self._record_lookup_shrink(shrink)
+        if state.connector_lookup_reasks >= _MAX_CONNECTOR_LOOKUP_REASKS:
+            # The blocks the device lost plus the run the answer offered past
+            # them estimate what asking again would have saved. A connector
+            # that answers in place is asked about the gap at once, so it
+            # loses none of them. The run is read once, and the drop count
+            # below reuses it.
+            run = self._answer_run(pending)
+            if connector is not None and connector.defers_lookup(replica_idx):
+                self._metrics.connector_lookup_shrink_cap_blocks += shrink + (
+                    run or 0
+                )
+            self._abandon_pending_lookup(state, "shrink_cap")
+            return True
+        self._abandon_pending_lookup(state, "shrink_reask")
+
+        state.connector_lookup_reasks += 1
+        replacement = self._start_connector_lookup(
+            ctx,
+            desired_hashes[num_device_blocks:],
+            replica_idx,
+            first_block=num_device_blocks,
+        )
+        return replacement.is_answered()
+
+    def _count_device_prefix_blocks(
+        self, desired_hashes: Sequence[bytes], replica_idx: int
+    ) -> int:
+        """Returns how many blocks the device hit would cover if taken now.
+
+        Counts without claiming or copying anything, and counts blocks a
+        peer replica holds when cross-replica copies are on, the same way
+        :meth:`_lookup_device_prefix_cache_hit` takes them.
+        """
+        if self._only_use_kv_connector_last_level_cache:
+            return 0
+        return self._find_longest_device_prefix_cache_hit(
+            desired_hashes, replica_idx, self._cross_replica_copy_enabled
+        )
+
+    def _start_connector_lookup(
+        self,
+        ctx: TextContext,
+        remaining: Sequence[bytes],
+        replica_idx: int,
+        first_block: int,
+        colocated_runs: Mapping[str, int] | None = None,
+    ) -> _PendingLookup:
+        """Starts a lookup over ``remaining`` for a later ``alloc`` to read.
+
+        ``remaining`` begins ``first_block`` blocks past the committed index,
+        and the lookup becomes the request's ``pending_lookup``.
+        ``colocated_runs`` is what :meth:`_probed_colocated_runs` found.
+        """
+        assert self._connector is not None
+        committed_blocks = self._state_of(ctx).committed_idx // self._block_size
+        # A connector that answers in place reaches here too, through
+        # alloc(defer_lookup=True), and that same alloc reads its answer
+        # before anything else allocates, so a refresh would buy nothing.
+        if self._refresh_lookup_device_hit and self._connector.defers_lookup(
+            replica_idx
+        ):
+            self._refresh_device_hit(
+                self._state_of(ctx).hashes[
+                    committed_blocks : committed_blocks + first_block
+                ],
+                replica_idx,
+            )
+
+        # Taken before the store is asked, so the age never trails the lease.
+        started_at = time.monotonic()
+        pending = _PendingLookup(
+            self._connector,
+            self._connector.start_lookup(
+                remaining,
+                replica_idx=replica_idx,
+                hint=ctx.dkv_cache_hint,
+                chain_start=committed_blocks + first_block,
+                colocated_runs=colocated_runs,
+            ),
+            first_block=first_block,
+            started_at=started_at,
+            hint=ctx.dkv_cache_hint,
+            on_drop=self._on_lookup_drop,
+        )
+        self._state_of(ctx).pending_lookup = pending
+        return pending
+
+    def _refresh_device_hit(
+        self, hit_hashes: Sequence[bytes], replica_idx: int
+    ) -> None:
+        """Moves the device hit a lookup is asked past to the recent end.
+
+        Refreshes the pages each leaf would take for the hit from this
+        replica's pool, tail first as a released row is freed, so eviction
+        reaches the hit after every older commit and its tail before its
+        head. Nothing is held. A block only a peer replica holds is copied
+        from it when the hit is taken, and reordering the peer would move
+        pages for a replica that does not run the request, so that part of
+        the hit can still shrink and the re-ask path covers it. A take whose
+        copy fails falls back to the local run, and a windowed or state
+        leaf's pages at the end of that run may not have been refreshed.
+        """
+        pool = self.pools[replica_idx]
+        for leaf_id, group in self._cacheable_groups.items():
+            cache = pool.prefix_caches[leaf_id]
+            for block_hash in reversed(group.claimable_hashes(hit_hashes)):
+                block = cache.get(block_hash)
+                if block is not None:
+                    pool.refresh(block)
+
+    def _rollback_prefix_reuse(
+        self, ctx: TextContext, replica_idx: int, committed_idx: int
+    ) -> None:
+        """Undoes the prefix-cache splice made past ``committed_idx``.
+
+        Keeps a failed ``alloc`` from leaving the request half-served: the
+        spliced blocks go back (an in-flight onload keeps its own pin until it
+        lands), the token window is rewound over them, and the cached-prefix
+        attribution is cleared.
+        """
+        state = self._state_of(ctx)
+        reused_tokens = state.committed_idx - committed_idx
+        if reused_tokens == 0:
+            return
+        # The pages a peer filled stay published past the rollback, and the
+        # retry device-hits them and computes past them, so they are written
+        # back as if the request had kept them. One rolled back before its
+        # copy landed is written back when it lands.
+        self._queue_peer_writeback(state, orphaned=True)
+        state.peer_onload = None
+        state.committed_idx = committed_idx
+        self._release_uncommitted_blocks(ctx, replica_idx)
+        self._metrics.cache_tokens -= reused_tokens
+        ctx.cached_prefix_length = 0
+        ctx.cached_prefix_external_length = 0
+
     def _release_uncommitted_blocks(
         self, ctx: TextContext, replica_idx: int
     ) -> None:
         """Drops the blocks past the committed index, in every cache."""
-        pool = self.pools[replica_idx]
-        committed_idx = self._req_to_committed_idx[ctx.request_id]
+        state = self._state_of(ctx)
+        # The rows are about to change, so where the request can resume is
+        # recomputed.
+        state.resumable = _RequestResumableState()
+        committed_idx = state.committed_idx
         num_committed_blocks = committed_idx // self._block_size
 
-        for leaf in self._leaves.values():
-            req_blocks = leaf.req_to_blocks[ctx.request_id]
-            assert len(req_blocks) >= num_committed_blocks
-            for _ in range(len(req_blocks) - num_committed_blocks):
-                pool.free_block(req_blocks.pop())
+        for group in self._groups.values():
+            group.shrink_to_fit(
+                ctx.request_id, num_committed_blocks, replica_idx
+            )
 
         delta = ctx.tokens.processed_length - committed_idx
         if delta > 0:
@@ -906,35 +3411,36 @@ class JengaBlockManager:
             ctx.tokens.skip_processing(-delta)
 
     def _commit_blocks_into_prefix_cache(
-        self, ctx: TextContext, pool: JengaBlockPool
+        self, ctx: TextContext, replica_idx: int
     ) -> None:
-        """Publishes the blocks the forward filled to the prefix caches."""
+        """Publishes the request's newly filled blocks into the prefix caches."""
         req_hashes = self._compute_hashes_for_request(ctx)
-        first_block = (
-            self._req_to_committed_idx[ctx.request_id] // self._block_size
-        )
+        first_block = self._state_of(ctx).committed_idx // self._block_size
 
         last_block = min(self._num_filled_blocks(ctx), len(req_hashes))
 
-        for leaf in self._leaves.values():
-            req_blocks = leaf.req_to_blocks[ctx.request_id]
-            for block_idx in range(first_block, last_block):
-                block = req_blocks[block_idx]
-                # A twin block already serving this hash means the bytes are
-                # already published, so the request adopts it and drops its own.
-                twin = pool.get_or_commit_into_prefix_cache(
-                    req_hashes[block_idx], block
+        for group in self._groups.values():
+            group.commit(ctx.request_id, req_hashes, last_block, replica_idx)
+
+        self._state_of(ctx).committed_idx = last_block * self._block_size
+
+        # Queue the newly committed run for the next `offload`, per leaf, as
+        # far as the leaf published it: a recurrent leaf holds only states.
+        if (
+            self._connector is not None
+            and self._streamed_leaf_ids
+            and last_block > first_block
+        ):
+            run = req_hashes[first_block:last_block]
+            prefix_caches = self.pools[replica_idx].prefix_caches
+            self._pending_offloads[replica_idx].append(
+                _QueuedOffload(
+                    {
+                        leaf_id: [h for h in run if h in prefix_caches[leaf_id]]
+                        for leaf_id in self._streamed_leaf_ids
+                    },
+                    parent_hash=req_hashes[first_block - 1]
+                    if first_block
+                    else None,
                 )
-                if twin is not None:
-                    req_blocks[block_idx] = twin
-
-        self._req_to_committed_idx[ctx.request_id] = (
-            last_block * self._block_size
-        )
-
-        # Queue the newly committed run for the next `offload`. Every leaf
-        # commits the same hashes in lockstep, so one run covers them all.
-        if self._connector is not None and last_block > first_block:
-            self._pending_offloads[self._replica_of(ctx)].append(
-                list(req_hashes[first_block:last_block])
             )

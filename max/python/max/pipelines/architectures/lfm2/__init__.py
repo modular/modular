@@ -10,14 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""The LFM2 architecture.
+
+A hybrid model combining full attention with short convolutions.
+"""
+
 from .arch import lfm2_arch
-from .model import ConvStateCache, LFM2Inputs, LFM2Model
+from .lfm2 import LFM2
 from .model_config import LFM2Config
 
 __all__ = [
-    "ConvStateCache",
+    "LFM2",
     "LFM2Config",
-    "LFM2Inputs",
-    "LFM2Model",
     "lfm2_arch",
 ]

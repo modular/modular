@@ -24,9 +24,8 @@ from collections.abc import Iterable
 
 import numpy as np
 import pytest
-from max.experimental.nn import Module, ModuleList
-from max.experimental.tensor import Tensor
 from max.graph.weights import WeightData
+from max.nn import Module, ModuleList
 from max.pipelines.lib.weight_loader import (
     HasLoaderAdapter,
     WeightLoader,
@@ -37,6 +36,7 @@ from max.pipelines.lib.weight_loader import (
     rename,
     swap_prefix,
 )
+from max.tensor import Tensor
 
 
 def _wd(name: str, value: float = 0.0) -> WeightData:

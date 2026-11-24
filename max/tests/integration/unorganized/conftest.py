@@ -30,18 +30,12 @@ SMOLLM2_HF_REPO_ID = "HuggingFaceTB/SmolLM2-135M"
 DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
     "deepseek-ai/DeepSeek-R1-Distill-Llama-8B"
 )
-LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID = (
-    "lmstudio-community/DeepSeek-R1-Distill-Llama-8B-GGUF"
-)
 TINY_RANDOM_LLAMA_HF_REPO_ID = (
     "trl-internal-testing/tiny-random-LlamaForCausalLM"
 )
 GEMMA_3_1B_IT_HF_REPO_ID = "google/gemma-3-1b-it"
 LLAMA_3_1_LORA_HF_REPO_ID = "FinGPT/fingpt-mt_llama3-8b_lora"
 TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID = (
-    "neubla/tiny-random-LlamaForCausalLM"
-)
 QWQ_32B_HF_REPO_ID = "Qwen/QwQ-32B"
 MISTRAL_NEMO_INSTRUCT_2407_HF_REPO_ID = "mistralai/Mistral-Nemo-Instruct-2407"
 
@@ -185,21 +179,6 @@ def deepseek_r1_distill_llama_8b_local_path() -> str:
 
 
 @pytest.fixture
-def lmstudio_deepseek_r1_distill_llama_8b_local_path() -> str:
-    try:
-        model_path = generate_local_model_path(
-            LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {e}")
-        logger.warning(
-            f"Falling back to repo_id: {LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = LMSTUDIO_DEEPSEEK_R1_DISTILL_LLAMA_8B_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
 def modular_ai_llama_3_1_local_path() -> str:
     try:
         model_path = generate_local_model_path(MODULAR_AI_LLAMA_3_1_HF_REPO_ID)
@@ -263,21 +242,6 @@ def tiny_llama_1_1b_chat_v1_0_local_path() -> str:
             f"Falling back to repo_id: {TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID} as config to PipelineConfig"
         )
         model_path = TINY_LLAMA_1_1B_CHAT_V1_0_HF_REPO_ID
-    return model_path
-
-
-@pytest.fixture
-def tiny_random_llama_for_causal_lm_local_path() -> str:
-    try:
-        model_path = generate_local_model_path(
-            TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID
-        )
-    except FileNotFoundError as e:
-        logger.warning(f"Failed to generate local model path: {e}")
-        logger.warning(
-            f"Falling back to repo_id: {TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID} as config to PipelineConfig"
-        )
-        model_path = TINY_RANDOM_LLAMA_FOR_CAUSAL_LM_HF_REPO_ID
     return model_path
 
 

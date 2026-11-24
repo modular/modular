@@ -53,9 +53,7 @@ class CompilationTarget:
 
 
 def _supported_dtypes(device: Device) -> list[DType]:
-    """Returns every value dtype the deleted ``select_ops.mojo`` handled on
-    *device*.
-    """
+    """Returns every value dtype ``select_ops.mojo`` handled on *device*."""
     return (
         gc_compile.float_dtypes(device)
         + gc_compile.SIGNED_INT_DTYPES

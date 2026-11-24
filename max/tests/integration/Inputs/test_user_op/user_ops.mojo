@@ -15,10 +15,7 @@
 from std.math import iota
 from extensibility import *
 import extensibility
-from extensibility import OutputTensor
-from extensibility import (
-    _MutableInputVariadicTensors as MutableInputVariadicTensors,
-)
+from layout import Coord
 
 from std.utils.index import IndexList
 
@@ -26,10 +23,14 @@ from std.utils.index import IndexList
 @extensibility.register("reduce_buffers")
 struct ReduceBuffers:
     @staticmethod
-    def execute(
-        output: OutputTensor[dtype=.float32, rank=1, ...],
-        inputs: MutableInputVariadicTensors[dtype=DType.float32, rank=1, ...],
-    ) -> None:
+    def execute[
+        Ins: TypeList[Trait=MutableInput & Tensor, ...], //
+    ](output: Some[Output & Tensor], inputs: TensorTuple[*Ins]) -> None:
+        comptime assert type_of(output).dtype == .float32
+        comptime assert type_of(output).rank == 1
+        comptime for i in range(len(Ins)):
+            comptime assert Ins[i].dtype == .float32
+            comptime assert Ins[i].rank == 1
         print("Success!")
 
 
@@ -49,14 +50,13 @@ struct MakeSimdPair:
 @extensibility.register("kernel_with_parameterized_opaque")
 struct ParameterizedOpaqueType:
     @staticmethod
-    def execute[
-        P0: Int
-    ](
-        output: OutputTensor[dtype=.int32, rank=1, ...],
-        x: SIMDPair[P0, _],
-    ) capturing:
-        output.store(IndexList[1](0), x.x)
-        output.store(IndexList[1](P0), x.y)
+    def execute[P0: Int](output: Some[Output & Tensor], x: SIMDPair[P0, _]):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert type_of(output).dtype == .int32
+        comptime assert type_of(output).rank == 1
+        var out_tile = output.to_tile_tensor[.int32]()
+        out_tile.store(Coord(0), x.x)
+        out_tile.store(Coord(P0), x.y)
 
 
 @extensibility.register_shape_function("kernel_with_parameterized_opaque")

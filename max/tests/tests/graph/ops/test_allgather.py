@@ -12,12 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 """Test the max.graph Python bindings."""
 
+from unittest.mock import patch
+
 import pytest
 from conftest import tensor_types
 from hypothesis import strategies as st
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, Shape, TensorType, ops
-from max.nn import Signals
+from max.graph.graph import KernelLibrary
+from max.nn.legacy import Signals
 
 shared_types = st.shared(tensor_types())
 
@@ -230,6 +233,48 @@ def test_allgather_basic() -> None:
             assert device == output.device
             assert output.shape == Shape((24, 5))
             assert output.dtype == DType.float32
+
+
+@pytest.mark.parametrize("has_kernel", [False, True])
+def test_allgather_stages_the_form_the_target_has_a_kernel_for(
+    has_kernel: bool,
+) -> None:
+    """The concatenated op is staged only where a kernel for it resolves."""
+    devices = [DeviceRef.GPU(id=i) for i in range(4)]
+    signals = Signals(devices)
+
+    with (
+        patch.object(KernelLibrary, "resolves", return_value=has_kernel),
+        Graph(
+            "allgather",
+            input_types=[
+                TensorType(dtype=DType.float32, shape=[6, 5], device=device)
+                for device in devices
+            ]
+            + list(signals.input_types()),
+        ) as graph,
+    ):
+        outputs = ops.allgather(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            axis=-1,
+            group_size=2,
+        )
+        graph.output(*outputs)
+
+    ir = str(graph._mlir_op)
+    if has_kernel:
+        assert ir.count("mo.distributed.allgather.concat(") == 1
+        assert "mo.distributed.allgather(" not in ir
+        assert "rmo.concat" not in ir
+        assert "[axis = 1, group_size = 2]" in ir
+    else:
+        assert "mo.distributed.allgather.concat(" not in ir
+        assert ir.count("mo.distributed.allgather(") == 1
+        assert ir.count("rmo.concat") == len(devices)
+    for output, device in zip(outputs, devices, strict=True):
+        assert output.device == device
+        assert output.shape == Shape((6, 10))
 
 
 def test_allgather_nonzero_dim() -> None:
@@ -477,3 +522,48 @@ def test_allgather_signal_buffer_mismatch() -> None:
                 signal_buffers=(v.buffer for v in graph.inputs[4:]),
             )
             graph.output(*allgather_outputs)
+
+
+def test_allgather_uneven_symbolic_split_is_stable() -> None:
+    """Repeated allgathers of an uneven symbolic split infer one stable shape.
+
+    Concat's shape inference used to mint fresh graph parameters while summing
+    the axis dims, and KGEN orders a commutative operand list by parameter name,
+    so the term order of the gathered dim drifted with the graph's parameter
+    counter. Inference runs again when the op is verified, so a drifting order
+    surfaced as ``'rmo.concat' op inferred type(s) ... are incompatible with
+    return type(s)``. Only uneven splits were affected: an even split makes
+    every shard the same dim, and any order of identical terms is the same term.
+    """
+    devices = [DeviceRef.GPU(id=i) for i in range(4)]
+    signals = Signals(devices)
+
+    with Graph(
+        "allgather_uneven_symbolic",
+        input_types=[
+            TensorType(dtype=DType.bfloat16, shape=["seq_len", 64], device=d)
+            for d in devices
+        ]
+        + list(signals.input_types()),
+    ) as graph:
+        hs = [v.tensor for v in graph.inputs[: len(devices)]]
+        buffers = [v.buffer for v in graph.inputs[len(devices) :]]
+
+        shapes = []
+        # One round is not enough: the first inference in a graph agreed with
+        # its own re-inference, and the orders only diverged further in.
+        for _ in range(4):
+            shards = ops.reducescatter.sum(
+                hs, buffers, axis=0, group_size=len(devices)
+            )
+            assert len({str(s.shape[0]) for s in shards}) == len(devices), (
+                "reduce-scatter should bin the symbolic dim unevenly"
+            )
+            gathered = ops.allgather(
+                shards, buffers, axis=0, group_size=len(devices)
+            )
+            shapes.append(str(gathered[0].shape[0]))
+            hs = [ops.rebind(g, ["seq_len", 64]) for g in gathered]
+
+        assert len(set(shapes)) == 1, f"gathered dim drifted: {shapes}"
+        graph.output(*hs)

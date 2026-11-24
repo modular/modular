@@ -26,7 +26,7 @@
 # RUN: kgen-opt -mlir-print-debuginfo %t_with_bitcode.mojoc | FileCheck %s
 
 # CHECK: lit.package @{{.*}}_with_bitcode
-# CHECK-SAME: externLLVMBitcodeModules = #lit<dense_resource_elements_array[dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
+# CHECK: } <{{.*}}externLLVMBitcodeModules = [dense_resource<[[LLVM_BITCODE_NAME:llvm_bitcode_[[:alnum:]]+]]
 # CHECK: dialect_resources:
 # CHECK: [[LLVM_BITCODE_NAME]]
 

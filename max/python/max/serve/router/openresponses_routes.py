@@ -78,7 +78,6 @@ async def create_response(
         HTTPException: If request parsing or validation fails, including
             if streaming is requested (not currently supported).
     """
-
     # Request is already parsed and validated via dependency injection
     # (including validation that streaming is not requested)
     logger.debug(
@@ -158,6 +157,7 @@ async def create_response(
 async def get_generated_image_content(
     request: Request, image_id: str
 ) -> FileResponse:
+    """Serves a generated image by id."""
     asset = _require_asset(
         _get_media_store(request).get_image(image_id),
         kind="image",
@@ -174,6 +174,7 @@ async def get_generated_image_content(
 async def get_generated_video_content(
     request: Request, video_id: str
 ) -> FileResponse:
+    """Serves a generated video by id."""
     asset = _require_asset(
         _get_media_store(request).get_video(video_id),
         kind="video",
@@ -190,6 +191,7 @@ async def get_generated_video_content(
 async def get_generated_audio_content(
     request: Request, audio_id: str
 ) -> FileResponse:
+    """Serves a generated audio clip by id."""
     asset = _require_asset(
         _get_media_store(request).get_audio(audio_id),
         kind="audio",

@@ -24,8 +24,12 @@ from pathlib import Path
 
 import pytest
 import torch
+from max.pipelines.weights.fp4_quantization import FP4Format
 from max.pipelines.weights.fp6_quantization import MX_BLOCK_SIZE, FP6Format
-from max.pipelines.weights.quantize_checkpoint import quantize_checkpoint
+from max.pipelines.weights.quantize_checkpoint import (
+    main,
+    quantize_checkpoint,
+)
 from safetensors.torch import safe_open, save_file
 
 _EXPERT = "model.layers.0.block_sparse_moe.experts.0.w1.weight"
@@ -113,3 +117,58 @@ def test_config_records_the_element_encoding(
     config = json.loads((dst / "config.json").read_text())
     assert config["quantization_config"]["fp6_format"] == fmt.value
     assert config["quantization_config"]["quant_method"] == "mxfp6"
+
+
+def test_nvfp4_writes_block_and_global_scales(tmp_path: Path) -> None:
+    """NVFP4 stores packed E2M1, E4M3 block scales, and a tensor scale."""
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    _write_source(src)
+
+    stats = quantize_checkpoint(src, dst, FP4Format.NVFP4)
+
+    assert stats["quantized"] == 1
+    out = _read_output(dst)
+    fmt = FP4Format.NVFP4
+    assert out[_EXPERT].shape == (_N, _K // 2)
+    assert out[_EXPERT].dtype == torch.uint8
+    assert out[f"{_EXPERT}_scale"].shape == (_N, _K // fmt.block_size)
+    assert out[f"{_EXPERT}_scale"].dtype == torch.float8_e4m3fn
+    assert out[f"{_EXPERT}_scale_2"].shape == (1,)
+    assert out[f"{_EXPERT}_scale_2"].dtype == torch.float32
+    input_scale = out[
+        "model.layers.0.block_sparse_moe.experts.0.w1.input_scale"
+    ]
+    assert input_scale.dtype == torch.float32
+    assert float(input_scale) == 1.0
+
+    config = json.loads((dst / "config.json").read_text())
+    assert config["quantization_config"]["quant_method"] == "modelopt"
+    assert config["quantization_config"]["quant_algo"] == "NVFP4"
+    assert config["quantization_config"]["weight_block_size"] == [
+        1,
+        fmt.block_size,
+    ]
+
+
+def test_cli_writes_the_stats_as_json(tmp_path: Path) -> None:
+    """CI renders the run summary from this file rather than scraping the log."""
+    src, dst = tmp_path / "src", tmp_path / "dst"
+    _write_source(src)
+    stats_path = tmp_path / "stats" / "quantization-stats.json"
+
+    exit_code = main(
+        [
+            str(src),
+            str(dst),
+            "--format",
+            FP4Format.NVFP4.value,
+            "--stats-json",
+            str(stats_path),
+        ]
+    )
+
+    assert exit_code == 0
+    summary = json.loads(stats_path.read_text())
+    assert summary["format"] == FP4Format.NVFP4.value
+    assert summary["quantized"] == 1
+    assert summary["bytes_saved"] > 0

@@ -18,12 +18,12 @@
 # CHECK-SAME: <?, [[T:.*]]: !AnyType_Trait>
 trait Trait:
     # CHECK: lit.fn @"f0{{.*}}(%self: !lit.ref<:!AnyType_Trait [[T]], imm {{.*}}> imm_mem) -> !kgen.none
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f0(self):
         ...
 
     # CHECK: lit.fn @"f1{{.*}}(%self: !lit.ref<{{.*}}> mut) -> !kgen.none
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f1(mut self):
         ...
 
@@ -35,7 +35,7 @@ trait Trait:
         pass
 
     # CHECK: lit.fn @"f3{{.*}}(%self: !lit.ref<{{.*}}> imm_mem, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, mut *"__result__`2x2"> byref_result) throws -> !kgen.scalar<bool>
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f3(self) raises:
         ...
 
@@ -49,7 +49,7 @@ trait Trait:
         pass
 
     # CHECK: lit.fn @"f5{{.*}}(%self: !lit.ref<{{.*}}> mut, ?, %__error__: !lit.ref<!Error, {{.*}}> byref_error, %__result__: !lit.ref<none, {{.*}}> byref_result) throws -> !kgen.scalar<bool>
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def f5(mut self) raises:
         ...
 
@@ -343,8 +343,7 @@ struct ChangedResultTypeStruct(ChangedResultTypeTrait, RegisterPassable):
 
 # CHECK-LABEL: lit.fn @"convert_result_type
 def convert_result_type():
-    @__parameter
-    def convert_result_type[T: ChangedResultTypeTrait]():
+    def convert_result_type[T: ChangedResultTypeTrait]() {imm}:
         pass
 
     # CHECK: call{{.*}}!ChangedResultTypeStruct
@@ -365,8 +364,7 @@ struct VariadicTrait[*I: Int](RegisterPassable, SimpleTraitMethod):
 
 # CHECK-LABEL: lit.fn @"test_bind_variadic
 def test_bind_variadic():
-    @__parameter
-    def bind_trait[T: SimpleTraitMethod]():
+    def bind_trait[T: SimpleTraitMethod]() {imm}:
         pass
 
     # CHECK: call{{.*}}@VariadicTrait<:param_list<!Int> []
@@ -572,7 +570,7 @@ trait ParentTraitSameSig:
 # CHECK-LABEL: lit.trait.decl @ChildTraitSameSig
 trait ChildTraitSameSig(ParentTraitSameSig):
     # CHECK-NEXT: lit.fn @"foo
-    # CHECK-NEXT: kgen.unreachable
+    # CHECK-NEXT: hlcf.unreachable
     def foo(self):
         ...
 
@@ -587,25 +585,25 @@ trait GreatGrandFather:
 
 # CHECK-LABEL: lit.trait.decl @GrandFather
 # CHECK-SAME: GreatGrandFather)
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@GreatGrandFather>]>
 trait GrandFather(GreatGrandFather):
     # CHECK: lit.fn @"bar
+# CHECK: } <{{.*}}immediateParents = [<@traits::@GreatGrandFather>]
     def bar(self):
         ...
 
 
 # CHECK-LABEL: lit.trait.decl @Father
 # CHECK-SAME: GrandFather_GreatGrandFather)
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@GrandFather>]>
 trait Father(GrandFather):
     # CHECK: lit.fn @"baz
+# CHECK: } <{{.*}}immediateParents = [<@traits::@GrandFather>]
     def baz(self):
         ...
 
 
 # CHECK-LABEL: lit.trait.decl @UnevenDiamond
 # CHECK-SAME: Father_GrandFather_GreatGrandFather_UnevenDiamond)
-# CHECK-SAME: immediateParents = #kgen<trait_symbols[<@traits::@Father>]>
+# CHECK: } <{{.*}}immediateParents = [<@traits::@Father>]
 trait UnevenDiamond(GreatGrandFather, Father):
     ...
 
@@ -634,16 +632,13 @@ struct TraitInheritance(Father, Movable where False):
 
 # CHECK-LABEL: lit.fn @"test_trait_inheritance
 def test_trait_inheritance():
-    @__parameter
-    def take_great_grand_father[T: GreatGrandFather]():
+    def take_great_grand_father[T: GreatGrandFather]() {imm}:
         pass
 
-    @__parameter
-    def take_grand_father[T: GrandFather]():
+    def take_grand_father[T: GrandFather]() {imm}:
         pass
 
-    @__parameter
-    def take_father[T: Father]():
+    def take_father[T: Father]() {imm}:
         pass
 
     # CHECK: call{{.*}}!TraitInheritance
@@ -959,15 +954,15 @@ struct FormVariadicPackWithCastedElementVariadic[
     def foo(self, var storage: VariadicPack[element_trait=Self.element_trait, _, *Self.element_types]):
         pass
 
-# This tests that we can take UnsafePointer (which has an AnyType bound for T)
+# This tests that we can take Pointer (which has an AnyType bound for T)
 # and conditional conformance rebind the parametric type with AnyType bound down
 # to Movable correctly.
-def take_movable_pointer[T: Movable&AnyType](ptr: UnsafePointer[T, AnyOrigin[mut=True]]): pass
+def take_movable_pointer[T: Movable&AnyType](ptr: Pointer[T, AnyOrigin[mut=True]]): pass
 # CHECK-LABEL: test_parametric_anytype_movable
 # CHECK-SAME: %ptr: !lit.struct<#Pointer <{{.*}}meta<!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>
 def test_parametric_anytype_movable[element_trait: _CollectionElementMetaType, //,
                                   *element_types: element_trait]
-                                  (ptr: UnsafePointer[element_types[0], AnyOrigin[mut=True]]):
+                                  (ptr: Pointer[element_types[0], AnyOrigin[mut=True]]):
 
         # CHECK: lit.call {{.*}}take_movable_pointer
         # CHECK-SAME: <:!AnyType_Movable {{.*}}!AnyType_Copyable_ImplicitlyCopyable_Movable> element_trait>

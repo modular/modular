@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Config types for the ModuleV3 autoencoder KL models."""
 
 from typing import Any
 
@@ -22,6 +23,8 @@ from pydantic import Field
 
 
 class AutoencoderKLConfigBase(MAXModelConfigBase):
+    """Fields shared by the autoencoder configs."""
+
     in_channels: int = 3
     out_channels: int = 3
     down_block_types: list[str] = Field(default_factory=list, max_length=4)
@@ -44,12 +47,15 @@ class AutoencoderKLConfigBase(MAXModelConfigBase):
 
 
 class AutoencoderKLConfig(AutoencoderKLConfigBase):
+    """Config for the SD-family autoencoder."""
+
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> "AutoencoderKLConfig":
+        """Builds the config from a Hugging Face config dict."""
         init_dict = {
             key: value
             for key, value in config_dict.items()
@@ -79,6 +85,8 @@ class AutoencoderKLConfig(AutoencoderKLConfigBase):
 
 
 class AutoencoderKLFlux2Config(AutoencoderKLConfigBase):
+    """Config for the Flux2 autoencoder."""
+
     patch_size: tuple[int, int] = (2, 2)
     batch_norm_eps: float = 1e-4
     batch_norm_momentum: float = 0.1

@@ -1,0 +1,37 @@
+From 1e03aa68b71a9bb10517b1053dc2e36972061be2 Mon Sep 17 00:00:00 2001
+From: Kathy Wu <kathywu@modular.com>
+Date: Thu, 22 Oct 2026 13:37:45 -0400
+Subject: [PATCH] Make request parallelism configurable
+
+MISTRAL_EVALS_MAX_WORKERS overrides the 512 requests in flight, for servers that shed load past a lower bound.
+---
+ eval/task.py | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/eval/task.py b/eval/task.py
+index 29edb16..332a9df 100644
+--- a/eval/task.py
++++ b/eval/task.py
+@@ -2,6 +2,7 @@ from typing import Any, Optional
+ 
+ import copy
+ import dataclasses
++import os
+ from abc import ABC, abstractmethod
+ from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+ import numpy as np
+@@ -57,7 +58,10 @@ class Eval(ABC):
+         """Queries model to get responses for each interaction."""
+ 
+         futures: dict[Future, Interaction] = {}
+-        with ThreadPoolExecutor(max_workers=512) as executor:
++        # A server that sheds load past its own bound (Mach admits a fixed
++        # number of image requests) needs fewer in flight than the default.
++        max_workers = int(os.environ.get("MISTRAL_EVALS_MAX_WORKERS", "512"))
++        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+             for interaction in self.interactions:
+                 request = copy.deepcopy(interaction.request)
+                 futures[executor.submit(model, request)] = interaction
+-- 
+2.50.1 (Apple Git-155)
+

@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Pixtral with the pipeline registry."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.context.context_validators import (
     validate_requires_vision_context,
 )
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
@@ -49,7 +49,6 @@ pixtral_arch = SupportedArchitecture(
     ],
     config=PixtralConfig,
     batching=PixtralBatchProcessor,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

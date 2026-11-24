@@ -8,11 +8,20 @@ modular_cc_binary(
         "*.cpp",
         "*.h",
     ]),
-    deps = [
+    data = [
+        "//Mojo:CompilerRT",
+    ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//MLRT:Driver/Compilation",
         "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "//bazel/internal:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:RuntimeGlobals.static",
         "//Init",
         "//Mojo:Compiler",
-        "//Mojo:CompilerRT",
         "//Mojo:ExecutionEngine",
         "//Mojo:HLCFDialect",
         "//Mojo:KGENDialect",
@@ -23,7 +32,7 @@ modular_cc_binary(
         "//Mojo:TransformUtils",
         "//Support:Base",
         "//Support:Context",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "@llvm-project//mlir:MlirOptLib",
     ],
 )

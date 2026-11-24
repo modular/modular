@@ -66,14 +66,24 @@ the review it deserves. The best way to make both of those things happen is
 to talk with us *before* you start writing code.
 
 For anything beyond a small, obvious fix, please open a GitHub issue (or, for
-larger changes, a
-[proposal](Mojo/docs/contributing/proposal-process.md))
+larger standard library changes, a [standard library
+proposal](Mojo/docs/contributing/stdlib/proposal-process.md))
 that describes the problem you're solving and the approach you have in mind. A
 maintainer will respond to let you know whether the change aligns with where
 we're headed, suggest alternatives, or flag anything you should know before
 investing the time. Once a maintainer has signaled that the change is a good fit
 — typically by adding the `accepted` label or by leaving a comment giving the
 go-ahead — you're clear to start work.
+
+If you come across an already accepted issue that you wish to work on, there is
+no need to ask permission from the team before you begin working on it
+given it is not actively assigned to anyone.
+
+If you need clarification on the approach, or otherwise need a maintainer's
+attention, tag the GitHub team that owns the code rather than an individual.
+You can find the owning team for any path in
+[`.github/CODEOWNERS`](.github/CODEOWNERS), for example `@modular/stdlib` for
+the Mojo standard library, or `@modular/mojo-compiler` for the Mojo compiler.
 
 What counts as a "small, obvious fix" where you can skip straight to a PR:
 
@@ -363,7 +373,7 @@ Here are a few implementation details that help us keep things running smoothly:
 
     ```plaintext
     ORIGINAL_AUTHOR=username 12345678+username@users.noreply.github.com
-    PUBLIC_PR_LINK=modularml/mojo#2439
+    PUBLIC_PR_LINK=modular/modular#2439
     ```
 
 - This repo is synced nightly with Modular's internal repo around 2 am ET

@@ -13,7 +13,7 @@
 
 # Tests for @deprecated decorator warning emission.
 
-# RUN: %parse-mojo-isolated -verify-diagnostics %s -I=%S/inputs
+# RUN: %parse-mojo-isolated -verify-diagnostics %s -I%S/inputs
 
 
 # ===----------------------------------------------------------------------=== #
@@ -265,6 +265,16 @@ struct InstanceMethodRefTopLevel(Movable where False):
     @deprecated(use=some_top_level_func)
     def instance_method(self):
         pass
+
+
+comptime some_top_level_value = 1
+
+
+struct ComptimeMemberRefTopLevel(Movable where False):
+    # comptime members, like methods, name a sibling member as the replacement.
+    # expected-error @below {{cannot reference unknown value 'some_top_level_value'}}
+    @deprecated(use=some_top_level_value)
+    comptime member = 1
 
 
 # ===----------------------------------------------------------------------=== #

@@ -32,6 +32,21 @@ _transitioned_mojo_library = rule(
     },
 )
 
+# CI skips the parameter verifier when it precompiles a package outside
+# `Mojo/`. The checks find compiler bugs rather than errors in the package, and
+# the compiler's own tree keeps them. `--config=parameter-verifier` keeps them
+# everywhere, for the nightly job that still runs them.
+_CI_PRECOMPILE_COPTS = select({
+    "//:ci_skips_parameter_verifier": ["--run-parameter-verifier=false"],
+    "//conditions:default": [],
+})
+
+def _verify_parameters_copts():
+    package = native.package_name()
+    if package == "Mojo" or package.startswith("Mojo/"):
+        return []
+    return _CI_PRECOMPILE_COPTS
+
 def mojo_library(
         name,
         srcs,
@@ -50,6 +65,7 @@ def mojo_library(
         copts = [],
         ignore_deprecated = [],
         import_path = ".",
+        target_compatible_with = [],
         tags = []):
     """
     Precompiles sources into a mojoc file.
@@ -81,6 +97,9 @@ def mojo_library(
             `IGNORED_POINTER_DEPRECATIONS` (see
             `//max/kernels/src:deprecations.bzl`) here explicitly.
         import_path: Forwarded to `mojo_library`
+        target_compatible_with:
+            Forwarded to all subtargets. See
+            https://bazel.build/extending/platforms#skipping-incompatible-targets
         tags: Forwarded to all subtargets
     """
     library_rule = _transitioned_mojo_library if use_production_compiler_for_asan else _upstream_mojo_library
@@ -95,8 +114,9 @@ def mojo_library(
         testonly = testonly,
         tags = ["mojo-fixits"] + tags,
         additional_compiler_inputs = additional_compiler_inputs,
-        copts = copts + ignore_deprecated_copts,
+        copts = copts + ignore_deprecated_copts + _verify_parameters_copts(),
         import_path = import_path,
+        target_compatible_with = target_compatible_with,
         **library_kwargs
     )
 
@@ -111,10 +131,12 @@ def mojo_library(
             docs_hosted_on_mojolang = docs_hosted_on_mojolang,
             show_stability_markers = show_stability_markers,
             stability_doc_url = stability_doc_url,
+            import_path = import_path,
             copts = ignore_deprecated_copts,
             visibility = visibility,
             tags = [ALLOW_UNUSED_TAG] + tags,
             testonly = testonly,
+            target_compatible_with = target_compatible_with,
         )
 
         build_test(
@@ -122,4 +144,5 @@ def mojo_library(
             targets = [name + ".docs"],
             tags = ["mojo-docs", "lint-test"] + tags,
             visibility = ["//visibility:private"],
+            target_compatible_with = target_compatible_with,
         )

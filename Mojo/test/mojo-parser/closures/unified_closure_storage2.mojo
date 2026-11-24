@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # COM: COnstructor is generated correctly
 

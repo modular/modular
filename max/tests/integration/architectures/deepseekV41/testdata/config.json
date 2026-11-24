@@ -1,0 +1,365 @@
+{
+  "architectures": [
+    "DeepseekV41ForCausalLM"
+  ],
+  "bos_token_id": 0,
+  "dtype": "bfloat16",
+  "eos_token_id": 1,
+  "image_token_id": 129264,
+  "model_type": "deepseek_v41",
+  "pad_token_id": 2,
+  "quantization_config": {
+    "activation_scheme": "dynamic",
+    "config_groups": {
+      "group_0": {
+        "input_activations": {
+          "dynamic": false,
+          "group_size": 16,
+          "num_bits": 4,
+          "type": "float"
+        },
+        "targets": [
+          "Linear"
+        ],
+        "weights": {
+          "dynamic": false,
+          "group_size": 16,
+          "num_bits": 4,
+          "type": "float"
+        }
+      }
+    },
+    "expert_dtype": "fp4",
+    "group_size": 16,
+    "ignore": [
+      "*.attn.*",
+      "*.ffn.shared_experts.*",
+      "head",
+      "mtp.*"
+    ],
+    "kv_cache_quant_algo": null,
+    "moe_quant_algo": "NVFP4",
+    "producer": {
+      "name": "modelopt",
+      "version": "dsv4-nvfp4-experts"
+    },
+    "quant_algo": "MIXED_PRECISION",
+    "quant_method": "fp8",
+    "quantized_layers": {
+      "layers.0.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.1.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.10.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.11.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.12.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.13.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.14.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.15.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.16.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.17.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.18.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.19.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.2.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.20.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.21.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.22.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.23.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.24.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.25.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.26.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.27.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.28.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.29.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.3.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.30.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.31.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.32.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.33.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.34.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.35.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.36.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.37.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.38.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.39.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.4.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.5.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.6.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.7.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.8.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      },
+      "layers.9.ffn.experts": {
+        "group_size": 16,
+        "quant_algo": "NVFP4"
+      }
+    },
+    "scale_fmt": "ue8m0",
+    "weight_block_size": [
+      32,
+      32
+    ]
+  },
+  "text_config": {
+    "attention_bias": false,
+    "attention_dropout": 0.0,
+    "candidate_block_size": 8,
+    "candidate_source_layer_id": 20,
+    "candidate_topk_blocks": 2048,
+    "compress_ratios": [
+      0,
+      0,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      2,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      1,
+      0,
+      0,
+      0
+    ],
+    "compress_rope_theta": 160000,
+    "dspark_block_size": 5,
+    "dspark_markov_rank": 256,
+    "dspark_n_routed_experts": 128,
+    "dspark_noise_token_id": 128799,
+    "dspark_num_experts_per_tok": 3,
+    "dspark_target_layer_ids": [
+      37,
+      38,
+      39
+    ],
+    "engram_compressed_vocab_size": 99092,
+    "engram_head_dim": 256,
+    "engram_layer_ids": [
+      1,
+      14
+    ],
+    "engram_max_ngram_size": 4,
+    "engram_n_heads": 8,
+    "engram_num_embeddings": [
+      384006168,
+      384016682
+    ],
+    "engram_pad_token_id": 2,
+    "engram_vocab_size": 16000000,
+    "hc_eps": 1e-06,
+    "hc_mult": 4,
+    "hc_sinkhorn_iters": 20,
+    "head_dim": 512,
+    "hidden_act": "silu",
+    "hidden_size": 5120,
+    "index_head_dim": 128,
+    "index_n_heads": 32,
+    "index_source_layer_ids": [
+      2,
+      8,
+      14,
+      20,
+      24,
+      28,
+      32,
+      36
+    ],
+    "index_topk": 512,
+    "initializer_range": 0.02,
+    "kv_source_layer_ids": [
+      2,
+      8,
+      14,
+      20
+    ],
+    "max_position_embeddings": 1048576,
+    "model_type": "deepseek_v41_text",
+    "moe_intermediate_size": 2304,
+    "n_routed_experts": 384,
+    "n_shared_experts": 1,
+    "norm_topk_prob": true,
+    "num_attention_heads": 64,
+    "num_experts_per_tok": 6,
+    "num_hidden_layers": 40,
+    "num_key_value_heads": 1,
+    "num_nextn_predict_layers": 3,
+    "o_groups": 8,
+    "o_lora_rank": 1024,
+    "q_lora_rank": 1280,
+    "qk_rope_head_dim": 64,
+    "rms_norm_eps": 1e-20,
+    "rope_scaling": {
+      "beta_fast": 32,
+      "beta_slow": 1,
+      "factor": 16,
+      "original_max_position_embeddings": 65536,
+      "rope_type": "yarn"
+    },
+    "rope_theta": 10000,
+    "routed_scaling_factor": 1.5,
+    "scoring_func": "sqrtsoftplus",
+    "sliding_window": 128,
+    "swiglu_limit": 10.0,
+    "tie_word_embeddings": false,
+    "topk_method": "noaux_tc",
+    "use_cache": true,
+    "vocab_size": 129280
+  },
+  "transformers_version": "5.6.0",
+  "vision_config": {
+    "downsample_ratio": 3,
+    "hidden_size": 1024,
+    "intermediate_size": 2816,
+    "max_image_tokens": 1024,
+    "max_wh_ratio": null,
+    "min_pixels": 295936,
+    "model_type": "deepseek_v41_vision",
+    "num_attention_heads": 16,
+    "num_hidden_layers": 32,
+    "patch_size": 14,
+    "rope_theta": 10000
+  }
+}

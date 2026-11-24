@@ -99,12 +99,13 @@ class ConvInputLayout(enum.Enum):
         return ConvInputLayout(attr.value)
 
 
-@dataclass(frozen=True)  # noqa: RUF049  # TODO: investigate why this breaks
 class DeviceKind(str, Enum):
     """A device type representation."""
 
     CPU = "cpu"
+    """A device on the host CPU."""
     GPU = "gpu"
+    """A GPU accelerator device."""
 
     def __str__(self) -> str:
         return self.value

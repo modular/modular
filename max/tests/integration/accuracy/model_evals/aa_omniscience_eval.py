@@ -48,12 +48,16 @@ from eval_common import (
     ChatClient,
     GenParams,
     append_github_env,
-    build_chat_kwargs,
+    chat_completion,
+    dump_config,
     dump_jsonl,
     dump_score,
     finish_stats,
     judge,
     make_client,
+    prepare_out_dir,
+    response_fields,
+    resumable_config,
     run_parallel,
     select_rows,
     strip_think,
@@ -170,10 +174,8 @@ def infer(
     prompt_index, sample = item
     question = sample["question"]
     reference = sample["answer"]
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(
-            model, [{"role": "user", "content": question}], params
-        )
+    resp = chat_completion(
+        client, model, [{"role": "user", "content": question}], params
     )
     # Count only the model-under-test's answer-generation call; the judge call
     # is NOT counted toward output-token stats.
@@ -195,6 +197,7 @@ def infer(
         "verdict": parse_verdict(raw_verdict),
         "finish_reason": resp.choices[0].finish_reason,
         "completion_tokens": answer_tokens,
+        **response_fields(resp.choices[0]),
     }
 
 
@@ -244,6 +247,7 @@ def run_eval(
     workers: int,
     params: GenParams,
     out_dir: str | None = None,
+    resume: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Runs AA-Omniscience over ``indexed_dataset`` (one pass) + returns score.
 
@@ -263,9 +267,10 @@ def run_eval(
     def on_error(
         item: tuple[int, dict[str, Any]], exc: Exception
     ) -> dict[str, Any]:
-        prompt_index, _sample = item
+        prompt_index, sample = item
         return {
             "prompt_index": prompt_index,
+            "reference": sample["answer"],
             "verdict": "ERROR",
             "error": str(exc),
         }
@@ -277,6 +282,7 @@ def run_eval(
         workers,
         "AA-Omniscience",
         out_dir=out_dir,
+        resume=resume,
     )
     return results, score(results)
 
@@ -321,6 +327,12 @@ def run_eval(
     default="AA_OMNISCIENCE",
     help="Prefix for the GITHUB_ENV metric keys the job summary reads.",
 )
+@click.option(
+    "--resume",
+    is_flag=True,
+    help="Keep the finished rows already in --out-dir and run only the rest. "
+    "Refuses when they were produced with different options.",
+)
 def main(
     base_url: str,
     model: str,
@@ -333,25 +345,35 @@ def main(
     temperature: float,
     top_p: float,
     metric_prefix: str,
+    resume: bool,
 ) -> None:
     """Runs AA-Omniscience against a running OpenAI-compatible server and scores it."""
-    client = make_client(base_url)
-    indexed_dataset = select_rows(
-        list(
-            load_dataset(
-                "ArtificialAnalysis/AA-Omniscience-Public",
-                data_files="AA-Omniscience_dataset_public.csv",
-                split="train",
-            )
-        ),
-        sample_size,
-        row_ids,
+    prepare_out_dir(
+        out_dir,
+        resumable_config(click.get_current_context().params),
+        resume,
     )
+    client = make_client(base_url)
+    dataset = list(
+        load_dataset(
+            "ArtificialAnalysis/AA-Omniscience-Public",
+            data_files="AA-Omniscience_dataset_public.csv",
+            split="train",
+        )
+    )
+    indexed_dataset = select_rows(dataset, sample_size, row_ids)
     params = GenParams(
         max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
     )
+    dump_config(out_dir, base_url, params, indexed_dataset, dataset)
     results, summary = run_eval(
-        client, indexed_dataset, model, workers, params, out_dir=out_dir
+        client,
+        indexed_dataset,
+        model,
+        workers,
+        params,
+        out_dir=out_dir,
+        resume=resume,
     )
     dump_jsonl(out_dir, results)
     dump_score(out_dir, summary)

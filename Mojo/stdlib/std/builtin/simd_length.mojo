@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Implements `SIMDLength`, which is a wrapper around the MLIR `index` type."""
 
+from std.os import abort
 from std.utils._select import _select_register_value as select
 
 
@@ -53,7 +54,7 @@ struct SIMDLength(
         """
         self._mlir_value = value.__mlir_index__()
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __init__[T: Indexer](out self, value: T):
         """Construct a SIMDLength from the given Indexer.
 
@@ -248,7 +249,7 @@ struct SIMDLength(
             mlir_value=__mlir_op.`index.mul`(self._mlir_value, rhs._mlir_value)
         )
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __imul__(mut self, rhs: Self):
         """Compute self*rhs and save the result in self.
 
@@ -277,7 +278,7 @@ struct SIMDLength(
             ),
         )
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __irshift__(mut self, rhs: Self):
         """Compute `self >> rhs` and save the result in self.
 
@@ -286,11 +287,12 @@ struct SIMDLength(
         """
         self = self >> rhs
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __pow__(self, exp: Self) -> Self:
         """Return the value raised to the power of the given exponent.
 
         Computes the power of an integer using the Russian Peasant Method.
+        A negative exponent aborts.
 
         Args:
             exp: The exponent value.
@@ -299,9 +301,10 @@ struct SIMDLength(
             The value of `self` raised to the power of `exp`.
         """
         if exp < 0:
-            # Not defined for Integers, this should raise an
-            # exception.
-            return 0
+            abort(
+                "an integer cannot be raised to a negative power; use a"
+                " floating point base, e.g. 'Float64(x) ** n'"
+            )
         var res: Int = 1
         var x = self
         var n = exp

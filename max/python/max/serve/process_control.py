@@ -11,9 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Process spawning, signalling, and shutdown helpers."""
+
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import logging
 import multiprocessing
 import signal
@@ -21,6 +24,7 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from multiprocessing.context import BaseContext
 from multiprocessing.synchronize import Event
 from typing import ParamSpec, TypeVar
 
@@ -43,7 +47,47 @@ def _event_wait_clear(event: Event, timeout: float) -> None:
     event.clear()
 
 
+class Liveness:
+    """Readiness and liveness signals from a subprocess to its parent.
+
+    The subprocess calls :py:meth:`set_ready` once at startup and
+    :py:meth:`beat` on every iteration. Beats are a lock-free shared
+    counter, so they never block on the parent.
+    """
+
+    def __init__(self, ctx: BaseContext) -> None:
+        self._ready = ctx.Event()
+        self._beats = ctx.RawValue(ctypes.c_uint64)
+        # The max length and batch size the subprocess settled on; 0 is
+        # unreported.
+        self._plan = ctx.RawArray(ctypes.c_int64, 2)
+
+    def report_plan(self, max_length: int | None, max_batch_size: int) -> None:
+        """Records the bounds the subprocess sized its KV cache for.
+
+        A model worker measures its memory once it has loaded, so the max
+        length and batch size it serves can be lower than the ones the
+        parent planned. Called before :py:meth:`set_ready`.
+        """
+        self._plan[0] = max_length or 0
+        self._plan[1] = max_batch_size
+
+    def reported_plan(self) -> tuple[int | None, int | None]:
+        """The max length and batch size :py:meth:`report_plan` recorded."""
+        return (self._plan[0] or None, self._plan[1] or None)
+
+    def set_ready(self) -> None:
+        """Marks the process as ready to serve."""
+        self._ready.set()
+
+    def beat(self) -> None:
+        """Records a heartbeat."""
+        self._beats.value += 1
+
+
 class SubprocessExit(Exception):
+    """A worker subprocess exited; the message carries its exit status."""
+
     def __init__(self, info: str | int | None):
         if isinstance(info, int):
             try:
@@ -54,7 +98,7 @@ class SubprocessExit(Exception):
 
 
 async def _read_ready(fd: int) -> None:
-    """async helper to wait for fd to enter readable state"""
+    """Async helper to wait for fd to enter readable state."""
     loop = asyncio.get_running_loop()
     ready = loop.create_future()
     loop.add_reader(fd, lambda: ready.set_result(True))
@@ -80,12 +124,12 @@ async def run_subprocess(
     *args: _P.args,
     **kwargs: _P.kwargs,
 ) -> None:
-    """async coroutine to run func(*args,**kwargs) in a subprocess.
+    """Async coroutine to run func(*args,**kwargs) in a subprocess.
 
     ``daemon`` controls the child's ``daemon`` flag. Passing ``True`` matches
     multiprocessing's safety behaviour of auto-terminating the child with the
     parent, but daemonic processes cannot spawn their own children. Callers that
-    host a subprocess which itself launches further subprocesses (e.g. a cascade
+    host a subprocess which itself launches further subprocesses (such as a cascade
     worker that spins up a ``max.serve`` model worker) must pass ``False``.
     Teardown is explicit in the ``finally`` block below, so a non-daemon child
     is still reliably reaped on context exit.
@@ -103,13 +147,12 @@ async def run_subprocess(
        ``finally:`` block does the full SIGTERM/SIGKILL/close dance.
 
     Cleanup is synchronous on purpose: terminating a subprocess is an
-    OS-level op, and making it async (kill tasks, callbacks, etc.) is
+    OS-level op, and making it async (kill tasks, callbacks and so on) is
     what produced the race that SERVSYS-1270 tracked. Sync cleanup
     blocks the event loop for up to ``_SIGTERM_GRACE + _SIGKILL_GRACE``
     seconds in the worst case, but we're shutting down -- nothing else
     needs the loop.
     """
-
     proc = _DebugSpawnProcess(
         target=func,
         args=args,
@@ -152,17 +195,17 @@ async def run_subprocess(
 class ProcessManager:
     """Handle yielded by :py:func:`subprocess_manager`.
 
-    Owns one subprocess and any associated watcher tasks (heartbeat,
-    etc.). All watchers run inside a shared :py:class:`CancelGroup`, so
+    Owns one subprocess and any associated watcher tasks (for example, a
+    heartbeat). All watchers run inside a shared :py:class:`CancelGroup`, so
     a failure in any of them tears down the body cleanly.
 
     Example::
 
         async with subprocess_manager("worker") as proc:
-            alive = mp.Event()
-            task = proc.start(work, alive)
-            await proc.ready(alive, timeout=10)
-            proc.watch_heartbeat(alive, timeout=2)
+            liveness = Liveness(mp)
+            task = proc.start(work, liveness)
+            await proc.ready(liveness, timeout=10)
+            proc.watch_heartbeat(liveness, timeout=2)
             await task  # blocks until subprocess exits
     """
 
@@ -198,15 +241,15 @@ class ProcessManager:
 
         return self.task
 
-    async def ready(self, event: Event, timeout: float | None) -> None:
-        """Waits for ``event`` to be set (then clears it).
+    async def ready(self, liveness: Liveness, timeout: float | None) -> None:
+        """Waits for the subprocess to call :py:meth:`Liveness.set_ready`.
 
-        Fails fast if the subprocess exits before the event is set --
+        Fails fast if the subprocess exits before it is ready --
         otherwise we'd wait the full timeout for an event that's never
         going to come.
 
         Args:
-            event: The readiness event the subprocess will set.
+            liveness: The signals shared with the subprocess.
             timeout: Total wait in seconds. ``None`` waits forever.
 
         Raises:
@@ -221,7 +264,9 @@ class ProcessManager:
         while True:
             # loop so thread is interruptible for cancellation
             try:
-                await loop.run_in_executor(None, _event_wait_clear, event, 1)
+                await loop.run_in_executor(
+                    None, _event_wait_clear, liveness._ready, 1
+                )
                 break
             except TimeoutError:
                 pass
@@ -237,30 +282,34 @@ class ProcessManager:
                 ) from None
 
     def watch_heartbeat(
-        self, event: Event, timeout: float
+        self, liveness: Liveness, timeout: float
     ) -> asyncio.Task[None]:
-        """Adds a background watcher that requires ``event`` to keep being set.
+        """Adds a background watcher that requires the subprocess to keep beating.
 
-        If the subprocess fails to set ``event`` within ``timeout``
-        seconds (repeatedly), :py:class:`TimeoutError` is raised, the
-        body is cancelled, and the error propagates out of the
-        :py:func:`subprocess_manager` block.
+        If :py:meth:`Liveness.beat` isn't called for ``timeout`` seconds,
+        :py:class:`TimeoutError` is raised, the body is cancelled, and the
+        error propagates out of the :py:func:`subprocess_manager` block.
         """
         assert self.heartbeat is None, "watch_heartbeat may only be called once"
 
         async def run_task() -> None:
-            try:
-                while True:
-                    await self.ready(event, timeout)
-            except TimeoutError:
-                raise TimeoutError(
-                    f"{self.name} failed heartbeat check"
-                ) from None
+            last_value = liveness._beats.value
+            last_change = time.monotonic()
+            while True:
+                await asyncio.sleep(min(timeout, 1.0))
+                now = time.monotonic()
+                value = liveness._beats.value
+                if value != last_value:
+                    last_value = value
+                    last_change = now
+                elif now - last_change > timeout:
+                    raise TimeoutError(f"{self.name} failed heartbeat check")
 
         self.heartbeat = self.group.create_task(run_task())
         return self.heartbeat
 
     def cancel(self) -> None:
+        """Cancels the manager's heartbeat task."""
         if self.heartbeat and not self.heartbeat.done():
             self.heartbeat.cancel()
         if self.task and not self.task.done():

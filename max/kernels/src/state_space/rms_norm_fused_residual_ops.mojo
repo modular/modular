@@ -16,8 +16,11 @@ import extensibility
 
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_gpu
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
 
+from layout import Coord
+from std.sys import align_of
+from std.utils.coord import coord_to_index_list
 from std.utils.index import IndexList
 
 from state_space.rms_norm_fused_residual import (
@@ -60,21 +63,30 @@ struct RMSNormFusedResidual:
     @staticmethod
     def execute[
         dtype: DType,
-        rank: Int,
-        target: StaticString,
         multiply_before_cast: Bool = True,
     ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        output: Some[Output & Tensor],
+        residual_output: Some[Output & Tensor],
+        input: Some[Input & Tensor],
+        residual_input: Some[Input & Tensor],
+        gamma: Some[Input & Tensor],
         epsilon: Float32,
         weight_offset: Scalar[dtype=dtype],
         dropout_p: Scalar[dtype=dtype],
         seed: Scalar[dtype=DType.uint64],
         ctx: DeviceContext,
-    ) capturing raises:
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(residual_output), TileTensorable)
+        comptime assert conforms_to(type_of(input), TileTensorable)
+        comptime assert conforms_to(type_of(residual_input), TileTensorable)
+        comptime assert conforms_to(type_of(gamma), TileTensorable)
+        comptime rank = type_of(input).rank
+        comptime assert type_of(output).rank == rank
+        comptime assert type_of(residual_output).rank == rank
+        comptime assert type_of(residual_input).rank == rank
+        comptime assert type_of(gamma).rank == 1
+
         # Validate shapes
         if output.shape() != input.shape():
             raise Error("Input and output buffers are not same shape")
@@ -82,59 +94,65 @@ struct RMSNormFusedResidual:
         if input.shape() != residual_input.shape():
             raise Error("Input and residual input buffers are not same shape")
 
-        comptime if is_gpu[target]():
-            # GPU path: the device kernel bakes the callbacks in as `capturing`
-            # comptime closures, so build them as comptime parameters.
-            @__parameter
-            @always_inline
+        if residual_output.shape() != input.shape():
+            raise Error("Input and residual output buffers are not same shape")
+
+        var input_tt = input.to_tile_tensor[dtype]()
+        var residual_input_tt = residual_input.to_tile_tensor[dtype]()
+        var output_tt = output.to_tile_tensor[dtype]()
+        var residual_output_tt = residual_output.to_tile_tensor[dtype]()
+
+        comptime if ctx.target.is_gpu():
+
+            @inline(.always)
             def input_fn[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
+                width: Int
+            ](coords: Coord) {var input_tt} -> SIMD[dtype, width]:
+                return input_tt.load[width=width, alignment=align_of[dtype]()](
+                    coords
                 )
 
-            @__parameter
-            @always_inline
+            @inline(.always)
             def residual_input_fn[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-                return residual_input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
-                )
+                width: Int
+            ](coords: Coord) {var residual_input_tt} -> SIMD[dtype, width]:
+                return residual_input_tt.load[
+                    width=width, alignment=align_of[dtype]()
+                ](coords)
 
-            @__parameter
-            @always_inline
+            @inline(.always)
             def output_fn[
-                width: SIMDLength, _rank: Int, alignment: Int
-            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-                output._fused_store[width=width, element_alignment=alignment](
-                    rebind[IndexList[output.rank]](coords),
-                    rebind[SIMD[output.dtype, width]](val),
-                )
+                width: SIMDLength, alignment: Int
+            ](coords: Coord, val: SIMD[dtype, width]) {var output_tt} -> None:
+                output_tt.store[
+                    width=width,
+                    alignment=min(
+                        type_of(output).alignment,
+                        alignment * align_of[dtype](),
+                    ),
+                ](coords, val)
 
-            @__parameter
-            @always_inline
+            @inline(.always)
             def residual_output_fn[
-                width: SIMDLength, _rank: Int, alignment: Int
-            ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-                residual_output._fused_store[
-                    width=width, element_alignment=alignment
-                ](
-                    rebind[IndexList[residual_output.rank]](coords),
-                    rebind[SIMD[residual_output.dtype, width]](val),
-                )
+                width: SIMDLength, alignment: Int
+            ](coords: Coord, val: SIMD[dtype, width]) {
+                var residual_output_tt
+            } -> None:
+                residual_output_tt.store[
+                    width=width,
+                    alignment=min(
+                        type_of(residual_output).alignment,
+                        alignment * align_of[dtype](),
+                    ),
+                ](coords, val)
 
-            rms_norm_fused_residual[
+            rms_norm_fused_residual[multiply_before_cast=multiply_before_cast,](
                 input_fn,
                 residual_input_fn,
                 output_fn,
                 residual_output_fn,
-                target=target,
-                multiply_before_cast=multiply_before_cast,
-            ](
                 input.shape(),
-                gamma.to_tile_tensor[.int64](),
+                gamma.to_tile_tensor[dtype](),
                 epsilon,
                 weight_offset,
                 ctx,
@@ -145,47 +163,47 @@ struct RMSNormFusedResidual:
             # CPU path: pass the callbacks as unified closures (runtime args).
             # They capture the tensors directly, which is what lets the migrated
             # CPU kernel take runtime closures end to end.
-            @always_inline
+            @inline(.always)
             def input_fn_cpu[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var input} -> SIMD[dtype, width]:
-                return input.load[width=width](
-                    rebind[IndexList[input.rank]](coords)
+                width: Int
+            ](coords: Coord) {var input_tt} -> SIMD[dtype, width]:
+                return input_tt.load[width=width, alignment=align_of[dtype]()](
+                    coords
                 )
 
-            @always_inline
+            @inline(.always)
             def residual_input_fn_cpu[
-                width: Int, _rank: Int
-            ](coords: IndexList[_rank]) {var residual_input} -> SIMD[
-                dtype, width
-            ]:
-                return residual_input.load[width=width](
-                    rebind[IndexList[residual_input.rank]](coords)
-                )
+                width: Int
+            ](coords: Coord) {var residual_input_tt} -> SIMD[dtype, width]:
+                return residual_input_tt.load[
+                    width=width, alignment=align_of[dtype]()
+                ](coords)
 
-            @always_inline
+            @inline(.always)
             def output_fn_cpu[
                 width: SIMDLength, alignment: Int
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-                var output
-            } -> None:
-                output._fused_store[width=width, element_alignment=alignment](
-                    rebind[IndexList[output.rank]](coords),
-                    rebind[SIMD[output.dtype, width]](val),
-                )
+            ](coords: Coord, val: SIMD[dtype, width]) {var output_tt} -> None:
+                output_tt.store[
+                    width=width,
+                    alignment=min(
+                        type_of(output).alignment,
+                        alignment * align_of[dtype](),
+                    ),
+                ](coords, val)
 
-            @always_inline
+            @inline(.always)
             def residual_output_fn_cpu[
                 width: SIMDLength, alignment: Int
-            ](coords: IndexList[rank], val: SIMD[dtype, width]) {
-                var residual_output
+            ](coords: Coord, val: SIMD[dtype, width]) {
+                var residual_output_tt
             } -> None:
-                residual_output._fused_store[
-                    width=width, element_alignment=alignment
-                ](
-                    rebind[IndexList[residual_output.rank]](coords),
-                    rebind[SIMD[residual_output.dtype, width]](val),
-                )
+                residual_output_tt.store[
+                    width=width,
+                    alignment=min(
+                        type_of(residual_output).alignment,
+                        alignment * align_of[dtype](),
+                    ),
+                ](coords, val)
 
             _rms_norm_fused_residual_cpu_entry[
                 multiply_before_cast=multiply_before_cast
@@ -195,7 +213,7 @@ struct RMSNormFusedResidual:
                 output_fn_cpu,
                 residual_output_fn_cpu,
                 input.shape(),
-                gamma.to_tile_tensor[.int64](),
+                gamma.to_tile_tensor[dtype](),
                 epsilon,
                 weight_offset,
                 dropout_p,
@@ -206,16 +224,18 @@ struct RMSNormFusedResidual:
 @extensibility.register_shape_function("rms_norm_fused_residual")
 def rms_norm_fused_residual_shape[
     dtype: DType,
-    rank: Int,
 ](
-    input: InputTensor[dtype=dtype, rank=rank, ...],
-    residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-    gamma: InputTensor[dtype=dtype, rank=1, ...],
+    input: Some[Tensor],
+    residual_input: Some[Tensor],
+    gamma: Some[Tensor],
     epsilon: Float32,
+    # The scalars bind their own `dtype` parameter. The graph compiler's
+    # scalar-attribute binding cannot resolve a trait projection like
+    # `type_of(input).dtype`. The `comptime assert`s below restore the tie.
     weight_offset: Scalar[dtype=dtype],
     dropout_p: Scalar[dtype=dtype],
     seed: Scalar[dtype=DType.uint64],
-) -> IndexList[rank]:
+) -> IndexList[type_of(input).rank]:
     """Returns the output shape for the `rms_norm_fused_residual` op.
 
     The fused RMS-norm-plus-residual op preserves the input shape; both the
@@ -234,4 +254,19 @@ def rms_norm_fused_residual_shape[
     Returns:
         The output shape, equal to `input.shape()`.
     """
-    return input.shape()
+    comptime assert (
+        type_of(input).dtype == dtype
+    ), "input dtype must match the scalar dtype"
+    comptime assert (
+        type_of(residual_input).rank == type_of(input).rank
+    ), "residual_input rank must match input rank"
+    comptime assert (
+        type_of(residual_input).dtype == dtype
+    ), "residual_input dtype must match the scalar dtype"
+    comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
+    comptime assert (
+        type_of(gamma).dtype == dtype
+    ), "gamma dtype must match the scalar dtype"
+    return rebind[IndexList[type_of(input).rank]](
+        coord_to_index_list(input.shape())
+    )

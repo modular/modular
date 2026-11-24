@@ -15,7 +15,7 @@
 # with a local var or a parameter of the same name is a redefinition error, in
 # either order. (Python instead silently rebinds.)
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # var first, import second.
 

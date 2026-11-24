@@ -13,12 +13,11 @@
 """Gemma 3 transformer architecture for text generation."""
 
 from .arch import gemma3_arch
-from .model import Gemma3Inputs, Gemma3Model
+from .gemma3 import Gemma3
 from .model_config import Gemma3Config
 
 __all__ = [
+    "Gemma3",
     "Gemma3Config",
-    "Gemma3Inputs",
-    "Gemma3Model",
     "gemma3_arch",
 ]

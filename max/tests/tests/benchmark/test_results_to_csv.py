@@ -22,19 +22,18 @@ end-to-end ``main`` invocation.
 from __future__ import annotations
 
 import csv
-import json
 from pathlib import Path
 
 from max.benchmark.results_to_csv import main
-
-
-def _write_blob(path: Path, **fields: object) -> None:
-    path.write_text(json.dumps(fields))
+from tests.benchmark.benchmark_fakes import (
+    write_blob,
+    write_engine_result_set,
+)
 
 
 def test_main_cli(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(
+    write_blob(
         a,
         max_concurrency=1,
         request_throughput=10.0,
@@ -51,42 +50,16 @@ def test_main_cli(tmp_path: Path) -> None:
 
 def test_main_cli_dry_run(tmp_path: Path) -> None:
     a = tmp_path / "results.json"
-    _write_blob(a, max_concurrency=1, request_throughput=10.0)
+    write_blob(a, max_concurrency=1, request_throughput=10.0)
     out = tmp_path / "out.csv"
     rc = main([str(a), "-o", str(out), "--dry-run"])
     assert rc == 0
     assert not out.exists()
 
 
-def _write_engine_json(path: Path) -> None:
-    """Writes a minimal engine ResultSetInContext document."""
-    path.write_text(
-        json.dumps(
-            {
-                "run_context": {"config_id": None, "git_commit": "abc"},
-                "results": [
-                    {
-                        "iteration_config": {
-                            "batch_size": 4,
-                            "context_len": 0,
-                            "input_len": 128,
-                            "output_len": 64,
-                        },
-                        "result": {
-                            "tokens_per_second": 500.0,
-                            "input_tokens_per_second": 300.0,
-                            "output_tokens_per_second": 200.0,
-                        },
-                    }
-                ],
-            }
-        )
-    )
-
-
 def test_main_cli_profile_engine(tmp_path: Path) -> None:
     src = tmp_path / "engine-results.json"
-    _write_engine_json(src)
+    write_engine_result_set(src)
     out = tmp_path / "engine.csv"
     rc = main([str(src), "-o", str(out), "--profile", "engine"])
     assert rc == 0

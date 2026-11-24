@@ -147,10 +147,13 @@ async def build_pipeline(args: PipelineArgs) -> GenAIPipeline:
             from the serve CLI flags. ``args.tokenizer_impl`` names the
             ``TokenizerWorker`` subclass the text-gen pipelines use, as
             ``"module.path:ClassName"``; ``None`` (the default) uses the
-            HuggingFace tokenizer.
+            HuggingFace tokenizer. ``args.model_worker_impl`` likewise names
+            the ``ModelWorker`` subclass the common text-generation pipeline
+            uses; ``None`` uses the MAX Serve model worker.
 
     Raises:
-        ValueError: If no model is specified.
+        ValueError: If no model is specified, or if ``tokenizer_impl`` or
+            ``model_worker_impl`` is set for a pipeline that cannot use it.
         NotImplementedError: If the architecture declares no cascade pipeline.
     """
     model_path = args.model_path
@@ -184,12 +187,18 @@ async def build_pipeline(args: PipelineArgs) -> GenAIPipeline:
         )
 
     if factory is CommonTextGenPipeline:
-        return CommonTextGenPipeline(config, args.tokenizer_impl)
-    if args.tokenizer_impl is not None:
-        raise ValueError(
-            f"--tokenizer-impl {args.tokenizer_impl!r} is only supported for "
-            f"the common text-generation pipeline, not {arch.name!r}."
+        return CommonTextGenPipeline(
+            config, args.tokenizer_impl, args.model_worker_impl
         )
+    for flag, value in (
+        ("--tokenizer-impl", args.tokenizer_impl),
+        ("--model-worker-impl", args.model_worker_impl),
+    ):
+        if value is not None:
+            raise ValueError(
+                f"{flag} {value!r} is only supported for the common "
+                f"text-generation pipeline, not {arch.name!r}."
+            )
 
     pipeline = factory(config)
     assert isinstance(pipeline, GenAIPipeline)

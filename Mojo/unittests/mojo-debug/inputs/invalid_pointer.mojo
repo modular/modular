@@ -23,10 +23,8 @@ comptime _invalid_dtype = DType(
 
 
 def main():
-    var base_alloc = alloc[Float32]({count = 1})
-    var base: Pointer[
-        Float32, origin_of(base_alloc._alloc)
-    ] = base_alloc.unsafe_ptr()
+    var base_alloc = alloc[Float32]({length = 1})
+    var base = base_alloc.unsafe_ptr()
     var ptr = base.unsafe_bitcast[Scalar[_invalid_dtype]]()
     keep_alive(ptr)  # breakpoint
     dealloc(base_alloc^)

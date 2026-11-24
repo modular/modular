@@ -14,16 +14,10 @@
 from std.math import tanh
 from std.random import randn, seed
 
-from test_utils import compare, libm_call
+from test_utils.math import compare, libm_call
 from std.testing import assert_almost_equal, TestSuite
 
-
-def tanh_libm[
-    dtype: DType, simd_width: SIMDLength
-](arg: SIMD[dtype, simd_width]) -> SIMD[
-    dtype, simd_width
-] where dtype.is_floating_point():
-    return libm_call["tanhf", "tanh"](arg)
+comptime tanh_libm = libm_call["tanhf", "tanh"]
 
 
 def test_tanh_tfvals_fp32() raises:

@@ -51,8 +51,8 @@ async def test_kv_cache_multi_gpu() -> None:
         kv_manager.alloc(context)
         kv_inputs = kv_manager.runtime_inputs_for_leaf([batch])
         for i in range(num_devices):
-            kv_inputs_per_device = kv_inputs.inputs[i]
-            assert len(kv_inputs_per_device.flatten()) == 6
+            kv_inputs_per_device = kv_inputs[i]
+            assert kv_inputs_per_device.mixed_step_split is not None
             assert kv_inputs_per_device.attention_dispatch_metadata is not None
 
 
@@ -86,7 +86,7 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
 
     kv_inputs = kv_manager.runtime_inputs_for_leaf([[context]])
 
-    for shard_idx, kv_inputs_per_device in enumerate(kv_inputs.inputs):
+    for shard_idx, kv_inputs_per_device in enumerate(kv_inputs):
         assert kv_inputs_per_device.attention_dispatch_metadata is not None
         assert (
             kv_inputs_per_device.attention_dispatch_metadata.device
@@ -101,4 +101,4 @@ async def test_mla_runtime_inputs_keep_dispatch_metadata_on_shard_device() -> (
 # host/disk tier is now the Rust ``rust_tiered`` connector, whose pyo3 extension
 # may only be depended on from an internal-only package. Its host-tier
 # offload/onload coverage lives in
-# ``internal/dkv/test_rust_tiered_connector_gpu.py``.
+# ``internal/dkv/test_tiered_connector_gpu.py``.

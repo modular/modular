@@ -24,15 +24,13 @@ from std.runtime._asyncrt import create_task
 def main():
     print("== test_runtime_task")
 
-    @__parameter
-    async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
+    __async def test_asyncrt_add[lhs: Int](rhs: Int) -> Int:
         return lhs + rhs
 
-    @__parameter
-    async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
-        return await create_task(test_asyncrt_add[1](a)) + await create_task(
-            test_asyncrt_add[2](b)
-        )
+    __async def test_asyncrt_add_two_of_them(a: Int, b: Int) -> Int:
+        return __await create_task(
+            test_asyncrt_add[1](a)
+        ) + __await create_task(test_asyncrt_add[2](b))
 
     var task = create_task(test_asyncrt_add_two_of_them(10, 20))
     # CHECK: 33

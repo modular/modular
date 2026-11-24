@@ -31,7 +31,7 @@ def compute_rms[
     comptime accum_type = get_accum_type[dtype]()
     var sum_of_squares = Scalar[accum_type]()
     for i in range(size):
-        var val = data[i][0].cast[accum_type]()
+        var val = data.load[width=1]((i,)).cast[accum_type]()
         sum_of_squares += val * val
     var result = sqrt(
         (sum_of_squares / Scalar[accum_type](data.num_elements()))
@@ -45,7 +45,6 @@ def run_rms_norm_gpu[
     //,
     dtype: DType,
     *,
-    static_cols: Int = -1,
     multiply_before_cast: Bool = True,
 ](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     print("== run_rms_norm_gpu")
@@ -69,48 +68,121 @@ def run_rms_norm_gpu[
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var epsilon = Float32(0.001)
-    var weight_offset = Scalar[dtype](0.0)
+    comptime epsilon = Float32(0.001)
+    comptime weight_offset = Float32(0.0)
 
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
-    @always_inline
-    @__copy_capture(data_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width](idx)
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        return data_buf.load[width=width](coords)
 
-    @always_inline
-    @__copy_capture(data_buf)
-    @__parameter
+    @inline(.always)
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        var idx = data_buf.layout(coords)
-        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+    ](coords: Coord, val: SIMD[dtype, width]) {var data_buf} -> None:
+        data_buf.store[alignment=alignment](coords, val)
 
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203);
     # `rank` is now an explicit parameter (no longer inferred from `shape`).
     rms_norm_gpu[
         rank,
-        input_fn,
-        identity_output_fn,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
         multiply_before_cast=multiply_before_cast,
-    ](Coord(shape), gamma, epsilon, weight_offset, ctx)
+    ](input_fn, identity_output_fn, Coord(shape), gamma, ctx)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h.unsafe_ptr() + r * cols,
+            data_h.unsafe_ptr().unsafe_offset(r * cols),
             row_major(cols),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
         for c in range(cols):
             var idx = r * cols + c
-            var val = (data_h[idx] / rms_ref) * (gamma_h[c] + weight_offset)
+            var val = (data_h[idx] / rms_ref) * (
+                gamma_h[c] + weight_offset.cast[dtype]()
+            )
+            assert_almost_equal(val, res[idx], rtol=rtol)
+
+    _ = data_d
+    _ = gamma_d
+
+
+def run_rms_norm_gpu_static_dims[
+    dtype: DType, *, multiply_before_cast: Bool = True
+](ctx: DeviceContext, var shape: Coord, rtol: Float64 = 0.01) raises:
+    """Drives `rms_norm_gpu` with a shape whose inner dims are `ComptimeInt`.
+
+    The dynamic-only shapes above leave every dimension a runtime value.
+    Callers that pass `TileTensor.shape_coord()`, such as the allreduce +
+    RMSNorm ops, keep static dims in the `Coord` type, and the kernels use
+    them as compile-time divisors in the row-to-index translation. Only a
+    static-dim shape reaches that path.
+    """
+    print("== run_rms_norm_gpu_static_dims")
+
+    comptime rank = type_of(shape).rank
+    var cols = Int(shape[rank - 1])
+    var rows = Int(shape.product()) // cols
+
+    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
+    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
+
+    rand[dtype](data_h.as_span())
+
+    for i in range(cols):
+        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
+
+    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
+    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
+
+    var data_buf = TileTensor(data_d, row_major(shape))
+    var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
+    comptime epsilon = Float32(0.001)
+    comptime weight_offset = Float32(0.0)
+
+    ctx.enqueue_copy(data_d, data_h)
+    ctx.enqueue_copy(gamma_d, gamma_h)
+
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        return data_buf.load[width=width](coords)
+
+    @inline(.always)
+    def identity_output_fn[
+        width: SIMDLength, alignment: Int
+    ](coords: Coord, val: SIMD[dtype, width]) {var data_buf} -> None:
+        data_buf.store[alignment=alignment](coords, val)
+
+    rms_norm_gpu[
+        rank,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=multiply_before_cast,
+    ](input_fn, identity_output_fn, shape, gamma, ctx)
+    ctx.enqueue_copy(res, data_d)
+    ctx.synchronize()
+
+    for r in range(rows):
+        var vec = TileTensor(
+            data_h.unsafe_ptr().unsafe_offset(r * cols),
+            row_major(cols),
+        )
+        var rms_ref = compute_rms(vec, cols, epsilon)
+        for c in range(cols):
+            var idx = r * cols + c
+            var val = (data_h[idx] / rms_ref) * (
+                gamma_h[c] + weight_offset.cast[dtype]()
+            )
             assert_almost_equal(val, res[idx], rtol=rtol)
 
     _ = data_d
@@ -141,29 +213,24 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
     var data_buf = TileTensor(data_d, row_major(Coord(Index(0, cols))))
     var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
 
-    @always_inline
-    @__copy_capture(data_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[dtype, width]:
-        return data_buf.raw_load[width=width](data_buf.layout(coords))
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+        return data_buf.load[width=width](coords)
 
-    @always_inline
-    @__copy_capture(data_buf)
-    @__parameter
+    @inline(.always)
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) -> None:
-        data_buf.raw_store[width=width, alignment=alignment](
-            data_buf.layout(coords), val
-        )
+    ](coords: Coord, val: SIMD[dtype, width]) {var data_buf} -> None:
+        data_buf.store[alignment=alignment](coords, val)
 
-    rms_norm_gpu[2, input_fn, identity_output_fn, multiply_before_cast=True](
-        Coord(Index(0, cols)),
-        gamma,
-        Float32(0.001),
-        Scalar[dtype](0.0),
-        ctx,
-    )
+    rms_norm_gpu[
+        2,
+        epsilon=Float32(0.001),
+        weight_offset=Float32(0.0),
+        multiply_before_cast=True,
+    ](input_fn, identity_output_fn, Coord(Index(0, cols)), gamma, ctx)
     var res = ctx.enqueue_create_host_buffer[dtype](cols)
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
@@ -172,96 +239,6 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
         assert_almost_equal(res[i], sentinel)
 
     _ = data_d
-    _ = gamma_d
-
-
-def run_rms_norm_row_based[
-    dtype: DType, rank: Int, *, multiply_before_cast: Bool = True
-](ctx: DeviceContext, shape: IndexList[rank], rtol: Float64 = 0.01) raises:
-    """Drives the row-based `rms_norm` entry point, not `rms_norm_gpu`.
-
-    `mo.reduce.rms_norm` lowers through this overload, so its epilogue-closure
-    contract needs coverage of its own; the `run_rms_norm_gpu` cases above
-    exercise a different function.
-    """
-    print("== run_rms_norm_row_based")
-
-    var cols = shape[rank - 1]
-    var rows = shape.flattened_length() // cols
-
-    comptime eps_f32 = Float32(0.001)
-
-    var data_h = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-    var res = ctx.enqueue_create_host_buffer[dtype](rows * cols)
-    var gamma_h = ctx.enqueue_create_host_buffer[dtype](cols)
-
-    rand[dtype](data_h.as_span())
-
-    for i in range(cols):
-        gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
-
-    var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    # Distinct output buffer: input_fn (reads) and output_fn (writes) are
-    # separate value-closure args, so they must reference distinct buffer
-    # origins (writing in place into `data_d` would alias the read).
-    var out_d = ctx.enqueue_create_buffer[dtype](rows * cols)
-    var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
-
-    var param_shape = Index(cols)
-
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var epsilon = eps_f32.cast[dtype]()
-    var weight_offset = Scalar[dtype](0.0)
-
-    ctx.enqueue_copy(data_d, data_h)
-    ctx.enqueue_copy(gamma_d, gamma_h)
-
-    @always_inline
-    def input_fn[
-        width: Int, alignment: Int
-    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
-
-    @always_inline
-    def output_fn[
-        width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) {var out_buf}:
-        var idx = out_buf.layout(coords)
-        out_buf.raw_store[width=width, alignment=alignment](
-            idx, rebind[SIMD[dtype, width]](val)
-        )
-
-    rms_norm[
-        dtype, rank, target="gpu", multiply_before_cast=multiply_before_cast
-    ](
-        input_fn,
-        output_fn,
-        Coord(shape),
-        Scalar[DType.int](cols),
-        gamma,
-        epsilon,
-        weight_offset,
-        ctx,
-    )
-    ctx.enqueue_copy(res, out_d)
-    ctx.synchronize()
-
-    for r in range(rows):
-        var vec = TileTensor(
-            data_h.unsafe_ptr() + r * cols,
-            row_major(cols),
-        )
-        var rms_ref = compute_rms(vec, cols, eps_f32)
-        for c in range(cols):
-            var idx = r * cols + c
-            var val = (data_h[idx] / rms_ref) * (gamma_h[c] + weight_offset)
-            assert_almost_equal(val, res[idx], rtol=rtol)
-
-    _ = data_d
-    _ = out_d
     _ = gamma_d
 
 
@@ -291,6 +268,10 @@ def main() raises:
         run_rms_norm_gpu[.float32](ctx, Index(8, 3072, 256))
         run_rms_norm_gpu[.float32](ctx, Index(4, 1024, 2048))
         run_rms_norm_gpu[.bfloat16](ctx, Index(4, 1024, 4096), rtol=2e-2)
+        # Rank 4 through the warp-tiling kernel: the widest coord that reached
+        # it was rank 3, leaving the `Coord` argument untested past three
+        # dynamic leaves. cols=2048 is an exact fit at bf16.
+        run_rms_norm_gpu[.bfloat16](ctx, Index(2, 3, 4, 2048), rtol=2e-2)
 
         run_rms_norm_gpu[.float32](ctx, Index(32768, 1536))
         run_rms_norm_gpu[.bfloat16](ctx, Index(32768, 1536), rtol=2e-2)
@@ -302,13 +283,20 @@ def main() raises:
         run_rms_norm_gpu[.bfloat16](ctx, Index(8, 2048), rtol=2e-2)
         run_rms_norm_gpu[.float32](ctx, Index(8, 8193))
 
-        # Test static shape dispatch.
-        run_rms_norm_gpu[.bfloat16, static_cols=4096](
-            ctx, Index(2, 4096), rtol=2e-2
+        # Static-dim shapes: the only cases where the kernels divide by
+        # compile-time dims in the row-to-index translation. Rank 2 and rank 3
+        # keep dim 0 dynamic (the batch-dynamic production shape); the fully
+        # static rank-2 case carries no dynamic dim at all.
+        run_rms_norm_gpu_static_dims[.bfloat16](
+            ctx, Coord(Int64(2), Idx[4096]), rtol=2e-2
         )
-        run_rms_norm_gpu[.bfloat16, static_cols=16384](
-            ctx, Index(2, 16384), rtol=2e-2
+        run_rms_norm_gpu_static_dims[.bfloat16](
+            ctx, Coord(Int64(2), Idx[16384]), rtol=2e-2
         )
+        run_rms_norm_gpu_static_dims[.float32](
+            ctx, Coord(Int64(4), Idx[1024], Idx[2048])
+        )
+        run_rms_norm_gpu_static_dims[.float32](ctx, Coord(Idx[2], Idx[8192]))
 
         # High-row-count, register-resident widths: exercises the CDNA4
         # wide-SIMD warp-tiling path (gated on row count). cols are multiples
@@ -360,25 +348,4 @@ def main() raises:
         )
         run_rms_norm_gpu[.bfloat16, multiply_before_cast=False](
             ctx, Index(4, 5120), rtol=2e-2
-        )
-
-        # Row-based `rms_norm` (the `mo.reduce.rms_norm` lowering path), across
-        # both `multiply_before_cast` branches and the narrow/wide dispatch.
-        run_rms_norm_row_based[DType.float32](ctx, Index(2, 5))
-        run_rms_norm_row_based[DType.float32](ctx, Index(7, 557))
-        run_rms_norm_row_based[DType.float32](ctx, Index(24576, 256))
-        run_rms_norm_row_based[DType.float32](ctx, Index(2, 8192))
-        run_rms_norm_row_based[DType.float32](ctx, Index(3, 4, 10, 20, 8))
-        run_rms_norm_row_based[DType.bfloat16](ctx, Index(64, 256), rtol=2e-2)
-        run_rms_norm_row_based[DType.bfloat16](
-            ctx, Index(4, 1024, 4096), rtol=2e-2
-        )
-        run_rms_norm_row_based[DType.float32, multiply_before_cast=False](
-            ctx, Index(7, 557)
-        )
-        run_rms_norm_row_based[DType.float32, multiply_before_cast=False](
-            ctx, Index(24576, 512)
-        )
-        run_rms_norm_row_based[DType.bfloat16, multiply_before_cast=False](
-            ctx, Index(4, 4096), rtol=2e-2
         )

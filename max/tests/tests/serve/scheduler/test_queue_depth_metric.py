@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for the maxserve.num_requests_queued gauge.
+"""Tests for the max.num_requests_queued gauge.
 
 The gauge is a synchronous OTel ``Gauge``: every call replaces the
 previously reported value rather than accumulating. ``BatchMetrics.publish_metrics``

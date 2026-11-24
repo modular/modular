@@ -16,8 +16,10 @@
 from __future__ import annotations
 
 import difflib
+import os
 from collections.abc import Mapping, Sequence
 from collections.abc import Set as AbstractSet
+from concurrent.futures import ThreadPoolExecutor
 from os import PathLike
 
 from max._core.safetensors import SafeTensor, safe_open
@@ -29,6 +31,29 @@ from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
 from ..weight import Weight
 from .weights import WeightData, Weights
+
+
+def _open_missing_shards(
+    filepaths: Sequence[PathLike[str]], handles: dict[PathLike[str], SafeTensor]
+) -> None:
+    """Opens, in parallel, every shard `handles` has no handle for.
+
+    Opening a shard maps it and parses its header, so for a checkpoint with a
+    hundred shards the cost is mostly per-file latency; the reader releases the
+    GIL while it runs, so the opens overlap.
+    """
+    missing = [filepath for filepath in filepaths if filepath not in handles]
+    if not missing:
+        return
+    workers = min(len(missing), os.cpu_count() or 1)
+    if workers <= 1:
+        for filepath in missing:
+            handles[filepath] = safe_open(filepath)
+        return
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        opened = list(pool.map(safe_open, missing))
+    for filepath, handle in zip(missing, opened, strict=True):
+        handles[filepath] = handle
 
 
 class SafetensorWeights(Weights):
@@ -123,27 +148,33 @@ class SafetensorWeights(Weights):
         _st_file_handles: dict[PathLike[str], SafeTensor] | None = None,
     ) -> None:
         self._filepaths = filepaths
+        # One handle per shard: the keys and the mapping come from the same
+        # open, and the loader keeps the mapping for the process lifetime, so
+        # opening a second time only doubles the parse and the address space.
+        handles: dict[PathLike[str], SafeTensor] = (
+            {} if _st_file_handles is None else _st_file_handles
+        )
         if tensors is not None:
             self._tensors = tensors
             assert tensors_to_file_idx is not None
             self._tensors_to_file_idx = tensors_to_file_idx
+            # Every weight gets a clone of this object holding the same handles,
+            # so only look for shards to open when some are actually missing
+            # rather than rescanning the path list once per weight.
+            if len(handles) < len(self._filepaths):
+                _open_missing_shards(self._filepaths, handles)
         else:
             self._tensors_to_file_idx = {}
             self._tensors = set()
+            _open_missing_shards(self._filepaths, handles)
             for idx, filepath in enumerate(self._filepaths):
-                with safe_open(filepath) as f:
-                    self._tensors |= set(f.keys())
-                    self._tensors_to_file_idx |= {k: idx for k in f.keys()}  # noqa: SIM118
+                keys = handles[filepath].keys()
+                self._tensors.update(keys)
+                self._tensors_to_file_idx.update({k: idx for k in keys})
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
         self._st_weight_map = {} if _st_weight_map is None else _st_weight_map
-        if _st_file_handles is not None:
-            self._st_file_handles = _st_file_handles
-        else:
-            file_handles: dict[PathLike[str], SafeTensor] = {}
-            for filepath in self._filepaths:
-                file_handles[filepath] = safe_open(filepath)
-            self._st_file_handles = file_handles
+        self._st_file_handles = handles
 
     @property
     def name(self) -> str:
@@ -152,7 +183,10 @@ class SafetensorWeights(Weights):
 
     def items(self):  # noqa: ANN201
         """Iterates through all allocable weights that start with the prefix."""
-        for name in self._tensors:
+        # Sorted because `_tensors` is a set, whose order varies between
+        # processes, and a graph built by walking this declares its weights in
+        # this order.
+        for name in sorted(self._tensors):
             if name.startswith(self.name):
                 yield (
                     name,

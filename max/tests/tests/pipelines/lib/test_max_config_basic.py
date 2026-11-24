@@ -107,7 +107,7 @@ class TestMAXConfigFileLoading:
             assert config.test_inf == float("inf")
 
     def test_load_config_with_enums(self) -> None:
-        """Test loading MAXConfig file with enum values."""
+        """Test enum and dtype coercion of values loaded from YAML."""
         config_data = {
             "name": "test_enum_config",
             "description": "A test config with enums",
@@ -127,23 +127,26 @@ class TestMAXConfigFileLoading:
 
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as f:
             yaml.dump(config_data, f)
-            f.flush()  # Ensure data is written to disk
+            f.flush()  # Ensure data is written to disk.
+            with open(f.name) as loaded:
+                sections = yaml.safe_load(loaded)
+
             # Test KVCacheConfig enum loading.
-            kv_config = KVCacheConfig(
-                config_file=f.name, section_name="kv_cache_config"
+            kv_config = KVCacheConfig.model_validate(
+                sections["kv_cache_config"]
             )
             assert kv_config.kv_cache_page_size == 256
             assert kv_config.kv_connector_config.type == KVConnectorType.tiered
 
             # Test ProfilingConfig enum loading.
-            profiling_config = ProfilingConfig(
-                config_file=f.name, section_name="profiling_config"
+            profiling_config = ProfilingConfig.model_validate(
+                sections["profiling_config"]
             )
             assert profiling_config.gpu_profiling == "on"
 
             # Test SamplingConfig enum loading.
-            sampling_config = SamplingConfig(
-                config_file=f.name, section_name="sampling_config"
+            sampling_config = SamplingConfig.model_validate(
+                sections["sampling_config"]
             )
             assert isinstance(sampling_config.in_dtype, DType)
             assert sampling_config.in_dtype == DType.float16

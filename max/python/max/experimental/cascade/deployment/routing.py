@@ -15,8 +15,8 @@
 :class:`RoundRobinPool` deploys a worker to every runtime in a pool and hands
 back a proxy that spreads calls across them round-robin. :class:`HybridRuntime`
 routes each worker to a named child runtime (a pool) by matching the worker's
-``deploy_hints`` -- e.g. a ``"cpu"``-hinted worker deploys into the ``"cpu"``
-pool, a ``"gpu"``-hinted worker into the ``"gpu"`` pool.
+``deploy_hints``. For example, a ``"cpu"``-hinted worker deploys into the
+``"cpu"`` pool, and a ``"gpu"``-hinted worker into the ``"gpu"`` pool.
 
 Both are :class:`~max.experimental.cascade.core.Runtime` subclasses so they
 satisfy ``pipeline.deploy(runtime)``. They are pure routers: ``deploy`` returns
@@ -147,11 +147,14 @@ class HybridRuntime(_RoutingRuntime):
         self._runtimes = dict(runtimes)
 
     async def __aenter__(self) -> HybridRuntime:
-        """Open every child runtime; they close when this router closes."""
+        """Open each child runtime once; they close when this router closes."""
         await super().__aenter__()
+        opened = {
+            runtime: await self.enter_async_context(runtime)
+            for runtime in dict.fromkeys(self._runtimes.values())
+        }
         self._runtimes = {
-            name: await self.enter_async_context(runtime)
-            for name, runtime in self._runtimes.items()
+            name: opened[runtime] for name, runtime in self._runtimes.items()
         }
         return self
 

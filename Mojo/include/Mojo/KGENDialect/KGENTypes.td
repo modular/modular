@@ -104,6 +104,8 @@ def KGEN_TypeValueType : KGENType<"TypeValue", "typevalue",
     /// A specific builder used to build the type from a bytecode context,
     /// providing a slightly different context from the normal builder.
     static TypeValueType getFromBytecode(TypedAttr typeValue);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -233,11 +235,11 @@ def KGEN_GeneratorType : KGENType<"Generator", "generator", [
       PartiallySpecializedInputParams &specialization,
       function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorType getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings,
+      ParamsBindingArrayAttr paramBindings,
       ParameterEvaluationContext *evaluationContext,
       function_ref<InFlightDiagnostic()> emitErrorFn = {});
     GeneratorType getSpecializedGenerator(
-      ArrayRef<TypedAttr> paramBindings,
+      ParamsBindingArrayAttr paramBindings,
       ParameterEvaluationContext *evaluationContext,
       Location location);
 
@@ -416,7 +418,6 @@ def KGEN_FuncType : KGENType<"Func", "func", [
 
     bool isThrows() const { return getFnEffects().isThrows(); }
     bool isAsync() const { return getFnEffects().isAsync(); }
-    bool isCapturing() const { return getFnEffects().isCapturing(); }
     bool isRefResult() const { return getFnEffects().isRefResult(); }
     bool isCABI() const { return getFnEffects().isCABI(); }
 
@@ -495,6 +496,7 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     Type getIfVariadicListOrPack(size_t index);
 
     /// Returns the index of the pack variadic arg, or std::nullopt if none.
+    /// Keyword-only arguments and a keyword vararg can follow the pack.
     std::optional<size_t> findPackVarArgIndex();
 
     /// Returns true if the signature has keyword variadic arguments.
@@ -633,6 +635,8 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
     /// Returns the address space, or zero if unresolved.
     unsigned getAddrSpaceOrZero() const { return getAddrSpace().value_or(0); }
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -641,7 +645,8 @@ def PointerType : KGENType<"Pointer", "pointer", [
 
 class PointerElementType<string lhs, string rhs> : TypesMatchWith<
     "pointer element type", lhs, rhs,
-    "llvm::cast<PointerType>($_self).getElementType()">;
+    "llvm::isa<PointerType>($_self) ? "
+    "llvm::cast<PointerType>($_self).getElementType() : Type()">;
 
 class PointerOf<Type type> : ConfinedType<PointerType,
     [CPred<"llvm::cast<PointerType>($_self).getElementType()">,
@@ -691,6 +696,10 @@ def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
       return $_get(elementType.getContext(), elementType);
     }]>,
   ];
+
+  let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -698,7 +707,8 @@ def KGEN_ParamListType : KGENType<"ParamList", "param_list", [
 
 class ParamListElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches variadic element type", lhs, rhs,
-    "llvm::cast<KGEN::ParamListType>($_self).getElementType()",
+    "llvm::isa<KGEN::ParamListType>($_self) ? "
+    "llvm::cast<KGEN::ParamListType>($_self).getElementType() : Type()",
     "typeRangeMatches">;
 
 //===----------------------------------------------------------------------===//
@@ -774,9 +784,10 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     This type represents a struct. A struct contains element types arranged in
     their order of declaration and a flag indicating register-passability.
 
-    This is the "anonymous" version of `!kgen.concrete_source_struct` that
-    strips away all information except for those necessary for understanding the
-    memory layout of the data it describes.
+    This is the "anonymous" version of `!kgen.struct_inst`. As a
+    layout, it strips away all information except for those necessary for
+    understanding the memory layout of the data it describes. See "Layouts and
+    value representations" below.
 
     The element types are stored as a `TypedAttr` which can be either:
     - A concrete `ParamListAttr` with resolved types
@@ -807,8 +818,53 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     // A struct parameterized on a variadic sequence of element types.
     kgen.generator @example<Ts: param_list<!kgen.type>>(
       %0: !kgen.struct<(Ts)>,
-    ) { kgen.return }
+    ) { hlcf.return }
     ```
+
+    #### Layouts and value representations
+
+    A struct is in one of two domains, determined by the `domain` attribute:
+
+    - A layout describes memory. Each element is reduced to the layout half of
+      its type constant.
+    - A value representation is the type value half of a type constant. It
+      preserves each element as-is.
+
+    Before LowerLIT, a struct can also have no domain. LowerLIT gives it
+    one by its position: a layout where it describes memory, and a value
+    representation where it is a type value. After LowerLIT, every struct has
+    a domain.
+
+    The sugared syntax denotes the domain:
+
+    - `(...)` is a list of types. It makes a layout; this is most common case.
+    - `[...]` or a parameter expression is a parameter value. It has no domain
+      yet. Add the `layout` keyword to make a layout, or the `value` keyword
+      to make a value representation.
+
+    ```mlir
+    // Layouts.
+    !kgen.struct<(index, f32)>
+    !kgen.struct<(T)>
+    !kgen.struct<Ts layout>
+
+    // Value representations.
+    !kgen.struct<[T] value>
+    !kgen.struct<Ts value>
+    !kgen.struct<[[typevalue<#kgen.genref<@Foo>>, struct<(scalar<f32>)>]] value>
+
+    // No domain yet.
+    !kgen.struct<[T]>
+    !kgen.struct<Ts>
+
+    // A type constant pairs the value representation with the layout.
+    #kgen.type<!kgen.struct<[T] value>, !kgen.struct<(T)>>
+    ```
+
+    The printer uses `(...)` for each layout whose elements are all known.
+    Thus `!kgen.struct<[T] layout>` prints as `!kgen.struct<(T)>`, and
+    `#kgen.type<!kgen.struct<[index] value>, !kgen.struct<(index)>>` folds to
+    `#kgen.type<!kgen.struct<(index)>>`.
   }];
 
   let parameters = (ins
@@ -826,9 +882,9 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     DefaultValuedParameter<"TypedAttr",
                            "$_builder.getIndexAttr(1)">:$minAlignment,
 
-    // This is true when this corresponds to a variadic parameter pack. This is
-    // looked at by ArgConvention lowering to know when it can flatten a pack.
-    "bool":$isParamPack
+    // Whether the struct is a memory layout (the type domain), a value
+    // representation (the value domain), or undecided.
+    "StructDomain":$domain
   );
   // Use hasCustomAssemblyFormat since we need to handle empty struct specially.
   let hasCustomAssemblyFormat = 1;
@@ -838,19 +894,23 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
   let skipDefaultBuilders = 1;
   let builders = [
     // Main builder with TypedAttr isMemoryOnly - implemented in KGENTypes.cpp.
-    // minAlignment defaults to 1 (no explicit alignment) when TypedAttr{} is passed.
+    // It builds a struct with no domain yet; `getLayoutDomain` and
+    // `getValueDomain` build one with a domain. minAlignment defaults to 1 (no
+    // explicit alignment) when TypedAttr{} is passed.
     TypeBuilder<(ins "TypedAttr":$variadic,
                      CArg<"TypedAttr", "{}">:$isMemoryOnly,
-                     CArg<"TypedAttr", "{}">:$minAlignment,
-                     CArg<"bool", "false">:$isParamPack), [{}]>,
+                     CArg<"TypedAttr", "{}">:$minAlignment), [{}]>,
+    // Builder that takes every flag, for rebuilding an existing struct.
+    TypeBuilder<(ins "TypedAttr":$variadic,
+                     "TypedAttr":$isMemoryOnly,
+                     "TypedAttr":$minAlignment,
+                     "StructDomain":$domain), [{}]>,
     // Convenience builder with bool isMemoryOnly (wraps in BoolAttr).
     TypeBuilder<(ins "TypedAttr":$variadic,
                      "bool":$isMemoryOnly,
-                     CArg<"TypedAttr", "{}">:$minAlignment,
-                     CArg<"bool", "false">:$isParamPack), [{
+                     CArg<"TypedAttr", "{}">:$minAlignment), [{
       return get($_ctxt, variadic,
-                 BoolAttr::get($_ctxt, isMemoryOnly), minAlignment,
-                 isParamPack);
+                 BoolAttr::get($_ctxt, isMemoryOnly), minAlignment);
     }]>,
     // Builder with TypedAttr variadic (infers context from variadic).
     TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,
@@ -882,6 +942,12 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     /// Get the number of struct elements. Returns std::nullopt if parametric.
     std::optional<size_t> getNumElements() const;
 
+    /// Get the byte offset of each element on `target`. Each element is at
+    /// the next offset aligned for it. Returns std::nullopt if the struct is
+    /// parametric or an element has no known size or alignment.
+    std::optional<SmallVector<int64_t>>
+    getElementOffsets(TargetInfoAttr target) const;
+
     /// True iff this struct's layout is known to use the memory-only ABI
     /// (not register-passable). Reads `isMemoryOnly`: a concrete `BoolAttr`
     /// means the answer is final; an i1 constraint proposition (conditional
@@ -891,7 +957,20 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     /// this reflects the instantiated convention.
     bool isDefinitelyMemoryOnly() const;
 
-    /// Builders with explicit context.
+    /// Builds a layout struct, which reduces each element to its layout half.
+    static StructType getLayoutDomain(MLIRContext *context, TypedAttr variadic,
+                                      TypedAttr isMemoryOnly = {},
+                                      TypedAttr minAlignment = {});
+
+    /// Builds a value struct, which keeps each element whole.
+    static StructType getValueDomain(MLIRContext *context, TypedAttr variadic,
+                                     TypedAttr isMemoryOnly = {},
+                                     TypedAttr minAlignment = {});
+
+    bool isLayoutDomain() const { return getDomain() == StructDomain::Layout; }
+    bool isValueDomain() const { return getDomain() == StructDomain::Value; }
+
+    /// Builders with explicit context. A list of types is always a layout.
     static StructType get(MLIRContext *context, ArrayRef<Type> types,
                           bool isMemoryOnly = false,
                           TypedAttr minAlignment = {});
@@ -905,6 +984,8 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     static StructType getChecked(function_ref<InFlightDiagnostic()> emitError,
                                  MLIRContext *context, ArrayRef<Type> types,
                                  bool isMemoryOnly = false);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -976,6 +1057,40 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
   ];
 
   let genVerifyDecl = 1;
+
+  let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// UntaggedUnionType
+//===----------------------------------------------------------------------===//
+
+def KGEN_UntaggedUnionType : KGENType<"UntaggedUnion", "untagged_union", [
+    DeclareTypeInterfaceMethods<DataLayoutInterface>,
+    DeclareTypeInterfaceMethods<MemoryableTypeInterface>
+]> {
+  let summary = "Overlapping storage without a tag or lifecycle";
+  let description = [{
+    Members share offset zero. The store extent is the largest member's
+    allocation size, without rounding to the strictest member alignment.
+    This allows a following field to occupy the union's tail padding.
+    An empty union has size zero and alignment one. Values and struct fields
+    use the store extent; standalone allocations and array elements round it
+    up to the union's alignment. Enclosing storage supplies any tag and
+    lifecycle.
+  }];
+  let parameters = (ins "TypedAttr":$variadic);
+  let hasCustomAssemblyFormat = 1;
+  let skipDefaultBuilders = 1;
+  let builders = [TypeBuilder<(ins "TypedAttr":$variadic)>];
+  let genVerifyDecl = 1;
+  let extraClassDeclaration = [{
+    static UntaggedUnionType getFromBytecode(TypedAttr variadic);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+  }];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1032,6 +1147,8 @@ def KGEN_VariantType : KGENType<"Variant", "variant", [
     llvm::iterator_range<llvm::mapped_iterator<ArrayRef<TypedAttr>::iterator,
                                                Type (*)(TypedAttr)>>
     getTypes() const;
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -1136,6 +1253,10 @@ def KGEN_SIMDType : KGENType<"SIMD", "simd", [
     bool isScalar() const { return getResolvedSize() == 1; }
     /// Returns the `!kgen.scalar<bool>` type (a SIMD of size 1 and bool dtype).
     static SIMDType getScalarBoolType(MLIRContext *ctx);
+    /// Returns the `!kgen.scalar<index>` type.
+    static SIMDType getScalarIndexType(MLIRContext *ctx);
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -1249,7 +1370,8 @@ def UnboundOrIndexOrInt : AnyTypeOf<[
 // Matches if Value has size=1 and same dtype as Operand
 class SIMDSizeOneOfSameDType<string operand, string value> : TypesMatchWith<
     value # " type matches dtype of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType())">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(1, llvm::cast<SIMDType>($_self).getDType()) : Type()">;
 
 class SIMDSize<string name> :
     StrFunc<"$" # name # ".getType().cast<KGEN::SIMDType>().getResolvedSize()">;
@@ -1259,12 +1381,16 @@ class SIMDOfSameSize<string lhs, string rhs> :
 
 class AddressSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::address))">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::address)) "
+    ": Type()">;
 
 class BoolSIMDOfSameSize<string operand, string value> : TypesMatchWith<
     value # " type matches simd type of the " # operand # " operand", operand,
-    value, "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
-    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::kBool))">;
+    value, "llvm::isa<SIMDType>($_self) ? "
+    "KGEN::SIMDType::get(llvm::cast<SIMDType>($_self).getSize(), "
+    "DTypeConstantAttr::get($_self.getContext(), KGEN::KGENDType::kBool)) "
+    ": Type()">;
 
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

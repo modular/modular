@@ -16,8 +16,7 @@ from std.os import abort
 from std.builtin.sort import _quicksort
 
 
-# DO NOT CHANGE
-trait TuningConfig(TrivialRegisterPassable, Writable):
+trait TuningConfig(Deinitable, ImplicitlyCopyable, RegisterPassable, Writable):
     ...
 
 
@@ -105,7 +104,7 @@ struct Table[type: TuningConfig](Writable):
     ](self, *, rule: rule_fn) -> List[ret_type]:
         var result = List[ret_type]()
 
-        @always_inline
+        @inline(.always)
         def _get_search_domain() {imm} -> List[Int]:
             if len(materialize[domain]()):
                 return materialize[domain]()

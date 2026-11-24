@@ -27,7 +27,9 @@ class PaddingDirection(enum.Enum):
     """Padding (from) direction for batch collation."""
 
     LEFT = "left"
+    """Prepend padding, so the last real token ends the sequence."""
     RIGHT = "right"
+    """Append padding after the real tokens; the default."""
 
 
 def collate_batch(

@@ -15,7 +15,6 @@ from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,
-    assert_true,
     assert_raises,
 )
 
@@ -188,17 +187,17 @@ def test_zip_bounds() raises:
     # same size bounds
     var zipA = zip(TestIter(2, {2}), TestIter(2, {2}))
     assert_equal(zipA.bounds()[0], 2)
-    assert_equal(zipA.bounds()[1].value(), 2)
+    assert_equal(zipA.bounds()[1], Optional(2))
 
     # different size bounds
     var zipB = zip(TestIter(3, {3}), TestIter(2, {2}), TestIter(1, {1}))
     assert_equal(zipB.bounds()[0], 1)
-    assert_equal(zipB.bounds()[1].value(), 1)
+    assert_equal(zipB.bounds()[1], Optional(1))
 
     # `None` upper get replaced with discrete upper bound
     var zipC = zip(TestIter(0, None), TestIter(2, {3}))
     assert_equal(zipC.bounds()[0], 0)
-    assert_equal(zipC.bounds()[1].value(), 3)
+    assert_equal(zipC.bounds()[1], Optional(3))
 
     # Preserves `None` upper if all are none
     var zipD = zip(

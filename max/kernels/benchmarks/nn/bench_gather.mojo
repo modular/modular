@@ -22,7 +22,7 @@ from std.utils.index import Index
 
 
 def bench_gather(mut m: Bench, spec: GatherSpec) raises:
-    @always_inline
+    @inline(.always)
     def bench_gather_wrapper(
         mut b: Bencher, concrete_spec: GatherSpec
     ) raises {}:
@@ -61,7 +61,7 @@ def bench_gather(mut bencher: Bencher, spec: GatherSpec) raises:
     )
     var output_tensor = TileTensor(output_ptr, row_major(Coord(indices_shape)))
 
-    @always_inline
+    @inline(.always)
     def bench_fn() raises {
         var data_tensor,
         var indices_tensor,
@@ -73,7 +73,7 @@ def bench_gather(mut bencher: Bencher, spec: GatherSpec) raises:
             indices_tensor,
             spec.axis,
             output_tensor,
-            DeviceContext(api="cpu"),
+            DeviceContext.cpu(),
         )
 
     bencher.iter(bench_fn)

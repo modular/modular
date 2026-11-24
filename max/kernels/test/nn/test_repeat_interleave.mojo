@@ -12,11 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from max.gpu.host import DeviceContext
-from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
-
-from std.utils.index import IndexList
+from nn.repeat_interleave import (
+    _collapse_dims_around_axis,
+    repeat_interleave,
+    repeat_interleave_shape,
+)
+from std.testing import assert_raises
 
 
 def test_collapse_dims_around_axis() raises:
@@ -24,22 +27,57 @@ def test_collapse_dims_around_axis() raises:
     print("test_collapse_dims_around_axis")
 
     # CHECK: (1, 100, 1)
-    print(_collapse_dims_around_axis(IndexList[1](100), 0))
+    print(_collapse_dims_around_axis(Coord(Idx[100]), 0))
 
     # CHECK: (1, 17, 23)
-    print(_collapse_dims_around_axis(IndexList[2](17, 23), 0))
+    print(_collapse_dims_around_axis(Coord(Idx[17], Idx[23]), 0))
 
     # CHECK: (17, 23, 1)
-    print(_collapse_dims_around_axis(IndexList[2](17, 23), 1))
+    print(_collapse_dims_around_axis(Coord(Idx[17], Idx[23]), 1))
 
     # CHECK: (1, 2, 16)
-    print(_collapse_dims_around_axis(IndexList[5](2, 2, 2, 2, 2), 0))
+    print(
+        _collapse_dims_around_axis(
+            Coord(Idx[2], Idx[2], Idx[2], Idx[2], Idx[2]), 0
+        )
+    )
 
     # CHECK: (4, 2, 4)
-    print(_collapse_dims_around_axis(IndexList[5](2, 2, 2, 2, 2), 2))
+    print(
+        _collapse_dims_around_axis(
+            Coord(Idx[2], Idx[2], Idx[2], Idx[2], Idx[2]), 2
+        )
+    )
 
     # CHECK: (16, 2, 1)
-    print(_collapse_dims_around_axis(IndexList[5](2, 2, 2, 2, 2), 4))
+    print(
+        _collapse_dims_around_axis(
+            Coord(Idx[2], Idx[2], Idx[2], Idx[2], Idx[2]), 4
+        )
+    )
+
+    with assert_raises(contains="axis outside of provided shape"):
+        _ = _collapse_dims_around_axis(Coord(Idx[17], Idx[23]), -1)
+
+
+def test_repeat_interleave_shape() raises:
+    # CHECK-LABEL: test_repeat_interleave_shape
+    print("test_repeat_interleave_shape")
+
+    var shape = Coord(Idx[3], Idx[2])
+
+    var per_element_stack: Array[Scalar[DType.int64], _] = [1, 2, 3]
+    var per_element = TileTensor(per_element_stack, row_major[3]())
+    # CHECK: (6, 2)
+    print(repeat_interleave_shape(shape, per_element, 0))
+
+    var broadcast_stack: Array[Scalar[DType.int64], _] = [4]
+    var broadcast = TileTensor(broadcast_stack, row_major[1]())
+    # CHECK: (3, 8)
+    print(repeat_interleave_shape(shape, broadcast, 1))
+
+    with assert_raises(contains="axis out of range"):
+        _ = repeat_interleave_shape(shape, broadcast, 2)
 
 
 def test_repeat_interleave_1d(ctx: DeviceContext) raises:
@@ -68,7 +106,7 @@ def test_repeat_interleave_1d(ctx: DeviceContext) raises:
     # CHECK: 0.0, 1.0, 1.0, 2.0, 2.0, 2.0, 3.0, 3.0, 3.0, 3.0
     print()
     for i in range(10):
-        print(output[i], ", ", sep="", end="")
+        print(t"{output[i]}, ", end="")
     print()
 
 
@@ -98,7 +136,7 @@ def test_repeat_interleave_1d_broadcast_repeats(ctx: DeviceContext) raises:
     # CHECK: 0.0, 0.0, 1.0, 1.0, 2.0, 2.0, 3.0, 3.0,
     print()
     for i in range(8):
-        print(output[i], ", ", sep="", end="")
+        print(t"{output[i]}, ", end="")
     print()
 
 
@@ -137,7 +175,7 @@ def test_repeat_interleave_2d_axis_0(ctx: DeviceContext) raises:
     print()
     for i in range(5):
         for j in range(2):
-            print(output[i, j], ", ", sep="", end="")
+            print(t"{output[i, j]}, ", end="")
         print()
     print()
 
@@ -171,7 +209,7 @@ def test_repeat_interleave_2d_axis_1(ctx: DeviceContext) raises:
     print()
     for i in range(2):
         for j in range(5):
-            print(output[i, j], ", ", sep="", end="")
+            print(t"{output[i, j]}, ", end="")
         print()
     print()
 
@@ -219,15 +257,16 @@ def test_repeat_interleave_3d(ctx: DeviceContext) raises:
     for i in range(2):
         for j in range(5):
             for k in range(2):
-                print(output[i, j, k], ", ", sep="", end="")
+                print(t"{output[i, j, k]}, ", end="")
             print()
         print("=====")
     print()
 
 
 def main() raises:
-    with DeviceContext(api="cpu") as ctx:
+    with DeviceContext.cpu() as ctx:
         test_collapse_dims_around_axis()
+        test_repeat_interleave_shape()
         test_repeat_interleave_1d(ctx)
         test_repeat_interleave_1d_broadcast_repeats(ctx)
         test_repeat_interleave_2d_axis_0(ctx)

@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Construction tests for WeightNormConvTranspose1d in max.nn."""
+"""Construction tests for WeightNormConvTranspose1d in max.nn.legacy."""
 
 from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph
-from max.nn import WeightNormConvTranspose1d
+from max.nn.legacy import WeightNormConvTranspose1d
 
 
 def test_weight_norm_conv_transpose1d_default_no_bias() -> None:

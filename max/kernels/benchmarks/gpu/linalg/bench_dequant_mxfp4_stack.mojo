@@ -36,7 +36,7 @@ from linalg.mxfp4_dequant import dequant_mxfp4
 
 def bench_dequant_stack[
     N: Int, K: Int, num_rows_total: Int, out_type: DType = .bfloat16
-](ctx: DeviceContext, mut b: Bench) raises:
+](ctx: DeviceContext[], mut b: Bench) raises:
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
 
@@ -70,9 +70,9 @@ def bench_dequant_stack[
     )
     var b_out_tt = TileTensor(b_out_device, row_major((num_rows_total, Idx[K])))
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext, iteration: Int
+        ctx: DeviceContext[], iteration: Int
     ) raises {mut b_out_tt, imm}:
         dequant_mxfp4(
             ctx,
@@ -83,7 +83,7 @@ def bench_dequant_stack[
             num_cols=K,
         )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut bencher: Bencher) raises {imm}:
         bencher_iter_custom(bencher, kernel_launch, ctx)
 

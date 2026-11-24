@@ -35,27 +35,15 @@ def test_naive_blockwise_fp8_matmul[
     comptime BLOCK_SCALE_N = block_scales_sizes[1]
     comptime BLOCK_SCALE_K = block_scales_sizes[2]
 
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
-        "== test_naive_blockwise_fp8_matmul",
-        input_type,
-        "x",
-        M,
-        "x",
-        N,
-        "x",
-        K,
-        "BLOCK_SCALE_M",
-        BLOCK_SCALE_M,
-        "BLOCK_SCALE_N",
-        BLOCK_SCALE_N,
-        "BLOCK_SCALE_K",
-        BLOCK_SCALE_K,
-        "transpose_b",
-        transpose_b,
+        t"== test_naive_blockwise_fp8_matmul {input_type} x {M} x {N} x"
+        t" {K} BLOCK_SCALE_M {BLOCK_SCALE_M} BLOCK_SCALE_N"
+        t" {BLOCK_SCALE_N} BLOCK_SCALE_K {BLOCK_SCALE_K} transpose_b"
+        t" {transpose_b}"
     )
 
     var a_shape = Coord(m, k)
@@ -118,16 +106,14 @@ def test_naive_blockwise_fp8_matmul[
             var res: Float32 = 0.0
             for _k in range(K):
                 var a_scale = a_scale_host[
-                    Coord(_k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M)
+                    _k // BLOCK_SCALE_K, _m // BLOCK_SCALE_M
                 ]
                 var b_scale = b_scale_host[
-                    Coord(_n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K)
+                    _n // BLOCK_SCALE_N, _k // BLOCK_SCALE_K
                 ] if transpose_b else b_scale_host[
-                    Coord(_k // BLOCK_SCALE_K, _n // BLOCK_SCALE_N)
+                    _k // BLOCK_SCALE_K, _n // BLOCK_SCALE_N
                 ]
-                var b_elem = b_host[Coord(_n, _k)] if transpose_b else b_host[
-                    Coord(_k, _n)
-                ]
+                var b_elem = b_host[_n, _k] if transpose_b else b_host[_k, _n]
                 res += (
                     a_host[_m, _k].cast[.float32]()
                     * b_elem.cast[.float32]()
@@ -163,15 +149,17 @@ def test_naive_blockwise_fp8_matmul[
         naive_blockwise_scaled_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
-            scales_granularity_mnk=Index(
-                BLOCK_SCALE_M, BLOCK_SCALE_N, BLOCK_SCALE_K
+            scales_granularity_mnk=Coord[Int, Int, Int](
+                BLOCK_SCALE_M,
+                BLOCK_SCALE_N,
+                BLOCK_SCALE_K,
             ),
         ](
-            c_dev.to_layout_tensor(),
-            a_dev.to_layout_tensor(),
-            b_dev.to_layout_tensor(),
-            a_scale_dev.to_layout_tensor(),
-            b_scale_dev.to_layout_tensor(),
+            c_dev,
+            a_dev,
+            b_dev,
+            a_scale_dev,
+            b_scale_dev,
             ctx,
         )
     else:
@@ -179,11 +167,11 @@ def test_naive_blockwise_fp8_matmul[
             BLOCK_DIM=16,
             transpose_b=transpose_b,
         ](
-            c_dev.to_layout_tensor(),
-            a_dev.to_layout_tensor(),
-            b_dev.to_layout_tensor(),
-            a_scale_dev.to_layout_tensor(),
-            b_scale_dev.to_layout_tensor(),
+            c_dev,
+            a_dev,
+            b_dev,
+            a_scale_dev,
+            b_scale_dev,
             ctx,
         )
 
@@ -205,36 +193,36 @@ def main() raises:
         comptime for transpose_b in range(0, 2):
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 128, 128),
+                (1, 128, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[128], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 64, 128),
+                (1, 64, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[128], Idx[256], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 64, 16),
+                (1, 64, 16),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[128], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 128, 128),
+                (1, 128, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[120], Idx[128], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(1, 128, 128),
+                (1, 128, 128),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[120], Idx[129], Idx[128])
 
             test_naive_blockwise_fp8_matmul[
                 .float8_e4m3fn,
-                Index(32, 128, 64),
+                (32, 128, 64),
                 transpose_b=Bool(transpose_b),
             ](ctx, Idx[120], Idx[129], Idx[129])

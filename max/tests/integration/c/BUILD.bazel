@@ -141,15 +141,17 @@ modular_cc_test(
     name = "CTest",
     srcs = ["CTest.c"],
     copts = ["-Werror"],  # Force any C specific warnings to be errors
+    dynamic_deps = ["//max/lib/max_license:max"],
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/max_license:max.static",
     ],
 )
 
 modular_cc_test(
     name = "CompileTest",
     srcs = ["CompileTest.cpp"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     tags = ["manual"],
     deps = [
         ":Utils",
@@ -161,6 +163,7 @@ modular_cc_test(
     name = "MEFTest",
     srcs = ["MEFTest.cpp"],
     data = [":vector_add.mef"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     env = {
         "TEST_MEF_PATH": "$(rootpath :vector_add.mef)",
     },
@@ -173,15 +176,19 @@ modular_cc_test(
 modular_cc_test(
     name = "TensorTest",
     srcs = ["TensorTest.cpp"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     deps = [
         ":Utils",
+        "//MLRT:Driver/CAPIHeaders",
         "//max:CAPI.headers",
+        "//max/lib/max_license:max.static",
     ],
 )
 
 modular_cc_test(
     name = "DeviceTest",
     srcs = ["DeviceTest.cpp"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     deps = [
         ":Utils",
         "//max:CAPI.headers",
@@ -191,9 +198,26 @@ modular_cc_test(
 modular_cc_test(
     name = "DeviceGPUTest",
     srcs = ["DeviceGPUTest.cpp"],
+    # TODO(GEX-4635): CaptureAndReplayModel replays the wrong output on B200.
+    args = select({
+        "//:b200_gpu": ["--gtest_filter=-GPUTest.CaptureAndReplayModel"],
+        "//conditions:default": [],
+    }),
     data = [
         ":mutable_buffer_gpu.mef",
         ":vector_add_gpu.mef",
+    ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//GraphCompiler:MGPRT",
+        "//MLRT:Driver/Compilation",
+        "//MLRT:Driver/DeviceContext",
+        "//MLRT:Driver/Runtime",
+        "//Mojo:CompilerRT",
+        "//Support:Globals",
+        "//bazel/internal:MLIR",
+        "//max/lib/max_license:max",
     ],
     env = {
         "MUTATE_MEF_PATH": "$(rootpath :mutable_buffer_gpu.mef)",
@@ -209,7 +233,9 @@ modular_cc_test(
     tags = ["gpu"],
     deps = [
         ":Utils",
+        "//MLRT:Driver/CAPIHeaders",
         "//max:CAPI.headers",
+        "//max/lib/max_license:max.static",
     ],
 )
 
@@ -220,6 +246,7 @@ modular_cc_test(
         ":mutable_buffer.mef",
         ":vector_add.mef",
     ],
+    dynamic_deps = ["//max/lib/max_license:max"],
     env = {
         "MUTATE_MEF_PATH": "$(rootpath :mutable_buffer.mef)",
         "VECTOR_ADD_MEF_PATH": "$(rootpath :vector_add.mef)",
@@ -239,6 +266,7 @@ modular_cc_test(
         ":static_dimensions.mef",
         ":symbolic_dimensions.mef",
     ],
+    dynamic_deps = ["//max/lib/max_license:max"],
     env = {
         "STATIC_MEF_PATH": "$(rootpath :static_dimensions.mef)",
         "SYMBOLIC_MEF_PATH": "$(rootpath :symbolic_dimensions.mef)",
@@ -255,6 +283,7 @@ modular_cc_test(
     name = "DebugPrintTest",
     srcs = ["DebugPrintTest.cpp"],
     data = [":debug_print.mef"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     env = {"DEBUG_PRINT_MEF_PATH": "$(rootpath :debug_print.mef)"},
     deps = [
         ":Utils",
@@ -267,6 +296,7 @@ modular_cc_test(
     name = "WeightsRegistryTest",
     srcs = ["WeightsRegistryTest.cpp"],
     data = [":external_weights.mef"],
+    dynamic_deps = ["//max/lib/max_license:max"],
     env = {
         "EXTERNAL_WEIGHTS_MEF_PATH": "$(rootpath :external_weights.mef)",
     },
@@ -282,7 +312,7 @@ modular_cc_library(
     hdrs = ["Utils.h"],
     deps = [
         "//max:CAPI.headers",
-        "//max/internal:max",
+        "//max/lib/max_license:max.static",
         "@llvm-project//third-party/unittest:gmock",
         "@llvm-project//third-party/unittest:gtest",
     ],

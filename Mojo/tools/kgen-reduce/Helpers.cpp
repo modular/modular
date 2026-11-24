@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Helpers.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Support/LLVMForwardDecls.h"
 #include "mlir/Bytecode/BytecodeWriter.h"
@@ -78,7 +79,7 @@ void M::unkeepToolOutputFile(llvm::ToolOutputFile &file) {
 }
 
 bool M::isStubbed(Region &region) {
-  return isa<KGEN::UnreachableOp>(region.front().front());
+  return isa<HLCF::UnreachableOp>(region.front().front());
 }
 
 void M::stubRegion(Region &region, Region &owner) {
@@ -91,5 +92,5 @@ void M::stubRegion(Region &region, Region &owner) {
 
   // Stub the function with an unreachable.
   OpBuilder b(&region.front(), region.front().begin());
-  KGEN::UnreachableOp::create(b, region.getLoc());
+  HLCF::UnreachableOp::create(b, region.getLoc());
 }

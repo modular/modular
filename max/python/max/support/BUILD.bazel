@@ -4,16 +4,23 @@ package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
     name = "support",
-    srcs = glob(
-        ["**/*.py"],
-        exclude = ["_taskgroups.py"],
-    ),
+    srcs = [
+        "__init__.py",
+        "algorithm.py",
+        "forked_pdb.py",
+        "host_memory.py",
+        "human_readable_formatter.py",
+        "image.py",
+        "math.py",
+        "networked_data.py",
+    ],
     ignore_unresolved_imports = [
         "boto3",  # Optional dependency for S3 operations, available in max[benchmark]
     ],
     deps = [
         "//max/python/max:_core",
         requirement("numpy"),
+        requirement("psutil"),
     ],
 )
 
@@ -23,5 +30,14 @@ modular_py_library(
     deps = [
         requirement("exceptiongroup"),  # only for python < 3.11
         requirement("taskgroup"),  # only for python < 3.11
+    ],
+)
+
+modular_py_library(
+    name = "telemetry",
+    srcs = ["_telemetry.py"],
+    deps = [
+        requirement("opentelemetry-exporter-prometheus"),
+        requirement("opentelemetry-sdk"),
     ],
 )

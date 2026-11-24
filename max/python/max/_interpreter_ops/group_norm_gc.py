@@ -68,8 +68,7 @@ def _graph_name(device: Device, dtype: DType) -> str:
 
 
 def _group_norm_graph(module: Module, device: Device, dtype: DType) -> None:
-    """Adds one fully-symbolic rank-4 group_norm graph into *module*
-    in-place."""
+    """Adds a fully-symbolic rank-4 group_norm graph to *module* in place."""
     device_ref = DeviceRef.from_device(device)
     cpu = DeviceRef.CPU()
     graph = Graph(

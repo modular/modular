@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for bottom_k."""
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from ..dim import Dim
@@ -81,7 +81,7 @@ def bottom_k(
     sorted_val = constant(True, dtype=DType.bool, device=DeviceRef.CPU())
 
     vals, idxs = Graph.current._add_op_generated(
-        rmo.MoBottomKOp,
+        mo.BottomKOp,
         values_type,
         indices_type,
         input_tv,

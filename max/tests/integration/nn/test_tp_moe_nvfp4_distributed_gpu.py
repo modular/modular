@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, ShardingStrategy, TensorType
 from max.graph.weights import WeightData
-from max.nn import Allreduce, Signals
-from max.nn.moe import MoEGate, MoEQuantized
+from max.nn.legacy import Allreduce, Signals
+from max.nn.legacy.moe import MoEGate, MoEQuantized
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,
@@ -444,18 +444,9 @@ def test_tp_moe_nvfp4() -> None:
             shard(inp) for shard, inp in zip(tp_moe_shards, inputs, strict=True)
         ]
         outputs = allreduce(outputs, signal_buffers)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = session.load(graph, weights_registry=moe.state_dict())
-
-    hidden_states = torch.randn(
-        SEQ_LEN, HIDDEN_DIM, dtype=torch.bfloat16, device="cuda"
-    )
-    result = compiled.execute(
-        Buffer.from_dlpack(hidden_states).to(devices[0]),
-        *signals.buffers(),
-    )
-    all_outputs = from_dlpack(result[0]).to("cpu")
 
     # Run MoEGate separately to get topk indices/scores for reference.
     moe_gate = MoEGate(
@@ -480,6 +471,16 @@ def test_tp_moe_nvfp4() -> None:
     gate_compiled = session.load(
         gate_graph, weights_registry=moe_gate.state_dict()
     )
+
+    hidden_states = torch.randn(
+        SEQ_LEN, HIDDEN_DIM, dtype=torch.bfloat16, device="cuda"
+    )
+    result = compiled.execute(
+        Buffer.from_dlpack(hidden_states).to(devices[0]),
+        *signals.buffers(),
+    )
+    all_outputs = from_dlpack(result[0]).to("cpu")
+
     gate_result = gate_compiled.execute(
         Buffer.from_dlpack(hidden_states).to(devices[0])
     )

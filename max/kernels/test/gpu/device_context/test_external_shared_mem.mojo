@@ -21,7 +21,9 @@ from std.testing import assert_equal
 def test_external_shared_mem(ctx: DeviceContext) raises:
     print("== test_external_shared_mem")
 
-    def dynamic_smem_kernel(data: MutPointer[Float32, MutAnyOrigin]):
+    def dynamic_smem_kernel[
+        data_origin: MutOrigin
+    ](data: MutPointer[Float32, data_origin]):
         var dynamic_sram = external_memory[
             Float32, address_space=.SHARED, alignment=4
         ]()
@@ -37,7 +39,7 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(res_device, res_host_ptr)
 
-    comptime kernel = dynamic_smem_kernel
+    comptime kernel = dynamic_smem_kernel[origin_of(res_device)]
 
     # 16 KB allocation — valid on all platforms including Metal (32 KB limit).
     ctx.enqueue_function[kernel](

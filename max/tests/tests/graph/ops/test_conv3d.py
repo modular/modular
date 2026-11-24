@@ -12,6 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for conv3d."""
 
+import pytest
+from conftest import mismatched_devices
 from hypothesis import assume, given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -106,3 +108,17 @@ def test_conv3d(
         assert list(result.shape) == expected_shape, (
             f"Expected shape {expected_shape}, got {result.shape}"
         )
+
+
+@given(devices=mismatched_devices())
+def test_conv3d_device_mismatch(devices: tuple[DeviceRef, DeviceRef]) -> None:
+    x_device, filter_device = devices
+    with Graph(
+        "conv3d_device_mismatch",
+        input_types=[
+            TensorType(DType.float32, [1, 4, 4, 4, 2], x_device),
+            TensorType(DType.float32, [1, 1, 1, 2, 2], filter_device),
+        ],
+    ) as graph:
+        with pytest.raises(ValueError, match="same device"):
+            ops.conv3d(graph.inputs[0].tensor, graph.inputs[1].tensor)

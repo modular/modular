@@ -25,6 +25,8 @@
 #include "mlir/Support/IndentedOstream.h"
 
 namespace M::KGEN {
+
+class ElaborationState;
 class Elaborator;
 class FuncOp;
 struct ImplNode;
@@ -69,8 +71,10 @@ protected:
   /// Returns true since elaboration is a materialization context.
   bool isMaterializationContext() const override { return true; }
 
-  /// Emit an error using the elaborator's error infrastructure.
-  void emitMaterializationError(const Twine &message) override;
+  /// Emit an error using the elaborator's error infrastructure. An unfolded
+  /// error is held until the concretized result is known not to fold.
+  void emitMaterializationError(const Twine &message,
+                                MaterializationErrorKind kind) override;
 
   TargetInfoAttr getTargetInfo() const override;
 
@@ -87,6 +91,9 @@ public:
   /// Lookup the body of the referenced function. Ensure the function is
   /// inflated as well.
   ErrorOr<Region *> lookupFunctionBody(SymbolRefAttr symbol) override;
+
+  /// Look up `symbol` in the interpreter libraries.
+  ErrorOr<void *> lookupInterpreterLibSymbol(StringRef symbol) override;
 
   /// Evaluate the function with the provided constant inputs.
   ErrorTreeOr<TypedAttr> evaluateFunction(FuncOp func,
@@ -126,7 +133,7 @@ private:
   GeneratorOp getGenerator(SymbolRefAttr symbol) override;
 
   ErrorOr<CrossDeviceFunction>
-  compileAsm(MLIRContext *ctx, GeneratorOp, SymbolConstantAttr, StringAttr,
+  compileAsm(MLIRContext *ctx, GeneratorOp, FuncSymbolAttr, StringAttr,
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) override;
 
   void addDeferredFunction(OwningOpRef<FuncOp> func) override;
@@ -179,8 +186,9 @@ struct ImplNode : public ImplNodeBase {
     /// access operations, modify bindings and worklists, etc. It is imperative
     /// that the callback closure does not capture any operation handles but
     /// that it accessing them through the node. This is because nodes can be
-    /// cloned and the operations get remapped.
-    std::function<LogicalResult(ImplNode *)> onComplete;
+    /// cloned and the operations get remapped. Returning `skipNode` leaves the
+    /// work item in place, so the resume runs the callback again.
+    std::function<ElaborationState(ImplNode *)> onComplete;
 
     /// The evaluator to use. We need one per work item because each represents
     /// a distinct parameter scope.
@@ -200,18 +208,10 @@ struct ImplNode : public ImplNodeBase {
   /// errors from callee nodes that errored during the first pass.
   std::vector<std::pair<Location, ParamNode *>> sccRemovedDeps;
 
-  /// The downstream nodes blocking elaboration of this node. All of them must
-  /// complete before elaboration of this node can continue; dropping one
-  /// deadlocks elaboration since the wait is invisible to recursion diagnosis.
-  SmallVector<std::pair<Location, ParamNode *>, 1> blockers;
-
-  /// Outstanding blocker resumes plus a guard held while the node is being
-  /// processed; the node is re-run when this drops to zero.
-  std::atomic<size_t> pendingResumes = 0;
-
-  /// Suppresses blocker registration during location concretization, which
-  /// cannot yield and restart.
-  bool suppressBlockers = false;
+  /// The current downstream node blocking elaboration of this node. E.g. when
+  /// elaboration of this node requires elaboration of another node. The blocker
+  /// node has to be completed before elaboration of this node can continue.
+  std::optional<std::pair<Location, ParamNode *>> blocker;
 };
 
 //===----------------------------------------------------------------------===//

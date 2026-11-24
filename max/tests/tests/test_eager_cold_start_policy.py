@@ -29,11 +29,15 @@ _ALLOW = _eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR
 def _isolated_policy(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> Generator[None]:
-    """Resets warned-once state and points the warm cache at an empty dir."""
+    """Resets warned-once state, names no warm store, allows lazy compiles,
+    and points the warm stamp at an empty dir."""
     _eager_policy._reset_for_test()
-    monkeypatch.delenv("MODULAR_EAGER_WARM_ADOPT_ASSERTED", raising=False)
+    monkeypatch.delenv(gc_compile.WARM_STORE_ENV_VAR, raising=False)
+    monkeypatch.delenv(_ALLOW, raising=False)
+    gc_compile.warm_store.cache_clear()
     monkeypatch.setenv("MODULAR_DERIVED_PATH", str(tmp_path))
     yield
+    gc_compile.warm_store.cache_clear()
     _eager_policy._reset_for_test()
 
 
@@ -68,7 +72,6 @@ def stubbed_family(
         *, warmed: bool, adopts: Mapping[str, object] | None = None
     ) -> gc_compile.GCOpFamily:
         family = gc_compile.GCOpFamily(spec=_StubSpec())
-        monkeypatch.setattr(gc_compile, "read_manifest", lambda: None)
         monkeypatch.setattr(gc_compile, "warm_stamp_matches", lambda: warmed)
 
         def sweep() -> bool:
@@ -135,7 +138,6 @@ def test_no_stamp_when_a_later_family_raises(
     """A sweep where one family raises leaves no warm stamp behind."""
     # Stamping per family let the first family's success claim the
     # whole machine.
-    monkeypatch.setattr(gc_compile, "read_manifest", lambda: None)
     monkeypatch.setattr(
         gc_compile.engine, "InferenceSession", lambda **_: _FakeSession()
     )

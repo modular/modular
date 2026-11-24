@@ -35,6 +35,12 @@ Example `local-image` JSONL:
 serving benchmarks such as vLLM-Omni: MAX generates a white PNG in the system
 temp directory and reuses it for each request in the run.
 
+To mix generated images into any dataset's requests or chat turns—for
+benchmarking vision-capable models without a dataset that natively carries
+images—use `--image-fraction` and the related `--image-*` flags. See the
+separate guide, [Mix generated images into any benchmark
+workload](benchmarking_mixed_images.md), for details.
+
 For `benchmark_serving.py` usage instructions, see [Benchmarking a MAX
 endpoint](/max/docs/max-benchmarking.md).
 
@@ -49,6 +55,17 @@ use `--extra-body` with an inline JSON string or a path to a YAML/JSON file:
 Fields are merged onto every text-generation request (last-writer-wins, so a key
 that collides with a dedicated flag overrides it). See the [benchmark
 configuration guide](benchmark_config.md) for the config-file form and details.
+
+To report goodput, the requests per second whose own latency met given targets,
+pass `--goodput` with space-separated `key:value` pairs in milliseconds, as in
+vLLM (keys `ttft`, `tpot`, and `e2el`):
+
+```bash
+--goodput ttft:500 tpot:50
+```
+
+See [Reporting goodput against latency
+targets](benchmark_config.md#reporting-goodput-against-latency-targets).
 
 > [!NOTE]
 > This benchmarking script is also available with the `max benchmark` command,

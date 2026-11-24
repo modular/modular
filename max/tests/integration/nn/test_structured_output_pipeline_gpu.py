@@ -16,30 +16,44 @@ The graph stitches together every primitive added in DRIV-135/DRIV-136:
 
   1. A first GPU ``argmax`` over a hand-crafted logits vector to pick a
      token deterministically.
-  2. A D2H ``mo.inplace_memcpy`` of that token into pinned host memory.
-  3. ``mo.launch_host_func`` runs a Python callback on the GPU stream
-     that advances an llguidance ``LLMatcher`` with the just-arrived
+  2. A D2H ``runtime.inplace_memcpy`` of that token into pinned host memory.
+  3. ``runtime.launch_host_func`` runs a Python callback on the GPU stream
+     that advances an xgrammar ``XgrammarMatcher`` with the just-arrived
      token and writes the next-step "additive logits mask" (``0.0`` for
      allowed tokens, ``-inf`` for forbidden) into a second pinned buffer.
-  4. An H2D ``mo.inplace_memcpy`` of the mask into a GPU buffer.
+  4. An H2D ``runtime.inplace_memcpy`` of the mask into a GPU buffer.
   5. A second GPU argmax that adds the mask to a fresh logits vector and
      samples the next token.
 
-The grammar is the regex ``"ab"``. After consuming token ``"a"``, only
-token ``"b"`` is allowed. Without the FSM mask the second logits vector
-would argmax to ``"c"``; with the mask applied it must argmax to ``"b"``.
+The grammar is a regex matching exactly ``"ab"``. After consuming token
+``"a"``, only token ``"b"`` is allowed. Without the FSM mask the second
+logits vector would argmax to ``"c"``; with the mask applied it must argmax
+to ``"b"``.
 """
 
 import numpy as np
 import pytest
-from llguidance import LLMatcher, LLTokenizer
-from llguidance._tokenizer import TokenizerWrapper
 from max import driver
-from max.driver import CPU, Accelerator, Buffer, DevicePinnedBuffer
+from max._xgrammar import (
+    GrammarCompiler,
+    GrammarMatcher,
+    TokenizerInfo,
+    VocabType,
+)
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    Usage,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, ops
-from max.nn import kernels
+from max.nn import _graph_ops as kernels
+from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    XgrammarBackend,
+    XgrammarMatcher,
+)
 
 # Tiny ASCII vocabulary keeps the test self-contained and deterministic.
 #   token 0 -> "a"
@@ -51,24 +65,16 @@ _VOCAB_SIZE = len(_VOCAB)
 _EOS_TOKEN_ID = 3
 
 
-class _AsciiTokenizer:
-    """Minimal byte tokenizer for grammar-constrained sampling tests."""
-
-    eos_token_id: int = _EOS_TOKEN_ID
-    bos_token_id: int | None = None
-    tokens: list[bytes] = _VOCAB
-
-    def __call__(self, s: bytes | str) -> list[int]:
-        if isinstance(s, str):
-            s = s.encode("utf-8")
-        result: list[int] = []
-        for byte_val in s:
-            ch = bytes([byte_val])
-            for i, token in enumerate(self.tokens):
-                if token == ch:
-                    result.append(i)
-                    break
-        return result
+def _make_backend() -> XgrammarBackend:
+    """Build an XgrammarBackend over the tiny ASCII vocab."""
+    tokenizer_info = TokenizerInfo(
+        _VOCAB,
+        vocab_type=VocabType.RAW,
+        vocab_size=_VOCAB_SIZE,
+        stop_token_ids=[_EOS_TOKEN_ID],
+    )
+    compiler = GrammarCompiler(tokenizer_info)
+    return XgrammarBackend(compiler)
 
 
 def test_structured_output_pipeline_e2e() -> None:
@@ -80,41 +86,27 @@ def test_structured_output_pipeline_e2e() -> None:
     gpu_ref = DeviceRef.from_device(accelerator)
     cpu_ref = DeviceRef.CPU()
 
-    # llguidance setup: a regex grammar that matches exactly "ab".
-    ll_tokenizer = LLTokenizer(
-        TokenizerWrapper(_AsciiTokenizer()), n_vocab=_VOCAB_SIZE
-    )
-    grammar = LLMatcher.grammar_from_regex("ab")
-    matcher = LLMatcher(ll_tokenizer, grammar)
-
-    # Pinned host buffers for the cross-device transfers. Backed by
-    # `DevicePinnedBuffer` (page-locked host memory tied to the GPU)
-    # so D2H/H2D copies can be properly asynchronous and `to_numpy()`
-    # exposes a zero-copy host view.
-    token_pinned = DevicePinnedBuffer(
-        dtype=DType.int64, shape=[1], device=accelerator
-    )
-    mask_pinned = DevicePinnedBuffer(
-        dtype=DType.float32, shape=[_VOCAB_SIZE], device=accelerator
-    )
-    token_pinned_view = token_pinned.to_numpy()
-    mask_pinned_view = mask_pinned.to_numpy()
-    token_pinned_view[0] = -1
-    mask_pinned_view[:] = -1.0
+    # Build xgrammar backend and compile a regex grammar that matches "ab".
+    backend = _make_backend()
+    compiled = backend._compiler.compile_regex("ab")
+    matcher = XgrammarMatcher(GrammarMatcher(compiled))
 
     # Host callback: read the just-arrived D2H token, advance the FSM,
     # convert the bitmask into an additive logits mask (0.0 allowed,
     # -inf forbidden), and write it into mask_pinned in place.
     def host_callback() -> None:
         token = int(token_pinned_view[0])
-        matcher.consume_token(token)
-        # compute_logit_bias() returns bytes of length n_vocab with
-        # 200 = allowed, 0 = forbidden.
-        bias_bytes = matcher.compute_logit_bias()
-        bias = np.frombuffer(bias_bytes, dtype=np.uint8)[:_VOCAB_SIZE]
-        additive = np.where(
-            bias > 0, np.float32(0.0), np.float32(-np.inf)
-        ).astype(np.float32)
+        matcher.try_consume_tokens([token])
+        # Fill the packed int32 bitmask, then unpack it to a float additive mask.
+        bitmask = backend.allocate_token_bitmask(1, _VOCAB_SIZE)
+        backend.fill_next_token_bitmask(matcher, bitmask, index=0)
+        additive = np.array(
+            [
+                0.0 if (int(bitmask[0, t // 32]) >> (t % 32)) & 1 else -np.inf
+                for t in range(_VOCAB_SIZE)
+            ],
+            dtype=np.float32,
+        )
         np.copyto(mask_pinned_view, additive)
 
     trampoline_ptr, user_data_ptr = driver.__unsafe_pack_py_host_func(
@@ -173,6 +165,24 @@ def test_structured_output_pipeline_e2e() -> None:
 
     session = InferenceSession(devices=[accelerator, CPU()])
     model = session.load(graph)
+
+    # Pinned host buffers for the cross-device transfers. Backed by
+    # `Usage.STAGING` (page-locked host memory tied to the GPU)
+    # so D2H/H2D copies can be properly asynchronous and `to_numpy()`
+    # exposes a zero-copy host view.
+    token_pinned = Buffer(
+        dtype=DType.int64, shape=[1], device=accelerator, usage=Usage.STAGING
+    )
+    mask_pinned = Buffer(
+        dtype=DType.float32,
+        shape=[_VOCAB_SIZE],
+        device=accelerator,
+        usage=Usage.STAGING,
+    )
+    token_pinned_view = token_pinned.to_numpy()
+    mask_pinned_view = mask_pinned.to_numpy()
+    token_pinned_view[0] = -1
+    mask_pinned_view[:] = -1.0
 
     # Stage the GPU mask buffer (zero-init; overwritten by H2D) and the
     # host_func payload buffer.

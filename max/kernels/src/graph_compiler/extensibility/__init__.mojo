@@ -22,23 +22,41 @@ decorator instead.
 """
 
 from .decorators import *
+from .platforms import *
+from .platform_predicates import *
 from .managed_tensor_slice import *
 from .operation_traits import *
+from .stable_addr_engine import *
 from .tensor_arg_traits import *
+from .tensor_tuple import *
 from .tile_tensor_adapters import *
 
 # Underscore-prefixed names are skipped by `import *`, but the kernels and
 # kv_cache packages reference them by name. Re-export them explicitly.
 from .managed_tensor_slice import (
     _FusedComputeOutputTensor,
-    _FusedComputeOutputTileTensor,
     _FusedInputTensor,
     _FusedInputVariadicTensors,
     _FusedOutputTensor,
-    _FusedOutputTileTensor,
     _FusedOutputVariadicTensors,
     _MutableInputTensor,
     _MutableInputVariadicTensors,
     _dot_prod,
     _shape_types_compatible,
 )
+from .tensor_arg_traits import (
+    _LegacyComputable,
+    _LegacyComputeOutput,
+)
+
+# TODO(GEX-4340): Remove with the interim legacy tile traits (GEX-4467).
+from .legacy_tile_traits import (
+    _LegacyTileComputable,
+    _LegacyTileComputeOutput,
+    _LegacyTileStorable,
+    _LegacyTileStoreAccess,
+)
+
+# TODO(GEX-4386): Remove once a `TensorTuple` device kernel can type a dense
+# element without rebinding to the projection.
+from .tile_tensor_adapters import _TileProjection

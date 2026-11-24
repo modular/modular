@@ -16,7 +16,7 @@ from threading import Thread
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_group
+from _transfer_engine_helpers import every_leaf, kv_group
 from max.driver import Accelerator
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import (
@@ -49,7 +49,7 @@ def transfer_routine_sender(
     # DP=1, TP=2 (2 GPUs in one replica)
     engine_1 = KVTransferEngine(
         "engine_1",
-        [kv_group(tensors_1, total_num_pages)],
+        [[kv_group(tensors_1, total_num_pages)]],
     )
 
     sender_md_queue.put(engine_1.metadata)
@@ -58,8 +58,8 @@ def transfer_routine_sender(
 
     transfer_0 = engine_1.initiate_send_transfer(
         remote_md,
-        src_idxs=[0],
-        dst_idxs=[0],
+        src_idxs=every_leaf(remote_md, [0]),
+        dst_idxs=every_leaf(remote_md, [0]),
         src_replica_idx=0,
         dst_replica_idx=0,
     )
@@ -67,8 +67,8 @@ def transfer_routine_sender(
 
     transfer_1 = engine_1.initiate_send_transfer(
         remote_md,
-        src_idxs=[3, 4],
-        dst_idxs=[3, 4],
+        src_idxs=every_leaf(remote_md, [3, 4]),
+        dst_idxs=every_leaf(remote_md, [3, 4]),
         src_replica_idx=0,
         dst_replica_idx=0,
     )
@@ -111,7 +111,7 @@ def transfer_routine_receiver(
     # DP=1, TP=2 (2 GPUs in one replica)
     engine_2 = KVTransferEngine(
         "engine_2",
-        [kv_group(tensors_2, total_num_pages)],
+        [[kv_group(tensors_2, total_num_pages)]],
     )
 
     receiver_md_queue.put(engine_2.metadata)

@@ -41,7 +41,6 @@
 namespace M::KGEN {
 class NoneType;
 class PointerType;
-class ReturnOp;
 
 namespace LIT {
 enum class SpecialFunctionKind : uint8_t;
@@ -75,6 +74,8 @@ class DIFileAttr;
 } // namespace M::DebugInfo
 
 #define GET_OP_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/LITDialect/LIT.h.inc"
+#pragma GCC visibility pop
 
 #endif // KGEN_KGENDIALECT_LITOPS_H

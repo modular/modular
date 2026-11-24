@@ -28,5 +28,5 @@ kgen.generator export @test_simd_param_printing() {
       :!kgen.scalar<uindex> #kgen<simd 8>,
       :!kgen.simd<4, si32> #kgen<simd<1, 2, 3, 4>>>>,
     #kgen.simd<false>:!kgen.scalar<bool>>>
-  kgen.return
+  hlcf.return
 }

@@ -16,10 +16,12 @@ from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
-def vec_func(
-    in0: ImmPointer[Float32, ImmutAnyOrigin],
-    in1: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def vec_func[
+    in0_origin: ImmOrigin, in1_origin: ImmOrigin, out_origin: MutOrigin
+](
+    in0: ImmPointer[Float32, in0_origin],
+    in1: ImmPointer[Float32, in1_origin],
+    output: MutPointer[Float32, out_origin],
     len_dev: Int32,
     supplement_dev: Int32,
 ):
@@ -54,7 +56,13 @@ def test(ctx: DeviceContext) raises:
     var block_dim = 32
     var supplement = 5
 
-    ctx.enqueue_function[vec_func](
+    ctx.enqueue_function[
+        vec_func[
+            ImmOrigin(origin_of(in0_device)),
+            ImmOrigin(origin_of(in1_device)),
+            origin_of(out_device),
+        ]
+    ](
         in0_device,
         in1_device,
         out_device,

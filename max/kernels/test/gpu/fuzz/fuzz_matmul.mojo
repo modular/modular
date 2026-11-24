@@ -39,7 +39,7 @@ from std.sys.defines import get_defined_int
 
 from max.gpu import global_idx
 from max.gpu.host import DeviceContext, HostBuffer
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 
 from _fuzz import boundary_int, collect_args, flag, flag_int, numeric_check
@@ -119,9 +119,9 @@ def run_one_case(
     ctx.enqueue_copy(b_dev, b_host)
 
     # M runtime (bare Int); N, K comptime (Idx[...]) so the tuned kernel engages.
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
     ctx.synchronize()
@@ -225,7 +225,7 @@ def _run_rows(
     rand(b_host.as_span())
     for j in range(m):
         seed(base_seed + j)
-        rand(a_host.unsafe_ptr() + j * K, K)
+        rand(a_host.unsafe_ptr().unsafe_offset(j * K), K)
 
     var a_dev = ctx.enqueue_create_buffer[dtype](a_size)
     var b_dev = ctx.enqueue_create_buffer[dtype](b_size)
@@ -233,9 +233,9 @@ def _run_rows(
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
 
-    var a = TileTensor(a_dev, row_major(Coord(m, Idx[K])))
-    var b = TileTensor(b_dev, row_major(Coord(Idx[N], Idx[K])))
-    var c = TileTensor(c_dev, row_major(Coord(m, Idx[N])))
+    var a = TileTensor(a_dev, row_major(m, Idx[K]))
+    var b = TileTensor(b_dev, row_major(Idx[N], Idx[K]))
+    var c = TileTensor(c_dev, row_major(m, Idx[N]))
 
     _matmul_gpu[use_tensor_core=True, transpose_b=True](c, a, b, ctx)
     ctx.synchronize()
@@ -330,31 +330,18 @@ def run_batch_variance_case(
             _ = alone^
 
     print(
-        "BATCH_VARIANCE base_m=",
-        spec.m,
-        "N=",
-        N,
-        "K=",
-        K,
-        "rows_diverged=",
-        n_rows_diverged,
-        "/",
-        N_PROBES,
-        "n_diff_total=",
-        n_diff_total,
-        "max_abs=",
-        max_abs,
+        t"BATCH_VARIANCE base_m= {spec.m} N= {N} K= {K} rows_diverged="
+        t" {n_rows_diverged} / {N_PROBES} n_diff_total= {n_diff_total} max_abs="
+        t" {max_abs}"
     )
 
     if n_rows_diverged == 0:
         # Negative control lost its teeth: every row bit-matched across the
         # M=1 / M>1 breakpoint.
         print(
-            "FUZZ_CONTRACT_FAIL batch-variance negative control: all",
-            N_PROBES,
-            "rows bit-identical across the M=1 / M=",
-            N_PROBES,
-            "dispatch breakpoint (expected divergence)",
+            t"FUZZ_CONTRACT_FAIL batch-variance negative control: all"
+            t" {N_PROBES} rows bit-identical across the M=1 / M="
+            t" {N_PROBES} dispatch breakpoint (expected divergence)"
         )
         raise Error("batch-variance negative control observed no divergence")
 
@@ -382,7 +369,7 @@ def main() raises:
 
     if mode == "single":
         var m = flag_int(args, "--m", 128)
-        print("FUZZ_SINGLE m=", m, "N=", N, "K=", K)
+        print(t"FUZZ_SINGLE m= {m} N= {N} K= {K}")
         with DeviceContext() as ctx:
             if batch_variance:
                 run_batch_variance_case(
@@ -396,15 +383,8 @@ def main() raises:
         return
 
     print(
-        "=== fuzz_matmul seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "===",
+        t"=== fuzz_matmul seed= {the_seed} budget= {the_budget} N= {N} K="
+        t" {K} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

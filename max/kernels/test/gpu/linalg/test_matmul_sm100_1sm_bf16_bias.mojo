@@ -17,6 +17,7 @@ import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import TileTensor, Coord, CoordLike, row_major, Idx
@@ -28,7 +29,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
 
 
 def test_blackwell_matmul_with_epilogue_tensor[
@@ -39,9 +39,9 @@ def test_blackwell_matmul_with_epilogue_tensor[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int = 1,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -53,9 +53,9 @@ def test_blackwell_matmul_with_epilogue_tensor[
     num_accum_pipeline_stages: Int = 2,
     num_clc_pipeline_stages: Int = 2,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({M},"
@@ -63,30 +63,28 @@ def test_blackwell_matmul_with_epilogue_tensor[
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape}"
     )
 
-    var a_shape = row_major(Coord(m, Idx[KType.static_value]))
+    var a_shape = row_major(m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(m, Idx[NType.static_value]))
-    var epilogue_shape = row_major(Coord(m, Idx[NType.static_value]))
+    var c_shape = row_major(m, Idx[NType.static_value])
+    var epilogue_shape = row_major(m, Idx[NType.static_value])
 
     var a_size = M * K
     var b_size = N * K if transpose_b else K * N
     var c_size = M * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = unsafe_alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = unsafe_alloc[Scalar[b_type]](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
-    var epilogue_host_ptr = alloc[Scalar[c_type]](c_size)
+    var epilogue_host_ptr = unsafe_alloc[Scalar[c_type]](c_size)
     var epilogue_host = TileTensor(epilogue_host_ptr, epilogue_shape)
 
     # Device allocations
@@ -102,17 +100,19 @@ def test_blackwell_matmul_with_epilogue_tensor[
     var epilogue_tile = TileTensor(epilogue_device, epilogue_shape)
 
     # Initialize
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
-    rand(epilogue_host._storage, epilogue_host.num_elements(), min=-10, max=10)
+    rand(a_host.as_span())
+    rand(b_host.as_span())
+    rand(epilogue_host.as_span(), min=-10, max=10)
 
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(epilogue_device, epilogue_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -141,15 +141,12 @@ def test_blackwell_matmul_with_epilogue_tensor[
     )
 
     # Reference: cuBLAS matmul
-    var a_lt = a_tensor.to_layout_tensor()
-    var b_lt = b_tensor.to_layout_tensor()
-    var c_ref_tensor_lt = c_ref_tensor.to_layout_tensor()
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
-        a_lt,
-        b_lt,
+        c_ref_tensor,
+        a_tensor,
+        b_tensor,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -194,7 +191,7 @@ def test_blackwell_matmul_with_epilogue_tensor[
     # Add epilogue tensor to reference on host: C_ref[m, n] += epilogue[m, n]
     for i in range(M):
         for j in range(N):
-            c_host_ref[Coord(i, j)] += epilogue_host[Coord(i, j)]
+            c_host_ref[i, j] += epilogue_host[i, j]
 
     # print("c_ref(blas+epilogue):", end=" ")
     # for i in range(M):
@@ -225,11 +222,11 @@ def test_blackwell_matmul_with_epilogue_tensor[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    epilogue_host_ptr.free()
+    a_host_ptr.unsafe_free()
+    b_host_ptr.unsafe_free()
+    c_host_ptr.unsafe_free()
+    c_host_ref_ptr.unsafe_free()
+    epilogue_host_ptr.unsafe_free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
@@ -264,8 +261,8 @@ def main() raises:
                     192,
                     256,
                 ]:
-                    comptime block_tile_shape = Index(mma_m, mma_n, BK)
-                    comptime umma_shape = Index(mma_m, mma_n, MMA_K)
+                    comptime block_tile_shape = (mma_m, mma_n, BK)
+                    comptime umma_shape = (mma_m, mma_n, MMA_K)
 
                     test_blackwell_matmul_with_epilogue_tensor[
                         dtype,
@@ -273,7 +270,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                        cluster_shape=(1, 1, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -294,7 +291,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,
@@ -313,7 +310,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](4, 2, 1),
+                            cluster_shape=(4, 2, 1),
                             cta_group=cta_group,
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
@@ -335,7 +332,7 @@ def main() raises:
                             .bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape=StaticTuple[Int32, 3](8, 2, 1),
+                            cluster_shape=(8, 2, 1),
                             cta_group=cta_group,
                             a_swizzle=swizzle,
                             b_swizzle=swizzle,
@@ -355,7 +352,7 @@ def main() raises:
                         .bfloat16,
                         block_tile_shape,
                         umma_shape,
-                        cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
+                        cluster_shape=(4, 4, 1),
                         cta_group=cta_group,
                         a_swizzle=swizzle,
                         b_swizzle=swizzle,

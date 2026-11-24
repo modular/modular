@@ -14,21 +14,26 @@
 """Build multiturn :class:`ChatSamples` from a pool of user texts and CLI distributions.
 
 Used when ``--fit-distributions`` is set so real datasets (instruct-coder,
-agentic-code, etc.) match ``--random-*`` and ``--delay-between-chat-turns``
+agentic-code and so on) match ``--random-*`` and ``--delay-between-chat-turns``
 the same way as :class:`RandomBenchmarkDataset` multiturn mode.
 """
 
 from __future__ import annotations
 
+import itertools
 import logging
 import random
-from dataclasses import dataclass
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, replace
+from typing import NamedTuple
 
 import numpy as np
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from ._tokenizer_pool import TokenizerPool, worker_tokenizer
+from .agentic_tools import ToolConfig
 from .distribution import BaseDistribution, DistributionParameter
+from .turn_profile import TurnProfile
 from .types import (
     ChatSamples,
     ChatSession,
@@ -40,13 +45,19 @@ from .types import (
 
 @dataclass(frozen=True)
 class _TurnSpec:
-    """Pre-sampled inputs for one turn in a multiturn session."""
+    """Pre-sampled inputs for one request: a user message and its reply.
+
+    ``is_agentic`` describes the user half -- a tool result, not a question.
+    """
 
     prompt_text: str
     target_in: int
     target_out: int
     sys_variant: int
-    delay_ms: float | None
+    # The delay that precedes this turn: a tool's latency before a round,
+    # the user's think-time before a question.
+    preceding_delay_ms: float | None
+    is_agentic: bool = False
     unique_marker: str = ""
 
 
@@ -151,12 +162,197 @@ def _repeat_truncate_token_ids(
     return (token_ids * ratio)[:target_len]
 
 
+# The ids charged for a junction that `_junction_may_grow` flags and that is
+# not measured. The bound is measured, not proven: over the GPT-2, Llama 3,
+# Qwen 3, GLM, DeepSeek, Gemma and MiniMax vocabularies and English, code, CJK
+# and emoji text, a flagged join cost at most three ids more than its parts,
+# and the text a flagged cut kept, including a cut through a multibyte
+# character, never re-encoded to more ids than the cut kept.
+_MAX_JUNCTION_GROWTH = 3
+
+
+def _splits_between(before: str, after: str) -> bool:
+    """Returns True when a pre-tokenizer starts a new piece at ``after``.
+
+    That is where whitespace follows a non-space, except a line break after
+    punctuation, which the Llama 3 pattern keeps in the punctuation's piece.
+    """
+    if not after.isspace() or before.isspace():
+        return False
+    return after not in "\r\n" or before.isalnum()
+
+
+def _junction_may_grow(left: str, right: str) -> bool:
+    """Returns True unless ``left`` and ``right`` meet at a split.
+
+    A split is a point where `_splits_between` holds. Assumes the
+    pre-tokenizer of a byte-level BPE in the GPT-2 or Llama 3 style or of
+    SentencePiece, which starts a new piece at every split, so the text on
+    each side of a split encodes as it does alone. Every other junction may
+    grow: a word cut in two, a character whose UTF-8 bytes are split (it
+    decodes to U+FFFD), a space that joins the word after it, and a
+    whitespace run the joined text divides another way, such as a blank line
+    before a word under GPT-2.
+    """
+    if not left or not right:
+        return False
+    return not _splits_between(left[-1], right[0])
+
+
+def _is_split(text: str, index: int) -> bool:
+    return _splits_between(text[index - 1], text[index])
+
+
+def _last_split(text: str) -> int | None:
+    return next(
+        (i for i in range(len(text) - 1, 0, -1) if _is_split(text, i)), None
+    )
+
+
+def _first_split(text: str) -> int | None:
+    return next((i for i in range(1, len(text)) if _is_split(text, i)), None)
+
+
+# The most text on each side of a junction that `_measured_join_growth`
+# encodes; a junction with no split that close takes another path.
+_MAX_PROBED_CHARS = 64
+
+
+def _measured_join_growth(
+    tokenizer: PreTrainedTokenizerBase,
+    left: str,
+    right: str,
+    *,
+    ends_split: bool,
+) -> int | None:
+    """Returns the ids that joining ``left`` to ``right`` adds to their counts.
+
+    Under the assumption of `_junction_may_grow`, only the span from the last
+    split in ``left`` to the first split in ``right`` can encode differently
+    once joined, so encoding that span measures the growth. With
+    ``ends_split``, the outer ends of ``left`` and ``right`` also count as
+    splits, which holds for pieces counted on their own. Returns None when
+    either side has no split within ``_MAX_PROBED_CHARS``, such as CJK text
+    with no spaces.
+    """
+    if not _junction_may_grow(left, right):
+        return 0
+    window = left[-_MAX_PROBED_CHARS:]
+    start = _last_split(window)
+    if start is None:
+        if not ends_split or len(left) > _MAX_PROBED_CHARS:
+            return None
+        start = 0
+    end = _first_split(right[: _MAX_PROBED_CHARS + 1])
+    if end is None:
+        if not ends_split or len(right) > _MAX_PROBED_CHARS:
+            return None
+        end = len(right)
+    tail, head = window[start:], right[:end]
+    return (
+        estimate_num_tokens(tokenizer, tail + head)
+        - estimate_num_tokens(tokenizer, tail)
+        - estimate_num_tokens(tokenizer, head)
+    )
+
+
+def _join_growth(
+    tokenizer: PreTrainedTokenizerBase, left: str, right: str
+) -> int:
+    """Bounds the ids that joining two pieces adds to their own counts.
+
+    The growth is measured, except at a junction with no split within
+    ``_MAX_PROBED_CHARS`` on the side of a piece longer than that, which
+    takes ``_MAX_JUNCTION_GROWTH``.
+    """
+    growth = _measured_join_growth(tokenizer, left, right, ends_split=True)
+    return _MAX_JUNCTION_GROWTH if growth is None else max(growth, 0)
+
+
+# The ids on each side of a repeat's seam that `_seam_growth` decodes to find
+# the splits around it.
+_SEAM_WINDOW_IDS = _MAX_PROBED_CHARS
+
+
+def _seam_growth(
+    tokenizer: PreTrainedTokenizerBase, ids: list[int]
+) -> int | None:
+    """Returns the ids that each seam of a repeat of ``ids`` adds to its count.
+
+    A seam joins one copy's tail to the next copy's head, and every seam
+    joins the same text, so one measurement covers them all. The seam is
+    measured in context out to the splits on either side, since a word that
+    opens the copy can merge with the text before it into ids that no pair
+    of ids at the seam shows. Returns None when it cannot be measured.
+    """
+    tail = ids[-_SEAM_WINDOW_IDS:]
+    left = tokenizer.decode(tail, skip_special_tokens=False)
+    joined = tokenizer.decode(
+        tail + ids[:_SEAM_WINDOW_IDS], skip_special_tokens=False
+    )
+    if not joined.startswith(left):
+        return None
+    return _measured_join_growth(
+        tokenizer, left, joined[len(left) :], ends_split=False
+    )
+
+
+def _cut_may_grow(
+    tokenizer: PreTrainedTokenizerBase, scaled_ids: list[int], ids: list[int]
+) -> bool:
+    """Returns True when the text of ``scaled_ids`` may encode to more ids.
+
+    The cut is the truncation of the base or the partial last copy of a
+    repeat. It is judged on the decoded text around it, so a cut through a
+    multibyte character always counts as one that may grow: the next id
+    either completes the character, which rewrites the kept text's U+FFFD,
+    or does not, which adds no text after the cut.
+    """
+    if len(scaled_ids) >= len(ids):
+        next_index = len(scaled_ids) % len(ids)
+        if next_index == 0:
+            return False
+    else:
+        next_index = len(scaled_ids)
+    kept = scaled_ids[-2:]
+    left = tokenizer.decode(kept, skip_special_tokens=False)
+    joined = tokenizer.decode(
+        kept + ids[next_index : next_index + 1], skip_special_tokens=False
+    )
+    right = joined[len(left) :]
+    if not joined.startswith(left) or not right:
+        return True
+    return _junction_may_grow(left, right)
+
+
+class _TextPiece(NamedTuple):
+    """Text and the token count charged for it."""
+
+    text: str
+    num_tokens: int
+
+
 def _text_scaled_to_token_length(
     tokenizer: PreTrainedTokenizerBase,
     base_text: str,
     target_len: int,
     min_len: int = 4,
-) -> tuple[str, int]:
+) -> _TextPiece:
+    """Repeats or cuts ``base_text``'s tokens to ``target_len`` tokens.
+
+    Returns the decoded text and its length in tokens. The length is the id
+    count rather than a re-encode of the decoded text, which nearly doubles
+    the cost of building a turn.
+
+    The length is at least the encode of the returned text under two
+    assumptions: the pre-tokenizer splits as `_junction_may_grow` states,
+    and a cut grows by no more than ``_MAX_JUNCTION_GROWTH``. A repeat adds
+    the growth `_seam_growth` measures at each seam between whole copies,
+    which is exact, and only a positive growth at the seam into a cut copy,
+    whose head may be shorter than the measured one. A seam that cannot be
+    measured pays for one re-encode and returns the exact length. A cut that
+    `_cut_may_grow` flags takes ``_MAX_JUNCTION_GROWTH`` ids.
+    """
     target_len = max(target_len, min_len)
     ids = tokenizer.encode(base_text, add_special_tokens=False)
     ids = _sanitize_token_ids(tokenizer, ids)
@@ -164,8 +360,23 @@ def _text_scaled_to_token_length(
         rep = _replacement_token_id(tokenizer)
         ids = [rep] * min_len
     scaled_ids = _repeat_truncate_token_ids(ids, target_len)
+    if not scaled_ids:
+        return _TextPiece("", 0)
     text = tokenizer.decode(scaled_ids, skip_special_tokens=False)
-    return text, estimate_num_tokens(tokenizer, text)
+    num_tokens = len(scaled_ids)
+    if num_tokens > len(ids):
+        growth = _seam_growth(tokenizer, ids)
+        if growth is None:
+            return _TextPiece(
+                text, len(tokenizer.encode(text, add_special_tokens=False))
+            )
+        copies, rest = divmod(num_tokens, len(ids))
+        num_tokens += growth * (copies - 1)
+        if rest:
+            num_tokens += max(growth, 0)
+    if _cut_may_grow(tokenizer, scaled_ids, ids):
+        num_tokens += _MAX_JUNCTION_GROWTH
+    return _TextPiece(text, num_tokens)
 
 
 def _split_sys_user_token_targets(
@@ -195,8 +406,8 @@ def _system_prompt_template(variant: int) -> str:
 class ScaledUserMessage:
     """User message scaled to a per-turn token budget, with optional sys prefix.
 
-    `content` is the full text sent to the model
-    (`sys_prefix.text + "\\n\\n" + user_body_scaled` when `sys_prefix` is set).
+    `content` is the full text sent to the model: `sys_prefix.text`, a blank
+    line, then `user_body_scaled`, when `sys_prefix` is set.
     `sys_prefix` describes the leading sys-prefix slice, or `None` when
     `sys_prompt_ratio <= 0`.
     """
@@ -223,6 +434,19 @@ def build_scaled_user_message(
     cache-distinct across pool cycles. Marker tokens are reserved from the
     user-side budget so the on-the-wire input length stays close to
     ``target_input_tokens``.
+
+    ``num_tokens`` sums the parts' counts rather than encoding the joined
+    text, which nearly doubles the cost of building the turn. The parts are
+    the scaled system prefix, the blank line and marker as one short piece,
+    and the scaled body. `_text_scaled_to_token_length` bounds each scaled
+    part and `_join_growth` adds what each join costs, so the sum is at least
+    the encode of ``content`` under the assumptions those helpers state. It
+    runs above the encode where junctions merge, which a context check may
+    safely do. The system prefix ends in a non-space before the blank line,
+    so that join costs nothing, and the join after the marker is measured, so
+    the production marker ``[n] `` adds no slack. The blank line and the
+    marker are encoded together because a GPT-2 pre-tokenizer splits a blank
+    line before a word into two ids.
     """
     sys_len, user_len = _split_sys_user_token_targets(
         target_input_tokens, sys_prompt_ratio, min_input_len
@@ -231,22 +455,34 @@ def build_scaled_user_message(
         estimate_num_tokens(tokenizer, unique_marker) if unique_marker else 0
     )
     body_target_len = max(user_len - marker_tokens, min_input_len)
-    parts: list[str] = []
+    pieces: list[_TextPiece] = []
     sys_prefix: SharedContext | None = None
+    lead = unique_marker
+    lead_tokens = marker_tokens
     if sys_len > 0:
-        sys_text, sys_tokens = _text_scaled_to_token_length(
+        sys_piece = _text_scaled_to_token_length(
             tokenizer, _system_prompt_template(sys_variant), sys_len, min_len=1
         )
-        parts.append(sys_text)
-        sys_prefix = SharedContext(text=sys_text, num_tokens=sys_tokens)
-    user_text, _ = _text_scaled_to_token_length(
-        tokenizer, user_body, body_target_len, min_len=min_input_len
+        pieces.append(sys_piece)
+        sys_prefix = SharedContext(
+            text=sys_piece.text, num_tokens=sys_piece.num_tokens
+        )
+        lead = "\n\n" + unique_marker
+        lead_tokens = estimate_num_tokens(tokenizer, lead)
+    if lead:
+        pieces.append(_TextPiece(lead, lead_tokens))
+    pieces.append(
+        _text_scaled_to_token_length(
+            tokenizer, user_body, body_target_len, min_len=min_input_len
+        )
     )
-    parts.append(unique_marker + user_text if unique_marker else user_text)
-    combined = "\n\n".join(parts)
+    join_growth = sum(
+        _join_growth(tokenizer, left.text, right.text)
+        for left, right in itertools.pairwise(pieces)
+    )
     return ScaledUserMessage(
-        content=combined,
-        num_tokens=estimate_num_tokens(tokenizer, combined),
+        content="".join(piece.text for piece in pieces),
+        num_tokens=sum(piece.num_tokens for piece in pieces) + join_growth,
         sys_prefix=sys_prefix,
     )
 
@@ -303,17 +539,31 @@ def _build_session(args: _SessionArgs) -> _SessionResult:
                 source="user",
                 content=msg.content,
                 num_tokens=msg.num_tokens,
+                is_agentic=turn.is_agentic,
             )
+        )
+        # The driver sleeps after each reply, so this one carries the
+        # think-time that precedes the turn following it.
+        next_turn = (
+            args.turns[turn_i + 1] if turn_i + 1 < len(args.turns) else None
         )
         messages.append(
             SessionMessage(
                 source="assistant",
                 content="",
                 num_tokens=turn.target_out,
-                delay_until_next_message=turn.delay_ms,
+                delay_until_next_message=(
+                    next_turn.preceding_delay_ms if next_turn else None
+                ),
             )
         )
         context_tokens += msg.num_tokens + turn.target_out
+
+    # Truncation can end a session on a reply that did have a successor, so
+    # clear it here too: the driver sleeps on this before exiting, and a delay
+    # on the last reply is dead wall-clock.
+    if messages:
+        messages[-1].delay_until_next_message = None
 
     session = (
         ChatSession(args.session_id, messages) if len(messages) >= 2 else None
@@ -325,92 +575,58 @@ def _build_session(args: _SessionArgs) -> _SessionResult:
     )
 
 
-def build_chat_samples_from_user_text_pool(
-    pool: TokenizerPool,
-    user_text_pool: list[str],
-    num_sessions: int,
-    num_turns: DistributionParameter,
-    input_len: DistributionParameter,
-    output_len: DistributionParameter,
-    delay_between_turns_dist: DistributionParameter | None,
-    sys_prompt_ratio: float,
-    max_num_unique_sys_prompt: int,
-    min_input_len: int = 4,
-    min_output_len: int = 1,
-    *,
-    shuffle_pool: bool = False,
-    log_prefix: str = "multiturn-fit",
-) -> ChatSamples:
-    """Assemble :class:`ChatSamples` by grouping pooled user strings into sessions.
+def _session_stream(stream_seed: int, session_id: int) -> np.random.RandomState:
+    """Returns the random stream that session ``session_id`` draws from.
 
-    For each session, samples a turn count and per-turn input/output targets from
-    the given distributions (with optional ``';'`` split for first vs remaining
-    turns). Each user message is produced by token-space repeat/truncation of a
-    pooled string, optionally prefixed with a scaled synthetic system block.
-
-    When the planned turn count exceeds the available pool, the cursor wraps
-    back to the start of the pool and a ``[N] `` marker (where ``N`` is the
-    1-indexed pass number) is prepended to the user body so cycled prompts are
-    cache-distinct. Distribution samples are re-drawn on every turn, so each
-    cycle produces a freshly fit workload rather than a replay.
-
-    Args:
-        pool: Tokenizer process pool used for batched pre-filter encodes
-            and per-session worker dispatch.
-        user_text_pool: Candidate user message bodies (one per underlying turn).
-        num_sessions: Target number of chat sessions.
-        num_turns: Distribution for turns per session (>= 1 after rounding).
-        input_len: Per-turn user-side token target distribution(s).
-        output_len: Per-turn assistant ``max_tokens`` distribution(s).
-        delay_between_turns_dist: Optional per-assistant-message delay (ms).
-        sys_prompt_ratio: Fraction of user message token budget for system prefix.
-        max_num_unique_sys_prompt: Cycle count for system-prefix variants.
-        min_input_len: Floor for sampled input lengths.
-        min_output_len: Floor for sampled output lengths.
-        shuffle_pool: Whether to shuffle ``user_text_pool`` in place before use.
-        log_prefix: Logger prefix for warnings.
-
-    Returns:
-        Generated chat sessions. The pool is cycled with unique per-cycle
-        markers to satisfy ``num_sessions`` even when planned turns exceed the
-        pool size; the result may still contain fewer sessions if any drop
-        due to model max-context overflow.
+    Each session draws only from its own stream, so a session's turns do not
+    depend on how many sessions the run builds.
     """
-    first_in, rest_in = parse_two_part_distribution(input_len, "input_len")
-    first_out, rest_out = parse_two_part_distribution(output_len, "output_len")
-
-    num_turns_dist = BaseDistribution.from_distribution_parameter(num_turns)
-    in_first_dist = BaseDistribution.from_distribution_parameter(first_in)
-    in_rest_dist = BaseDistribution.from_distribution_parameter(rest_in)
-    out_first_dist = BaseDistribution.from_distribution_parameter(first_out)
-    out_rest_dist = BaseDistribution.from_distribution_parameter(rest_out)
-    delay_dist = BaseDistribution.from_distribution_parameter(
-        delay_between_turns_dist
+    return np.random.RandomState(
+        np.random.MT19937(np.random.SeedSequence([stream_seed, session_id]))
     )
 
-    assert num_turns_dist is not None
-    assert in_first_dist is not None
-    assert in_rest_dist is not None
-    assert out_first_dist is not None
-    assert out_rest_dist is not None
 
+def _build_sessions(
+    *,
+    pool: TokenizerPool,
+    user_text_pool: Sequence[str],
+    tool_text_pool: Sequence[str],
+    num_sessions: int,
+    num_turns: BaseDistribution,
+    stream_seed: int,
+    first_turn_profile: TurnProfile,
+    later_turn_profile: TurnProfile,
+    tools: Sequence[ToolConfig] | None,
+    rounds: BaseDistribution | None,
+    min_output_len: int,
+    max_output_len: int | None,
+    sys_prompt_ratio: float,
+    max_num_unique_sys_prompt: int,
+    min_input_len: int,
+    shuffle_pool: bool,
+    log_prefix: str,
+) -> ChatSamples:
+    """Draw each session's turns and build them from the pools.
+
+    A human turn and an agent-loop round are the same draw from different
+    distributions, so both go through one loop. Session ``i`` draws its turn
+    count, lengths, delays and agent-loop rounds from
+    ``_session_stream(stream_seed, i)``.
+    """
     model_max_length = min(
         pool.tokenizer.model_max_length, np.iinfo(np.int64).max
     )
     max_context_length = int(model_max_length * MAX_CONTEXT_USAGE_RATIO)
 
-    # Batch the pre-filter encode through the shared spawn pool.
-    pool_lens = pool.encode_lens(list(user_text_pool))
-    filtered = [
+    pool_lens = pool.encode_lens(
+        list(user_text_pool), desc=f"{log_prefix}: tokenizing text pool"
+    )
+    filtered_user_texts = [
         t
         for t, n in zip(user_text_pool, pool_lens, strict=False)
         if n >= min_input_len
     ]
-
-    if shuffle_pool:
-        random.shuffle(filtered)
-
-    if not filtered:
+    if not filtered_user_texts:
         logger.warning(
             "%s: no valid user texts in pool after filtering (min_input_len=%s).",
             log_prefix,
@@ -418,62 +634,110 @@ def build_chat_samples_from_user_text_pool(
         )
         return ChatSamples(chat_sessions=[])
 
-    num_turns_per_session = [
-        max(round(num_turns_dist.sample_value()), 1)
-        for _ in range(num_sessions)
-    ]
-    total_turns_needed = sum(num_turns_per_session)
-    if total_turns_needed > len(filtered):
-        logger.info(
-            "%s: pool has %d valid rows but %d turns planned; will cycle "
-            "through the pool with per-cycle unique markers (e.g. '[1] ') "
-            "while re-sampling distributions on each turn.",
-            log_prefix,
-            len(filtered),
-            total_turns_needed,
-        )
+    # A real tool result can be a token or two, so no min-length filter here.
+    # Datasets with no recorded tool messages fall back to the user pool; the
+    # copy keeps the two shuffled and cycled independently below.
+    tool_texts = list(tool_text_pool or filtered_user_texts)
+    if shuffle_pool:
+        random.shuffle(filtered_user_texts)
+        random.shuffle(tool_texts)
 
     warmup_dict: dict[int, SharedContext] = {}
     max_variant = max(1, max_num_unique_sys_prompt)
     session_args_list: list[_SessionArgs] = []
-    cursor = 0
-    draw_index = 0
-    for session_id in range(num_sessions):
-        n_planned = num_turns_per_session[session_id]
+    # One cycle per pool, so one wrapping does not disturb the other.
+    user_body_cycle = itertools.cycle(filtered_user_texts)
+    tool_body_cycle = itertools.cycle(tool_texts)
+    draw_counter = itertools.count()
+    tool_list = list(tools) if tools else []
+    tool_probs = np.array([tool.weight for tool in tool_list], dtype=np.float64)
+    if tool_list:
+        tool_probs /= tool_probs.sum()
+    num_user_turns = 0
 
-        turns: list[_TurnSpec] = []
-        for turn_i in range(n_planned):
-            if cursor >= len(filtered):
-                cursor = 0
-            in_dist = in_first_dist if turn_i == 0 else in_rest_dist
-            out_dist = out_first_dist if turn_i == 0 else out_rest_dist
-            target_in = max(round(in_dist.sample_value()), min_input_len)
-            target_out = max(round(out_dist.sample_value()), min_output_len)
-            sys_variant = (session_id + turn_i) % max_variant
-            delay_ms = (
-                max(float(delay_dist.sample_value()), 0.0)
-                if delay_dist
-                else None
+    def add_turn(
+        turns: list[_TurnSpec],
+        profile: TurnProfile,
+        body_cycle: Iterator[str],
+        *,
+        session_id: int,
+        turn_i: int,
+        is_agentic: bool,
+        rng: np.random.RandomState,
+    ) -> None:
+        """Draw one spec and append it, taking its body from ``body_cycle``.
+
+        A spec is a human turn or an agent-loop round; both draw the same
+        way, from different profiles.
+        """
+        targets = profile.draw(
+            min_input_len=min_input_len, min_output_len=min_output_len, rng=rng
+        )
+        turns.append(
+            _TurnSpec(
+                prompt_text=next(body_cycle),
+                target_in=targets.input_len,
+                target_out=(
+                    min(targets.output_len, max_output_len)
+                    if max_output_len is not None
+                    else targets.output_len
+                ),
+                sys_variant=(session_id + turn_i) % max_variant,
+                preceding_delay_ms=targets.delay_ms,
+                is_agentic=is_agentic,
+                # Marked unconditionally: avoids unintended shared prefixes.
+                unique_marker=f"[{next(draw_counter)}] ",
             )
-            # Marked unconditionally: avoids unintended shared prefixes.
-            marker = f"[{draw_index}] "
-            turns.append(
-                _TurnSpec(
-                    prompt_text=filtered[cursor],
-                    target_in=target_in,
-                    target_out=target_out,
-                    sys_variant=sys_variant,
-                    delay_ms=delay_ms,
-                    unique_marker=marker,
-                )
+        )
+
+    for session_id in range(num_sessions):
+        rng = _session_stream(stream_seed, session_id)
+        n_turns = max(round(num_turns.sample_value(rng)), 1)
+        num_user_turns += n_turns
+        turn_specs: list[_TurnSpec] = []
+        for turn_i in range(n_turns):
+            block_start = len(turn_specs)
+            add_turn(
+                turn_specs,
+                first_turn_profile if turn_i == 0 else later_turn_profile,
+                user_body_cycle,
+                session_id=session_id,
+                turn_i=turn_i,
+                is_agentic=False,
+                rng=rng,
             )
-            cursor += 1
-            draw_index += 1
+            if tool_list and rounds is not None:
+                num_rounds = max(round(rounds.sample_value(rng)), 0)
+                for tool_i in rng.choice(
+                    len(tool_list), size=num_rounds, p=tool_probs
+                ):
+                    add_turn(
+                        turn_specs,
+                        tool_list[tool_i].profile,
+                        tool_body_cycle,
+                        session_id=session_id,
+                        turn_i=turn_i,
+                        is_agentic=True,
+                        rng=rng,
+                    )
+
+            # Each spec goes on the wire as a user message and a reply. In
+            # the agent loop a reply is the call to the NEXT tool rather than
+            # an answer to what just arrived, so every round displaces the
+            # human's answer one slot further right. Rotating target_out one
+            # slot left restores call-before-result, and the modulo wrap
+            # leaves the human's answer on the block's last reply.
+            block = turn_specs[block_start:]
+            outs = [spec.target_out for spec in block]
+            turn_specs[block_start:] = [
+                replace(spec, target_out=outs[(i + 1) % len(outs)])
+                for i, spec in enumerate(block)
+            ]
 
         session_args_list.append(
             _SessionArgs(
                 session_id=session_id,
-                turns=turns,
+                turns=turn_specs,
                 sys_prompt_ratio=sys_prompt_ratio,
                 min_input_len=min_input_len,
                 max_context_length=max_context_length,
@@ -481,9 +745,23 @@ def build_chat_samples_from_user_text_pool(
             )
         )
 
+    if num_user_turns > len(filtered_user_texts):
+        logger.info(
+            "%s: pool has %d valid rows but %d turns planned; will cycle "
+            "through the pool, with a per-draw unique marker (e.g. '[7] ') "
+            "and distributions re-sampled on each turn.",
+            log_prefix,
+            len(filtered_user_texts),
+            num_user_turns,
+        )
+
     sessions: list[ChatSession] = []
     truncated_turns: list[int] = []
-    for result in pool.map(_build_session, session_args_list):
+    for result in pool.map(
+        _build_session,
+        session_args_list,
+        desc=f"{log_prefix}: building sessions",
+    ):
         if result.session is not None:
             sessions.append(result.session)
         if result.truncated_at_turn is not None:
@@ -512,7 +790,123 @@ def build_chat_samples_from_user_text_pool(
             len(sessions),
             num_sessions,
         )
-
     return ChatSamples(
         chat_sessions=sessions, shared_contexts=list(warmup_dict.values())
+    )
+
+
+def build_fitted_chat_samples(
+    pool: TokenizerPool,
+    user_text_pool: list[str],
+    num_sessions: int,
+    num_turns: DistributionParameter,
+    input_len: DistributionParameter,
+    output_len: DistributionParameter,
+    delay_between_turns_dist: DistributionParameter | None,
+    sys_prompt_ratio: float,
+    max_num_unique_sys_prompt: int,
+    min_input_len: int = 4,
+    min_output_len: int = 1,
+    *,
+    max_output_len: int | None = None,
+    shuffle_pool: bool = False,
+    tools: Sequence[ToolConfig] | None = None,
+    agentic_rounds_per_turn: DistributionParameter | None = None,
+    tool_text_pool: Sequence[str] | None = None,
+    log_prefix: str = "multiturn-fit",
+) -> ChatSamples:
+    """Assemble :class:`ChatSamples` by grouping pooled user strings into sessions.
+
+    For each session, samples a turn count and per-turn input/output targets from
+    the given distributions (with optional ``';'`` split for first vs remaining
+    turns). Each user message is produced by token-space repeat/truncation of a
+    pooled string, optionally prefixed with a scaled synthetic system block.
+
+    Every user body is prefixed with a ``[N] `` marker, ``N`` counting draws
+    across the run from zero, so cycled bodies stay cache-distinct. When the
+    planned turn count exceeds the available pool it wraps back to the start;
+    distribution samples are re-drawn on every turn, so a second pass over the
+    pool produces a freshly fit workload rather than a replay.
+
+    Args:
+        pool: Tokenizer process pool used for batched pre-filter encodes
+            and per-session worker dispatch.
+        user_text_pool: Candidate user message bodies (one per underlying turn).
+        num_sessions: Target number of chat sessions.
+        num_turns: Distribution for turns per session (>= 1 after rounding).
+        input_len: Per-turn user-side token target distribution(s).
+        output_len: Per-turn assistant ``max_tokens`` distribution(s).
+        delay_between_turns_dist: Optional per-assistant-message delay (ms).
+        sys_prompt_ratio: Fraction of user message token budget for system prefix.
+        max_num_unique_sys_prompt: Cycle count for system-prefix variants.
+        min_input_len: Floor for sampled input lengths, human turns and
+            agent-loop rounds alike. A round also carries the ``[N] `` marker,
+            so a sub-floor tool profile cannot reach the wire either way.
+        min_output_len: Floor for sampled output lengths.
+        max_output_len: Optional ceiling. Draws above it are clamped to it,
+            not redrawn, before context budgeting.
+        shuffle_pool: Whether to randomize the draw order of the text pools.
+        tools: Optional tool profiles for an agent loop after each turn.
+        agentic_rounds_per_turn: How many rounds follow each turn. Given with
+            ``tools``, or neither.
+        tool_text_pool: Optional body pool for agent-loop rounds; defaults to
+            ``user_text_pool``.
+        log_prefix: Logger prefix for warnings.
+
+    Returns:
+        Generated chat sessions. The pool is cycled with per-draw unique
+        markers to satisfy ``num_sessions`` even when planned turns exceed the
+        pool size; the result may still contain fewer sessions if any drop
+        due to model max-context overflow.
+    """
+    if max_output_len is not None and max_output_len < min_output_len:
+        raise ValueError("max_output_len must be at least min_output_len")
+    first_in, rest_in = parse_two_part_distribution(input_len, "input_len")
+    first_out, rest_out = parse_two_part_distribution(output_len, "output_len")
+
+    first_turn_profile = TurnProfile.from_parameters(
+        input_len=first_in,
+        output_len=first_out,
+        delay=delay_between_turns_dist,
+    )
+    later_turn_profile = TurnProfile.from_parameters(
+        input_len=rest_in, output_len=rest_out, delay=delay_between_turns_dist
+    )
+
+    rounds_dist = BaseDistribution.from_distribution_parameter(
+        agentic_rounds_per_turn
+    )
+    if (tools is None) != (rounds_dist is None):
+        raise ValueError(
+            "tools and agentic_rounds_per_turn must be given together: one"
+            " says what a round costs, the other how many rounds run per"
+            " turn."
+        )
+
+    num_turns_dist = BaseDistribution.from_distribution_parameter_or_raise(
+        num_turns
+    )
+    # One draw from the global stream keys every session's own stream. The
+    # count of sessions changes with the load (the warmup pool grows with
+    # concurrency), and session i must stay the same when it does.
+    stream_seed = int(np.random.randint(2**31))
+
+    return _build_sessions(
+        pool=pool,
+        user_text_pool=user_text_pool,
+        tool_text_pool=tool_text_pool or [],
+        num_sessions=num_sessions,
+        num_turns=num_turns_dist,
+        stream_seed=stream_seed,
+        first_turn_profile=first_turn_profile,
+        later_turn_profile=later_turn_profile,
+        tools=tools,
+        rounds=rounds_dist,
+        min_input_len=min_input_len,
+        min_output_len=min_output_len,
+        max_output_len=max_output_len,
+        sys_prompt_ratio=sys_prompt_ratio,
+        max_num_unique_sys_prompt=max_num_unique_sys_prompt,
+        shuffle_pool=shuffle_pool,
+        log_prefix=log_prefix,
     )

@@ -11,9 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.sys import has_amd_gpu_accelerator
 
-from max.gpu.host import get_gpu_target
+from max.gpu.host import get_gpu_target, default_accelerator
 from max.gpu.host.compile import _compile_code
 from layout import ComptimeInt, RowMajorLayout
 from layout.tensor_engine import DefaultEngine
@@ -60,17 +59,12 @@ def parse_directive_value(asm: String, directive: String) -> Int:
     Returns:
         The parsed integer value, or 0 if not found.
     """
-    if directive not in asm:
-        return 0
-
-    var directive_idx = asm.find(directive)
-    var line_end = asm.find("\n", directive_idx)
-    if line_end <= directive_idx:
+    __guard case .Some(directive_idx) = asm.find(directive);
+      case .Some(line_end) = asm.find("\n", directive_idx) else:
         return 0
 
     var line = asm[byte=directive_idx:line_end]
-    var colon_idx = line.find(":")
-    if colon_idx < 0:
+    __guard case .Some(colon_idx) = line.find(":") else:
         return 0
 
     try:
@@ -133,7 +127,7 @@ def compile_kernel_to_asm[
         b_type,
         transpose_b=True,
         K=K,
-    ](Index(block_m, block_n))
+    ]((block_m, block_n))
 
     comptime a_tt_layout = RowMajorLayout[ComptimeInt[M], ComptimeInt[K]]
     comptime b_tt_layout = RowMajorLayout[ComptimeInt[N], ComptimeInt[K]]
@@ -192,9 +186,9 @@ def compile_pingpong_kernel_to_asm[
     comptime c_tt_layout = RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]
 
     comptime pingpong_config = KernelConfig(
-        block_shape=Index(256, 256, block_k),
-        warp_shape=Index(128, 64, block_k),
-        mma_shape=Index(16, 16, mma_k),
+        block_shape=(256, 256, block_k),
+        warp_shape=(128, 64, block_k),
+        mma_shape=(Int(16), Int(16), Int(mma_k)),
     )
 
     comptime kernel = AMDPingPongMatmul[
@@ -229,7 +223,7 @@ def print_test_header[
 ]():
     """Print test configuration header."""
     print("=== AMD Matmul Assembly Check ===")
-    print("Data types: A=", a_type, ", B=", b_type, ", C=", c_type, sep="")
+    print(t"Data types: A={a_type}, B={b_type}, C={c_type}", sep="")
     print("Block shape: BM=", block_m, ", BN=", block_n, sep="")
 
 
@@ -268,7 +262,7 @@ def test_amd_matmul_bf16_max_config() raises:
     """Test AMD AMDMatmul assembly for BF16 with max config (256x256x64)."""
     print("== test_amd_matmul_bf16_max_config (256x256x64)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -285,7 +279,7 @@ def test_amd_matmul_fp8_max_config() raises:
     """Test AMD AMDMatmul assembly for FP8 with max config (256x256x128)."""
     print("== test_amd_matmul_fp8_max_config (256x256x128)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -302,7 +296,7 @@ def test_amd_pingpong_fp8_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for FP8 (256x256x128)."""
     print("== test_amd_pingpong_fp8_max_config (256x256x128)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 
@@ -333,7 +327,7 @@ def test_amd_pingpong_bf16_max_config() raises:
     """Test AMD ping-pong matmul kernel assembly for BF16 (256x256x64)."""
     print("== test_amd_pingpong_bf16_max_config (256x256x64)")
 
-    comptime if not has_amd_gpu_accelerator():
+    comptime if not default_accelerator().is_amd_gpu():
         print("Skipping test - AMD GPU not available")
         return
 

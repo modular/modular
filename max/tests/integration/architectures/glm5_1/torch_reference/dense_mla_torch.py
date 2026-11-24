@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import importlib
 from typing import Any
 
 import torch
@@ -88,43 +87,3 @@ def glm_mla_forward_dense_no_indexer(
     )
     attn_output = attn_output.reshape(batch_size, seq_length, -1).contiguous()
     return layer.o_proj(attn_output)
-
-
-def install_dense_mla_attention_patch_on_model(model: nn.Module) -> None:
-    """Patch loaded ``GlmMoeDsaAttention`` instances to use dense eager MLA."""
-    attn = model.model.layers[0].self_attn
-    attn_cls = type(attn)
-    if getattr(attn_cls, "_glm_dense_mla_patched", False):
-        return
-
-    mod = importlib.import_module(attn_cls.__module__)
-    apply_rotary_pos_emb = mod.apply_rotary_pos_emb
-    eager_attention_forward = mod.eager_attention_forward
-
-    def dense_forward(
-        self: nn.Module,
-        hidden_states: torch.Tensor,
-        position_embeddings: tuple[torch.Tensor, torch.Tensor],
-        attention_mask: torch.Tensor | None,
-        past_key_values: Any = None,
-        prev_topk_indices: torch.Tensor | None = None,
-        **kwargs: Any,
-    ) -> tuple[torch.Tensor, None, None]:
-        del prev_topk_indices, kwargs
-        if past_key_values is not None:
-            raise NotImplementedError(
-                "Dense MLA validation does not support KV cache; "
-                "run with use_cache=False."
-            )
-        out = glm_mla_forward_dense_no_indexer(
-            self,
-            hidden_states,
-            position_embeddings,
-            attention_mask,
-            apply_rotary_pos_emb=apply_rotary_pos_emb,
-            eager_attention_forward=eager_attention_forward,
-        )
-        return out, None, None
-
-    attn_cls.forward = dense_forward
-    attn_cls._glm_dense_mla_patched = True

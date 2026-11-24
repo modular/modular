@@ -116,11 +116,11 @@ def main():
     ]
 
     # Test struct_field_type_by_name folding
-    # CHECK: lit.alias.decl *"fieldTypeByName0`{{[0-9]*}}": !AnyType = <!MyStruct>
+    # CHECK: lit.alias.decl *"fieldTypeByName0`{{[0-9]*}}": !AnyType = <sugar_preserved({{.*}}, !MyStruct)>
     comptime fieldTypeByName0 = struct_field_type_by_name[
         MyWrapper[37], "nested"
     ]
-    # CHECK: lit.alias.decl *"fieldTypeByName1`{{[0-9]*}}": !AnyType = <@struct_type_reflection_attrs::@MyParam<:!Int {:scalar<index> 37}>>
+    # CHECK: lit.alias.decl *"fieldTypeByName1`{{[0-9]*}}": !AnyType = <sugar_preserved({{.*}}, @struct_type_reflection_attrs::@MyParam<:!Int {:scalar<index> 37}>)>
     comptime fieldTypeByName1 = struct_field_type_by_name[
         MyWrapper[37], "nested_param"
     ]

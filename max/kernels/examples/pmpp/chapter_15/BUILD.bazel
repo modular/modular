@@ -10,7 +10,7 @@ _CPU_ONLY = [
 ]
 
 _LAYOUT_DEPS = [
-    "fig15_14_LayoutTensor.mojo",
+    "fig15_14_TileTensor.mojo",
 ]
 
 [

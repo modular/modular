@@ -10,8 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# TODO(MSTDL-2788): Placeholder package docstring. Without a package index here,
-# the API reference lists this package with an empty description and links to a
-# page that does not exist. Confirm against `std/algorithm/backend/__init__.mojo`
-# once that package's move completes.
-"""Provides CPU and GPU backend implementations for the `algorithm` package."""
+"""Implements the per-target halves of the data-parallel algorithms.
+
+The entry points in the parent package select CPU or GPU at compile time and
+forward into the matching subpackage here. Reach for those entry points rather
+than these modules, whose split tracks the dispatch and shifts with it.
+
+Host thread-pool parallelism has no GPU counterpart, so `parallelize()` and its
+siblings reach callers only through the CPU side; the GPU side additionally
+carries block- and row-level reductions, for kernel authors composing a
+reduction inside a larger kernel.
+"""

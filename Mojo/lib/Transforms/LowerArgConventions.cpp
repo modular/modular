@@ -28,6 +28,7 @@
 #include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/POPDialect/POPOps.h"
+#include "Mojo/POPDialect/POPUtils.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Support/MDialect/MTypeInterfaces.h"
 #include "Target/TargetLowering.h"
@@ -39,18 +40,13 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 
 namespace M::KGEN {
 #define GEN_PASS_DEF_LOWERARGCONVENTIONS
 #include "Mojo/KGENPasses.h.inc"
 } // namespace M::KGEN
-
-static StructType getIfParamPack(Type type) {
-  if (auto packStruct = ::dyn_cast<StructType>(type))
-    if (packStruct.getIsParamPack())
-      return packStruct;
-  return {};
-}
 
 /// If the specified value has uses, replace them with a dummy value.
 static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
@@ -103,13 +99,6 @@ static Type lowerPointerType(Type type, TargetInfoAttr target,
   }
 
   if (target) {
-    // Parameter packs represent a list of arguments. Unconditionally promote
-    // them. Promotion will be considered for each individual member of the
-    // pack.
-    if (auto structType = dyn_cast<StructType>(elType);
-        structType && structType.getIsParamPack())
-      return elType;
-
     std::optional<int64_t> size =
         DataLayoutInterface::getTypeStoreSize(target, elType);
     // If layout can't provide a stable size, prefer keeping the promotion path
@@ -221,19 +210,22 @@ public:
   Block &block;
   Value newResPtr;
   Value newErrPtr;
-  SmallVector<Attribute> LLVMArgMetadata;
+  SmallVector<Attribute> fnArgAttrs;
   bool hasError = false;
 
 private:
   void applyOneToOneTransform(unsigned operandIndex, Type newType,
                               llvm::function_ref<Value(Location, Value)> apply);
+  void eraseFnArgAttr(unsigned operandIndex);
 };
 } // namespace
 
+/// Replace the convention of a split pack vararg with one convention per
+/// element. The FuncType verifier makes sure that each element is a pointer.
 static void
 insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
                            unsigned argConventionIndex, ArrayRef<Type> types,
-                           int depth) {
+                           ArgConvention eltConvention) {
   if (types.size() == 0) {
     conventions[argConventionIndex] = ArgConvention::ImmReg;
     return;
@@ -244,23 +236,21 @@ insertAndUpdateConventions(SmallVectorImpl<ArgConvention> &conventions,
        i--)
     conventions[i] = conventions[i - (packSize - 1)];
   for (unsigned i = 0; i < packSize; ++i) {
-    ArgConvention newConvention = ArgConvention::ImmReg;
-    if (auto ptr = dyn_cast<PointerType>(types[i])) {
-      // if the depth is 0 then this is a top level kgen.pack and we do not know
-      // if it holds an address that is potentially written to.
-      if (depth == 0)
-        newConvention = ArgConvention::Mut;
-      else if (!isa<KGEN::NoneType>(ptr.getElementType()))
-        newConvention = ArgConvention::ImmMem;
-    }
-    conventions[argConventionIndex + i] = newConvention;
+    auto ptr = cast<PointerType>(types[i]);
+    conventions[argConventionIndex + i] =
+        isa<KGEN::NoneType>(ptr.getElementType()) ? ArgConvention::ImmReg
+                                                  : eltConvention;
   }
 }
 
-static void transformNonResultValue(Transform *transform, unsigned operandIndex,
-                                    SmallVector<ArgConvention> &conventions,
-                                    unsigned argConventionIndex, bool isCABI,
-                                    int depth = 0) {
+/// Lower one argument. `packEltConvention` is set only for the pack vararg
+/// itself: that argument is promoted and split into its elements, exactly one
+/// level. Any other pack is an ordinary value.
+static void
+transformNonResultValue(Transform *transform, unsigned operandIndex,
+                        SmallVector<ArgConvention> &conventions,
+                        unsigned argConventionIndex, bool isCABI,
+                        std::optional<ArgConvention> packEltConvention = {}) {
 
   Type type = transform->typeOfValueAt(operandIndex);
   ArgConvention convention = conventions[argConventionIndex];
@@ -286,23 +276,32 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
                                   convention == ArgConvention::DeinitMem))
     return;
 
-  if (auto elType = lowerPointerType(type, transform->target,
-                                     transform->maxInlineSize, isCABI)) {
+  // The pack vararg is always promoted, whatever its size, so that it can be
+  // split below.
+  Type elType;
+  if (auto ptr = dyn_cast<PointerType>(type); ptr && packEltConvention) {
+    elType = ptr.getElementType();
+  } else {
+    elType = lowerPointerType(type, transform->target, transform->maxInlineSize,
+                              isCABI);
+  }
+  if (elType) {
     transform->applyPointerTransform(operandIndex, elType);
     conventions[argConventionIndex] =
         (conventions[argConventionIndex] == ArgConvention::OwnedMem ||
          conventions[argConventionIndex] == ArgConvention::DeinitMem)
             ? ArgConvention::OwnedReg
             : ArgConvention::ImmReg;
-    transformNonResultValue(transform, operandIndex, conventions,
-                            argConventionIndex, isCABI, ++depth);
+    return transformNonResultValue(transform, operandIndex, conventions,
+                                   argConventionIndex, isCABI,
+                                   packEltConvention);
   }
 
-  /// LOWER PACK. Look for a kgen.struct with the "isParamPack" attribute.
-  if (auto packStruct = getIfParamPack(type)) {
-    if (convention != ArgConvention::OwnedReg &&
-        convention != ArgConvention::ImmReg)
-      return;
+  /// LOWER PACK. Split the pack vararg into its elements.
+  if (packEltConvention) {
+    auto packStruct = cast<StructType>(type);
+    assert(convention == ArgConvention::ImmReg &&
+           "Unexpected convention for a pack");
 
     auto variadic =
         cast_or_null<ParamListAttr>(packStruct.getElementTypesVariadic());
@@ -315,9 +314,11 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
       types.push_back(memberType);
     }
     transform->applyPackTransform(operandIndex, types, packStruct);
-    insertAndUpdateConventions(conventions, argConventionIndex, types, depth);
-    transformNonResultValue(transform, operandIndex, conventions,
-                            argConventionIndex, isCABI, ++depth);
+    insertAndUpdateConventions(conventions, argConventionIndex, types,
+                               *packEltConvention);
+    // The elements are ordinary arguments; a pack among them is not split.
+    return transformNonResultValue(transform, operandIndex, conventions,
+                                   argConventionIndex, isCABI);
   }
 
   /// LIFT REG. Lower an argument this target cannot pass in registers back to
@@ -334,7 +335,7 @@ FuncTransform::FuncTransform(ImplicitLocOpBuilder &b, FuncOp funcOp,
                              TargetInfoAttr target, unsigned maxInlineSize)
     : Transform(target, funcOp.getSubprogramScope(), maxInlineSize), b(b),
       block(funcOp.getBodyRegion().front()),
-      LLVMArgMetadata(funcOp.getLLVMArgMetadata().getValue()) {}
+      fnArgAttrs(funcOp.getFnArgAttrs().getValue()) {}
 
 Location Transform::addDI(Location loc) {
   if (!spAttr)
@@ -354,6 +355,7 @@ void FuncTransform::performResultTransform(unsigned operandIndex,
                                               argVal.getType());
   argVal.replaceAllUsesWith(alloc);
   block.eraseArgument(operandIndex);
+  eraseFnArgAttr(operandIndex);
   if (convention == ArgConvention::ByRefError)
     newErrPtr = alloc;
   else if (convention == ArgConvention::ByRefResult)
@@ -363,6 +365,12 @@ void FuncTransform::performResultTransform(unsigned operandIndex,
 void FuncTransform::performThrowNeverElimination(unsigned operandIndex) {
   replaceUsesWithDummy(block.getArgument(operandIndex), b);
   block.eraseArgument(operandIndex);
+  eraseFnArgAttr(operandIndex);
+}
+
+void FuncTransform::eraseFnArgAttr(unsigned operandIndex) {
+  if (operandIndex < fnArgAttrs.size())
+    fnArgAttrs.erase(fnArgAttrs.begin() + operandIndex);
 }
 
 void FuncTransform::applyOneToOneTransform(
@@ -415,16 +423,15 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
                          originalLocation);
   block.eraseArgument(operandIndex);
 
-  // Update the per-argument LLVM metadata to remain aligned with the updated
+  // Update the per-argument LLVM attributes to remain aligned with the updated
   // argument list.
-  if (LLVMArgMetadata.empty())
+  if (fnArgAttrs.empty())
     return;
 
-  auto dict = cast<DictionaryAttr>(LLVMArgMetadata[operandIndex]);
+  auto dict = cast<DictionaryAttr>(fnArgAttrs[operandIndex]);
   if (!dict.empty()) {
     block.getParentOp()->emitError()
-        << "cannot unpack argument " << operandIndex
-        << " that has LLVMArgMetadata";
+        << "cannot unpack argument " << operandIndex << " that has fnArgAttrs";
     hasError = true;
     return;
   }
@@ -433,9 +440,8 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
     // Insert (types.size() - 1) empty entries after operandIndex, preserving
     // the existing empty entry at operandIndex to correspond to the first
     // unpacked arg since it's already known to be an empty DictionaryAttr.
-    LLVMArgMetadata.insert(LLVMArgMetadata.begin() + operandIndex + 1,
-                           types.size() - 1,
-                           DictionaryAttr::get(type.getContext()));
+    fnArgAttrs.insert(fnArgAttrs.begin() + operandIndex + 1, types.size() - 1,
+                      DictionaryAttr::get(type.getContext()));
   }
 }
 
@@ -553,8 +559,14 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
   for (size_t idx = 0; idx < argConventions.size(); ++idx) {
     auto convention = argConventions[idx];
     if (!isResultSlot(convention)) {
+      // The pointer to a pack is only read. Its elements get their own
+      // conventions when it is split.
+      std::optional<ArgConvention> packEltConvention =
+          getPackEltConvention(convention);
+      if (packEltConvention)
+        argConventions[idx] = ArgConvention::ImmMem;
       transformNonResultValue(transform, idx + operandOffset, argConventions,
-                              idx, oldSig.isCABI());
+                              idx, oldSig.isCABI(), packEltConvention);
       continue;
     }
     if (oldSig.isAsync()) // Async is broken.
@@ -609,11 +621,12 @@ static TransformResult lowerSignature(FuncType oldSig, size_t operandOffset,
     llvm::append_range(result.newResultTypes, oldSig.getResults());
     break;
   case ABI::PromoteError:
-    // For a throwing function, this retains the i1 result by default unless
-    // we're able to lower the normal result or the error result.  If we are
-    // able to lower one of them, we end up with "i1, othertype" as two results
-    // from the KGEN function, if both can be lowered to registers then we
-    // replace the i1 with "variant<normal, error>".
+    // For a throwing function, this retains the scalar<bool> error-state
+    // result by default unless we're able to lower the normal result or the
+    // error result. If we are able to lower one of them, the KGEN function has
+    // scalar<bool> and the lowered value as two results. If both can be
+    // lowered to registers, replace the status with
+    // "variant<normal, error>".
     result.newResultTypes.push_back(
         SIMDType::getScalarBoolType(oldSig.getContext()));
     result.newResultTypes.push_back(loweredErrorType);
@@ -759,8 +772,8 @@ static void lowerCallOpImpl(Operation *op, FuncType oldSig,
                                         result.newResultTypes),
                       result.newArgConventions, oldSig.getFnEffects(),
                       oldSig.getMetadata(), oldSig.getArgListAttrs());
-    callOp.setCalleeAttr(SymbolConstantAttr::get(
-        callOp.getCallee().getSymbol(), GeneratorType::get({}, newSig)));
+    callOp.setCalleeAttr(
+        FuncSymbolGenerator::getParamLess(callOp.getCalleeSymbol(), newSig));
   }
 }
 
@@ -788,10 +801,10 @@ static Value repackFuncVariantResult(ReturnOp returnOp,
   }
 
   // We can't guarantee what the result is, so we emit conditional variant
-  // repacking. We create an HCLF::IfOp, with a condition checking if there is
+  // repacking. We create an HLCF::IfOp, with a condition checking if there is
   // no error (i.e. the then branch will handle normal return). The result of
   // this IfOp is what we will return.
-  auto ifOp = HLCF::IfOp::create(b, newVariantTy, oldRetVal);
+  auto ifOp = HLCF::IfOp::create(b, TypeRange{newVariantTy}, oldRetVal);
 
   // Populate the then branch (normal return).
   Block *thenBlock = b.createBlock(&ifOp.getThenRegion());
@@ -824,8 +837,8 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
       sig.getArgListAttrs());
   funcOp.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, newSig));
-  funcOp.setLLVMArgMetadataAttr(
-      ArrayAttr::get(funcOp.getContext(), transform.LLVMArgMetadata));
+  funcOp.setFnArgAttrsAttr(
+      ArrayAttr::get(funcOp.getContext(), transform.fnArgAttrs));
   if (result.abiLowering != DontPromote) {
     Block &body = funcOp.getBodyRegion().front();
     // Find all return sites in the function and rewrite them.
@@ -869,57 +882,27 @@ static LogicalResult lowerFuncOp(FuncOp funcOp, unsigned maxInlineSize) {
   return success(!transform.hasError);
 }
 
-/// Expand pack operands on `pop.external_call` into individual elements.
+/// Replaces the pack operand of a call-like POP op with the elements of the
+/// pack, one level deep.
 ///
-/// Before this, an `external_call` taking a pack looks like:
-///   pop.external_call @foo(%pack) : (!kgen.struct<[i32, f32] isParamPack>)->()
+/// Before:
+///   pop.external_call @foo(%pack) : (!kgen.struct<(si32, f32)>) -> ()
+///     <expandPackOperandIdx = 0 : index>
 ///
-/// After expansion:
-///   %0 = kgen.struct.extract %pack[0] : <[i32, f32]>
-///   %1 = kgen.struct.extract %pack[1] : <[i32, f32]>
-///   pop.external_call @foo(%0, %1) : (i32, f32) -> ()
-///
-/// Recursively flatten a pack-typed value into individual scalar operands.
-/// Nested packs (e.g. from variadic C calls like `printf(pack(fmt,
-/// pack(*args))`) are fully expanded so that every operand passed to the
-/// external call is a non-pack value.
-static void flattenPackOperand(OpBuilder &builder, Location loc, Value pack,
-                               StructType packStruct,
-                               SmallVectorImpl<Value> &results) {
-  ParamListAttr variadic = packStruct.getVariadicIfResolved();
-  assert(variadic && "unresolved variadic pack on pop.external_call");
-
-  for (auto [i, typeExpr] : llvm::enumerate(variadic.getValues())) {
-    Type elemTy = cast<TypeParamAttr>(typeExpr).getMlirType();
-    Value extracted =
-        StructExtractOp::create(builder, loc, elemTy, pack,
-                                IntegerAttr::get(builder.getIndexType(), i));
-
-    if (auto nestedPackStruct = getIfParamPack(elemTy))
-      flattenPackOperand(builder, loc, extracted, nestedPackStruct, results);
-    else
-      results.push_back(extracted);
-  }
-}
-
-static void lowerExternalCallOpImpl(POP::ExternalCallOp op) {
-  SmallVector<Value> newOperands;
-  bool changed = false;
-
+/// After:
+///   %0 = kgen.struct.extract %pack[0] : <(si32, f32)>
+///   %1 = kgen.struct.extract %pack[1] : <(si32, f32)>
+///   pop.external_call @foo(%0, %1) : (si32, f32) -> ()
+template <typename CallLikeOp>
+static void lowerPackOperand(CallLikeOp op) {
+  IntegerAttr expandPackOperandIdx = op.getExpandPackOperandIdxAttr();
+  if (!expandPackOperandIdx)
+    return;
   OpBuilder builder(op);
-
-  for (Value operand : op.getOperands()) {
-    if (auto packTy = getIfParamPack(operand.getType())) {
-      changed = true;
-      flattenPackOperand(builder, op.getLoc(), operand, packTy, newOperands);
-    } else {
-      newOperands.push_back(operand);
-      continue;
-    }
-  }
-
-  if (changed)
-    op.getOperandsMutable().assign(newOperands);
+  SmallVector<Value> args = POP::getOperandsWithPackExpanded(
+      builder, op.getLoc(), op->getOperands(), expandPackOperandIdx);
+  op->setOperands(args);
+  op.removeExpandPackOperandIdxAttr();
 }
 
 void LowerArgConventionsPass::runOnOperation() {
@@ -938,7 +921,11 @@ void LowerArgConventionsPass::runOnOperation() {
       return lowerCallOpImpl(callOp, callOp.getCallee().getType().getBody(),
                              spAttr, maxInlineSize);
     if (auto extCall = dyn_cast<POP::ExternalCallOp>(op))
-      return lowerExternalCallOpImpl(extCall);
+      return lowerPackOperand(extCall);
+    if (auto intrinsic = dyn_cast<POP::CallLLVMIntrinsicOp>(op))
+      return lowerPackOperand(intrinsic);
+    if (auto inlineAsm = dyn_cast<POP::InlineAsmOp>(op))
+      return lowerPackOperand(inlineAsm);
   });
 
   // We must do this in a second pass, otherwise ops like kgen.call_indirect

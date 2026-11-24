@@ -124,7 +124,7 @@ def test_type_list_map_to_values() raises:
     comptime pl = TypeList.of[
         Trait=HasStaticValue, WithValue[10], WithValue[20], WithValue[30]
     ]().map_to_values[_HasStaticToIntMapper]()
-    assert_equal(pl.size, 3)
+    assert_equal(pl.length, 3)
     assert_equal(pl[0], 10)
     assert_equal(pl[1], 20)
     assert_equal(pl[2], 30)
@@ -134,7 +134,7 @@ def test_type_list_map_to_values_empty() raises:
     comptime pl = TypeList.of[Trait=HasStaticValue]().map_to_values[
         _HasStaticToIntMapper
     ]()
-    assert_equal(pl.size, 0)
+    assert_equal(pl.length, 0)
 
 
 comptime _KeepEvenIdx[T: HasStaticValue, idx: Int]: Bool = (idx & 1) == 0
@@ -252,7 +252,7 @@ comptime _TabulateTimesThree[index: Int]: Int = index * 3
 
 def test_parameter_list_tabulate() raises:
     comptime pl = ParameterList.tabulate[4, _TabulateTimesThree]()
-    assert_equal(pl.size, 4)
+    assert_equal(pl.length, 4)
     assert_equal(pl[0], 0)
     assert_equal(pl[1], 3)
     assert_equal(pl[2], 6)
@@ -261,7 +261,7 @@ def test_parameter_list_tabulate() raises:
 
 def test_parameter_list_splat() raises:
     comptime pl = ParameterList.splat[3, 42]()
-    assert_equal(pl.size, 3)
+    assert_equal(pl.length, 3)
     assert_equal(pl[0], 42)
     assert_equal(pl[1], 42)
     assert_equal(pl[2], 42)
@@ -269,7 +269,7 @@ def test_parameter_list_splat() raises:
 
 def test_parameter_list_splat_zero() raises:
     comptime pl = ParameterList.splat[0, 1]()
-    assert_equal(pl.size, 0)
+    assert_equal(pl.length, 0)
 
 
 def test_variadic_contains() raises:
@@ -289,7 +289,7 @@ def test_variadic_contains_empty() raises:
 
 def test_variadic_contains_value() raises:
     comptime list = ParameterList.of[1, 2, 3]()
-    assert_equal(list.size, 3)
+    assert_equal(list.length, 3)
     assert_true(list.contains[1]())
     assert_true(list.contains[2]())
     assert_true(list.contains[3]())
@@ -298,7 +298,7 @@ def test_variadic_contains_value() raises:
 
 def test_variadic_contains_value_empty() raises:
     comptime list = ParameterList.empty_of[Int]()
-    assert_equal(list.size, 0)
+    assert_equal(list.length, 0)
     assert_false(list.contains[1]())
 
 
@@ -425,14 +425,27 @@ def test_variadic_pack_write_to() raises:
     helper(1, "hello", True)
 
 
-def test_variadic_pack_write_repr_to() raises:
-    def helper[*Ts: Writable](*args: *Ts) raises:
-        comptime assert Ts.all_conforms_to[Writable]()
-        var s = String()
-        args.write_repr_to(s)
-        assert_equal(s, "(Int(1), 'hello', True)")
+def test_variadic_pack_writable() raises:
+    def return_pack[*Ts: AnyType](*args: *Ts) -> type_of(args):
+        return args.copy()
 
-    helper(1, "hello", True)
+    var a = 1
+    var b = "hello"
+    var c = [1, 2, 3]
+
+    var abc = return_pack(a, b, c)
+    assert_true(conforms_to(type_of(abc), Writable))
+    assert_equal(String(abc), String(t"({a}, {b}, {c})"))
+
+    var ab = return_pack(a, b)
+    assert_true(conforms_to(type_of(ab), Writable))
+    assert_equal(
+        repr(ab),
+        String(
+            t"VariadicPack[{reflect[type_of(a)].name()},"
+            t" {reflect[type_of(b)].name()}]({repr(a)}, {repr(b)})"
+        ),
+    )
 
 
 def test_variadic_pack_forwarding() raises:
@@ -673,6 +686,7 @@ def test_dynamic_variadic_pack() raises:
         List[Int],
     ]()
 
+    @__allow_legacy_any_origin_fields
     def make_elem_ptr[
         idx: Int
     ]() {imm} -> Pointer[Args[idx], MutUnsafeAnyOrigin]:

@@ -40,55 +40,15 @@ private:
   // Helpers for matchAndRewrite
   //===--------------------------------------------------------------------===//
 
-  /// Compute the call argument index where variadic args start.
-  /// Accounts for sret pointer and two-register expansion of fixed args.
-  unsigned
-  computeVariadicCallArgStart(ArrayRef<CoercionInfo> argClassifications,
-                              size_t numFixedArgs, bool usesSRet) const {
-    unsigned start = usesSRet ? 1 : 0;
-    for (size_t i = 0; i < numFixedArgs; ++i) {
-      if (argClassifications[i].isTwoRegister())
-        start += 2;
-      else
-        start += 1;
-    }
-    return start;
-  }
-
-  /// Overlay byval attributes for indirect args onto the given per-parameter
-  /// attribute lists. On x86-64 System V, MEMORY class structs are passed by
-  /// pointer with the byval attribute so the callee knows to copy from stack.
-  void overlayByvalAttrs(MutableArrayRef<mlir::NamedAttrList> paramAttrs,
-                         ArrayRef<CoercionInfo> argClassifications,
-                         ExternalCallOp op, size_t numFixedArgs, bool usesSRet,
-                         bool isVariadic) const {
-    size_t numParams = isVariadic ? numFixedArgs : argClassifications.size();
-    unsigned paramIdx = usesSRet ? 1 : 0;
-    for (size_t idx = 0; idx < numParams; ++idx) {
-      const auto &coercion = argClassifications[idx];
-      if (coercion.useIndirect && coercion.useByval) {
-        Type llvmArgType =
-            getTypeConverter()->convertType(op.getOperandTypes()[idx]);
-        paramAttrs[paramIdx].set(LLVM::LLVMDialect::getByValAttrName(),
-                                 mlir::TypeAttr::get(llvmArgType));
-      }
-      if (coercion.isTwoRegister())
-        paramIdx += 2;
-      else
-        paramIdx += 1;
-    }
-  }
-
   /// On ARM64, bitcast variadic float args < 64 bits to integer to prevent
   /// LLVM's float→double promotion. This ensures raw bits are placed in GPRs
   /// for va_arg struct reads. On x86-64, floats go in XMM registers and
   /// must NOT be bitcast.
-  void applyARM64VariadicFloatBitcast(
-      SmallVectorImpl<Value> &callArgs,
-      ArrayRef<CoercionInfo> argClassifications, size_t numFixedArgs,
-      bool usesSRet, Location loc, ConversionPatternRewriter &rewriter) const {
-    unsigned varStart =
-        computeVariadicCallArgStart(argClassifications, numFixedArgs, usesSRet);
+  void applyARM64VariadicFloatBitcast(SmallVectorImpl<Value> &callArgs,
+                                      const SignatureClassification &sigClass,
+                                      size_t numFixedArgs, Location loc,
+                                      DirectRewriter &rewriter) const {
+    unsigned varStart = sigClass.getLLVMParamIndex(numFixedArgs);
     for (unsigned i = varStart; i < callArgs.size(); ++i) {
       if (auto floatTy = dyn_cast<FloatType>(callArgs[i].getType())) {
         unsigned bitWidth = floatTy.getWidth();
@@ -101,33 +61,6 @@ private:
     }
   }
 
-  /// Seed per-parameter attribute lists with the op's POP-level argAttrs.
-  /// ABI coercion can change the parameter list: sret prepends a hidden
-  /// pointer, two-register args expand to two parameters, etc. The original
-  /// argAttrs from the POP op use POP-level indexing, so we seed the
-  /// LLVM-indexed list with user-provided attrs at the correct positions.
-  /// Only positions within [0, paramAttrs.size()) are filled, so variadic
-  /// callers can pass a list sized for fixed params only.
-  void seedUserArgAttrs(MutableArrayRef<mlir::NamedAttrList> paramAttrs,
-                        mlir::ArrayAttr argAttrs,
-                        ArrayRef<CoercionInfo> argClassifications,
-                        bool usesSRet) const {
-    if (!argAttrs)
-      return;
-    unsigned paramIdx = usesSRet ? 1 : 0;
-    for (size_t popIdx = 0; popIdx < argClassifications.size(); ++popIdx) {
-      if (paramIdx >= paramAttrs.size())
-        break;
-      if (popIdx < argAttrs.size()) {
-        if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[popIdx])) {
-          for (auto namedAttr : dict)
-            paramAttrs[paramIdx].set(namedAttr.getName(), namedAttr.getValue());
-        }
-      }
-      paramIdx += argClassifications[popIdx].isTwoRegister() ? 2 : 1;
-    }
-  }
-
   /// Build the final LLVM-level per-parameter argAttrs that we expect on the
   /// declaration: user-provided attrs remapped to LLVM indices, plus the sret
   /// and byval overlays applied by the lowering. Returns null if no attrs
@@ -135,28 +68,17 @@ private:
   /// match the LLVM function's fixed parameter count only — variadic args
   /// are not part of the function type and their attributes go on the call.
   mlir::ArrayAttr buildLLVMArgAttrs(mlir::ArrayAttr argAttrs,
-                                    ArrayRef<CoercionInfo> argClassifications,
+                                    const SignatureClassification &sigClass,
                                     ExternalCallOp op, size_t numFixedArgs,
-                                    bool usesSRet, bool isVariadic,
-                                    ConversionPatternRewriter &rewriter) const {
-    size_t numArgsForSig =
-        isVariadic ? numFixedArgs : argClassifications.size();
-    unsigned numLLVMParams = usesSRet ? 1 : 0;
-    for (size_t i = 0; i < numArgsForSig; ++i)
-      numLLVMParams += argClassifications[i].isTwoRegister() ? 2 : 1;
-
-    SmallVector<mlir::NamedAttrList> paramAttrs(numLLVMParams);
-    seedUserArgAttrs(paramAttrs, argAttrs, argClassifications, usesSRet);
-
-    if (usesSRet) {
-      Type llvmRetType =
-          getTypeConverter()->convertType(op.getResult().getType());
-      paramAttrs[0].set(LLVM::LLVMDialect::getStructRetAttrName(),
-                        mlir::TypeAttr::get(llvmRetType));
-    }
-
-    overlayByvalAttrs(paramAttrs, argClassifications, op, numFixedArgs,
-                      usesSRet, isVariadic);
+                                    DirectRewriter &rewriter) const {
+    SmallVector<Type> llvmArgTypes;
+    for (Type t : op.getOperandTypes())
+      llvmArgTypes.push_back(getTypeConverter()->convertType(t));
+    Type llvmRetType;
+    if (!op.getResults().empty())
+      llvmRetType = getTypeConverter()->convertType(op.getResult().getType());
+    SmallVector<mlir::NamedAttrList> paramAttrs = sigClass.getParamAttrs(
+        llvmArgTypes, llvmRetType, argAttrs, numFixedArgs);
 
     bool anySet = llvm::any_of(paramAttrs, [](const mlir::NamedAttrList &nal) {
       return !nal.empty();
@@ -165,7 +87,7 @@ private:
       return nullptr;
 
     SmallVector<Attribute> dicts;
-    dicts.reserve(numLLVMParams);
+    dicts.reserve(paramAttrs.size());
     for (auto &nal : paramAttrs)
       dicts.push_back(nal.getDictionary(rewriter.getContext()));
     return rewriter.getArrayAttr(dicts);
@@ -229,9 +151,13 @@ public:
   /// identity (no coercion needed), the same code path runs — identity
   /// classifications simply produce pass-through behavior identical to
   /// standard LLVM type conversion.
-  LogicalResult
-  matchAndRewrite(ExternalCallOp op, ExternalCallOpAdaptor adaptor,
-                  ConversionPatternRewriter &rewriter) const override {
+  LogicalResult matchAndRewrite(ExternalCallOp op,
+                                ExternalCallOpAdaptor adaptor,
+                                DirectRewriter &rewriter) const override {
+    if (op.getExpandPackOperandIdxAttr()) {
+      return op.emitOpError(
+          "pack operand must be expanded by lower-arg-conventions");
+    }
     Location loc = op.getLoc();
     const llvm::Triple &triple = getTypeConverter()->getTarget().getTriple();
     CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
@@ -259,18 +185,18 @@ public:
     }
 
     // Classify arguments/return and build the coerced LLVM signature + args.
-    // op.getOperandTypes() holds POP-level types for classification; the
-    // adaptor operands hold the already-converted LLVM values for coercion.
+    // The op's types are the POP-level types for classification; the adaptor
+    // operands hold the already-converted LLVM values for coercion.
+    Type returnType;
     Type llvmReturnType;
-    if (!op.getResults().empty())
-      llvmReturnType =
-          getTypeConverter()->convertType(op.getResult().getType());
-    auto prep = cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
-                                 llvmReturnType, loc, rewriter, numFixedArgs,
-                                 isVariadic);
-    auto &argClassifications = prep.argClass;
-    const CoercionInfo &returnClassification = prep.retClass;
-    const bool usesSRet = prep.usesSRet;
+    if (!op.getResults().empty()) {
+      returnType = op.getResult().getType();
+      llvmReturnType = getTypeConverter()->convertType(returnType);
+    }
+    auto prep =
+        cabi.prepareCall(op.getOperandTypes(), adaptor.getOperands(),
+                         returnType, loc, rewriter, numFixedArgs, isVariadic);
+    const SignatureClassification &sigClass = prep.classification;
     const LLVM::LLVMFunctionType &signature = prep.signature;
 
     // Step 4: Compute the final LLVM-level attributes we expect on the
@@ -286,12 +212,24 @@ public:
     auto memory = dyn_cast_or_null<LLVM::MemoryEffectsAttr>(op.getMemoryAttr());
 
     mlir::ArrayAttr expectedArgAttrs =
-        buildLLVMArgAttrs(argAttrs, argClassifications, op, numFixedArgs,
-                          usesSRet, isVariadic, rewriter);
-    // resAttrs are dropped when sret is active (no LLVM-level return value).
+        buildLLVMArgAttrs(argAttrs, sigClass, op, numFixedArgs, rewriter);
+    // resAttrs are dropped when there is no LLVM-level return value: the
+    // result is sret or ignored.
     mlir::ArrayAttr expectedResAttrs;
-    if (resAttrs && !usesSRet)
-      expectedResAttrs = rewriter.getArrayAttr(resAttrs);
+    if (!sigClass.ret.useSRet && !sigClass.ret.isIgnore()) {
+      NamedAttrList attrs =
+          resAttrs ? NamedAttrList(resAttrs) : NamedAttrList();
+      // As for a struct argument, the padding of a struct result is not
+      // defined.
+      if (isa_and_nonnull<LLVM::LLVMStructType>(llvmReturnType))
+        attrs.erase(LLVM::LLVMDialect::getNoUndefAttrName());
+      assert(sigClass.getResultAttrs(getContext()).empty() &&
+             "Not expecting call-side result attrs");
+      if (!attrs.empty()) {
+        expectedResAttrs =
+            rewriter.getArrayAttr({attrs.getDictionary(getContext())});
+      }
+    }
 
     // Step 5: Lookup existing function (unified path - no early return!)
     auto func = symtab.lookup<LLVM::LLVMFuncOp>(op.getCallee().getValue());
@@ -337,38 +275,17 @@ public:
     // floats and land in SIMD registers where va_arg for HFA structs reads
     // them.
     if (isVariadic && triple.isAArch64() && triple.isOSDarwin()) {
-      applyARM64VariadicFloatBitcast(prep.callArgs, argClassifications,
-                                     numFixedArgs, usesSRet, loc, rewriter);
+      applyARM64VariadicFloatBitcast(prep.callArgs, sigClass, numFixedArgs, loc,
+                                     rewriter);
     }
 
-    // Step 7: Create call
+    // Step 7: Create call and handle the return value
     LLVM::CallOp call = createLLVMCall(rewriter, loc, func, prep.callArgs);
-
-    // Mirror byval onto the call args. A direct call lowers from the call-site
-    // attributes, so the declaration attribute alone does not make the caller
-    // emit the by-memory copy. This covers both fixed and variadic args.
-    SmallVector<Type> llvmArgTypes;
-    for (Type t : op.getOperandTypes())
-      llvmArgTypes.push_back(getTypeConverter()->convertType(t));
-    cabi.applyByvalAttrsToCall(call, argClassifications, llvmArgTypes, usesSRet,
-                               rewriter, /*startArgIdx=*/0);
-
-    // Step 8: Handle return value
-    if (op.getResults().empty()) {
-      // Void return
-      rewriter.eraseOp(op);
-    } else if (!returnClassification.isIdentity()) {
-      // ABI coercion: reverse coercion on the return value.
-      Value callResult = call.getNumResults() > 0 ? call.getResult() : Value();
-      Value result =
-          cabi.extractReturn(returnClassification, callResult, prep.sretPtr,
-                             llvmReturnType, loc, rewriter);
+    if (Value result =
+            cabi.finishCall(call, prep, TailKind::None, loc, rewriter))
       rewriter.replaceOp(op, result);
-    } else {
-      // Identity return: use standard replacement
-      replaceCallWithLLVMCall(rewriter, op, call);
-    }
-
+    else
+      rewriter.eraseOp(op);
     return success();
   }
 };

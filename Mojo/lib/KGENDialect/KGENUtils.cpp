@@ -17,6 +17,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/KGENDialect/KGENUtils.h"
+#include "Mojo/Interpreter/InterpreterAttrs.h"
 #include "Mojo/KGENDialect/KGENDType.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/KGENOps.h"
@@ -27,12 +28,15 @@
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Support/Compiler/MLIRDType.h"
 #include "Support/Compiler/VerifyUtils.h"
+#include "Support/HashUtils.h"
 #include "Support/MDialect/MAttrs.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "Support/ML/DType.h"
 #include "Support/Preprocessor.h"
 #include "Support/STLExtras.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/TypeSwitch.h"
 
@@ -43,34 +47,115 @@ using namespace KGEN;
 // Parameter Type and Value Printing and Parsing
 //===----------------------------------------------------------------------===//
 
+// Placeholder framing for `DedupContext`. Control characters cannot occur in
+// printed parameter text: string payloads are escaped by both printers.
+static constexpr char kDedupDef = '\x01';
+static constexpr char kDedupRef = '\x02';
+static constexpr char kDedupEnd = '\x03';
+
+std::string DedupContext::mark(const void *key, bool &isRepeat) {
+  auto [it, inserted] = ids.try_emplace(key, referenced.size());
+  isRepeat = !inserted;
+  if (inserted)
+    referenced.push_back(false);
+  else
+    referenced[it->second] = true;
+  return (Twine(isRepeat ? kDedupRef : kDedupDef) + Twine(it->second) +
+          Twine(kDedupEnd))
+      .str();
+}
+
+std::string DedupContext::finalize(StringRef raw, char labelPrefix) {
+  finalized = true;
+  // No placeholders were emitted, so `raw` contains none and is returned
+  // verbatim. This also keeps stray control bytes in identifiers (which
+  // `mark` never emits) from being misread as placeholders.
+  if (ids.empty())
+    return std::string(raw);
+  // Labels are numbered by first appearance among referenced definitions.
+  DenseMap<unsigned, unsigned> labelForId;
+  std::string result;
+  result.reserve(raw.size());
+  while (!raw.empty()) {
+    size_t pos = raw.find_first_of(StringRef("\x01\x02", 2));
+    if (pos == StringRef::npos) {
+      result += raw;
+      break;
+    }
+    result += raw.take_front(pos);
+    char kind = raw[pos];
+    raw = raw.drop_front(pos + 1);
+    // A placeholder is `<digits>\x03`. If the bytes don't form one, this is a
+    // stray control byte in an identifier, not a mark: copy it through.
+    size_t end = raw.find(kDedupEnd);
+    unsigned id = 0;
+    // getAsInteger returns true on failure.
+    bool wellFormed = end != StringRef::npos && end != 0 &&
+                      !raw.take_front(end).getAsInteger(10, id) &&
+                      id < referenced.size();
+    if (!wellFormed) {
+      result += kind;
+      continue;
+    }
+    raw = raw.drop_front(end + 1);
+
+    if (kind == kDedupDef) {
+      if (!referenced[id])
+        continue;
+      unsigned label = labelForId.size();
+      labelForId[id] = label;
+      result += labelPrefix;
+      result += std::to_string(label);
+      result += ' ';
+    } else {
+      auto it = labelForId.find(id);
+      assert(it != labelForId.end() && "dedup reference before definition");
+      result += labelPrefix;
+      result += std::to_string(it->second);
+    }
+  }
+  return result;
+}
+
 std::string KGEN::getParamAsString(Attribute value) {
-  SmallVector<char, 128> result;
+  // This string is never parsed back, so use the mangle printer: it dedups
+  // repeated subexpressions and digests MemRefAttr memory models.
+  std::string str;
   {
-    llvm::raw_svector_ostream os(result);
+    llvm::raw_string_ostream os(str);
     if (auto ta = dyn_cast<TypedAttr>(value)) {
       StreamAsmPrinter p(os);
-      printParamValue(p, ta, {});
+      KGENParamPrinter printer = KGENParamPrinter::createManglePrinter();
+      printer.printParamValue(p, ta, {});
+      str = printer.finalize(str, 'e');
     } else {
       os << value;
     }
   }
-  return std::string(result.data(), result.size());
+  return str;
 }
 
 StringAttr KGEN::getParamTypeAsString(TypedAttr value) {
   std::string str;
   llvm::raw_string_ostream os(str);
   StreamAsmPrinter p(os);
-  printColonTypeParamValue(p, value);
-  return StringAttr::get(value.getContext(), str);
+  // Dedup repeated subexpressions so that a shared DAG of parameter
+  // expressions (e.g. a chain of comptime aliases) prints in linear rather
+  // than exponential time. The result is a display string, not parsed back.
+  // Use an `e` label prefix rather than a backtick: these strings feed
+  // SourceNameAttr, whose encoding treats a backtick as a string delimiter.
+  KGENParamPrinter printer = KGENParamPrinter::createManglePrinter();
+  printer.printColonTypeParamValue(p, value);
+  return StringAttr::get(value.getContext(), printer.finalize(str, 'e'));
 }
 
 StringAttr KGEN::getTypeAsString(Type type) {
   std::string str;
   llvm::raw_string_ostream os(str);
   StreamAsmPrinter p(os);
-  printKGENType(p, type);
-  return StringAttr::get(type.getContext(), str);
+  KGENParamPrinter printer = KGENParamPrinter::createManglePrinter();
+  printer.printKGENType(p, type);
+  return StringAttr::get(type.getContext(), printer.finalize(str, 'e'));
 }
 
 /// Parse a parameter of type kgen.string.
@@ -123,9 +208,8 @@ OptionalParseResult KGEN::parseOptionalSignatureValues(
   // for interfaces.
   auto effectsValue = impl::FnEffects::None;
   StringRef kw;
-  while (succeeded(
-      p.parseOptionalKeyword(&kw, {"throws", "async", "capturing", "refresult",
-                                   "register_passable", "cabi"}))) {
+  while (succeeded(p.parseOptionalKeyword(
+      &kw, {"throws", "async", "refresult", "register_passable", "cabi"}))) {
     effectsValue |= *impl::symbolizeFnEffects(kw);
 
     // No vertical bar? We're done. It's not a parse error, but it does mean we
@@ -279,25 +363,184 @@ void KGEN::printKGENType(raw_ostream &os, Type type) {
   printKGENType(p, type);
 }
 
-void KGEN::printKGENType(AsmPrinter &p, Type type) {
+void KGENParamPrinter::printKGENType(AsmPrinter &p, Type type) {
   // Always print an alias if available.
   if (succeeded(p.printAlias(type)))
     return;
 
-  // Handle other special cases for parameters here.  These each are sugar for a
-  // kgen type.
-  auto *dialect = type.getContext()->getLoadedDialect<KGENDialect>();
-  assert(dialect && "cannot print KGEN type without KGEN dialect");
-  if (auto it = dialect->typePrintFns.find(type.getTypeID());
-      it != dialect->typePrintFns.end()) {
-    it->second(p, type);
-  } else if (auto signature = dyn_cast<FuncType>(type)) {
+  if (auto signature = dyn_cast<FuncType>(type)) {
     printFuncType(p, signature);
   } else if (auto generator = dyn_cast<GeneratorType>(type)) {
     printGenerator(p, generator);
+  } else if (auto literal = dyn_cast<FuncLiteralType>(type)) {
+    // Not registered as a pretty type: it prints with its dialect prefix, and
+    // both registration paths would drop it for the bare mnemonic.
+    p << "!kgen." << literal.getMnemonic();
+    printFuncLiteralBody(p, literal);
   } else {
-    p << type;
+    auto *dialect = type.getContext()->getLoadedDialect<KGENDialect>();
+    assert(dialect && "cannot print KGEN type without KGEN dialect");
+    auto paramIt = dialect->paramTypePrintFns.find(type.getTypeID());
+    if (paramIt != dialect->paramTypePrintFns.end()) {
+      paramIt->second(p, type, *this);
+      return;
+    }
+    auto it = dialect->typePrintFns.find(type.getTypeID());
+    if (it == dialect->typePrintFns.end()) {
+      p << type;
+      return;
+    }
+    it->second(p, type);
   }
+}
+
+void KGENParamPrinter::printStructInstanceBody(AsmPrinter &p,
+                                               StructInstanceType type) {
+  p << '<';
+  p.printStrippedAttrOrType(type.getName());
+  if (!type.getParamNames().empty()) {
+    p << '[';
+    KGEN::printParamNames(p, type.getParamNames());
+    p << ']';
+  }
+  printParameterValues(p, type.getParamValues());
+  if (!type.getFields().empty()) {
+    p << '(';
+    printStructDefFields(p, type.getFields());
+    p << ')';
+  }
+  printIsMemoryOnly(p, type.getIsMemoryOnly());
+  p << '>';
+}
+
+void KGENParamPrinter::printStructBody(AsmPrinter &p, StructType type) {
+  p << '<';
+
+  TypedAttr variadic = type.getElementTypesVariadic();
+  auto attr = dyn_cast<ParamListAttr>(variadic);
+  // A resolved layout prints as `(...)`, a list of types. Everything else
+  // prints as a parameter value, and an explicit domain is denoted.
+  bool printsAsTypes = type.isLayoutDomain() && attr &&
+                       isa<TypeType>(attr.getType().getElementType());
+  if (!printsAsTypes) {
+    // Parametric expression or complex metatype - print without parens.  We
+    // print :param_list<Movable> if the elements are not TypeType metatype.
+    if (!isa<TypeType>(
+            cast<ParamListType>(variadic.getType()).getElementType()))
+      printColonTypeParamValue(p, variadic);
+    else
+      printParamValue(p, variadic, variadic.getType());
+  } else {
+    // Concrete types with simple metatype - print with parens.
+    p << '(';
+    if (!attr.getValues().empty()) {
+      SmallVector<Type> types;
+      for (TypedAttr value : attr.getValues())
+        types.push_back(ParamType::get(value));
+      printParamTypes(p, types);
+    }
+    p << ')';
+  }
+
+  printIsMemoryOnly(p, type.getIsMemoryOnly());
+
+  if (type.isLayoutDomain() && !printsAsTypes)
+    p << " layout";
+  else if (type.isValueDomain())
+    p << " value";
+
+  // Print alignment if not the default (1).
+  TypedAttr minAlign = type.getMinAlignment();
+  if (auto intAttr = dyn_cast<IntegerAttr>(minAlign)) {
+    if (intAttr.getInt() != 1)
+      p << " align(" << intAttr.getInt() << ")";
+  } else if (minAlign) {
+    // Parametric alignment expression.
+    p << " align(";
+    printParamValue(p, minAlign);
+    p << ")";
+  }
+
+  p << '>';
+}
+
+void KGENParamPrinter::printPointerBody(AsmPrinter &p, PointerType type) {
+  p << '<';
+  printParamType(p, type.getElementType());
+  printPointerOptionals(p, type.getAddressSpace(), type.getIsNonNull());
+  p << '>';
+}
+
+void KGENParamPrinter::printParamListBody(AsmPrinter &p, ParamListType type) {
+  p << '<';
+  printParamType(p, type.getElementType());
+  p << '>';
+}
+
+void KGENParamPrinter::printTypeValueBody(AsmPrinter &p, TypeValueType type) {
+  p << '<';
+  printTypeParamValue(p, type.getTypeValue());
+  p << '>';
+}
+
+void KGENParamPrinter::printVariantBody(AsmPrinter &p, VariantType type) {
+  p << '<';
+  printVariantTypes(p, type.getVariadic());
+  p << '>';
+}
+
+// Sugars `simd<1, t>` to `scalar<t>`.
+void KGENParamPrinter::printSIMDBody(AsmPrinter &p, SIMDType type) {
+  if (type.isScalar()) {
+    p << "scalar<";
+    printParamValue(p, type.getDType());
+  } else {
+    p << "simd<";
+    printParamValue(p, type.getSize());
+    p << ", ";
+    printParamValue(p, type.getDType());
+  }
+  p << '>';
+}
+
+void KGENParamPrinter::printFuncLiteralBody(AsmPrinter &p,
+                                            FuncLiteralType type) {
+  p << '<';
+  printTypeParamValue(p, type.getFuncLiteral());
+  p << '>';
+}
+
+void KGENParamPrinter::printPointerOptionals(AsmPrinter &p,
+                                             TypedAttr addressSpace,
+                                             bool isNonNull) {
+  auto defaultAddrSpace =
+      IntegerAttr::get(IndexType::get(addressSpace.getContext()), 0);
+  if (addressSpace != defaultAddrSpace) {
+    p << ", ";
+    printParamValue(p, addressSpace);
+  }
+  if (isNonNull)
+    p << ", nonnull";
+}
+
+void KGENParamPrinter::printVariantTypes(AsmPrinter &p, TypedAttr variadic) {
+  // Print an empty variadic or a parametric variadic.
+  auto attr = dyn_cast<ParamListAttr>(variadic);
+  if (!attr || attr.getValues().empty()) {
+    p << '[';
+    printParamValue(p, variadic);
+    p << ']';
+    return;
+  }
+
+  SmallVector<Type> values;
+  for (TypedAttr value : attr.getValues())
+    values.push_back(ParamType::get(value));
+  printParamTypes(p, values);
+}
+
+void KGEN::printKGENType(AsmPrinter &p, Type type) {
+  KGENParamPrinter::createDiagnosticPrinter().printKGENType(p, type);
 }
 
 static OptionalParseResult parseOptionalColonType(AsmParser &parser,
@@ -327,7 +570,8 @@ ParseResult KGEN::parseColonTypeOrIndex(AsmParser &parser, Type &type) {
 }
 
 /// print `: <type>` or elide it entirely if type is an `index` type.
-void KGEN::printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType) {
+void KGENParamPrinter::printColonTypeOrDefault(AsmPrinter &p, Type type,
+                                               Type defaultType) {
   // Index type is the default so it doesn't print.
   if (type == defaultType)
     return;
@@ -335,13 +579,22 @@ void KGEN::printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType) {
   printKGENType(p, type);
 }
 
+void KGEN::printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType) {
+  KGENParamPrinter::createDiagnosticPrinter().printColonTypeOrDefault(
+      p, type, defaultType);
+}
+
 /// print `: <type>` or elide it entirely if type is an `index` type.
+void KGENParamPrinter::printColonTypeOrIndex(AsmPrinter &p, Type type) {
+  printColonTypeOrDefault(p, type, IndexType::get(type.getContext()));
+}
+
 void KGEN::printColonTypeOrIndex(AsmPrinter &p, Type type) {
-  return printColonTypeOrDefault(p, type, IndexType::get(type.getContext()));
+  KGENParamPrinter::createDiagnosticPrinter().printColonTypeOrIndex(p, type);
 }
 
 /// print `:<type> ` or elide it entirely if type is an `index` type.
-static void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type) {
+void KGENParamPrinter::printColonTypeOrIndexPrefix(AsmPrinter &p, Type type) {
   // Index type is the default so it doesn't print.
   if (type.isIndex())
     return;
@@ -370,13 +623,17 @@ ParseResult KGEN::parseDTypeParamValue(AsmParser &p, TypedAttr &value) {
   return parseParamValue(p, value, DTypeType::get(p.getContext()));
 }
 
-void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
+void KGENParamPrinter::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
   if (!isa<TypeType>(value.getType())) {
     p << ':';
     printKGENType(p, value.getType());
     p << ' ';
   }
   printParamValue(p, value);
+}
+
+void KGEN::printTypeParamValue(AsmPrinter &p, TypedAttr value) {
+  KGENParamPrinter::createDiagnosticPrinter().printTypeParamValue(p, value);
 }
 
 ParseResult KGEN::parseTypeParamValue(AsmParser &p, TypedAttr &value) {
@@ -405,6 +662,10 @@ ParseResult KGEN::parseParamType(AsmParser &p, Type &type) {
 }
 
 void KGEN::printParamType(AsmPrinter &p, Type type) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamType(p, type);
+}
+
+void KGENParamPrinter::printParamType(AsmPrinter &p, Type type) {
   // A "ParamType" is either:
   // 1. An actual mlir Type,
   // 2. A type-value in the type domain (i.e. wrapped with ParamType), or
@@ -425,13 +686,22 @@ ParseResult KGEN::parseParamTypes(AsmParser &p, SmallVectorImpl<Type> &types) {
       [&] { return parseParamType(p, types.emplace_back()); });
 }
 
-void KGEN::printParamTypes(AsmPrinter &p, ArrayRef<Type> types) {
+void KGENParamPrinter::printParamTypes(AsmPrinter &p, ArrayRef<Type> types) {
   llvm::interleaveComma(types, p, [&](Type type) { printParamType(p, type); });
 }
 
-void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+void KGEN::printParamTypes(AsmPrinter &p, ArrayRef<Type> types) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamTypes(p, types);
+}
+
+void KGENParamPrinter::printTypeParamValues(AsmPrinter &p,
+                                            ArrayRef<TypedAttr> values) {
   llvm::interleaveComma(
       values, p, [&](TypedAttr value) { printTypeParamValue(p, value); });
+}
+
+void KGEN::printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  KGENParamPrinter::createDiagnosticPrinter().printTypeParamValues(p, values);
 }
 
 ParseResult KGEN::parseTypeParamValues(AsmParser &p,
@@ -572,7 +842,7 @@ ParseResult KGEN::parseI1Flag(AsmParser &p, TypedAttr &value,
     value = p.getBuilder().getBoolAttr(false);
     return success();
   }
-  if (failed(p.parseLess())) {
+  if (failed(p.parseOptionalLess())) {
     value = p.getBuilder().getBoolAttr(true);
     return success();
   }
@@ -615,9 +885,15 @@ ParseResult KGEN::parseColonTypeParamValue(AsmParser &p, TypedAttr &value) {
   return success();
 }
 
-void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
+void KGENParamPrinter::printColonTypeParamValue(AsmPrinter &p,
+                                                TypedAttr value) {
   printColonTypeOrIndexPrefix(p, value.getType());
   printParamValue(p, value);
+}
+
+void KGEN::printColonTypeParamValue(AsmPrinter &p, TypedAttr value) {
+  KGENParamPrinter::createDiagnosticPrinter().printColonTypeParamValue(p,
+                                                                       value);
 }
 
 ParseResult KGEN::parseWitnessEntry(AsmParser &p, StringAttr &name,
@@ -820,8 +1096,9 @@ ParseResult KGEN::parseParamName(AsmParser &p, StringAttr &name) {
   return success();
 }
 
-static ParseResult
-parseDischargedBodyConstraints(AsmParser &p, DenseBoolArrayAttr &discharged) {
+ParseResult
+KGEN::parseDischargedBodyConstraints(AsmParser &p,
+                                     DenseBoolArrayAttr &discharged) {
   if (failed(p.parseOptionalVerticalBar()))
     return success();
 
@@ -843,8 +1120,84 @@ parseDischargedBodyConstraints(AsmParser &p, DenseBoolArrayAttr &discharged) {
   return success();
 }
 
+void KGEN::printDischargedBodyConstraints(AsmPrinter &p,
+                                          DenseBoolArrayAttr discharged) {
+  if (!discharged || discharged.empty())
+    return;
+  p << " | \"";
+  for (bool value : discharged.asArrayRef())
+    p << (value ? '1' : '0');
+  p << '"';
+}
+
+ParseResult KGEN::parseParamsBindingArray(AsmParser &p, GeneratorType genType,
+                                          ParamsBindingArrayAttr &params) {
+  // Parse each operand, inferring its type from the signature type. Bound
+  // parameters are allowed to refine the types of subsequent parameters, so
+  // specialize the types as we go.
+  ParameterEvaluator evaluator;
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
+  size_t numUnboundParams = 0;
+  SmallVector<TypedAttr> paramValues;
+  for (Type inputType : genType.getInputParamTypes()) {
+    if (failed(p.parseOptionalComma()))
+      break;
+    Type remappedDeclType = evaluator.getReboundType(inputType);
+    // A '?' leaves the input unbound.
+    if (succeeded(p.parseOptionalQuestion())) {
+      paramValues.push_back(TypedAttr());
+      auto residual = ParamIndexRefAttr::get(
+          /*depth=*/0, numUnboundParams++, remappedDeclType);
+      evaluator.appendIndexBinding(residual);
+      continue;
+    }
+    Type valueType;
+    TypedAttr value;
+    if (parseColonTypeOrDefault(p, valueType, remappedDeclType) ||
+        parseParamValue(p, value, valueType))
+      return failure();
+    paramValues.push_back(value);
+    evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
+  }
+  // Inputs without a value in the text are unbound.
+  params = ParamsBindingArrayAttr::get(
+      p.getContext(), genType.getInputParamTypes().size(), paramValues);
+  return success();
+}
+
+void KGEN::printParamsBindingArray(AsmPrinter &p, GeneratorType genType,
+                                   ParamsBindingArrayAttr params) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamsBindingArray(
+      p, genType, params);
+}
+
+void KGENParamPrinter::printParamsBindingArray(AsmPrinter &p,
+                                               GeneratorType genType,
+                                               ParamsBindingArrayAttr params) {
+  ParameterEvaluator evaluator;
+  IndexDepthAdjuster plusOneAdjuster(/*adjustDepth=*/1);
+  size_t numUnboundParams = 0;
+  for (auto [inputType, value] :
+       llvm::zip(genType.getInputParamTypes(), params.getDenseBindingArray())) {
+    p << ", ";
+    Type remappedDeclType = evaluator.getReboundType(inputType);
+    if (!value) {
+      p << '?';
+      auto residual = ParamIndexRefAttr::get(
+          /*depth=*/0, numUnboundParams++, remappedDeclType);
+      evaluator.appendIndexBinding(residual);
+      continue;
+    }
+    // Be explicit about bound value types, because the binding type does not
+    // necessarily have the same representation as the generator input
+    // parameter type when both are inferred from outer scope.
+    printColonTypeParamValue(p, value);
+    evaluator.appendIndexBinding(plusOneAdjuster.replace(value));
+  }
+}
+
 ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
-                                  SmallVectorImpl<TypedAttr> &paramValues,
+                                  ParamsBindingArrayAttr &params,
                                   DenseBoolArrayAttr &discharged,
                                   Type preParsedGeneratorType) {
   if (!preParsedGeneratorType &&
@@ -855,68 +1208,25 @@ ParseResult KGEN::parseBindParams(AsmParser &p, TypedAttr &generator,
     return failure();
 
   auto genType = sugarCast<GeneratorType>(preParsedGeneratorType);
-  // Parse each operand, inferring its type from the signature type. Bound
-  // parameters are allowed to refine the types of subsequent parameters, so
-  // specialize the types as we go.
-  ParameterEvaluator evaluator;
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
-  size_t numUnboundParams = 0;
-  for (Type inputType : genType.getInputParamTypes()) {
-    if (failed(p.parseOptionalComma()))
-      break;
-    Type remappedDeclType = evaluator.getReboundType(inputType);
-    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
-    Type valueType;
-    if (parseColonTypeOrDefault(p, valueType, defaultValueType) ||
-        parseParamValue(p, paramValues.emplace_back(), valueType))
-      return failure();
-    TypedAttr value = paramValues.back();
-    if (::isa<UnboundAttr>(value)) {
-      auto residual = ParamIndexRefAttr::get(
-          /*depth=*/-1, numUnboundParams++, defaultValueType);
-      evaluator.appendIndexBinding(residual);
-      continue;
-    }
-    evaluator.appendIndexBinding(value);
-  }
+  if (parseParamsBindingArray(p, genType, params))
+    return failure();
   return parseDischargedBodyConstraints(p, discharged);
 }
 
 void KGEN::printBindParams(AsmPrinter &p, TypedAttr generator,
-                           ArrayRef<TypedAttr> paramValues,
+                           ParamsBindingArrayAttr params,
                            DenseBoolArrayAttr discharged) {
+  KGENParamPrinter::createDiagnosticPrinter().printBindParams(
+      p, generator, params, discharged);
+}
+
+void KGENParamPrinter::printBindParams(AsmPrinter &p, TypedAttr generator,
+                                       ParamsBindingArrayAttr params,
+                                       DenseBoolArrayAttr discharged) {
   printColonTypeParamValue(p, generator);
-  auto genType = sugarCast<GeneratorType>(generator.getType());
-  ParameterEvaluator evaluator;
-  evaluator.setInputDepth(1);
-  IndexDepthAdjuster minusOneAdjuster(/*adjustDepth=*/-1);
-  size_t numUnboundParams = 0;
-  for (auto [inputType, value] :
-       llvm::zip(genType.getInputParamTypes(), paramValues)) {
-    p << ", ";
-    Type remappedDeclType = evaluator.getReboundType(inputType);
-    Type defaultValueType = minusOneAdjuster.replace(remappedDeclType);
-    if (::isa<UnboundAttr>(value)) {
-      printColonTypeOrDefault(p, value.getType(), defaultValueType);
-      printParamValue(p, value);
-      auto residual = ParamIndexRefAttr::get(
-          /*depth=*/-1, numUnboundParams++, defaultValueType);
-      evaluator.appendIndexBinding(residual);
-      continue;
-    }
-    // Be explicit about bound value types, because the binding type does not
-    // necessarily have the same representation as the generator input
-    // parameter type when both are inferred from outer scope.
-    printColonTypeParamValue(p, value);
-    evaluator.appendIndexBinding(value);
-  }
-  if (discharged && !discharged.empty()) {
-    p << " | \"";
-    for (bool value : discharged.asArrayRef())
-      p << (value ? '1' : '0');
-    p << '"';
-  }
+  printParamsBindingArray(p, sugarCast<GeneratorType>(generator.getType()),
+                          params);
+  printDischargedBodyConstraints(p, discharged);
 }
 
 /// Print a parameter name correctly, using a double quoted syntax if it
@@ -1134,12 +1444,6 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
     return success();
   }
 
-  // A '?' represents an unknown parameter.
-  if (succeeded(p.parseOptionalQuestion())) {
-    value = UnboundAttr::get(type);
-    return success();
-  }
-
   // Barewords / MLIR keywords are implicitly parameter declaration references
   // or the start of a expression in function form.
   StringRef keyword;
@@ -1226,18 +1530,14 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
 
       if (keyword == "bind_params" && operandType) {
         TypedAttr generator;
-        SmallVector<TypedAttr> paramValues;
+        ParamsBindingArrayAttr params;
         DenseBoolArrayAttr discharged;
-        if (parseBindParams(p, generator, paramValues, discharged, operandType))
+        if (parseBindParams(p, generator, params, discharged, operandType))
           return failure();
         if (p.parseRParen())
           return failure();
-        value = BindParamsAttr::get(p.getContext(), generator, paramValues,
-                                    discharged);
-        if (!isEqualCanon(value.getType(), type))
-          return p.emitError(loc)
-                 << "bind_params result type mismatch: expected " << type
-                 << " but inferred " << value.getType();
+        value = BindParamsAttr::get(p.getContext(), generator, params,
+                                    discharged, type);
         return success();
       }
 
@@ -1396,8 +1696,8 @@ ParseResult KGEN::parseParamValue(AsmParser &p, TypedAttr &value, Type type,
   return p.parseAttribute(value, type);
 }
 
-static void printOperatorOperands(AsmPrinter &p, POC opcode,
-                                  ArrayRef<TypedAttr> operands) {
+void KGENParamPrinter::printOperatorOperands(AsmPrinter &p, POC opcode,
+                                             ArrayRef<TypedAttr> operands) {
   // If the elements are not index type, print the type explicitly.
   if (llvm::is_contained({POC::EQ, POC::LT, POC::LE, POC::Rebind}, opcode))
     printColonTypeOrIndexPrefix(p, operands[0].getType());
@@ -1410,16 +1710,6 @@ static void printOperatorOperands(AsmPrinter &p, POC opcode,
     break;
 
   case POC::Apply:
-    // Print the signature operand with a type. Print all other operands without
-    // types.
-    printColonTypeOrIndexPrefix(p, operands.front().getType());
-    printParamValue(p, operands.front());
-    for (TypedAttr operand : operands.drop_front()) {
-      p << ", ";
-      printParamValue(p, operand);
-    }
-    break;
-
   case POC::ApplyResultSlot:
     // Print the signature operand with a type. Print all other operands without
     // types.
@@ -1501,15 +1791,65 @@ void KGEN::printAsMojoStringLiteral(StringRef name, raw_ostream &out) {
   }
 }
 
+bool KGEN::isNonTrivialParamAttr(Attribute value) {
+  auto *dialect = value.getContext()->getLoadedDialect<KGENDialect>();
+  return dialect && dialect->isNonTrivialParamAttr(value);
+}
+
 void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
+  KGENParamPrinter::createDiagnosticPrinter().printParamValue(p, value, type);
+}
+
+void KGENParamPrinter::printParamValue(AsmPrinter &p, TypedAttr value,
+                                       Type type) {
   // Use an alias for this attribute if available.
   if (succeeded(p.printAlias(value)))
     return;
 
+  // Attributes are uniqued, so a shared subexpression is a shared pointer.
+  // Labeling repeats keeps printing linear in the number of distinct
+  // subexpressions rather than exponential in DAG depth.
+  if (dedup && isNonTrivialParamAttr(value)) {
+    bool isRepeat = false;
+    p << dedup->mark(value.getAsOpaquePointer(), isRepeat);
+    if (isRepeat)
+      return;
+  }
+
+  printParamValueImpl(p, value, type);
+}
+
+std::string KGENParamPrinter::memRefDigest(Attribute model) {
+  // Attributes are uniqued, so a shared model is a shared pointer; cache by
+  // identity so an identical model is hashed only once.
+  const void *key = model.getAsOpaquePointer();
+  if (auto it = memRefDigests.find(key); it != memRefDigests.end())
+    return it->second;
+
+  raw_xxhash128_stream stream;
+  model.print(stream);
+  std::string digest = stream.hashString();
+  memRefDigests[key] = digest;
+  return digest;
+}
+
+void KGENParamPrinter::printParamValueImpl(AsmPrinter &p, TypedAttr value,
+                                           Type type) {
   // If the attribute's type provides a pretty printing hook, try to use it.
   if (auto typeItf = dyn_cast<ParameterTypeInterface>(value.getType()))
-    if (succeeded(typeItf.printValue(p, value)))
+    if (succeeded(typeItf.printValue(p, value, *this)))
       return;
+
+  // A MemRefAttr's model can reference every live allocation, so inlining it
+  // as hex blows up the string. Hash it for every string except the op
+  // printer, so we do not break round-tripping.
+  if (hashMemRefs) {
+    if (auto memref = dyn_cast<MemRefAttr>(value)) {
+      p << "#interp.memref<xxh3:" << memRefDigest(memref.getModel()) << ", "
+        << memref.getIndex() << ", " << memref.getOffset() << ">";
+      return;
+    }
+  }
 
   if (isa<UnknownAttr>(value)) {
     p << "*?";
@@ -1521,14 +1861,9 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     return;
   }
 
-  if (isa<UnboundAttr>(value)) {
-    p << '?';
-    return;
-  }
-
   if (auto bindParams = dyn_cast<BindParamsAttr>(value)) {
     p << "bind_params(";
-    printBindParams(p, bindParams.getGenerator(), bindParams.getParamValues(),
+    printBindParams(p, bindParams.getGenerator(), bindParams.getParams(),
                     bindParams.getDischarged());
     p << ')';
     return;
@@ -1708,6 +2043,11 @@ void KGEN::printParamValue(AsmPrinter &p, TypedAttr value, Type type) {
     return;
   }
 
+  if (dedup)
+    if (auto paramAttr = dyn_cast<ParameterAttr>(value))
+      if (succeeded(paramAttr.printDisplayValue(p, *this)))
+        return;
+
   p.printAttributeWithoutType(value);
 }
 
@@ -1722,31 +2062,23 @@ bool KGEN::isTypeExprType(Type type) {
 
 bool KGEN::isTypeExpr(TypedAttr attr) { return isTypeExprType(attr.getType()); }
 
+std::optional<ArrayRef<TypedAttr>> KGEN::getIdentityClass(TypedAttr prop) {
+  if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
+    return identical.getOperands();
+  return std::nullopt;
+}
+
 std::optional<std::pair<TypedAttr, TypedAttr>>
 KGEN::getIdentityProposition(TypedAttr prop) {
   // FIXME(MOCO-4577): a class of more than two is dropped rather than returning
   // every derived pair. That loses provability but stays sound.
-  if (auto identical = sugarDynCast<ParamIdenticalAttr>(prop))
-    if (identical.getNumOperands() == 2)
-      return std::make_pair(identical.getOperand(0), identical.getOperand(1));
-
-  auto op = sugarDynCast<ParamOperatorAttr>(prop);
-  if (!op || op.getOpcode() != POC::EQ || op.getOperands().size() != 2)
+  //
+  // Scalar int-like `eq` canonicalizes to `param.identical` at construction, so
+  // identity is spelled one way.
+  auto identical = sugarDynCast<ParamIdenticalAttr>(prop);
+  if (!identical || identical.getNumOperands() != 2)
     return std::nullopt;
-
-  // A lane-wise `eq` answers identity only where the two coincide, which rules
-  // out floats: IEEE equality holds between values that are not
-  // interchangeable (`+0.0` and `-0.0`) and fails between a value and itself
-  // (NaN). An unresolved dtype might still turn out to be a float.
-  Type operandType = op.getOperand(0).getType();
-  if (auto simdType = sugarDynCast<SIMDType>(operandType)) {
-    std::optional<KGENDType> dtype = simdType.getResolvedDType();
-    if (!dtype || !dtype->isIntLike())
-      return std::nullopt;
-  } else if (!operandType.isIntOrIndex()) {
-    return std::nullopt;
-  }
-  return std::make_pair(op.getOperand(0), op.getOperand(1));
+  return std::make_pair(identical.getOperand(0), identical.getOperand(1));
 }
 
 KGEN::EnvAttr KGEN::getModularEnvAttr(MLIRContext *ctx,
@@ -1824,7 +2156,8 @@ void KGEN::extendWithModularEnvAttr(ModuleOp moduleOp,
                         .extend(getModuleEnvAttr(moduleOp)));
 }
 
-void KGEN::printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly) {
+void KGENParamPrinter::printIsMemoryOnly(AsmPrinter &p,
+                                         TypedAttr isMemoryOnly) {
   if (auto boolAttr = dyn_cast<BoolAttr>(isMemoryOnly)) {
     if (boolAttr.getValue())
       p << " memoryOnly";
@@ -1834,6 +2167,11 @@ void KGEN::printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly) {
   p << " memoryOnly(";
   printParamValue(p, isMemoryOnly, isMemoryOnly.getType());
   p << ")";
+}
+
+void KGEN::printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly) {
+  KGENParamPrinter::createDiagnosticPrinter().printIsMemoryOnly(p,
+                                                                isMemoryOnly);
 }
 
 ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly) {
@@ -1855,32 +2193,22 @@ ParseResult KGEN::parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly) {
   return success();
 }
 
-void KGEN::printMinAlignment(AsmPrinter &p, TypedAttr minAlignment) {
-  // Skip printing if minAlignment is the default (1) to keep IR clean.
-  if (auto intAttr = dyn_cast<IntegerAttr>(minAlignment)) {
-    if (intAttr.getInt() == 1)
-      return;
-    p << " align(" << intAttr.getInt() << ")";
-  } else {
-    // Future parametric support may produce other TypedAttr types.
-    p << " align(" << minAlignment << ")";
-  }
-}
+ParseResult KGEN::parseStructDefField(AsmParser &p, StringAttr &name,
+                                      TypedAttr &typeValue,
+                                      ArrayAttr &annotations) {
+  if (parseParamName(p, name) || p.parseColon() ||
+      parseTypeParamValue(p, typeValue))
+    return failure();
 
-ParseResult KGEN::parseMinAlignment(AsmParser &p, TypedAttr &minAlignment) {
-  if (succeeded(p.parseOptionalKeyword("align"))) {
-    if (p.parseLParen())
-      return failure();
-    uint64_t value;
-    if (p.parseInteger(value))
-      return failure();
-    if (p.parseRParen())
-      return failure();
-    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), value);
-  } else {
-    // Default alignment is 1 (no explicit alignment).
-    minAlignment = IntegerAttr::get(IndexType::get(p.getContext()), 1);
-  }
+  SmallVector<Attribute> parsed;
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::OptionalSquare, [&]() {
+        if (p.parseAttribute(parsed.emplace_back()))
+          return failure();
+        return mlir::success();
+      }))
+    return failure();
+
+  annotations = ArrayAttr::get(p.getContext(), parsed);
   return success();
 }
 
@@ -1891,21 +2219,47 @@ KGEN::parseStructDefFields(AsmParser &p,
   return p.parseCommaSeparatedList([&]() {
     StringAttr name;
     TypedAttr typeValue;
-    if (parseParamName(p, name) || p.parseColon() ||
-        parseTypeParamValue(p, typeValue))
+    ArrayAttr annotations;
+    if (parseStructDefField(p, name, typeValue, annotations))
       return failure();
-    fields.push_back(StructDefFieldAttr::get(ctx, name, typeValue));
+    fields.push_back(
+        StructDefFieldAttr::get(ctx, name, typeValue, annotations));
     return mlir::success();
+  });
+}
+
+void KGENParamPrinter::printStructDefField(AsmPrinter &p, StringAttr name,
+                                           TypedAttr typeValue,
+                                           ArrayAttr annotations) {
+  printParamName(p, name);
+  p << ": ";
+  printTypeParamValue(p, typeValue);
+  if (!annotations.empty()) {
+    p << "[";
+    llvm::interleaveComma(annotations, p, [&](Attribute a) {
+      p.printAttribute(cast<AnnotationAttr>(a));
+    });
+    p << "]";
+  }
+}
+
+void KGEN::printStructDefField(AsmPrinter &p, StringAttr name,
+                               TypedAttr typeValue, ArrayAttr annotations) {
+  KGENParamPrinter::createDiagnosticPrinter().printStructDefField(
+      p, name, typeValue, annotations);
+}
+
+void KGENParamPrinter::printStructDefFields(
+    AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields) {
+  llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
+    printStructDefField(p, field.getName(), field.getTypeValue(),
+                        field.getAnnotations());
   });
 }
 
 void KGEN::printStructDefFields(AsmPrinter &p,
                                 ArrayRef<StructDefFieldAttr> fields) {
-  llvm::interleaveComma(fields, p, [&](StructDefFieldAttr field) {
-    printParamName(p, field.getName());
-    p << ": ";
-    printTypeParamValue(p, field.getTypeValue());
-  });
+  KGENParamPrinter::createDiagnosticPrinter().printStructDefFields(p, fields);
 }
 
 //===----------------------------------------------------------------------===//
@@ -2136,6 +2490,10 @@ ParseResult KGEN::parseGenerator(AsmParser &p, Type &generator) {
 }
 
 void KGEN::printGenerator(AsmPrinter &p, GeneratorType generator) {
+  KGENParamPrinter::createDiagnosticPrinter().printGenerator(p, generator);
+}
+
+void KGENParamPrinter::printGenerator(AsmPrinter &p, GeneratorType generator) {
   if (PogListAttr metadata = generator.getParamListAttrs()) {
     metadata.printGenerator(p, generator);
     return;
@@ -2201,8 +2559,17 @@ void KGEN::printOptionalDecorators(OpAsmPrinter &p, Operation *op,
 }
 
 /// Parse the always_inline related keywords if present.
-ParseResult KGEN::parseOptionalInline(OpAsmParser &parser,
-                                      InlineLevelAttr &attr) {
+ParseResult KGEN::parseOptionalInline(OpAsmParser &parser, Attribute &attr) {
+  // `inline<expr>` is an `@inline(expr)` the elaborator has not folded yet.
+  if (succeeded(parser.parseOptionalKeyword("inline"))) {
+    TypedAttr expr;
+    if (parser.parseLess() || parser.parseAttribute(expr) ||
+        parser.parseGreater())
+      return failure();
+    attr = expr;
+    return success();
+  }
+
   // Handle always_inline.
   InlineLevel inlineLevel;
   if (succeeded(parser.parseOptionalKeyword("always_inline")))
@@ -2215,12 +2582,120 @@ ParseResult KGEN::parseOptionalInline(OpAsmParser &parser,
     inlineLevel = InlineLevel::Never;
   else
     inlineLevel = InlineLevel::Automatic;
-  attr = InlineLevelAttr::get(parser.getContext(), inlineLevel);
+  attr = getInlineLevelAttr(parser.getContext(), inlineLevel);
   return success();
 }
 
-void KGEN::printOptionalInline(AsmPrinter &p, InlineLevel level) {
-  switch (level) {
+/// The level `value` names. `@inline` forbids AlwaysBuiltin: it also needs the
+/// foldability checks `@always_inline("builtin")` performs.
+static std::optional<InlineLevel> inlineLevelFromValue(int64_t value,
+                                                       bool allowBuiltin) {
+  switch (value) {
+  case static_cast<int64_t>(InlineLevel::Automatic):
+  case static_cast<int64_t>(InlineLevel::Always):
+  case static_cast<int64_t>(InlineLevel::AlwaysNoDebug):
+  case static_cast<int64_t>(InlineLevel::Never):
+    return static_cast<InlineLevel>(value);
+  case static_cast<int64_t>(InlineLevel::AlwaysBuiltin):
+    if (allowBuiltin)
+      return InlineLevel::AlwaysBuiltin;
+    return std::nullopt;
+  default:
+    return std::nullopt;
+  }
+}
+
+ErrorOr<int64_t> KGEN::getScalarIndexValue(TypedAttr value) {
+  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(value))
+    return intAttr.getInt();
+  if (auto simdAttr = dyn_cast_if_present<SIMDAttr>(value)) {
+    ArrayRef<DTypeValue> values = simdAttr.getValues();
+    if (values.size() != 1)
+      return Error("expected a scalar SIMD value");
+    if (!values.front().getDType().isIndex())
+      return Error("expected an index-typed SIMD value");
+    return values.front().getIndexVal();
+  }
+  return Error("expected an integer or scalar SIMD");
+}
+
+ErrorOr<int64_t> KGEN::getScalarIntegerValue(TypedAttr value) {
+  if (auto intAttr = dyn_cast_if_present<IntegerAttr>(value))
+    return intAttr.getInt();
+  auto simdAttr = dyn_cast_if_present<SIMDAttr>(value);
+  if (!simdAttr)
+    return Error("expected an integer or scalar SIMD");
+  ArrayRef<DTypeValue> values = simdAttr.getValues();
+  if (values.size() != 1)
+    return Error("expected a scalar SIMD value");
+  const DTypeValue &scalar = values.front();
+  KGENDType dtype = scalar.getDType();
+  if (dtype.isIndex() || dtype.isUIndex())
+    return scalar.getIndexVal();
+  if (!dtype.isInt())
+    return Error("expected an integer-typed SIMD value");
+  if (std::optional<int64_t> extValue = scalar.getIntVal().tryExtValue())
+    return *extValue;
+  return Error("integer value does not fit in 64 bits");
+}
+
+std::optional<int64_t> KGEN::inlineLevelValueOf(TypedAttr spec) {
+  if (auto intAttr = sugarDynCastIfPresent<IntegerAttr>(spec))
+    return intAttr.getInt();
+  // `@inline` names a level with `InlineLevel`, whose `Int` is a SIMD scalar.
+  if (auto simdAttr = sugarDynCastIfPresent<SIMDAttr>(spec);
+      simdAttr && simdAttr.getValues().size() == 1 &&
+      simdAttr.getValues().front().getDType().isIntLike())
+    return simdAttr.getValues().front().getIntVal().getExtValue();
+  return std::nullopt;
+}
+
+std::optional<InlineLevel> KGEN::inlineLevelOf(TypedAttr spec) {
+  if (std::optional<int64_t> value = inlineLevelValueOf(spec))
+    return inlineLevelFromValue(*value, /*allowBuiltin=*/true);
+  return std::nullopt;
+}
+
+InlineLevel KGEN::inlineLevelOrAutomatic(TypedAttr spec) {
+  return inlineLevelOf(spec).value_or(InlineLevel::Automatic);
+}
+
+TypedAttr KGEN::getInlineLevelAttr(MLIRContext *ctx, InlineLevel level) {
+  return IntegerAttr::get(IndexType::get(ctx), static_cast<int64_t>(level));
+}
+
+LogicalResult KGEN::verifyInlineLevel(Operation *op, Attribute spec) {
+  auto expr = dyn_cast_if_present<TypedAttr>(spec);
+  bool integral = expr && expr.getType().isIntOrIndex();
+  if (auto simd = dyn_cast_if_present<SIMDType>(expr ? expr.getType() : Type{}))
+    if (std::optional<KGENDType> dtype = simd.getResolvedDType())
+      integral = dtype->isIntLike();
+  if (!integral)
+    return op->emitOpError(
+        "'inlineLevel' must be an integer expression naming an InlineLevel");
+
+  // A level is only a value once elaboration has folded it. One `@inline`
+  // wrote is held to what that decorator accepts; a level the compiler set
+  // itself is a plain integer and may be any of them.
+  if (std::optional<int64_t> value = inlineLevelValueOf(expr)) {
+    bool compilerSet = sugarDynCastIfPresent<IntegerAttr>(expr) != nullptr;
+    if (!inlineLevelFromValue(*value, /*allowBuiltin=*/compilerSet))
+      return op->emitOpError("'inlineLevel' names no InlineLevel: ") << *value;
+  }
+  return success();
+}
+
+void KGEN::printOptionalInline(AsmPrinter &p, Attribute attr) {
+  auto typedAttr = dyn_cast_if_present<TypedAttr>(attr);
+  std::optional<InlineLevel> level =
+      typedAttr ? inlineLevelOf(typedAttr) : std::nullopt;
+  if (!level) {
+    // Printers run on invalid IR too, so a missing spec must not crash.
+    if (attr)
+      p << " inline<" << attr << ">";
+    return;
+  }
+  switch (*level) {
   case InlineLevel::Automatic:
     break;
   case InlineLevel::Always:
@@ -2279,6 +2754,11 @@ void KGEN::printParameterValues(OpAsmPrinter &p, Operation *op,
 }
 
 void KGEN::printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
+  KGENParamPrinter::createDiagnosticPrinter().printParameterValues(p, values);
+}
+
+void KGENParamPrinter::printParameterValues(AsmPrinter &p,
+                                            ArrayRef<TypedAttr> values) {
   if (values.empty())
     return;
   p << '<';
@@ -2288,6 +2768,11 @@ void KGEN::printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values) {
     printParamValue(p, value);
   });
   p << '>';
+}
+
+void KGENParamPrinter::printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait) {
+  p.printAttribute(trait.getSymbol());
+  printParameterValues(p, trait.getParamValues());
 }
 
 ParseResult KGEN::parseParametricCallee(OpAsmParser &p, TypedAttr &callee) {
@@ -2527,7 +3012,7 @@ static bool isDecorator(TypedAttr decorator,
   if (auto apply = dyn_cast<KGEN::ParamOperatorAttr>(decorator))
     decorator = apply.getOperand(0);
 
-  auto sym = dyn_cast<KGEN::SymbolConstantAttr>(decorator);
+  auto sym = KGEN::FuncSymbolGenerator::dynCast(decorator);
   if (!sym)
     return false;
   SymbolRefAttr symRef = sym.getSymbol();
@@ -2691,6 +3176,13 @@ static ArrayElementsAttr convertSIMDToVectorAttr(SIMDAttr simd, VectorType type,
   return AttrT::get(type, values);
 }
 
+std::optional<int64_t> KGEN::matchConstantIndex(Value value) {
+  Attribute attr;
+  if (!matchPattern(value, m_Constant(&attr)))
+    return std::nullopt;
+  return getConstantIndex(attr);
+}
+
 OpFoldResult KGEN::foldCastToBuiltin(TypedAttr input, Type resultType) {
   // Look through sugar to fold.
   input = SugarAttr::strip(input);
@@ -2841,9 +3333,6 @@ TypedAttr splatLiteralToSIMDImpl(T literal, SIMDType target) {
   return SIMDSplatAttr::get(target.getContext(), scalar, target);
 }
 
-TypedAttr KGEN::splatFloatLiteralToSIMD(double literal, SIMDType target) {
-  return splatLiteralToSIMDImpl<double>(literal, target);
-}
 TypedAttr KGEN::splatIntLiteralToSIMD(uint64_t literal, SIMDType target) {
   return splatLiteralToSIMDImpl<uint64_t>(literal, target);
 }

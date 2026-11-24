@@ -1,0 +1,272 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""The fused collective + RMS norm functionals on their real kernels.
+
+Needs 2 real, distinct devices: on a mesh that repeats a device there are no
+signal buffers, and the functionals take their simulated path instead.
+
+Each test runs one odd row count: the ragged case, the only dimension the
+wrapper layer can see. The kernel's row sweep lives in
+``max/tests/integration/graph/multi_gpu/test_allreduce_rms_norm.py``.
+"""
+
+from __future__ import annotations
+
+import numpy as np
+import pytest
+from max.driver import CPU, Accelerator, Device
+from max.dtype import DType
+from max.functional import (
+    allgather_rms_norm,
+    allreduce_rms_norm,
+    allreduce_sum,
+    reduce_scatter_rms_norm,
+    transfer_to,
+)
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Partial,
+    Placement,
+    Replicated,
+    Sharded,
+)
+from max.tensor.sharding.placements import even_shard_sizes
+
+MESH_2 = DeviceMesh(
+    devices=(Accelerator(0), Accelerator(1)),
+    mesh_shape=(2,),
+    axis_names=("tp",),
+)
+EPS = 1e-6
+COLS = 256
+# bfloat16 has an 8-bit mantissa.
+TOL = 3e-2
+
+
+def _rms_norm(x: np.ndarray, gamma: np.ndarray) -> np.ndarray:
+    rms = np.sqrt(np.mean(x * x, axis=-1, keepdims=True) + EPS)
+    return x / rms * gamma
+
+
+def _bf16_on(values: np.ndarray, device: Device) -> Tensor:
+    return Tensor(values).to(device).cast(DType.bfloat16)
+
+
+def _gamma(rng: np.random.Generator) -> tuple[np.ndarray, Tensor]:
+    values = rng.standard_normal(COLS).astype(np.float32)
+    return values, transfer_to(
+        Tensor(values), DeviceMapping(MESH_2, (Replicated(),))
+    ).cast(DType.bfloat16)
+
+
+def _assert_close(actual: Tensor, expected: np.ndarray) -> None:
+    np.testing.assert_allclose(
+        actual.cast(DType.float32).to_numpy(), expected, rtol=TOL, atol=TOL
+    )
+
+
+def _fragments(
+    rng: np.random.Generator, rows: int, mesh: DeviceMesh
+) -> list[np.ndarray]:
+    return [
+        rng.standard_normal((rows, COLS)).astype(np.float32)
+        for _ in mesh.devices
+    ]
+
+
+def _partial_over(fragments: list[np.ndarray], mesh: DeviceMesh) -> Tensor:
+    return Tensor._from_shards(
+        tuple(
+            _bf16_on(fragment, device).driver_tensor
+            for fragment, device in zip(fragments, mesh.devices, strict=True)
+        ),
+        DeviceMapping(mesh, (Partial(),)),
+    )
+
+
+def _assert_replicated_rms_norm(
+    normed: Tensor,
+    fragments: list[np.ndarray],
+    gamma_values: np.ndarray,
+    mesh: DeviceMesh,
+) -> None:
+    assert normed.placements == (Replicated(),)
+    total = np.sum(fragments, axis=0)
+    reference = _rms_norm(total, gamma_values)
+    for i in range(mesh.num_devices):
+        _assert_close(normed.local_shards[i], reference)
+    # Replicated: every device holds the same normed sum.
+    assert np.array_equal(
+        normed.local_shards[0].cast(DType.float32).to_numpy(),
+        normed.local_shards[1].cast(DType.float32).to_numpy(),
+    )
+
+
+@pytest.mark.parametrize("rows", [7])
+def test_reduce_scatter_rms_norm(rows: int) -> None:
+    rng = np.random.default_rng(0)
+    fragments = [
+        rng.standard_normal((rows, COLS)).astype(np.float32)
+        for _ in MESH_2.devices
+    ]
+    gamma_values, gamma = _gamma(rng)
+    partial = Tensor._from_shards(
+        tuple(
+            _bf16_on(fragment, device).driver_tensor
+            for fragment, device in zip(fragments, MESH_2.devices, strict=True)
+        ),
+        DeviceMapping(MESH_2, (Partial(),)),
+    )
+
+    normed, summed = reduce_scatter_rms_norm(partial, gamma, EPS)
+
+    assert normed.placements == (Sharded(0),)
+    assert summed.placements == (Sharded(0),)
+    total = np.sum(fragments, axis=0)
+    start = 0
+    for i, size in enumerate(even_shard_sizes(rows, MESH_2.num_devices)):
+        expected = total[start : start + size]
+        start += size
+        _assert_close(summed.local_shards[i], expected)
+        _assert_close(normed.local_shards[i], _rms_norm(expected, gamma_values))
+
+
+@pytest.mark.parametrize("rows", [7])
+def test_allreduce_rms_norm(rows: int) -> None:
+    rng = np.random.default_rng(2)
+    fragments = _fragments(rng, rows, MESH_2)
+    gamma_values, gamma = _gamma(rng)
+    partial = _partial_over(fragments, MESH_2)
+
+    normed = allreduce_rms_norm(partial, gamma, EPS)
+
+    _assert_replicated_rms_norm(normed, fragments, gamma_values, MESH_2)
+
+
+@pytest.mark.parametrize("rows", [7])
+def test_allreduce_rms_norm_host_gamma(rows: int) -> None:
+    """A host gamma rides the fused op on the real mesh.
+
+    A gamma that is not distributed reaches the wrapper whole, on the
+    host; the fused op reads one gamma per device on that device, so the
+    wrapper must place a copy on every mesh device before building the op.
+    Signed data, a gamma far from ones, against numpy.
+    """
+    rng = np.random.default_rng(5)
+    fragments = _fragments(rng, rows, MESH_2)
+    gamma_values = (rng.standard_normal(COLS).astype(np.float32) * 0.5) + 0.5
+    with default_device(CPU()):
+        gamma = Tensor(gamma_values).cast(DType.bfloat16)
+    partial = _partial_over(fragments, MESH_2)
+
+    normed = allreduce_rms_norm(partial, gamma, EPS)
+
+    _assert_replicated_rms_norm(normed, fragments, gamma_values, MESH_2)
+
+
+@pytest.mark.parametrize("rows", [7])
+def test_allgather_rms_norm(rows: int) -> None:
+    rng = np.random.default_rng(1)
+    full = rng.standard_normal((rows, COLS)).astype(np.float32)
+    gamma_values, gamma = _gamma(rng)
+    sizes = even_shard_sizes(rows, MESH_2.num_devices)
+    sharded = Tensor._from_shards(
+        tuple(
+            _bf16_on(
+                full[sum(sizes[:i]) : sum(sizes[: i + 1])], device
+            ).driver_tensor
+            for i, device in enumerate(MESH_2.devices)
+        ),
+        DeviceMapping(MESH_2, (Sharded(0),)),
+    )
+
+    normed, gathered = allgather_rms_norm(sharded, gamma, EPS)
+
+    assert normed.placements == (Replicated(),)
+    assert gathered.placements == (Replicated(),)
+    for i in range(MESH_2.num_devices):
+        _assert_close(gathered.local_shards[i], full)
+        _assert_close(normed.local_shards[i], _rms_norm(full, gamma_values))
+
+
+# Plain collectives on a mesh that repeats each GPU along one axis, and on a
+# mesh with a device that has no signal buffer.
+
+MIXED = DeviceMesh(
+    devices=(Accelerator(0), Accelerator(0), Accelerator(1), Accelerator(1)),
+    mesh_shape=(2, 2),
+    axis_names=("dp", "tp"),
+)
+
+
+def _float32_shards(
+    fragments: list[np.ndarray],
+    mesh: DeviceMesh,
+    placements: tuple[Placement, ...],
+) -> Tensor:
+    return Tensor._from_shards(
+        tuple(
+            Tensor(fragment).to(device).driver_tensor
+            for fragment, device in zip(fragments, mesh.devices, strict=True)
+        ),
+        DeviceMapping(mesh, placements),
+    )
+
+
+def test_collectives_across_and_within_gpus_of_a_mixed_mesh() -> None:
+    """Along ``dp`` each group holds both GPUs and runs the kernel; along
+    ``tp`` each group holds one GPU twice and sums on it."""
+    rng = np.random.default_rng(1)
+    a, b = (rng.standard_normal((5, 8)).astype(np.float32) for _ in range(2))
+    across = _float32_shards([a, a, b, b], MIXED, (Partial(), Replicated()))
+    summed = allreduce_sum(across, "dp")
+    assert summed.placements == (Replicated(), Replicated())
+    for shard in summed.local_shards:
+        np.testing.assert_allclose(shard.to_numpy(), a + b, rtol=1e-5)
+    within = _float32_shards([a, b, a, b], MIXED, (Replicated(), Partial()))
+    summed = allreduce_sum(within, "tp")
+    for shard in summed.local_shards:
+        np.testing.assert_allclose(shard.to_numpy(), a + b, rtol=1e-5)
+    rows = rng.standard_normal((6, 8)).astype(np.float32)
+    split = transfer_to(
+        Tensor(rows), DeviceMapping(MIXED, (Sharded(0), Replicated()))
+    )
+    gathered = transfer_to(
+        split, DeviceMapping(MIXED, (Replicated(), Replicated()))
+    )
+    np.testing.assert_allclose(gathered.to_numpy(), rows)
+    # Over both axes a group holds each GPU twice.
+    with pytest.raises(ValueError, match="group of distinct devices"):
+        allreduce_sum(
+            _float32_shards([a, a, a, a], MIXED, (Partial(), Partial())),
+            ("dp", "tp"),
+        )
+
+
+def test_collectives_on_a_cpu_and_a_gpu() -> None:
+    """The CPU has no signal buffer, so each group computes on its first
+    device and moves the results back."""
+    mesh = DeviceMesh(
+        devices=(CPU(), Accelerator(0)), mesh_shape=(2,), axis_names=("tp",)
+    )
+    rng = np.random.default_rng(2)
+    a, b = (rng.standard_normal((8, 8)).astype(np.float32) for _ in range(2))
+    summed = allreduce_sum(_float32_shards([a, b], mesh, (Partial(),)), "tp")
+    for shard, device in zip(summed.local_shards, mesh.devices, strict=True):
+        assert shard.device == device
+        np.testing.assert_allclose(shard.to_numpy(), a + b, rtol=1e-5)
+    rows = transfer_to(Tensor(a), DeviceMapping(mesh, (Sharded(0),)))
+    columns = transfer_to(rows, DeviceMapping(mesh, (Sharded(1),)))
+    np.testing.assert_allclose(columns.local_shards[1].to_numpy(), a[:, 4:])

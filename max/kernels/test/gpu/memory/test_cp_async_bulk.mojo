@@ -30,6 +30,7 @@ from max.gpu.sync import (
     cp_async_bulk_wait_group,
 )
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 from layout.tma_async import SharedMemBarrier
@@ -41,11 +42,8 @@ from layout.tma_async import SharedMemBarrier
 
 
 def kernel_bulk_g2s[
-    NUM_ELEMS: Int
-](
-    src: ImmPointer[Float32, ImmutAnyOrigin],
-    dst: MutPointer[Float32, MutAnyOrigin],
-):
+    NUM_ELEMS: Int, src_origin: ImmOrigin, dst_origin: MutOrigin
+](src: ImmPointer[Float32, src_origin], dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
@@ -74,8 +72,8 @@ def kernel_bulk_g2s[
 
 
 def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
-    var in_host = alloc[Float32](NUM_ELEMS)
-    var out_host = alloc[Float32](NUM_ELEMS)
+    var in_host = unsafe_alloc[Float32](NUM_ELEMS)
+    var out_host = unsafe_alloc[Float32](NUM_ELEMS)
 
     for i in range(NUM_ELEMS):
         in_host[i] = Float32(i + 1)
@@ -87,7 +85,11 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_dev, in_host)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function[kernel_bulk_g2s[NUM_ELEMS]](
+    ctx.enqueue_function[
+        kernel_bulk_g2s[
+            NUM_ELEMS, ImmOrigin(origin_of(in_dev)), origin_of(out_dev)
+        ]
+    ](
         in_dev,
         out_dev,
         grid_dim=(1,),
@@ -100,8 +102,8 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         assert_equal(out_host[i], Float32(i + 1))
 
-    in_host.free()
-    out_host.free()
+    in_host.unsafe_free()
+    out_host.unsafe_free()
 
 
 # ---------------------------------------------------------------------------
@@ -110,8 +112,8 @@ def test_bulk_g2s[NUM_ELEMS: Int](ctx: DeviceContext) raises:
 
 
 def kernel_bulk_s2g[
-    NUM_ELEMS: Int
-](dst: MutPointer[Float32, MutAnyOrigin],):
+    NUM_ELEMS: Int, dst_origin: MutOrigin
+](dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
@@ -130,14 +132,14 @@ def kernel_bulk_s2g[
 
 
 def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
-    var out_host = alloc[Float32](NUM_ELEMS)
+    var out_host = unsafe_alloc[Float32](NUM_ELEMS)
     for i in range(NUM_ELEMS):
         out_host[i] = 0
 
     var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function[kernel_bulk_s2g[NUM_ELEMS]](
+    ctx.enqueue_function[kernel_bulk_s2g[NUM_ELEMS, origin_of(out_dev)]](
         out_dev,
         grid_dim=(1,),
         block_dim=(NUM_ELEMS,),
@@ -149,7 +151,7 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         assert_equal(out_host[i], Float32(i + 1))
 
-    out_host.free()
+    out_host.unsafe_free()
 
 
 # ---------------------------------------------------------------------------
@@ -158,8 +160,8 @@ def test_bulk_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
 
 
 def kernel_bulk_reduce_s2g[
-    NUM_ELEMS: Int
-](dst: MutPointer[Float32, MutAnyOrigin],):
+    NUM_ELEMS: Int, dst_origin: MutOrigin
+](dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
     var smem = unsafe_stack_allocation[
@@ -184,14 +186,14 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     # reduce-add.
     comptime init = Float32(100.0)
 
-    var out_host = alloc[Float32](NUM_ELEMS)
+    var out_host = unsafe_alloc[Float32](NUM_ELEMS)
     for i in range(NUM_ELEMS):
         out_host[i] = init
 
     var out_dev = ctx.enqueue_create_buffer[.float32](NUM_ELEMS)
     ctx.enqueue_copy(out_dev, out_host)
 
-    ctx.enqueue_function[kernel_bulk_reduce_s2g[NUM_ELEMS]](
+    ctx.enqueue_function[kernel_bulk_reduce_s2g[NUM_ELEMS, origin_of(out_dev)]](
         out_dev,
         grid_dim=(1,),
         block_dim=(NUM_ELEMS,),
@@ -203,7 +205,7 @@ def test_bulk_reduce_s2g[NUM_ELEMS: Int](ctx: DeviceContext) raises:
     for i in range(NUM_ELEMS):
         assert_equal(out_host[i], init + Float32(i + 1))
 
-    out_host.free()
+    out_host.unsafe_free()
 
 
 # ---------------------------------------------------------------------------

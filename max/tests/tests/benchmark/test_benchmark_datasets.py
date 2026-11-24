@@ -15,15 +15,20 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import logging
 import multiprocessing as mp
+import os
+import re
 from pathlib import Path
 from unittest.mock import Mock, mock_open, patch
 
 import msgspec
+import numpy as np
 import pytest
 from huggingface_hub import errors as hf_hub_errors
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 from max.benchmark.benchmark_shared.datasets import (
     DATASET_REGISTRY,
     ArtificialAnalysisBenchmarkDataset,
@@ -54,13 +59,26 @@ from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
     TokenizerPool,
     _init_encoder,
 )
+from max.benchmark.benchmark_shared.datasets.agentic_tools import (
+    ToolConfig,
+)
+from max.benchmark.benchmark_shared.datasets.all import (
+    _resolve_agentic_tool_profiles,
+)
 from max.benchmark.benchmark_shared.datasets.chat_judge import (
     ChatJudgeBenchmarkDataset,
+)
+from max.benchmark.benchmark_shared.datasets.image_augmentation import (
+    augment_samples_with_images,
 )
 
 # Import the module under test
 from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
-    build_chat_samples_from_user_text_pool,
+    _MAX_JUNCTION_GROWTH,
+    _cut_may_grow,
+    _text_scaled_to_token_length,
+    build_fitted_chat_samples,
+    build_scaled_user_message,
     resolve_constant_delay_ms,
 )
 from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
@@ -68,50 +86,40 @@ from max.benchmark.benchmark_shared.datasets.nemotron_opencode import (
     AnthropicTool,
     _anthropic_tool_to_openai,
 )
+from max.benchmark.benchmark_shared.datasets.types import (
+    ChatSamples,
+)
 from PIL import Image
+from tests.benchmark.benchmark_fakes import FakeTokenizer, fake_loader
+from transformers import PreTrainedTokenizerFast
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 
-class _FakeTokenizer:
-    """Picklable stand-in for `PreTrainedTokenizerBase` used by unit tests.
+class _RoundTripTokenizer(FakeTokenizer):
+    """Fake tokenizer whose decode(encode(x)) == x.
 
-    `_fake_loader` constructs one per spawn worker; the parent uses an
-    instance of this class directly. Behavior is deterministic so tests
-    can assert on outputs (no Mock call-count plumbing).
+    `FakeTokenizer.decode` returns filler, which hides which pool a body came
+    from.
     """
-
-    name_or_path = "_fake_"
-    vocab_size = 1000
-    unk_token_id = None
-    all_special_ids: frozenset[int] = frozenset({0, 1, 2})
-
-    def __init__(self, model_max_length: int = 4096) -> None:
-        self.model_max_length = model_max_length
 
     def encode(
         self, text: str, add_special_tokens: bool = False, **_: object
     ) -> list[int]:
-        # Length-aware so multiturn-fit tests that scale messages to a
-        # target token count round-trip through encode→decode→encode and
-        # see a meaningful encoded length.
-        return list(range(max(4, len(text))))
+        return [ord(c) for c in text] or [32]
 
     def decode(
         self, ids: list[int], skip_special_tokens: bool = False, **_: object
     ) -> str:
-        return "Z" * len(ids)
-
-    def convert_tokens_to_ids(self, token: str) -> int:
-        return 223
+        return "".join(chr(i) for i in ids)
 
 
-def _fake_loader(
+def _round_trip_loader(
     name_or_path: str,
     model_max_length: int | None,
     trust_remote_code: bool,
     revision: str | None,
-) -> _FakeTokenizer:
-    return _FakeTokenizer(model_max_length=model_max_length or 4096)
+) -> _RoundTripTokenizer:
+    return _RoundTripTokenizer(model_max_length=model_max_length or 4096)
 
 
 def _raising_loader(
@@ -119,7 +127,7 @@ def _raising_loader(
     model_max_length: int | None,
     trust_remote_code: bool,
     revision: str | None,
-) -> _FakeTokenizer:
+) -> FakeTokenizer:
     raise OSError("simulated Hub-offline tokenizer load failure")
 
 
@@ -150,6 +158,25 @@ def test_init_encoder_exits_quietly_on_loader_failure() -> None:
     finally:
         root.handlers[:] = saved_handlers
         root.setLevel(saved_level)
+
+
+@pytest.mark.parametrize("disable_tqdm", [False, True])
+def test_tokenizer_pool_progress_keeps_input_order(
+    disable_tqdm: bool, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Results stay in input order across many chunks, and the labelled
+    progress bar goes to stderr unless `disable_tqdm` is set."""
+    tok = FakeTokenizer()
+    texts = ["x" * (4 + i % 97) for i in range(1000)]
+
+    with TokenizerPool(
+        tok, loader=fake_loader, disable_tqdm=disable_tqdm
+    ) as pool:
+        lens = pool.encode_lens(texts, desc="test-progress")
+
+    assert lens == [len(text) for text in texts]
+    bar_shown = "test-progress" in capsys.readouterr().err
+    assert bar_shown is not disable_tqdm
 
 
 def test_dataset_registry_structure() -> None:
@@ -298,12 +325,21 @@ def test_benchmark_dataset_from_flags_nonexistent_path(
     mock_exists.assert_called_once_with("/nonexistent/path.json")
 
 
-def test_benchmark_dataset_from_flags_unknown_dataset() -> None:
+@pytest.mark.parametrize(
+    "dataset_name",
+    [
+        pytest.param("unknown_dataset", id="unknown_dataset"),
+        pytest.param("vision-arena-unknown", id="registered_name_prefix"),
+    ],
+)
+def test_benchmark_dataset_from_flags_unknown_dataset(
+    dataset_name: str,
+) -> None:
     """Test that unknown dataset names raise ValueError."""
     with pytest.raises(ValueError) as exc_info:
-        BenchmarkDataset.from_flags(dataset_name="unknown_dataset")
+        BenchmarkDataset.from_flags(dataset_name=dataset_name)
 
-    assert "Unknown dataset: unknown_dataset" in str(exc_info.value)
+    assert f"Unknown dataset: {dataset_name}" in str(exc_info.value)
     assert "Available datasets:" in str(exc_info.value)
 
 
@@ -314,14 +350,6 @@ def test_benchmark_dataset_get_dataset_class() -> None:
 
     dataset_class = BenchmarkDataset._get_dataset_class("code_debug")
     assert dataset_class == CodeDebugBenchmarkDataset
-
-
-def test_benchmark_dataset_get_dataset_class_unknown() -> None:
-    """Test _get_dataset_class with unknown dataset name."""
-    with pytest.raises(ValueError) as exc_info:
-        BenchmarkDataset._get_dataset_class("unknown_dataset")
-
-    assert "Unknown dataset: unknown_dataset" in str(exc_info.value)
 
 
 @patch("os.path.exists")
@@ -364,58 +392,34 @@ def test_benchmark_dataset_repr(mock_exists: Mock) -> None:
     assert "has_multiturn_chat_support=True" in repr_str
 
 
-@patch("os.path.exists")
-@patch(
-    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
+@pytest.mark.parametrize(
+    ("dataset_name", "repo_id", "filename"),
+    [
+        ("code_debug", "xinrongzhang2022/InfiniteBench", "code_debug.jsonl"),
+        (
+            "sharegpt",
+            "anon8231489123/ShareGPT_Vicuna_unfiltered",
+            "ShareGPT_V3_unfiltered_cleaned_split.json",
+        ),
+    ],
 )
-def test_code_debug_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
-    """Test fetching code_debug dataset from HuggingFace Hub."""
-    mock_download.return_value = "/path/to/downloaded/file.jsonl"
-    mock_exists.return_value = True  # Mock downloaded file exists
+def test_huggingface_dataset_from_flags_downloads(
+    dataset_name: str, repo_id: str, filename: str
+) -> None:
+    """from_flags fetches a Hugging Face dataset's file from the Hub."""
+    with (
+        patch("os.path.exists", return_value=True),
+        patch(
+            "max.benchmark.benchmark_shared.datasets."
+            f"{dataset_name}.hf_hub_download_with_retry",
+            return_value="/path/to/downloaded/file",
+        ) as mock_download,
+    ):
+        dataset = BenchmarkDataset.from_flags(dataset_name=dataset_name)
 
-    dataset = BenchmarkDataset.from_flags(dataset_name="code_debug")
-
-    assert dataset.dataset_path == "/path/to/downloaded/file.jsonl"
+    assert dataset.dataset_path == "/path/to/downloaded/file"
     mock_download.assert_called_once_with(
-        repo_id="xinrongzhang2022/InfiniteBench",
-        filename="code_debug.jsonl",
-        repo_type="dataset",
-    )
-
-
-@patch(
-    "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
-)
-def test_code_debug_from_flags_unknown(mock_download: Mock) -> None:
-    """Test fetching unknown dataset raises ValueError."""
-    mock_download.return_value = "/tmp/fake_code_debug.jsonl"
-    dataset = BenchmarkDataset.from_flags(dataset_name="code_debug")
-    # CodeDebugBenchmarkDataset now inherits from HuggingFaceBenchmarkDataset
-    # and will fetch from HF by default, so we test the fetch method directly
-    with patch.object(CodeDebugBenchmarkDataset, "fetch") as mock_fetch:
-        mock_fetch.side_effect = ValueError(
-            "Unknown dataset for CodeDebugBenchmarkDataset: unknown_dataset"
-        )
-        with pytest.raises(ValueError, match="Unknown dataset"):
-            dataset.fetch()
-
-
-@patch("os.path.exists")
-@patch(
-    "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
-)
-def test_sharegpt_from_flags(mock_download: Mock, mock_exists: Mock) -> None:
-    """Test fetching ShareGPT dataset from HuggingFace Hub."""
-    mock_download.return_value = "/path/to/downloaded/file.json"
-    mock_exists.return_value = True  # Mock downloaded file exists
-
-    dataset = BenchmarkDataset.from_flags(dataset_name="sharegpt")
-
-    assert dataset.dataset_path == "/path/to/downloaded/file.json"
-    mock_download.assert_called_once_with(
-        repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-        filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-        repo_type="dataset",
+        repo_id=repo_id, filename=filename, repo_type="dataset"
     )
 
 
@@ -430,11 +434,11 @@ def test_random_from_flags() -> None:
 
 def test_random_sample_requests() -> None:
     """Test sampling random requests."""
-    tok = _FakeTokenizer(model_max_length=50)
+    tok = FakeTokenizer(model_max_length=50)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=2,
             tokenizer=tok,
@@ -450,13 +454,43 @@ def test_random_sample_requests() -> None:
         assert isinstance(request, SampledRequest)
 
 
-def test_shared_contexts_empty_when_no_sys_prompt() -> None:
-    """shared_contexts is empty when sys_prompt_ratio is 0."""
-    tok = _FakeTokenizer()
+def test_random_sample_requests_with_images() -> None:
+    """--random-image-count/--random-image-size still work after the
+    _generate_random_image extraction into image_augmentation.py."""
+    tok = FakeTokenizer(model_max_length=200)
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
+        samples = dataset.sample_requests(
+            num_requests=3,
+            tokenizer=tok,
+            pool=pool,
+            input_len="50",
+            output_len="10",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            image_size="64,64",
+            image_count=2,
+        )
+
+    assert len(samples.requests) == 3
+    for request in samples.requests:
+        assert len(request.encoded_images) == 2
+        for image in request.encoded_images:
+            assert image["type"] == "image_url"
+            assert image["image_url"]["url"].startswith(
+                "data:image/jpeg;base64,"
+            )
+
+
+def test_shared_contexts_empty_when_no_sys_prompt() -> None:
+    """shared_contexts is empty when sys_prompt_ratio is 0."""
+    tok = FakeTokenizer()
+    dataset = BenchmarkDataset.from_flags(dataset_name="random")
+    assert isinstance(dataset, RandomBenchmarkDataset)
+
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=5,
             tokenizer=tok,
@@ -472,11 +506,11 @@ def test_shared_contexts_empty_when_no_sys_prompt() -> None:
 
 def test_shared_contexts_one_entry_per_unique_idx() -> None:
     """shared_contexts has exactly one SharedContext per unique sys_prompt_idx."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=10,
             tokenizer=tok,
@@ -493,12 +527,12 @@ def test_shared_contexts_one_entry_per_unique_idx() -> None:
 
 def test_shared_contexts_at_most_max_unique() -> None:
     """shared_contexts has at most max_num_unique_sys_prompt entries."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
 
     max_unique = 3
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.sample_requests(
             num_requests=30,
             tokenizer=tok,
@@ -515,87 +549,52 @@ def test_shared_contexts_at_most_max_unique() -> None:
         assert entry.num_tokens > 0
 
 
-@patch("os.path.exists")
-def test_sonnet_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that SonnetBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="sonnet", dataset_path="/path/to/sonnet.txt"
-    )
-
-    assert isinstance(dataset, SonnetBenchmarkDataset)
-    assert dataset.dataset_name == "sonnet"
-    assert dataset.dataset_path == "/path/to/sonnet.txt"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_vision_arena_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that VisionArenaBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="vision-arena", dataset_path="/path/to/vision_arena.json"
-    )
-
-    assert isinstance(dataset, VisionArenaBenchmarkDataset)
-    assert dataset.dataset_name == "vision-arena"
-    assert dataset.dataset_path == "/path/to/vision_arena.json"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_axolotl_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that AxolotlBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="axolotl", dataset_path="/path/to/axolotl.json"
-    )
-
-    assert isinstance(dataset, AxolotlBenchmarkDataset)
-    assert dataset.dataset_name == "axolotl"
-    assert dataset.dataset_path == "/path/to/axolotl.json"
-    assert dataset.dataset_mode == "local"
-
-
-@patch("os.path.exists")
-def test_arxiv_summarization_from_flags_local_mode(mock_exists: Mock) -> None:
-    """Test that ArxivSummarizationBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
-
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="arxiv-summarization", dataset_path="/path/to/arxiv.json"
-    )
-
-    assert isinstance(dataset, ArxivSummarizationBenchmarkDataset)
-    assert dataset.dataset_name == "arxiv-summarization"
-    assert dataset.dataset_path == "/path/to/arxiv.json"
-    assert dataset.dataset_mode == "local"
-
-
-def test_vision_arena_from_flags_unknown() -> None:
-    """Test fetching unknown dataset raises ValueError."""
-    with pytest.raises(ValueError, match="Unknown dataset"):
-        BenchmarkDataset.from_flags(dataset_name="vision-arena-unknown")
-
-
-@patch("os.path.exists")
-def test_obfuscated_conversations_from_flags_local_mode(
-    mock_exists: Mock,
+@pytest.mark.parametrize(
+    ("dataset_name", "dataset_path", "dataset_class"),
+    [
+        pytest.param(
+            "sonnet", "/path/to/sonnet.txt", SonnetBenchmarkDataset, id="sonnet"
+        ),
+        pytest.param(
+            "vision-arena",
+            "/path/to/vision_arena.json",
+            VisionArenaBenchmarkDataset,
+            id="vision_arena",
+        ),
+        pytest.param(
+            "axolotl",
+            "/path/to/axolotl.json",
+            AxolotlBenchmarkDataset,
+            id="axolotl",
+        ),
+        pytest.param(
+            "arxiv-summarization",
+            "/path/to/arxiv.json",
+            ArxivSummarizationBenchmarkDataset,
+            id="arxiv_summarization",
+        ),
+        pytest.param(
+            "obfuscated-conversations",
+            "/path/to/obfuscated.jsonl",
+            ObfuscatedConversationsBenchmarkDataset,
+            id="obfuscated_conversations",
+        ),
+    ],
+)
+def test_from_flags_with_dataset_path_is_local_mode(
+    dataset_name: str,
+    dataset_path: str,
+    dataset_class: type[LocalBenchmarkDataset],
 ) -> None:
-    """Test that ObfuscatedConversationsBenchmarkDataset works in local mode."""
-    mock_exists.return_value = True
+    """from_flags builds a local-mode dataset from an explicit path."""
+    with patch("os.path.exists", return_value=True):
+        dataset = BenchmarkDataset.from_flags(
+            dataset_name=dataset_name, dataset_path=dataset_path
+        )
 
-    dataset = BenchmarkDataset.from_flags(
-        dataset_name="obfuscated-conversations",
-        dataset_path="/path/to/obfuscated.jsonl",
-    )
-
-    assert isinstance(dataset, ObfuscatedConversationsBenchmarkDataset)
-    assert dataset.dataset_name == "obfuscated-conversations"
-    assert dataset.dataset_path == "/path/to/obfuscated.jsonl"
+    assert isinstance(dataset, dataset_class)
+    assert dataset.dataset_name == dataset_name
+    assert dataset.dataset_path == dataset_path
     assert dataset.dataset_mode == "local"
 
 
@@ -743,45 +742,6 @@ def test_local_datasets_require_dataset_path() -> None:
     sonnet_dataset.fetch()
     assert sonnet_dataset.dataset_path is not None
     assert "sonnet_4x.txt" in sonnet_dataset.dataset_path
-
-
-def test_huggingface_datasets_fetch_behavior() -> None:
-    """Test that HuggingFace datasets fetch from HF when used directly."""
-    # Test CodeDebugBenchmarkDataset
-    with patch(
-        "max.benchmark.benchmark_shared.datasets.code_debug.hf_hub_download_with_retry"
-    ) as mock_download:
-        mock_download.return_value = "/path/to/downloaded/file.jsonl"
-
-        code_debug_dataset = CodeDebugBenchmarkDataset()
-        code_debug_dataset.dataset_name = "code_debug"
-        code_debug_dataset.fetch()
-
-        assert (
-            code_debug_dataset.dataset_path == "/path/to/downloaded/file.jsonl"
-        )
-        mock_download.assert_called_once_with(
-            repo_id="xinrongzhang2022/InfiniteBench",
-            filename="code_debug.jsonl",
-            repo_type="dataset",
-        )
-
-    # Test ShareGPTBenchmarkDataset
-    with patch(
-        "max.benchmark.benchmark_shared.datasets.sharegpt.hf_hub_download_with_retry"
-    ) as mock_download:
-        mock_download.return_value = "/path/to/downloaded/file.json"
-
-        sharegpt_dataset = ShareGPTBenchmarkDataset()
-        sharegpt_dataset.dataset_name = "sharegpt"
-        sharegpt_dataset.fetch()
-
-        assert sharegpt_dataset.dataset_path == "/path/to/downloaded/file.json"
-        mock_download.assert_called_once_with(
-            repo_id="anon8231489123/ShareGPT_Vicuna_unfiltered",
-            filename="ShareGPT_V3_unfiltered_cleaned_split.json",
-            repo_type="dataset",
-        )
 
 
 def test_local_datasets_with_default_files() -> None:
@@ -952,10 +912,10 @@ def test_synthetic_pixel_dataset_sample_requests_for_image_to_video() -> None:
 def test_random_multiturn_emits_zero_prefix_turns() -> None:
     """gen_multiturn_random_requests always emits prefix_turns=0; the runner
     owns warmup prefix-turn assignment via _pick_warmup_population."""
-    tok = _FakeTokenizer()
+    tok = FakeTokenizer()
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
     assert isinstance(dataset, RandomBenchmarkDataset)
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.gen_multiturn_random_requests(
             input_len=32,
             output_len=16,
@@ -976,19 +936,71 @@ def test_resolve_constant_delay_ms() -> None:
     assert resolve_constant_delay_ms("0") == 0.0
 
 
+@pytest.mark.parametrize("max_output_len", [None, 12])
 @patch.object(InstructCoderBenchmarkDataset, "_load_pairs")
 def test_instruct_coder_multiturn_fit_distributions(
     mock_load_pairs: Mock,
+    max_output_len: int | None,
 ) -> None:
     """``fit_length_distributions`` honors turn count, lengths, and delay."""
     body = "hello world " * 80
     mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
 
-    tok = _FakeTokenizer(model_max_length=50_000)
+    tok = FakeTokenizer(model_max_length=50_000)
     dataset = InstructCoderBenchmarkDataset()
     dataset.dataset_path = "/tmp/instruct_coder_mock.json"
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
+    with TokenizerPool(tok, loader=fake_loader) as pool:
+        samples = dataset.gen_multiturn_sessions(
+            num_sessions=4,
+            tokenizer=tok,
+            pool=pool,
+            shuffle=False,
+            fit_length_distributions=True,
+            num_turns="DU(3,3)",
+            input_len="80",
+            output_len="20",
+            max_output_len=max_output_len,
+            delay_between_turns_dist="100",
+            sys_prompt_ratio=0.0,
+        )
+
+    assert len(samples.chat_sessions) == 4
+    for session in samples.chat_sessions:
+        assert len(session.messages) == 6
+        for assistant in session.messages[1::2]:
+            assert assistant.source == "assistant"
+            assert assistant.num_tokens == (max_output_len or 20)
+        # Each reply carries the delay before the turn that follows it; the
+        # last reply has no such turn.
+        assert [m.delay_until_next_message for m in session.messages[1::2]] == [
+            100.0,
+            100.0,
+            None,
+        ]
+        for user in session.messages[0::2]:
+            assert user.source == "user"
+            # FakeTokenizer decodes to one unbroken run, so its truncation cut
+            # and its marker join both land inside a word and each take the
+            # per-junction allowance.
+            assert 80 <= user.num_tokens <= 80 + 2 * _MAX_JUNCTION_GROWTH
+
+
+@patch.object(InstructCoderBenchmarkDataset, "_load_pairs")
+def test_instruct_coder_multiturn_compatible_with_image_augmentation(
+    mock_load_pairs: Mock,
+) -> None:
+    """MXTOOLS-398: instruct-coder's --fit-distributions sessions can have
+    the general, dataset-agnostic image augmentation mixed in on top,
+    without instruct-coder needing its own image-generation logic."""
+    body = "hello world " * 80
+    mock_load_pairs.return_value = [(body, "line\n" * 60)] * 400
+
+    tok = FakeTokenizer(model_max_length=50_000)
+    dataset = InstructCoderBenchmarkDataset()
+    dataset.dataset_path = "/tmp/instruct_coder_mock.json"
+
+    with TokenizerPool(tok, loader=fake_loader) as pool:
         samples = dataset.gen_multiturn_sessions(
             num_sessions=4,
             tokenizer=tok,
@@ -1002,16 +1014,21 @@ def test_instruct_coder_multiturn_fit_distributions(
             sys_prompt_ratio=0.0,
         )
 
+    augment_samples_with_images(
+        samples,
+        fraction=1.0,
+        image_count=1,
+        image_long_side=256,
+        image_aspect_ratio=1.0,
+        turn="first",
+    )
+
     assert len(samples.chat_sessions) == 4
     for session in samples.chat_sessions:
-        assert len(session.messages) == 6
-        for assistant in session.messages[1::2]:
-            assert assistant.source == "assistant"
-            assert assistant.num_tokens == 20
-            assert assistant.delay_until_next_message == 100.0
-        for user in session.messages[0::2]:
-            assert user.source == "user"
-            assert user.num_tokens == 80
+        user_messages = [m for m in session.messages if m.source == "user"]
+        assert len(user_messages[0].images) == 1
+        for later in user_messages[1:]:
+            assert len(later.images) == 0
 
 
 def _write_chat_judge_file(path: Path) -> None:
@@ -1045,7 +1062,7 @@ def test_chat_judge_gen_chat_sessions_sets_per_turn_delay(
 
     samples = dataset.gen_chat_sessions(
         num_sessions=1,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         shuffle=False,
         delay_between_turns_dist="100",
     )
@@ -1074,7 +1091,7 @@ def test_chat_judge_gen_chat_sessions_no_delay_by_default(
 
     samples = dataset.gen_chat_sessions(
         num_sessions=1,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         shuffle=False,
     )
 
@@ -1084,13 +1101,13 @@ def test_chat_judge_gen_chat_sessions_no_delay_by_default(
 
 def test_every_user_body_is_marked_distinct() -> None:
     """Every body carries its own ``[N] `` marker, wrap or no wrap."""
-    tok = _FakeTokenizer(model_max_length=50_000)
+    tok = FakeTokenizer(model_max_length=50_000)
     pool_texts = ["alpha body text", "beta body text", "gamma body text"]
     num_sessions = 5
     turns_per_session = 2  # 10 total turns, pool only has 3 -> wraps
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
-        samples = build_chat_samples_from_user_text_pool(
+    with TokenizerPool(tok, loader=fake_loader) as pool:
+        samples = build_fitted_chat_samples(
             pool=pool,
             user_text_pool=pool_texts,
             num_sessions=num_sessions,
@@ -1129,6 +1146,65 @@ def test_every_user_body_is_marked_distinct() -> None:
         assert abs(user.num_tokens - target_in) <= 4
 
 
+def test_a_session_does_not_depend_on_the_session_count() -> None:
+    """Session ``i`` is the same however many sessions follow it.
+
+    The warmup pool grows with concurrency, so the session count changes
+    across a sweep while the sessions must not.
+    """
+    tok = FakeTokenizer(model_max_length=50_000)
+
+    def sessions(num_sessions: int) -> list[list[tuple[str, int]]]:
+        np.random.seed(42)
+        with TokenizerPool(tok, loader=fake_loader) as pool:
+            samples = build_fitted_chat_samples(
+                pool=pool,
+                user_text_pool=["alpha body text", "beta body text"],
+                num_sessions=num_sessions,
+                num_turns="DU(1, 6)",
+                input_len="LN(4.0, 0.5)",
+                output_len="LN(3.0, 0.5)",
+                delay_between_turns_dist="U(0, 1000)",
+                sys_prompt_ratio=0.0,
+                max_num_unique_sys_prompt=1,
+                shuffle_pool=False,
+                log_prefix="test-invariant",
+            )
+        return [
+            [(m.content, m.num_tokens) for m in session.messages]
+            for session in samples.chat_sessions
+        ]
+
+    assert sessions(4) == sessions(12)[:4]
+
+
+def test_a_truncated_session_still_ends_without_a_delay() -> None:
+    """A truncated session's last reply carries no delay.
+
+    Truncation cuts the plan short, so the emitted last reply is not the
+    planned last one.
+    """
+    tok = FakeTokenizer(model_max_length=200)
+    with TokenizerPool(tok, loader=fake_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=["alpha body text", "beta body text"],
+            num_sessions=2,
+            num_turns="3",  # only turn 0 fits the context budget
+            input_len="80",
+            output_len="20",
+            delay_between_turns_dist="30000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            shuffle_pool=False,
+            log_prefix="test",
+        )
+    assert samples.chat_sessions, "expected truncated-but-usable sessions"
+    for session in samples.chat_sessions:
+        assert session.messages[-1].source == "assistant"
+        assert session.messages[-1].delay_until_next_message is None
+
+
 def test_truncated_sessions_logged_once_in_aggregate(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -1136,7 +1212,7 @@ def test_truncated_sessions_logged_once_in_aggregate(
     per truncated session."""
     # model_max_length is small enough that a second turn always overflows the
     # 0.95 * max_context budget, so every session is truncated after turn 0.
-    tok = _FakeTokenizer(model_max_length=200)
+    tok = FakeTokenizer(model_max_length=200)
     pool_texts = ["alpha body text", "beta body text", "gamma body text"]
     num_sessions = 5
 
@@ -1144,8 +1220,8 @@ def test_truncated_sessions_logged_once_in_aggregate(
         "max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit"
     )
     with caplog.at_level(logging.INFO, logger=module):
-        with TokenizerPool(tok, loader=_fake_loader) as pool:
-            samples = build_chat_samples_from_user_text_pool(
+        with TokenizerPool(tok, loader=fake_loader) as pool:
+            samples = build_fitted_chat_samples(
                 pool=pool,
                 user_text_pool=pool_texts,
                 num_sessions=num_sessions,
@@ -1562,7 +1638,7 @@ def test_aa_requires_input_len() -> None:
     """input_len is mandatory."""
     dataset = _make_aa_dataset(["word " * 100])
     with pytest.raises(ValueError, match="input_len is required"):
-        dataset.sample_requests(num_requests=1, tokenizer=_FakeTokenizer())
+        dataset.sample_requests(num_requests=1, tokenizer=FakeTokenizer())
 
 
 def test_aa_sizes_prompts_to_budget_and_rotates_tasks() -> None:
@@ -1576,7 +1652,7 @@ def test_aa_sizes_prompts_to_budget_and_rotates_tasks() -> None:
 
     samples = dataset.sample_requests(
         num_requests=4,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         output_lengths=[1000, 1500, 2000, 1000],
         input_len=input_len,
     )
@@ -1604,7 +1680,7 @@ def test_aa_without_output_lengths_leaves_eos_enabled() -> None:
 
     samples = dataset.sample_requests(
         num_requests=2,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         input_len=2000,
     )
 
@@ -1620,7 +1696,7 @@ def test_aa_sampled_output_len_caps_with_eos_enabled() -> None:
 
     samples = dataset.sample_requests(
         num_requests=2,
-        tokenizer=_FakeTokenizer(),
+        tokenizer=FakeTokenizer(),
         input_len=2000,
         output_len=50,  # constant distribution -> deterministic cap
     )
@@ -1665,10 +1741,10 @@ def _has_system_block(content: str) -> bool:
 
 def test_system_prefix_lands_on_the_first_turn_only() -> None:
     """A session resends its history, so a later system block is a duplicate."""
-    tok = _FakeTokenizer(model_max_length=50_000)
+    tok = FakeTokenizer(model_max_length=50_000)
 
-    with TokenizerPool(tok, loader=_fake_loader) as pool:
-        samples = build_chat_samples_from_user_text_pool(
+    with TokenizerPool(tok, loader=fake_loader) as pool:
+        samples = build_fitted_chat_samples(
             pool=pool,
             user_text_pool=[f"body-{i} " * 40 for i in range(20)],
             num_sessions=3,
@@ -1692,3 +1768,633 @@ def test_system_prefix_lands_on_the_first_turn_only() -> None:
 
     # The prefix must still reach warmup now that only turn 0 carries one.
     assert samples.shared_contexts
+
+
+class _WordStartTokenizer:
+    """Fake tokenizer whose ids carry the leading space of a word.
+
+    A byte-level BPE behaves this way: a word that a repeat glues onto the
+    previous one loses its spaced id and falls back to per-character ids, so
+    the splice costs more ids than the two copies did apart.
+    """
+
+    unk_token_id = None
+    all_special_ids: frozenset[int] = frozenset()
+    vocab_size = 1000
+
+    _SPACED = {" the": 10, " cat": 11}
+    _BARE = {"the": 20, "cat": 21}
+    _CHARS = {c: 30 + i for i, c in enumerate("abcdefghijklmnopqrstuvwxyz")}
+    _SPACE = 60
+
+    def __init__(self, model_max_length: int = 50_000) -> None:
+        self.model_max_length = model_max_length
+        self.encode_calls = 0
+
+    def _reverse(self) -> dict[int, str]:
+        table = {tid: piece for piece, tid in self._SPACED.items()}
+        table.update({tid: piece for piece, tid in self._BARE.items()})
+        table.update({tid: char for char, tid in self._CHARS.items()})
+        table[self._SPACE] = " "
+        return table
+
+    def decode(
+        self, ids: list[int], skip_special_tokens: bool = False, **_: object
+    ) -> str:
+        table = self._reverse()
+        return "".join(table[tid] for tid in ids)
+
+    def encode(
+        self, text: str, add_special_tokens: bool = False, **_: object
+    ) -> list[int]:
+        self.encode_calls += 1
+        ids: list[int] = []
+        i = 0
+        while i < len(text):
+            piece, tid = self._match(text, i)
+            ids.append(tid)
+            i += len(piece)
+        return ids
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self._SPACE
+
+    def _match(self, text: str, i: int) -> tuple[str, int]:
+        # A spaced id only matches at a space, and a bare id only where a word
+        # starts, so a glued word lands on the per-character fallback.
+        word_start = i == 0 or text[i - 1] == " "
+        tables = [self._SPACED]
+        if word_start:
+            tables.append(self._BARE)
+        for table in tables:
+            for piece, tid in table.items():
+                if text.startswith(piece, i):
+                    return piece, tid
+        if text[i] == " ":
+            return " ", self._SPACE
+        return text[i], self._CHARS[text[i]]
+
+
+def test_repeat_count_adds_the_measured_seam_growth() -> None:
+    """A repeat's drift is per seam, and one measured seam gives it exactly.
+
+    A seam that lengthens the re-encode and one that shortens it both come
+    out exact, from the base encode and three short probe encodes, with no
+    re-encode of the whole body.
+    """
+    tok = _WordStartTokenizer()
+
+    tok.encode_calls = 0
+    glued = "the cat"
+    glued_text, glued_tokens = _text_scaled_to_token_length(tok, glued, 8)
+    assert tok.encode_calls == 4
+    assert len(tok.encode(glued_text)) > 8  # the seam lengthens the re-encode
+    assert glued_tokens == len(tok.encode(glued_text))
+
+    tok.encode_calls = 0
+    separated = "the cat "
+    separated_text, separated_tokens = _text_scaled_to_token_length(
+        tok, separated, 9
+    )
+    assert tok.encode_calls == 4
+    assert len(tok.encode(separated_text)) < 9  # the seam merges
+    assert separated_tokens == len(tok.encode(separated_text))
+
+
+def test_repeat_with_no_split_near_the_seam_reencodes() -> None:
+    """A copy with no split cannot bound its seam, so the count is exact."""
+    tok = _WordStartTokenizer()
+
+    tok.encode_calls = 0
+    text, num_tokens = _text_scaled_to_token_length(tok, "cat", 7, min_len=1)
+    # The base and the re-encode, with no probe.
+    assert tok.encode_calls == 2
+    assert num_tokens == len(tok.encode(text))
+
+
+def test_empty_body_with_no_minimum_scales_to_nothing() -> None:
+    """A body with no ids and no minimum length gives an empty turn."""
+    msg = build_scaled_user_message(_WordStartTokenizer(), "", 0, 0.0, 0, 0)
+    assert msg.content == ""
+    assert msg.num_tokens == 0
+
+
+class _CrossMergeBpe:
+    """Fake BPE whose space before a word merges across the word's characters.
+
+    Here ``pqr`` and ``stu`` are one character each, as multibyte UTF-8
+    characters are under a byte-level BPE, and the word ``pqrstu`` encodes
+    to those two ids. After a space, the space takes ``p`` and ``q``, and
+    the leftover ``r`` merges with ``s`` across the two characters, so the
+    spaced word costs four ids where a space and the word cost three. A space
+    and ``pqr`` alone still merge into one id, so the seam of a repeat looks
+    like a merge to any probe that only reads the two ids at the seam. GLM
+    5.3 splits a space before Korean and Japanese words the same way.
+    """
+
+    unk_token_id = None
+    all_special_ids: frozenset[int] = frozenset()
+
+    _MERGES = [
+        (" ", "p"),
+        (" p", "q"),
+        ("p", "q"),
+        ("pq", "r"),
+        ("r", "s"),
+        ("s", "t"),
+        ("st", "u"),
+        (" pq", "r"),
+    ]
+
+    def __init__(self) -> None:
+        pieces = [" ", "p", "q", "r", "s", "t", "u"]
+        pieces += [left + right for left, right in self._MERGES]
+        self._ids = {piece: tid for tid, piece in enumerate(pieces)}
+        self._pieces = dict(enumerate(pieces))
+
+    def encode(
+        self, text: str, add_special_tokens: bool = False, **_: object
+    ) -> list[int]:
+        ids: list[int] = []
+        for word in re.findall(r"\s*\S+|\s+", text):
+            ids += [self._ids[piece] for piece in self._merge(list(word))]
+        return ids
+
+    def decode(
+        self, ids: list[int], skip_special_tokens: bool = False, **_: object
+    ) -> str:
+        return "".join(self._pieces[tid] for tid in ids)
+
+    def convert_tokens_to_ids(self, token: str) -> int:
+        return self._ids[" "]
+
+    def _merge(self, symbols: list[str]) -> list[str]:
+        while True:
+            ranked = [
+                (self._MERGES.index(pair), i)
+                for i, pair in enumerate(itertools.pairwise(symbols))
+                if pair in self._MERGES
+            ]
+            if not ranked:
+                return symbols
+            _, i = min(ranked)
+            symbols[i : i + 2] = [symbols[i] + symbols[i + 1]]
+
+
+def test_seam_that_regroups_a_whole_word_is_counted() -> None:
+    """A seam is measured out to the next split, not just at its two ids.
+
+    The copy ends in a space and opens with a word the space regroups, so
+    every seam costs one id more than the copies' counts, while the space
+    and the copy's first id alone merge into one.
+    """
+    tok = _CrossMergeBpe()
+    body = "pqrstu "
+    ids = tok.encode(body)
+    assert len(ids) == 3
+    # The premise: the two ids at the seam merge, but the whole word grows.
+    assert len(tok.encode(tok.decode(ids[-1:] + ids[:1]))) == 1
+    assert len(tok.encode(body * 2)) == 2 * len(ids) + 1
+
+    text, num_tokens = _text_scaled_to_token_length(tok, body, 30, min_len=1)
+    assert text == body * 10
+    assert num_tokens == len(tok.encode(text)) == 39
+
+
+def test_truncation_end_allows_for_a_word_cut_in_two() -> None:
+    """A cut between words keeps the id count exact; one inside a word is bound.
+
+    The truncated text's last word is the only place its re-encode can differ,
+    so only a cut inside a word takes the per-junction allowance.
+    """
+    tok = _WordStartTokenizer()
+
+    mid_word_text, mid_word_tokens = _text_scaled_to_token_length(
+        tok, "the cats", 2, min_len=1
+    )
+    assert mid_word_text == "the cat"
+    real = len(tok.encode(mid_word_text))
+    assert mid_word_tokens >= real
+    assert mid_word_tokens <= real + _MAX_JUNCTION_GROWTH
+
+    boundary_text, boundary_tokens = _text_scaled_to_token_length(
+        tok, "the cat the cat", 2, min_len=1
+    )
+    assert boundary_text == "the cat"
+    assert boundary_tokens == len(tok.encode(boundary_text))
+
+
+def test_part_join_allowance_bounds_a_glued_marker() -> None:
+    """A marker glued onto the body costs ids the parts' own counts miss.
+
+    The marker and the body are counted apart, so the join can re-encode
+    longer; the allowance keeps the recorded count at or above the real one.
+    """
+    tok = _WordStartTokenizer()
+
+    marked = build_scaled_user_message(
+        tok,
+        "the cat",
+        4,
+        0.0,
+        0,
+        1,
+        unique_marker="zz",
+    )
+    real = len(tok.encode(marked.content))
+    # The premise: without the allowance the two parts' counts fall short.
+    assert real > len(tok.encode("zz")) + len(tok.encode("the cat"))
+    assert marked.num_tokens >= real
+    assert marked.num_tokens <= real + _MAX_JUNCTION_GROWTH
+
+    unmarked = build_scaled_user_message(tok, "the cat", 4, 0.0, 0, 1)
+    assert unmarked.num_tokens == len(tok.encode(unmarked.content))
+
+
+@pytest.fixture(scope="module")
+def byte_level_bpe() -> PreTrainedTokenizerFast:
+    """The Llama 3 tokenizer checked into the repo, so these tests run offline."""
+    path = os.environ.get("BYTE_LEVEL_BPE_TOKENIZER_JSON")
+    if not path:
+        pytest.skip("BYTE_LEVEL_BPE_TOKENIZER_JSON is set only under bazel")
+    return PreTrainedTokenizerFast(tokenizer_file=path)
+
+
+@pytest.mark.parametrize("cut", range(1, 8))
+def test_cut_through_a_multibyte_character_takes_the_allowance(
+    byte_level_bpe: PreTrainedTokenizerFast, cut: int
+) -> None:
+    """A cut that splits a character's UTF-8 bytes is never counted exact.
+
+    The kept bytes decode to U+FFFD, which no word-character test sees as part
+    of a word. Cuts 1 and 5 keep one of four byte ids, so the next id does not
+    complete the character either and adds no text after the cut.
+    """
+    tok = byte_level_bpe
+    text = "𠮷𠮷"
+    ids = tok.encode(text, add_special_tokens=False)
+    assert len(ids) == 8  # four byte-level ids per character
+
+    scaled_text, num_tokens = _text_scaled_to_token_length(
+        tok, text, cut, min_len=1
+    )
+    assert num_tokens >= len(tok.encode(scaled_text, add_special_tokens=False))
+    assert _cut_may_grow(tok, ids[:cut], ids)
+    if cut % 4:
+        assert scaled_text.endswith("\N{REPLACEMENT CHARACTER}")
+    assert num_tokens == cut + 3  # pins _MAX_JUNCTION_GROWTH
+
+
+@pytest.mark.parametrize("sys_prompt_ratio", [0.0, 0.5])
+def test_marker_join_counts_a_multibyte_word_it_merges_with(
+    byte_level_bpe: PreTrainedTokenizerFast, sys_prompt_ratio: float
+) -> None:
+    """The marker's trailing space merges into a Hangul word and costs ids.
+
+    The marker and the body are counted apart, and the join re-encodes two
+    ids longer, so a rule that trusts any join next to whitespace understates
+    the turn. The join is measured, so the marker-only turn is exact.
+    """
+    tok = byte_level_bpe
+    marker, body = "[7] ", "스크립트"
+
+    def count(text: str) -> int:
+        return len(tok.encode(text, add_special_tokens=False))
+
+    assert count(marker + body) == count(marker) + count(body) + 2
+    target = count(marker) + count(body)
+    if sys_prompt_ratio:
+        target *= 2
+
+    msg = build_scaled_user_message(
+        tok, body, target, sys_prompt_ratio, 0, 1, unique_marker=marker
+    )
+    assert msg.content.endswith(marker + body)
+    real = count(msg.content)
+    assert msg.num_tokens >= real
+    if not sys_prompt_ratio:
+        assert msg.num_tokens == real
+
+
+# ---------------------------------------------------------------------------
+# Agent rounds and text pools
+# ---------------------------------------------------------------------------
+
+
+def _tools(input_len: str = "40") -> list[ToolConfig]:
+    return [
+        ToolConfig.model_validate({"input-len": input_len, "output-len": "10"})
+    ]
+
+
+def _build(
+    tok: object,
+    loader: object,
+    *,
+    user_pool: list[str],
+    tool_pool: list[str] | None = None,
+    num_turns: str = "2",
+    rounds: str | None = "3",
+    sessions: int = 3,
+) -> ChatSamples:
+    with TokenizerPool(tok, loader=loader) as pool:  # type: ignore[arg-type]
+        return build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=user_pool,
+            num_sessions=sessions,
+            num_turns=num_turns,
+            input_len="40",
+            output_len="10",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=_tools() if rounds is not None else None,
+            agentic_rounds_per_turn=rounds,
+            tool_text_pool=tool_pool,
+            log_prefix="test",
+        )
+
+
+def test_agent_rounds_draw_from_the_tool_pool() -> None:
+    """Rounds take their bodies from the tool pool, human turns from theirs.
+
+    The tool entries are all under ``min_input_len``: a real result can be one
+    or two tokens, so the pool filter that guards the human pool must not run
+    here. If it did, these would be dropped and the human pool silently reused.
+    """
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    samples = _build(
+        tok,
+        _round_trip_loader,
+        user_pool=[f"HUMAN-{i} " * 20 for i in range(8)],
+        tool_pool=["ok", "0", "ab", "xy"],
+    )
+    assert samples.chat_sessions
+    for session in samples.chat_sessions:
+        users = [m for m in session.messages if m.source == "user"]
+        assert len(users) == 8, "2 human turns, each followed by 3 rounds"
+        assert sum("HUMAN-" in m.content for m in users) == 2
+        assert [m.is_agentic for m in users].count(True) == 6
+        # Round-trip tokenizer scales by repeating, so the seed text survives.
+        rounds = [m.content for m in users if m.is_agentic]
+        assert all("HUMAN-" not in body for body in rounds)
+        assert all(
+            any(seed in body for seed in ("ok", "0", "ab", "xy"))
+            for body in rounds
+        )
+
+
+def test_tool_cycle_is_independent_of_the_human_cycle() -> None:
+    """A shared cycle would perturb the tool pool as the human pool wraps."""
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    samples = _build(
+        tok,
+        _round_trip_loader,
+        user_pool=[f"HUMAN-{i} " * 20 for i in range(2)],  # wraps at once
+        tool_pool=[f"TOOL-{i} " * 20 for i in range(500)],  # never wraps
+        sessions=6,
+    )
+    drawn = [
+        m.content.split("TOOL-")[1].split()[0]
+        for s in samples.chat_sessions
+        for m in s.messages
+        if m.source == "user" and "TOOL-" in m.content
+    ]
+    # 6 sessions x 2 turns x 3 rounds against a 500-entry pool, so the tool
+    # cycle never wraps and every round takes a fresh entry -- which a cycle
+    # shared with the fast-wrapping human pool could not do.
+    assert len(drawn) == 36
+    assert len(set(drawn)) == len(drawn)
+
+
+def test_full_flag_path_builds_the_documented_shape() -> None:
+    """S U A (U* A* ...) U A (U* A* ...), driven the way the CLI drives it."""
+    args = ServingBenchmarkConfig(
+        model="m",
+        dataset_name="instruct-coder",
+        fit_distributions=True,
+        num_chat_sessions=2,
+        agentic_tool_profiles={
+            "tools": [{"input-len": "40", "output-len": "10", "delay": "250"}]
+        },
+        agentic_rounds_per_turn="3",
+    )
+    tools = _resolve_agentic_tool_profiles(args)
+    assert tools is not None
+
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"HUMAN-{i} " * 20 for i in range(8)],
+            num_sessions=2,
+            num_turns="2",
+            input_len="40",
+            output_len="10",
+            delay_between_turns_dist="30000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=tools,
+            agentic_rounds_per_turn=args.agentic_rounds_per_turn,
+            tool_text_pool=[f"TOOL-{i} " * 20 for i in range(60)],
+            log_prefix="test",
+        )
+
+    for session in samples.chat_sessions:
+        kinds = [
+            "U*" if m.is_agentic else "U"
+            for m in session.messages
+            if m.source == "user"
+        ]
+        assert kinds == ["U", "U*", "U*", "U*", "U", "U*", "U*", "U*"]
+        # Only the reply that closes a block waits on the human.
+        delays = [
+            m.delay_until_next_message
+            for m in session.messages
+            if m.source == "assistant"
+        ]
+        # Each reply carries the delay before whatever follows it: tool
+        # latency inside a block, human think-time before the next
+        # question. The session's last reply has nothing to follow it.
+        assert delays == [
+            250.0,
+            250.0,
+            250.0,
+            30000.0,
+            250.0,
+            250.0,
+            250.0,
+            None,
+        ]
+
+
+def _round_input_lens(samples: ChatSamples) -> list[int]:
+    return [
+        m.num_tokens
+        for s in samples.chat_sessions
+        for m in s.messages
+        if m.source == "user" and m.is_agentic
+    ]
+
+
+def _weighted_tools() -> list[ToolConfig]:
+    """Two tools whose input lengths tell them apart, 3:1 by weight."""
+    return [
+        ToolConfig.model_validate(
+            {"weight": 3, "input-len": "40", "output-len": "10"}
+        ),
+        ToolConfig.model_validate(
+            {"weight": 1, "input-len": "400", "output-len": "10"}
+        ),
+    ]
+
+
+def test_block_output_lengths_rotate_onto_the_calls() -> None:
+    """The block's decodes are tool calls; its answer to the human is last.
+
+    An assistant message inside the loop is the call to the *next* tool, so it
+    takes that tool's ``output-len``. Only the block's final assistant is the
+    prose answer, which is what ``--random-output-len`` describes.
+    """
+    tools = [
+        ToolConfig.model_validate(
+            {"input-len": "40", "output-len": "11", "delay": "200"}
+        )
+    ]
+    tok = _RoundTripTokenizer(model_max_length=1_000_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"HUMAN-{i} " * 30 for i in range(12)],
+            num_sessions=1,
+            num_turns="1",
+            input_len="50",
+            output_len="333",
+            delay_between_turns_dist="4000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=tools,
+            agentic_rounds_per_turn="2",
+            tool_text_pool=[f"TOOL-{i} " * 25 for i in range(12)],
+            log_prefix="test",
+        )
+    decodes = [
+        m.num_tokens
+        for m in samples.chat_sessions[0].messages
+        if m.source == "assistant"
+    ]
+    assert decodes == [11, 11, 333], (
+        "each in-loop decode is a tool call sized by its tool; the human's"
+        " output-len belongs to the final answer"
+    )
+
+
+def test_a_block_without_rounds_keeps_its_own_output_len() -> None:
+    """The rotation is the identity with no rounds, so S U A U A is intact."""
+    tok = _RoundTripTokenizer(model_max_length=1_000_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"HUMAN-{i} " * 30 for i in range(12)],
+            num_sessions=1,
+            num_turns="3",
+            input_len="50",
+            output_len="333",
+            delay_between_turns_dist="4000",
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            log_prefix="test",
+        )
+    decodes = [
+        m.num_tokens
+        for m in samples.chat_sessions[0].messages
+        if m.source == "assistant"
+    ]
+    assert decodes == [333, 333, 333]
+
+
+@pytest.mark.parametrize(
+    ("tools", "rounds"),
+    [(None, "3"), (_tools(), None)],
+    ids=["rounds-without-tools", "tools-without-rounds"],
+)
+def test_agentic_arguments_are_required_together(
+    tools: list[ToolConfig] | None, rounds: str | None
+) -> None:
+    """Half a pair used to parse and then build a plain multiturn workload."""
+    tok = _RoundTripTokenizer(model_max_length=100_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        with pytest.raises(ValueError, match="must be given together"):
+            build_fitted_chat_samples(
+                pool=pool,
+                user_text_pool=["BODY " * 20],
+                num_sessions=1,
+                num_turns="1",
+                input_len="40",
+                output_len="10",
+                delay_between_turns_dist=None,
+                sys_prompt_ratio=0.0,
+                max_num_unique_sys_prompt=1,
+                tools=tools,
+                agentic_rounds_per_turn=rounds,
+            )
+
+
+def test_round_tool_mix_follows_the_weights() -> None:
+    tok = _RoundTripTokenizer(model_max_length=1_000_000)
+    with TokenizerPool(tok, loader=_round_trip_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=[f"BODY-{i} " * 40 for i in range(50)],
+            num_sessions=40,
+            num_turns="2",
+            input_len="40",
+            output_len="10",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0.0,
+            max_num_unique_sys_prompt=1,
+            min_input_len=4,
+            tools=_weighted_tools(),
+            agentic_rounds_per_turn="25",
+            log_prefix="test",
+        )
+
+    lens = _round_input_lens(samples)
+    assert len(lens) == 40 * 2 * 25
+    light = sum(1 for n in lens if n < 100)
+    # 3:1 over 2000 draws; binomial sd is ~20, so this is generous.
+    assert 0.70 < light / len(lens) < 0.80
+
+
+@pytest.mark.parametrize("max_output_len", [None, 64])
+def test_fitted_output_ceiling_precedes_context_budget(
+    max_output_len: int | None,
+) -> None:
+    tok = FakeTokenizer(model_max_length=1000)
+    with TokenizerPool(tok, loader=fake_loader) as pool:
+        samples = build_fitted_chat_samples(
+            pool=pool,
+            user_text_pool=["body " * 40],
+            num_sessions=1,
+            num_turns="3",
+            input_len="50",
+            output_len="2000",
+            delay_between_turns_dist=None,
+            sys_prompt_ratio=0,
+            max_num_unique_sys_prompt=1,
+            max_output_len=max_output_len,
+        )
+    if max_output_len is None:
+        assert not samples.chat_sessions
+    else:
+        assert len(samples.chat_sessions) == 1
+        outputs = [
+            message.num_tokens
+            for message in samples.chat_sessions[0].messages
+            if message.source == "assistant"
+        ]
+        assert outputs == [64, 64, 64]

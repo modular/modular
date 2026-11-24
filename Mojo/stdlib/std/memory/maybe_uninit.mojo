@@ -14,8 +14,6 @@
 initialized.
 """
 
-from std.builtin.rebind import downcast
-from std.os import abort
 from std.memory import unsafe_memset_zero
 from std.traits import (
     IsTriviallyCopyable,
@@ -26,20 +24,19 @@ from std.traits import (
 
 struct MaybeUninit[T: AnyType](
     Defaultable,
-    Deinitable where (
-        IsTriviallyDeinitable[T],
+    Deinitable where IsTriviallyDeinitable[T] else (
         "T must be trivially deinitable, since MaybeUninit never runs T's"
-        " __deinit__",
+        " __deinit__"
     ),
     ImplicitlyCopyable where (
-        IsTriviallyCopyable[T] and IsTriviallyMovable[T],
+        IsTriviallyCopyable[T] and IsTriviallyMovable[T]
+    ) else (
         "T must be trivially copyable and movable, since copying"
-        " MaybeUninit only copies the underlying bits",
+        " MaybeUninit only copies the underlying bits"
     ),
-    Movable where (
-        IsTriviallyMovable[T],
+    Movable where IsTriviallyMovable[T] else (
         "T must be trivially movable, since moving MaybeUninit only moves"
-        " the underlying bits",
+        " the underlying bits"
     ),
     RegisterPassable where (
         conforms_to(T, RegisterPassable) and IsTriviallyMovable[T]
@@ -233,12 +230,12 @@ struct MaybeUninit[T: AnyType](
 
     var _array: Self._mlir_type
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         """Construct a `MaybeUninit` in an uninitialized state."""
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self, var value: Self.T, /
     ) where conforms_to(Self.T, Movable):
@@ -251,7 +248,7 @@ struct MaybeUninit[T: AnyType](
         self.unsafe_write(value^)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def zeroed(out result: Self):
         """Construct a `MaybeUninit` in an uninitialized state, with the memory
         set to all 0 bytes.
@@ -266,7 +263,7 @@ struct MaybeUninit[T: AnyType](
         result = Self()
         unsafe_memset_zero(Pointer(to=result), 1)
 
-    @always_inline
+    @inline(.always)
     def write(
         mut self,
         var value: Self.T,
@@ -285,7 +282,7 @@ struct MaybeUninit[T: AnyType](
         """
         self.unsafe_ptr().unsafe_write(value^)
 
-    @always_inline
+    @inline(.always)
     def unsafe_write(
         mut self, var value: Self.T, /
     ) where conforms_to(Self.T, Movable):
@@ -310,7 +307,39 @@ struct MaybeUninit[T: AnyType](
         """
         self.unsafe_ptr().unsafe_write(value^)
 
-    @always_inline
+    @inline(.always)
+    def unsafe_write(mut self, *, var init_with: Some[def() -> Self.T]):
+        """Initialize this memory with the value returned by `init_with`.
+
+        The value returned by `init_with` is constructed directly into this
+        memory rather than being constructed elsewhere and then moved, so `T`
+        does not need to be `Movable`.
+
+        ```mojo
+        from std.memory import MaybeUninit
+
+        @fieldwise_init
+        struct Pinned(not Movable):
+            var value: Int
+
+        var uninit = MaybeUninit[Pinned]()
+        ref value = uninit.unsafe_write(init_with=lambda () -> Pinned: Pinned(7))
+        print(value)  # => 7
+        ```
+
+        Args:
+            init_with: A function that constructs and returns the value to
+                store in memory.
+
+        Safety:
+
+        - If the memory is already initialized, calling this leaks the
+          previous value: its destructor never runs. Call `unsafe_deinit()`
+          first if the previous value needs to be destroyed.
+        """
+        self.unsafe_ptr().unsafe_write(init_with=init_with)
+
+    @inline(.always)
     def unsafe_assume_init(
         deinit self,
     ) -> Self.T where conforms_to(Self.T, Movable):
@@ -331,7 +360,7 @@ struct MaybeUninit[T: AnyType](
         """
         return self.unsafe_ptr().unsafe_take_pointee()
 
-    @always_inline
+    @inline(.always)
     def unsafe_assume_init(ref self) -> ref[self] Self.T:
         """Returns a reference to the internal value.
 
@@ -348,7 +377,7 @@ struct MaybeUninit[T: AnyType](
         """
         return self.unsafe_ptr()[]
 
-    @always_inline
+    @inline(.always)
     def unsafe_deinit(deinit self) where conforms_to(Self.T, Deinitable):
         """Destroys the contained value.
 
@@ -364,7 +393,7 @@ struct MaybeUninit[T: AnyType](
         """
         self.unsafe_ptr().unsafe_deinit_pointee()
 
-    @always_inline
+    @inline(.always)
     def unsafe_forget(deinit self):
         """Discards this `MaybeUninit` without destroying its contents.
 
@@ -381,7 +410,7 @@ struct MaybeUninit[T: AnyType](
         """
         pass
 
-    @always_inline
+    @inline(.always)
     def unsafe_ptr(
         ref self,
     ) -> Pointer[Self.T, origin_of(self)]:

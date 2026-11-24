@@ -104,6 +104,7 @@ def test_matches_kv_cache_buffer_to_memory(replicated: bool) -> None:
     """
     tp = 2
     kv_buffer = KVCacheBuffer(
+        leaf_id="full_group",
         replicates_kv_across_tp=replicated,
         # bfloat16 values fold to 2 bytes per element in the uint8 page view.
         values=[
@@ -118,6 +119,7 @@ def test_matches_kv_cache_buffer_to_memory(replicated: bool) -> None:
 
     values_bytes, scales_bytes = 64 * 2, 4 * 4
     stored_per_unit = 1 if replicated else tp
-    values_mem, scales_mem = kv_buffer.to_memory()
+    units = kv_buffer.to_memory()
+    values_mem, scales_mem = units["full_group"], units["full_group/scales"]
     assert values_mem.host_bytes_per_page == stored_per_unit * values_bytes
     assert scales_mem.host_bytes_per_page == stored_per_unit * scales_bytes

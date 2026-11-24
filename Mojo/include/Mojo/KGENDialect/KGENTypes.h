@@ -25,34 +25,49 @@
 #include "Mojo/KGENDialect/KGENTypeInterfaces.h"
 #include "Support/ForwardDecls.h"
 #include "Support/MDialect/MTypeInterfaces.h"
+#include "Support/SymbolExport.h"
 
 namespace M::KGEN {
+/// Return the size a struct field occupies before the next field. This is the
+/// alloc size, except for an untagged union, which occupies only its store
+/// size: the largest member's alloc size, not rounded up to the union's
+/// alignment. The next field can then start in the union's tail padding, so
+/// an enum's tag goes directly after its largest payload. This is safe because
+/// every write of a union stops at its store size: initialization, a
+/// whole-value copy, a member store and an interpreter write. A union's stride
+/// (`size_of`, array elements) stays its alloc size.
+std::optional<int64_t> getStructFieldSize(TargetInfoAttr target, Type type);
+
 class ParameterEvaluationContext;
 class FnMetadataAttrInterface;
 class FuncInterface;
 class ParamDeclAttr;
 class ParamDeclArrayAttr;
+class ParamsBindingArrayAttr;
 struct PartiallySpecializedInputParams;
 class FuncSymbolAttr;
+class FuncOp;
+class GeneratorAttr;
 class FuncTypeGeneratorType;
 class FuncLiteralTypeGeneratorType;
 class ConstraintAttr;
 class FnMetadataAttr;
 class PogListAttr;
 class StructDefFieldAttr;
-class SymbolConstantAttr;
 class ParamListType;
 class ParamListAttr;
 } // namespace M::KGEN
 
 #define GET_TYPEDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Mojo/KGENDialect/KGENTypes.h.inc"
+#pragma GCC visibility pop
 
 namespace M::KGEN {
 //===----------------------------------------------------------------------===//
 // FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
-class FuncTypeGeneratorType : public GeneratorType {
+class MODULAR_CXX_EXPORT FuncTypeGeneratorType : public GeneratorType {
 public:
   using GeneratorType::GeneratorType;
   FuncTypeGeneratorType(GeneratorType sig);
@@ -68,11 +83,11 @@ public:
 
   /// Get this GeneratorType with some parameters bound.
   FuncTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           function_ref<InFlightDiagnostic()> emitErrorFn = {});
   FuncTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           Location location);
 
@@ -110,16 +125,19 @@ public:
 
   /// Get this GeneratorType with some parameters bound.
   FuncLiteralTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           function_ref<InFlightDiagnostic()> emitErrorFn = {});
   FuncLiteralTypeGeneratorType
-  getSpecializedGenerator(ArrayRef<TypedAttr> paramBindings,
+  getSpecializedGenerator(ParamsBindingArrayAttr paramBindings,
                           ParameterEvaluationContext *evaluationContext,
                           Location location);
 
   // Unwrap the target literal from the literal type.
-  SymbolConstantAttr getSymbolConstantAttr();
+  TypedAttr getFuncSymbolAttr();
+  /// Return the signature of the target literal, i.e. this generator with the
+  /// FuncLiteralType body replaced by its FuncType.
+  FuncTypeGeneratorType getNonLiteralGeneratorType();
 
   FuncLiteralType getBody();
   FuncLiteralType getInstantiatedBody();

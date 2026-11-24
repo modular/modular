@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.Module."""
+"""Tests for max.nn.legacy.Module."""
 
 from __future__ import annotations
 
@@ -18,18 +18,18 @@ import asyncio
 from typing import Generic, TypeVar
 
 import pytest
+from max import functional as F
 from max.driver import CPU, Accelerator, Device, accelerator_count
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import (
+from max.graph import DeviceRef, Dim, DimLike
+from max.nn import (
     Embedding,
     Linear,
     Module,
     Sequential,
     module_dataclass,
 )
-from max.experimental.tensor import Tensor, TensorType
-from max.graph import DeviceRef, Dim, DimLike
+from max.tensor.tensor import Tensor, TensorType
 
 
 # Tricky: because this function adds two dimensions, it needs
@@ -225,7 +225,7 @@ class GPTModel(Module[[Tensor], Tensor]):
 
     def forward(self, in_idx: Tensor) -> Tensor:
         tok_embeds = self.token_embedding(in_idx)
-        pos_embeds = self.positional_embedding(Tensor.range_like(in_idx.type))
+        pos_embeds = self.positional_embedding(Tensor.range_like(in_idx))
         x = tok_embeds + pos_embeds  # Shape [batch_size, num_tokens, emb_size]
         return Sequential(
             self.layers,

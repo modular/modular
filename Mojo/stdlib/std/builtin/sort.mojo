@@ -30,7 +30,7 @@ comptime insertion_sort_threshold = 32
 """Threshold below which insertion sort is used instead of quicksort."""
 
 
-@always_inline
+@inline(.always)
 def _insertion_sort[
     T: Copyable,
     origin: MutOrigin,
@@ -57,7 +57,7 @@ def _insertion_sort[
 
 
 # put everything that's "<" to the left of pivot
-@always_inline
+@inline(.always)
 def _quicksort_partition_right[
     T: Copyable,
     origin: MutOrigin,
@@ -85,7 +85,7 @@ def _quicksort_partition_right[
 
 
 # put everything that's "<=" to the left of pivot
-@always_inline
+@inline(.always)
 def _quicksort_partition_left[
     T: Copyable,
     origin: MutOrigin,
@@ -132,7 +132,7 @@ def _heap_sort_fix_down[
         j = i * 2 + 1
 
 
-@always_inline
+@inline(.always)
 def _heap_sort[
     T: Copyable,
     origin: MutOrigin,
@@ -149,7 +149,7 @@ def _heap_sort[
         _heap_sort_fix_down(span, 0, cmp_fn)
 
 
-@always_inline
+@inline(.always)
 def _estimate_initial_height(size: Int) -> Int:
     # Compute the log2 of the size rounded upward.
     var log2: Int = (bit_width_of[DType.int]() - 1) ^ count_leading_zeros(
@@ -160,7 +160,7 @@ def _estimate_initial_height(size: Int) -> Int:
     return max(2, Int(ceil(1.3 * Float64(log2))))
 
 
-@always_inline
+@inline(.always)
 def _delegate_small_sort[
     T: Copyable,
     origin: MutOrigin,
@@ -190,7 +190,7 @@ def _delegate_small_sort[
 #     var len: Int
 
 
-@always_inline
+@inline(.always)
 def _quicksort[
     T: Copyable,
     origin: MutOrigin,
@@ -370,7 +370,7 @@ def _stable_sort[
     origin: MutOrigin,
     //,
 ](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
-    var layout = Layout[T](count=len(span))
+    var layout = Layout[T](length=len(span))
     var temp_buff = alloc(layout)
     var temp_buff_span = temp_buff.unsafe_span()
     _stable_sort_impl(span, temp_buff_span, cmp_fn)
@@ -382,7 +382,7 @@ def _stable_sort[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _partition[
     T: Copyable,
     origin: MutOrigin,
@@ -489,17 +489,39 @@ def sort[
     *,
     stable: Bool = False,
 ](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
-    """Sort a span in-place.
-    The function doesn't return anything, the span is updated in-place.
+    """Sorts a span in place using a custom comparison function.
+
+    The comparison function defines the sort order. It receives two elements,
+    `a` and `b`, and returns `True` if `a` should come before `b` in the sorted
+    result, otherwise it returns `False`.
 
     Parameters:
-        T: Type of the underlying data.
-        origin: Origin of span.
-        stable: Whether the sort should be stable.
+        T: The element type of the span.
+        origin: The origin of the span.
+        stable: Whether to preserve the relative order of equal elements
+            (defaults to `False`, elements that compare as equal can end
+            up in a different relative order than they started in).
 
     Args:
-        span: The span to be sorted.
-        cmp_fn: The comparison function.
+        span: The span to sort. You can directly pass a `List` or `Array`,
+            because they implicitly convert to a `Span`.
+        cmp_fn: The comparison function. The function receives two elements,
+            `a` and `b`, and must return `True` if `a` should come before `b` in
+            the sorted result, otherwise it must return `False`. It must return
+            `False` even when the two elements are equal, so it behaves like a
+            strict "less than" comparison.
+
+    For example, this sorts integers in descending order:
+
+    ```mojo
+    var numbers = [3, 1, 4, 1, 5]
+
+    def descending(a: Int, b: Int) -> Bool:
+        return a > b
+
+    sort(numbers, descending)
+    print(numbers)  # [5, 4, 3, 1, 1]
+    ```
     """
 
     _sort[stable=stable](span, cmp_fn)
@@ -512,15 +534,32 @@ def sort[
     *,
     stable: Bool = False,
 ](span: Span[T, origin]):
-    """Sort a span of comparable elements in-place.
+    """Sorts a span of comparable elements in place in ascending order.
+
+    Elements are ordered using the `<` operator, so the smallest element ends
+    up first. For example, integers sort from lowest to highest and strings
+    sort in lexicographic order. To sort in a different order, use the
+    overload that takes a comparison function, `sort(span, cmp_fn)`.
 
     Parameters:
-        T: The order comparable collection element type.
-        origin: Origin of span.
-        stable: Whether the sort should be stable.
+        T: The element type of the span. Must conform to `Copyable` and
+            `Comparable`.
+        origin: The origin of the span.
+        stable: Whether to preserve the relative order of equal elements
+            (defaults to `False`, elements that compare as equal can end
+            up in a different relative order than they started in).
 
     Args:
-        span: The span to be sorted.
+        span: The span to sort. You can directly pass a `List` or `Array`,
+          because they implicitly convert to a `Span`.
+
+    For example:
+
+    ```mojo
+    var numbers = [3, 1, 4, 1, 5]
+    sort(numbers)
+    print(numbers)  # [1, 1, 3, 4, 5]
+    ```
     """
 
     def _cmp_fn(a: T, b: T) -> Bool:
@@ -534,7 +573,7 @@ def sort[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _sort2[
     T: Copyable,
     origin: MutOrigin,
@@ -549,7 +588,7 @@ def _sort2[
         span.unsafe_swap_elements(offset0, offset1)
 
 
-@always_inline
+@inline(.always)
 def _sort3[
     T: Copyable,
     origin: MutOrigin,
@@ -566,7 +605,7 @@ def _sort3[
     _sort2(span, offset0, offset1, cmp_fn)
 
 
-@always_inline
+@inline(.always)
 def _sort_partial_3[
     T: Copyable,
     origin: MutOrigin,
@@ -587,7 +626,7 @@ def _sort_partial_3[
         span.unsafe_swap_elements(offset1, offset2)
 
 
-@always_inline
+@inline(.always)
 def _small_sort[
     T: Copyable,
     origin: MutOrigin,

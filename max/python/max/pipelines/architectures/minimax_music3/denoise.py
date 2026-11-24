@@ -138,8 +138,12 @@ def blend(
     previous: npt.NDArray[np.float32],
     time: float,
 ) -> npt.NDArray[np.float32]:
-    """Interpolate the overlap from its own initial noise toward the previous
-    window's latents.
+    """Interpolates the overlap toward the previous window's latents.
+
+    At ``time = 0`` this is the noise the window was seeded with, and at ``time
+    = 1`` it is the previous window's latents, so re-running it before every
+    Euler step drags the two windows into agreement over the course of the
+    denoising.
 
     At ``time = 0`` this is the noise the window was seeded with, and at
     ``time = 1`` it is the previous window's latents, so re-running it before

@@ -15,11 +15,14 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from std.collections import List, Set
-from std.hashlib.hasher import Hasher
+from std.builtin.variadics import _MLIR
+from std.collections import Set
+from std.hash.hasher import Hasher
+from std.ffi import c_long
 
 from std.python import (
     ConvertibleFromPython,
+    ConvertibleToPython,
     Python,
     PythonObject,
 )
@@ -68,7 +71,9 @@ struct Bool(
     Boolable,
     Comparable,
     ConvertibleFromPython,
+    ConvertibleToPython,
     Defaultable,
+    EnumLike,
     Floatable,
     Hashable,
     ImplicitlyCopyable,
@@ -94,6 +99,17 @@ struct Bool(
 
     comptime MAX: Bool = True
     """The maximum value of a Bool."""
+
+    # ===-------------------------------------------------------------------===#
+    # EnumLike
+    # ===-------------------------------------------------------------------===#
+
+    comptime _enum_case_names = ParameterList.of[
+        "False".value, "True".value
+    ].values
+    comptime _enum_case_types: _MLIR.KGENParamListType[AnyType] = TypeList.of[
+        Trait=AnyType, Tuple[], Tuple[]
+    ].values
 
     # ===-------------------------------------------------------------------===#
     # Trivial bits for special functions.
@@ -136,7 +152,7 @@ struct Bool(
         """
         self._mlir_value = mlir_value
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __init__[T: Boolable, //](out self, value: T):
         """Set the bool representation of the object.
 
@@ -157,7 +173,7 @@ struct Bool(
         """
         self = False
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     @implicit
     def __init__(out self, value: Scalar[.bool]):
         """Convert a scalar SIMD value to a Bool.
@@ -203,7 +219,7 @@ struct Bool(
             self._mlir_value
         )
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """
         Formats this boolean to the provided Writer.
@@ -220,7 +236,7 @@ struct Bool(
             StaticString("True") if self else StaticString("False")
         )
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the repr of this boolean to a writer.
 
@@ -241,7 +257,23 @@ struct Bool(
         """
         return select[Int](self, 1, 0)
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
+    def _get_enum_discriminant(self) -> Int:
+        """Return 0 for `False` and 1 for `True`."""
+        return self.__int__()
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        """Bool cases have no payload; this is never called for a valid match.
+        """
+        while True:
+            pass
+
+    @inline(.nodebug)
     def __float__(self) -> Float64:
         """Convert this Bool to a float.
 
@@ -364,7 +396,7 @@ struct Bool(
         """
         return __mlir_op.`pop.simd.and`(self._mlir_value, rhs._mlir_value)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __iand__(mut self, rhs: Bool):
         """Computes `self & rhs` and store the result in `self`.
 
@@ -400,7 +432,7 @@ struct Bool(
         """
         return __mlir_op.`pop.simd.or`(self._mlir_value, rhs._mlir_value)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __ior__(mut self, rhs: Bool):
         """Computes `self | rhs` and store the result in `self`.
 
@@ -436,7 +468,7 @@ struct Bool(
         """
         return __mlir_op.`pop.simd.xor`(self._mlir_value, rhs._mlir_value)
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __ixor__(mut self, rhs: Bool):
         """Computes `self ^ rhs` and stores the result in `self`.
 
@@ -457,6 +489,7 @@ struct Bool(
         """
         return lhs ^ self
 
+    @stable(since="1.3")
     def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
@@ -467,6 +500,15 @@ struct Bool(
             hasher: The hasher instance.
         """
         hasher._update_with_simd(Scalar[.bool](self))
+
+    def to_python_object(var self) -> PythonObject:
+        """Convert this value to a `PythonObject`.
+
+        Returns:
+            A `PythonObject` representing the value.
+        """
+        ref cpy = Python().cpython()
+        return PythonObject(from_owned=cpy.PyBool_FromLong(c_long(Int(self))))
 
     @doc_hidden
     def __init__(out self, *, py: PythonObject) raises:
@@ -493,16 +535,27 @@ def any[
     IterableType.IteratorType[origin_of(iterable)].Element,
     Boolable & Deinitable,
 ):
-    """Checks if **all** elements in the list are truthy.
+    """Checks whether any element in the iterable is truthy.
+
+    Checks elements in order and stops at the first truthy element. An empty
+    iterable returns `False`.
 
     Parameters:
-        IterableType: The type of the iterable containing `Boolable` items.
+        IterableType: The type of the iterable. Its elements must conform to
+            `Boolable` and `Deinitable`.
 
     Args:
         iterable: The iterable to check.
 
     Returns:
-        `True` if **any** element in the list is truthy, `False` otherwise.
+        `True` if any element is truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    print(any([0, 0, 5]))  # True
+    print(any([0, 0, 0]))  # False
+    ```
     """
 
     for var item0 in iterable:
@@ -512,15 +565,43 @@ def any[
     return False
 
 
-def any(value: SIMD) -> Bool:
-    """Checks if **any** element in the simd vector is truthy.
+def any(
+    var iterable: Some[IterableOwned],
+) -> Bool where conforms_to(
+    type_of(iterable).IteratorOwnedType.Element,
+    Boolable & Deinitable,
+):
+    """Checks if **any** element in the iterable is truthy, consuming the
+    iterable.
 
     Args:
-        value: The simd vector to check.
+        iterable: The iterable to consume and check.
 
     Returns:
-        `True` if **any** element in the simd vector is truthy, `False`
-        otherwise.
+        `True` if **any** element in the iterable is truthy, `False` otherwise.
+    """
+    for var item0 in iterable^:
+        var item = item0^
+        if item:
+            return True
+    return False
+
+
+def any(value: SIMD) -> Bool:
+    """Checks whether any element in the SIMD vector is truthy.
+
+    Args:
+        value: The SIMD vector to check.
+
+    Returns:
+        `True` if any element is truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    var flags = SIMD[.bool, 4](True, False, False, False)
+    print(any(flags))  # True
+    ```
     """
     return value.cast[.bool]().reduce_or()
 
@@ -536,16 +617,27 @@ def all[
     IterableType.IteratorType[origin_of(iterable)].Element,
     Boolable & Deinitable,
 ):
-    """Checks if **all** elements in the list are truthy.
+    """Checks whether all elements in the iterable are truthy.
+
+    Checks elements in order and stops at the first falsy element. An empty
+    iterable returns `True`.
 
     Parameters:
-        IterableType: The type of the iterable containing `Boolable` items.
+        IterableType: The type of the iterable. Its elements must conform to
+            `Boolable` and `Deinitable`.
 
     Args:
         iterable: The iterable to check.
 
     Returns:
-        `True` if **all** elements in the iterable are truthy, `False` otherwise.
+        `True` if all elements are truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    print(all([1, 2, 3]))  # True
+    print(all([1, 0, 3]))  # False
+    ```
     """
     for var item0 in iterable:
         var item = item0^
@@ -554,14 +646,42 @@ def all[
     return True
 
 
-def all(value: SIMD) -> Bool:
-    """Checks if **all** elements in the simd vector are truthy.
+def all(
+    var iterable: Some[IterableOwned],
+) -> Bool where conforms_to(
+    type_of(iterable).IteratorOwnedType.Element,
+    Boolable & Deinitable,
+):
+    """Checks if **all** elements in the iterable are truthy, consuming the
+    iterable.
 
     Args:
-        value: The simd vector to check.
+        iterable: The iterable to consume and check.
 
     Returns:
-        `True` if **all** elements in the simd vector are truthy, `False`
-        otherwise.
+        `True` if **all** elements in the iterable are truthy, `False` otherwise.
+    """
+    for var item0 in iterable^:
+        var item = item0^
+        if not item:
+            return False
+    return True
+
+
+def all(value: SIMD) -> Bool:
+    """Checks whether all elements in the SIMD vector are truthy.
+
+    Args:
+        value: The SIMD vector to check.
+
+    Returns:
+        `True` if all elements are truthy, `False` otherwise.
+
+    For example:
+
+    ```mojo
+    var flags = SIMD[.bool, 4](True, True, True, False)
+    print(all(flags))  # False
+    ```
     """
     return value.cast[.bool]().reduce_and()

@@ -24,6 +24,7 @@
 #include "Support/SymbolExport.h"
 
 #if MODULAR_KGEN_PROFILING_ENABLED
+#include "Support/Profiling/CaptureLabels.h"
 #include "Support/Profiling/Ranges.h"
 #include "llvm/ADT/StringRef.h"
 #endif
@@ -121,6 +122,51 @@ KGEN_CompilerRT_RangeIsRecording(void) {
   return M::Profiling::isRangeRecordingActive() ? 1 : 0;
 #else
   return 0;
+#endif
+}
+
+// Push an op label for the device-graph capture in progress, if any.
+// Returns 1 iff pushed; the caller must pair each such push with one
+// KGEN_CompilerRT_CaptureLabelPop on the same thread. One relaxed atomic
+// load outside a capture. Same `namePtr` contract as
+// KGEN_CompilerRT_RangeBegin.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
+KGEN_CompilerRT_CaptureLabelPush(const char *namePtr, size_t nameLen) {
+#if MODULAR_KGEN_PROFILING_ENABLED
+  return M::Profiling::pushCaptureLabel(llvm::StringRef(namePtr, nameLen)) ? 1
+                                                                           : 0;
+#else
+  return 0;
+#endif
+}
+
+// The calling thread's innermost capture op as a token for
+// KGEN_CompilerRT_CaptureLabelAdopt, or 0 when none is pushed.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT uint64_t
+KGEN_CompilerRT_CaptureLabelCurrent(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
+  return M::Profiling::currentCaptureOp();
+#else
+  return 0;
+#endif
+}
+
+// Adopt a token from KGEN_CompilerRT_CaptureLabelCurrent on a worker thread.
+// Returns 1 iff adopted; pair each such call with one
+// KGEN_CompilerRT_CaptureLabelPop on the same thread.
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT size_t
+KGEN_CompilerRT_CaptureLabelAdopt(uint64_t opSeq) {
+#if MODULAR_KGEN_PROFILING_ENABLED
+  return M::Profiling::adoptCaptureOp(opSeq) ? 1 : 0;
+#else
+  return 0;
+#endif
+}
+
+COMPILERRT_EXPORT COMPILERRT_VISIBILITY_EXPORT void
+KGEN_CompilerRT_CaptureLabelPop(void) {
+#if MODULAR_KGEN_PROFILING_ENABLED
+  M::Profiling::popCaptureLabel();
 #endif
 }
 

@@ -21,7 +21,7 @@ def test_map() raises:
     def add_one(x: Int) -> Int:
         return x + 1
 
-    var m = map[add_one](l)
+    var m = map(l, add_one)
     assert_equal(next(m), 2)
     assert_equal(next(m), 3)
     assert_equal(next(m), 4)
@@ -31,7 +31,7 @@ def test_map() raises:
     def to_str(x: Int) -> String:
         return String(x)
 
-    var m2 = map[to_str](l)
+    var m2 = map(l, to_str)
     assert_equal(next(m2), "1")
     assert_equal(next(m2), "2")
     assert_equal(next(m2), "3")
@@ -51,8 +51,8 @@ def test_map_function_can_take_owned_value() raises:
 
     # ensure the number of copies are equal between an "owned" and
     # "borrowed" mapping function.
-    var m1 = map[report_copies_owned](list)
-    var m2 = map[report_copies_ref](list)
+    var m1 = map(list, report_copies_owned)
+    var m2 = map(list, report_copies_ref)
 
     assert_equal(next(m1), next(m2))
 
@@ -62,7 +62,7 @@ def test_map_owned() raises:
         return x * 2
 
     var l: List[Int] = [1, 2, 3]
-    var m = map[double](l^)
+    var m = map(l^, double)
     assert_equal(next(m), 2)
     assert_equal(next(m), 4)
     assert_equal(next(m), 6)

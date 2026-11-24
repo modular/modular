@@ -22,6 +22,8 @@ F: filter weights [M, C, K, K]
 Y: output feature maps [M, H_out, W_out]
 """
 
+from std.memory.alloc import unsafe_alloc
+
 
 def conv_layer_forward(
     M: Int,
@@ -29,9 +31,9 @@ def conv_layer_forward(
     H: Int,
     W: Int,
     K: Int,
-    X: UnsafePointer[mut=False, Float32, _],
-    F: UnsafePointer[mut=False, Float32, _],
-    Y: UnsafePointer[mut=True, Float32, _],
+    X: ImmPointer[Float32, _],
+    F: ImmPointer[Float32, _],
+    Y: MutPointer[Float32, _],
 ):
     """Single image convolution (Figure 19.3).
 
@@ -78,9 +80,9 @@ def main():
     var W_out = W - K + 1
 
     # Allocate memory
-    var X = alloc[Float32](C * H * W)
-    var F = alloc[Float32](M * C * K * K)
-    var Y = alloc[Float32](M * H_out * W_out)
+    var X = unsafe_alloc[Float32](C * H * W)
+    var F = unsafe_alloc[Float32](M * C * K * K)
+    var Y = unsafe_alloc[Float32](M * H_out * W_out)
 
     # Initialize with simple values (all 1.0)
     for i in range(C * H * W):
@@ -126,6 +128,6 @@ def main():
         print("\nFigure 19.3 Test Failed!")
 
     # Cleanup
-    X.free()
-    F.free()
-    Y.free()
+    X.unsafe_free()
+    F.unsafe_free()
+    Y.unsafe_free()

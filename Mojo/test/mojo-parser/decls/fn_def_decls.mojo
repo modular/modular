@@ -224,7 +224,7 @@ def use_ref_result() raises:
 
     # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
     # CHECK-NEXT: lit.call {{.*}}decls::@"def_ref_result{{.*}}(%a, %__error__, %__call_result_tmp__)
-    # CHECK-NEXT: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
+    # CHECK: [[REF:%.*]] = lit.load.consume %__call_result_tmp__
     # CHECK-NEXT: lit.call {{.*}}MemoryOnly::@"__init__{{.*}}([[REF]])
     def_ref_result(a) = MemoryOnly()
 
@@ -237,7 +237,7 @@ def return_def_arg_box(abc: MemoryOnly) raises -> ref [abc] MemoryOnly:
 
 # CHECK-LABEL: lit.fn @"foldable_requires_1
 # CHECK-SAME: {
-# CHECK-SAME:  ne(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 0))
+# CHECK-SAME:  not(identical(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, 0)))
 def foldable_requires_1[x: Int]()
     where x:
         pass
@@ -333,19 +333,21 @@ struct Foo[x: Int, y: Int](FooTrait, Movable where False):
 
 # INLINE-LABEL: lit.trait.decl @PluginHooks
 # INLINE: lit.alias.decl *"print_emit_fn{{[`0-9]*}}":
-# INLINE-SAME: !lit.generator<<"[[OMUT:O.mut`2x]]": !Bool,
-# INLINE-SAME: "[[OORIGIN:O._mlir_origin`2x1]]": origin<
+# INLINE-SAME: !lit.generator<<"[[OORIGIN:O._mlir_origin`2x]]": origin<
 trait PluginHooks:
-    comptime print_emit_fn: Optional[def[O: Origin](str: StringSlice[O]) thin]
+    comptime print_emit_fn: Optional[
+        def[O: ImmOrigin](str: StringSpan[O]) thin
+    ]
 
 
 # INLINE-LABEL: lit.struct.decl @DefaultPlugin
 # INLINE: lit.alias.decl *"print_emit_fn{{[`0-9]*}}":
-# INLINE-SAME: !lit.generator<<"[[OMUT]]": !Bool,
-# INLINE-SAME: "[[OORIGIN]]": origin<
+# INLINE-SAME: !lit.generator<<"[[OORIGIN]]": origin<
 # INLINE: kgen.conformance{{.*}}@PluginHooks
 # INLINE: kgen.witness "print_emit_fn"
 struct DefaultPlugin(PluginHooks, Movable where False):
-    comptime print_emit_fn: Optional[def[O: Origin](str: StringSlice[O]) thin] = (
+    comptime print_emit_fn: Optional[
+        def[O: ImmOrigin](str: StringSpan[O]) thin
+    ] = (
         None
     )

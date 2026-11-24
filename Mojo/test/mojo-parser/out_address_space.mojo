@@ -19,7 +19,7 @@ struct MemType(Movable):
     # Has an explicit address space and origin.
 
     # CHECK-LABEL: lit.fn @"__init__[::AddressSpace,LITMutOrigin]()"
-    # CHECK-SAME: <addr_space: !AddressSpace, ?, *"self_is_origin`2x1": origin<true>>
+    # CHECK-SAME: <addr_space: !AddressSpace, ?, *"self_is_origin`2x": origin<true>>
     # CHECK-SAME: %self: !lit.ref<!MemType, mut {{.*}}, #lit.struct.extract<
     def __init__[addr_space: AddressSpace](out[addr_space] self):
         self.value = 0
@@ -33,7 +33,7 @@ struct MemType(Movable):
 
     # This has a fixed address space, parametric origin.
     # CHECK-LABEL: lit.fn @"__init__[LITMutOrigin](::SIMD[DType.int, 1],::SIMD[DType.int, 1])
-    # CHECK-SAME: %self: !lit.ref<!MemType, mut *"self_is_origin`2x1", sugar_preserved({{.*}}, 1)> byref_result)
+    # CHECK-SAME: %self: !lit.ref<!MemType, mut *"self_is_origin`2x", sugar_preserved({{.*}}, 1)> byref_result)
     def __init__(a: Int, b: Int, out[AddressSpace.GLOBAL] self):
         self.value = 0
 

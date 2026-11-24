@@ -20,10 +20,10 @@ from internal_utils import InitializationType, Timer, init_vector_launch
 
 from std.testing import assert_equal
 
-from layout import TileTensor, Idx, row_major
+from layout import TileTensor, row_major
 
 
-@no_inline
+@inline(.never)
 def test_vec_init[
     dtype: DType, block_dim: Int = 256
 ](length: Int, init_type: InitializationType, context: DeviceContext) raises:
@@ -54,7 +54,7 @@ def test_vec_init[
             _ = verification_data.fill(1)
         elif init_type == InitializationType.arange:
             for i in range(length):
-                verification_data.raw_store(i, Scalar[dtype](i))
+                verification_data[i] = Scalar[dtype](i)
         for i in range(length):
             assert_equal(verification_ptr[i], out_host[i])
 

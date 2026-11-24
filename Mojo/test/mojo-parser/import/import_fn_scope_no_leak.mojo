@@ -16,7 +16,7 @@
 # or through the shared package decl of an unrelated import of the same
 # package.
 
-# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I=%S/inputs %s
+# RUN: %parse-mojo-isolated -split-input-file -verify-diagnostics -I%S/inputs %s
 
 # An import in one function is not visible in a sibling function, even when
 # the importer is parsed first.
@@ -101,3 +101,18 @@ def deep_importer():
 def innocent():
     # expected-error @below {{package 'test_package' has no declaration 'test_nested_package'}}
     test_package.test_nested_package.nested_function()
+
+
+# // -----
+
+# A failed function-scoped import is not visible in a sibling function either.
+
+
+def failed_importer():
+    # expected-error @below {{unable to locate module 'no_such_module'}}
+    import no_such_module
+
+
+def failed_user():
+    # expected-error @below {{use of unknown declaration 'no_such_module'}}
+    _ = no_such_module

@@ -19,7 +19,7 @@ Supports both BF16 and FP8 via compile-time flag:
 
 from std.sys import get_defined_bool, get_defined_int
 
-from layout import Idx, Coord, TileTensor, row_major
+from layout import TileTensor, row_major
 from max.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
@@ -67,9 +67,9 @@ def test_ping_pong_kernel_amd[
     var c_ref_tt = TileTensor(device_c_ref, row_major[M, N]())
     vendor_blas.matmul(
         ctx,
-        c_ref_tt.to_layout_tensor(),
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
+        c_ref_tt,
+        a_tt,
+        b_tt,
         c_row_major=True,
         transpose_b=True,
     )
@@ -108,16 +108,8 @@ def test_ping_pong_kernel_amd[
                     if printed < 10:
                         var row, col = divmod(i, N)
                         print(
-                            "Mismatch at (",
-                            row,
-                            ",",
-                            col,
-                            "): actual=",
-                            actual,
-                            " expected=",
-                            expected,
-                            " rel_err=",
-                            rel_err,
+                            t"Mismatch at ( {row} , {col} ): actual= {actual} "
+                            t" expected= {expected}  rel_err= {rel_err}"
                         )
                         printed += 1
                     errors += 1

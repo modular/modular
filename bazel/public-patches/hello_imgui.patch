@@ -1,0 +1,24 @@
+diff --git a/src/hello_imgui/impl/imgui_theme.cpp b/src/hello_imgui/impl/imgui_theme.cpp
+index fc71531..6da4436 100644
+--- a/src/hello_imgui/impl/imgui_theme.cpp
++++ b/src/hello_imgui/impl/imgui_theme.cpp
+@@ -238,8 +238,8 @@ namespace ImGuiTheme
+             colors[ImGuiCol_TabSelected]              = ImVec4(0.20f, 0.20f, 0.20f, 0.36f);
+             colors[ImGuiCol_TabDimmed]           = ImVec4(0.00f, 0.00f, 0.00f, 0.52f);
+             colors[ImGuiCol_TabDimmedSelected]     = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
+-            colors[ImGuiCol_DockingPreview]         = ImVec4(0.33f, 0.67f, 0.86f, 1.00f);
+-            colors[ImGuiCol_DockingEmptyBg]         = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
++            // colors[ImGuiCol_DockingPreview]         = ImVec4(0.33f, 0.67f, 0.86f, 1.00f);
++            // colors[ImGuiCol_DockingEmptyBg]         = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
+             colors[ImGuiCol_PlotLines]              = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
+             colors[ImGuiCol_PlotLinesHovered]       = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
+             colors[ImGuiCol_PlotHistogram]          = ImVec4(1.00f, 0.00f, 0.00f, 1.00f);
+@@ -1041,7 +1041,7 @@ namespace ImGuiTheme
+     bool _ShowThemeSelector(ImGuiTheme_* theme)
+     {
+         bool changed = false;
+-        ImVec2 listboxSize =  ImVec2(15.f * ImGui::GetFontSize(), ImGuiTheme_Count * (ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.y) );
++        ImVec2 listboxSize =  ImVec2(15.f * ImGui::GetFontSize(), int(ImGuiTheme_Count) * (ImGui::GetFontSize() + ImGui::GetStyle().ItemInnerSpacing.y) );
+         ImGui::Text("Available Themes");
+         if (ImGui::BeginListBox("##Available_themes", listboxSize))
+         {

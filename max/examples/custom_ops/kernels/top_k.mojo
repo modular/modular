@@ -21,7 +21,6 @@ from max.algorithm import parallelize_over_rows
 from std.bit import log2_floor
 from max.gpu import (
     WARP_SIZE,
-    block_dim,
     block_idx,
     thread_idx,
 )
@@ -30,22 +29,28 @@ from max.gpu.primitives import warp
 from max.gpu.memory import external_memory
 from std.collections import Span
 
-from extensibility import InputTensor, OutputTensor
+from extensibility import Input, Output, Tensor, TileTensorable
+from layout import TensorLayout, TileTensor
+
+from std.utils.coord import Coord
 
 from std.utils.numerics import min_or_neg_inf
 
 
 @fieldwise_init
 struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
-    """Stores the value with it's index."""
+    """Stores a value, its index, and whether it remains eligible."""
 
     var idx: Int32
     var val: Scalar[Self.T]
+    var active: UInt32
 
     def __eq__(self, rhs: Self) -> Bool:
-        return self.val == rhs.val
+        return self.active == rhs.active and self.val == rhs.val
 
     def __lt__(self, rhs: Self) -> Bool:
+        if self.active != rhs.active:
+            return self.active < rhs.active
         return self.val < rhs.val
 
 
@@ -60,38 +65,72 @@ struct TopK:
 
     @staticmethod
     def execute[
-        dtype: DType,
-        rank: Int,
-        //,  # Forces the previous two params to be inferred from the args
         K: Int,
-        target: StaticString,
     ](
-        out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
-        out_idxs: OutputTensor[dtype=.int32, rank=rank, ...],
-        in_vals: InputTensor[dtype=dtype, rank=rank, ...],
+        out_vals: Some[Output & Tensor],
+        out_idxs: Some[Output & Tensor],
+        in_vals: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
-        comptime assert rank == 2, "rank must be 2"
+        comptime assert conforms_to(type_of(out_vals), TileTensorable)
+        comptime assert conforms_to(type_of(out_idxs), TileTensorable)
+        comptime assert conforms_to(type_of(in_vals), TileTensorable)
+        comptime dtype = type_of(in_vals).dtype
+        comptime assert type_of(out_vals).rank == 2, "rank must be 2"
+        comptime assert type_of(out_idxs).rank == 2, "rank must be 2"
+        comptime assert type_of(in_vals).rank == 2, "rank must be 2"
+
+        # `run` takes plain pointer-backed views, so rebuild each argument's
+        # view from its pointer and layout.
+        Self.run[K](
+            TileTensor(
+                ptr=out_vals.to_tile_tensor[dtype]().unsafe_ptr(),
+                layout=out_vals.layout(),
+            ),
+            TileTensor(
+                ptr=out_idxs.to_tile_tensor[.int32]().unsafe_ptr(),
+                layout=out_idxs.layout(),
+            ),
+            TileTensor(
+                ptr=in_vals.to_tile_tensor[dtype]().unsafe_ptr(),
+                layout=in_vals.layout(),
+            ),
+            ctx,
+        )
+
+    @staticmethod
+    def run[
+        dtype: DType,
+        vals_layout: TensorLayout,
+        idxs_layout: TensorLayout,
+        in_layout: TensorLayout,
+        //,
+        K: Int,
+    ](
+        out_vals: TileTensor[mut=True, dtype, vals_layout, _],
+        out_idxs: TileTensor[mut=True, .int32, idxs_layout, _],
+        in_vals: TileTensor[dtype, in_layout, _],
+        ctx: DeviceContext,
+    ) raises:
+        """Runs top-k on `TileTensor` views of rank-2 tensors."""
         comptime assert not (
-            target == "gpu" and K > WARP_SIZE
+            ctx.target.is_gpu() and K > WARP_SIZE
         ), "K can't be larger than warp size"
 
-        var shape = in_vals.shape()
-        var batch_size = shape[0]
+        var shape = in_vals.layout.shape_coord()
+        var batch_size = Int(shape[0])
         var dev_ctx = ctx
 
-        var out_vals_tensor = out_vals.to_layout_tensor()
-        var out_idxs_tensor = out_idxs.to_layout_tensor()
-        var in_vals_tensor = in_vals.to_layout_tensor()
+        comptime OutVals = type_of(out_vals)
+        comptime OutIdxs = type_of(out_idxs)
+        comptime InVals = type_of(in_vals)
 
-        @__parameter
         def top_k_gpu[
             K: Int,
-        ](
-            out_vals: type_of(out_vals_tensor),
-            out_idxs: type_of(out_idxs_tensor),
-            in_vals: type_of(in_vals_tensor),
-        ):
+        ](out_vals: OutVals, out_idxs: OutIdxs, in_vals: InVals,):
+            comptime assert out_vals.flat_rank == 2
+            comptime assert out_idxs.flat_rank == 2
+            comptime assert in_vals.flat_rank == 2
             var bid = block_idx.x
             var tid = thread_idx.x
 
@@ -102,9 +141,16 @@ struct TopK:
                 alignment=align_of[TopKElement[dtype]](),
             ]()
 
-            # Threads put their corresponding index and value into shared memory
+            # Every lane participates in the full-warp shuffle, but only K
+            # lanes contain candidates. Eligibility is separate from the value
+            # so legitimate negative infinity remains selectable.
+            var value = min_or_neg_inf[dtype]()
+            var active = UInt32(0)
+            if tid < K:
+                value = in_vals[bid, tid][0]
+                active = 1
             top_k_sram[unsafe_offset=tid] = TopKElement(
-                Int32(tid), in_vals[bid, tid][0]
+                Int32(tid), value, active
             )
             # Finish packing the values across threads in this block
             barrier()
@@ -122,8 +168,10 @@ struct TopK:
                     var shuffled = TopKElement(
                         warp.shuffle_down(reduced.idx, UInt32(offset)),
                         warp.shuffle_down(reduced.val, UInt32(offset)),
+                        warp.shuffle_down(reduced.active, UInt32(offset)),
                     )
-                    reduced = max(reduced, shuffled)
+                    if tid + offset < WARP_SIZE:
+                        reduced = max(reduced, shuffled)
 
                 # Wait for all threads to finish reducing their values
                 barrier()
@@ -135,19 +183,19 @@ struct TopK:
                     out_idxs[bid, i] = reduced.idx
 
                     # Remove found maximum from consideration in the next iter
-                    var index = reduced.idx % Int32(block_dim.x)
-                    top_k_sram[unsafe_offset=index].val = min_or_neg_inf[
-                        dtype
-                    ]()
+                    top_k_sram[unsafe_offset=reduced.idx].active = 0
 
-        comptime if target == "gpu":
+                # Retirement must be visible before the next candidate reload.
+                barrier()
+
+        comptime if ctx.target.is_gpu():
             dev_ctx.enqueue_function[top_k_gpu[K]](
-                out_vals_tensor,
-                out_idxs_tensor,
-                in_vals_tensor,
+                out_vals,
+                out_idxs,
+                in_vals,
                 grid_dim=batch_size,  # One block per batch
-                block_dim=K,  # One thread per K
-                shared_mem_bytes=K * size_of[TopKElement[dtype]](),
+                block_dim=WARP_SIZE,
+                shared_mem_bytes=WARP_SIZE * size_of[TopKElement[dtype]](),
             )
         else:
 
@@ -159,10 +207,9 @@ struct TopK:
                     def val_greater_than(
                         lhs: Int32, rhs: Int32
                     ) {in_vals, row_idx} -> Bool:
-                        return (
-                            in_vals[row_idx, Int(lhs)]
-                            > in_vals[row_idx, Int(rhs)]
-                        )
+                        return in_vals.load[width=1](
+                            Coord(row_idx, Int(lhs))
+                        ) > in_vals.load[width=1](Coord(row_idx, Int(rhs)))
 
                     sort(
                         Span(
@@ -175,7 +222,12 @@ struct TopK:
                     )
 
                     for i in range(K):
-                        var sorted_idx = Int(out_idxs[row_idx, i])
-                        out_vals[row_idx, i] = in_vals[row_idx, sorted_idx]
+                        var sorted_idx = Int(
+                            out_idxs.load[width=1](Coord(row_idx, i))
+                        )
+                        out_vals.store[width=1](
+                            Coord(row_idx, i),
+                            in_vals.load[width=1](Coord(row_idx, sorted_idx)),
+                        )
 
             parallelize_over_rows(top_k_cpu, shape, axis=1, grain_size=1)

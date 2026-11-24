@@ -34,9 +34,11 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Module, RMSNorm
-from max.nn.kernels import mtp_eh_norm
-from max.nn.transformer.distributed_transformer import forward_sharded_layers
+from max.nn._graph_ops import mtp_eh_norm
+from max.nn.legacy import Module, RMSNorm
+from max.nn.legacy.transformer.distributed_transformer import (
+    forward_sharded_layers,
+)
 from test_common.graph_utils import gpu_warp_size
 from torch.utils.dlpack import from_dlpack
 
@@ -107,7 +109,7 @@ def _bf16(rng: np.random.Generator, *shape: int, scale: float) -> np.ndarray:
 @pytest.mark.parametrize(
     "hidden_size,tokens,warps",
     [
-        (4096, 5, 8),  # the draft width GLM-5.3-Flash and DeepSeek-V3.2 use
+        (4096, 5, 8),  # GLM-5.3-Flash's draft width
         (384, 3, 8),  # hidden not a multiple of the block: a ragged pass
         (512, 2, 1),  # one warp: the cross-warp reduction path is skipped
         # Three warps. `block_reduce_dual_sum` reduces over a power-of-two lane
@@ -174,6 +176,34 @@ def test_rejects_mismatched_inputs() -> None:
         with pytest.raises(ValueError, match="not exceed 1024"):
             mtp_eh_norm(a, a, w, w, EPS, block_threads=2048)
         g.output(a)
+
+
+@pytest.mark.parametrize(
+    "hidden_size,block_threads",
+    [
+        (6144, 384),
+        (7168, 448),
+        (4096, 256),
+        (1536, 256),
+        (1032, 256),  # 64 threads would leave columns past 16 a thread
+        (32768, 256),
+    ],
+)
+def test_picks_the_register_path_width(
+    hidden_size: int, block_threads: int
+) -> None:
+    """The default block is ``hidden_size // 16`` wide where that fits.
+
+    That needs whole 64-lane warps and at most 1024 threads; other widths
+    take 256 threads.
+    """
+    gpu = DeviceRef.GPU()
+    t = TensorType(DType.bfloat16, ["t", hidden_size], gpu)
+    w = TensorType(DType.bfloat16, [hidden_size], gpu)
+    with Graph("default_width", input_types=(t, t, w, w)) as g:
+        embed, prev, ew, hw = (x.tensor for x in g.inputs)
+        g.output(mtp_eh_norm(embed, prev, ew, hw, EPS))
+    assert f"block_threads = {block_threads}" in str(g._mlir_op)
 
 
 class _DraftInputPair(Module):

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from layout import TileTensor, row_major
-from nn.tile import tile
+from nn.tile import tile, tile_shape
 from std.testing import assert_equal
 
 
@@ -702,6 +702,135 @@ def test_tile_eg14() raises:
     print()
 
 
+# CHECK-LABEL: test_tile_eg15
+# CHECK: 0.0 ,
+# CHECK: 1.0 ,
+# CHECK: 0.0 ,
+# CHECK: 1.0 ,
+# CHECK: 2.0 ,
+# CHECK: 3.0 ,
+# CHECK: 2.0 ,
+# CHECK: 3.0 ,
+# CHECK: 4.0 ,
+# CHECK: 5.0 ,
+# CHECK: 4.0 ,
+# CHECK: 5.0 ,
+# CHECK: 6.0 ,
+# CHECK: 7.0 ,
+# CHECK: 6.0 ,
+# CHECK: 7.0 ,
+# CHECK: 0.0 ,
+def test_tile_eg15() raises:
+    print("== test_tile_eg15")
+    comptime type = DType.float32
+
+    var input_stack = Array[Scalar[type], 2 * 2 * 2 * 1 * 1](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
+    var input = TileTensor(input_stack, row_major[2, 2, 2, 1, 1]())
+
+    # type_repeats is always .int64
+    comptime type_repeats = DType.int64
+
+    var repeats_stack = Array[Scalar[type_repeats], 5](fill={})
+    var repeats = TileTensor(repeats_stack, row_major[5]())
+
+    repeats[0] = 3
+    repeats[1] = 1
+    repeats[2] = 2
+    repeats[3] = 1
+    repeats[4] = 1
+
+    # Output rank = input rank
+    # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = Array[Scalar[type], 6 * 2 * 4](fill=0)
+    var output = TileTensor(output_stack, row_major[6, 2, 4, 1, 1]())
+
+    tile[type, type_repeats](
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
+    )
+
+    print()
+    for i in range(6):
+        for j in range(2):
+            for k in range(4):
+                for l in range(1):
+                    for m in range(1):
+                        print(output[i, j, k, l, m], ",", end="")
+                print()
+            print()
+    print()
+
+
+# A rank-6 tile, exercising the kernel past the interpreter's rank-5
+# precompile sweep: out[i0,i1,i2,i3,0,0] = in[i0%2, i1%2, i2%2, 0, 0, 0]
+# for repeats (2,1,2,3,1,1).
+# CHECK-LABEL: test_tile_eg16
+# CHECK: 0.0 ,
+# CHECK: 1.0 ,
+# CHECK: 0.0 ,
+# CHECK: 1.0 ,
+# CHECK: 2.0 ,
+# CHECK: 3.0 ,
+# CHECK: 2.0 ,
+# CHECK: 3.0 ,
+# CHECK: 4.0 ,
+# CHECK: 5.0 ,
+# CHECK: 4.0 ,
+# CHECK: 5.0 ,
+# CHECK: 6.0 ,
+# CHECK: 7.0 ,
+# CHECK: 6.0 ,
+# CHECK: 7.0 ,
+# CHECK: 0.0 ,
+def test_tile_eg16() raises:
+    print("== test_tile_eg16")
+    comptime type = DType.float32
+
+    var input_stack = Array[Scalar[type], 2 * 2 * 2 * 1 * 1 * 1](
+        fill_with=lambda (i: Int) -> Scalar[type]: Scalar[type](i)
+    )
+    var input = TileTensor(input_stack, row_major[2, 2, 2, 1, 1, 1]())
+
+    # type_repeats is always .int64
+    comptime type_repeats = DType.int64
+
+    var repeats_stack = Array[Scalar[type_repeats], 6](fill={})
+    var repeats = TileTensor(repeats_stack, row_major[6]())
+
+    repeats[0] = 2
+    repeats[1] = 1
+    repeats[2] = 2
+    repeats[3] = 3
+    repeats[4] = 1
+    repeats[5] = 1
+
+    # Output rank = input rank
+    # output_dim[i] = input_dim[i] * repeats[i]
+    var output_stack = Array[Scalar[type], 4 * 2 * 4 * 3](fill=0)
+    var output = TileTensor(output_stack, row_major[4, 2, 4, 3, 1, 1]())
+
+    tile[type, type_repeats](
+        input.make_dynamic[.int64](),
+        repeats.make_dynamic[.int64](),
+        output.make_dynamic[.int64](),
+    )
+
+    print()
+    for i in range(4):
+        for j in range(2):
+            for k in range(4):
+                for l in range(3):
+                    for m in range(1):
+                        for n in range(1):
+                            print(output[i, j, k, l, m, n], ",", end="")
+                    print()
+                print()
+    print()
+
+
 def test_tile_1d() raises:
     """Test tiling a 1D tensor.
 
@@ -734,7 +863,26 @@ def test_tile_1d() raises:
         assert_equal(output[i], expected[i])
 
 
+def test_tile_shape_rejects_negative_repeats() raises:
+    """A negative repeat would size a negative output dim; must raise."""
+    comptime type_repeats = DType.int64
+    var input_stack: Array[Scalar[DType.int64], 2] = [1, 2]
+    var input = TileTensor(input_stack, row_major[2]())
+    var repeats_stack = Array[Scalar[type_repeats], 1](fill=-1)
+    var repeats = TileTensor(repeats_stack, row_major[1]())
+
+    var raised = False
+    try:
+        _ = tile_shape[DType.int64, type_repeats](
+            input.make_dynamic[.int64](), repeats.make_dynamic[.int64]()
+        )
+    except:
+        raised = True
+    assert_equal(raised, True, msg="negative repeats must raise")
+
+
 def main() raises:
+    test_tile_shape_rejects_negative_repeats()
     test_tile_1d()
     test_tile_eg1()
     test_tile_eg2()
@@ -750,3 +898,5 @@ def main() raises:
     test_tile_eg12()
     test_tile_eg13()
     test_tile_eg14()
+    test_tile_eg15()
+    test_tile_eg16()

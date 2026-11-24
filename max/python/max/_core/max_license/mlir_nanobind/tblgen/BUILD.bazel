@@ -1,0 +1,27 @@
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "lib",
+    srcs = glob(["**/*.py"]),
+    imports = [".."],
+    tags = ["no-pydeps"],  # FIXME: Breaks due to `types.py` conflicting with builtin `types` module
+    deps = [
+        requirement("click"),
+    ],
+)
+
+# I legitimately don't know if there's a better way
+# to do this. I want `bazel run` to work, but I also
+# want `python -m` to work, with relative imports.
+modular_py_binary(
+    name = "tblgen",
+    srcs = ["//max/python/max/_core/max_license/mlir_nanobind:tblgen_main.py"],
+    imports = [".."],
+    main = "//max/python/max/_core/max_license/mlir_nanobind:tblgen_main.py",
+    visibility = ["//visibility:public"],  # Used by rules in multiple packages
+    deps = [
+        ":lib",
+    ],
+)

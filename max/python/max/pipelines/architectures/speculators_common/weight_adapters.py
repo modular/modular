@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Weight handling shared by unified speculators-DSpark pipelines."""
+"""Weight handling shared by speculators-format DSpark drafts."""
 
 from __future__ import annotations
 
@@ -27,30 +27,6 @@ SKIPPED_DRAFT_KEYS = ("t2d",)
 SKIPPED_DRAFT_PREFIXES = ("confidence_head.",)
 
 
-def merge_unified_state_dict(
-    target_state_dict: dict[str, Any],
-    draft_state_dict: dict[str, Any],
-) -> dict[str, Any]:
-    """Merges target + draft weights for a unified model.
-
-    Prefixes target weights with ``target.*`` and draft weights with
-    ``draft.*`` verbatim (the speculators checkpoint carries no ``model.``
-    prefix and its keys match the draft module 1:1, including the frozen
-    ``embed_tokens`` / pruned-vocab ``lm_head`` copies and the ``d2t`` offset
-    table). Training-only tensors are skipped.
-    """
-    unified: dict[str, Any] = {}
-    for name, value in target_state_dict.items():
-        unified[f"target.{name}"] = value
-    for name, value in draft_state_dict.items():
-        if name in SKIPPED_DRAFT_KEYS or name.startswith(
-            SKIPPED_DRAFT_PREFIXES
-        ):
-            continue
-        unified[f"draft.{name}"] = value
-    return unified
-
-
 def validate_draft_checkpoint_weights(
     draft_state_dict: dict[str, Any],
     draft_config: DSparkSpeculatorsDraftConfig,
@@ -62,6 +38,11 @@ def validate_draft_checkpoint_weights(
     lm_head / markov_w2 row counts, the fc tap-concat width, and the ``d2t``
     offset table mapping into the target vocabulary. Raises with the
     offending tensor named, before any graph is built.
+
+    ``d2t`` is checked only for a pruned drafter (see
+    :attr:`~..speculators_common.draft_config.DSparkSpeculatorsDraftConfig.has_d2t`);
+    an unpruned one ships none and requiring it would reject a valid
+    checkpoint.
     """
     draft_vocab = draft_config.draft_vocab_size
     vocab = draft_config.vocab_size
@@ -93,6 +74,15 @@ def validate_draft_checkpoint_weights(
             f"DSpark draft fc.weight has shape {fc_shape}; expected"
             f" in-features = num taps x hidden = {expected_fc_in}."
         )
+    if not draft_config.has_d2t:
+        if "d2t" in draft_state_dict:
+            raise ValueError(
+                "DSpark draft carries a d2t table but its vocabulary is"
+                f" unpruned (draft_vocab_size={draft_vocab} =="
+                f" vocab_size={vocab}), so nothing consumes it."
+            )
+        return
+
     d2t_shape = _shape("d2t")
     if d2t_shape != (draft_vocab,):
         raise ValueError(

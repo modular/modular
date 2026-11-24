@@ -19,9 +19,9 @@ Covers all behavioral branches of ``resolve_kv_hash_seed``:
   auto-generates one (unlike ``sha256``) -- default deployments keep
   deterministic, cross-restart-stable behavior.
 - ``ahash64`` decodes and uses an explicitly configured seed_hex, the
-  same as ``sha256`` / ``sha256_64`` do.
-- ``sha256`` / ``sha256_64`` accept a valid 64-char hex seed.
-- ``sha256`` / ``sha256_64`` cache a generated random seed across
+  same as ``sha256`` does.
+- ``sha256`` accepts a valid 64-char hex seed.
+- ``sha256`` caches a generated random seed across
   multiple calls within the same process.
 - Invalid hex strings raise ``ValueError`` with a clear message.
 """
@@ -68,12 +68,6 @@ def test_ahash64_rejects_short_hex() -> None:
 def test_sha256_decodes_valid_hex() -> None:
     seed_hex = "ab" * 32  # 64 chars -> 32 bytes
     result = resolve_kv_hash_seed("sha256", seed_hex)
-    assert result == bytes.fromhex(seed_hex)
-
-
-def test_sha256_64_decodes_valid_hex() -> None:
-    seed_hex = "cd" * 32
-    result = resolve_kv_hash_seed("sha256_64", seed_hex)
     assert result == bytes.fromhex(seed_hex)
 
 
@@ -143,8 +137,3 @@ def test_sha256_rejects_non_hex_string() -> None:
             "sha256",
             "not-hex-at-all-but-64-chars-long-zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz",
         )
-
-
-def test_sha256_64_rejects_non_hex_string() -> None:
-    with pytest.raises(ValueError, match="hex string"):
-        resolve_kv_hash_seed("sha256_64", "xx" * 32)

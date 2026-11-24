@@ -36,10 +36,10 @@ from __future__ import annotations
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.graph import ops
+from max.tensor import Tensor
 
 Logits = npt.NDArray[np.float32]
 
@@ -186,10 +186,9 @@ def draw(
 def _draw_index(scores: Tensor) -> Tensor:
     """Draw one index from the categorical ``softmax(scores)`` describes.
 
-    Gumbel-max, not a cumulative sum: perturbing each score by an independent
-    Gumbel and taking the argmax draws exactly from the softmax, needs no
-    normalization, and -- unlike ``cumsum``, which has no GPU kernel and would
-    quietly bounce the draw through the host -- stays on the device.
+    Gumbel-max, not an inverse CDF: perturbing each score by an independent
+    Gumbel and taking the argmax draws exactly from the softmax in a single
+    pass, with no normalization and no ``cumsum`` over the candidates.
     """
     # Both ends of the interval are excluded because both send a candidate's
     # noise to an infinity: ``log(0)`` rules it out, ``log(1)`` elects it.

@@ -13,7 +13,6 @@
 """Contains bounds checks which are on by default for CPU and off by default for GPU.
 """
 
-from . import OptionalReg
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.debug_assert import _assert_enabled
 from std.reflection import SourceLocation
@@ -25,15 +24,15 @@ comptime _AssertMode[
 ] = "safe" if cpu_default and not is_gpu() else "none"
 
 
-@always_inline
+@inline(.always)
 def check_bounds[
     cpu_default: Bool = True,
-](idx: Some[Indexer], size: Int, location: Optional[SourceLocation] = None):
+](idx: Int, *, length: Int, location: Optional[SourceLocation] = None):
     """Bounds check which is on by default for CPU, and off by default for GPU.
 
     You can turn off CPU bounds checks for a specific collection by setting
-    `check_bounds[cpu_default=False](idx, size, loc)`, but turn them on for
-    tests with:
+    `check_bounds[cpu_default=False](idx, length=len(self))`, but turn them
+    on for tests with:
 
     ```bash
     mojo build -D ASSERT=all main.mojo
@@ -53,23 +52,27 @@ def check_bounds[
 
     Args:
         idx: The index for the bounds check.
-        size: The size of the container, and first index that would be out of range.
+        length: The length of the container, and first index that would be out of range.
         location: `SourceLocation` shown on assert error. Defaults to showing the callsite
             two levels of function calls above this one. So if `check_bounds` is called
             inside a `__getitem__` method, it will show the source location where
             the incorrect index was provided.
     """
+    # The comptime interpreter builds the failure arguments eagerly, so avoid
+    # them when the index is in range.
+    if UInt(idx) < UInt(length):
+        return
     debug_assert[assert_mode=_AssertMode[cpu_default]](
-        UInt(index(idx)) < UInt(size),
+        False,
         "index ",
-        index(idx),
+        idx,
         " is out of bounds, valid range is 0 to ",
-        size - 1,
+        length - 1,
         location=location.or_else(call_location[inline_count=2]()),
     )
 
 
-@always_inline
+@inline(.always)
 def check_slice_bounds[
     cpu_default: Bool = True,
 ](
@@ -104,7 +107,7 @@ def check_slice_bounds[
     var start = slice.start.or_else(0)
     var end = slice.end.or_else(len)
 
-    @no_inline
+    @inline(.never)
     def do_asserts(location: SourceLocation) {imm}:
         debug_assert[assert_mode=mode](
             UInt(start) <= UInt(len),

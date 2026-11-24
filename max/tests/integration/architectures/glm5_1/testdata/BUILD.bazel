@@ -9,6 +9,8 @@ filegroup(
     testonly = True,
     srcs = glob(
         [
+            "*.LICENSE",
+            "*.jinja",
             "*.json",
         ],
     ),

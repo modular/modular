@@ -15,12 +15,12 @@
 from __future__ import annotations
 
 import pytest
-from max.experimental.nn.rope import (
+from max.nn.rope import (
     RotaryEmbedding,
     TransposedRotaryEmbedding,
     rope,
 )
-from max.experimental.tensor import Tensor, TensorType
+from max.tensor.tensor import Tensor, TensorType
 
 
 def test_repr() -> None:
@@ -87,5 +87,7 @@ def test_symbolic_seqlen() -> None:
     #     compiled(Tensor.zeros([1, 3, 1, 6]))
 
     assert 5 != embedding.dim
-    with pytest.raises(TypeError):
+    # A static dim the graph baked in must match, and a compiled callable
+    # reports a mismatched argument as a ValueError.
+    with pytest.raises(ValueError, match="argument 0: expected"):
         compiled(Tensor.zeros([1, 2, 1, 5]))

@@ -27,15 +27,15 @@ from dataclasses import dataclass
 
 import numpy as np
 import numpy.typing as npt
+from max import functional as F
 from max.driver import Buffer
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor
 from max.pipelines.context import PixelContext
 from max.pipelines.diffusion.interface import (
     DiffusionPipeline,
     DiffusionPipelineOutput,
 )
 from max.profiler import traced
+from max.tensor import Tensor
 
 from ..qwen3_modulev3.text_encoder.model import Qwen3TextEncoderModel
 from .denoise_step import Ideogram4CombineStep, Ideogram4PackStep
@@ -107,6 +107,7 @@ class Ideogram4Pipeline(DiffusionPipeline):
 
     @traced(message="Ideogram4Pipeline.init_remaining_components")
     def init_remaining_components(self) -> None:
+        """Builds the scheduler and VAE the transformer runs beside."""
         self.vae_scale_factor = (
             2 ** (len(self.vae.config.block_out_channels) - 1)
             if getattr(self, "vae", None)
@@ -168,6 +169,7 @@ class Ideogram4Pipeline(DiffusionPipeline):
         self,
         context: PixelContext,
     ) -> Ideogram4ModelInputs:
+        """Builds the pipeline's inputs from the request context."""
         device = self.transformer.devices[0]
         dtype = self.transformer.config.dtype
 
@@ -312,6 +314,7 @@ class Ideogram4Pipeline(DiffusionPipeline):
     def execute(
         self, model_inputs: Ideogram4ModelInputs, **kwargs: object
     ) -> DiffusionPipelineOutput:
+        """Runs the denoising loop and returns the image."""
         mi = model_inputs
         device = self.devices[0]
 

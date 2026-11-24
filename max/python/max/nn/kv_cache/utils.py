@@ -10,27 +10,129 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Types and helpers shared by the KV cache."""
+
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 import numpy as np
 from max.driver import Buffer, Device
+from max.dtype import DType
+from max.graph import DeviceRef, TensorType
+
+ATTN_DISPATCH_METADATA = "attn_dispatch_metadata"
+"""Graph input holding the resolved decode-attention dispatch shape."""
+
+DRAFT_ATTN_DISPATCH_METADATA = "draft_attn_dispatch_metadata"
+"""The same, for the draft key under speculative decoding."""
+
+
+@runtime_checkable
+class GraphInputStagingInterface(Protocol):
+    """One forward's staging: somewhere to write a graph input.
+
+    Structural on purpose: what builds the dispatch metadata lives here, one
+    layer below the staging that carries it, so this names the one method it
+    needs rather than importing the implementation.
+    """
+
+    def get(
+        self, name: str, shape: tuple[int, ...]
+    ) -> tuple[Buffer, tuple[Buffer, ...]]:
+        """Returns host staging for ``name`` and the buffers it is sent to."""
+        ...
+
+
+@dataclass(frozen=True)
+class DispatchMetadataSpec:
+    """The shape of a kernel's dispatch-metadata input, and where it lives.
+
+    One source for both halves of the input: the ``TensorType`` the graph
+    declares, and the buffer a forward fills. They used to be written out
+    separately and kept in step by comment.
+    """
+
+    shape: tuple[int, ...]
+    dtype: DType
+    on_device: bool
+    """Whether the kernel reads it on the accelerator rather than the host.
+
+    A host-resident one is never transferred, so there is nothing to stage
+    for it; a device-resident one is staged like any other graph input.
+    """
+
+    def tensor_type(self, device: DeviceRef) -> TensorType:
+        """The graph input this metadata is declared as."""
+        return TensorType(
+            self.dtype,
+            shape=list(self.shape),
+            device=device if self.on_device else DeviceRef.CPU(),
+        )
 
 
 @dataclass(frozen=True)
 class AttnKeyInterface:
     """Common base for resolved attention keys."""
 
-    def pack_into_buffer(
-        self, device: Device, max_cache_valid_length: int
-    ) -> Buffer:
-        """Packs this into a kernel dispatch-metadata buffer.
+    @classmethod
+    def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
+        """Returns the shape, dtype and residence of this kernel's metadata."""
+        raise NotImplementedError
+
+    def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
+        """Writes this dispatch shape's values into ``into``.
+
+        ``into`` is shaped by :meth:`dispatch_metadata_spec`. Writing rather
+        than allocating is what lets a caller hand over staging it already
+        owns -- see ``GraphInputStager``.
 
         ``max_cache_valid_length`` is the runtime cache length; it is supplied
         here rather than stored so the identity is independent of it.
         """
         raise NotImplementedError
+
+    def pack_into_buffer(
+        self, device: Device, max_cache_valid_length: int
+    ) -> Buffer:
+        """Packs this into a freshly allocated dispatch-metadata buffer.
+
+        For callers with nowhere to stage it. A host-resident spec stays on
+        the host; a device-resident one is copied over, which is the copy
+        staging exists to fold into the rest of a forward's.
+        """
+        spec = self.dispatch_metadata_spec()
+        values = np.zeros(spec.shape, dtype=spec.dtype.to_numpy())
+        self.pack_into(values, max_cache_valid_length)
+        host = Buffer.from_numpy(values)
+        return host.to(device) if spec.on_device else host
+
+    def dispatch_metadata_buffers(
+        self,
+        staging: GraphInputStagingInterface | None,
+        *,
+        name: str,
+        devices: Sequence[Device],
+        max_cache_valid_length: int,
+    ) -> tuple[Buffer, ...]:
+        """One buffer per tensor-parallel shard, staged when it can be.
+
+        A device-resident key with somewhere to stage is one host write fanned
+        out to every shard, so it travels in the forward's own transfer.
+        Otherwise each shard gets a buffer of its own -- for a host-resident
+        key there is no transfer to fold in anyway.
+        """
+        spec = self.dispatch_metadata_spec()
+        if staging is None or not spec.on_device:
+            return tuple(
+                self.pack_into_buffer(device, max_cache_valid_length)
+                for device in devices
+            )
+        host, destinations = staging.get(name, spec.shape)
+        self.pack_into(host.to_numpy(), max_cache_valid_length)
+        return destinations
 
 
 @dataclass(frozen=True)
@@ -39,10 +141,10 @@ class AttnKey(AttnKeyInterface):
 
     The resolved ``num_partitions`` (the kernel grid) plus the batch and prompt
     dimensions. The runtime ``max_cache_valid_length`` is supplied to
-    :meth:`pack_into_buffer` rather than stored, so dispatches that differ only
-    in cache length share one identity. Concrete subclasses
-    (:class:`MHAAttnKey`, :class:`MLAAttnKey`)
-    implement the kernel-specific buffer layout.
+    :meth:`~AttnKeyInterface.pack_into` rather than stored, so dispatches that
+    differ only in cache length share one identity. Concrete subclasses
+    (:class:`MHAAttnKey`, :class:`MLAAttnKey`) declare the kernel-specific
+    layout and write it.
     """
 
     batch_size: int
@@ -54,22 +156,20 @@ class AttnKey(AttnKeyInterface):
 class MHAAttnKey(AttnKey):
     """Decode dispatch metadata for multi-head attention (MHA)."""
 
-    def pack_into_buffer(
-        self, device: Device, max_cache_valid_length: int
-    ) -> Buffer:
-        # MHA decode kernels read a 4-int dispatch buffer on the host (CPU).
-        # ``device`` is intentionally ignored: the MHA dispatch-metadata graph
-        # input is declared CPU-resident.
-        return Buffer.from_numpy(
-            np.array(
-                [
-                    self.batch_size,
-                    self.max_prompt_length,
-                    self.num_partitions,
-                    max_cache_valid_length,
-                ],
-                dtype=np.int64,
-            )
+    @classmethod
+    def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
+        """MHA decode kernels read four ints, on the host."""
+        return DispatchMetadataSpec(
+            shape=(4,), dtype=DType.int64, on_device=False
+        )
+
+    def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
+        """Writes batch size, prompt width, partition count, cache length."""
+        into[:] = (
+            self.batch_size,
+            self.max_prompt_length,
+            self.num_partitions,
+            max_cache_valid_length,
         )
 
 
@@ -77,39 +177,83 @@ class MHAAttnKey(AttnKey):
 class MLAAttnKey(AttnKey):
     """Decode dispatch metadata for multi-latent attention (MLA)."""
 
-    def pack_into_buffer(
-        self, device: Device, max_cache_valid_length: int
-    ) -> Buffer:
-        # MLA decode kernels read a 3-int dispatch buffer on the accelerator.
-        # ``max_cache_valid_length`` is not part of the MLA dispatch buffer (it
-        # is carried separately in ``max_cache_length``), so it is ignored here.
-        metadata = Buffer.from_numpy(
-            np.array(
-                [
-                    self.batch_size,
-                    self.max_prompt_length,
-                    self.num_partitions,
-                ],
-                dtype=np.int64,
-            )
+    kernel_variant: int = 0
+    """Tells apart SM100 sparse launches with the same partition count.
+
+    Values 0, 1, and 2 select single-CTA 64-key, paired 128-key, and
+    single-CTA 128-key launches, respectively. This is part of the capture
+    identity only; :meth:`pack_into` does not write it.
+    """
+    decode_batch_size: int = 0
+    """Rows of the record's decode view, zero when the record does not split."""
+    decode_max_prompt_length: int = 0
+    """Per-step query width of the decode view, zero when it does not split."""
+    decode_num_partitions: int = 0
+    """Partition count of the decode view, zero when it does not split."""
+
+    @classmethod
+    def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
+        """MLA decode kernels read six ints, on the accelerator.
+
+        Values 0-2 are the whole batch's; values 3-5 the decode view's,
+        zero when the record does not split.
+        """
+        return DispatchMetadataSpec(
+            shape=(6,), dtype=DType.int64, on_device=True
         )
-        return metadata.to(device)
+
+    def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
+        """Writes the whole batch's and the decode view's dispatch values into ``into``.
+
+        The cache length is not part of the MLA dispatch buffer; it is carried
+        separately in ``max_cache_length``.
+        """
+        into[:] = (
+            self.batch_size,
+            self.max_prompt_length,
+            self.num_partitions,
+            self.decode_batch_size,
+            self.decode_max_prompt_length,
+            self.decode_num_partitions,
+        )
 
 
 @dataclass(frozen=True)
 class MSAAttnKey(AttnKeyInterface):
-    """Decode dispatch metadata for multi-step attention (MSA)."""
+    """Decode dispatch metadata for MiniMax Sparse Attention (MSA).
 
-    def pack_into_buffer(
-        self, device: Device, max_cache_valid_length: int
-    ) -> Buffer:
-        return Buffer.from_numpy(np.array([42], dtype=np.int64))
+    Graph capture keys each captured graph by its caches' attention keys, so
+    the key holds the batch size even where no other cache's key does.
+    """
+
+    batch_size: int
+
+    @classmethod
+    def dispatch_metadata_spec(cls) -> DispatchMetadataSpec:
+        """The batch size and the cache length, on the accelerator."""
+        return DispatchMetadataSpec(
+            shape=(2,), dtype=DType.int64, on_device=True
+        )
+
+    def pack_into(self, into: np.ndarray, max_cache_valid_length: int) -> None:
+        """Writes the batch size and this step's cache length."""
+        into[:] = (self.batch_size, max_cache_valid_length)
+
+
+@dataclass(frozen=True)
+class MSAIndexAttnKey(MSAAttnKey):
+    """Decode dispatch metadata for the MSA indexer's index-K cache.
+
+    A type of its own, so a graph captured for one MSA cache is never
+    replayed for the other.
+    """
 
 
 @dataclass(frozen=True)
 class MultiAttnKey(AttnKeyInterface):
-    """A tree of resolved dispatch metadata mirroring a ``MultiKVCacheParams``
-    tree.
+    """A tree of resolved dispatch metadata.
+
+    Mirrors a ``MultiKVCacheParams`` tree.
 
     ``children`` is a tuple of ``(name, key)`` pairs (rather than a dict) so it
     stays a frozen, hashable identity for the graph-capture key map.

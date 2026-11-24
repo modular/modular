@@ -21,113 +21,111 @@ graph inputs are added here.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from typing import ClassVar
+
+from max import functional as F
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.sharding import (
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
+from max.nn.common_layers.quant_moe import QuantizedMoE
+from max.nn.ep import EPBuffers
+from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.utils import split_replicated_batch
+from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.tensor import Tensor, default_dtype
+from max.tensor.sharding import (
     DeviceMapping,
-    NoReshard,
-    PlacementMapping,
     Replicated,
     Sharded,
-    mode,
 )
-from max.experimental.tensor import Tensor
-from max.graph import TensorValue
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
-from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
 
 from ...deepseekV3_modulev3.deepseekV3 import (
     DeepseekV3TextModel,
     gather_last_tokens,
-    split_replicated_batch,
 )
-from ...deepseekV3_modulev3.model_config import DeepseekV3Config
+from ..model_config import KimiK2_5Config
 
 
-class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
-    """Top-level Kimi K2.5 language model.
+class KimiK2_5Decoder(Module[[DecoderInputs], DecoderOutputs]):
+    """The Kimi K2.5 text tower, registered for the ``DECODER`` role.
 
     Composes a :class:`DeepseekV3TextModel` and reimplements its decode loop
-    with a multimodal-embedding merge inserted after ``embed_tokens``. Mirrors
-    ``deepseekV3_modulev3.DeepseekV3`` for the variadic KV/EP unflattening.
+    with a multimodal-embedding merge inserted after ``embed_tokens``. It
+    runs tensor-parallel attention over a ``tp`` mesh, or one attention
+    replica per device over a ``dp`` mesh, with its experts tensor-parallel
+    or, under expert parallelism, spread across the devices.
     """
 
-    def __init__(
-        self,
-        config: DeepseekV3Config,
-        kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
-    ) -> None:
+    graph_name: ClassVar[str] = "KimiK2_5MoEDecoder"
+    supports_data_parallel: ClassVar[bool] = True
+    consumes_vision: ClassVar[bool] = True
+
+    def __init__(self, config: KimiK2_5Config) -> None:
         super().__init__()
-        self.language_model = DeepseekV3TextModel(config, ep_batch_manager)
-        self.config = config
-        self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
+        llm = config.llm_config
+        if llm.mesh is None:
+            raise ValueError("Kimi K2.5 needs a mesh: apply the runtime first")
+        # Quantized checkpoints keep norms, biases and embeddings in bf16.
+        dtype = DType.bfloat16 if llm.quant_config is not None else llm.dtype
+        with default_dtype(dtype):
+            self.language_model = DeepseekV3TextModel(llm)
+        # The checkpoint names the text model's weights from its root.
+        self.language_model.name_transparent = True
+        self.config = llm
+        self.kv_params = llm.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        image_embeddings: Tensor,
-        image_token_indices: Tensor,
-        *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Runs the language graph over the batch and its image embeddings."""
         mesh = self.config.mesh
-        if mesh is None:
-            raise ValueError("Mesh must be defined")
+        assert mesh is not None
+        assert inputs.vision is not None
+        assert inputs.batch_context_lengths is not None
 
-        # Peel the per-replica host batch context lengths and (under data
-        # parallelism) the CPU split boundaries off the variadic args, matching
-        # ``DeepseekV3.forward`` (the shared tower's top-level wrapper).
-        dp_degree = self.config.data_parallel_degree
-        batch_context_lengths = variadic_args[:dp_degree]
-        variadic_args = variadic_args[dp_degree:]
         data_parallel_splits: Tensor | None = None
         input_row_offsets_i64: Tensor | None = None
-        if dp_degree > 1:
-            batch_context_length = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in batch_context_lengths],
-                PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+        if self.config.data_parallel_degree > 1:
+            batch_context_length = cache_tensor(
+                inputs.batch_context_lengths,
+                DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
             )
-            data_parallel_splits, input_row_offsets_i64, *rest = variadic_args
-            variadic_args = tuple(rest)
+            assert inputs.host_input_row_offsets is not None
+            data_parallel_splits = inputs.data_parallel_splits
+            input_row_offsets_i64 = F.cast(
+                inputs.host_input_row_offsets, DType.int64
+            )
         else:
-            batch_context_length = batch_context_lengths[0]
+            batch_context_length = inputs.batch_context_lengths[0]
 
-        kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(kv_collections, KVCacheInputs)
-
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            # Any variadic graph values left after the KV cache are the EP
-            # communication buffers. Wrap them as an explicit forward argument
-            # so they thread through each MoE block's subgraph boundary.
-            ep_buffers = list(kv_inputs)
-            comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
-
-        kv_collection = PagedCacheValues.from_upstream(
-            kv_collections.inputs,
-            PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+        kv_inputs = iter(kv_input_values(inputs.kv))
+        kv_collections = tree.leaves(
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
         )
-        return self._run_text_model(
-            tokens,
+        kv_collection = PagedCacheValues.from_upstream(
+            kv_collections,
+            DeviceMapping(mesh, (Replicated(),) * mesh.ndim),
+        )
+        logits = self._run_text_model(
+            inputs.tokens,
             kv_collection,
-            input_row_offsets,
-            image_embeddings,
-            image_token_indices,
+            inputs.input_row_offsets,
+            inputs.vision.embeddings,
+            inputs.vision.scatter_indices,
             batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            inputs.ep,
         )
+        return DecoderOutputs(next_token_logits=logits)
 
-    @mode(NoReshard())
     def _run_text_model(
         self,
         tokens: Tensor,
@@ -138,8 +136,8 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None,
         input_row_offsets_i64: Tensor | None,
-        comm_buffers: EPCommBuffers | None,
-    ) -> tuple[Tensor, ...]:
+        ep: EPBuffers | None,
+    ) -> Tensor:
         lm = self.language_model
         mesh = lm.mesh
         if mesh is not None:
@@ -190,16 +188,20 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
             # CPU batch_context_length so the graph stays capturable.
             mla_prefill_metadata.buffer_lengths = batch_context_length
 
+        # The MoE blocks share one subgraph, as in ``DeepseekV3TextModel``.
         for idx, layer in enumerate(lm.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
-            h = layer(
+            call: Callable[..., Tensor] = layer
+            if isinstance(layer.mlp, QuantizedMoE):
+                call = as_subgraph(layer, name="moe_block")
+            h = call(
                 layer_idx_tensor,
                 h,
                 kv_collection,
                 input_row_offsets,
                 freqs_cis,
                 mla_prefill_metadata,
-                comm_buffers,
+                ep,
             )
 
         last_token_h = gather_last_tokens(h, input_row_offsets)
@@ -208,5 +210,4 @@ class KimiK2_5MoEDecoder(Module[..., tuple[Tensor, ...]]):
         last_logits = lm.lm_head(lm.norm(last_token_h))
         if mesh is not None:
             last_logits = last_logits.to(mesh.devices[0])
-        last_logits = F.cast(last_logits, DType.float32)
-        return (last_logits,)
+        return F.cast(last_logits, DType.float32)

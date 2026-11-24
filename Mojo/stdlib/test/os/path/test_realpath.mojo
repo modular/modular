@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.os.path import realpath
-from std.pathlib import Path, cwd
-from std.sys import CompilationTarget
+from std.pathlib import cwd
 
-from std.python import Python
 from std.testing import TestSuite, assert_equal, assert_raises, assert_true
 
 

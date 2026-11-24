@@ -26,13 +26,12 @@ from typing import Any, Literal
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import CPU, Buffer, Device
+from max.driver import CPU, Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
 from max.graph.ops import shape_to_tensor
 from max.pipelines.context import PixelContext, TokenBuffer
 from max.pipelines.diffusion.interface import DiffusionPipeline, max_compile
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.profiler import Tracer, traced
 
 from ..autoencoders.autoencoder_kl_qwen_image import AutoencoderKLQwenImageModel
@@ -568,7 +567,7 @@ class QwenImagePipeline(DiffusionPipeline):
             return np.from_dlpack(cpu_image).astype(np.float32)
         except (RuntimeError, TypeError):
             # bfloat16 not supported by numpy, cast via v1 Tensor
-            from max.experimental.tensor import Tensor as _Tensor
+            from max.tensor import Tensor as _Tensor
 
             if isinstance(cpu_image, _Tensor):
                 return np.from_dlpack(cpu_image.cast(DType.float32)).astype(
@@ -592,6 +591,7 @@ class QwenImagePipeline(DiffusionPipeline):
         latents: npt.NDArray[np.float32],
         latent_image_ids: npt.NDArray[np.float32],
     ) -> tuple[Buffer, Buffer]:
+        """Packs the latents and their position ids into the graph's input."""
         latents_np = np.asarray(latents)
         batch = latents_np.shape[0]
         c = latents_np.shape[1]

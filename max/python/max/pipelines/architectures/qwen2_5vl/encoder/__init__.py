@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Qwen2.5-VL encoder."""
 
 from .model import Qwen25VLEncoderModel
 from .multimodal_encoder import Qwen25VLMultimodalEncoderModel

@@ -31,7 +31,7 @@
 from max.gpu import thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.primitives import block
-from std.testing import assert_equal, assert_almost_equal, TestSuite
+from std.testing import assert_almost_equal, TestSuite
 
 
 def block_scan_kernel[
@@ -120,7 +120,7 @@ def run_case[
     ctx.synchronize()
 
     # --- Diagnostics: print the boundary structure before asserting. ---
-    print("=== CASE:", name, "(n_active=", n_active, ") ===")
+    print(t"=== CASE: {name} (n_active= {n_active} ) ===")
     print("  ref_total =", ref_total)
     print("  got_sum[0]            =", got_sum[0], "(block.sum, tx=0)")
     print(
@@ -143,17 +143,8 @@ def run_case[
     while w * 32 < n_active + 64 and w * 32 < block_size:
         var idx = w * 32
         print(
-            "    warp",
-            w,
-            "tx",
-            idx,
-            ": incl=",
-            got_incl[idx],
-            " excl=",
-            got_excl[idx],
-            " (ref incl=",
-            ref_incl[idx],
-            ")",
+            t"    warp {w} tx {idx} : incl= {got_incl[idx]}  excl="
+            t" {got_excl[idx]}  (ref incl= {ref_incl[idx]} )"
         )
         w += 1
 

@@ -13,6 +13,8 @@
 
 # ===----------------------------------------------------------------------=== #
 #
+# Portions Copyright (c) 2018 Łukasz Langa, licensed under the MIT License.
+#
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
@@ -2121,6 +2123,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         string_line = Line(
             mode=line.mode,
             depth=line.depth + 1,
+            indent_offset=line.indent_offset,
             inside_brackets=True,
             should_split_rhs=line.should_split_rhs,
             magic_trailing_comma=line.magic_trailing_comma,

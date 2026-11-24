@@ -10,7 +10,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 """QwenImage VAE (encoder + decoder) for T=1 image generation.
 
 The QwenImage VAE (Wan-2.1 architecture) uses 3D causal convolutions. For
@@ -31,15 +30,14 @@ from collections.abc import Callable
 from typing import Any, cast
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, float32_to_bfloat16_as_uint16
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
 from max.graph.weights import WeightData, Weights
-from max.nn.conv import Conv2d
-from max.nn.layer import LayerList, Module
+from max.nn.legacy.conv import Conv2d
+from max.nn.legacy.layer import LayerList, Module
 from max.pipelines.lib import SupportedEncoding
-from max.pipelines.lib.bfloat16_utils import float32_to_bfloat16_as_uint16
 from max.pipelines.modeling.base.component_model import ComponentModel
 
 from .model_config import (
@@ -53,7 +51,14 @@ def _interpolate_2d_nearest(
     *,
     scale_factor: int = 2,
 ) -> TensorValue:
-    """Upsample an NCHW tensor using nearest-neighbor expansion."""
+    """Upsample an NCHW tensor using nearest-neighbor expansion.
+
+    Delegates to ``ops.resize_nearest`` with the asymmetric transform and
+    floor rounding, which at an exact 2x scale maps each output coordinate
+    to ``out_coord // 2`` -- the same replication the old hand-rolled
+    reshape + broadcast expansion produced. The resize kernel's
+    integer-scale fast path makes this as cheap as the broadcast trick.
+    """
     if x.rank != 4:
         raise ValueError(f"Input tensor must have rank 4, got {x.rank}")
     if scale_factor != 2:
@@ -62,13 +67,12 @@ def _interpolate_2d_nearest(
         )
 
     n, c, h, w = x.shape
-    x_reshaped = ops.reshape(x, [n, c, h, 1, w, 1])
-    ones = ops.broadcast_to(
-        ops.constant(1.0, dtype=x.dtype, device=x.device),
-        [1, 1, 1, scale_factor, 1, scale_factor],
+    return ops.resize_nearest(
+        x,
+        [n, c, h * scale_factor, w * scale_factor],
+        coordinate_transform_mode=ops.CoordinateTransformMode.ASYMMETRIC,
+        round_mode=ops.RoundMode.FLOOR,
     )
-    x_expanded = x_reshaped * ones
-    return ops.reshape(x_expanded, [n, c, h * scale_factor, w * scale_factor])
 
 
 class NCHWRMSNorm(Module):
@@ -99,6 +103,7 @@ class NCHWRMSNorm(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Normalizes ``x`` per channel, accepting NCHW layout."""
         x_perm = ops.permute(x, [0, 2, 3, 1])
         gamma = self.gamma.cast(x_perm.dtype)
         if x_perm.device:
@@ -166,6 +171,7 @@ class ResBlock(Module):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the residual block over ``x``."""
         shortcut = (
             self.conv_shortcut(x) if self.conv_shortcut is not None else x
         )
@@ -233,6 +239,7 @@ class Attention(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Applies self-attention to ``x`` with a residual."""
         residual = x
         x = self.norm(x)
 
@@ -271,6 +278,7 @@ class Interpolate2D(Module):
     """
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Doubles the spatial size of ``x`` with nearest sampling."""
         return _interpolate_2d_nearest(x, scale_factor=2)
 
 
@@ -278,6 +286,7 @@ class ZeroPadBottomRight2D(Module):
     """Pad right and bottom by 1 pixel (matches HF ZeroPad2d((0,1,0,1)))."""
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Pads one row and one column on the bottom right."""
         return ops.pad(x, paddings=[0, 0, 0, 0, 0, 1, 0, 1], value=0)
 
 
@@ -313,6 +322,7 @@ class Upsampler(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Upsamples ``x`` by the configured factor."""
         x = self.resample[0](x)
         x = self.resample[1](x)
         return x
@@ -348,6 +358,7 @@ class Downsampler(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Downsamples ``x`` by the configured factor."""
         x = self.resample[0](x)
         x = self.resample[1](x)
         return x
@@ -379,6 +390,7 @@ class MidBlock(Module):
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the attention block between the resnet stages."""
         x = self.resnets[0](x)
         x = self.attentions[0](x)
         x = self.resnets[1](x)
@@ -425,6 +437,7 @@ class UpBlock(Module):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the block's resnets and upsamplers over ``x``."""
         for resnet in self.resnets:
             x = resnet(x)
         if self.upsamplers is not None:
@@ -462,6 +475,7 @@ class DownBlock(Module):
             )
 
     def __call__(self, x: TensorValue) -> TensorValue:
+        """Runs the block's resnets and downsamplers over ``x``."""
         for resnet in self.resnets:
             x = resnet(x)
         if self.downsamplers is not None:
@@ -546,6 +560,7 @@ class QwenImageEncoder3d(Module):
         )
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The encoder's input types."""
         return (
             TensorType(
                 self._dtype,
@@ -555,6 +570,7 @@ class QwenImageEncoder3d(Module):
         )
 
     def __call__(self, image: TensorValue) -> TensorValue:
+        """Runs the image through the encoder stack."""
         h = self.conv_in(image)
         for down_block in self.down_blocks:
             h = down_block(h)
@@ -666,6 +682,7 @@ class QwenImageDecoder3d(Module):
         )
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The decoder's input types."""
         return (
             TensorType(
                 self._dtype,
@@ -675,6 +692,7 @@ class QwenImageDecoder3d(Module):
         )
 
     def __call__(self, z: TensorValue) -> TensorValue:
+        """Runs the latent through the decoder stack."""
         z = self.post_quant_conv(z)
         h = self.conv_in(z)
         h = self.mid_block(h)
@@ -695,9 +713,11 @@ class AutoencoderKLQwenImage(Module):
         self.decoder = QwenImageDecoder3d(config)
 
     def encode(self, image: TensorValue) -> TensorValue:
+        """Encodes the image with the encoder graph."""
         return self.encoder(image)
 
     def __call__(self, z: TensorValue) -> TensorValue:
+        """Decodes the latent with the decoder graph."""
         return self.decoder(z)
 
 
@@ -842,6 +862,7 @@ class AutoencoderKLQwenImageModel(ComponentModel):
         self.load_model()
 
     def load_model(self) -> Callable[..., Any]:
+        """Loads the encoder and decoder weights into the graph."""
         target_dtype = self.config.dtype
 
         # Collect VAE weights by component.
@@ -934,12 +955,15 @@ class AutoencoderKLQwenImageModel(ComponentModel):
         return Buffer.from_dlpack(arr).to(self.devices[0])
 
     def encode(self, image: Buffer) -> Buffer:
+        """Encodes the image through the compiled encoder."""
         result = self.encoder.execute(image)
         return result[0] if isinstance(result, (list, tuple)) else result
 
     def decode(self, z: Buffer) -> Buffer:
+        """Decodes the latent through the compiled decoder."""
         result = self.model.execute(z)
         return result[0] if isinstance(result, (list, tuple)) else result
 
     def __call__(self, z: Buffer) -> Buffer:
+        """Decodes the latent, as the pipeline calls it."""
         return self.decode(z)

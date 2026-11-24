@@ -14,7 +14,7 @@
 
 from std.sys.info import CompilationTarget, _current_target, is_64bit
 
-from std.collections import List, Optional
+from std.collections import List
 
 from std.reflection import (
     get_linkage_name,
@@ -22,7 +22,7 @@ from std.reflection import (
     reflect,
 )
 from std.reflection.type_info import _unqualified_type_name
-from std.testing import assert_equal, assert_true, assert_false
+from std.testing import assert_equal
 from std.testing import TestSuite
 
 
@@ -43,7 +43,7 @@ def test_get_linkage_name_nested() raises:
     assert_equal(
         name,
         (
-            "test_type_info::test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[DType.int,"
+            "test_type_info::closure$test_get_linkage_name_nested()::_nested_func::__storage::_nested_func(::SIMD[DType.int,"
             " 1])`"
         ),
     )
@@ -102,6 +102,23 @@ def test_get_function_name_export() raises:
     assert_equal(name, "export_func")
 
 
+def two_args(a: Int, b: Float32):
+    pass
+
+
+def _variadic_function_name[
+    ret_type: AnyType,
+    arg_types: TypeList[Trait=AnyType, ...],
+    //,
+    func: def(*args: *arg_types) thin -> ret_type,
+]() -> StaticString:
+    return get_function_name[func]()
+
+
+def test_get_function_name_through_variadic_function_type() raises:
+    assert_equal(_variadic_function_name[two_args](), "two_args")
+
+
 struct WhatsMyName:
     pass
 
@@ -128,7 +145,7 @@ def test_get_type_name() raises:
     assert_equal(name, "SIMD[DType.int, 1]")
 
     name = reflect[Int].name[qualified_builtins=True]()
-    assert_equal(name, "std.builtin.simd.SIMD[std.builtin.dtype.DType.int, 1]")
+    assert_equal(name, "std.simd.SIMD[std.builtin.dtype.DType.int, 1]")
 
 
 def test_get_type_name_nested() raises:
@@ -144,9 +161,7 @@ def test_get_type_name_simd() raises:
     assert_equal(name, "SIMD[DType.float32, 1]")
 
     name = reflect[SIMD[.uint16, 4]].name[qualified_builtins=True]()
-    assert_equal(
-        name, "std.builtin.simd.SIMD[std.builtin.dtype.DType.uint16, 4]"
-    )
+    assert_equal(name, "std.simd.SIMD[std.builtin.dtype.DType.uint16, 4]")
 
 
 @fieldwise_init
@@ -201,7 +216,7 @@ def test_get_type_name_struct() raises:
 
 
 def test_get_type_name_unprintable() raises:
-    var name = reflect[CompilationTarget[_current_target()]].name()
+    var name = reflect[CompilationTarget[_mlir_value=_current_target()]].name()
     assert_equal(name, "std.sys.info.CompilationTarget[<unprintable>]")
 
 

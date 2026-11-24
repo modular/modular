@@ -37,16 +37,17 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import pytest
+from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import CompiledModel, Module
-from max.experimental.tensor import Tensor, default_dtype
 from max.graph import TensorType
+from max.nn import Module
 from max.pipelines.architectures.minimax_music3 import sampling
 from max.pipelines.architectures.minimax_music3.model_config import (
     SamplingConfig,
 )
+from max.tensor import Tensor, default_dtype
+from max.tensor.compilation import CompiledCallable
 
 VOCAB = 64
 TOP_K = 8
@@ -107,7 +108,7 @@ def recipe() -> SamplingConfig:
     )
 
 
-Stage = tuple[Draw, CompiledModel[..., Any]]
+Stage = tuple[Draw, CompiledCallable[..., Any]]
 
 
 @pytest.fixture(
@@ -129,7 +130,7 @@ def logits(spread: float, seed: int = 0) -> npt.NDArray[np.float32]:
 
 
 def run(
-    model: CompiledModel[..., Any],
+    model: CompiledCallable[..., Any],
     scores: npt.NDArray[np.float32],
     seed: int,
 ) -> tuple[Tensor, ...]:

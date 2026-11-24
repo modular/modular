@@ -1,0 +1,251 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Owns a socket descriptor and applies the setup every socket needs."""
+
+from std.ffi import ErrNo, c_int, c_size_t
+from std.io import FileDescriptor, IOError
+from std.io._syscall import cap_io_length, check, retry_io_interrupted
+from std.net.addr import SocketAddr
+from std.sys import size_of
+
+from ._sys import unix
+from ._sys.socket_addr import (
+    from_sockaddr_storage,
+    sockaddr_len,
+    to_sockaddr_storage,
+)
+from ._sys.unix import (
+    MSG_NOSIGNAL,
+    POLLOUT,
+    SOL_SOCKET,
+    SO_ERROR,
+    accept_socket,
+    getsockopt,
+    nfds_t,
+    open_socket,
+    pollfd,
+    setsockopt,
+    sockaddr,
+    sockaddr_storage,
+    socklen_t,
+)
+
+
+struct Socket(not Deinitable, Movable):
+    """An open socket, closed when the value is destroyed.
+
+    New sockets are close-on-exec; see `open_socket` for the full setup.
+    """
+
+    var _fd: FileDescriptor
+
+    def __init__(out self, var fd: FileDescriptor):
+        """Takes ownership of an open socket descriptor."""
+        self._fd = fd^
+
+    def __init__(
+        out self, *, domain: c_int, type: c_int, protocol: c_int = 0
+    ) raises IOError:
+        """Opens a socket of the given domain, type, and protocol, where
+        protocol 0 picks the default for the domain and type."""
+        self._fd = open_socket(domain, type, protocol)
+
+    def close(deinit self) raises IOError:
+        """Closes the socket."""
+        self._fd^.close()
+
+    # TODO(https://github.com/modular/modular/issues/7477): this really
+    # shouldn't be "unsafe". Getting the `c_int` of the underlying descriptor is
+    # perfectly safe. The only unsafe thing would be initializing a Socket/FD
+    # from a raw `c_int`.
+    def unsafe_fd(self) -> c_int:
+        """Returns the descriptor, which stays owned by this socket.
+
+        It's valid only while the socket is alive, and Mojo destroys the socket
+        at its last use, which can be the `unsafe_fd()` call itself.
+        """
+        return self._fd._value._value
+
+    def set_option(
+        self, *, level: c_int, name: c_int, value: c_int
+    ) raises IOError:
+        """Sets an integer socket option."""
+        var v = value
+        _ = check(
+            setsockopt(
+                self.unsafe_fd(),
+                level,
+                name,
+                Pointer(to=v).unsafe_bitcast[NoneType](),
+                socklen_t(size_of[c_int]()),
+            ),
+            "setsockopt",
+        )
+
+    def option(self, *, level: c_int, name: c_int) raises IOError -> c_int:
+        """Returns an integer socket option."""
+        var value: c_int = 0
+        var len = socklen_t(size_of[c_int]())
+        _ = check(
+            getsockopt(
+                self.unsafe_fd(),
+                level,
+                name,
+                Pointer(to=value).unsafe_bitcast[NoneType](),
+                Pointer(to=len),
+            ),
+            "getsockopt",
+        )
+        return value
+
+    def set_flag(
+        self, *, level: c_int, name: c_int, enabled: Bool
+    ) raises IOError:
+        """Turns a boolean socket option on or off."""
+        self.set_option(
+            level=level, name=name, value=c_int(1) if enabled else c_int(0)
+        )
+
+    def flag(self, *, level: c_int, name: c_int) raises IOError -> Bool:
+        """Returns whether a boolean socket option is on."""
+        # macOS reports a set flag as its option bit, not 1.
+        return self.option(level=level, name=name) != 0
+
+    def bind(self, addr: SocketAddr) raises IOError:
+        """Binds the socket to a local address."""
+        var storage = to_sockaddr_storage(addr)
+        if (
+            unix.bind(
+                self.unsafe_fd(),
+                Pointer(to=storage).unsafe_bitcast[sockaddr](),
+                sockaddr_len(addr),
+            )
+            == -1
+        ):
+            raise IOError.last_os_error("bind")._with_subject(.addr(addr))
+
+    def listen(self, *, backlog: c_int) raises IOError:
+        """Accepts connections, queueing up to `backlog` of them."""
+        _ = check(unix.listen(self.unsafe_fd(), backlog), "listen")
+
+    def connect(self, addr: SocketAddr) raises IOError:
+        """Connects the socket to a remote address."""
+        var storage = to_sockaddr_storage(addr)
+        var result = unix.connect(
+            self.unsafe_fd(),
+            Pointer(to=storage).unsafe_bitcast[sockaddr](),
+            sockaddr_len(addr),
+        )
+        if result == 0:
+            return
+        var error = IOError.last_os_error("connect")._with_subject(.addr(addr))
+        # An interrupted `connect` carries on in the kernel, so calling it
+        # again doesn't work: on macOS that fails with `EISCONN` while the
+        # connection is still pending.
+        if error.kind() != .interrupted:
+            raise error
+        self.finish_connect(addr)
+
+    def finish_connect(self, addr: SocketAddr) raises IOError:
+        """Waits for a pending connection to `addr` to finish, and raises the
+        error it failed with, if any."""
+        var fds = pollfd(fd=self.unsafe_fd(), events=POLLOUT, revents=0)
+
+        def attempt() raises IOError {mut fds} -> c_int:
+            return check(unix.poll(Pointer(to=fds), nfds_t(1), -1), "poll")
+
+        _ = retry_io_interrupted(attempt)
+        var errno = self.option(level=SOL_SOCKET, name=SO_ERROR)
+        if errno != 0:
+            raise IOError(
+                errno=ErrNo(Int(errno)), operation="connect"
+            )._with_subject(.addr(addr))
+
+    def accept(self) raises IOError -> Tuple[Socket, SocketAddr]:
+        """Accepts a connection, and returns its socket and the peer's
+        address."""
+        match accept_socket(self.unsafe_fd()):
+            case (var fd, var addr):
+                return (Socket(fd^), addr)
+
+    def local_addr(self) raises IOError -> SocketAddr:
+        """Returns the address the socket is bound to."""
+        var storage = sockaddr_storage()
+        var len = socklen_t(size_of[sockaddr_storage]())
+        _ = check(
+            unix.getsockname(
+                self.unsafe_fd(),
+                Pointer(to=storage).unsafe_bitcast[sockaddr](),
+                Pointer(to=len),
+            ),
+            "getsockname",
+        )
+        return from_sockaddr_storage(storage, "getsockname")
+
+    def peer_addr(self) raises IOError -> SocketAddr:
+        """Returns the address of the connected peer."""
+        var storage = sockaddr_storage()
+        var len = socklen_t(size_of[sockaddr_storage]())
+        _ = check(
+            unix.getpeername(
+                self.unsafe_fd(),
+                Pointer(to=storage).unsafe_bitcast[sockaddr](),
+                Pointer(to=len),
+            ),
+            "getpeername",
+        )
+        return from_sockaddr_storage(storage, "getpeername")
+
+    def recv(
+        self, buffer: MutSpan[Byte, _], *, flags: c_int = 0
+    ) raises IOError -> Int:
+        """Reads into `buffer` with the given `MSG_*` flags, and returns how
+        many bytes it read: 0 once the peer has closed its end."""
+
+        def attempt() raises IOError {imm} -> Int:
+            return check(
+                unix.recv(
+                    self.unsafe_fd(),
+                    buffer.unsafe_ptr(),
+                    c_size_t(cap_io_length(len(buffer))),
+                    flags,
+                ),
+                "recv",
+            )
+
+        return retry_io_interrupted(attempt)
+
+    def send(
+        self, bytes: ImmSpan[Byte, _], *, flags: c_int = 0
+    ) raises IOError -> Int:
+        """Writes some of `bytes` with the given `MSG_*` flags, and returns how
+        many it wrote.
+
+        A send to a peer that has closed raises an error instead of `SIGPIPE`,
+        which would end the process.
+
+        macOS ignores `MSG_DONTWAIT` here, and blocks on a full buffer anyway.
+        """
+
+        def attempt() raises IOError {imm} -> Int:
+            return check(
+                unix.send(
+                    self.unsafe_fd(),
+                    bytes.unsafe_ptr(),
+                    c_size_t(cap_io_length(len(bytes))),
+                    flags | MSG_NOSIGNAL,
+                ),
+                "send",
+            )
+
+        return retry_io_interrupted(attempt)

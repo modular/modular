@@ -13,13 +13,11 @@
 
 # A `.mojoc` inside a plain (non-package) directory still wins the usual
 # `.mojoc`-over-`.mojo` resolution precedence, but importing it through the
-# directory is rejected: its recorded symbol roots resolve only for a
-# top-level binding, so a nested mount would leave every escaping type
-# unresolvable. TODO(MOCO-4487): once loading re-anchors recorded roots to
-# the mount point, these imports resolve instead (restore the `mojo run`
-# form of this test). Inside a source package the `.mojoc` remains
-# unresolvable: a package can't legitimately nest a precompiled copy of its
-# own submodules.
+# directory is rejected unless it was precompiled under that namespace (see
+# mojo-parser's precompile_namespaced_import.mojo): its recorded symbol roots
+# resolve only at the path it was built for. Inside a source package the
+# `.mojoc` remains unresolvable: a package can't legitimately nest a
+# precompiled copy of its own submodules.
 
 # RUN: rm -rf %t.dir && mkdir -p %t.dir/only/tmp %t.dir/mixed/tmp %t.dir/pkg/tmp
 # RUN: mojo precompile %S/inputs/dir_precompiled/helper -o %t.dir/only/tmp/helper.mojoc

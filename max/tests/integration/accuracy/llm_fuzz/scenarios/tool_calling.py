@@ -1162,4 +1162,49 @@ class ToolCallingAttacks(BaseScenario):
                 )
             )
 
+        # ----- 15. Empty tool result -----
+        # A tool that printed nothing returns "", which the OpenAI schema
+        # allows and every chat template renders as an empty result block.
+        # Refusing it with a 400 breaks the agent loop mid-task.
+        resp = await client.post_json(
+            {
+                "model": model,
+                "messages": [
+                    {"role": "user", "content": "What's the weather in Paris?"},
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "call_empty",
+                                "type": "function",
+                                "function": {
+                                    "name": "get_weather",
+                                    "arguments": '{"location": "Paris"}',
+                                },
+                            }
+                        ],
+                    },
+                    {
+                        "role": "tool",
+                        "tool_call_id": "call_empty",
+                        "content": "",
+                    },
+                ],
+                "tools": [valid_tool],
+                "max_tokens": 50,
+            }
+        )
+        results.append(
+            self.make_result(
+                self.name,
+                "empty_tool_result",
+                Verdict.PASS if resp.status == 200 else Verdict.FAIL,
+                status_code=resp.status,
+                detail=f"Status {resp.status}"
+                + (f" error: {resp.error}" if resp.error else "")
+                + (f" body: {resp.body[:200]}" if resp.status != 200 else ""),
+            )
+        )
+
         return results

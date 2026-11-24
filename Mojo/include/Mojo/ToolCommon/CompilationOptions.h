@@ -15,6 +15,7 @@
 #define KGEN_TOOLCOMMON_COMPILATIONOPTIONS_H
 
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/ParameterVerification.h"
 #if MLRT_ACCELERATOR_SUPPORT
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #endif
@@ -22,7 +23,9 @@
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/MArchTarget/MArchTarget.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinAttributes.h"
+#include "llvm/ADT/FloatingPointMode.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/BinaryFormat/Dwarf.h"
 #include "llvm/Support/CodeGen.h"
@@ -78,27 +81,9 @@ splitFpModeEmissionOptions(llvm::StringRef options, FpMode &mode,
   return std::nullopt;
 }
 
-/// Returns true if `item` is a `target-abi=...` emission option. KGEN
-/// intercepts this itself, rather than registering a global cl option, since
-/// it must be applied before the TargetMachine is created.
-inline bool isTargetABIEmissionOption(llvm::StringRef item) {
-  return item.split('=').first == "target-abi";
-}
-
-/// Applies a `target-abi=<value>` item in `items` to `targetABI`, forwarding
-/// the value verbatim, matching LLVM's own `-target-abi` flag semantics.
-inline void applyTargetABIEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
-                                          std::string &targetABI) {
-  for (llvm::StringRef item : items) {
-    auto [key, value] = item.split('=');
-    if (key == "target-abi")
-      targetABI = value.str();
-  }
-}
-
 /// This class provides a set of options used to control the compilation of
 /// KGEN modules.
-class CompilationOptions {
+class MODULAR_CXX_EXPORT CompilationOptions {
 public:
   /// The debug info level to use when compiling.
   enum DebugInfoLevel {
@@ -142,9 +127,7 @@ public:
       bool elaborationErrorIncludePrelude = false,
       ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams,
       unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max(),
-      DebugInfoLanguage debugInfoLanguage = kLangMojo,
-      std::string searchPaths = "",
-      SmallVector<std::string> extraSearchPaths = {});
+      DebugInfoLanguage debugInfoLanguage = kLangMojo);
 
   /// Return the corresponding codegen optimization level for the current option
   /// set.
@@ -195,6 +178,8 @@ public:
   /// ABI) sourced from a `target-abi` emission option, reset before each
   /// compile rather than carried on the target's identity.
   std::string targetABI;
+  /// This mode is only applicable to NVIDIA GPU kernels.
+  std::optional<llvm::DenormalMode::DenormalModeKind> denormalFP32Mode;
   std::optional<llvm::CodeModel::Model> mcmodel;
   std::optional<uint64_t> largeDataThreshold;
   int64_t loopUnrollingWarnThreshold = 65536;
@@ -219,12 +204,17 @@ public:
   /// text (.ll) for all targets.
   /// --emit=asm and --emit=llvm are mutually exclusive, so only one value is
   /// ever active at a time.
+  /// A kind set here is produced in addition to the kind each kernel embeds,
+  /// so the toolchain behind that embedded kind still runs even when the host
+  /// output is discarded.
   EmitAs offloadOutputKind = EmitAs::ASM;
-  std::string searchPaths;
-  SmallVector<std::string> extraSearchPaths;
 
   // File paths to external bitcode libraries specified via command line.
   SmallVector<std::string> bitcodeLibs;
+
+  // Interpreter libraries, the shared libraries whose functions a comptime
+  // `pop.external_call` can call.
+  SmallVector<std::string> interpreterLibs;
 
   bool verboseOutput = false;
 
@@ -235,6 +225,14 @@ public:
   ErrorVerboseLevel elaborationErrorVerbose = kSimpleParams;
 
   unsigned elaborationMaxDepth = std::numeric_limits<unsigned>::max();
+
+  bool elaborationStats = false;
+
+  bool parserStats = false;
+
+  // Whether to run the parameter verifier. It finds compiler bugs, not user
+  // errors, so CI can turn it off to save compile time.
+  bool runParameterVerifier = kVerifyParametersByDefault;
 
   // HACK: to disable llvm splitting for some cases.
   // - mojo REPL (#35345)
@@ -255,16 +253,6 @@ public:
   // Maximum number of threads to be used by AsyncRT. 0 means use all available.
   size_t numThreads = 0;
 
-  bool disableWarnings = false;
-  bool warningsAsErrors = false;
-  bool warnOnUnstableAPIs = false;
-  bool ignoreIncompatiblePrecompiledFileErrors = false;
-
-  /// Qualified names (e.g. `Foo.bar`, or just `some_fn` for a top-level
-  /// declaration) of `@deprecated` declarations whose deprecation warning
-  /// should be suppressed, set via `--ignore-deprecated`.
-  SmallVector<std::string> ignoredDeprecations;
-
   // Extra handle name to separate cache base between mojo, kgen, kgen-opt,
   // to avoid internal test cache pruning races caused by different binary IDs.
   // Set default value to be "mojo", will be overwritten with other tool names
@@ -274,16 +262,36 @@ public:
   void setDefaultCPU();
 };
 
-// Return true if target triple is `air64-`
-bool isMetalTriple(const llvm::Triple &triple);
-
 // Return true if `triple` is a registered GPU target.
-bool isGPUTriple(const llvm::Triple &triple);
+MODULAR_CXX_EXPORT bool isGPUTriple(const llvm::Triple &triple);
+
+// Return true if `triple` is the registered Metal target.
+MODULAR_CXX_EXPORT bool isMetalTriple(const llvm::Triple &triple);
 
 // Whether the standalone module should export all symbols (GPU targets do, so
 // offloaded kernels resolve by symbol at runtime).
 bool overrideExported(const llvm::Triple &triple);
 bool overrideExported(const CompilationOptions &options);
+
+/// Returns true if `item` is an emission option that KGEN reads into a
+/// `CompilationOptions` field instead of an LLVM cl option, so the item must
+/// not reach `parseEmissionOptions`.
+bool isInterceptedEmissionOption(llvm::StringRef item);
+
+/// Sets the `options` fields of the intercepted items in `items`, and clears
+/// the fields whose item is absent.
+ErrorOrSuccess
+applyInterceptedEmissionOptions(llvm::ArrayRef<llvm::StringRef> items,
+                                CompilationOptions &options);
+
+/// Applies the emission options of one offload group to `options`. The fp-mode
+/// items are applied on top of `hostFpMode` and removed from the option string.
+/// The intercepted items stay in the string, because the string identifies the
+/// offload in debug output and cache keys.
+ErrorOrSuccess applyOffloadEmissionOptions(llvm::StringRef emissionOptions,
+                                           llvm::StringRef linkOptions,
+                                           FpMode hostFpMode,
+                                           CompilationOptions &options);
 
 } // namespace M::KGEN
 

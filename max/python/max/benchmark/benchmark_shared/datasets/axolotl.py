@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Axolotl conversation dataset."""
+
 from __future__ import annotations
 
 import importlib.resources
@@ -25,6 +27,8 @@ from .types import RequestSamples, SampledRequest
 
 
 class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
+    """Axolotl conversation dataset."""
+
     def fetch(self) -> None:
         """Fetch Axolotl dataset from local file."""
         # Set default dataset path if not provided
@@ -50,6 +54,7 @@ class AxolotlBenchmarkDataset(LocalBenchmarkDataset):
         **kwargs,
     ) -> RequestSamples:
         """Sample requests from an Axolotl-formatted dataset.
+
         The dataset should be in the following JSON format:
         [
             {

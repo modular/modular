@@ -124,6 +124,12 @@ def StructDeclInterface : OpInterface<"StructDeclInterface"> {
       "Get the input parameter declarations for this struct.",
       "ArrayRef<ParamDeclAttr>", "getInputParams"
     >,
+    InterfaceMethod<[{
+      Get the array of annotations, when `fieldIndex` is nullopt, return the
+      annotation on struct, else, returns the annotation of the specified field.
+    }], "FailureOr<ArrayAttr>", "getAnnotations",
+      (ins "std::optional<int>":$fieldIndex)
+    >,
     InterfaceMethod< [{
       Lookup a conformance by trait symbol, when returning non-null, the type
       of the returned Operation must be a ConformanceOp, we declare it as
@@ -162,9 +168,9 @@ def FuncInterface : OpInterface<"FuncInterface"> {
       Return the function's body argument and result types.
     }], "FunctionType", "getFunctionType", (ins)>,
     InterfaceMethod<[{
-      Return whether the function should be always_inline'd, and whether it
-      should maintain debug info when inlined.
-    }], "InlineLevel", "getInlineLevel", (ins)>,
+      Return the value `@inline` named, which is an `InlineLevel` once it no
+      longer depends on a parameter. `inlineLevelOf` reads it back.
+    }], "TypedAttr", "getInlineLevel", (ins)>,
     InterfaceMethod<[{
       Return the decorators attached to this function.
     }], "ArrayRef<TypedAttr>", "getDecorators", (ins), [{}], [{ return {}; }]>,
@@ -267,7 +273,7 @@ def KGEN_GeneratorUserOpInterface : OpInterface<"GeneratorUserOpInterface"> {
       its callee has been concretized into a symbol constant. The method should
       use the builder to create a new operation that invokes the callee.
     }], "void", "concretizeCallee", (ins "IRRewriter &":$b,
-                                         "SymbolConstantAttr":$callee), [{}], [{
+                                         "FuncSymbolGenerator":$callee), [{}], [{
       $_op.setCalleeAttr(callee);
     }]>
   ];
@@ -316,7 +322,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       implicit parameter operator in how it behaves.
 
       Two operations that are implicitly parameter are `kgen.call` and
-      `kgen.param.if`.
+      `hlcf.comptime.if`.
 
       ```mlir
       kgen.call @foobar() : () -> ()
@@ -327,7 +333,7 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       symbol reference `@foobar` to a single concrete function.
 
       ```mlir
-      kgen.param.if <1> {
+      hlcf.comptime.if 1 {
         // ...
       } else {
         // ...
@@ -360,14 +366,14 @@ def ParamOpInterface : OpInterface<"ParamOpInterface"> {
       Example:
 
       ```mlir
-      kgen.param.declare.region Fn = <A>() -> ()
+      kgen.generator @Fn<A: index>() -> ()
           constraints <[eq(A, 1), "A == 1"]> {
       }
       ```
 
       Here, the expression `eq(A, 1)` contains a use of the parameter `A` which
-      is declared inside the scope defined by the `kgen.param.declare.region`.
-      This use must be distinguished from the uses of parameters by the
+      is declared inside the scope defined by the `kgen.generator`. This use
+      must be distinguished from the uses of parameters by the
       operation at the scope that contains the operation (i.e. the scope in
       which `Fn` is declared).
     }], "void", "collectParameterUsesBelow",
@@ -485,7 +491,7 @@ def FunctionLike : OpInterface<"FunctionLike", [DebugInfo_SubprogramScoped]> {
     - region results are returned via the stack.
 
     This interface specifies the required result types of the region, allowing
-    it to be terminated by a `kgen.return` or `kgen.unreachable`, if the
+    it to be terminated by a `hlcf.return` or `hlcf.unreachable`, if the
     function never returns.
   }];
 
@@ -540,8 +546,8 @@ def KGEN_CallOpInterface : OpInterface<"KGENCallOpInterface"> {
 
     /// Get the symbol backing the callee.
     SymbolRefAttr getCalleeSymbol() {
-      if (auto callee = dyn_cast<SymbolConstantAttr>($_op.getCallee()))
-        return callee.getSymbol();
+      if (auto generator = FuncSymbolGenerator::dynCast($_op.getCallee()))
+        return generator.getSymbol();
       return {};
     }
   }];

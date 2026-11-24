@@ -41,13 +41,13 @@ from max.pipelines.context import (
     SamplingParams,
 )
 from max.pipelines.lib import PixelGenerationTokenizer
+from max.pipelines.lib.generate import GenerateIterator
 from max.pipelines.modeling.types import (
     PipelineTokenizer,
     PixelGenerationInputs,
     RequestID,
     TextGenerationRequest,
 )
-from max.support import fetch_bytes_from_s3
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
 
@@ -56,6 +56,7 @@ from .model_output import (
     TokenInfo,
 )
 from .numerics import log_softmax
+from .storage import load_bytes
 from .test_data import MockPixelGenerationRequest, MockTextGenerationRequest
 
 
@@ -76,8 +77,9 @@ def _decode_base64_image_to_numpy(image_data: str) -> np.ndarray:
 def _load_input_image(image_uri: str) -> Image.Image:
     """Load an input image for image-to-image requests."""
     if image_uri.startswith("s3://"):
-        image_bytes = fetch_bytes_from_s3(image_uri)
-        return Image.open(BytesIO(image_bytes)).convert("RGB")
+        # Falls back to an unsigned read of the public bucket when the
+        # runner has no AWS credentials, as test_data's images do.
+        return Image.open(BytesIO(load_bytes(image_uri))).convert("RGB")
     return Image.open(image_uri).convert("RGB")
 
 
@@ -187,7 +189,13 @@ def run_model(
             reference_by_id,
             logits_processors,
         )
-        outputs = pipeline.generate(batch)
+        contexts = [
+            asyncio.run(pipeline.tokenizer.new_context(request))
+            for request in batch
+        ]
+        with GenerateIterator.from_contexts(pipeline, contexts) as generation:
+            while not generation.done:
+                generation.step()
         if print_outputs:
             for j in range(len(batch)):
                 request = requests_in_batch[j]
@@ -201,7 +209,10 @@ def run_model(
                 print(
                     "Output:",
                     tokenizer.delegate.decode(
-                        outputs[j].tokens, skip_special_tokens=True
+                        generation.sequences[j][
+                            contexts[j].tokens.prompt_length :
+                        ],
+                        skip_special_tokens=True,
                     ),
                 )
 

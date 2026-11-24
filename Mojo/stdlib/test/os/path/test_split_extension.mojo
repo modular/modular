@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os.path.path import _split_extension, split_extension
+from std.os.path.path import split_extension
 
 from std.testing import TestSuite, assert_equal
 

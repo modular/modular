@@ -1,0 +1,78 @@
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootPath":"lit","capabilities":{},"trace":"off"}}
+// -----
+// A match with no cases yet: the error has no fix-it, but the refactoring
+// offers every arm at the match's indent, right after the colon.
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+  "uri":"test:///empty.mojo",
+  "languageId":"mojo",
+  "version":1,
+  "text":"def foo(flag: Bool):\n    match flag:\n    print(flag)\n"
+}}}
+// -----
+{"jsonrpc":"2.0","id":4,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///empty.mojo"
+  },
+  "range":{
+    "start":{"line":1,"character":4}, "end":{"line":1,"character":9}
+  },
+  "context":{
+    "diagnostics":[{
+      "range":{"start":{"line":1,"character":4}, "end":{"line":1,"character":9}},
+      "message":"'match' statement must have at least one 'case' block",
+      "severity":1,
+      "source":"mojo"
+    }],
+    "only":["quickfix"],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 4
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": []
+// -----
+{"jsonrpc":"2.0","id":5,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///empty.mojo"
+  },
+  "range":{
+    "start":{"line":1,"character":4}, "end":{"line":1,"character":9}
+  },
+  "context":{
+    "diagnostics":[],
+    "only":["refactor"],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 5
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK-NEXT:    {
+// CHECK-NEXT:      "edit": {
+// CHECK-NEXT:        "changes": {
+// CHECK-NEXT:          "test:///empty.mojo": [
+// CHECK-NEXT:            {
+// CHECK-NEXT:              "newText": "\n    case False:\n        pass\n    case True:\n        pass",
+// CHECK-NEXT:              "range": {
+// CHECK-NEXT:                "end": {
+// CHECK-NEXT:                  "character": 15,
+// CHECK-NEXT:                  "line": 1
+// CHECK-NEXT:                },
+// CHECK-NEXT:                "start": {
+// CHECK-NEXT:                  "character": 15,
+// CHECK-NEXT:                  "line": 1
+// CHECK-NEXT:                }
+// CHECK-NEXT:              }
+// CHECK-NEXT:            }
+// CHECK-NEXT:          ]
+// CHECK-NEXT:        }
+// CHECK-NEXT:      },
+// CHECK-NEXT:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// CHECK-NEXT:    }
+// CHECK-NEXT:  ]
+// -----
+{"jsonrpc":"2.0","id":10,"method":"shutdown"}
+// -----
+{"jsonrpc":"2.0","method":"exit"}

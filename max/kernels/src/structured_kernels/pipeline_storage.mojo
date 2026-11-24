@@ -16,9 +16,8 @@ This module provides a single-source-of-truth framework for pipeline storage,
 where stage count determines barrier count, and tile storage type determines
 the SMEM layout for input tiles.
 
-All tile storage uses TileTensor natively. Conversion to LayoutTensor only
-happens at external API boundaries (TMA, MMA) using the {ptr} syntax or
-explicit LayoutTensor construction.
+All tile storage uses TileTensor natively, including the tiles passed to
+TMA, MMA, and epilogue operations.
 
 Design Principles
 -----------------
@@ -73,8 +72,8 @@ struct MyKernelSmem[config: MyConfig]:
     # Tile storage (single source of truth for tile types)
     comptime Tiles = StandardTileStorage[
         config.a_type, config.b_type,
-        IndexList[2](config.BM, config.BK),  # A tile shape
-        IndexList[2](config.BN, config.BK),  # B tile shape
+        (config.BM, config.BK),  # A tile shape
+        (config.BN, config.BK),  # B tile shape
         config.num_pipeline_stages,
     ]
     var tiles: Self.Tiles
@@ -113,18 +112,13 @@ When the framework doesn't fit:
 """
 
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from layout import Layout
 from layout.tma_async import SharedMemBarrier
 from layout.tensor_core_async import tile_layout_k_major_typed
-from std.utils.index import IndexList
 
 # SMemArray for barriers (non-tile arrays), SMemPtr for barrier pointers
 from .smem_types import SMemArray, SMemPtr
 
-# LayoutTensor-based SMemTileArray for C output tiles (used by epilogue)
-
-
-# TileTensor-based tile arrays for input tiles (A, B, scales)
+# TileTensor-based tile arrays for input and output tiles
 from .tile_types import (
     SMemTileArray2D,
     SMemTileArray2DRowMajor,
@@ -148,8 +142,8 @@ from .pipeline import ProducerConsumerPipeline
 struct StandardTileStorage[
     a_type: DType,
     b_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # Pipeline stages
     num_pipeline_stages: Int,
 ]:
@@ -158,8 +152,7 @@ struct StandardTileStorage[
     This is the single source of truth for tile array types and storage.
     SMEM structs embed this rather than defining tile arrays separately.
 
-    All tiles use TileTensor natively. Convert to LayoutTensor at TMA/MMA
-    boundaries using {ptr} syntax or explicit construction.
+    All tiles use TileTensor natively, including at TMA/MMA boundaries.
 
     Parameters:
         a_type: Data type for A matrix tiles.
@@ -188,12 +181,12 @@ struct StandardTileStorage[
     var a_tiles_storage: Self.ATileArray.Storage
     var b_tiles_storage: Self.BTileArray.Storage
 
-    @always_inline
+    @inline(.always)
     def a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         """Get A tile array accessor (TileTensor-based)."""
         return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         """Get B tile array accessor (TileTensor-based)."""
         return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
@@ -205,13 +198,13 @@ struct BlockScaledTileStorage[
     c_type: DType,
     sfa_type: DType,
     sfb_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # C tile dimensions kept separate for type-level compatibility with TileWriter
     c_dim0: Int,
     c_dim1: Int,
-    sfa_shape: IndexList[2],  # Scale factor A dims
-    sfb_shape: IndexList[2],  # Scale factor B dims
+    sfa_shape: Tuple[Int, Int],  # Scale factor A dims
+    sfb_shape: Tuple[Int, Int],  # Scale factor B dims
     # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
@@ -220,8 +213,7 @@ struct BlockScaledTileStorage[
 
     Single source of truth for block-scaled tile arrays and storage.
 
-    All tiles use TileTensor natively. LayoutTensor conversion
-    is kept for SMemEpilogueWriter compatibility.
+    All tiles use TileTensor natively, including in SMemEpilogueWriter.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, sfa, sfb.
 
@@ -242,7 +234,6 @@ struct BlockScaledTileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based array types (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
@@ -291,27 +282,27 @@ struct BlockScaledTileStorage[
     var sfa_tiles_storage: Self.SFATileArray.Storage
     var sfb_tiles_storage: Self.SFBTileArray.Storage
 
-    @always_inline
+    @inline(.always)
     def a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         """Get A tile array accessor."""
         return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         """Get B tile array accessor."""
         return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         """Get C tile array accessor."""
         return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def sfa_tiles(ref[AddressSpace.SHARED] self) -> Self.SFATileArray:
         """Get SFA tile array accessor."""
         return Self.SFATileArray(self.sfa_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def sfb_tiles(ref[AddressSpace.SHARED] self) -> Self.SFBTileArray:
         """Get SFB tile array accessor."""
         return Self.SFBTileArray(self.sfb_tiles_storage.unsafe_ptr())
@@ -322,12 +313,12 @@ struct BlockwiseFP8TileStorage[
     b_type: DType,
     c_type: DType,
     a_scales_type: DType,
-    a_shape: IndexList[2],  # (BM, BK)
-    b_shape: IndexList[2],  # (BN, BK)
+    a_shape: Tuple[Int, Int],  # (BM, BK)
+    b_shape: Tuple[Int, Int],  # (BN, BK)
     # C tile dimensions kept separate for type-level compatibility with TileWriter
     c_dim0: Int,
     c_dim1: Int,
-    a_scales_shape: IndexList[2],  # (1, BM)
+    a_scales_shape: Tuple[Int, Int],  # (1, BM)
     # Pipeline stages
     num_pipeline_stages: Int,
     num_output_stages: Int,
@@ -337,8 +328,7 @@ struct BlockwiseFP8TileStorage[
     Single source of truth for blockwise FP8 tile arrays and storage.
     B-scales are read directly from global memory during epilogue.
 
-    All tiles use TileTensor natively. LayoutTensor conversion
-    is kept for SMemEpilogueWriter compatibility.
+    All tiles use TileTensor natively, including in SMemEpilogueWriter.
 
     IMPORTANT: Field order preserves SMEM layout compatibility: a, b, c, a_scales.
 
@@ -357,7 +347,6 @@ struct BlockwiseFP8TileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based array types for A/B (native, explicit dimensions)
     comptime ATileArray = SMemTileArray2D[
@@ -393,22 +382,22 @@ struct BlockwiseFP8TileStorage[
     var c_tiles_storage: Self.CTileArray.Storage
     var a_scales_tiles_storage: Self.AScalesTileArray.Storage
 
-    @always_inline
+    @inline(.always)
     def a_tiles(ref[AddressSpace.SHARED] self) -> Self.ATileArray:
         """Get A tile array accessor."""
         return Self.ATileArray(self.a_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def b_tiles(ref[AddressSpace.SHARED] self) -> Self.BTileArray:
         """Get B tile array accessor."""
         return Self.BTileArray(self.b_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         """Get C tile array accessor."""
         return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
 
-    @always_inline
+    @inline(.always)
     def a_scales_tiles(ref[AddressSpace.SHARED] self) -> Self.AScalesTileArray:
         """Get A-scales tile array accessor."""
         return Self.AScalesTileArray(self.a_scales_tiles_storage.unsafe_ptr())
@@ -425,8 +414,7 @@ struct OutputTileStorage[
     Single source of truth for output tile array and storage.
     Separate from input tiles since output has different stage count.
 
-    All tiles use TileTensor natively. LayoutTensor conversion
-    is kept for SMemEpilogueWriter compatibility.
+    All tiles use TileTensor natively, including in SMemEpilogueWriter.
 
     Parameters:
         c_type: Data type for C matrix tiles.
@@ -436,7 +424,6 @@ struct OutputTileStorage[
     """
 
     # C tile layout derived from dimensions (row_major for TMA compatibility)
-    comptime c_tile_layout = Layout.row_major(Self.c_dim0, Self.c_dim1)
 
     # TileTensor-based for C storage (row_major layout - no swizzle for C tiles)
     comptime CTileArray = SMemTileArray2DRowMajor[
@@ -444,7 +431,7 @@ struct OutputTileStorage[
     ]
     var c_tiles_storage: Self.CTileArray.Storage
 
-    @always_inline
+    @inline(.always)
     def c_tiles(ref[AddressSpace.SHARED] self) -> Self.CTileArray:
         """Get C tile array accessor."""
         return Self.CTileArray(self.c_tiles_storage.unsafe_ptr())
@@ -470,17 +457,17 @@ struct BarrierPair[num_stages: Int]:
 
     var storage: Self.Array.Storage
 
-    @always_inline
+    @inline(.always)
     def barriers(ref[AddressSpace.SHARED] self) -> Self.Array:
         """Get barrier array accessor."""
         return Self.Array(self.storage)
 
-    @always_inline
+    @inline(.always)
     def ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get raw barrier pointer for initialization or custom usage."""
         return self.barriers().ptr
 
-    @always_inline
+    @inline(.always)
     def create_pipeline(
         ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self.num_stages]:
@@ -535,14 +522,14 @@ struct InputPipelineStorage[
     # TODO: When Payload types define Storage, add:
     # var payload: Payload.Engine[num_stages]
 
-    @always_inline
+    @inline(.always)
     def create_pipeline(
         ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self.num_stages]:
         """Create runtime pipeline from this storage."""
         return self.barriers.create_pipeline()
 
-    @always_inline
+    @inline(.always)
     def barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Escape hatch: Get raw barrier pointer for custom initialization."""
         return self.barriers.barriers().ptr
@@ -568,14 +555,14 @@ struct OutputPipelineStorage[num_stages: Int]:
 
     var barriers: BarrierPair[Self.num_stages]
 
-    @always_inline
+    @inline(.always)
     def create_pipeline(
         ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self.num_stages]:
         """Create runtime pipeline from this storage."""
         return self.barriers.create_pipeline()
 
-    @always_inline
+    @inline(.always)
     def barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Escape hatch: Get raw barrier pointer."""
         return self.barriers.barriers().ptr
@@ -611,19 +598,19 @@ struct ClcPipelineStorage[num_stages: Int]:
     comptime ResponseArray = SMemArray[UInt128, Self.num_stages]
     var response_storage: Self.ResponseArray.Storage
 
-    @always_inline
+    @inline(.always)
     def full(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
         return Self.BarrierArray(self.full_storage)
 
-    @always_inline
+    @inline(.always)
     def empty(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
         return Self.BarrierArray(self.empty_storage)
 
-    @always_inline
+    @inline(.always)
     def throttle(ref[AddressSpace.SHARED] self) -> Self.ThrottleArray:
         return Self.ThrottleArray(self.throttle_storage)
 
-    @always_inline
+    @inline(.always)
     def response(ref[AddressSpace.SHARED] self) -> Self.ResponseArray:
         return Self.ResponseArray(self.response_storage)
 
@@ -645,11 +632,11 @@ struct TmemDeallocStorage:
     var barrier_storage: Self.BarrierArray.Storage
     var addr_storage: Self.AddrArray.Storage
 
-    @always_inline
+    @inline(.always)
     def barrier(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
         return Self.BarrierArray(self.barrier_storage)
 
-    @always_inline
+    @inline(.always)
     def addr(ref[AddressSpace.SHARED] self) -> Self.AddrArray:
         return Self.AddrArray(self.addr_storage)
 
@@ -661,7 +648,7 @@ struct TmemDeallocStorage:
 
 struct SourceTileStorage[
     src_type: DType,
-    src_shape: IndexList[2],  # (OutputM, OutputN)
+    src_shape: Tuple[Int, Int],  # (OutputM, OutputN)
     num_epi_load_stages: Int,
 ]:
     """Storage for source tensor C tiles (residual/skip connection input).
@@ -677,9 +664,6 @@ struct SourceTileStorage[
     """
 
     # Source tile layout (row_major for TMA compatibility, matches output)
-    comptime src_tile_layout = Layout.row_major(
-        Self.src_shape[0], Self.src_shape[1]
-    )
 
     # TileTensor-based for source storage and access
     comptime SrcTileArray = SMemTileArray2DRowMajor[
@@ -692,7 +676,7 @@ struct SourceTileStorage[
 
     var src_tiles_storage: Self.SrcTileArray.Storage
 
-    @always_inline
+    @inline(.always)
     def src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
         """Get source tile array accessor (TileTensor-based)."""
         return Self.SrcTileArray(self.src_tiles_storage.unsafe_ptr())
@@ -722,14 +706,14 @@ struct EpiLoadPipelineStorage[num_stages: Int]:
 
     var barriers: BarrierPair[Self.num_stages]
 
-    @always_inline
+    @inline(.always)
     def create_pipeline(
         ref[AddressSpace.SHARED] self,
     ) -> ProducerConsumerPipeline[Self.num_stages]:
         """Create runtime pipeline from this storage."""
         return self.barriers.create_pipeline()
 
-    @always_inline
+    @inline(.always)
     def barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Escape hatch: Get raw barrier pointer."""
         return self.barriers.barriers().ptr
@@ -759,12 +743,12 @@ struct LoadOrderBarrierStorage:
 
     var barrier_storage: Self.BarrierArray.Storage
 
-    @always_inline
+    @inline(.always)
     def barrier(ref[AddressSpace.SHARED] self) -> Self.BarrierArray:
         """Get the load order barrier."""
         return Self.BarrierArray(self.barrier_storage)
 
-    @always_inline
+    @inline(.always)
     def ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get raw barrier pointer for initialization."""
         return self.barrier().ptr
@@ -800,11 +784,11 @@ struct RawBarrierStorage[count: Int]:
 
     var storage: Self.Array.Storage
 
-    @always_inline
+    @inline(.always)
     def barriers(ref[AddressSpace.SHARED] self) -> Self.Array:
         return Self.Array(self.storage)
 
-    @always_inline
+    @inline(.always)
     def ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Get raw pointer for custom usage."""
         return self.barriers().ptr
@@ -868,54 +852,54 @@ struct SmemPipelineBundle[
     var epi_load_pipeline: Self.EpiLoadPipeline
 
     # ========== Barrier Accessors ==========
-    @always_inline
+    @inline(.always)
     def input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
         """Returns input tile pipeline barriers."""
         return self.input_pipeline.barriers.barriers()
 
-    @always_inline
+    @inline(.always)
     def accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
         """Returns accumulator pipeline barriers."""
         return self.output_pipeline.barriers.barriers()
 
-    @always_inline
+    @inline(.always)
     def clc_full(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
         """Returns CLC full barriers."""
         return self.clc_pipeline.full()
 
-    @always_inline
+    @inline(.always)
     def clc_empty(ref[AddressSpace.SHARED] self) -> Self.ClcBarriers:
         """Returns CLC empty barriers."""
         return self.clc_pipeline.empty()
 
-    @always_inline
+    @inline(.always)
     def clc_throttle(ref[AddressSpace.SHARED] self) -> Self.ClcThrottleBarriers:
         """Returns CLC throttle barriers."""
         return self.clc_pipeline.throttle()
 
-    @always_inline
+    @inline(.always)
     def clc_response(ref[AddressSpace.SHARED] self) -> Self.ClcResponse:
         """Returns CLC response storage."""
         return self.clc_pipeline.response()
 
-    @always_inline
+    @inline(.always)
     def tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
         """Returns TMEM deallocation barrier."""
         return self.tmem_dealloc_pipeline.barrier()
 
-    @always_inline
+    @inline(.always)
     def tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
         """Returns TMEM address storage."""
         return self.tmem_dealloc_pipeline.addr()
 
-    @always_inline
+    @inline(.always)
     def epilogue_load_barriers(
         ref[AddressSpace.SHARED] self,
     ) -> Self.EpiLoadBarriers:
         """Returns epilogue load pipeline barriers."""
         return self.epi_load_pipeline.barriers.barriers()
 
-    @always_inline
+    @inline(.always)
     def epilogue_load_barrier_ptr(ref[AddressSpace.SHARED] self) -> MbarPtr:
         """Returns epilogue load pipeline barrier pointer."""
         return self.epi_load_pipeline.barrier_ptr()
@@ -963,22 +947,22 @@ struct SmemPipelineBundleNoClc[
     var tmem_dealloc_pipeline: Self.TmemDeallocPipeline
 
     # ========== Barrier Accessors ==========
-    @always_inline
+    @inline(.always)
     def input_barriers(ref[AddressSpace.SHARED] self) -> Self.InputBarriers:
         """Returns input tile pipeline barriers."""
         return self.input_pipeline.barriers.barriers()
 
-    @always_inline
+    @inline(.always)
     def accum_barriers(ref[AddressSpace.SHARED] self) -> Self.AccumBarriers:
         """Returns accumulator pipeline barriers."""
         return self.output_pipeline.barriers.barriers()
 
-    @always_inline
+    @inline(.always)
     def tmem_dealloc(ref[AddressSpace.SHARED] self) -> Self.TmemDealloc:
         """Returns TMEM deallocation barrier."""
         return self.tmem_dealloc_pipeline.barrier()
 
-    @always_inline
+    @inline(.always)
     def tmem_addr(ref[AddressSpace.SHARED] self) -> Self.TmemAddr:
         """Returns TMEM address storage."""
         return self.tmem_dealloc_pipeline.addr()

@@ -20,11 +20,10 @@ from max.gpu.host import DeviceContext
 from layout import TileTensor
 
 
-from std.utils.coord import Coord
-from std.utils.index import IndexList
+from std.utils.coord import Coord, coord
 
 
-@always_inline
+@inline(.always)
 def matrix_band_part[
     dtype: DType,
     int_type: DType,
@@ -33,11 +32,10 @@ def matrix_band_part[
     simd_width: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
-    target: StaticString = "cpu",
+    & def[width: Int](Coord) -> SIMD[dtype, width],
 ](
     input_0_fn: InputFnType,
-    input_shape: IndexList[rank],
+    input_shape: Coord,
     num_lower: TileTensor[int_type, ...],
     num_upper: TileTensor[int_type, ...],
     exclude: TileTensor[cond_type, ...],
@@ -58,8 +56,6 @@ def matrix_band_part[
         simd_width: SIMD width for the elementwise kernel launch.
         InputFnType: Callable type returning the input element at a given
             index as a `SIMD` vector.
-        target: Target device for the elementwise kernel (defaults to
-            `"cpu"`).
 
     Args:
         input_0_fn: Function returning the input element at a given index.
@@ -70,8 +66,9 @@ def matrix_band_part[
         output: Mutable output tensor receiving the band-part result.
         ctx: Device context used to launch the elementwise kernel.
     """
-    var lower_diagonal_index = Int(num_lower.load_linear[1](IndexList[1](0)))
-    var upper_diagonal_index = Int(num_upper.load_linear[1](IndexList[1](0)))
+
+    var lower_diagonal_index = Int(num_lower.load[1](coord[0]))
+    var upper_diagonal_index = Int(num_upper.load[1](coord[0]))
 
     def dispatch[
         exclude: Bool
@@ -90,7 +87,6 @@ def matrix_band_part[
             rank,
             simd_width,
             exclude=exclude,
-            target=target,
         ](
             input_0_fn,
             input_shape,
@@ -100,10 +96,10 @@ def matrix_band_part[
             ctx,
         )
 
-    unswitch(exclude.load_linear[1](IndexList[1](0)) != 0, dispatch)
+    unswitch(exclude.load[1](coord[0]) != 0, dispatch)
 
 
-@always_inline
+@inline(.always)
 def _matrix_band_part_impl[
     dtype: DType,
     int_type: DType,
@@ -112,12 +108,11 @@ def _matrix_band_part_impl[
     simd_width: Int,
     InputFnType: ImplicitlyCopyable
     & RegisterPassable
-    & def[width: Int, rank: Int](IndexList[rank]) -> SIMD[dtype, width],
+    & def[width: Int](Coord) -> SIMD[dtype, width],
     exclude: Bool,
-    target: StaticString = "cpu",
 ](
     input_0_fn: InputFnType,
-    input_shape: IndexList[rank],
+    input_shape: Coord,
     lower_diagonal_index: Int,
     upper_diagonal_index: Int,
     output: TileTensor[mut=True, dtype, ...],
@@ -137,16 +132,13 @@ def _matrix_band_part_impl[
         output: Mutable output tensor receiving the band-part result.
         ctx: Device context used to launch the elementwise kernel.
     """
+
     comptime assert rank >= 2, "Matrix band only supports rank >=2"
 
-    @always_inline
+    @inline(.always)
     def func[simd_width: Int, alignment: Int = 1](index: Coord) {var}:
-        var idx = IndexList[rank]()
-        comptime for i in range(rank):
-            idx[i] = Int(index[i].value())
-
-        var row = idx[rank - 2]
-        var col = idx[rank - 1]
+        var row = Int(index[rank - 2])
+        var col = Int(index[rank - 1])
 
         var in_band = (
             lower_diagonal_index < 0 or (row - col) <= lower_diagonal_index
@@ -156,11 +148,11 @@ def _matrix_band_part_impl[
             in_band = not in_band
 
         if in_band:
-            output.store_linear(idx, input_0_fn[1, rank](idx))
+            output.store(index, input_0_fn[1](index))
         else:
-            output.store_linear(idx, Scalar[dtype](0))
+            output.store(index, Scalar[dtype](0))
 
     elementwise[
         simd_width=1,
-        target=target,
+        _trace_description="matrix_band_part",
     ](func, output.layout.shape_coord(), ctx)

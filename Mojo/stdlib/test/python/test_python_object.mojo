@@ -235,8 +235,8 @@ def test_len() raises:
 
 
 def test_is() raises:
-    var x = PythonObject(500)
-    var y = PythonObject(500)
+    var x = PythonObject(1500)
+    var y = PythonObject(1500)
     assert_false(x is y)
     assert_true(x is not y)
 
@@ -344,17 +344,14 @@ def test_dict() raises:
     ref cpy = Python().cpython()
 
     # large integer so it's RC'd
-    var n = PythonObject(1000)
+    var n = PythonObject(1500)
     var d = Python.dict(num=n)
 
     var _pos: Py_ssize_t = 0
     var key: PyObjectPtr = {}
     var val: PyObjectPtr = {}
     _ = cpy.PyDict_Next(
-        d._obj_ptr,
-        Pointer(to=_pos).as_unsafe_any_origin(),
-        Pointer(to=key).as_unsafe_any_origin(),
-        Pointer(to=val).as_unsafe_any_origin(),
+        d._obj_ptr, Pointer(to=_pos), Pointer(to=key), Pointer(to=val)
     )
 
     assert_equal(cpy._Py_REFCNT(key), 1)
@@ -395,14 +392,14 @@ def test_none_implicit_conversion() raises:
     assert_equal(String(b), "None")
 
     # Function argument.
-    def takes_python_object(obj: PythonObject) raises -> String:
-        return String(obj)
+    var takes_python_object = lambda (
+        obj: PythonObject
+    ) raises -> String: String(obj)
 
     assert_equal(takes_python_object(None), "None")
 
     # Return value.
-    def returns_none() -> PythonObject:
-        return None
+    var returns_none = lambda () -> PythonObject: None
 
     assert_true(returns_none() is Python.none())
 
@@ -613,6 +610,26 @@ def test_contains_dunder() raises:
     assert_true(7 in only_iter)
     assert_false(9 in only_iter)
 
+    # A user-defined `__contains__` takes precedence over iteration.
+    _ = p.eval(
+        "class ContainsOnly:\n"
+        "  def __contains__(self, value):\n"
+        "    return value == 'hit'"
+    )
+    var contains_only = p.evaluate("ContainsOnly()")
+    assert_true("hit" in contains_only)
+    assert_false("miss" in contains_only)
+
+    # An error raised by a user-defined `__contains__` propagates.
+    _ = p.eval(
+        "class ContainsRaises:\n"
+        "  def __contains__(self, value):\n"
+        "    raise ValueError('boom')"
+    )
+    var contains_raises = p.evaluate("ContainsRaises()")
+    with assert_raises(contains="boom"):
+        _ = "hit" in contains_raises
+
 
 @fieldwise_init
 struct Person(Defaultable, Movable, Writable):
@@ -785,7 +802,7 @@ def test_advanced_slicing() raises:
     assert_equal("[]", String(py=data[10:20]))
 
     # Test slice assignment (if supported)
-    var mutable_list: PythonObject = [1, 2, 3, 4, 5]
+    var _: PythonObject = [1, 2, 3, 4, 5]
     # Note: slice assignment would be: mutable_list[1:3] = [10, 20]
     # but this might not be supported in current implementation
 
@@ -940,8 +957,12 @@ def test_python_object_string() raises:
     var p = Python()
     _ = p.eval("class A:\n  def __str__(self): pass")
     var a = p.evaluate("A()")
-    with assert_raises(contains="__str__ returned non-string"):
-        _ = String(py=a)
+    if p.cpython().version.minor >= 15:
+        with assert_raises(contains="__str__() must return a str"):
+            _ = String(py=a)
+    else:
+        with assert_raises(contains="__str__ returned non-string"):
+            _ = String(py=a)
 
 
 def test_python_object_write_repr_to() raises:

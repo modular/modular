@@ -14,7 +14,6 @@
 from std.collections.string._utf8 import (
     _count_utf8_continuation_bytes,
     _is_utf8_continuation_byte,
-    _is_valid_utf8,
     _is_valid_utf8_comptime,
     _is_valid_utf8_runtime,
     _utf8_byte_type,
@@ -211,11 +210,11 @@ def test_bad_utf8_sequences() raises:
 
 def test_stringslice_from_utf8() raises:
     for sequence in materialize[GOOD_SEQUENCES]():
-        _ = StringSlice(from_utf8=Span(sequence))
+        _ = StringSpan(from_utf8=Span(sequence))
 
     for sequence in materialize[BAD_SEQUENCES]():
         with assert_raises(contains="buffer is not valid UTF-8"):
-            _ = StringSlice(from_utf8=Span(sequence))
+            _ = StringSpan(from_utf8=Span(sequence))
 
 
 def test_combination_good_utf8_sequences() raises:

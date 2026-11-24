@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import TestSuite, assert_equal, assert_raises
 
 
 def test_enumerate() raises:
@@ -69,7 +69,7 @@ def test_enumerate_bounds() raises:
     var e = enumerate(list)
 
     assert_equal(iter(list).bounds()[0], e.bounds()[0])
-    assert_equal(iter(list).bounds()[1].value(), e.bounds()[1].value())
+    assert_equal(iter(list).bounds()[1], e.bounds()[1])
 
 
 def test_enumerate_owned() raises:

@@ -98,6 +98,59 @@ def test_python_version_constraints() -> None:
     ]
 
 
+def test_aiperf_group_constraints() -> None:
+    blob = {
+        "name": "example_package",
+        "marker": "python_full_version >= '3.11' and sys_platform == 'darwin' and extra == 'group-15-bazel-pyproject-aiperf'",
+    }
+    all_versions = {"example_package": "1.0.0"}
+    dependency = Dependency(blob, all_versions)
+
+    constraints, gpu_constraints = dependency.constraints()
+    assert not gpu_constraints
+    assert constraints == [
+        ":_env_python_3.11_aarch64-apple-darwin",
+        ":_env_python_3.12_aarch64-apple-darwin",
+        ":_env_python_3.13_aarch64-apple-darwin",
+        ":_env_python_3.14_aarch64-apple-darwin",
+        ":_env_python_3.14_aarch64-apple-darwin-freethreaded",
+        ":_env_python_3.15_aarch64-apple-darwin",
+        ":_env_python_3.15_aarch64-apple-darwin-freethreaded",
+    ]
+
+
+def test_aiperf_and_gpu_constraints_do_not_overlap() -> None:
+    blob = {
+        "name": "example_package",
+        "marker": "(python_full_version >= '3.11' and sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-aiperf') or (sys_platform == 'linux' and extra == 'group-15-bazel-pyproject-nvidia-sglang')",
+    }
+    all_versions = {"example_package": "1.0.0"}
+    dependency = Dependency(blob, all_versions)
+
+    constraints, gpu_constraints = dependency.constraints()
+    # py >= 3.11 on linux is already covered by the aiperf plain constraint;
+    # only the uncovered py3.10 nvidia GPU platform needs its own constraint.
+    assert constraints == [
+        ":_env_python_3.11_aarch64-unknown-linux-gnu",
+        ":_env_python_3.11_x86_64-unknown-linux-gnu",
+        ":_env_python_3.12_aarch64-unknown-linux-gnu",
+        ":_env_python_3.12_x86_64-unknown-linux-gnu",
+        ":_env_python_3.13_aarch64-unknown-linux-gnu",
+        ":_env_python_3.13_x86_64-unknown-linux-gnu",
+        ":_env_python_3.14_aarch64-unknown-linux-gnu",
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu",
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded",
+        ":_env_python_3.15_aarch64-unknown-linux-gnu",
+        ":_env_python_3.15_aarch64-unknown-linux-gnu-freethreaded",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded",
+    ]
+    assert gpu_constraints == [
+        ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu",
+    ]
+
+
 def test_pypy_constraints() -> None:
     blob = {
         "name": "example_package",
@@ -144,6 +197,8 @@ def test_nvidia_only_constraints() -> None:
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu_nvidia_gpu",
     ]
 
 
@@ -164,6 +219,8 @@ def test_amd_only_constraints() -> None:
         ":_env_python_3.13_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_amd_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded_amd_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu",
     ]
 
 
@@ -184,6 +241,8 @@ def test_nvidia_sglang_constraints() -> None:
         ":_env_python_3.13_x86_64-unknown-linux-gnu_nvidia_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu_nvidia_gpu",
     ]
 
 
@@ -210,4 +269,8 @@ def test_multi_gpu_constraints() -> None:
         ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu_amd_gpu",
         ":_env_python_3.14_x86_64-unknown-linux-gnu_nvidia_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded_amd_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded_nvidia_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu",
+        ":_env_python_3.15_x86_64-unknown-linux-gnu_nvidia_gpu",
     ]

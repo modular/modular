@@ -245,12 +245,13 @@ OptionalParseResult UnionType::parseValue(AsmParser &p,
   return mlir::success((bool)value);
 }
 
-LogicalResult UnionType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult UnionType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) const {
   auto attr = ::dyn_cast<UnionAttr>(value);
   if (!attr)
     return failure();
   p << '{';
-  printColonTypeParamValue(p, attr.getValue());
+  printer.printColonTypeParamValue(p, attr.getValue());
   p << '}';
   return success();
 }
@@ -284,6 +285,30 @@ std::optional<int64_t> UnionType::getTypeAlign(TargetInfoAttr target) const {
     maxAlign = std::max(maxAlign, *align);
   }
   return maxAlign;
+}
+
+void UnionType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  auto attr = dyn_cast<ParamListAttr>(getVariadic());
+  if (!attr) {
+    p << '[';
+    printer.printParamValue(p, getVariadic());
+    p << ']';
+  } else if (!attr.getValues().empty()) {
+    SmallVector<Type> values;
+    for (TypedAttr value : attr.getValues())
+      values.push_back(ParamType::get(value));
+    printer.printParamTypes(p, values);
+  }
+  p << '>';
+}
+
+void POP::ArrayType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  printer.printParamValue(p, getSize());
+  p << ", ";
+  printer.printParamType(p, getElementType());
+  p << '>';
 }
 
 ErrorOrSuccess UnionType::writeTo(TypedAttr value, int64_t addr,
@@ -335,7 +360,8 @@ OptionalParseResult IntLiteralType::parseValue(AsmParser &p,
   return mlir::success();
 }
 
-LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult IntLiteralType::printValue(AsmPrinter &p, TypedAttr value,
+                                         KGENParamPrinter &printer) const {
   auto v = ::dyn_cast<IntLiteralAttr>(value);
   if (!v)
     return failure();

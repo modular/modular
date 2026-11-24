@@ -10,13 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Supported architecture entry for DeepSeek-V2."""
 
 from max.experimental.cascade.pipelines.common_textgen import (
     CommonTextGenPipeline,
 )
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
 from max.pipelines.lib import (
     SupportedArchitecture,
     TextTokenizer,
@@ -47,7 +47,6 @@ deepseekV2_arch = SupportedArchitecture(
     },
     requires_max_batch_context_length=True,
     config=DeepseekV2Config,
-    memory_planner=PagedMemoryPlanner,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
     cascade_pipeline_factory=CommonTextGenPipeline,

@@ -18,9 +18,11 @@
 #ifndef KGEN_MOJOPARSER_DLVALUES_H
 #define KGEN_MOJOPARSER_DLVALUES_H
 
-#include "OverloadSet.h"
+#include "Mojo/MojoParser/CallOperands.h"
 
 namespace M::KGEN::LIT {
+
+struct ListLiteralNode;
 
 /// This DLValue implementation represents a discard pattern of _.  It discards
 /// its result on store and produces an error if attempting to load it.
@@ -98,14 +100,15 @@ public:
 /// `[a, b] = x` or `var [a, b] = x`.
 class ListPatternDLValue : public BaseDLValue {
 public:
-  const ExprNode *expr;
+  const ListLiteralNode *expr;
   // These are the subexpressions of the list pattern; emitted on store.
   SmallVector<ExprNode *, 4> eltExprs;
   // Captured from the assignment dest so `var [a, b] = …` declares elements.
   PatternDeclKind patternDeclKind;
 
   ListPatternDLValue(ArrayRef<ExprNode *> eltExprs, ASTType listType,
-                     PatternDeclKind patternDeclKind, const ExprNode *expr);
+                     PatternDeclKind patternDeclKind,
+                     const ListLiteralNode *expr);
 
   void print(raw_ostream &os) const override;
   CValue emitLoad(ExprDest &dest, IREmitter &emitter) const override;

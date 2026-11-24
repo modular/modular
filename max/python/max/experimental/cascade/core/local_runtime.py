@@ -20,11 +20,12 @@ import itertools
 import logging
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from contextlib import AsyncExitStack, asynccontextmanager
-from typing import cast
+from typing import Any, cast
 
 from max.experimental.cascade.core.interfaces import Runtime, Worker
 from max.experimental.cascade.core.type_hints import arg_types
 from max.support._taskgroups import CancelGroup
+from typing_extensions import TypeForm
 
 
 # TODO why do we need this? Where should it really live???
@@ -104,7 +105,7 @@ class LocalRuntime(Runtime):
 
     async def get_func_args_type(
         self, worker_id: str, func_name: str
-    ) -> dict[str, object | None]:
+    ) -> dict[str, TypeForm[Any] | None]:
         """Resolve the parameter type hints of a worker method by name."""
         _, method = self._resolve_method(worker_id, func_name)
         return arg_types(method)

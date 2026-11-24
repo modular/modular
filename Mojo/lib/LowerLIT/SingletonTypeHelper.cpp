@@ -17,6 +17,7 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
 #include "Support/Compiler/OperationUtils.h"
+#include "llvm/Support/ErrorHandling.h"
 
 using namespace M;
 using namespace KGEN;
@@ -74,9 +75,14 @@ SingletonTypeHelper::lookupStructSingletonFields(SymbolRefAttr ref) {
   if (notAlwaysSingletonStructs.contains(refName))
     return alwaysSingletonStructs.end();
 
+  if (frozen) {
+    llvm::report_fatal_error("singleton lookup of a struct decl that "
+                             "populateAll did not classify");
+  }
+
   // If we repeat an in-progress struct decl, it indicates an illegal cycle.
-  // End the check and consider it _not_ a singleton type. LowerLITTypes will
-  // report the error.
+  // End the check and consider it _not_ a singleton type. The pass's type
+  // lowering will report the error.
   if (!inProgressStructs.insert(refName).second)
     return {};
 
@@ -122,4 +128,9 @@ SingletonTypeHelper::populateStructSingletonFields(
     values.emplace_back(name, value);
   }
   return alwaysSingletonStructs.try_emplace(key, std::move(values)).first;
+}
+
+void SingletonTypeHelper::populateAll() {
+  for (auto &entry : processedStructs.structDecls)
+    (void)lookupStructSingletonFields(FlatSymbolRefAttr::get(entry.first));
 }

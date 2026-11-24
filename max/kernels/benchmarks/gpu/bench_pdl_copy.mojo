@@ -120,8 +120,10 @@ def copy2_n(
         c[i] = b[i] + result + 2.0
 
 
-@no_inline
-def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+@inline(.never)
+def bench_pdl_copy(
+    mut b: Bench, *, length: Int, context: DeviceContext[]
+) raises:
     comptime dtype = DType.float32
     var a_host = List(length=length, fill=Scalar[dtype](0))
     var b_host = List(length=length, fill=Scalar[dtype](0))
@@ -146,9 +148,9 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(c_device, c_host)
     context.enqueue_copy(d_device, d_host)
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
             context.enqueue_function[copy1](
@@ -169,7 +171,7 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
                 attributes=pdl_launch_attributes(),
             )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, context)
 
@@ -187,8 +189,8 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     _ = d_host^
 
 
-@no_inline
-def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+@inline(.never)
+def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext[]) raises:
     comptime dtype = DType.float32
     var a_host = List(length=length, fill=Scalar[dtype](0))
     var b_host = List(length=length, fill=Scalar[dtype](0))
@@ -213,9 +215,9 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(c_device, c_host)
     context.enqueue_copy(d_device, d_host)
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {mut b_device, mut c_device, imm}:
         for _ in range(10):
             context.enqueue_function[copy1_n](
@@ -234,7 +236,7 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
                 block_dim=(block_dim),
             )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) raises {imm}:
         bencher_iter_custom(b, kernel_launch, context)
 

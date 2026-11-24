@@ -2,9 +2,9 @@
 
 This guide explains how to add support for a new GPU architecture to the Mojo
 standard library. Targets live in
-[`std/_gpu/host/info.mojo`](../../../stdlib/std/_gpu/host/info.mojo); this
-document is for contributors extending that file and is not part of the public
-API.
+[`std/_gpu/host/info.mojo`](https://github.com/modular/modular/tree/main/Mojo/stdlib/std/_gpu/host/info.mojo);
+this document is for contributors extending that file and is not part of the
+public API.
 
 When adding support for a new GPU architecture, you must create a target
 configuration function that returns a `_TargetType`. The sections below explain
@@ -16,7 +16,8 @@ the components of the MLIR target configuration, with special focus on the
 Each GPU target function returns an MLIR `kgen.target` attribute with these
 fields:
 
-- **triple**: Target triple (e.g., "nvptx64-nvidia-cuda", "amdgcn-amd-amdhsa").
+- **triple**: Target triple (e.g., "nvptx64-nvidia-cuda",
+  "amdgpu9.42-amd-amdhsa").
 - **arch**: Architecture name (e.g., "sm_80", "gfx942", "apple-m4").
 - **features**: Target-specific features (e.g., "+ptx81,+sm_80").
 - **tune_cpu**: Optimization target (usually same as arch, can differ for
@@ -231,8 +232,8 @@ clang -S test.ll -o - | grep datalayout
 For AMD GPUs:
 
 ```bash
-echo 'target triple = "amdgcn-amd-amdhsa"' > test.ll
-clang -S test.ll -o - | grep datalayout
+echo 'target triple = "amdgpu9.42-amd-amdhsa"' > test.ll
+clang -S -emit-llvm test.ll -o - | grep datalayout
 ```
 
 ### Method 2: Consult LLVM source code
@@ -283,7 +284,8 @@ spaces in GPU kernels.
 The target triple identifies the architecture, vendor, and operating system:
 
 - **NVIDIA**: `nvptx64-nvidia-cuda` (64-bit) or `nvptx-nvidia-cuda` (32-bit).
-- **AMD**: `amdgcn-amd-amdhsa` (HSA runtime).
+- **AMD**: `amdgpu<major>.<minor>-amd-amdhsa` (HSA runtime), where the version
+  names the subarch (e.g. `gfx942` is `amdgpu9.42-amd-amdhsa`).
 - **Apple**: `air64-apple-macosx` (Metal on macOS).
 
 ### Arch
@@ -374,20 +376,15 @@ Or check vendor specifications:
 - **NVIDIA**: <https://developer.nvidia.com/cuda-gpus>.
 - **AMD**: ROCm device specifications.
 
-### Step 2: Create the target function
+### Step 2: Create the target configuration
 
-Add a new function that returns the MLIR target configuration.
+Add a `CompilationTarget` configuration.
 
 Example for an NVIDIA GPU:
 
 ```mojo
-def _get_your_gpu_target() -> _TargetType:
-    """Creates an MLIR target configuration for Your GPU.
-
-    Returns:
-        MLIR target configuration for Your GPU.
-    """
-    return __mlir_attr[
+comptime _your_gpu_target = CompilationTarget[
+    _mlir_value=__mlir_attr[
         `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
         `arch = "sm_90a", `,
         `features = "+ptx85,+sm_90a", `,
@@ -397,10 +394,12 @@ def _get_your_gpu_target() -> _TargetType:
         `simd_bit_width = 128`,
         `> : !kgen.target`,
     ]
+]()
+"""Target configuration for Your GPU."""
 ```
 
-Place this function with other GPU target functions in `info.mojo` (search for
-`_get_*_target()` functions).
+Place this configuration with the other GPU target configurations in
+`info.mojo` (search for `_some_target` declarations).
 
 ### Step 3: Create the `GPUInfo` alias
 
@@ -466,9 +465,9 @@ def target(self) -> _TargetType:
         MLIR target configuration for the GPU.
     """
     if self.name == "NVIDIA Tesla P100":
-        return _get_teslap100_target()
+        return _teslap100_target._mlir_value
     if self.name == "Your GPU":  # Add your GPU here
-        return _get_your_gpu_target()
+        return _your_gpu_target._mlir_value
     # ... rest of mappings ...
 ```
 
@@ -507,7 +506,7 @@ Avoid these common mistakes when adding GPU support:
    definition.
 6. **Copy-paste errors**: Double-check field values when adapting from similar
    GPUs.
-7. **Forgetting to update all 5 locations**: Target function, alias,
+7. **Forgetting to update all 5 locations**: Target configuration, alias,
    constraint list, `comptime` block, and `target()` method.
 8. **PTX/driver version mismatch**: Ensure PTX version is supported by your
    CUDA driver.
@@ -516,7 +515,7 @@ Avoid these common mistakes when adding GPU support:
 
 Before submitting your GPU addition:
 
-- [ ] Target function created and documented.
+- [ ] Target configuration created and documented.
 - [ ] `GPUInfo` alias defined with correct family.
 - [ ] Architecture added to constraint list in `_get_info_from_target`.
 - [ ] Mapping added to `comptime` block in `_get_info_from_target`.
@@ -539,14 +538,14 @@ Before submitting your GPU addition:
 
 ## Examples in `info.mojo`
 
-See real-world examples by searching for these functions:
+See real-world examples by searching for these definitions:
 
-- `_get_h100_target()`: NVIDIA Hopper H100 (compute 9.0).
-- `_get_mi250x_target()`: AMD CDNA2 MI250X.
-- `_get_mi300x_target()`: AMD CDNA3 MI300X.
-- `_get_metal_m4_target()`: Apple Metal M4.
-- `_get_metal_m4_metal4_target()`: Apple Metal M4 with Metal 4.0.
-- `_get_rtx5090_target()`: NVIDIA Blackwell consumer GPU.
+- `_h100_target`: NVIDIA Hopper H100 (compute 9.0).
+- `_mi250x_target`: AMD CDNA2 MI250X.
+- `_mi300x_target`: AMD CDNA3 MI300X.
+- `_metal_m4_target`: Apple Metal M4.
+- `_metal_m4_metal4_target`: Apple Metal M4 with Metal 4.0.
+- `_rtx5090_target`: NVIDIA Blackwell consumer GPU.
 
 Each example demonstrates the complete target configuration for that GPU
 family.

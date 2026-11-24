@@ -19,6 +19,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from helpers import parse_json
+
 from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
 
 if TYPE_CHECKING:
@@ -30,6 +32,22 @@ class ParameterAbuse(BaseScenario):
     name = "parameter_abuse"
     description = "Extreme, invalid, and conflicting parameter values"
     tags = ["parameters", "validation", "crash"]
+
+    @staticmethod
+    def _token_cap_overrun(body: str, cap: int) -> str | None:
+        """Describe how `body` broke its output-token budget, or None if it held."""
+        data, err = parse_json(body)
+        if data is None:
+            return f"Invalid JSON response: {err}"
+        completion_tokens = data.get("usage", {}).get("completion_tokens")
+        if not isinstance(completion_tokens, int):
+            return "Response is missing usage.completion_tokens"
+        if completion_tokens > cap:
+            return (
+                f"completion_tokens ({completion_tokens}) exceeds the"
+                f" {cap}-token limit"
+            )
+        return None
 
     async def run(
         self, client: FuzzClient, config: RunConfig
@@ -170,11 +188,21 @@ class ParameterAbuse(BaseScenario):
             ),
         }
 
-        # Tests that require an exact status code to pass.
+        # Tests that require an exact status code to pass. A request carrying
+        # both token limits is accepted rather than rejected: the server
+        # reconciles them, and `max_completion_tokens` wins.
         expected_status: dict[str, int] = {
             "max_completion_tokens_only": 200,
             "max_tokens_and_max_completion_tokens_same": 200,
-            "max_tokens_and_max_completion_tokens_conflict": 400,
+            "max_tokens_and_max_completion_tokens_conflict": 200,
+        }
+
+        # The output-token budget each accepted request must respect, which is
+        # `max_completion_tokens` whenever it is present.
+        expected_token_cap: dict[str, int] = {
+            "max_completion_tokens_only": 10,
+            "max_tokens_and_max_completion_tokens_same": 10,
+            "max_tokens_and_max_completion_tokens_conflict": 20,
         }
 
         for test_name, payload in tests.items():
@@ -196,12 +224,22 @@ class ParameterAbuse(BaseScenario):
                     verdict = Verdict.FAIL
                     detail = f"Connection error: {resp.error}"
                 elif required is not None:
-                    if resp.status == required:
-                        verdict = Verdict.PASS
-                        detail = f"Got expected status {resp.status}"
-                    else:
+                    if resp.status != required:
                         verdict = Verdict.FAIL
                         detail = f"Expected {required}, got {resp.status}"
+                    else:
+                        cap = expected_token_cap.get(test_name)
+                        overrun = (
+                            self._token_cap_overrun(resp.body, cap)
+                            if cap is not None and resp.status == 200
+                            else None
+                        )
+                        if overrun is not None:
+                            verdict = Verdict.FAIL
+                            detail = overrun
+                        else:
+                            verdict = Verdict.PASS
+                            detail = f"Got expected status {resp.status}"
                 elif resp.status >= 500:
                     verdict = Verdict.FAIL
                     detail = (

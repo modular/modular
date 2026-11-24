@@ -4,13 +4,15 @@ Benchmarks comparing MAX kernels against external baselines on NVIDIA B200 GPUs.
 
 ## Benchmarks
 
-| Target               | Description                                 | Baselines                    |
-|----------------------|---------------------------------------------|------------------------------|
-| `bench_prefill`      | MHA prefill (variable-length)               | FlashInfer, flash-attention  |
-| `bench_decode`       | MHA decode (single token)                   | FlashInfer (TRT-LLM backend) |
-| `bench_mla_decode`   | Multi-head Latent Attention decode          | FlashInfer (TRT-LLM MLA)     |
-| `bench_grouped_gemm` | Grouped GEMM                                | DeepGEMM                     |
-| `bench_ep_baseline`  | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional)            |
+| Target                       | Description                                 | Baselines                    |
+|------------------------------|---------------------------------------------|------------------------------|
+| `bench_prefill`              | MHA prefill (variable-length)               | FlashInfer, flash-attention  |
+| `bench_decode`               | MHA decode (single token)                   | FlashInfer (TRT-LLM backend) |
+| `bench_mla_decode`           | Multi-head Latent Attention decode          | FlashInfer (TRT-LLM MLA)     |
+| `bench_grouped_gemm`         | Grouped GEMM                                | DeepGEMM                     |
+| `bench_ep_baseline`          | Expert Parallelism dispatch/combine (adhoc) | DeepEP (optional)            |
+| `bench_mega_ffn_nvfp4_graph` | NVFP4 MoE FFN under a CUDA graph            | FlashInfer (TRT-LLM MoE)     |
+| `bench_mla_sparse_graph`     | FP8 sparse MLA under a CUDA graph           | FlashInfer (TRT-LLM MLA)     |
 
 ## Running Benchmarks
 
@@ -27,26 +29,47 @@ kbench bench_grouped_gemm.yaml
 ./bazelw run //max/kernels/benchmarks/misc/comparison:bench_ep_baseline
 ```
 
+The FlashInfer 0.7.0 and flash-attn-4 baselines resolve only in the
+`nvidia-bench` dependency group, so add `--//:use_bench=true` to a Bazel
+invocation that compares against them. Without it, `flash-attn-4` is
+unavailable and FlashInfer is the older default pin.
+
 ## Architecture
 
 ### Wheel Infrastructure
 
-External baselines require SM100-specific builds not available on PyPI. The
-infrastructure:
+FlashInfer and FlashAttention (FA4) come from the pip lock, as
+`flashinfer-python` and `flash-attn-4`. Upstream publishes both as pure-Python
+wheels that JIT-compile their kernels through `nvidia-cutlass-dsl`, so there is
+nothing SM100-specific to pre-build:
 
 ```text
-MODULE.bazel                             # http_file: fetch wheels from S3
+oss/modular/bazel/pip/requirements/pyproject.toml  # version pins
     ↓
-bazel/pip/blackwell_bench/               # pycross_wheel_library targets
+requirement("flashinfer-python") / requirement("flash-attn-4")
+    ↓
+max/kernels/benchmarks/misc/comparison/     # modular_py_binary executables
+```
+
+DeepGEMM still needs an SM100 build that is not on PyPI, so it keeps the
+mirrored-wheel path:
+
+```text
+MODULE.bazel                             # http_file: fetch the wheel from S3
+    ↓
+max/kernels/benchmarks/misc/blackwell_bench/  # pycross_wheel_library targets
     ↓
 max/kernels/benchmarks/misc/comparison/  # modular_py_binary executables
 ```
 
 **Key files:**
 
-- `MODULE.bazel` - `http_file` rules fetch pre-built wheels from S3
-- `bazel/pip/blackwell_bench/BUILD.bazel` - `pycross_wheel_library` targets
-- `bazel/pip/blackwell_bench_wheels.bzl` - Helper macro
+- `oss/modular/bazel/pip/requirements/pyproject.toml` - pins for
+  `flashinfer-python` and `flash-attn-4`
+- `MODULE.bazel` - `http_file` rule fetching the pre-built DeepGEMM wheel
+- `max/kernels/benchmarks/misc/blackwell_bench/BUILD.bazel` -
+  `pycross_wheel_library` targets
+- `max/kernels/benchmarks/misc/blackwell_bench/wheels.bzl` - Helper macro
   `blackwell_bench_wheel()`
 
 ### Adding a Dependency
@@ -62,7 +85,8 @@ max/kernels/benchmarks/misc/comparison/  # modular_py_binary executables
    )
    ```
 
-2. **Create library target** in `bazel/pip/blackwell_bench/BUILD.bazel`:
+2. **Create library target** in
+   `max/kernels/benchmarks/misc/blackwell_bench/BUILD.bazel`:
 
    ```starlark
    pycross_wheel_library(
@@ -78,18 +102,29 @@ max/kernels/benchmarks/misc/comparison/  # modular_py_binary executables
    deps = [blackwell_bench_wheel("mylib")]
    ```
 
-## Rebuilding Wheels
+## Updating baselines
 
-Use `setup_bench_env.py` to build reproducible wheels from source. Repositories
-are **automatically cloned** to `~/.cache/blackwell_bench/` if not present.
+To benchmark against newer FlashInfer or FlashAttention, bump the pins in
+`oss/modular/bazel/pip/requirements/pyproject.toml` (`flashinfer-python`,
+`flash-attn-4`, and the matching `nvidia-cutlass-dsl` / `apache-tvm-ffi`
+overrides they require), then regenerate the lock:
 
 ```bash
-# Build all wheels (auto-clones repos if needed)
-python setup_bench_env.py --build-wheels --wheel-dir ./sm100_wheels
+./bazelw run //bazel/pip/requirements:update_requirements
+```
 
-# Build specific wheel
-python setup_bench_env.py --build-wheels --wheel-dir ./sm100_wheels \
-    --no-flashinfer --no-flashattn  # Only DeepGEMM
+`nvidia-cutlass-dsl` is shared with vLLM and SGLang, so prefer the lowest
+version that satisfies the new baselines over the newest available.
+
+## Rebuilding the DeepGEMM wheel
+
+Use `setup_bench_env.py` to build a reproducible wheel from source. The
+repository is **automatically cloned** to `~/.cache/blackwell_bench/` if not
+present.
+
+```bash
+# Build the wheel (auto-clones the repo if needed)
+python setup_bench_env.py --build-wheels --wheel-dir ./sm100_wheels
 
 # Use custom source path (skips auto-clone)
 python setup_bench_env.py --build-wheels --deepgemm-src ~/my/DeepGEMM
@@ -102,13 +137,11 @@ Then update `MODULE.bazel` with the new URL and sha256.
 
 ### Source Repositories
 
-Repos are cloned from these URLs (shallow clone, `--depth 1`):
+The repo is cloned from this URL (shallow clone, `--depth 1`):
 
-| Package         | Repository                                     |
-|-----------------|------------------------------------------------|
-| DeepGEMM        | <https://github.com/deepseek-ai/DeepGEMM>      |
-| FlashInfer      | <https://github.com/flashinfer-ai/flashinfer>  |
-| flash-attention | <https://github.com/Dao-AILab/flash-attention> |
+| Package  | Repository                                |
+|----------|-------------------------------------------|
+| DeepGEMM | <https://github.com/deepseek-ai/DeepGEMM> |
 
 Default cache location: `~/.cache/blackwell_bench/`
 
@@ -116,21 +149,27 @@ Default cache location: `~/.cache/blackwell_bench/`
 
 ### nvidia-cutlass-dsl .pth files
 
-Bazel doesn't process `.pth` files. The `nvidia-cutlass-dsl` package uses
-one to add `python_packages/` (containing `cutlass`) to sys.path. We use
-the `imports` attribute:
+Bazel doesn't process `.pth` files. Since 4.8, `nvidia-cutlass-dsl` splits
+`cutlass` across its `libs-core`, `libs-base` and `libs-cu12` wheels, each
+of which uses one to add its `dsl_packages/` to sys.path. The
+`cutlass-imports-<lib>` targets in `blackwell_bench/BUILD.bazel` add each
+directory through the `imports` attribute:
 
 ```starlark
-imports = ["../../../../rules_pycross++.../python_packages"]
+imports = ["../../../../../../rules_pycross++.../dsl_packages"]
 ```
 
-### flash-attention pure Python wheel
+Bazel keeps each wheel in its own tree, so `bench.setup_cutlass_dsl()` links
+them into one merged `cutlass` package at import time. Call it before
+importing `flashinfer` or `flash_attn.cute`.
 
-The flash-attention wheel is built as pure Python
-(`FLASH_ATTENTION_SKIP_CUDA_BUILD=TRUE`) because we only use the cute
-interface (JIT-compiled via nvidia-cutlass-dsl). The benchmark code creates
-a stub `flash_attn` module to bypass `__init__.py` which imports the
-missing CUDA extension.
+### flash-attention 2 vs FA4
+
+We benchmark FA4, which upstream publishes separately from flash-attention 2
+as `flash-attn-4`. It installs `flash_attn.cute` under a PEP 420 namespace
+package, with no `flash_attn/__init__.py`, so importing it does not pull in
+flash-attention 2's `flash_attn_2_cuda` extension. The two distributions can
+be installed side by side.
 
 ### S3 URL encoding for wheel filenames
 
@@ -142,6 +181,38 @@ Bazel's `http_file` doesn't encode special characters, causing 403 errors.
 **Solution:** `setup_bench_env.py --build-wheels` automatically renames
 wheels to replace `+` with `_` (e.g., `deep_gemm-2.2.0_38f8ef7-...whl`).
 The wheel contents are unchanged—only the filename is sanitized.
+
+## CUDA graph comparison benchmarks
+
+These benchmarks time a MAX op the way serving runs it, captured in a CUDA
+graph with PDL, at a model's per-rank shapes. Each MAX arm has a competitor
+arm that calls the FlashInfer kernel vLLM selects for the same op on SM100.
+
+| MAX arm (bazel)                 | Competitor arm (vLLM venv)              |
+|---------------------------------|-----------------------------------------|
+| `bench_mega_ffn_nvfp4_graph.py` | `bench_flashinfer_trtllm_moe_nvfp4.py`  |
+| `bench_mla_sparse_graph.py`     | `bench_flashinfer_trtllm_mla_sparse.py` |
+
+Both arms of a pair share their inputs and their timer:
+
+- `moe_routing.py`: per-expert token counts (balanced, uniform, skewed) and
+  the EP dispatch layout of one rank.
+- `sparse_mla_indices.py`: top-k key positions and paged-cache rows.
+- `gpu_telemetry.py`: short timed bursts after an idle gap, single replays
+  from idle, sustained time and energy per op, and the kernels a replay ran.
+
+The competitor arms import the kernel library from a venv with the `vllm`
+wheel installed, so they run the versions vLLM pins. They are not bazel
+targets. Run them with that venv's Python from this directory:
+
+```bash
+<venv>/bin/python bench_flashinfer_trtllm_moe_nvfp4.py --tokens 48,8192
+<venv>/bin/python bench_flashinfer_trtllm_mla_sparse.py --batch 8 --q-len 6
+```
+
+Shape YAMLs with the production dims live under
+`Faux/utils/compare/shapes/<model>/`. The `extract-kernel-shapes` skill
+describes how to derive them and how to run a fair head-to-head.
 
 ## EP Baseline Benchmark (Adhoc)
 

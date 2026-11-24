@@ -27,7 +27,7 @@ import pytest
 import torch
 from max.driver import Accelerator, accelerator_count
 from max.dtype import DType
-from max.experimental import random
+from max.functional import random
 
 SEED = 42
 N = 64

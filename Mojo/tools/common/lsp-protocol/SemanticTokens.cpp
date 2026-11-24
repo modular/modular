@@ -13,7 +13,9 @@
 
 #include "SemanticTokens.h"
 #include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/Twine.h"
 #include "llvm/Support/ErrorHandling.h"
+#include <array>
 
 #define DEBUG_TYPE "mojo-lsp-server"
 
@@ -56,12 +58,18 @@ StringRef Mojo::LSP::toLspSemanticTokenType(SemanticTokenKind kind) {
 // SemanticToken Modifier
 //===----------------------------------------------------------------------===//
 
-StringRef
-Mojo::LSP::toLspSemanticTokenModifier(SemanticTokenModifier modifier) {
-  switch (modifier) {
-  default:
-    llvm_unreachable("unhandled SemanticTokenModifier");
-  }
+StringRef Mojo::LSP::toLspSemanticTokenModifier(unsigned modifier) {
+  // NOTE: These are all non-standard token modifiers.
+  static const auto names = [] {
+    std::array<std::string, kNumSemanticTokenModifiers> names;
+    for (auto [index, name] : llvm::enumerate(names))
+      name = ("addressSpace" + Twine(index)).str();
+    return names;
+  }();
+  // An unknown modifier has no name; don't take the server down over one.
+  if (modifier >= kNumSemanticTokenModifiers)
+    return "";
+  return names[modifier];
 }
 
 //===----------------------------------------------------------------------===//

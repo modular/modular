@@ -52,7 +52,9 @@ Guide](https://github.com/modular/modular/blob/main/Mojo/CONTRIBUTING.md).
 
 If you want to report issues or request features, [please create a GitHub
 issue here](https://github.com/modular/modular/issues)—also see our [guide to
-submitting good bug reports](./CONTRIBUTING.md#submitting-bugs).
+submitting good bug reports][bug-reports].
+
+[bug-reports]: https://github.com/modular/modular/blob/main/CONTRIBUTING.md#submitting-bugs
 
 ## Contact us
 

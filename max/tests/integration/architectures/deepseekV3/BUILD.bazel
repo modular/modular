@@ -9,12 +9,7 @@ package(default_visibility = [
 modular_py_test(
     name = "deepseekV3",
     size = "large",
-    srcs = glob(
-        ["*.py"],
-        exclude = [
-            "test_tool_parser.py",
-        ],
-    ),
+    srcs = ["test_modulev3_grouped_silu.py"],
     exec_properties = {
         "test.resources:gpu-memory": "1",
     },
@@ -27,13 +22,32 @@ modular_py_test(
         "gpu",
     ],
     deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/nn",
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "deepseekV3_cpu",
+    srcs = [
+        "test_deepseekv3_config_validation.py",
+        "test_ep_dispatch.py",
+        "test_logits_postprocess.py",
+        "test_weight_adapter.py",
+    ],
+    imports = ["."],
+    deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV3_2",
         "//max/python/max/pipelines/architectures/deepseekV3_nextn",
-        "//max/python/max/pipelines/kv_cache",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
         requirement("transformers"),
@@ -49,4 +63,10 @@ modular_py_test(
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/weights",
     ],
+)
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
 )

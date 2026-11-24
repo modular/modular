@@ -16,6 +16,7 @@
 
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Alignment.h"
 
@@ -45,7 +46,7 @@ std::optional<std::string> findDirInEnvPath(llvm::StringRef subdirName,
 /// Write to a file (creating if necessary) serialized with any other
 /// ...UnderLock operation, even in parallel across processes.  Writing will
 /// also appear atomic to readers not aware of LLVM lock files.
-ErrorOr<std::filesystem::path>
+MODULAR_CXX_EXPORT ErrorOr<std::filesystem::path>
 writeFileUnderLock(const std::filesystem::path &filePath,
                    llvm::function_ref<void(raw_ostream &)> writeContent);
 
@@ -56,7 +57,7 @@ writeFileUnderLock(const std::filesystem::path &filePath,
 /// file convention -- no atomicity guarantees are provided with respect to
 /// writers not aware of the LLVM lock file convention concurrently operating
 /// on the file.
-ErrorOrSuccess
+MODULAR_CXX_EXPORT ErrorOrSuccess
 readFileUnderLock(const std::filesystem::path &filePath,
                   llvm::function_ref<void(const std::filesystem::path &)> read);
 
@@ -66,14 +67,14 @@ readFileUnderLock(const std::filesystem::path &filePath,
 /// middle of appending, other processes may witness a partially-appended
 /// state.  Processes not aware of the LLVM lock file convention may also
 /// witness partially-appended states while the append is in progress.
-ErrorOrSuccess
+MODULAR_CXX_EXPORT ErrorOrSuccess
 appendFileUnderLock(const std::filesystem::path &filePath,
                     llvm::function_ref<void(raw_ostream &)> appendContent);
 
 /// This class provides a tempfile implementation. The llvm::sys version has
 /// some really odd behavior that is tricky to manage, so we provide our own
 /// implementation.
-class TempFile {
+class MODULAR_CXX_EXPORT TempFile {
 public:
   /// Create a TempFile and return any errors during creation. The model is
   /// something like `myString-%%%%%.ext` - the `%` characters are filled in
@@ -118,7 +119,7 @@ private:
 };
 
 /// This class provides a temporary directory, in the same fashion as TempFile.
-class TempDir {
+class MODULAR_CXX_EXPORT TempDir {
 public:
   /// See TempFile::create.
   static ErrorOr<TempDir> create(StringRef model);
@@ -144,13 +145,14 @@ private:
 
 /// Invokes the provided callback, writing the output to a temporary file whose
 /// name is based on the provided model.
-ErrorOr<TempFile> writeTempFile(const Twine &model,
-                                function_ref<void(raw_ostream &)> writeFn);
-ErrorOr<TempFile> writeTempFile(const Twine &model, StringRef buffer);
+MODULAR_CXX_EXPORT ErrorOr<TempFile>
+writeTempFile(const Twine &model, function_ref<void(raw_ostream &)> writeFn);
+MODULAR_CXX_EXPORT ErrorOr<TempFile> writeTempFile(const Twine &model,
+                                                   StringRef buffer);
 
 /// Open the filename specified as the argument and return a memory buffer, or
 /// an error message on failure.
-M::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
+MODULAR_CXX_EXPORT M::ErrorOr<std::unique_ptr<llvm::MemoryBuffer>>
 openInputFile(StringRef inputFilename,
               std::optional<llvm::Align> align = std::nullopt);
 

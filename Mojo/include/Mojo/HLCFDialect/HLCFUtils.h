@@ -25,14 +25,8 @@ bool isMatchingLoop(Operation *op, StringAttr label);
 /// must find a matching loop.
 LoopOp getParentLoop(Operation *op, StringAttr label);
 
-/// Check if the child loop is nested in the parentToCheck loop.
-bool isParentLoop(LoopOp child, LoopOp parentToCheck);
-
 /// Get the parent operation of a terminator.
 Operation *getParentNode(HLCF::ControlFlowTerminator term);
-
-/// Given an elif op, transform into multiple IfOps. Return top IfOp.
-IfOp replaceElifWithIfOps(ElifOp elifOp);
 
 ParseResult parseLoop(OpAsmParser &p,
                       SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,

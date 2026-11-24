@@ -20,7 +20,10 @@ what covers partial-marker holdback across chunk boundaries.
 
 from __future__ import annotations
 
+import asyncio
 import json
+from collections.abc import AsyncIterator
+from typing import cast
 
 import pytest
 from max.experimental.cascade.interfaces.gen_ai import (
@@ -28,10 +31,13 @@ from max.experimental.cascade.interfaces.gen_ai import (
     GenAIReasoningChunk,
     GenAITextChunk,
     GenAIToolCall,
+    RawTextChunk,
 )
 from max.experimental.cascade.pipelines.chat_parser import (
     ChatChunkParser,
     ChatParserConfig,
+    ChatParserWorker,
+    _StopStrings,
 )
 
 REASONING_CONFIG = ChatParserConfig(
@@ -94,7 +100,9 @@ def test_reasoning_split(chunk_size: int) -> None:
         REASONING_CONFIG,
         chunk_size,
     )
-    assert _reasoning(chunks) == "weigh options"
+    assert _reasoning(chunks) == "weigh options", [
+        type(c).__name__ + ":" + repr(getattr(c, "text", "")) for c in chunks
+    ]
     assert _text(chunks) == "The answer is 42."
     assert _tool_calls(chunks) == {}
 
@@ -218,3 +226,119 @@ def test_nested_json_arguments_survive_chunking(chunk_size: int) -> None:
         "a": [1, 2, 3],
         "b": {"c": True},
     }
+
+
+def test_trailing_delta_with_no_chunk_is_still_counted() -> None:
+    """A final delta that yields no chunk does not lose its tokens.
+
+    Both the stripped ``</think>`` and the text-free EOS leave nothing to hang
+    a count on, so the two tokens ride out together on an empty chunk.
+    """
+    parser = ChatChunkParser(REASONING_CONFIG)
+    chunks = parser.feed("<think>reason", 4)
+    chunks.extend(parser.feed("</think>", 1))
+    # Stands in for the detokenizer's text-free EOS chunk.
+    chunks.extend(parser.feed("", 1))
+    chunks.extend(parser.finish())
+
+    assert chunks == [
+        GenAIReasoningChunk(text="reason", num_tokens=4),
+        GenAITextChunk(text="", num_tokens=2),
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Stop strings
+# --------------------------------------------------------------------------- #
+
+
+def _stop(
+    text: str, stops: list[str], chunk_size: int = 1000
+) -> tuple[list[str], bool]:
+    """Feed ``text`` to ``_StopStrings`` in slices until it matches."""
+    matcher = _StopStrings(stops)
+    emitted = []
+    for i in range(0, len(text), chunk_size):
+        emitted.append(matcher.feed(text[i : i + chunk_size]))
+        if matcher.matched:
+            return emitted, True
+    emitted.append(matcher.finish())
+    return emitted, False
+
+
+@pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
+def test_stop_string_cuts_the_text_before_it(chunk_size: int) -> None:
+    emitted, matched = _stop("The answer is 42.\nQ: next", ["Q:"], chunk_size)
+    assert matched
+    assert "".join(emitted) == "The answer is 42.\n"
+    # A prefix of the stop string is held back, never emitted then retracted.
+    assert all("Q" not in piece for piece in emitted)
+
+
+@pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
+def test_earliest_stop_string_wins(chunk_size: int) -> None:
+    emitted, matched = _stop("hello world", ["world", "lo"], chunk_size)
+    assert matched
+    assert "".join(emitted) == "hel"
+
+
+@pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
+def test_unfinished_stop_prefix_is_emitted_at_the_end(chunk_size: int) -> None:
+    emitted, matched = _stop("ends with Q", ["Q:"], chunk_size)
+    assert not matched
+    assert "".join(emitted) == "ends with Q"
+
+
+def test_empty_stop_string_matches_nothing() -> None:
+    emitted, matched = _stop("text", ["", "zzz"])
+    assert not matched
+    assert "".join(emitted) == "text"
+
+
+def _parse_stream(
+    text: str,
+    config: ChatParserConfig,
+    stops: list[str],
+    chunk_size: int = 1000,
+) -> list[GenAIChunk]:
+    """Drive the parser worker's stream the way the pipelines do."""
+
+    async def deltas() -> AsyncIterator[RawTextChunk]:
+        for i in range(0, len(text), chunk_size):
+            yield RawTextChunk(text=text[i : i + chunk_size], num_tokens=1)
+
+    worker = ChatParserWorker(config)
+
+    # ``worker_method`` types a stream as an awaited handle, but calling the
+    # generator directly yields the async iterator itself.
+    stream = cast(
+        AsyncIterator[GenAIChunk],
+        worker.parse_stream(deltas(), True, {}, stops),
+    )
+
+    async def collect() -> list[GenAIChunk]:
+        return [chunk async for chunk in stream]
+
+    return asyncio.run(collect())
+
+
+@pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
+def test_parse_stream_emits_text_held_back_for_a_stop(chunk_size: int) -> None:
+    """A prefix of a stop string that never completes still reaches the client."""
+    chunks = _parse_stream("ends with Q", REASONING_CONFIG, ["Q:"], chunk_size)
+    assert _text(chunks) == "ends with Q"
+    assert _reasoning(chunks) == ""
+
+
+@pytest.mark.parametrize("chunk_size", CHUNK_SIZES)
+def test_parse_stream_stops_inside_reasoning(chunk_size: int) -> None:
+    """A match inside a reasoning span ends the response mid-thought.
+
+    MAX Serve behaves the same way; this pins it for cascade.
+    """
+    start = REASONING_CONFIG.reasoning_start
+    chunks = _parse_stream(
+        f"{start}weigh optionsQ: next", REASONING_CONFIG, ["Q:"], chunk_size
+    )
+    assert _reasoning(chunks) == "weigh options"
+    assert _text(chunks) == ""

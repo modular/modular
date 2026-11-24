@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.experimental.support."""
+"""Tests for max.tensor.support."""
 
 from contextvars import ContextVar
 
-from max.experimental.support import contextvar_context
+from max.tensor.support import contextvar_context
 
 
 def test_contextvar_context() -> None:

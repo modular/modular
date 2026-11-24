@@ -16,6 +16,7 @@
 
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
+#include "Support/SymbolExport.h"
 
 #include <cstddef>
 #include <string>
@@ -26,11 +27,11 @@ namespace M {
 /// variable will not be set if it already exists.
 /// TODO: This should be upstreamed to llvm::sys::Process to match the GetEnv
 ///       method.
-LogicalResult setProcessEnv(StringRef name, StringRef value,
-                            bool overwrite = true);
+MODULAR_CXX_EXPORT LogicalResult setProcessEnv(StringRef name, StringRef value,
+                                               bool overwrite = true);
 
 /// Get a list of all the environment variables of the current process.
-std::vector<StringRef> getEnv();
+MODULAR_CXX_EXPORT std::vector<StringRef> getEnv();
 
 //===----------------------------------------------------------------------===//
 // Memory usage
@@ -39,11 +40,11 @@ std::vector<StringRef> getEnv();
 /// Returns the current process' physical memory usage, or 0 if value is
 /// not available. Generally determined from the OS's reported resident
 /// page value, and may not very reliable.
-size_t getProcessPhysicalMemUsage();
+MODULAR_CXX_EXPORT size_t getProcessPhysicalMemUsage();
 
 // Returns the full path to the current executable, or "<unknown>" if the path
 // cannot be obtained.
-std::string getProcessExecutablePath();
+MODULAR_CXX_EXPORT std::string getProcessExecutablePath();
 } // namespace M
 
 #endif // SUPPORT_PROCESS_H

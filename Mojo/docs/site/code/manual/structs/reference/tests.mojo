@@ -32,7 +32,7 @@ struct Node[T: ImplicitlyCopyable & Writable & Deinitable](Movable):
     # returns a pointer to the new `Node`.
     @staticmethod
     def make_node(value: Self.T) -> Self.NodePointer:
-        var node_ptr = alloc[Self]({count = 1}).unsafe_leak()
+        var node_ptr = alloc[Self]({length = 1}).unsafe_leak()
         node_ptr.unsafe_write(Self(value))
         return node_ptr
 
@@ -43,7 +43,7 @@ struct Node[T: ImplicitlyCopyable & Writable & Deinitable](Movable):
         node_ptr.unsafe_deinit_pointee()
         dealloc(
             ThinAllocation(unsafe_owned_ptr=node_ptr).unsafe_with_layout(
-                {count = 1}
+                {length = 1}
             )
         )
 
@@ -51,8 +51,7 @@ struct Node[T: ImplicitlyCopyable & Writable & Deinitable](Movable):
     # the pointer to `self.next`. Replaces any existing `next`.
     def append(mut self, value: Self.T):
         # Free chain if replacing `next`
-        if self.next:
-            var next_ptr = self.next.value()
+        if case .Some(next_ptr) = self.next:
             next_ptr[].free_chain()
             Self.free_node(next_ptr)
 
@@ -61,26 +60,23 @@ struct Node[T: ImplicitlyCopyable & Writable & Deinitable](Movable):
     # Prints the list starting at this pointer's pointee
     @staticmethod
     def print_list(node: Optional[Self.NodePointer]):
-        if not node:
-            print("Empty list")
-            return
+        match node:
+            case .None:
+                print("Empty list")
+            case .Some(node_ptr):
+                var current_value: Optional[Self.T] = node_ptr[].value
+                if case .Some(value) = current_value:
+                    print(value, end=" ")
 
-        var node_ptr = node.value()
-
-        var current_value: Optional[Self.T] = node_ptr[].value
-        if current_value:
-            print(current_value.value(), end=" ")
-
-        if node_ptr[].next:
-            Self.print_list(node_ptr[].next)
-        else:
-            print()
+                if node_ptr[].next:
+                    Self.print_list(node_ptr[].next)
+                else:
+                    print()
 
     # Releases all successively allocated `Node` pointees. Does not release self.
     def free_chain(self):
         var current = self.next
-        while current:
-            var current_ptr = current.value()
+        while case .Some(current_ptr) = current:
             var next_node = current_ptr[].next
             Self.free_node(current_ptr)
             current = next_node
@@ -93,7 +89,8 @@ def main():
     var current = list_head
     for idx in range(1, len(values), 1):
         current[].append(values[idx])
-        current = current[].next.value()
+        if case .Some(next_ptr) = current[].next:
+            current = next_ptr
 
     ListNode.print_list(list_head)
 

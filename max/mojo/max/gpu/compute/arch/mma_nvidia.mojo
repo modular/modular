@@ -32,7 +32,7 @@ from std.memory import bitcast
 from ..mma import _has_type, _has_shape, _unsupported_mma_op
 
 
-@always_inline
+@inline(.always)
 def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
     # ===------------------------------------------------------------------===#
     # F16 = F16 * F16 + F16
@@ -337,4 +337,13 @@ def _mma_nvidia(mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         d = rebind[type_of(d)](SIMD[.float64, 4](r[0], r[1], r[2], r[3]))
 
     else:
-        _unsupported_mma_op(d, a, b, c)
+        _unsupported_mma_op[
+            d.dtype,
+            d.length,
+            a.dtype,
+            a.length,
+            b.dtype,
+            b.length,
+            c.dtype,
+            c.length,
+        ]()

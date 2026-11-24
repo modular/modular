@@ -18,13 +18,14 @@ from typing import cast
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import flash_attention_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn._graph_ops import flash_attention_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 
@@ -72,14 +73,6 @@ def max_flash_attention_with_sinks(
         devices=[DeviceRef.GPU()],
     )
 
-    prompt_lens = [
-        int(input_row_offsets[i + 1] - input_row_offsets[i])
-        for i in range(batch_size)
-    ]
-    kv_cache_inputs = paged_kv_cache_inputs(
-        kv_params, prompt_lens, total_num_pages=8
-    )
-
     # Define graph input types
     input_type = TensorType(
         DType.bfloat16,
@@ -113,14 +106,7 @@ def max_flash_attention_with_sinks(
             sink_weights = inputs[2].tensor
 
             # Fetch KV cache
-            kv_collection = PagedCacheValues(
-                kv_blocks=inputs[3].buffer,
-                cache_lengths=inputs[4].tensor,
-                lookup_table=inputs[5].tensor,
-                max_prompt_length=inputs[6].tensor,
-                max_cache_length=inputs[7].tensor,
-                attention_dispatch_metadata=inputs[8].tensor,
-            )
+            kv_collection = kv_params.unflatten_kv_inputs(iter(inputs[3:]))[0]
 
             # Layer index
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -145,7 +131,16 @@ def max_flash_attention_with_sinks(
         return g
 
     graph = build_graph()
+    # Compile before any device allocation, so compilation never needs the GPU.
     model = session.load(graph)
+
+    prompt_lens = [
+        int(input_row_offsets[i + 1] - input_row_offsets[i])
+        for i in range(batch_size)
+    ]
+    kv_cache_inputs = paged_kv_cache_inputs(
+        kv_params, prompt_lens, total_num_pages=8
+    )
 
     # Convert inputs to MAX tensors
     q_tensor = Buffer.from_dlpack(query).to(device)
@@ -159,7 +154,7 @@ def max_flash_attention_with_sinks(
         q_tensor,
         offsets_tensor,
         sinks_tensor,
-        *kv_cache_inputs.flatten(),
+        *tree.leaves(kv_cache_inputs),
     )[0]
 
     return cast(Buffer, result).to(CPU()).to_numpy()

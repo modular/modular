@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/Compiler/Target/TargetBackend.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Support/Configuration.h"
 #include "Target/TargetTraits.h"
 
@@ -20,6 +21,7 @@
 #include "llvm/IR/Module.h"
 #include "llvm/IR/PassManager.h"
 #include "llvm/MC/TargetRegistry.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/ManagedStatic.h"
 #include "llvm/Target/TargetMachine.h"
 #include "llvm/TargetParser/Triple.h"
@@ -27,6 +29,11 @@
 #include "llvm/Transforms/Instrumentation/ThreadSanitizer.h"
 
 namespace M::KGEN {
+
+llvm::cl::LibraryOptionsContext &getEmissionLibraryOptions() {
+  static llvm::cl::LibraryOptionsContext options;
+  return options;
+}
 
 void addAddressSanitizerPass(llvm::ModulePassManager &mpm,
                              const CompilationOptions &options) {
@@ -76,6 +83,7 @@ defaultCreateTargetMachine(const CompilationOptions &options, bool isJIT) {
   llvm::TargetOptions targetOptions;
   targetOptions.MCOptions.ABIName =
       !options.targetABI.empty() ? options.targetABI : options.targetAbi;
+  targetOptions.MCOptions.LibraryOptions = &getEmissionLibraryOptions();
   std::unique_ptr<llvm::TargetMachine> machine(target->createTargetMachine(
       llvm::Triple(options.targetTriple), options.targetCpu,
       options.targetFeatures, targetOptions, options.relocModel,
@@ -139,5 +147,8 @@ TargetBackendRegistry::lookup(const llvm::Triple &triple) const {
     return Error(e.getError());
   return result;
 }
+
+void TargetBackend::preprocessGenerator(GeneratorOp, GeneratorOp,
+                                        FuncSymbolAttr, mlir::ModuleOp) const {}
 
 } // namespace M::KGEN

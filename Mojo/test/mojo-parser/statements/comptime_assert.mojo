@@ -39,7 +39,7 @@ def test_assert_with_message_parameter[x: Int]():
 
 # CHECK-LABEL: lit.fn @"test_assert_with_param_expr
 def test_assert_with_param_expr[x: Int, y: Int]():
-    # CHECK: kgen.param.assert <{{.*}}eq(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, #lit.struct.extract<:!Int y, "_mlir_value">))>, ""
+    # CHECK: kgen.param.assert <{{.*}}identical(:scalar<index> #lit.struct.extract<:!Int x, "_mlir_value">, #lit.struct.extract<:!Int y, "_mlir_value">))>, ""
     comptime assert x == y
 
 
@@ -62,6 +62,18 @@ def test_assert_enables_where_constraint[x: Int](y: Int):
 def test_assert_with_tstring_message[x: Int]():
     # CHECK: kgen.param.assert <{{.*}}>, data_to_str({{.*}}__make_tstring
     comptime assert x, t"expected positive, got {x}"
+
+
+# CHECK-LABEL: lit.fn @"test_assert_with_parenthesized_tstring_message
+def test_assert_with_parenthesized_tstring_message[x: Int]():
+    # CHECK: kgen.param.assert <{{.*}}>, data_to_str({{.*}}__make_tstring
+    comptime assert x > 0, (t"expected positive number, got {x}")
+
+
+# CHECK-LABEL: lit.fn @"test_assert_with_nested_parenthesized_tstring_message
+def test_assert_with_nested_parenthesized_tstring_message[x: Int]():
+    # CHECK: kgen.param.assert <{{.*}}>, data_to_str({{.*}}__make_tstring
+    comptime assert x > 0, ((t"expected positive number, got {x}"))
 
 
 # CHECK-LABEL: lit.fn @"test_always_true_warning

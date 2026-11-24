@@ -27,8 +27,7 @@ from nn.gather_scatter import gather
 def test_gather() raises:
     print("== test_gather")
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
@@ -64,7 +63,7 @@ def test_gather() raises:
             output.make_dynamic[.int64](),
             input.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
-            context=DeviceContext(api="cpu"),
+            context=DeviceContext.cpu(),
         )
 
         print(output[0, 0])
@@ -89,8 +88,7 @@ def test_gather() raises:
 def test_gather_3d() raises:
     print("== test_gather_3d\n")
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
@@ -125,7 +123,7 @@ def test_gather_3d() raises:
             output.make_dynamic[.int64](),
             input.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
-            context=DeviceContext(api="cpu"),
+            context=DeviceContext.cpu(),
         )
 
         print(output[0, 0, 0, 0])
@@ -149,8 +147,7 @@ def test_gather_3d() raises:
 def test_gather_empty_indices() raises:
     print("== test_gather_empty_indices")
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def _test_gather[indices_type: DType]() raises:
         comptime num_rows = 16
         comptime row_size = 4
@@ -184,7 +181,7 @@ def test_gather_empty_indices() raises:
             output.make_dynamic[.int64](),
             input.make_dynamic[.int64](),
             indices.make_dynamic[.int64](),
-            context=DeviceContext(api="cpu"),
+            context=DeviceContext.cpu(),
         )
 
     _test_gather[.int32]()

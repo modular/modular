@@ -1,0 +1,719 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026, Modular Inc. All rights reserved.
+//
+// Licensed under the MAX License:
+// https://modular.com/legal/max-license
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+//
+// Tests for the driver C API across two accelerators, which are the peer
+// access queries and the peer copies. The target that builds this asks for
+// two devices, so a host with fewer is skipped before anything runs, and a
+// pair that cannot reach each other skips the cases that need it.
+//
+//===----------------------------------------------------------------------===//
+
+#include "MLRT/Driver/CAPI/DriverCAPI.h"
+
+#include "MLRT/Driver/DeviceContext/DeviceContext.h"
+
+#include "CAPITestHelpers.h"
+
+#include "gtest/gtest.h"
+
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <vector>
+
+using namespace capi_test;
+
+TEST(DriverCApiPeer, PeerAccessQueries) {
+  if (M_DriverAcceleratorCount() < 2)
+    GTEST_SKIP() << "peer access between two devices needs two accelerators";
+
+  DeviceHandle first;
+  DeviceHandle second;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, first.receive()), M_DRIVER_OK);
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(1, second.receive()), M_DRIVER_OK);
+
+  bool canAccess = false;
+  ASSERT_EQ(M_DriverDeviceCanAccess(first.get(), second.get(), &canAccess),
+            M_DRIVER_OK)
+      << lastError();
+  // The driver refuses to enable a pair the hardware cannot connect, and
+  // enabling every pair at once fails as a whole on such a host, so the rest
+  // of this test needs the pair.
+  if (!canAccess)
+    GTEST_SKIP() << "devices cannot access each other's memory";
+
+  // Per-pair enable, in both directions, is idempotent.
+  EXPECT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverDeviceEnablePeerAccess(second.get(), first.get()),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+
+  ASSERT_EQ(M_DriverEnableAllPeerAccess(), M_DRIVER_OK) << lastError();
+  bool enabled = false;
+  ASSERT_EQ(M_DriverAllPeerAccessEnabled(&enabled), M_DRIVER_OK);
+  EXPECT_TRUE(enabled);
+}
+
+TEST(DriverCApiPeer, UnorderedPeerCopyOrderedByEvents) {
+  if (M_DriverAcceleratorCount() < 2)
+    GTEST_SKIP() << "a peer copy needs two accelerators";
+
+  DeviceHandle first;
+  DeviceHandle second;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, first.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(1, second.receive()), M_DRIVER_OK)
+      << lastError();
+
+  bool canAccess = false;
+  ASSERT_EQ(M_DriverDeviceCanAccess(second.get(), first.get(), &canAccess),
+            M_DRIVER_OK)
+      << lastError();
+  if (!canAccess)
+    GTEST_SKIP() << "devices cannot access each other's memory";
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(second.get(), first.get()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+
+  constexpr uint64_t kBytes = 4096;
+  std::vector<uint8_t> expected(kBytes);
+  for (size_t i = 0; i < kBytes; ++i)
+    expected[i] = static_cast<uint8_t>(i * 31 + 7);
+
+  // The producer fills the source on the first device from a pinned host
+  // buffer and marks the point where the source is ready.
+  BufferHandle sourceHost;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/true,
+                                   sourceHost.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *sourceHostAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(sourceHost.get(), &sourceHostAddress),
+            M_DRIVER_OK);
+  std::memcpy(sourceHostAddress, expected.data(), kBytes);
+
+  BufferHandle source;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/false,
+                                   source.receive()),
+            M_DRIVER_OK)
+      << lastError();
+
+  StreamHandle producer;
+  ASSERT_EQ(M_DriverStreamCreate(first.get(), producer.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
+            M_DRIVER_OK)
+      << lastError();
+  M_DriverEvent *produced = nullptr;
+  ASSERT_EQ(
+      M_DriverEventCreate(first.get(), /*enable_timing=*/false, &produced),
+      M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamRecordEvent(producer.get(), produced), M_DRIVER_OK)
+      << lastError();
+
+  // The copy stream on the second device waits for that point itself, because
+  // the unordered copy leaves the ordering against the source to the caller.
+  StreamHandle copier;
+  ASSERT_EQ(M_DriverStreamCreate(second.get(), copier.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamWaitForEvent(copier.get(), produced), M_DRIVER_OK)
+      << lastError();
+
+  BufferHandle destination;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/false,
+                                   destination.receive()),
+            M_DRIVER_OK)
+      << lastError();
+
+  // A peer copy is enqueued on the destination's own context, so a stream of
+  // the source device is refused.
+  EXPECT_EQ(M_DriverCopyBufferPeerUnordered(producer.get(),
+                                            view(destination, 0, kBytes),
+                                            view(source, 0, kBytes)),
+            M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_FALSE(lastError().empty());
+
+  ASSERT_EQ(M_DriverCopyBufferPeerUnordered(copier.get(),
+                                            view(destination, 0, kBytes),
+                                            view(source, 0, kBytes)),
+            M_DRIVER_OK)
+      << lastError();
+  M_DriverEvent *copied = nullptr;
+  ASSERT_EQ(M_DriverEventCreate(second.get(), /*enable_timing=*/false, &copied),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamRecordEvent(copier.get(), copied), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverEventSynchronize(copied), M_DRIVER_OK) << lastError();
+
+  BufferHandle landing;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/true,
+                                   landing.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *landingAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(landing.get(), &landingAddress), M_DRIVER_OK);
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kBytes)),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(std::memcmp(landingAddress, expected.data(), kBytes), 0);
+
+  M_DriverEventDestroy(copied);
+  M_DriverEventDestroy(produced);
+}
+
+/// A source produced by a queue of slow copies on the first device's shared
+/// context, read by an ordered peer copy on the second device that waits for
+/// nothing itself. The ordered variant has to wait for the source device's
+/// shared context, which is the only thing that makes the bytes right.
+TEST(DriverCApiPeer, OrderedPeerCopyWaitsForTheSourceContext) {
+  if (M_DriverAcceleratorCount() < 2)
+    GTEST_SKIP() << "a peer copy needs two accelerators";
+
+  DeviceHandle first;
+  DeviceHandle second;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, first.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(1, second.receive()), M_DRIVER_OK)
+      << lastError();
+
+  bool canAccess = false;
+  ASSERT_EQ(M_DriverDeviceCanAccess(second.get(), first.get(), &canAccess),
+            M_DRIVER_OK)
+      << lastError();
+  if (!canAccess)
+    GTEST_SKIP() << "devices cannot access each other's memory";
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(second.get(), first.get()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+
+  // The producer is the first device's shared context itself, adopted as a
+  // stream, because that is the context the ordered copy promises to wait on.
+#if MODULAR_HAL_DEVICE_CONTEXT
+  GTEST_SKIP() << "the HAL build cannot adopt a context by address";
+#endif
+  void *producerContext = nullptr;
+  ASSERT_EQ(M_DriverDeviceContextHandle(first.get(), &producerContext),
+            M_DRIVER_OK)
+      << lastError();
+  StreamHandle producer;
+  if (M_DriverStreamFromContextHandle(producerContext, producer.receive()) !=
+      M_DRIVER_OK)
+    GTEST_SKIP() << "this build cannot adopt a context: " << lastError();
+
+  constexpr uint64_t kBytes = 4096;
+  std::vector<uint8_t> expected(kBytes);
+  for (size_t i = 0; i < kBytes; ++i)
+    expected[i] = static_cast<uint8_t>(i * 29 + 3);
+
+  // Slow work ahead of the source, a stack of large copies the producer has
+  // to finish before the pattern lands, so a copy that skipped the wait would
+  // read the zeroed source.
+  constexpr uint64_t kSlowBytes = 64u << 20;
+  BufferHandle slowHost;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kSlowBytes,
+                                   /*pinned_host=*/true, slowHost.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *slowHostAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(slowHost.get(), &slowHostAddress),
+            M_DRIVER_OK);
+  BufferHandle slowDevice;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kSlowBytes,
+                                   /*pinned_host=*/false, slowDevice.receive()),
+            M_DRIVER_OK)
+      << lastError();
+
+  BufferHandle source;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/false,
+                                   source.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  BufferHandle sourceHost;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/true,
+                                   sourceHost.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *sourceHostAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(sourceHost.get(), &sourceHostAddress),
+            M_DRIVER_OK);
+
+  // Everything the copy needs on the second device exists before the slow
+  // stack is queued, so only the peer copy call itself sits between the
+  // producer's enqueue and the copy, and the stack cannot drain in between.
+  StreamHandle copier;
+  ASSERT_EQ(M_DriverStreamCreate(second.get(), copier.receive()), M_DRIVER_OK)
+      << lastError();
+  BufferHandle destination;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/false,
+                                   destination.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  BufferHandle landing;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/true,
+                                   landing.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *landingAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(landing.get(), &landingAddress), M_DRIVER_OK);
+
+  // The source starts zeroed on the device, then the slow stack, then the
+  // pattern, all on the producer and none of it waited for by the host.
+  std::vector<uint8_t> zeros(kBytes, 0);
+  std::memcpy(sourceHostAddress, zeros.data(), kBytes);
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(producer.get()), M_DRIVER_OK)
+      << lastError();
+  std::memcpy(sourceHostAddress, expected.data(), kBytes);
+  for (int round = 0; round < 32; ++round) {
+    ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(),
+                                       view(slowDevice, 0, kSlowBytes),
+                                       slowHostAddress),
+              M_DRIVER_OK)
+        << lastError();
+  }
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
+            M_DRIVER_OK)
+      << lastError();
+
+  ASSERT_EQ(M_DriverCopyBufferPeer(copier.get(), view(destination, 0, kBytes),
+                                   view(source, 0, kBytes)),
+            M_DRIVER_OK)
+      << lastError();
+
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kBytes)),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(std::memcmp(landingAddress, expected.data(), kBytes), 0)
+      << "the ordered peer copy read the source before the producer wrote it";
+
+  // The bracket's other half is that the producer waits for the copy, so its
+  // queue drains only once the copy is done, and both sides end clean.
+  ASSERT_EQ(M_DriverStreamSynchronize(producer.get()), M_DRIVER_OK)
+      << lastError();
+}
+
+namespace M::Driver {
+
+// In the driver's namespace for its types.
+TEST(DriverCApiPeer, UnorderedPeerCopyLeavesAPendingErrorInPlace) {
+#if MODULAR_HAL_DEVICE_CONTEXT
+  GTEST_SKIP() << "the HAL shim has no shared context to record into";
+#else
+  if (M_DriverAcceleratorCount() < 2)
+    GTEST_SKIP() << "a peer copy needs two accelerators";
+
+  DeviceHandle first;
+  DeviceHandle second;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, first.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(1, second.receive()), M_DRIVER_OK)
+      << lastError();
+  bool canAccess = false;
+  ASSERT_EQ(M_DriverDeviceCanAccess(second.get(), first.get(), &canAccess),
+            M_DRIVER_OK)
+      << lastError();
+  if (!canAccess)
+    GTEST_SKIP() << "devices cannot access each other's memory";
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(second.get(), first.get()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+  ErrorOr<DeviceContextRef> shared =
+      DeviceContext::getOrCreate(Device::gpuAPI, 0);
+  ASSERT_FALSE(shared.isError()) << shared.getError();
+  DeviceContextRef sourceContext = shared.takeValue();
+
+  constexpr uint64_t kBytes = 4096;
+  std::vector<uint8_t> expected(kBytes);
+  for (size_t i = 0; i < kBytes; ++i)
+    expected[i] = static_cast<uint8_t>(i * 37 + 11);
+
+  // The source is filled and waited for before the copy, so the copy itself
+  // is the only thing that could touch the source device's shared context.
+  BufferHandle sourceHost;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/true,
+                                   sourceHost.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *sourceHostAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(sourceHost.get(), &sourceHostAddress),
+            M_DRIVER_OK);
+  std::memcpy(sourceHostAddress, expected.data(), kBytes);
+  BufferHandle source;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBytes, /*pinned_host=*/false,
+                                   source.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  StreamHandle producer;
+  ASSERT_EQ(M_DriverStreamCreate(first.get(), producer.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBytes),
+                                     sourceHostAddress),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(producer.get()), M_DRIVER_OK)
+      << lastError();
+
+  StreamHandle copier;
+  ASSERT_EQ(M_DriverStreamCreate(second.get(), copier.receive()), M_DRIVER_OK)
+      << lastError();
+  BufferHandle destination;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/false,
+                                   destination.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  BufferHandle landing;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBytes, /*pinned_host=*/true,
+                                   landing.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *landingAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(landing.get(), &landingAddress), M_DRIVER_OK);
+
+  // An error another user of the source device's shared context recorded
+  // must neither fail the unordered copy nor be consumed by it.
+  ErrorOrSuccess planted = plantPendingError(*sourceContext);
+  ASSERT_FALSE(planted.isError()) << planted.getError();
+  ASSERT_EQ(M_DriverCopyBufferPeerUnordered(copier.get(),
+                                            view(destination, 0, kBytes),
+                                            view(source, 0, kBytes)),
+            M_DRIVER_OK)
+      << "the unordered copy must not take the source context's pending "
+         "error: "
+      << lastError();
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kBytes)),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(std::memcmp(landingAddress, expected.data(), kBytes), 0);
+
+  // The error is still pending on the source device, so its next
+  // synchronous call reports it, and only then does the context run clean.
+  EXPECT_EQ(M_DriverDeviceSynchronize(first.get()), M_DRIVER_RUNTIME_ERROR)
+      << "the pending error must still be there for the next synchronous "
+         "call to report";
+  EXPECT_FALSE(lastError().empty());
+  ASSERT_EQ(M_DriverDeviceSynchronize(first.get()), M_DRIVER_OK) << lastError();
+#endif
+}
+
+} // namespace M::Driver
+
+/// Pieces of a peer's buffer, produced on the peer's own shared queue behind a
+/// stack of slow fills, land byte-exact on this device through one
+/// device-to-device batch, ordered only by waiting for the peer device.
+TEST(DriverCApiPeer, BatchD2DPeer) {
+  if (M_DriverAcceleratorCount() < 2)
+    GTEST_SKIP() << "a peer batch needs two accelerators";
+
+  DeviceHandle first;
+  DeviceHandle second;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, first.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(1, second.receive()), M_DRIVER_OK)
+      << lastError();
+  bool canAccess = false;
+  ASSERT_EQ(M_DriverDeviceCanAccess(first.get(), second.get(), &canAccess),
+            M_DRIVER_OK)
+      << lastError();
+  if (!canAccess)
+    GTEST_SKIP() << "devices cannot access each other's memory";
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(second.get(), first.get()),
+            M_DRIVER_OK)
+      << lastError();
+
+  constexpr uint64_t kSourceBytes = 64ull << 20;
+  constexpr uint64_t kPattern = 4096;
+  std::vector<uint8_t> pattern(kPattern);
+  for (size_t i = 0; i < kPattern; ++i)
+    pattern[i] = static_cast<uint8_t>(i * 17 + 9);
+
+  BufferHandle patternHost;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kPattern, /*pinned_host=*/true,
+                                   patternHost.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *patternAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(patternHost.get(), &patternAddress),
+            M_DRIVER_OK);
+  std::memcpy(patternAddress, pattern.data(), kPattern);
+  BufferHandle source;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kSourceBytes,
+                                   /*pinned_host=*/false, source.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *src = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(source.get(), &src), M_DRIVER_OK);
+
+  // The producer is the second device's shared context, the queue MAX writes
+  // on, driven through the C++ driver as MAX would.
+  M::ErrorOr<M::Driver::DeviceContextRef> producer =
+      M::Driver::DeviceContext::getOrCreate(M::Driver::Device::gpuAPI, 1);
+  ASSERT_FALSE(producer.isError()) << producer.getError();
+  for (int i = 0; i < 64; ++i)
+    ASSERT_FALSE(
+        (*producer)->enqueueSetMemory(src, kSourceBytes, 0x11, 1).isError());
+  ASSERT_FALSE((*producer)
+                   ->enqueueCopyToDevice(src, patternAddress, kPattern)
+                   .isError());
+
+  BufferHandle destination;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kPattern,
+                                   /*pinned_host=*/false,
+                                   destination.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  StreamHandle copier;
+  ASSERT_EQ(M_DriverStreamCreate(first.get(), copier.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamWaitForDevice(copier.get(), first.get()), M_DRIVER_OK)
+      << lastError();
+  BufferHandle zeros;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kPattern, /*pinned_host=*/true,
+                                   zeros.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *zerosAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(zeros.get(), &zerosAddress), M_DRIVER_OK);
+  std::memset(zerosAddress, 0, kPattern);
+  ASSERT_EQ(M_DriverCopyHostToBuffer(
+                copier.get(), view(destination, 0, kPattern), zerosAddress),
+            M_DRIVER_OK)
+      << lastError();
+  // The only ordering against the producer.
+  ASSERT_EQ(M_DriverStreamWaitForDevice(copier.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+
+  struct Piece {
+    uint64_t from, to, size;
+  };
+  const Piece pieces[3] = {{0, 2048, 512}, {1024, 0, 1000}, {3000, 3500, 96}};
+  M_DriverBufferView dsts[3];
+  M_DriverBufferView srcs[3];
+  std::vector<uint8_t> expected(kPattern, 0);
+  for (size_t i = 0; i < 3; ++i) {
+    dsts[i] = view(destination, pieces[i].to, pieces[i].size);
+    srcs[i] = view(source, pieces[i].from, pieces[i].size);
+    std::memcpy(expected.data() + pieces[i].to, pattern.data() + pieces[i].from,
+                pieces[i].size);
+  }
+  ASSERT_EQ(M_DriverCopyBufferBatch(copier.get(), dsts, srcs, 3), M_DRIVER_OK)
+      << lastError();
+
+  BufferHandle landing;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kPattern, /*pinned_host=*/true,
+                                   landing.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *landingAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(landing.get(), &landingAddress), M_DRIVER_OK);
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingAddress,
+                                     view(destination, 0, kPattern)),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(std::memcmp(landingAddress, expected.data(), kPattern), 0);
+  // The source and the pattern stay alive until the producer is done.
+  ASSERT_EQ(M_DriverDeviceSynchronize(second.get()), M_DRIVER_OK)
+      << lastError();
+}
+
+/// The view peer copies at non-zero offsets on both sides. The ordered one
+/// reads a source that MAX's queue on the first device writes behind slow
+/// work, with nothing else ordering the copy after it; the unordered one is
+/// ordered by an event alone.
+TEST(DriverCApiPeer, BufferPeerCopiesThroughViews) {
+  if (M_DriverAcceleratorCount() < 2)
+    GTEST_SKIP() << "a peer copy needs two accelerators";
+
+  DeviceHandle first;
+  DeviceHandle second;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, first.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(1, second.receive()), M_DRIVER_OK)
+      << lastError();
+  bool canAccess = false;
+  ASSERT_EQ(M_DriverDeviceCanAccess(second.get(), first.get(), &canAccess),
+            M_DRIVER_OK)
+      << lastError();
+  if (!canAccess)
+    GTEST_SKIP() << "devices cannot access each other's memory";
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(second.get(), first.get()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverDeviceEnablePeerAccess(first.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+
+  constexpr uint64_t kBuffer = 8192;
+  constexpr uint64_t kBytes = 1500;
+  constexpr uint64_t kOrderedFrom = 1000;
+  constexpr uint64_t kOrderedTo = 2000;
+  constexpr uint64_t kUnorderedFrom = 3000;
+  constexpr uint64_t kUnorderedTo = 5000;
+  std::vector<uint8_t> ordered(kBytes);
+  std::vector<uint8_t> unordered(kBytes);
+  for (size_t i = 0; i < kBytes; ++i) {
+    ordered[i] = static_cast<uint8_t>(i * 29 + 3);
+    unordered[i] = static_cast<uint8_t>(i * 7 + 101);
+  }
+
+  // Everything is allocated up front, so only the copy calls sit between the
+  // producer's enqueue and the copies and the slow work cannot drain first.
+  BufferHandle sourceHost;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBuffer, /*pinned_host=*/true,
+                                   sourceHost.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *sourceHostAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(sourceHost.get(), &sourceHostAddress),
+            M_DRIVER_OK);
+  auto *sourceHostBytes = static_cast<uint8_t *>(sourceHostAddress);
+  std::memset(sourceHostBytes, 0, kBuffer);
+  std::memcpy(sourceHostBytes + kOrderedFrom, ordered.data(), kBytes);
+  std::memcpy(sourceHostBytes + kUnorderedFrom, unordered.data(), kBytes);
+
+  constexpr uint64_t kSlowBytes = 64u << 20;
+  BufferHandle slow;
+  BufferHandle source;
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kSlowBytes,
+                                   /*pinned_host=*/false, slow.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverBufferAllocate(first.get(), kBuffer, /*pinned_host=*/false,
+                                   source.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  BufferHandle destination;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBuffer,
+                                   /*pinned_host=*/false,
+                                   destination.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  BufferHandle landing;
+  ASSERT_EQ(M_DriverBufferAllocate(second.get(), kBuffer, /*pinned_host=*/true,
+                                   landing.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *landingAddress = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(landing.get(), &landingAddress), M_DRIVER_OK);
+  auto *landingBytes = static_cast<uint8_t *>(landingAddress);
+
+  StreamHandle producer;
+  ASSERT_EQ(M_DriverDeviceStream(first.get(), producer.receive()), M_DRIVER_OK)
+      << lastError();
+  StreamHandle copier;
+  ASSERT_EQ(M_DriverStreamCreate(second.get(), copier.receive()), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamWaitForDevice(copier.get(), second.get()),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(
+      M_DriverFillBuffer(copier.get(), view(destination, 0, kBuffer), 0x5c),
+      M_DRIVER_OK)
+      << lastError();
+  M_DriverEvent *produced = nullptr;
+  ASSERT_EQ(
+      M_DriverEventCreate(first.get(), /*enable_timing=*/false, &produced),
+      M_DRIVER_OK)
+      << lastError();
+
+  ASSERT_EQ(M_DriverFillBuffer(producer.get(), view(source, 0, kBuffer), 0),
+            M_DRIVER_OK)
+      << lastError();
+  for (int round = 0; round < 32; ++round)
+    ASSERT_EQ(M_DriverFillBuffer(producer.get(), view(slow, 0, kSlowBytes),
+                                 static_cast<uint8_t>(round)),
+              M_DRIVER_OK)
+        << lastError();
+  ASSERT_EQ(M_DriverCopyHostToBuffer(producer.get(), view(source, 0, kBuffer),
+                                     sourceHostBytes),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamRecordEvent(producer.get(), produced), M_DRIVER_OK)
+      << lastError();
+
+  // A peer copy is enqueued on the destination's own context, so a stream of
+  // the source device is refused.
+  EXPECT_EQ(M_DriverCopyBufferPeer(producer.get(),
+                                   view(destination, kOrderedTo, kBytes),
+                                   view(source, kOrderedFrom, kBytes)),
+            M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_FALSE(lastError().empty());
+
+  ASSERT_EQ(M_DriverCopyBufferPeer(copier.get(),
+                                   view(destination, kOrderedTo, kBytes),
+                                   view(source, kOrderedFrom, kBytes)),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamWaitForEvent(copier.get(), produced), M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverCopyBufferPeerUnordered(
+                copier.get(), view(destination, kUnorderedTo, kBytes),
+                view(source, kUnorderedFrom, kBytes)),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverCopyBufferToHost(copier.get(), landingBytes,
+                                     view(destination, 0, kBuffer)),
+            M_DRIVER_OK)
+      << lastError();
+  ASSERT_EQ(M_DriverStreamSynchronize(copier.get()), M_DRIVER_OK)
+      << lastError();
+
+  for (uint64_t i = 0; i < kBuffer; ++i) {
+    uint8_t expected = 0x5c;
+    if (i >= kOrderedTo && i < kOrderedTo + kBytes)
+      expected = ordered[i - kOrderedTo];
+    else if (i >= kUnorderedTo && i < kUnorderedTo + kBytes)
+      expected = unordered[i - kUnorderedTo];
+    ASSERT_EQ(landingBytes[i], expected) << "at byte " << i;
+  }
+  ASSERT_EQ(M_DriverStreamSynchronize(producer.get()), M_DRIVER_OK)
+      << lastError();
+  M_DriverEventDestroy(produced);
+}

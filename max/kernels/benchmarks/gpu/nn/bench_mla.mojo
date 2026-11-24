@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv, sqrt
-from std.memory import alloc, dealloc
+from std.memory import alloc
 from std.random import randn
 from std.sys import get_defined_dtype, get_defined_int, get_defined_bool
 
@@ -32,11 +32,7 @@ from internal_utils._utils import InitializationType
 from layout import (
     Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
     row_major,
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -50,8 +46,7 @@ from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse_utils import (
 )
 from nn.attention.gpu.nvidia.sm100.mla_prefill_sparse import mla_prefill_sparse
 from nn.attention.mha_mask import CausalMask
-
-from std.utils.index import Index, IndexList
+from nn.attention.gpu.mla import AMDMLA, LegacyNVMLA, MLAKernels, SM100MLA
 
 
 def bench_decode[
@@ -62,6 +57,8 @@ def bench_decode[
     group: Int = 1,
     decoding_warp_split_k: Bool = False,
     cache_busting: Bool = True,
+    *,
+    kernels: MLAKernels,
 ](
     mut m: Bench,
     seq_len: Int,
@@ -69,7 +66,7 @@ def bench_decode[
     batch_size: Int,
     num_partitions: Int,
     mode: String,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -81,6 +78,19 @@ def bench_decode[
     var q_size = batch_size * num_heads * seq_len * depth
     var k_size = batch_size * kv_num_heads * num_keys * depth
     var o_size = batch_size * num_heads * seq_len * v_depth
+
+    # 0 = let the dispatch heuristic pick the production default; any other
+    # value pins the split explicitly (the bench otherwise bypasses the
+    # heuristic entirely). 0 is the arg default, so a bare run measures the
+    # production arm. The report line labels the arm rather than restating
+    # the heuristic's choice: re-deriving it here would be a second copy of
+    # the dispatch's split rule, free to drift from the real one.
+    var np_selection: Optional[Int] = (
+        None if num_partitions == 0 else num_partitions
+    )
+    var np_label = String("auto") if num_partitions == 0 else String(
+        num_partitions
+    )
 
     # For cache busting: calculate strides and larger buffer sizes.
     comptime simd_size = 4
@@ -104,54 +114,31 @@ def bench_decode[
         num_heads=num_heads,
         _is_cache_length_accurate=True,
     ](batch_size, num_keys, 1, ctx)
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
 
-    @always_inline
+    @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut b: Bencher,
-    ) {var cb_q, var cb_k, var cb_o, var scalar_args_buf_lt, imm,}:
-        @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+    ) {var cb_q, var cb_k, var cb_o, var scalar_args_tt, imm,}:
+        @inline(.always)
+        def _kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        seq_len,
-                        Idx[num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size, seq_len, Idx[num_heads], Idx[depth]),
             )
             var k_device = TileTensor(
                 cb_k.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        num_keys,
-                        Idx[kv_num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size, num_keys, Idx[kv_num_heads], Idx[depth]),
             )
             var output_device = TileTensor(
                 cb_o.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size,
-                        seq_len,
-                        Idx[num_heads],
-                        Idx[v_depth],
-                    )
-                ),
+                row_major(batch_size, seq_len, Idx[num_heads], Idx[v_depth]),
             )
-            var scalar_args_tt = TileTensor(
-                scalar_args_buf_lt.ptr, row_major[3]()
-            )
-
             flare_mla_decoding[
                 config=MHAConfig[qkv_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
+                kernels=kernels,
             ](
                 output_device.as_unsafe_any_origin(),
                 q_device,
@@ -160,7 +147,7 @@ def bench_decode[
                 scale,
                 ctx,
                 scalar_args_tt,
-                num_partitions=num_partitions,
+                num_partitions=np_selection,
             )
 
         bencher_iter_custom(b, _kernel_launch, ctx)
@@ -180,6 +167,7 @@ def bench_decode[
             "/num_keys=", num_keys,
             "/batch_size=", batch_size,
             "/mode=", mode,
+            "/num_partitions=", np_label,
             "/cache_busting=", cache_busting,
         ),
             # fmt: on
@@ -204,12 +192,14 @@ def bench_prefill[
     cache_depth: Int,
     cache_num_heads: Int,
     cache_busting: Bool = True,
+    *,
+    kernels: MLAKernels,
 ](
     mut m: Bench,
     seq_len: Int,
     num_keys: Int,
     batch_size: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
 ) raises:
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -241,10 +231,10 @@ def bench_prefill[
 
     # input row offsets and cache row offsets
     var input_row_offsets = alloc[UInt32](
-        {count = batch_size + 1}
+        {length = batch_size + 1}
     ).unsafe_leak()
     var cache_row_offsets = alloc[UInt32](
-        {count = batch_size + 1}
+        {length = batch_size + 1}
     ).unsafe_leak()
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
@@ -273,14 +263,14 @@ def bench_prefill[
     # Row offsets tensors (these don't need cache busting offsets).
     var input_row_offsets_device = TileTensor(
         input_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
     var cache_row_offsets_device = TileTensor(
         cache_row_offsets_device_ptr,
-        row_major(Coord(batch_size + 1)),
+        row_major(batch_size + 1),
     )
 
-    @always_inline
+    @inline(.always)
     def bench_func(
         mut b: Bencher,
     ) {
@@ -293,61 +283,32 @@ def bench_prefill[
         var cache_row_offsets_device,
         imm,
     }:
-        @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        @inline(.always)
+        def _kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var q_device = TileTensor(
                 cb_q.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * seq_len,
-                        Idx[num_heads],
-                        Idx[depth],
-                    )
-                ),
+                row_major(batch_size * seq_len, Idx[num_heads], Idx[depth]),
             )
             var k_device = TileTensor(
                 cb_k.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * num_keys,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
             )
             var v_device = TileTensor(
                 cb_v.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * num_keys,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * num_keys, Idx[num_heads], Idx[kv_depth]),
             )
             var cache_device = TileTensor(
                 cb_cache.offset_ptr(iteration),
                 row_major(
-                    Coord(
-                        batch_size,
-                        num_keys,
-                        Idx[cache_num_heads],
-                        Idx[cache_depth],
-                    )
+                    batch_size, num_keys, Idx[cache_num_heads], Idx[cache_depth]
                 ),
             )
             var output_device = TileTensor(
                 cb_o.offset_ptr(iteration),
-                row_major(
-                    Coord(
-                        batch_size * seq_len,
-                        Idx[num_heads],
-                        Idx[kv_depth],
-                    )
-                ),
+                row_major(batch_size * seq_len, Idx[num_heads], Idx[kv_depth]),
             )
 
-            flare_mla_prefill[rank=q_device.rank](
+            flare_mla_prefill[rank=q_device.rank, kernels=kernels](
                 output_device,
                 q_device,
                 k_device,
@@ -409,7 +370,7 @@ def bench_prefill_sparse[
     q_tmem_depth: Int = 384,
     page_size: Int = 128,
     cache_busting: Bool = True,
-](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext) raises:
+](mut m: Bench, s_q: Int, num_kv_tokens: Int, ctx: DeviceContext[]) raises:
     var scale = Float32(1.0) / sqrt(Float32(192.0))
     comptime kv_num_heads = 1
     comptime num_layers = 1
@@ -435,7 +396,7 @@ def bench_prefill_sparse[
 
     # KV blocks: host-init with random data, copy to device.
     var kv_host_alloc = alloc[Scalar[qkv_type]](
-        {count = block_elems}
+        {length = block_elems}
     ).into_managed()
     var kv_host = kv_host_alloc.unsafe_ptr()
     randn[qkv_type](
@@ -445,7 +406,7 @@ def bench_prefill_sparse[
     ctx.enqueue_copy(blocks_device, kv_host)
 
     # Sequential LUT: page i → physical block i (batch_size=1).
-    var lut_host_alloc = alloc[UInt32]({count = num_pages}).into_managed()
+    var lut_host_alloc = alloc[UInt32]({length = num_pages}).into_managed()
     var lut_host = lut_host_alloc.unsafe_ptr()
     for i in range(num_pages):
         lut_host[i] = UInt32(i)
@@ -453,16 +414,16 @@ def bench_prefill_sparse[
     ctx.enqueue_copy(lut_device, lut_host)
 
     var cache_lengths_host_alloc = alloc[UInt32](
-        {count = batch_size}
+        {length = batch_size}
     ).into_managed()
     var cache_lengths_host = cache_lengths_host_alloc.unsafe_ptr()
     cache_lengths_host[0] = UInt32(num_kv_tokens)
     var cache_lengths_device = ctx.enqueue_create_buffer[.uint32](batch_size)
     ctx.enqueue_copy(cache_lengths_device, cache_lengths_host)
 
-    # Physical indices: cycle through all valid (page, offset) pairs.
+    # Physical indices use cyclic page and intra-page offsets.
     var indices_host_alloc = alloc[UInt32](
-        {count = total_indices}
+        {length = total_indices}
     ).into_managed()
     var indices_host = indices_host_alloc.unsafe_ptr()
     for i in range(total_indices):
@@ -472,7 +433,7 @@ def bench_prefill_sparse[
     var indices_device = ctx.enqueue_create_buffer[.uint32](total_indices)
     ctx.enqueue_copy(indices_device, indices_host)
 
-    var topk_lengths_host_alloc = alloc[UInt32]({count = s_q}).into_managed()
+    var topk_lengths_host_alloc = alloc[UInt32]({length = s_q}).into_managed()
     var topk_lengths_host = topk_lengths_host_alloc.unsafe_ptr()
     for i in range(s_q):
         topk_lengths_host[i] = UInt32(topk)
@@ -481,53 +442,51 @@ def bench_prefill_sparse[
 
     ctx.synchronize()
 
-    dealloc(kv_host_alloc^)
-    dealloc(lut_host_alloc^)
-    dealloc(cache_lengths_host_alloc^)
-    dealloc(indices_host_alloc^)
-    dealloc(topk_lengths_host_alloc^)
-
     # Build PagedKVCacheCollection from device buffers.
     comptime kv_params = KVCacheStaticParams(
         num_heads=kv_num_heads, head_size=qk_depth, is_mla=True
     )
-    comptime kv_block_layout = Layout.row_major[6]()
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    comptime lut_layout = Layout.row_major[2]()
-
-    var kv_block_lt = LayoutTensor[qkv_type, kv_block_layout](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](
-                num_pages, 1, num_layers, page_size, kv_num_heads, qk_depth
-            )
-        ),
+    comptime Collection = PagedKVCacheCollection[
+        qkv_type,
+        kv_params,
+        page_size,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime blocks_layout_type = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*blocks_layout_type.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(num_layers)
+    var blocks_strides = Coord[*blocks_layout_type.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var blocks = TileTensor(
+        blocks_device, blocks_layout_type(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
+    var cache_lengths = (
+        TileTensor(cache_lengths_device, row_major(Int64(batch_size)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var cache_lengths_lt = LayoutTensor[mut=False, .uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    var lookup_table = (
+        TileTensor(lut_device, row_major(Int64(batch_size), Int64(num_pages)))
+        .as_imm()
+        .as_unsafe_any_origin()
     )
-    var lut_lt = LayoutTensor[mut=False, .uint32, lut_layout, _](
-        lut_device.unsafe_ptr(),
-        RuntimeLayout[lut_layout].row_major(
-            IndexList[2](batch_size, num_pages)
-        ),
-    )
-
-    var kv_collection = PagedKVCacheCollection[qkv_type, kv_params, page_size](
-        kv_block_lt,
-        cache_lengths_lt,
-        lut_lt,
+    var kv_collection = Collection(
+        blocks,
+        cache_lengths,
+        lookup_table,
         UInt32(s_q),
         UInt32(num_kv_tokens),
     )
     var kv_cache = kv_collection.get_key_cache(0)
 
-    var indices_tt = TileTensor(
-        indices_device.unsafe_ptr(), row_major(total_indices)
-    )
+    var indices_tt = TileTensor(indices_device, row_major(len(indices_device)))
     var topk_lengths_tt = TileTensor(
-        topk_lengths_device.unsafe_ptr(), row_major(s_q)
+        topk_lengths_device, row_major(len(topk_lengths_device))
     )
 
     comptime config = MLASparseConfig[
@@ -541,7 +500,8 @@ def bench_prefill_sparse[
         group=num_heads,
     )
 
-    @always_inline
+    @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut b: Bencher,
     ) {
@@ -553,8 +513,8 @@ def bench_prefill_sparse[
         var scale,
         imm,
     }:
-        @always_inline
-        def _kernel_launch(ctx: DeviceContext, iteration: Int) raises {imm}:
+        @inline(.always)
+        def _kernel_launch(ctx: DeviceContext[], iteration: Int) raises {imm}:
             var q_tt = TileTensor(
                 cb_q.offset_ptr(iteration),
                 row_major((s_q, Idx[num_heads], Idx[qk_depth])),
@@ -607,6 +567,11 @@ def bench_prefill_sparse[
 
     ctx.synchronize()
 
+    _ = kv_host_alloc
+    _ = lut_host_alloc
+    _ = cache_lengths_host_alloc
+    _ = indices_host_alloc
+    _ = topk_lengths_host_alloc
     _ = blocks_device
     _ = lut_device
     _ = cache_lengths_device
@@ -638,6 +603,70 @@ struct MLA_cfg(ImplicitlyCopyable, Writable):
     var sparse_q_tmem_depth: Int
 
 
+def bench_dense[
+    cfg: MLA_cfg, kernels: MLAKernels
+](
+    mut m: Bench,
+    seq_len: Int,
+    num_keys: Int,
+    batch_size: Int,
+    num_partitions: Int,
+    mode: String,
+    ctx: DeviceContext[],
+    skip_prefill: Bool = False,
+    skip_decode: Bool = False,
+) raises:
+    if not skip_decode:
+        _bench_decode_cell[cfg, kernels](
+            m, seq_len, num_keys, batch_size, num_partitions, mode, ctx
+        )
+
+    if skip_prefill:
+        return
+    bench_prefill[
+        cfg.qkv_type,
+        cfg.output_type,
+        cfg.prefill_depth,
+        cfg.num_heads,
+        cfg.kv_depth,
+        cfg.cache_depth,
+        cfg.cache_num_heads,
+        cache_busting=cfg.cache_busting,
+        kernels=kernels,
+    ](m, seq_len, num_keys, batch_size, ctx)
+
+
+def _bench_decode_cell[
+    cfg: MLA_cfg, kernels: MLAKernels
+](
+    mut m: Bench,
+    seq_len: Int,
+    num_keys: Int,
+    batch_size: Int,
+    num_partitions: Int,
+    mode: String,
+    ctx: DeviceContext[],
+) raises:
+    bench_decode[
+        cfg.qkv_type,
+        cfg.output_type,
+        cfg.depth,
+        cfg.num_heads,
+        cfg.group,
+        cfg.decoding_warp_split_k,
+        cfg.cache_busting,
+        kernels=kernels,
+    ](
+        m,
+        seq_len,
+        num_keys,
+        batch_size,
+        num_partitions,
+        mode,
+        ctx,
+    )
+
+
 def main() raises:
     comptime qkv_type = get_defined_dtype["qkv_type", .bfloat16]()
     comptime output_type = get_defined_dtype["output_type", .bfloat16]()
@@ -661,8 +690,26 @@ def main() raises:
     var seq_len = Int(arg_parse("seq_len", 64))
     var num_keys = Int(arg_parse("num_keys", 64))
     var batch_size = Int(arg_parse("batch_size", 1))
-    var num_partitions = Int(arg_parse("num_partitions", 1))
+    var num_partitions = Int(arg_parse("num_partitions", 0))
     var mode = String(arg_parse("mode", "decode"))
+    # Comma-separated lists sweep the split-K ladder and the cache length in
+    # one run; a partition count of 0 means auto.
+    var np_list = String(arg_parse("np_list", ""))
+    var nk_list = String(arg_parse("nk_list", ""))
+    var skip_prefill = arg_parse("skip_prefill", False)
+    var skip_decode = arg_parse("skip_decode", False)
+    var partitions = List[Int]()
+    if np_list:
+        for item in np_list.split(","):
+            partitions.append(Int(item))
+    else:
+        partitions.append(num_partitions)
+    var key_counts = List[Int]()
+    if nk_list:
+        for item in nk_list.split(","):
+            key_counts.append(Int(item))
+    else:
+        key_counts.append(num_keys)
 
     comptime cfg = MLA_cfg(
         qkv_type=qkv_type,
@@ -686,34 +733,44 @@ def main() raises:
     var m = Bench()
     with DeviceContext() as ctx:
         if mode != "sparse_prefill":
-            bench_decode[
-                cfg.qkv_type,
-                cfg.output_type,
-                cfg.depth,
-                cfg.num_heads,
-                cfg.group,
-                cfg.decoding_warp_split_k,
-                cfg.cache_busting,
-            ](
-                m,
-                seq_len,
-                num_keys,
-                batch_size,
-                num_partitions,
-                mode,
-                ctx,
-            )
-
-            bench_prefill[
-                cfg.qkv_type,
-                cfg.output_type,
-                cfg.prefill_depth,
-                cfg.num_heads,
-                cfg.kv_depth,
-                cfg.cache_depth,
-                cfg.cache_num_heads,
-                cache_busting=cfg.cache_busting,
-            ](m, seq_len, num_keys, batch_size, ctx)
+            comptime if _is_sm10x_gpu(ctx.default_device_info):
+                bench_dense[cfg, SM100MLA](
+                    m,
+                    seq_len,
+                    num_keys,
+                    batch_size,
+                    num_partitions,
+                    mode,
+                    ctx,
+                    skip_decode=skip_decode,
+                )
+            elif ctx.target.is_amd_gpu():
+                for nk in key_counts:
+                    for np in partitions:
+                        bench_dense[cfg, AMDMLA](
+                            m,
+                            seq_len,
+                            nk,
+                            batch_size,
+                            np,
+                            mode,
+                            ctx,
+                            # Prefill takes no partition count: time it once
+                            # per key count.
+                            skip_prefill or np != partitions[0],
+                            skip_decode=skip_decode,
+                        )
+            else:
+                bench_dense[cfg, LegacyNVMLA](
+                    m,
+                    seq_len,
+                    num_keys,
+                    batch_size,
+                    num_partitions,
+                    mode,
+                    ctx,
+                    skip_decode=skip_decode,
+                )
 
         comptime if _is_sm10x_gpu(ctx.default_device_info):
             bench_prefill_sparse[

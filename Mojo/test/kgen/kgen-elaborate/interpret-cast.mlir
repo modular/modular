@@ -7,13 +7,13 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
   kgen.generator @cast_index_to_si64_large() -> !kgen.scalar<si64> {
     %0 = kgen.param.constant: scalar<index> = <-8664705627211539068>
     %1 = pop.cast %0 : !kgen.scalar<index> to !kgen.scalar<si64>
-    kgen.return %1 : !kgen.scalar<si64>
+    hlcf.return %1 : !kgen.scalar<si64>
   }
 
   kgen.generator @cast_index_to_si32_large() -> !kgen.scalar<si32> {
     %0 = kgen.param.constant: scalar<index> = <-8664705627211539068>
     %1 = pop.cast %0 : !kgen.scalar<index> to !kgen.scalar<si32>
-    kgen.return %1 : !kgen.scalar<si32>
+    hlcf.return %1 : !kgen.scalar<si32>
   }
   // CHECK-LABEL: @main
   kgen.generator export @main() {
@@ -60,6 +60,36 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK-NEXT: kgen.param.constant: scalar<si128> = <-2147483648>
     %17 = kgen.param.constant : !kgen.scalar<si128> = <#pop.cast<#kgen<simd -2147483648> : !kgen.scalar<index>> : !kgen.scalar<si128>>
 
-    kgen.return
+    // Casting to `f8e8m0fnu` takes the magnitude, rounds it up to a power of
+    // two, and saturates the top binade rather than reaching the NaN encoding.
+    // In order: NaN, 2**12, 2**1, 2**-127, 2**127.
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"NaN">
+    %18 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "-Inf"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"4.1E+3">
+    %19 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "-4096.0"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"2">
+    %20 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "1.1"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"5.9E-39">
+    %21 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "0.0"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e8m0fnu> = <"1.7E+38">
+    %22 = kgen.param.constant : !kgen.scalar<f8e8m0fnu> = <#pop.cast<#kgen<simd "2.55E+38"> : !kgen.scalar<f32>> : !kgen.scalar<f8e8m0fnu>>
+
+    // The other float8 types saturate: a folded cast must clamp an overflow,
+    // and an infinity, to the largest finite value and keep the sign, which is
+    // what the conversion these lower to does. `f8e4m3fn` and the `fnuz` pair
+    // have no infinity, so converting without the clamp reaches their NaN
+    // encoding instead.
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e4m3fn> = <"448">
+    %23 = kgen.param.constant : !kgen.scalar<f8e4m3fn> = <#pop.cast<#kgen<simd "1.0E+30"> : !kgen.scalar<f32>> : !kgen.scalar<f8e4m3fn>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e4m3fn> = <"-448">
+    %24 = kgen.param.constant : !kgen.scalar<f8e4m3fn> = <#pop.cast<#kgen<simd "-Inf"> : !kgen.scalar<f32>> : !kgen.scalar<f8e4m3fn>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e5m2> = <"-5.7E+4">
+    %26 = kgen.param.constant : !kgen.scalar<f8e5m2> = <#pop.cast<#kgen<simd "-Inf"> : !kgen.scalar<f32>> : !kgen.scalar<f8e5m2>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e4m3fnuz> = <"240">
+    %27 = kgen.param.constant : !kgen.scalar<f8e4m3fnuz> = <#pop.cast<#kgen<simd "1.0E+30"> : !kgen.scalar<f32>> : !kgen.scalar<f8e4m3fnuz>>
+    // CHECK-NEXT: kgen.param.constant: scalar<f8e5m2fnuz> = <"5.7E+4">
+    %28 = kgen.param.constant : !kgen.scalar<f8e5m2fnuz> = <#pop.cast<#kgen<simd "1.0E+30"> : !kgen.scalar<f32>> : !kgen.scalar<f8e5m2fnuz>>
+
+    hlcf.return
   }
 }

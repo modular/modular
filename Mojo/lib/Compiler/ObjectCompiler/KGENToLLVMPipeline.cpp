@@ -31,10 +31,15 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   pm.addPass(createLowerKGENToLLVM(LowerKGENToLLVMOptions{
       options.globalCtorFnName, options.globalDtorFnName}));
   pm.addNestedPass<LLVMFuncOp>(createKGENVerifierPass());
-  pm.addPass(createLowerRuntimeClosures());
   pm.addNestedPass<LLVMFuncOp>(createLegalizePOPOperations());
-  pm.addPass(createLowerGlobalPOPToLLVM());
-  pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM());
+
+  LowerGlobalPOPToLLVMOptions globalPOPOptions;
+  globalPOPOptions.inlinePrecompiledMLIR = options.inlinePrecompiledMLIR;
+  pm.addPass(createLowerGlobalPOPToLLVM(globalPOPOptions));
+
+  LowerPOPToLLVMOptions popOptions;
+  popOptions.inlinePrecompiledMLIR = options.inlinePrecompiledMLIR;
+  pm.addNestedPass<LLVMFuncOp>(createLowerPOPToLLVM(popOptions));
   pm.addNestedPass<LLVMFuncOp>(createLowerControlFlow());
   pm.addNestedPass<LLVMFuncOp>(mlir::createReconcileUnrealizedCastsPass());
   pm.addNestedPass<LLVMFuncOp>(createLowerSuspensionPoints());
@@ -51,9 +56,10 @@ void KGEN::buildLowerToLLVMPipeline(mlir::OpPassManager &pm,
   // translation to LLVM IR, dispatched through the target lowering.
   pm.addPass(createTargetSpecificLLVMLowering());
 
-  // Run the LLVM lowering for debug info last.
-  pm.addPass(DebugInfo::createDebugInfoToLLVM(
-      {/*tradeoffPerfForVariableDI=*/options.optimizationLevel == 0}));
+  // Debug info is stripped before elaboration when it is disabled.
+  if (options.debugInfoLevel != DebugInfo::EmissionKind::None)
+    pm.addPass(DebugInfo::createDebugInfoToLLVM(
+        {/*tradeoffPerfForVariableDI=*/options.optimizationLevel == 0}));
 }
 
 void KGEN::registerLowerToLLVMPipeline() {

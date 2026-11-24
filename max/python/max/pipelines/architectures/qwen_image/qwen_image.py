@@ -28,9 +28,9 @@ Weight key naming matches HuggingFace diffusers:
 
 from max.dtype import DType
 from max.graph import TensorType, TensorValue, ops
-from max.nn.layer import LayerList, Module
-from max.nn.linear import Linear
-from max.nn.norm import RMSNorm
+from max.nn.legacy.layer import LayerList, Module
+from max.nn.legacy.linear import Linear
+from max.nn.legacy.norm import RMSNorm
 
 from .layers.embeddings import (
     QwenImagePosEmbed,
@@ -151,6 +151,7 @@ class QwenImageTransformer2DModel(Module):
         self.num_noise_tokens: int | None = None
 
     def input_types(self) -> tuple[TensorType, ...]:
+        """The graph's input types."""
         hidden_states_type = TensorType(
             self.max_dtype,
             shape=["batch_size", "image_seq_len", self.in_channels],

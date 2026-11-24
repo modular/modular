@@ -28,7 +28,6 @@ from ._cpython import (
     Py_file_input,
     Py_ssize_t,
     PyMethodDef,
-    PyObjectPtr,
 )
 from .python_object import PythonObject
 
@@ -91,7 +90,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             to=cpython
         ).unsafe_origin_cast[ImmStaticOrigin]()
 
-    @always_inline
+    @inline(.always)
     def cpython(self) -> ref[ImmStaticOrigin] CPython:
         """Handle to the low-level C API of the CPython interpreter present in
         the current process.
@@ -176,7 +175,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             return PythonObject(from_owned=res_ptr)
 
     @staticmethod
-    def add_to_path(dir_path: StringSlice) raises:
+    def add_to_path(dir_path: StringSpan) raises:
         """Adds a directory to the Python path.
 
         This might be necessary to import a Python module via `import_module()`.
@@ -313,7 +312,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
             # Safety: `module` pointer lives long enough because its reference
             #   argument.
             module._obj_ptr,
-            functions.as_unsafe_any_origin(),
+            functions,
         )
         if errno == -1:
             raise cpy.unsafe_get_error()
@@ -343,7 +342,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var errno = cpy.PyModule_AddObjectRef(
             module._obj_ptr,
-            name.as_c_string_slice().ptr().as_unsafe_any_origin(),
+            name.as_c_string_span().ptr(),
             value._obj_ptr,
         )
         if errno == -1:
@@ -370,7 +369,7 @@ struct Python(Defaultable, ImplicitlyCopyable):
         ref cpy = Self().cpython()
         var dict_ptr = cpy.PyDict_New()
         for entry in kwargs.items():
-            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSlice(entry.key))
+            var key_ptr = cpy.PyUnicode_DecodeUTF8(StringSpan(entry.key))
             if not key_ptr:
                 raise cpy.unsafe_get_error()
             # PyDict_SetItem doesn't steal the value.
@@ -471,8 +470,8 @@ struct Python(Defaultable, ImplicitlyCopyable):
             _ = cpy.PyTuple_SetItem(tup_ptr, i, values[i].steal_data())
         return PythonObject(from_owned=tup_ptr)
 
-    @no_inline
-    def as_string_slice(self, obj: PythonObject) -> StringSlice[ImmutAnyOrigin]:
+    @inline(.never)
+    def as_string_slice(self, obj: PythonObject) -> StringSpan[ImmutAnyOrigin]:
         """Return a string representing the given Python object.
 
         Args:

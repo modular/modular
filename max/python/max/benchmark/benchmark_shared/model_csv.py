@@ -757,7 +757,7 @@ def _csv_mode_opaque(model_type: type[ModelT], field_name: str) -> bool:
     """Returns True when a BaseModel field opts out of structured CSV expansion.
 
     Set ``Field(json_schema_extra={"csv_mode": "opaque"})`` on presentation
-    views that duplicate other structured fields (e.g. ``result_groups``) so
+    views that duplicate other structured fields (such as ``result_groups``) so
     they stay one JSON cell instead of exploding into duplicate columns.
     """
     if not isinstance(model_type, type) or not issubclass(
@@ -797,7 +797,7 @@ def flatten_model(model_type: type[ModelT], model: ModelT) -> dict[str, str]:
     (``model_dump(mode="json")``) rather than from the live field objects, so
     the CSV is a flat projection of the same JSON/schema blob the JSON reporter
     emits — one serialization source of truth, no independent field walk. This
-    also means fields whose runtime value is a non-JSON-native object (e.g. the
+    also means fields whose runtime value is a non-JSON-native object (such as the
     percentile-metric containers) serialize via pydantic instead of tripping
     ``json.dumps``.
     """

@@ -13,19 +13,17 @@
 
 from std.math import ceildiv, isclose
 from std.random import rand
-from std.sys.info import num_physical_cores, simd_width_of
+from std.sys.info import simd_width_of
 
-from layout import Coord, Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, TileTensor, row_major
 from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
-    pack_filter_lt,
+    pack_filter,
 )
 from nn.conv.conv_utils import (
     ConvShape,
-    get_conv_num_partitions,
-    get_conv_num_tasks,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
@@ -100,36 +98,36 @@ def test[
         length=R * S * C * rounded_F, fill=Scalar[filter_type](0)
     )
 
-    comptime layout_4d = Layout.row_major[4]()
-    comptime layout_5d = Layout.row_major[5]()
-    var input = LayoutTensor[input_type, layout_4d](
-        input_ptr, RuntimeLayout[layout_4d].row_major(Index(N, H, W, C))
+    var input = TileTensor(Span(input_ptr), row_major(Coord(Index(N, H, W, C))))
+    var filter = TileTensor(
+        Span(filter_ptr), row_major(Coord(Index(R, S, C, F)))
     )
-    var filter = LayoutTensor[filter_type, layout_4d](
-        filter_ptr, RuntimeLayout[layout_4d].row_major(Index(R, S, C, F))
-    )
-    var packed_filter = LayoutTensor[filter_type, layout_5d](
-        packed_filter_ptr,
-        RuntimeLayout[layout_5d].row_major(
-            Index(
-                ceildiv(F, micro_kernel_width * simd_size),
-                R,
-                S,
-                C,
-                micro_kernel_width * simd_size,
-            ),
+    var packed_filter = TileTensor(
+        Span(packed_filter_ptr),
+        row_major(
+            Coord(
+                Index(
+                    ceildiv(F, micro_kernel_width * simd_size),
+                    R,
+                    S,
+                    C,
+                    micro_kernel_width * simd_size,
+                )
+            )
         ),
     )
-    var output = LayoutTensor[output_type, layout_4d](
-        output_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    var output = TileTensor(
+        Span(output_ptr), row_major(Coord(Index(N, HO, WO, F)))
     )
-    var output_ref = LayoutTensor[output_type, layout_4d](
-        output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    var output_ref = TileTensor(
+        Span(output_ref_ptr), row_major(Coord(Index(N, HO, WO, F)))
     )
 
     comptime if filter_packed:
-        pack_filter_lt[simd_size, micro_kernel_f_size](
-            filter, packed_filter, conv_shape.num_groups
+        pack_filter[simd_size, micro_kernel_f_size](
+            filter.as_imm(),
+            packed_filter,
+            conv_shape.num_groups,
         )
 
     # Reference: naive conv
@@ -137,14 +135,14 @@ def test[
         output_ref_ptr.unsafe_ptr(),
         input_ptr.unsafe_ptr(),
         filter_ptr.unsafe_ptr(),
-        Index(N, 1, HO, WO, F),
-        Index(N, 1, H, W, C),
-        Index(1, R, S, C, F),
-        Index(0, 0),
-        pad_h,
-        pad_w,
-        Index(1, stride[0], stride[1]),
-        Index(1, dilation[0], dilation[1]),
+        Coord(N, 1, HO, WO, F),
+        Coord(N, 1, H, W, C),
+        Coord(1, R, S, C, F),
+        Coord(0, 0),
+        Coord(pad_h),
+        Coord(pad_w),
+        Coord(1, stride[0], stride[1]),
+        Coord(1, dilation[0], dilation[1]),
         conv_shape.num_groups,
     )
 
@@ -153,31 +151,26 @@ def test[
 
     comptime if filter_packed:
         ConvDirectNHWC[
-            layout_4d,
-            layout_5d,
-            layout_4d,
+            input.LayoutType,
+            packed_filter.LayoutType,
+            output.LayoutType,
             input_type,
             filter_type,
             output_type,
             True,
             conv_attr,
-        ].run(
-            output,
-            input,
-            packed_filter,
-            conv_shape,
-        )
+        ].run(output, input.as_imm(), packed_filter.as_imm(), conv_shape)
     else:
         ConvDirectNHWC[
-            layout_4d,
-            layout_4d,
-            layout_4d,
+            input.LayoutType,
+            filter.LayoutType,
+            output.LayoutType,
             input_type,
             filter_type,
             output_type,
             False,
             conv_attr,
-        ].run(output, input, filter, conv_shape)
+        ].run(output, input.as_imm(), filter.as_imm(), conv_shape)
 
     # Check results, return on the first failed comparison.
     for n in range(N):

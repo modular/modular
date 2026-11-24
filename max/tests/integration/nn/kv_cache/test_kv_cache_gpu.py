@@ -18,11 +18,7 @@ from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheInputsPerDevice,
-    MHAKVCacheParams,
-)
+from max.nn.kv_cache import KVCacheInputsPerDevice, MHAKVCacheParams
 from max.pipelines.kv_cache import PagedKVCacheManager
 from test_common.context_utils import create_text_context
 
@@ -30,7 +26,7 @@ from test_common.context_utils import create_text_context
 # the Python host tier: the host/disk tier is now the Rust ``rust_tiered``
 # connector, whose pyo3 extension may only be depended on from an internal-only
 # package. Multi-buffer offload/onload stays covered by the round-trip tests in
-# ``integration/kv_cache/internal/dkv/test_rust_tiered_connector_gpu.py``.
+# ``integration/kv_cache/internal/dkv/test_tiered_connector_gpu.py``.
 
 
 def test_kv_cache_gpu() -> None:
@@ -58,8 +54,12 @@ async def _test_kv_cache_gpu() -> None:
     kv_manager.alloc(context)
     batch = [context]
     kv_inputs = kv_manager.runtime_inputs([batch])
-    assert isinstance(kv_inputs, KVCacheInputs)
-    first_device_inputs = kv_inputs.inputs[0]
+    assert (
+        isinstance(kv_inputs, tuple)
+        and kv_inputs
+        and isinstance(kv_inputs[0], KVCacheInputsPerDevice)
+    )
+    first_device_inputs = kv_inputs[0]
     assert isinstance(first_device_inputs, KVCacheInputsPerDevice)
-    assert len(first_device_inputs.flatten()) == 6
+    assert first_device_inputs.mixed_step_split is not None
     assert first_device_inputs.attention_dispatch_metadata is not None

@@ -19,10 +19,15 @@
 /// Two families:
 ///   1. Save-temps helpers: writeBytesToTempWithHash, writeTempModule.
 ///   2. Kernel-offload output naming: reserveOffloadOutputBaseName,
-///      offloadOutputPath, kOffloadWritesAttrName, flushOffloadWrites.
+///      offloadOutputPath, kOffloadWritesAttrName, queueOffloadWrite,
+///      flushOffloadWrites.
 
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENEnums.h"
+#include "Mojo/Support/FileUtils.h"
 #include "Support/ErrorOr.h"
 #include "mlir/IR/BuiltinOps.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/MemoryBufferRef.h"
@@ -34,16 +39,6 @@ namespace M::KGEN {
 //===----------------------------------------------------------------------===//
 // Save-temps helpers
 //===----------------------------------------------------------------------===//
-
-/// Write \p buf to a content-addressed file at
-/// <saveTempsPrefix>.<xxh128><postfix>.  No-op when saveTempsPrefix is empty.
-mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                                             const std::string &postfix,
-                                             llvm::StringRef buf);
-
-mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                                             const std::string &postfix,
-                                             llvm::MemoryBufferRef buf);
 
 /// Serialize \p module to a string and save it via writeBytesToTempWithHash.
 /// The output path is <saveTempsPrefix><phase>.<hash><fileExt>.
@@ -91,6 +86,13 @@ std::string offloadOutputPath(llvm::StringRef prefix, llvm::StringRef fileName);
 /// output directory changes.
 inline constexpr llvm::StringLiteral kOffloadWritesAttrName =
     "kgen.offload_debug_files";
+
+/// Queue \p content as \p rawName's output file, named with the extension
+/// \p target uses for \p kind. The counterpart of flushOffloadWrites().
+ErrorOrSuccess
+queueOffloadWrite(TargetInfoAttr target, EmitAs kind, mlir::StringAttr rawName,
+                  llvm::StringRef content, llvm::StringMap<int> &nameCountMap,
+                  llvm::SmallVectorImpl<mlir::NamedAttribute> &pendingWrites);
 
 /// Flush all pending offload writes on \p module and remove the attribute.
 /// Each file is written to \p outputPrefix joined with its recorded name.

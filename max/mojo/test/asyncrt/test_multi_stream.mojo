@@ -18,8 +18,8 @@ from std.testing import TestSuite, assert_equal
 
 
 def vec_func(
-    in0: Pointer[Float32, MutAnyOrigin],
-    in1: Pointer[Float32, MutAnyOrigin],
+    in0: Pointer[Float32, ImmutAnyOrigin],
+    in1: Pointer[Float32, ImmutAnyOrigin],
     output: Pointer[Float32, MutAnyOrigin],
     len_dev: Int32,
 ):
@@ -99,8 +99,9 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
-    out_dev1.reassign_ownership_to(ctx2)
-    out_dev1.enqueue_copy_to(out_host1)
+    ctx2.enqueue_wait_for(ctx1)
+    # `out_dev1.enqueue_copy_to` would copy on ctx1, the buffer's own queue.
+    ctx2.enqueue_copy(out_host1.unsafe_ptr(), out_dev1)
     ctx1.enqueue_function(
         dev_func,
         in0_dev2,
@@ -110,8 +111,8 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
-    out_dev2.reassign_ownership_to(ctx2)
-    out_dev2.enqueue_copy_to(out_host2)
+    ctx2.enqueue_wait_for(ctx1)
+    ctx2.enqueue_copy(out_host2.unsafe_ptr(), out_dev2)
     ctx1.enqueue_function(
         dev_func,
         in0_dev3,
@@ -121,11 +122,15 @@ def _run_test_concurrent_copy(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         grid_dim=(length // block_dim),
         block_dim=(block_dim),
     )
-    out_dev3.reassign_ownership_to(ctx2)
-    out_dev3.enqueue_copy_to(out_host3)
+    ctx2.enqueue_wait_for(ctx1)
+    ctx2.enqueue_copy(out_host3.unsafe_ptr(), out_dev3)
 
     # Wait for the copies to be completed.
     ctx2.synchronize()
+    # Freed in ctx1's order, so they must outlive the copies on ctx2.
+    _ = out_dev1^
+    _ = out_dev2^
+    _ = out_dev3^
 
     for i in range(length):
         var index = i % 2048
@@ -225,13 +230,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
     # Wait for out_dev1 to be produced.
-    # `ctx2.enqueue_wait_for(ctx1)` is not enough:
-    # While it will hold `ctx2` until out_dev1 is ready, it will not extend
-    # the lifetime of `out_dev1` for the duration of the `dev_func2` call.
-    in_dev2.reassign_ownership_to(ctx2)
-    out_dev1.reassign_ownership_to(ctx2)
-
-    out_dev2.reassign_ownership_to(ctx2)  # output of `dev_func2` kernel
+    ctx2.enqueue_wait_for(ctx1)
 
     # The following two kernels can execute in parallel.
     ctx2.enqueue_function(
@@ -254,9 +253,7 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
     )
 
     # Wait for output of `dev_func1`.
-    out_dev3.reassign_ownership_to(ctx2)
-
-    out_dev4.reassign_ownership_to(ctx2)  # output of `dev_func2` kernel
+    ctx2.enqueue_wait_for(ctx1)
 
     ctx2.enqueue_function(
         dev_func2,
@@ -268,12 +265,16 @@ def _run_test_concurrent_func(ctx1: DeviceContext, ctx2: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
-    out_dev4.enqueue_copy_to(out_host)
+    ctx2.enqueue_copy(out_host.unsafe_ptr(), out_dev4)
 
-    # Reassign ownership of `out_host` to ctx1, then synchronize on ctx1 for the
-    #  copies to be completed.
-    out_host.reassign_ownership_to(ctx1)
-    ctx1.synchronize()
+    ctx2.synchronize()
+    # Allocated on ctx1 and freed in its order, so they must outlive the
+    # kernels on ctx2.
+    _ = in_dev2^
+    _ = out_dev1^
+    _ = out_dev2^
+    _ = out_dev3^
+    _ = out_dev4^
 
     for i in range(length):
         var index = i % 2048

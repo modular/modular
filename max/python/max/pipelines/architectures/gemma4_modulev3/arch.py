@@ -10,31 +10,35 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Registers Gemma 4 with the ModuleV3 registry."""
 
 import dataclasses
 
 from max.graph.weights import WeightsFormat
+from max.pipelines.architectures.gemma4.arch import gemma4_arch
 from max.pipelines.architectures.gemma4.context import Gemma4Context
-from max.pipelines.architectures.gemma4.memory_planner import (
-    Gemma4MemoryPlanner,
-)
-from max.pipelines.architectures.gemma4.model_config import (
-    Gemma4ForConditionalGenerationConfig,
-)
 from max.pipelines.architectures.gemma4.tokenizer import Gemma4Tokenizer
-from max.pipelines.lib import SupportedArchitecture
+from max.pipelines.architectures.gemma4.weight_adapters import (
+    gemma4_weight_rules,
+)
+from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from . import weight_adapters
-from .batch_processor import Gemma4ModuleV3BatchProcessor
-from .model import Gemma4Model
+from .model_config import Gemma4Config
+from .modules import Gemma4Decoder, Gemma4Vision
+from .registered_batch_processor import Gemma4ModuleV3BatchProcessor
 
 gemma4_modulev3_arch = SupportedArchitecture(
     name="Gemma4ForConditionalGeneration_ModuleV3",
-    example_repo_ids=["google/gemma-4-31B-it"],
+    example_repo_ids=[
+        "google/gemma-4-31B-it",
+        "nvidia/Gemma-4-31B-IT-NVFP4",
+        "google/gemma-4-26B-A4B-it",
+        "nvidia/Gemma-4-26B-A4B-NVFP4",
+    ],
     default_encoding="bfloat16",
-    supported_encodings={"bfloat16"},
-    pipeline_model=Gemma4Model,
+    supported_encodings={"bfloat16", "float16", "float4_e2m1fnx2"},
+    modules={GraphRole.DECODER: Gemma4Decoder, GraphRole.VISION: Gemma4Vision},
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=Gemma4Tokenizer,
     context_type=Gemma4Context,
@@ -44,17 +48,16 @@ gemma4_modulev3_arch = SupportedArchitecture(
         InputModality.VIDEO,
     },
     default_weights_format=WeightsFormat.safetensors,
-    multi_gpu_supported=False,
-    weight_adapters={
-        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
-    },
-    config=Gemma4ForConditionalGenerationConfig,
+    multi_gpu_supported=True,
+    weight_rules=gemma4_weight_rules,
+    use_weight_rules=True,
+    config=Gemma4Config,
     tool_parser="gemma4",
+    format_spec=gemma4_arch.format_spec,
+    tokenizer_family=gemma4_arch.tokenizer_family,
     reasoning_parser="gemma4",
-    default_structured_output_backend="xgrammar",
     batching=Gemma4ModuleV3BatchProcessor,
-    memory_planner=Gemma4MemoryPlanner,
-    supports_overlap_scheduler=False,
+    supports_overlap_scheduler=True,
     supports_device_graph_capture=False,
 )
 

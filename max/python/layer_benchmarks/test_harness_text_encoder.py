@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Harness tests for WAN TextEncoder (correctness + benchmark).
+r"""Harness tests for WAN TextEncoder (correctness + benchmark).
 
 By default, correctness runs (compares MAX graph vs HF torch reference).
 Set ``TEXT_ENC_RUN_BENCHMARK=1`` to also run the MAX benchmark (requires
@@ -29,16 +29,16 @@ Environment variables:
 
 Example (production WAN 2.2 config, benchmark only)::
 
-    ./bazelw test //max/python/layer_benchmarks:harness_text_encoder \\
-      --test_output=streamed --curses=no --noshow_progress \\
-      --test_timeout=600 \\
-      --test_env=TEXT_ENC_VOCAB_SIZE=256384 \\
-      --test_env=TEXT_ENC_D_MODEL=4096 \\
-      --test_env=TEXT_ENC_D_KV=64 \\
-      --test_env=TEXT_ENC_D_FF=10240 \\
-      --test_env=TEXT_ENC_NUM_LAYERS=24 \\
-      --test_env=TEXT_ENC_NUM_HEADS=64 \\
-      --test_env=TEXT_ENC_RUN_CORRECTNESS=0 \\
+    ./bazelw test //max/python/layer_benchmarks:harness_text_encoder \
+      --test_output=streamed --curses=no --noshow_progress \
+      --test_timeout=600 \
+      --test_env=TEXT_ENC_VOCAB_SIZE=256384 \
+      --test_env=TEXT_ENC_D_MODEL=4096 \
+      --test_env=TEXT_ENC_D_KV=64 \
+      --test_env=TEXT_ENC_D_FF=10240 \
+      --test_env=TEXT_ENC_NUM_LAYERS=24 \
+      --test_env=TEXT_ENC_NUM_HEADS=64 \
+      --test_env=TEXT_ENC_RUN_CORRECTNESS=0 \
       --test_env=TEXT_ENC_RUN_BENCHMARK=1
 """
 
@@ -97,6 +97,7 @@ _RUN_BENCHMARK = os.environ.get("TEXT_ENC_RUN_BENCHMARK", "0") == "1"
 def runner() -> LayerTestRunner[
     TextEncoderStaticParams, TextEncoderDynamicParams, None
 ]:
+    """Creates the runner for WAN TextEncoder."""
     params = _make_static_params()
     print(f"\nTextEncoder config: {params}")
     return create_runner(TEXT_ENCODER, params)
@@ -111,6 +112,7 @@ def test_correctness(
         TextEncoderStaticParams, TextEncoderDynamicParams, None
     ],
 ) -> None:
+    """Checks the runner's results against the reference."""
     results = runner.correctness(
         _SMOKE_SHAPES, atol=1e-2, rtol=1e-2, cos_threshold=0.001
     )
@@ -128,6 +130,7 @@ def test_benchmark(
         TextEncoderStaticParams, TextEncoderDynamicParams, None
     ],
 ) -> None:
+    """Benchmarks WAN TextEncoder across its shapes."""
     iterations = _env_int("TEXT_ENC_ITERATIONS", 50)
     warmup = _env_int("TEXT_ENC_WARMUP", 10)
     results = runner.benchmark(

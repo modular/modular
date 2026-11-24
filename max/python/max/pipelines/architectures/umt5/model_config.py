@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""UMT5 configuration."""
 
 from typing import Any
 
@@ -22,6 +23,8 @@ from pydantic import Field
 
 
 class UMT5ConfigBase(MAXModelConfigBase):
+    """The checkpoint fields UMT5 reads."""
+
     vocab_size: int = 256384
     d_model: int = 4096
     d_kv: int = 64
@@ -53,12 +56,15 @@ class UMT5ConfigBase(MAXModelConfigBase):
 
 
 class UMT5Config(UMT5ConfigBase):
+    """The UMT5 config, built from a Hugging Face checkpoint."""
+
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> UMT5ConfigBase:
+        """Builds the config from the Hugging Face checkpoint dict."""
         init_dict = {
             key: value
             for key, value in config_dict.items()

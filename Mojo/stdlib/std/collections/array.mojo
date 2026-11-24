@@ -33,15 +33,16 @@ var filled = Array[Int, 5](fill=42)
 """
 
 
-import std.math
+from std.math import max, min, align_down
 import std.memory
+from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.builtin.rebind import downcast
-from std.collections import check_bounds
+from std.collections import check_bounds, check_slice_bounds
 import std.format._utils as fmt
 from std.reflection import reflect
-from std.hashlib.hasher import Hasher
-from std.sys import is_gpu, size_of
+from std.hash.hasher import Hasher
+from std.sys import size_of
 from std.memory import (
     MaybeUninit,
     forget_deinit,
@@ -99,7 +100,7 @@ struct _ArrayIter[
     var index: Int
     var src: Pointer[Array[Self.T, Self.length], Self.origin]
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
@@ -117,7 +118,7 @@ struct _ArrayIter[
             self.index -= 1
             return self.src[][self.index]
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
@@ -173,7 +174,7 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
             count=Self.length - move._index,
         )
 
-    @always_inline
+    @inline(.always)
     def __deinit__(deinit self):
         # Move fields out of self so we can manage their lifetimes.
         var idx = self._index
@@ -189,7 +190,7 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
         # double-destroy the elements we already handled.
         forget_deinit(array^)
 
-    @always_inline
+    @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
@@ -203,22 +204,21 @@ struct _ArrayIterOwned[T: Movable & Deinitable, length: Int](
             .unsafe_take_pointee()
         )
 
-    @always_inline
+    @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         var remaining = Self.length - self._index
         return (remaining, {remaining})
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy an `Array` of"
-    " non-`Deinitable` elements"
-)
 @stable(since="1.0")
 struct Array[T: AnyType, length: Int](
     Comparable where conforms_to(T, Comparable),
     Copyable where conforms_to(T, Copyable),
     Defaultable where conforms_to(T, Defaultable),
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy an `Array` of"
+        " non-`Deinitable` elements"
+    ),
     DevicePassable where conforms_to(T, DevicePassable) and conforms_to(
         T, Copyable
     ),
@@ -268,6 +268,12 @@ struct Array[T: AnyType, length: Int](
         **lexicographically**: elements compare pairwise and the first differing
         pair decides the result.
     """
+
+    # Exposes the generic parameters so `test_utils.cabi_check` can recover
+    # an array field's element type and length from a reflected field type,
+    # see `_ArrayMarker` there.
+    comptime _cabi_element_type: AnyType = Self.T
+    comptime _cabi_length: Int = Self.length
 
     comptime __del__is_trivial: Bool = IsTriviallyDeinitable[Self.T]
     comptime __copy_ctor_is_trivial: Bool = IsTriviallyCopyable[Self.T]
@@ -351,7 +357,7 @@ struct Array[T: AnyType, length: Int](
     # Life cycle methods
     # ===------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, uninitialized: Bool):
         """Create an Array with uninitialized memory.
 
@@ -404,7 +410,7 @@ struct Array[T: AnyType, length: Int](
             )
         std.memory.forget_deinit(unsafe_assume_initialized^)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
     ) where conforms_to(Self.T, Defaultable):
@@ -424,19 +430,10 @@ struct Array[T: AnyType, length: Int](
                 init_with=lambda () -> Self.T: Self.T()
             )
 
-    @always_inline
-    def __init__[
-        batch_size: Int = 64
-    ](out self, *, fill: Self.T) where conforms_to(Self.T, Copyable):
+    @inline(.always)
+    def __init__(out self, *, fill: Self.T) where conforms_to(Self.T, Copyable):
         """Constructs an array where each element is initialized to the supplied
         value.
-
-        Parameters:
-            batch_size: The number of elements to unroll for filling the array.
-                Default is 64, which optimizes for AVX512 operations on modern
-                CPUs. For large arrays (>2k elements), this batched approach
-                significantly improves compile times compared to full unrolling
-                while maintaining good runtime performance.
 
         Args:
             fill: The element value to fill each index with.
@@ -445,27 +442,11 @@ struct Array[T: AnyType, length: Int](
 
         ```mojo
         var filled = Array[Int, 5](fill=42)  # [42, 42, 42, 42, 42]
-
-        # For large arrays, consider adjusting batch_size to balance
-        # compile time and runtime performance:
-        var large = Array[Int, 10000].__init__[batch_size=32](fill=0)
         ```
-
-        Notes:
-
-        - Full unrolling with large arrays (>2k elements) can cause significant
-            compiler slowdowns.
-        - Using batch_size=64 balances AVX512 efficiency and instruction cache
-            usage.
-        - For very large arrays, using smaller batch sizes (e.g., 32 or 16) can
-            further improve compilation speed while still maintaining good
-            runtime performance.
         """
-        self = Self.__init__[batch_size=batch_size](
-            fill_with=lambda (_i: Int) -> Self.T: fill.copy()
-        )
+        self = Self(fill_with=lambda (_i: Int) -> Self.T: fill.copy())
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, fill_with_unrolled: Some[def[Int]() -> Self.T]):
         """Constructs an array by calling `fill_with_unrolled[i]()` for each
         index `i`.
@@ -496,14 +477,9 @@ struct Array[T: AnyType, length: Int](
                 init_with=lambda () {ref} -> Self.T: fill_with_unrolled[i]()
             )
 
-    @always_inline
-    def __init__[
-        batch_size: Int = 64
-    ](out self, *, fill_with: Some[def(Int) -> Self.T]):
+    @inline(.always)
+    def __init__(out self, *, fill_with: Some[def(Int) -> Self.T]):
         """Constructs an array by calling `fill_with(i)` for each index `i`.
-
-        Parameters:
-            batch_size: The number of elements to unroll for filling the array.
 
         Args:
             fill_with: A function called with each index in `[0, length)`,
@@ -516,21 +492,36 @@ struct Array[T: AnyType, length: Int](
         # [0, 1, 4, 9, 16]
         ```
         """
-        comptime if batch_size >= Self.length:
+        comptime elem_bytes = max(1, size_of[Self.T]())
+
+        # Unrolled stores stop buying throughput past ~256 bytes per batch
+        # Sizing in bytes stops a fixed element count from over-unrolling wide
+        # elements into LLVM's superlinear loop passes for no gain.
+        # The element cap bounds compile time, which scales with count rather
+        # than bytes.
+        comptime UNROLL_BYTES = 256
+        comptime MAX_UNROLL_ELEMENTS = 64
+        comptime batch_size = min(
+            MAX_UNROLL_ELEMENTS, max(1, UNROLL_BYTES // elem_bytes)
+        )
+        # A 1 or 2 iteration loop does not earn its setup.
+        comptime full_unroll_max = min(MAX_UNROLL_ELEMENTS, 2 * batch_size)
+
+        comptime if Self.length <= full_unroll_max:
             self = {
                 fill_with_unrolled = lambda [i: Int]() {
                     ref
                 } -> Self.T: fill_with(i)
             }
         else:
-            comptime unroll_end = std.math.align_down(Self.length, batch_size)
+            comptime unroll_end = align_down(Self.length, batch_size)
 
             self = {uninitialized = True}
             var ptr = self.unsafe_ptr()
 
-            # Skip the batched loop entirely when it cannot run. Emitting it for
-            # `unroll_end == 0` leaves the inlined iterator's line-table marker
-            # behind as an irremovable barrier, even though the loop is dead.
+            # Emitting the loop for `unroll_end == 0` leaves the inlined
+            # iterator's line-table marker behind as an irremovable barrier,
+            # even though the loop is dead.
             comptime if unroll_end > 0:
                 for batch_start in range(0, unroll_end, batch_size):
                     comptime for i in range(batch_size):
@@ -546,6 +537,59 @@ struct Array[T: AnyType, length: Int](
                     init_with=lambda () {ref} -> Self.T: fill_with(i)
                 )
                 ptr = ptr.unsafe_offset(1)
+
+    # TODO(MOCO-4470): Merge into the non-raising overload above once a
+    # non-raising closure can be called as `raises E` with `E` bound to
+    # `Never`.
+    # TODO(https://github.com/modular/modular/issues/7637): Drop `Movable` from
+    # the `T` constraint once a raising call can construct its result in
+    # place behind a `Pointer`, and a raising closure can return a
+    # non-`Movable` type (https://github.com/modular/modular/issues/7636).
+    @inline(.always)
+    def __init__[
+        E: Movable, //
+    ](
+        out self, *, fill_with: Some[def(Int) raises E -> Self.T]
+    ) raises E where conforms_to(Self.T, Movable & Deinitable):
+        """Constructs an array by calling `fill_with(i)` for each index `i`,
+        where `fill_with` can raise.
+
+        If `fill_with` raises, the array destroys the elements it already
+        holds and propagates the error.
+
+        Parameters:
+            E: The type of error that `fill_with` raises.
+
+        Args:
+            fill_with: A function called with each index in `[0, length)`,
+                whose result is written to that position.
+
+        Raises:
+            E: If `fill_with` raises for any index.
+
+        Examples:
+
+        ```mojo
+        def num(i: Int) raises -> Int:
+            raise "error"
+
+        try:
+            var numbers = Array[Int, 3](fill_with=num)
+        except e:
+            print(e)  # error
+        ```
+        """
+        self = {uninitialized = True}
+        var ptr = self.unsafe_ptr()
+        var initialized = 0
+        try:
+            for i in range(Self.length):
+                ptr.unsafe_offset(i).unsafe_write(fill_with(i))
+                initialized += 1
+        except e:
+            unsafe_destroy_n(ptr, initialized)
+            forget_deinit(self^)
+            raise e^
 
     def __init__[
         *, __literal_size__: Int
@@ -658,7 +702,7 @@ struct Array[T: AnyType, length: Int](
         deinit self,
     ) where conforms_to(Self.T, Deinitable):
         """Destroys the array's elements."""
-        unsafe_destroy_n(self.unsafe_ptr(), Self.length)
+        Span(self).unsafe_deinit_elements()
 
     def deinit_with(deinit self, deinit_func: Some[def(var Self.T)], /):
         """Consumes this array and deinitializes its elements using the provided
@@ -686,9 +730,11 @@ struct Array[T: AnyType, length: Int](
     # ===------------------------------------------------------------------===#
 
     @stable(since="1.0")
-    @always_inline
+    @inline(.always)
     def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
+
+        Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
 
         Args:
             idx: The index to access (0 to len-1).
@@ -696,16 +742,29 @@ struct Array[T: AnyType, length: Int](
         Returns:
             A reference to the element at the specified index.
 
+        Examples:
+
+        ```mojo
+        var arr = [10, 20, 30]
+        var total = 0
+        # The index can be computed at run time.
+        for i in range(len(arr)):
+            total += arr[i]
+        print(total)  # 60
+        ```
+
         Notes:
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, len(self))
+        check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
-    @always_inline
+    @inline(.always)
     def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         """Gets a reference to the element at the given index.
+
+        Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
 
         Args:
             idx: The index to access (0 to len-1).
@@ -726,11 +785,44 @@ struct Array[T: AnyType, length: Int](
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, len(self))
+        check_bounds(index(idx), length=len(self))
         return self._unchecked_get(idx)
 
+    @inline(.always)
+    def __getitem__(
+        ref self, slc: ContiguousSlice, /
+    ) -> Span[Self.T, origin_of(self)]:
+        """Gets a span over the elements at the specified slice positions.
+
+        Subscripting calls this method: `arr[1:5]` is `arr.__getitem__()`.
+
+        Aborts if `slc`'s start or end index is out of bounds (valid range is
+        `0` to `len(self)`, inclusive). Negative indices are not supported:
+        they abort when bounds checking is enabled (the default on CPU) and
+        cause undefined behavior otherwise.
+
+        Args:
+            slc: The slice specifying the range of elements.
+
+        Returns:
+            A span over the specified slice of the array.
+
+        Examples:
+
+        ```mojo
+        var arr = [1, 2, 3, 4]
+        var middle = arr[1:3]
+        print(middle[0], middle[1])  # Prints 2 3
+        ```
+        """
+        var start, end = check_slice_bounds(slc, len(self))
+        return {
+            unsafe_ptr = self.unsafe_ptr().unsafe_offset(start),
+            length = end - start,
+        }
+
     @stable(since="1.0")
-    @always_inline
+    @inline(.always)
     def __getitem_param__[idx: Int, /](ref self) -> ref[self] Self.T:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
@@ -760,7 +852,7 @@ struct Array[T: AnyType, length: Int](
         comptime assert index(idx) < Self.length, "index is out of bounds"
         return self._unchecked_get(materialize[idx]())
 
-    @always_inline
+    @inline(.always)
     def __getitem_param__[
         idx: Some[Indexer & Deinitable]
     ](ref self) -> ref[self] Self.T:
@@ -794,15 +886,15 @@ struct Array[T: AnyType, length: Int](
         comptime assert index(idx) < Self.length, "index is out of bounds"
         return self._unchecked_get(materialize[idx]())
 
-    @always_inline
+    @inline(.always)
     def _unchecked_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         var ptr = __mlir_op.`pop.array.gep`(
             Pointer(to=self._array)._get_kgen_pointer(),
-            index(idx).__mlir_index__(),
+            index(idx)._mlir_value,
         )
         return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
 
-    @always_inline
+    @inline(.always)
     def concat(
         deinit self,
         deinit rhs: Array[Self.T, _],
@@ -843,7 +935,7 @@ struct Array[T: AnyType, length: Int](
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    @always_inline
+    @inline(.always)
     def __len__(self) -> Int:
         """Returns the length of the array.
 
@@ -896,7 +988,7 @@ struct Array[T: AnyType, length: Int](
                 return True
         return False
 
-    @always_inline
+    @inline(.always)
     def _compare(
         self, other: Self
     ) -> Int where conforms_to(Self.T, Comparable):
@@ -920,7 +1012,7 @@ struct Array[T: AnyType, length: Int](
                 return 1
         return 0
 
-    @always_inline
+    @inline(.always)
     def __lt__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
         """Compares two arrays lexicographically for less-than ordering.
 
@@ -933,7 +1025,7 @@ struct Array[T: AnyType, length: Int](
         """
         return self._compare(other) < 0
 
-    @always_inline
+    @inline(.always)
     def __le__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
         """Compares two arrays lexicographically for less-than-or-equal
         ordering.
@@ -946,7 +1038,7 @@ struct Array[T: AnyType, length: Int](
         """
         return self._compare(other) <= 0
 
-    @always_inline
+    @inline(.always)
     def __gt__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
         """Compares two arrays lexicographically for greater-than ordering.
 
@@ -959,7 +1051,7 @@ struct Array[T: AnyType, length: Int](
         """
         return self._compare(other) > 0
 
-    @always_inline
+    @inline(.always)
     def __ge__(self, other: Self) -> Bool where conforms_to(Self.T, Comparable):
         """Compares two arrays lexicographically for greater-than-or-equal
         ordering.
@@ -972,6 +1064,7 @@ struct Array[T: AnyType, length: Int](
         """
         return self._compare(other) >= 0
 
+    @stable(since="1.3")
     def __hash__[
         H: Hasher
     ](self, mut hasher: H) where conforms_to(Self.T, Hashable):
@@ -990,7 +1083,7 @@ struct Array[T: AnyType, length: Int](
     # Methods
     # ===------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def unsafe_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
         """Gets a reference to an element without bounds checking.
 
@@ -1017,10 +1110,10 @@ struct Array[T: AnyType, length: Int](
             This is an unsafe method that skips bounds checking for performance.
             Users should prefer `__getitem__` instead for safety.
         """
-        check_bounds[cpu_default=False](idx, len(self))
+        check_bounds[cpu_default=False](index(idx), length=len(self))
         return self._unchecked_get(idx)
 
-    @always_inline
+    @inline(.always)
     @stable(since="1.0")
     def unsafe_ptr[
         origin: Origin, address_space: AddressSpace, //
@@ -1060,10 +1153,9 @@ struct Array[T: AnyType, length: Int](
             Pointer(to=self._array)
             .unsafe_bitcast[Self.T]()
             .unsafe_origin_cast[origin]()
-            .unsafe_address_space_cast[address_space]()
         )
 
-    @always_inline
+    @inline(.always)
     @stable(since="1.0")
     def __contains__(
         self, value: Self.T
@@ -1191,16 +1283,15 @@ struct Array[T: AnyType, length: Int](
             Pointer(to=self),
         )
 
-    @always_inline
+    @inline(.always)
     def repeat[
         n: Int
     ](
         deinit self,
         out result: Array[Self.T, Self.length * n],
     ) where (
-        conforms_to(Self.T, Copyable) and (n > 0),
-        "`Array * n` requires n > 0",
-    ):
+        conforms_to(Self.T, Copyable) and (n > 0)
+    ) else "`Array * n` requires n > 0":
         """Repeats this array's elements the given number of times.
 
 

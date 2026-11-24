@@ -15,6 +15,7 @@
 #define ASYNCRT_SUPPORT_THREADAFFINITY_H
 
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 
 #include "llvm/ADT/FunctionExtras.h"
@@ -30,18 +31,19 @@ namespace M::AsyncRT {
 /// fallback to defaults, and return error to the caller if the attempt
 /// fails. If withAffinity is false, then expected result is a vector
 /// containing all entries with kNoAffinity.
-M::ErrorOr<std::vector<size_t>> getThreadAffinityCpuIds(bool withAffinity,
-                                                        size_t numThreads,
-                                                        size_t maxThreads);
+MODULAR_CXX_EXPORT M::ErrorOr<std::vector<size_t>>
+getThreadAffinityCpuIds(bool withAffinity, size_t numThreads,
+                        size_t maxThreads);
 
 /// Executes workFn with thread execution affinity to the specified CPU core and
 /// sets the memory policy to the NUMA node that CPU core resides in if
 /// possible.
-void runWithThreadAffinity(size_t cpuID, llvm::function_ref<void()> workFn);
+MODULAR_CXX_EXPORT void
+runWithThreadAffinity(size_t cpuID, llvm::function_ref<void()> workFn);
 
 /// Sets the execution affinity to the specified CPU core and sets the memory
 /// policy to the NUMA node that CPU core resides in if possible.
-void setThreadAffinity(size_t cpuID);
+MODULAR_CXX_EXPORT void setThreadAffinity(size_t cpuID);
 
 } // namespace M::AsyncRT
 

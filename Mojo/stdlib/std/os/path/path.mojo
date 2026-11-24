@@ -23,7 +23,7 @@ from std.os.path import isdir
 from std.collections.string.string_span import _unsafe_strlen
 from std.pwd import getpwuid, getpwnam
 from std.stat import S_ISDIR, S_ISLNK, S_ISREG
-from std.ffi import MAX_PATH, c_char, external_call, get_errno
+from std.ffi import MAX_PATH, c_char, get_errno
 from std.sys import CompilationTarget
 from std.sys._libc import realpath as libc_realpath
 
@@ -44,7 +44,7 @@ from ..os import sep
 # ===----------------------------------------------------------------------=== #
 
 
-@always_inline
+@inline(.always)
 def _get_stat_st_mode(var path: String) raises -> Int:
     comptime if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
@@ -54,7 +54,7 @@ def _get_stat_st_mode(var path: String) raises -> Int:
         return Int(_stat_linux_x86(path^).st_mode)
 
 
-@always_inline
+@inline(.always)
 def _get_lstat_st_mode(var path: String) raises -> Int:
     comptime if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
@@ -70,9 +70,7 @@ def _get_lstat_st_mode(var path: String) raises -> Int:
 
 
 def _user_home_path(path: String) -> String:
-    var user_end = path.find(sep, 1)
-    if user_end < 0:
-        user_end = path.byte_length()
+    var user_end = path.find(sep, 1).or_else(path.byte_length())
     # Special POSIX syntax for ~[user-name]/path
     if path.byte_length() > 1 and user_end > 1:
         try:
@@ -251,7 +249,10 @@ def dirname[PathLike: stdPathLike, //](path: PathLike) -> String:
     ```
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(sep) + 1
+    # Index just past the last separator, or 0 if there is none.
+    var i = 0
+    if case .Some(last_sep) = fspath.rfind(sep):
+        i = last_sep + 1
     var head = String(fspath[byte=:i])
     if head and head != sep * head.byte_length():
         return String(head.rstrip(sep))
@@ -305,7 +306,7 @@ def realpath[
     # through the libc_realpath call (avoids use-after-free).
     var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
-        fspath.as_c_string_slice(),
+        fspath.as_c_string_span(),
         string.unsafe_as_bytes_mut().unsafe_ptr().unsafe_bitcast[c_char](),
     )
     if not returned_path_ptr:
@@ -433,7 +434,7 @@ def is_absolute[PathLike: stdPathLike, //](path: PathLike) -> Bool:
 
 
 # TODO(MOCO-1532):
-#   Use StringSlice here once param inference bug for empty variadic
+#   Use StringSpan here once param inference bug for empty variadic
 #   list of parameterized types is fixed.
 def join(var path: String, *paths: String) -> String:
     """Join two or more pathname components, inserting '/' as needed.
@@ -501,7 +502,10 @@ def split[PathLike: stdPathLike, //](path: PathLike) -> Tuple[String, String]:
     ```
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(sep) + 1
+    # Index just past the last separator, or 0 if there is none.
+    var i = 0
+    if case .Some(last_sep) = fspath.rfind(sep):
+        i = last_sep + 1
     var head, tail = fspath[byte=:i], fspath[byte=i:]
     if head and head != String(sep) * head.byte_length():
         head = head.rstrip(sep)
@@ -527,7 +531,10 @@ def basename[PathLike: stdPathLike, //](path: PathLike) -> String:
         The basename from the path.
     """
     var fspath = path.__fspath__()
-    var i = fspath.rfind(sep) + 1
+    # Index just past the last separator, or 0 if there is none.
+    var i = 0
+    if case .Some(last_sep) = fspath.rfind(sep):
+        i = last_sep + 1
     var head = fspath[byte=i:]
     if head and head != sep * head.byte_length():
         return String(head.rstrip(sep))
@@ -566,10 +573,10 @@ def basename[PathLike: stdPathLike, //](path: PathLike) -> String:
 # TODO: Move this to a generic path module when Windows is supported.
 # As it can be used for both Windows and Unix-like systems.
 def _split_extension(
-    path: StringSlice,
-    sep: StringSlice,
-    alt_sep: StringSlice,
-    extension_sep: StringSlice,
+    path: StringSpan,
+    sep: StringSpan,
+    alt_sep: StringSpan,
+    extension_sep: StringSpan,
 ) raises -> Tuple[String, String]:
     """Splits `path` into the root and extension.
 
@@ -582,17 +589,20 @@ def _split_extension(
     Returns:
         A tuple containing two strings: (root, extension).
     """
-    # Find the last extension separator after the last separator.
-    var head_end = path.rfind(sep)
+    # The last path component starts just past the last separator, or at 0.
+    var file_start = 0
+    if case .Some(last_sep) = path.rfind(sep):
+        file_start = last_sep + 1
     if alt_sep:
-        head_end = max(head_end, path.rfind(alt_sep))
+        if case .Some(last_alt_sep) = path.rfind(alt_sep):
+            file_start = max(file_start, last_alt_sep + 1)
 
-    var file_end = path.rfind(extension_sep)
-    if file_end > head_end:
+    # Find the last extension separator after the last separator.
+    # If it comes before `file_start`, the loop below doesn't run.
+    if case .Some(file_end) = path.rfind(extension_sep):
         # skip all leading dots
-        var file_start = head_end + 1
         while file_start < file_end:
-            if StringSlice(path[byte=file_start]) != extension_sep:
+            if StringSpan(path[byte=file_start]) != extension_sep:
                 return String(path[byte=:file_end]), String(
                     path[byte=file_end:]
                 )
@@ -653,14 +663,14 @@ def splitroot[
     var length = p.byte_length()
 
     # Relative path, e.g.: 'foo'
-    if length < 1 or p[byte=:1] != StringSlice(sep):
+    if length < 1 or p[byte=:1] != StringSpan(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
     elif (
         length < 2
-        or p[byte=1:2] != StringSlice(sep)
-        or (length >= 3 and p[byte=2:3] == StringSlice(sep))
+        or p[byte=1:2] != StringSpan(sep)
+        or (length >= 3 and p[byte=2:3] == StringSpan(sep))
     ):
         return empty, String(sep), String(p[byte=1:])
 
@@ -668,6 +678,73 @@ def splitroot[
     # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
         return empty, String(p[byte=:2]), String(p[byte=2:])
+
+
+# ===----------------------------------------------------------------------=== #
+# normpath
+# ===----------------------------------------------------------------------=== #
+
+
+def normpath[PathLike: stdPathLike, //](path: PathLike) -> String:
+    """Normalizes a pathname by collapsing redundant separators and up-level
+    references, so that `A//B`, `A/B/`, `A/./B` and `A/foo/../B` all become
+    `A/B`. On POSIX, two leading slashes are preserved as a special case.
+
+    This string manipulation may change the meaning of a path that contains
+    symbolic links, and it does not resolve them. It also does not sandbox the
+    result: leading `..` components in a relative path are preserved, so
+    callers must validate a normalized path before using it to access the file
+    system.
+
+    Parameters:
+        PathLike: The type conforming to the os.PathLike trait.
+
+    Args:
+        path: The path to normalize.
+
+    Returns:
+        The normalized path.
+
+    Examples:
+
+    ```mojo
+    from std.os.path import normpath
+
+    print(normpath("foo//bar"))      # "foo/bar"
+    print(normpath("foo/./bar"))     # "foo/bar"
+    print(normpath("foo/../bar"))    # "bar"
+    print(normpath("//foo//bar"))    # "//foo/bar"
+    print(normpath("/.."))           # "/"
+    print(normpath(""))              # "."
+    ```
+    """
+    comptime dot = "."
+    comptime dotdot = ".."
+
+    var path_str = path.__fspath__()
+    if not path_str:
+        return dot
+
+    var _, root, tail = splitroot(path_str)
+
+    var comps = tail.split(sep)
+    var new_comps = type_of(comps)()
+    for comp in comps:
+        if not comp or comp == dot:
+            continue
+        if (
+            comp != dotdot
+            or (not root and not new_comps)
+            or (new_comps and new_comps[len(new_comps) - 1] == dotdot)
+        ):
+            new_comps.append(comp)
+        elif new_comps:
+            _ = new_comps.pop()
+
+    var new_path_str = root + sep.join(new_comps)
+    if not new_path_str:
+        return dot
+    return new_path_str
 
 
 # ===----------------------------------------------------------------------=== #
@@ -729,7 +806,7 @@ def _is_alphanumeric(byte: Byte) -> Bool:
 
 def _parse_variable_name[
     immutable: ImmOrigin
-](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
+](bytes: Span[Byte, immutable]) -> Tuple[StringSpan[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
     For `${}` expansions, two additional bytes are added to the byte count to
     account for the braces, unless the closing brace is missing, in which
@@ -747,26 +824,26 @@ def _parse_variable_name[
             and _is_shell_special_variable(bytes[1])
             and bytes[2] == UInt8(ord("}"))
         ):
-            return StringSlice(unsafe_from_utf8=bytes[1:2]), 3
+            return StringSpan(unsafe_from_utf8=bytes[1:2]), 3
 
         # Scan until the closing brace or the end of the bytes.
         var i = 1
         while i < len(bytes):
             if bytes[i] == UInt8(ord("}")):
-                return StringSlice(unsafe_from_utf8=bytes[1:i]), i + 1
+                return StringSpan(unsafe_from_utf8=bytes[1:i]), i + 1
             i += 1
         # No closing brace found: `i == len(bytes)`, so the whole remainder
         # was consumed with no closing-brace byte to account for.
-        return StringSlice(unsafe_from_utf8=bytes[1:i]), i
+        return StringSpan(unsafe_from_utf8=bytes[1:i]), i
     elif _is_shell_special_variable(bytes[0]):
-        return StringSlice(unsafe_from_utf8=bytes[0:1]), 1
+        return StringSpan(unsafe_from_utf8=bytes[0:1]), 1
 
     # Scan until we hit an invalid character in environment variable names.
     var i = 0
     while i < len(bytes) and _is_alphanumeric(bytes[i]):
         i += 1
 
-    return StringSlice(unsafe_from_utf8=bytes[:i]), i
+    return StringSpan(unsafe_from_utf8=bytes[:i]), i
 
 
 def expandvars[PathLike: stdPathLike, //](path: PathLike) -> String:

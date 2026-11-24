@@ -22,23 +22,23 @@ with careful consideration of the underlying hardware synchronization mechanisms
 """
 
 from std.bit import next_power_of_two
-from std._gpu import thread_idx
-from std._gpu.primitives.warp import _ReduceFn
 from std.memory import bitcast
 from std.sys import _RegisterPackType, llvm_intrinsic, size_of
 from max.gpu.sync import barrier
 from std.sys._assembly import inlined_assembly
 from std.sys.info import _is_sm_9x_or_newer, _is_sm_100x_or_newer
 
+from std.utils.coord import Coord
 
-from std.utils.index import IndexList, product
+from max.gpu import thread_idx
+from max.gpu.primitives.warp import _ReduceFn
 
 # ===-----------------------------------------------------------------------===#
 #  1D ctaid in a cluster
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def block_rank_in_cluster() -> UInt32:
     """Returns the unique identifier (rank) for the current thread block within its cluster.
 
@@ -62,7 +62,7 @@ def block_rank_in_cluster() -> UInt32:
     ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def elect_one_sync() -> Bool:
     """Elects a single thread within a warp to perform an operation.
 
@@ -81,7 +81,7 @@ def elect_one_sync() -> Bool:
     return Bool(__mlir_op.`nvvm.elect.sync`[_type=__mlir_type.`i1`]())
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
     """Elects a single thread within a warp to perform an operation.
 
@@ -112,7 +112,7 @@ def elect_one_sync_with_mask(mask: UInt32 = 0xFFFFFFFF) -> Bool:
     return Bool(is_elected)
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_arrive_relaxed():
     """Signals arrival at a cluster synchronization point with relaxed memory ordering.
 
@@ -129,7 +129,7 @@ def cluster_arrive_relaxed():
     ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_arrive():
     """Signals arrival at a cluster synchronization point with memory ordering guarantees.
 
@@ -145,7 +145,7 @@ def cluster_arrive():
     ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_wait():
     """Waits for all thread blocks in the cluster to arrive at the synchronization point.
 
@@ -161,7 +161,7 @@ def cluster_wait():
     ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_sync():
     """Performs a full cluster synchronization with memory ordering guarantees.
 
@@ -173,7 +173,7 @@ def cluster_sync():
     cluster_wait()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_sync_relaxed():
     """Performs a full cluster synchronization with relaxed memory ordering.
 
@@ -185,7 +185,7 @@ def cluster_sync_relaxed():
     cluster_wait()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_sync_acquire():
     """Acquires the cluster sync proxy.
 
@@ -202,7 +202,7 @@ def cluster_sync_acquire():
     ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_sync_release():
     """Release the cluster sync proxy.
 
@@ -218,7 +218,7 @@ def cluster_sync_release():
     ]()
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def clusterlaunchcontrol_query_cancel_is_canceled(
     result: Pointer[mut=True, UInt128, _, address_space=.SHARED]
 ) -> UInt32:
@@ -253,7 +253,7 @@ def clusterlaunchcontrol_query_cancel_is_canceled(
     return ret_val
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def clusterlaunchcontrol_query_cancel_get_first_ctaid[
     id: String
 ](result: Pointer[mut=True, UInt128, _, address_space=.SHARED]) -> UInt32:
@@ -298,7 +298,7 @@ def clusterlaunchcontrol_query_cancel_get_first_ctaid[
     return ret_val
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
     result: Pointer[mut=True, UInt128, _, address_space=.SHARED],
 ) -> Tuple[UInt32, UInt32, UInt32]:
@@ -336,7 +336,7 @@ def clusterlaunchcontrol_query_cancel_get_first_ctaid_v4(
     )
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def clusterlaunchcontrol_try_cancel[
     multicast: Bool = False
 ](
@@ -373,9 +373,9 @@ def clusterlaunchcontrol_try_cancel[
     ](Int32(Int(result)), Int32(Int(mbar)))
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def cluster_mask_base[
-    cluster_shape: IndexList[3],
+    cluster_shape: Coord,
     axis: Int,
 ]() -> UInt16:
     """Computes the base mask for a cluster. Base mask in an axis masks
@@ -399,18 +399,19 @@ def cluster_mask_base[
 
     """
     comptime assert axis in (0, 1), "axis must be one of 0, 1"
+    comptime assert cluster_shape.rank == 3, "the cluster shape has three axes"
 
     comptime assert (
-        product(cluster_shape) <= 16
+        cluster_shape.product() <= 16
     ), "cluster size must be less than or equal to 16"
 
     comptime if axis == 0:
-        return UInt16((1 << cluster_shape[0]) - 1)
+        return UInt16((1 << Int(cluster_shape[0])) - 1)
 
     var mask: UInt16 = 0
 
-    comptime for i in range(cluster_shape[1]):
-        mask |= UInt16(1 << (i * cluster_shape[0]))
+    comptime for i in range(Int(cluster_shape[1])):
+        mask |= UInt16(1 << (i * Int(cluster_shape[0])))
 
     return mask
 
@@ -430,7 +431,7 @@ def cluster_mask_base[
 # `(P,1,1)` cluster shape this equals `block_idx.x % P` (see `splitk_partition_idx`).
 
 
-@always_inline
+@inline(.always)
 def cluster_remote_smem_addr(local_addr: UInt32, peer_rank: UInt32) -> UInt32:
     """Map a local `.shared` byte address to peer `peer_rank`'s window in the cluster.
 
@@ -457,7 +458,7 @@ def cluster_remote_smem_addr(local_addr: UInt32, peer_rank: UInt32) -> UInt32:
     ](local_addr, peer_rank)
 
 
-@always_inline
+@inline(.always)
 def load_cluster_smem[
     dtype: DType, width: Int
 ](
@@ -554,7 +555,7 @@ def load_cluster_smem[
     return bitcast[dtype, width](words)
 
 
-@always_inline
+@inline(.always)
 def store_cluster_smem[
     dtype: DType, width: Int
 ](
@@ -639,7 +640,7 @@ def store_cluster_smem[
         ](base + UInt32(4 * o1), peer_rank, words[o1])
 
 
-@always_inline
+@inline(.always)
 def cluster_allreduce[
     dtype: DType,
     width: SIMDLength,
@@ -728,7 +729,7 @@ def cluster_allreduce[
         return acc
 
 
-@always_inline
+@inline(.always)
 def cluster_allgather[
     dtype: DType,
     width: SIMDLength,

@@ -16,13 +16,14 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo, rmo
 
 from ..dim import DimLike
 from ..graph import Graph
 from ..shape import Shape, ShapeLike
 from ..type import TensorType
 from ..value import StrongTensorValueLike, TensorValue
+from .validation import assert_same_device
 
 
 def broadcast_to(
@@ -85,9 +86,10 @@ def broadcast_to(
         if out_dims is None:
             message = f"must pass out_dims with tensor value shape {shape}"
             raise ValueError(message)
+        assert_same_device(x=x, shape=shape)
 
         return Graph.current._add_op_generated(
-            rmo.MoBroadcastToOp,
+            mo.BroadcastToOp,
             TensorType(x.dtype, shape=out_dims, device=x.device),
             x,
             shape._mlir_value,

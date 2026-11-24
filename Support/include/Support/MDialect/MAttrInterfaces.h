@@ -21,6 +21,8 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#pragma GCC visibility push(default)
 #include "Support/MDialect/MAttrInterfaces.h.inc"
+#pragma GCC visibility pop
 
 #endif // SUPPORT_MDIALECT_MATTRINTERFACES_H

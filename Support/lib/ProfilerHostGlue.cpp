@@ -59,11 +59,14 @@
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "Support/Configuration.h"
 #include "Support/Profiling/PluginABI.h"
 #include "Support/Profiling/Ranges.h"
+#include "Support/Profiling/TraceActivity.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
 #ifndef _WIN32
@@ -299,6 +302,60 @@ void sinkRangeEnd() { api()->rangeEnd(); }
 
 void sinkRegisterCurrentThread() { api()->registerCurrentThread(); }
 
+// An older (1.0) plugin has no requestBurst: no event bursts, nothing else
+// changes.
+bool sinkRequestBurst(StringRef reason) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, requestBurst))
+    return false;
+  return table->requestBurst(reason.data(), reason.size());
+}
+
+void sinkSetTraceMetadata(StringRef key, StringRef value) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, setTraceMetadata))
+    return;
+  table->setTraceMetadata(key.data(), key.size(), value.data(), value.size());
+}
+
+bool sinkRangeBeginSpanOnly(StringRef name, uint32_t color) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, rangeBeginSpanOnly))
+    return false;
+  return table->rangeBeginSpanOnly(name.data(), name.size(), color);
+}
+
+// Converts the plugin's C records to the caller's, which borrow the same
+// strings, for the length of the visitor call.
+void forwardTrace(void *context, const M_ProfilerActivity *activities,
+                  size_t activityCount, const M_ProfilerMetadataField *metadata,
+                  size_t metadataCount) {
+  std::vector<TraceActivity> converted;
+  converted.reserve(activityCount);
+  for (size_t i = 0; i < activityCount; ++i) {
+    const M_ProfilerActivity &a = activities[i];
+    converted.push_back({StringRef(a.name, a.nameLen),
+                         StringRef(a.category, a.categoryLen), a.startNs,
+                         a.durationNs, a.device, a.resource, a.threadId,
+                         a.correlationId, a.externalId});
+  }
+  std::vector<TraceMetadataField> fields;
+  fields.reserve(metadataCount);
+  for (size_t i = 0; i < metadataCount; ++i)
+    fields.push_back(
+        {StringRef(metadata[i].key, metadata[i].keyLen),
+         StringRef(metadata[i].jsonValue, metadata[i].jsonValueLen)});
+  (*static_cast<TraceVisitor *>(context))(converted, fields);
+}
+
+bool sinkDisableCollecting(TraceVisitor visitor, bool save) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, disableCollecting))
+    return false;
+  table->disableCollecting(forwardTrace, &visitor, save);
+  return true;
+}
+
 constexpr RangeSink kSink = {
     .enable = sinkEnable,
     .disable = sinkDisable,
@@ -312,6 +369,10 @@ constexpr RangeSink kSink = {
     .rangeBeginWithId = sinkRangeBeginWithId,
     .rangeEnd = sinkRangeEnd,
     .registerCurrentThread = sinkRegisterCurrentThread,
+    .requestBurst = sinkRequestBurst,
+    .setTraceMetadata = sinkSetTraceMetadata,
+    .rangeBeginSpanOnly = sinkRangeBeginSpanOnly,
+    .disableCollecting = sinkDisableCollecting,
 };
 
 } // namespace

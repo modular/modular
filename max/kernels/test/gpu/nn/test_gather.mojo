@@ -20,9 +20,8 @@ from nn.gather_scatter import gather
 def test_gather(ctx: DeviceContext) raises:
     print("== test_gather")
 
-    @no_inline
-    @__parameter
-    def _test_gather[indices_type: DType]() raises:
+    @inline(.never)
+    def _test_gather[indices_type: DType]() raises {imm}:
         comptime num_rows = 16
         comptime row_size = 4
         comptime num_indices = 16
@@ -68,7 +67,7 @@ def test_gather(ctx: DeviceContext) raises:
             output_device, row_major[num_indices, row_size]()
         )
 
-        gather[axis=0, target="gpu"](
+        gather[axis=0](
             output_tensor.make_dynamic[.int64](),
             input_tensor.make_dynamic[.int64](),
             indices_tensor.make_dynamic[.int64](),

@@ -21,14 +21,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Embedding, Linear, Module
-from max.experimental.nn.common_layers.rotary_embedding import RotaryEmbedding
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.tensor import Tensor
 from max.graph import TensorType
+from max.nn import Embedding, Linear, Module
+from max.nn.common_layers.rotary_embedding import RotaryEmbedding
+from max.nn.norm import RMSNorm
+from max.nn.sequential import ModuleList
+from max.tensor import Tensor
 
 from .layers import EncoderAttention
 
@@ -46,6 +46,7 @@ class Qwen3MLP(Module[[Tensor], Tensor]):
         self.down_proj = Linear(intermediate_size, hidden_size, bias=False)
 
     def forward(self, hidden_states: Tensor) -> Tensor:
+        """Runs the gated MLP over ``hidden_states``."""
         gate = F.silu(self.gate_proj(hidden_states))
         up = self.up_proj(hidden_states)
         return self.down_proj(gate * up)
@@ -88,6 +89,8 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         Args:
             x: Input hidden states [seq_len, hidden_dim]
             rope: RoPE embedding module
+            attention_bias: The additive causal mask.
+
         Returns:
             Output hidden states [seq_len, hidden_dim]
         """

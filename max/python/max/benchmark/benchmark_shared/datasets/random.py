@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Random and synthetic datasets, including the ShareGPT prompt sampler."""
+
 from __future__ import annotations
 
 import json
@@ -21,13 +23,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
-from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import override
 
 from ._hf_download import hf_hub_download_with_retry
 from ._tokenizer_pool import TokenizerPool, _encode_ids
 from .distribution import BaseDistribution, DistributionParameter
+from .image_augmentation import generate_random_image
 from .local import LocalBenchmarkDataset
 from .types import (
     ChatSamples,
@@ -91,8 +93,11 @@ def log_request_actual_length_percentiles(
 
 
 class RandomBenchmarkDataset(LocalBenchmarkDataset):
+    """Random dataset that draws prompts and lengths from pools."""
+
     @property
     def use_synthetic_tokens(self) -> bool:
+        """Reports whether prompts are built from synthetic tokens."""
         # Overridden in SyntheticBenchmarkDataset
         return False
 
@@ -295,6 +300,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
 
         Args:
             tokenizer: Tokenizer to encode prompts.
+            pool: Pool that encodes the prompts in parallel.
             max_num_unique_sys_prompt: Number of unique system prompts to load.
             num_requests: Number of user prompts to load.
 
@@ -338,7 +344,9 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         # don't tokenize the full ~25k ShareGPT pool on every benchmark run.
         required_prompts = max_num_unique_sys_prompt + num_requests
         candidate_pool = prompts[: max(required_prompts * 4, 64)]
-        encoded = pool.map(_encode_ids, candidate_pool)
+        encoded = pool.map(
+            _encode_ids, candidate_pool, desc="random: tokenizing prompts"
+        )
         tokenized_prompts: list[list[int]] = [
             ids for ids in encoded if len(ids) >= 4
         ][:required_prompts]
@@ -606,9 +614,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             for _ in range(image_count):
                 assert image_height is not None
                 assert image_width is not None
-                raw_image = self._generate_random_image(
-                    image_height, image_width
-                )
+                raw_image = generate_random_image(image_height, image_width)
                 # TODO: figure out how to account for image tokens and chat prompts in this length.
                 # For now, just hardcoding to the internvl 512x512 image token count.
                 images.append(encode_image(raw_image))
@@ -630,7 +636,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         id_lists.extend(
             p.sys_prompt.ids for p in pending if p.sys_prompt is not None
         )
-        decoded = pool.decode_texts(id_lists)
+        decoded = pool.decode_texts(id_lists, desc="random: decoding prompts")
 
         sys_decoded_iter = iter(decoded[len(pending) :])
         for p, prompt_text in zip(
@@ -644,7 +650,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
         texts.extend(
             p.sys_prompt.text for p in pending if p.sys_prompt is not None
         )
-        lens = pool.encode_lens(texts)
+        lens = pool.encode_lens(texts, desc="random: measuring prompts")
 
         sys_lens_iter = iter(lens[len(pending) :])
         for p, plen in zip(pending, lens[: len(pending)], strict=True):
@@ -678,33 +684,10 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             shared_contexts=list(warmup_dict.values()),
         )
 
-    def _generate_random_image(self, height: int, width: int) -> Image.Image:
-        # Truly random images end up being too large and incompressible.
-        # Instead create a much more limited block based random image with limited color palette.
-        block_size = 16
-        colors = np.array([0, 64, 128, 192, 255], dtype=np.uint8)
-
-        blocks_h = (height + block_size - 1) // block_size
-        blocks_w = (width + block_size - 1) // block_size
-
-        # Generate colors for all blocks
-        block_colors = np.random.choice(
-            len(colors), size=(blocks_h, blocks_w, 3)
-        )
-        block_array = colors[block_colors]
-
-        # repeat blocks to create image
-        array = np.repeat(
-            np.repeat(block_array, block_size, axis=0), block_size, axis=1
-        )
-
-        # crop
-        array = array[:height, :width]
-
-        return Image.fromarray(array)
-
 
 class SyntheticBenchmarkDataset(RandomBenchmarkDataset):
+    """Random dataset whose prompts are synthetic token sequences."""
+
     @override
     @property
     def use_synthetic_tokens(self) -> bool:

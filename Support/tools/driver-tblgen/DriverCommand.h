@@ -159,13 +159,9 @@ public:
     return option->getValueAsOptionalString("MetaVarName");
   }
 
-  /// Return the option's index value, if one is defined.
-  std::optional<int64_t> getIndex() const;
-
-  /// Add an LLVM `Option` to the sorted list of aliases for this option.
-  /// If an alias is newly added and is not valid, returns a failure. Otherwise,
-  /// returns success.
-  LogicalResult addAlias(const llvm::Record *aliasRecord);
+  /// Add an LLVM `Option` to the list of aliases for this option, which is
+  /// kept in definition order.
+  void addAlias(const llvm::Record *aliasRecord);
 
   /// Return all the aliases of this option.
   ArrayRef<CommandAlias> getAliases() const { return aliases; }
@@ -239,21 +235,24 @@ private:
   std::vector<CommandOption> options;
 };
 
-/// A comparator that can be used to sort option groups and options, based on
-/// their index, in ascending order.
+/// A comparator that can be used to sort option groups and subcommands, based
+/// on their index, in ascending order.
 struct LessIndex {
   bool operator()(const llvm::Record *lhs, const llvm::Record *rhs) const;
 
-  bool operator()(const CommandAlias &lhs, const CommandAlias &rhs) const {
-    return operator()(lhs.getRecord(), rhs.getRecord());
-  }
   bool operator()(const CommandOptionGroup &lhs,
                   const CommandOptionGroup &rhs) const {
     return operator()(lhs.getGroup(), rhs.getGroup());
   }
+};
 
+/// A comparator that sorts options and aliases in the order they are defined.
+struct LessByID {
+  bool operator()(const CommandAlias &lhs, const CommandAlias &rhs) const {
+    return llvm::LessRecordByID()(lhs.getRecord(), rhs.getRecord());
+  }
   bool operator()(const CommandOption &lhs, const CommandOption &rhs) const {
-    return operator()(lhs.getOption(), rhs.getOption());
+    return llvm::LessRecordByID()(lhs.getOption(), rhs.getOption());
   }
 };
 

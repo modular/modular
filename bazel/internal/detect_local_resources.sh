@@ -13,30 +13,67 @@
 ##===----------------------------------------------------------------------===##
 
 # Detects number and memory amounts of local GPUs.
-# Outputs relevant bazelrc lines.
+# Outputs relevant bazelrc lines, stamped with the host fingerprint.
+# With --fingerprint, prints only the fingerprint.
 
 set -euo pipefail
 
+# Changes only across a reboot or a container restart. Containers on one node
+# share the kernel's boot_id, hence PID 1's start time as well.
+host_fingerprint() {
+    if [[ "$(uname)" == "Linux" ]]; then
+        local boot_id pid1_start
+        boot_id=$(cat /proc/sys/kernel/random/boot_id 2>/dev/null || echo unknown)
+        # Field 22, counted from after the comm field, which may contain spaces.
+        pid1_start=$(sed 's/.*) //' /proc/1/stat 2>/dev/null | awk '{print $20}')
+        echo "${boot_id}-${pid1_start:-unknown}"
+    else
+        sysctl -n kern.boottime | sed -E 's/^\{ sec = ([0-9]+).*/\1/'
+    fi
+}
+
+if [[ "${1:-}" == "--fingerprint" ]]; then
+    host_fingerprint
+    exit 0
+fi
+
+echo "# host-fingerprint: $(host_fingerprint)"
+
 if [[ "$(uname)" == "Linux" ]]; then
     if command -v nvidia-smi > /dev/null; then
-        # One line per GPU, in MiB.
-        output=$(nvidia-smi --query-gpu=memory.total --format=noheader,nounits)
+        # One line per GPU, in MiB. GPU-less images can still ship nvidia-smi,
+        # which then fails to reach the driver.
+        if ! output=$(nvidia-smi --query-gpu=memory.total --format=noheader,nounits); then
+            echo "warning: nvidia-smi failed, assuming no local GPUs: $output" >&2
+            echo "build --local_resources=gpu-memory=0"
+            exit 0
+        fi
         # We assume all GPUs are the same, so just grab the first
         mem_mib="$(echo "$output" | head -n 1)"
-        # We specify GiB for local memory
-        mem_gib=$(( mem_mib / 1024 ))
+        if [[ ! "$mem_mib" =~ ^[0-9]+$ ]]; then
+            # Unified-memory parts (GB10 / DGX Spark, Jetson) have no dedicated
+            # GPU memory: nvidia-smi answers [N/A] and the pool is system RAM,
+            # so use MemTotal.
+            mem_gib=$(awk '/^MemTotal:/ {printf "%d", $2 / 1048576}' /proc/meminfo)
+            echo "warning: nvidia-smi reported '$mem_mib' as total GPU memory;" \
+                "assuming unified memory and using ${mem_gib} GiB of system" \
+                "RAM" >&2
+        else
+            # We specify GiB for local memory
+            mem_gib=$(( mem_mib / 1024 ))
+        fi
 
         gpu_count=$(echo "$output" | wc -l)
     elif command -v amd-smi > /dev/null; then
         if ! command -v jq > /dev/null; then
-            echo "error: jq not found, necessary for gpu memory detection with amd-smi. please install jq."
+            echo "error: jq not found, necessary for gpu memory detection with amd-smi. please install jq." >&2
             exit 1
         fi
         output=$(amd-smi static --vram --json)
         # For simplicity, we're assuming that this is output in MB
         unit=$(echo "$output" | jq -r '.gpu_data[0].vram.size.unit')
         if [[ "$unit" != "MB" ]]; then
-            echo "error: assumed ami-smi output outputs MB, got $unit"
+            echo "error: assumed ami-smi output outputs MB, got $unit" >&2
             exit 1
         fi
         # We assume all GPUs are the same, so just grab the first
@@ -47,7 +84,7 @@ if [[ "$(uname)" == "Linux" ]]; then
     elif command -v rocm-smi > /dev/null; then
         # This is the older alternative to amd-smi.
         # The output is more confusing to parse, it doesn't seem worth it to support.
-        echo "error: local resource detection for AMD GPUs only supported with amd-smi, which was not found."
+        echo "error: local resource detection for AMD GPUs only supported with amd-smi, which was not found." >&2
         exit 1
     else
         # No GPUs
@@ -56,7 +93,7 @@ if [[ "$(uname)" == "Linux" ]]; then
     fi
 else # We assume Mac is the only other case
     if ! command -v jq > /dev/null; then
-        echo "error: jq not found, necessary for gpu memory detection on macos. please install jq."
+        echo "error: jq not found, necessary for gpu memory detection on macos. please install jq." >&2
         exit 1
     fi
     mem_gb=$(system_profiler SPHardwareDataType -json | jq --raw-output '.SPHardwareDataType[0].physical_memory' | cut -d ' ' -f 1)

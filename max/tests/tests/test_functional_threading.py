@@ -24,10 +24,10 @@ import asyncio
 import threading
 from collections.abc import Callable
 
-from max.experimental import functional as F
-from max.experimental import tensor as tensor_mod
-from max.experimental.realization_context import EagerRealizationContext
-from max.experimental.tensor import Tensor
+from max import functional as F
+from max.tensor import Tensor
+from max.tensor import tensor as tensor_mod
+from max.tensor.realization_context import EagerRealizationContext
 
 
 def _run_simple_op() -> Tensor:

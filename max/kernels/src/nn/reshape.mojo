@@ -13,27 +13,25 @@
 """Implements the reshape operation that reinterprets a contiguous tensor's data under a new shape."""
 
 from layout import Coord, TileTensor
-from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
-
-from std.utils.index import IndexList
+from layout.coord import CoordLike, DynamicCoord
+from layout.layout import Layout
 
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
-@always_inline
+@inline(.always)
 def reshape[
     dtype: DType,
+    shape_types: TypeList[Trait=CoordLike, ...],
     //,
-    output_rank: Int,
 ](
     input: TileTensor[dtype, ...],
-    new_shape: IndexList[output_rank],
+    new_shape: Coord[*shape_types],
 ) -> TileTensor[
     dtype,
     Layout[
-        shape_types=DynamicCoord[.int64, output_rank].element_types,
-        stride_types=DynamicCoord[.int64, output_rank].element_types,
+        shape_types=DynamicCoord[.int64, shape_types.length].element_types,
+        stride_types=DynamicCoord[.int64, shape_types.length].element_types,
     ],
     input.origin,
     address_space=input.address_space,
@@ -43,12 +41,12 @@ def reshape[
 
     Computes row-major (contiguous) strides for the requested shape and
     constructs a new `TileTensor` that shares the input's underlying buffer,
-    origin, and address space. The caller is responsible for ensuring the
-    input is contiguous.
+    origin, address space, and engine. The caller is responsible for ensuring
+    the input is contiguous.
 
     Parameters:
         dtype: Element type of the input tensor.
-        output_rank: Rank of the requested output shape.
+        shape_types: Element types of the requested output shape.
 
     Args:
         input: Contiguous source tensor whose data is reinterpreted.
@@ -59,25 +57,19 @@ def reshape[
         A `TileTensor` view over the same buffer with the new shape and
         contiguous strides.
     """
-    var stride_tuple = type_of(new_shape)()
-    var stride: Int = 1
-
-    # Create contiguous strides.
+    comptime output_rank = shape_types.length
+    var shape = DynamicCoord[.int64, output_rank]()
+    var stride = DynamicCoord[.int64, output_rank]()
+    var acc = 1
     comptime for i in reversed(range(output_rank)):
-        # Start from the back so we can accumulate the strides.
-        stride_tuple[i] = stride
-        stride *= new_shape[i]
-
-    # Return a view with the new shape, preserving the input's engine
-    # (for example a device tile stays `DevicePointerEngine`) by rebinding the
-    # storage handle rather than erasing it through a raw pointer.
-    return {
-        input._storage,
-        Layout(Coord(new_shape), Coord(stride_tuple)),
-    }
+        var dim = Int(new_shape[i])
+        shape.replace_dynamic[i](Scalar[.int64](dim))
+        stride.replace_dynamic[i](Scalar[.int64](acc))
+        acc *= dim
+    return {input._storage, Layout(shape, stride)}
 
 
-@always_inline
+@inline(.always)
 def reshape_shape[
     output_rank: Int,
     input_type: DType,
@@ -85,10 +77,10 @@ def reshape_shape[
 ](
     input_buf: TileTensor[input_type, ...],
     target_shape_buf: TileTensor[target_shape_type, ...],
-) raises -> IndexList[output_rank]:
-    """Reads a target shape from a buffer and returns it as a static `IndexList`, inferring any single `-1` dimension.
+) raises -> DynamicCoord[.int, output_rank]:
+    """Reads a target shape from a buffer and returns it as a `Coord`, inferring any single `-1` dimension.
 
-    Copies the rank-1 `target_shape_buf` into a static `IndexList[output_rank]`,
+    Copies the rank-1 `target_shape_buf` into a `Coord` of rank `output_rank`,
     allowing at most one dimension to be specified as `-1`, which is then inferred
     from the input's element count. Raises an error if the constraints are
     violated or the inferred shape does not match the input's number of elements.
@@ -104,7 +96,7 @@ def reshape_shape[
             where at most one entry may be `-1`.
 
     Returns:
-        A static `IndexList[output_rank]` with any `-1` dimension resolved.
+        The target shape with any `-1` dimension resolved.
 
     Raises:
         Error: If `target_shape_buf` is not rank 1, the rank does not match
@@ -118,9 +110,9 @@ def reshape_shape[
     if output_rank != Int(target_shape_buf.dim(0)):
         raise Error("[reshape] requires (len(target_shape) == output_rank)")
 
-    # move the target shape from buffer into a static int tuple; also check and
-    # record if there's any to-be-inferred dimension (-1).
-    var target_shape = IndexList[output_rank]()
+    # move the target shape from buffer into an array; also check and record
+    # if there's any to-be-inferred dimension (-1).
+    var target_shape = Array[Int, output_rank](fill=0)
     var to_be_inferred_axis = -1
     var non_negative_dim_product = 1
     for axis in range(output_rank):
@@ -150,4 +142,4 @@ def reshape_shape[
     if output_num_elems != input_num_elems:
         raise Error("[reshape] input and output number of elements must match")
 
-    return target_shape
+    return Coord(target_shape)

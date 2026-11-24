@@ -26,9 +26,10 @@ def predicate() -> Bool:
     pass
 
 
-@explicit_destroy("StorageA must be explicitly destroyed.")
 struct StorageA[T: AnyType](
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "StorageA must be explicitly destroyed."
+    ),
     Storage, Movable where False,
 ):
     def __init__(out self):
@@ -38,9 +39,10 @@ struct StorageA[T: AnyType](
         pass
 
 
-@explicit_destroy("StorageB must be explicitly destroyed.")
 struct StorageB[T: AnyType](
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "StorageB must be explicitly destroyed."
+    ),
     Storage, Movable where False,
 ):
     def __init__(out self):
@@ -51,9 +53,11 @@ struct StorageB[T: AnyType](
 
 
 # CHECK-LABEL: lit.struct.decl @Container
-@explicit_destroy("Container must be explicitly destroyed.")
 struct Container[T: AnyType](
-    Deinitable where conforms_to(T, Deinitable), Movable where False,
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Container must be explicitly destroyed."
+    ),
+    Movable where False,
 ):
     # The merged `_Storage` type value must be a constrained trait bound.
 

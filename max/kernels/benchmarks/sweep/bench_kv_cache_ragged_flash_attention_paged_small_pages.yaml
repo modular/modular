@@ -1,0 +1,149 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------===##
+
+# The `page_size` 16 and 64 groups of
+# `bench_kv_cache_ragged_flash_attention_paged.yaml`, split out because the
+# AMD structured attention kernels cannot address a KV page smaller than
+# their KV tile: `mha_decode`'s `KVCacheIterator` loads `BN = 128` rows per
+# tile and `mha_prefill`'s loads `kv_block = 64`, while
+# `PagedKVCache.block_paged_ptr` requires
+# `tile_size <= page_size and page_size % tile_size == 0`
+# (`max/kernels/src/kv_cache/types.mojo:4089`). So page sizes below 128 fail
+# to compile for gfx950, which made 8 of this sweep's 13 configs invalid in
+# the 4xMI355 kernel nightly (KERN-4043).
+#
+# Only the CUDA kernel configs list this target; MI355 runs the shared file.
+# Spec strings are unchanged (they carry the `.mojo` stem and the params), so
+# every row keeps its BigQuery history.
+#
+# Usage:
+#   kbench bench_kv_cache_ragged_flash_attention_paged_small_pages.yaml \
+#     --timeout-secs 600
+
+name: bench_kv_cache_ragged_flash_attention_paged_small_pages
+file: $KERNEL_BENCHMARKS_ROOT/sweep/bench_kv_cache_ragged_flash_attention_paged.mojo
+sweep: true
+
+params:
+
+# llama3.1 token generation: one new token per sequence over a warm cache.
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+# llama3.1 prefill: a chunk of new tokens over an empty cache.
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [256, 512]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+- num_q_heads: 32
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [256, 512]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.1
+
+# llama3.2 token generation.
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [1]
+  $cache_len: [215, 1024]
+  $batch_size: [20, 250, 500]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+# llama3.2 prefill.
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 16
+  $seq_len: [215, 1024]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2
+
+- num_q_heads: 24
+  num_kv_heads: 8
+  head_dim: 128
+  page_size: 64
+  $seq_len: [215, 1024]
+  $cache_len: [0]
+  $batch_size: [20, 80]
+  $use_random_seq_lengths: False
+  $use_random_cache_lengths: False
+  metadata:
+    MODEL: llama3.2

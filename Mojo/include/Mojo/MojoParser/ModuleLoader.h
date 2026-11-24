@@ -20,11 +20,23 @@
 
 #include "Mojo/MojoParser/ModuleSpec.h"
 #include "Mojo/MojoParser/SharedState.h"
+#include "Support/SymbolExport.h"
 
 #include <memory>
 #include <optional>
 
+namespace M {
+namespace KGEN {
+namespace DepGraph {
+class GraphOp;
+}
+} // namespace KGEN
+} // namespace M
+
 namespace M::KGEN::LIT {
+
+class PackageASTDecl;
+class ModuleASTDecl;
 
 /// The binding a module name is about to make: which entity it names, where
 /// that lands, and whether some other name already binds it.
@@ -48,15 +60,21 @@ struct BindingSpec {
 ///
 /// Its primary purpose is resolution: given an import path, work out what it
 /// names on disk and describe it as a `ModuleSpec`.
-class ModuleLoader : public SharedStateUser {
+class MODULAR_CXX_EXPORT ModuleLoader : public SharedStateUser {
 public:
   ModuleLoader(SharedState &shared);
   ~ModuleLoader();
 
-  /// Resolve the absolute path for a given module name. Returns nullopt if the
-  /// module cannot be found.
-  std::optional<ModuleSpec> resolveModulePath(StringRef moduleName,
-                                              llvm::SMLoc includeLoc);
+  /// The working directory that imports from `importBufferFileId` search, or
+  /// an empty path for a null buffer id, which requests none.
+  std::filesystem::path workingDirectoryFor(unsigned importBufferFileId) const;
+
+  /// Resolve the absolute path for a given module name across the import
+  /// directories, searching `workingDir` among them unless it is empty.
+  /// Returns nullopt if the module cannot be found.
+  std::optional<ModuleSpec>
+  resolveModulePath(StringRef moduleName,
+                    const std::filesystem::path &workingDir);
 
   /// Resolve the absolute path for a given module name within the provided
   /// directory. Returns nullopt if the module cannot be found.
@@ -69,9 +87,9 @@ public:
                                               bool isInsideSourcePackage);
 
   /// Collect the portion directories of the namespace described by
-  /// `parentSpec`: for each import directory visible from
-  /// `importBufferFileId`, descend the spec's namespace components as plain
-  /// directories. Portions are returned in traversal order, deduplicated.
+  /// `parentSpec`: for each import directory, `workingDir` among them unless it
+  /// is empty, descend the spec's namespace components as plain directories.
+  /// Portions are returned in traversal order, deduplicated.
   ///
   /// A "portion" is one root's directory contributing to the namespace. For the
   /// example on `namespaceComponents`, the portions of `foo.bar` are
@@ -85,7 +103,7 @@ public:
   /// portion.
   SmallVector<std::string>
   collectNamespacePortions(const ModuleSpec &parentSpec,
-                           unsigned importBufferFileId);
+                           const std::filesystem::path &workingDir);
 
   /// Resolve the name as a submodule of the namespace described by
   /// `parentSpec`, searching every portion. Returns every distinct thing the
@@ -95,12 +113,13 @@ public:
   /// ambiguous; several portions provide a closed candidate.
   SmallVector<ModuleSpec>
   resolveNamespaceSubModule(StringRef moduleName, const ModuleSpec &parentSpec,
-                            unsigned importBufferFileId);
+                            const std::filesystem::path &workingDir);
 
   /// Traverse the directories available for importing modules and packages,
-  /// calling the given callback for each directory found.
+  /// `workingDir` among them unless it is empty, calling the given callback
+  /// for each directory found.
   void
-  traverseImportDirectories(unsigned importBufferFileId,
+  traverseImportDirectories(const std::filesystem::path &workingDir,
                             function_ref<WalkResult(StringRef)> callback) const;
 
   /// Resolve what binding the name makes in the provided scope, creating the
@@ -122,10 +141,22 @@ public:
 
   /// Create the state the whole import tree nests inside. Called once, when
   /// the top-level decl exists.
-  void initializeTopLevel(ASTDecl &topLevelDecl);
+  void initializeTopLevel(TopLevelModuleASTDecl &topLevelDecl);
 
   /// The state of the top-level decl, which every import is nested within.
   ModuleState &getTopLevelState() const;
+
+  /// Bind `packageState`, the package being precompiled, at `importPath` too:
+  /// the absolute path it is imported by once precompiled, namespace
+  /// components first. The binding shares the package's origin, aliasing the
+  /// binding under its source directory's name, so a self-import spelled either
+  /// way resolves to its source, never to what is on disk under the import
+  /// path, such as a stale build of it or the output being written. Each
+  /// namespace component binds as a namespace whether or not any import root
+  /// has a directory for it yet; fails, reporting why, if one names anything
+  /// else.
+  LogicalResult bindPrecompiledPackage(ModuleState &packageState,
+                                       ArrayRef<StringRef> importPath);
 
   /// The state this decl was imported as, or null if it names no module.
   ModuleState *lookupState(ASTDecl *decl) const;
@@ -134,7 +165,7 @@ public:
   ///
   /// Given the binding that created it, `state` also takes its origin, and
   /// claims the naming of that origin's contents when no binding has yet.
-  void setState(ASTDecl &decl, ModuleState &state,
+  void setState(ModuleASTDecl &decl, ModuleState &state,
                 const BindingSpec *binding = nullptr);
 
   /// Record `state` as what `packageOp` was imported as.
@@ -150,8 +181,9 @@ public:
   /// Import the specified module or package, returning the decl. Always returns
   /// a valid decl, even if a corresponding module or package could not be
   /// found.
-  ASTDecl &importModule(const SharedState::ImportPath &path,
-                        PackageOp currentPackage, llvm::SMLoc loc);
+  ModuleASTDecl &importModule(const SharedState::ImportPath &path,
+                              PackageOp currentPackage, llvm::SMLoc loc,
+                              ASTDecl *importer);
 
   /// Import the specified module or package, returning the module state.
   /// Always returns a valid module state, even if the module could not be
@@ -169,7 +201,8 @@ public:
 
   /// Try to import a direct submodule with the given name, returning the
   /// submodule's decl, or null if no such submodule exists.
-  ASTDecl *tryImportSubModule(ASTDecl &parent, StringRef name, llvm::SMLoc loc);
+  ModuleASTDecl *tryImportSubModule(ModuleASTDecl &parent, StringRef name,
+                                    llvm::SMLoc loc);
 
   /// Return true if the package has a nested module with the given name in the
   /// module-state cache. The package body must be resolved before calling this
@@ -179,14 +212,14 @@ public:
   /// Return the decls of every nested module/package currently materialized in
   /// the package's module-state cache. These are navigable but unlisted (not
   /// in the package's importable scope).
-  SmallVector<ASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
+  SmallVector<ModuleASTDecl *> getNestedModuleDecls(PackageOp packageOp) const;
 
   /// Scan a source package's directory and register a child decl for every
   /// sibling module/sub-package - a deferred `FileModuleOp` for each `.mojo`
   /// file and a (already-deferred) `PackageOp` for each sub-package. The
   /// children are unlisted (in the module-state cache + package IR, never the
   /// package's importable scope) and their bodies/files are opened lazily.
-  void registerSourcePackageChildren(ASTDecl &packageDecl);
+  void registerSourcePackageChildren(PackageASTDecl &packageDecl);
 
   //===--------------------------------------------------------------------===//
   // Loading
@@ -224,14 +257,34 @@ public:
   ModuleState &createBinaryPackageState(SMLoc loc, const ModuleSpec &spec,
                                         ModuleState &parentState);
 
-  /// Create an error module state and emit the given error message. If
-  /// `unlisted` is set, the erroneous decl is not registered in
-  /// `errorContext`'s name table. A non-empty `note` is attached to the error.
+  /// Create the state for a module or package nested in an already-loaded
+  /// precompiled artifact. Like a child found by scanning a source package, its
+  /// decl is unlisted. It shares the artifact's origin and has no spec, since
+  /// resolution never produced a candidate for it. `importLoc` is where the
+  /// artifact was imported.
+  ModuleState &createArtifactChildState(Operation *op, ModuleState &parentState,
+                                        SMLoc importLoc);
+
+  /// Create an error module state and emit the given error message. A
+  /// non-empty `note` is attached to the error.
   ModuleState &createErrorModuleState(SMLoc loc, StringAttr name,
-                                      ASTDecl &errorContext,
+                                      ModuleASTDecl &errorContext,
                                       const Twine &errorMsg,
-                                      bool unlisted = false,
                                       const Twine &note = {});
+
+  //===--------------------------------------------------------------------===//
+  // Module Dependency Graph
+  //===--------------------------------------------------------------------===//
+
+  /// Record a dep edge `importer` -> `imported`, attributed to each end's
+  /// nearest enclosing file module or package. No-ops if either end has no
+  /// module state or is erroneous.
+  void recordDepEdge(ASTDecl *importer, ASTDecl *imported);
+
+  /// Build the module import dependency graph from parse-time data (call after
+  /// all decls resolve). Sets the graph `root` if `rootDecl` is the main
+  /// module.
+  mlir::OwningOpRef<DepGraph::GraphOp> buildDepGraph(const ASTDecl *rootDecl);
 
 private:
   /// The state this package op was imported as, or null. Distinct from
@@ -264,6 +317,11 @@ private:
   /// the module could not be found.
   ModuleState &importRelativeModuleState(const SharedState::ImportPath &path,
                                          ASTDecl *parentDecl, llvm::SMLoc loc);
+
+  /// Record dep edges for a dotted `import a.b.c`: to the leaf `module` and
+  /// each ancestor package, since editing an ancestor `__init__.mojo` can
+  /// affect it.
+  void recordModuleImportDepEdges(ASTDecl *importer, ASTDecl &module);
 
   /// The directories searched before the working directory and the source
   /// manager's include directories: configured search paths, or the defaults

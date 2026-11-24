@@ -1,7 +1,6 @@
 ---
 title: Mojo simple statements reference
 sidebar_label: Simple statements
-sidebar_position: 5
 description: >
   Complete reference for Mojo simple statements. Covers
   import statements, expression statements, assignment statements,
@@ -11,7 +10,10 @@ description: >
 <!-- VERIFIED: ParserStmts.cpp parseStmt(), parseImportStmt(),
      parseFromImportStmt(), parseReturnStmt(), parseRaiseStmt(),
      parseAssertStmt(), parseBreakOrContinueStmt(), parseVarStmt(),
-     parseComptimeCompoundStmt() -->
+     parseComptimeCompoundStmt()
+     Compiler verified: 2026-10-15, Mojo 1.2.0.dev2026101405 (48ec2d26)
+       (list destructuring only)
+     Last updated: 2026-10-15 (adds list destructuring) -->
 
 A *simple statement* performs a single action on one logical line. Multiple
 simple statements can share a line when separated by semicolons.
@@ -156,6 +158,7 @@ print(b) # World
 Destructuring assignment:
 
 ```mojo
+# Tuple destructuring
 var a, b = 1, 2          # Destructuring assignment
 var (c, d) = (1, 2)      # Equivalent destructuring
                          # not "assign tuple to tuple"
@@ -166,7 +169,38 @@ def returns_pair() -> Tuple[Int, Int]:
 
 var e, f = returns_pair()
 print(e, f)  # 1 2
+
+# List destructuring
+var values: List = [1, 2, 3, 4]
+var [first, *middle, last] = values
+print("first:", first, "middle:", middle, "last:", last)
+
+match values:
+    case []:
+        print("empty")
+    case [1, *middle, last]:
+        print("middle:", len(middle), "last:", last)
+    case [first, *rest]:
+        print("first:", first, len(rest), "remain")
 ```
+
+With list destructuring, at most one `*name` can appear. It binds a
+read-only view of the elements between the leading and trailing names, not
+a copy.
+
+The collection must conform to `Sized` and support integer subscripts. A
+`*name` pattern also requires slice subscripts, which both `List` and `Array`
+support.
+
+If the length doesn't fit the pattern, a list destructuring assignment raises
+an error, so the enclosing function must be declared `raises`.
+
+In a `match` statement, a list pattern of the wrong length doesn't match, and
+checking continues with the next case. See
+[Patterns](/docs/reference/compound-statements#patterns).
+
+Names in a `case` bind fresh for that case, so they don't conflict with the
+names declared above.
 
 Avoid multiple assignments for destructuring unrelated values.
 

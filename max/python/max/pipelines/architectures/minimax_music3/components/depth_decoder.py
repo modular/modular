@@ -31,10 +31,10 @@ from __future__ import annotations
 
 import math
 
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Embedding, Linear, Module, ModuleList, RMSNorm
-from max.experimental.tensor import Tensor
+from max.nn import Embedding, Linear, Module, ModuleList, RMSNorm
+from max.tensor import Tensor
 
 from ..model_config import DepthDecoderConfig
 
@@ -60,6 +60,7 @@ class Attention(Module[[Tensor], Tensor]):
         self.to_out = Linear(dim, dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the decoder block's self-attention."""
         batch, seq = int(x.shape[0]), int(x.shape[1])
         shape = [batch, seq, self.heads, self.head_dim]
 
@@ -105,6 +106,7 @@ class DecoderBlock(Module[[Tensor], Tensor]):
         self.down_proj = Linear(intermediate_size, dim, bias=False)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Runs the block's attention, then its feed-forward."""
         x = x + self.attn(self.input_layernorm(x))
         normed = self.post_attention_layernorm(x)
         gated = F.silu(self.gate_proj(normed)) * self.up_proj(normed)
@@ -243,12 +245,7 @@ class DepthDecoder(Module[..., Tensor]):
         summed = self.semantic_embeddings(codes[:, :1]) + F.sum(
             self.embed_codes(codes[:, 1:]), axis=1
         )
-        scale = F.constant(
-            self.config.num_codebooks**-0.5,
-            summed.dtype,
-            device=summed.device,
-        )
-        return summed * scale
+        return summed * self.config.num_codebooks**-0.5
 
     def forward(self, inputs_embeds: Tensor) -> Tensor:
         """Runs the depth sequence and normalizes every position's output.

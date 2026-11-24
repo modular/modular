@@ -25,15 +25,29 @@ import sys
 import threading
 import time
 import traceback
+import urllib.parse
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from array import array
+from collections.abc import (
+    AsyncIterator,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableMapping,
+    Sequence,
+)
 from dataclasses import dataclass, field
-from typing import Any, TypeVar
+from itertools import pairwise
+from typing import Any, TypeVar, cast
 
 import aiohttp
-from openai.types.chat.chat_completion_chunk import ChoiceDeltaToolCall
+import msgspec
+from max.serve._tool_call_validation import (
+    check_response_format_conformance,
+    response_format_schema_is_checkable,
+)
 from openai.types.chat.completion_create_params import ResponseFormat
-from pydantic import BaseModel
+from pydantic import ValidationError
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import NotRequired, TypedDict
@@ -43,19 +57,84 @@ from .config import (
     Backend,
     BenchmarkTask,
     SamplingConfig,
+    get_video_request_schema,
 )
 from .datasets.types import (
+    AssistantToolCall,
     ChatMessage,
+    ImageContentBlock,
     OpenAIImage,
     PixelGenerationImageOptions,
+    ReasoningField,
+    ToolCallFunction,
 )
-from .sse import iter_events
+from .sse import SSEDecoder
 from .utils import deadline_passed, openai_bearer_auth_headers
 
 # 30 minute timeout per request session
 AIOHTTP_TIMEOUT = aiohttp.ClientTimeout(total=30 * 60)
 
+# How long a pooled connection may sit idle before it is closed. Long enough
+# that a run's own think time rarely costs a handshake, short enough that a
+# server which closes idle connections first does not hand back a dead one: a
+# POST is not retried, so a race there fails the request outright.
+#
+# The native pool lives for one benchmark() point, while the measuring proxy's
+# lives for the proxy, so the two only diverge with --skip-test-prompt and no
+# warmup, where the proxy serves requests the native client never sends.
+# TODO: the eval-capture proxy (utils/eval-capture, proxy.rs) still opens a
+# connection per request; give it the same pool.
+KEEPALIVE_TIMEOUT_S = 60
+
+_JSON_HEADERS = {"Content-Type": "application/json"}
+_FORM_HEADERS = {"Content-Type": "application/x-www-form-urlencoded"}
+
+# Chunks tokenized per call when filling in per-chunk TPOT; bounds peak memory.
+_TPOT_TOKENIZE_SLICE = 10_000
+
 logger = logging.getLogger(__name__)
+
+
+@contextlib.asynccontextmanager
+async def benchmark_client_session() -> AsyncIterator[aiohttp.ClientSession]:
+    """Yields the one keep-alive connection pool a benchmark run shares."""
+    connector = aiohttp.TCPConnector(
+        limit=0, limit_per_host=0, keepalive_timeout=KEEPALIVE_TIMEOUT_S
+    )
+    async with aiohttp.ClientSession(
+        connector=connector, timeout=AIOHTTP_TIMEOUT
+    ) as session:
+        yield session
+
+
+def _serialize_request_body(payload: Any) -> tuple[bytes, str]:
+    """Encodes the body so the request's clock starts after it.
+
+    aiohttp serializes a ``json=`` payload itself, inside the window TTFT and
+    latency are measured from, which charges the client's encoding to the
+    server. Every driver whose body is JSON, or a flat form encoded by
+    :func:`_serialize_form_body`, encodes it up front and takes its start stamp
+    afterwards, so neither TTFT, latency nor a media driver's latency covers
+    it. A multipart body is the one exception: aiohttp frames it while it
+    streams, and the image bytes it carries are already read before the stamp.
+
+    Returns:
+        The encoded body, or ``b""`` and the error that fails this one request
+        instead of the run.
+    """
+    try:
+        return msgspec.json.encode(payload), ""
+    except Exception:
+        return b"", "".join(traceback.format_exception(*sys.exc_info()))
+
+
+def _serialize_form_body(payload: Mapping[str, str]) -> bytes:
+    """Encodes a flat field map as a form body, as aiohttp would have.
+
+    aiohttp form-encodes a ``data=`` mapping while it writes the request, which
+    puts the encoding inside the measured window.
+    """
+    return urllib.parse.urlencode(payload).encode()
 
 
 def _encode_openresponses_image_from_file_path(
@@ -103,6 +182,12 @@ class BaseRequestFuncInput(ABC):
         """Get the output type for the request function input."""
 
 
+# The payload fields a ``SamplingConfig`` contributes: one scalar per set field.
+SamplingFields = Mapping[str, float | int]
+# The four ``SamplingConfig`` values a cached ``SamplingFields`` was built from.
+SamplingFieldsKey = tuple[float | None, float | None, float | None, int | None]
+
+
 def _apply_sampling_to_request_payload(
     payload: dict[str, Any], sampling: SamplingConfig
 ) -> None:
@@ -117,13 +202,140 @@ def _apply_sampling_to_request_payload(
         payload["top_p"] = sampling.top_p
 
 
+# A ChatMessage after model_dump(): "role" plus "content", which is either a
+# plain string or a list of content blocks. Not a TypedDict because these
+# arrive from model_dump() as dict[str, Any], which would need a cast.
+SerializedChatMessage = MutableMapping[str, Any]
+
+
+class ChatWireHistory:
+    """Encodes each message once; the history only grows.
+
+    A benchmark run appends one message per turn and re-sends the whole
+    conversation each time, so each message must be serialized exactly once.
+    The cache holds the array's elements and closes it per request.
+
+    The cache cannot tell a rewritten message from a new one, because it never
+    looks at a message it has already encoded: an edit to an earlier message
+    goes out unchanged. Only a *shorter* history is caught, by ``encode``
+    raising, and that error is meant to abort the run. A caller that dropped
+    messages mid-run has broken the invariant that a session's prompt extends
+    the previous one, so every later measurement would be attributed to the
+    wrong request.
+    """
+
+    def __init__(self) -> None:
+        # The messages encoded so far, as a JSON array missing its closer.
+        self._encoded = bytearray(b"[")
+        self._count = 0
+
+    def encode(self, messages: Sequence[ChatMessage]) -> msgspec.Raw:
+        """The JSON array of *messages*, ready to splice into a body.
+
+        Raises:
+            ValueError: If *messages* is shorter than what was already
+                encoded. The cache only appends, so a shorter history means
+                the caller dropped messages, and reusing the prefix would send
+                them anyway.
+        """
+        if len(messages) < self._count:
+            raise ValueError(
+                f"Cannot encode {len(messages)} messages after "
+                f"{self._count} were already sent: the cached history only "
+                "grows."
+            )
+        for message in messages[self._count :]:
+            if self._count:
+                self._encoded += b", "
+            self._encoded += msgspec.json.encode(
+                message.model_dump(exclude_none=True)
+            )
+            self._count += 1
+        return msgspec.Raw(self._encoded + b"]")
+
+
+def _attach_images_to_first_user_message(
+    messages: Sequence[SerializedChatMessage],
+    images: Sequence[OpenAIImage],
+) -> bool:
+    """Attach images to the first user message, normalizing string content.
+
+    Neither "index 0" nor "content is a list" holds in general: a conversation
+    can lead with a system message, and datasets such as agentic-code pass
+    plain-string content straight through.
+
+    The drop paths below are a safety net, not a supported outcome. Image
+    augmentation skips prompts with no user message rather than counting
+    tokens for images it knows would be dropped here, so reaching a drop
+    means sampling and sending disagree about the prompt shape.
+
+    Returns:
+        Whether *images* reached the payload.
+    """
+    target = next((m for m in messages if m.get("role") == "user"), None)
+    if target is None:
+        logger.warning(
+            "Dropping %d image(s): the conversation has no user message.",
+            len(images),
+        )
+        return False
+    content = target.get("content")
+    if isinstance(content, str):
+        target["content"] = [{"type": "text", "text": content}]
+    elif not isinstance(content, list):
+        logger.warning(
+            "Dropping %d image(s): unexpected content type %s.",
+            len(images),
+            type(content).__name__,
+        )
+        return False
+    target["content"].extend(images)
+    return True
+
+
+def prompt_carries_image(prompt: str | list[ChatMessage]) -> bool:
+    """Whether *prompt*'s messages carry an image content part."""
+    return isinstance(prompt, list) and any(
+        isinstance(part, ImageContentBlock)
+        for message in prompt
+        if isinstance(content := message.content, list)
+        for part in content
+    )
+
+
+def _chat_messages_json(
+    prompt: str | list[ChatMessage],
+    images: Sequence[OpenAIImage],
+    history: ChatWireHistory | None,
+) -> tuple[msgspec.Raw, bool]:
+    """The ``messages`` array of a chat body, encoded.
+
+    Returns:
+        The array, and whether *images* were added to it.
+    """
+    if history is not None and not images and isinstance(prompt, list):
+        return history.encode(prompt), False
+    messages: list[SerializedChatMessage]
+    if isinstance(prompt, str):
+        messages = [
+            {"role": "user", "content": [{"type": "text", "text": prompt}]}
+        ]
+    else:
+        messages = [msg.model_dump(exclude_none=True) for msg in prompt]
+    attached = bool(images) and _attach_images_to_first_user_message(
+        messages, images
+    )
+    return msgspec.Raw(msgspec.json.encode(messages)), attached
+
+
 def _build_final_payload(
     base_payload: Mapping[str, Any], extra_body: Mapping[str, Any] | None
 ) -> dict[str, Any]:
-    """Return a new payload: a shallow copy of *base_payload* with *extra_body*
-    merged on top, last-writer-wins (an *extra_body* key overrides the managed
-    field of the same name). Not mutated, so *base_payload* keeps its precise
-    type and the result is ``dict[str, Any]``.
+    """Return a new payload with *extra_body* merged over *base_payload*.
+
+    The copy is shallow and last-writer-wins (an *extra_body* key overrides
+    the managed field of the same name). Not mutated, so *base_payload* keeps
+    its precise type and the result is ``dict[str, Any]``.
     """
     payload: dict[str, Any] = dict(base_payload)
     if not extra_body:
@@ -151,12 +363,25 @@ class RequestFuncInput(BaseRequestFuncInput):
     max_tokens: int | None
     ignore_eos: bool
     response_format: ResponseFormat | None = None
+    # Whether ``prompt`` already carries an image part from an earlier turn.
+    prompt_carries_image: bool = False
     # Forwarded as the chat-completions ``tools`` field. Plain ``list[dict]``
     # so datasets can pass through OpenAI-shaped or server-specific schemas
     # without translation; ignored by non-chat drivers.
     tools: list[dict[str, Any]] | None = None
+    # The adapter the request is routed to. ``model`` already names it for the
+    # server; this keeps it apart from a base-model request for the metrics.
+    lora_id: str | None = None
+    # Cache seeding needs a completed generation, even if its tokens are
+    # special tokens that the server does not expose as text.
+    is_cache_warmup: bool = False
+    # Wire form of ``prompt``'s messages already sent, for a growing history.
+    wire_history: ChatWireHistory | None = field(
+        default=None, repr=False, compare=False
+    )
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        """Returns the output class this driver produces."""
         return RequestFuncOutput
 
 
@@ -170,6 +395,7 @@ class PixelGenerationRequestFuncInput(BaseRequestFuncInput):
     image_options: PixelGenerationImageOptions | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
+        """Returns the output class this driver produces."""
         return PixelGenerationRequestFuncOutput
 
 
@@ -190,6 +416,61 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def tag_lora_route(
+    output: BaseRequestFuncOutput, request_func_input: BaseRequestFuncInput
+) -> None:
+    """Records the adapter *output*'s request was routed to, if any."""
+    if isinstance(output, RequestFuncOutput) and isinstance(
+        request_func_input, RequestFuncInput
+    ):
+        output.lora_id = request_func_input.lora_id
+
+
+def tag_response_format_outcome(
+    output: BaseRequestFuncOutput, request_func_input: BaseRequestFuncInput
+) -> None:
+    """Record whether *output* was constrained, and whether it conformed.
+
+    Conformance is judged client-side, from the response text alone, so it
+    reports on any backend rather than only on one that exposes a metrics
+    endpoint.
+
+    The check is the same one the server runs for its own conformance log, so
+    the two numbers mean the same thing and can be compared. Failures here are
+    a property of the response, never of the benchmark: the checker is
+    documented as never raising.
+
+    A schema that does not compile leaves the request unjudged rather than
+    scoring it. The checker itself fails open, which is right for the server's
+    log but would be backwards here -- an unusable schema would report a
+    perfect conformance rate, and the metric reads healthiest exactly where it
+    measured nothing.
+    """
+    if not isinstance(output, RequestFuncOutput) or not isinstance(
+        request_func_input, RequestFuncInput
+    ):
+        return
+    response_format = request_func_input.response_format
+    output.response_format_constrained = response_format is not None
+    if response_format is None:
+        return
+    schema = cast(dict[str, Any], response_format).get("json_schema")
+    # json_object asks for any well-formed JSON object, which the permissive
+    # schema below expresses; a bare "text" format constrains nothing at all.
+    if isinstance(schema, dict):
+        schema = schema.get("schema")
+    elif cast(dict[str, Any], response_format).get("type") == "json_object":
+        schema = {"type": "object"}
+    else:
+        return
+    if not isinstance(schema, dict):
+        return
+    if not response_format_schema_is_checkable(schema):
+        return
+    result = check_response_format_conformance(output.generated_text, schema)
+    output.response_format_conformed = result.outcome == "valid"
 
 
 def mark_cancelled_if_past_deadline(
@@ -261,6 +542,9 @@ class ServerTokenStats:
     completion_tokens: int | None = None
     total_tokens: int | None = None
     cached_tokens: int = 0
+    # Whether the usage carried cached-token counts at all, so a server that
+    # reports none is not read as one that served nothing from its cache.
+    cached_tokens_reported: bool = False
 
 
 @dataclass
@@ -269,9 +553,29 @@ class RequestFuncOutput(BaseRequestFuncOutput):
 
     # List of inter-token latencies.
     itl: list[float] = field(default_factory=list)
+    # Text events whose gap the socket read could not measure: the request's
+    # first text read gives its other text events no gap, so they report none.
+    # ``len(itl) + itl_unresolved`` is then one sample per text event after the
+    # first, however the reads were batched.
+    itl_unresolved: int = 0
     # List of per-chunk time-per-output-token values.
     tpot: list[float] = field(default_factory=list)
+    # End offsets in ``generated_text``; compute_chunk_tpots drains it.
+    pending_tpot_ends: array[int] = field(default_factory=lambda: array("I"))
+    # Events per socket read, as ``{events in the read: reads}``, over the
+    # reads that carried generated text. Pooled over a run into the
+    # diagnostics group: a read carrying several events is where the
+    # client fell behind and read them together.
+    stream_events_per_read: dict[int, int] = field(default_factory=dict)
     generated_text: str = ""
+    # ``generated_text`` split into the chat response's own fields, so a session
+    # can send the turn back the way the API returned it. ``reasoning_field`` is
+    # the key the reasoning arrived under. A driver that sees no chat fields
+    # leaves these empty and the session replays ``generated_text``.
+    content_text: str = ""
+    reasoning_text: str = ""
+    reasoning_field: ReasoningField = "reasoning_content"
+    tool_calls: list[AssistantToolCall] = field(default_factory=list)
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
     server_token_stats: ServerTokenStats = field(
@@ -281,6 +585,24 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     # retention can group/order turns within a session. None for single-turn.
     session_id: str | None = None
     turn_index: int | None = None
+    # Whether this request carried a response_format. Set by the driver, which
+    # is the last place holding both the input and the output -- metrics see
+    # only the outputs.
+    response_format_constrained: bool = False
+    # Whether the generated text satisfied that response_format. ``None`` when
+    # the request was unconstrained or produced nothing to judge.
+    response_format_conformed: bool | None = None
+    # Whether the request offered ``tools``, and whether the response contained
+    # a tool call. Offered but never called means the prompts gave the model no
+    # reason to use its tools: MAX Serve builds the tool grammar but never
+    # enforces it, so the run measures the definitions in the prompt and little
+    # of tool-call decoding.
+    tools_offered: bool = False
+    tool_call_returned: bool = False
+    # Whether the payload carried an image part, counting images resent with
+    # earlier turns of the session: the share production counts per request.
+    carries_image: bool = False
+    lora_id: str | None = None
 
 
 @dataclass
@@ -290,11 +612,28 @@ class PixelGenerationRequestFuncOutput(BaseRequestFuncOutput):
     num_generated_outputs: int = 0
 
 
+_FuncOutputT = TypeVar("_FuncOutputT", bound=BaseRequestFuncOutput)
+
+
+def _failed_before_sending(output: _FuncOutputT, error: str) -> _FuncOutputT:
+    """Records a request that failed before it reached the wire.
+
+    It carries a submit time, and the zero latency it measured, like any other
+    failure: the run's measurement window and its denominators then count it
+    the same way.
+    """
+    output.error = error
+    output.request_submit_time = time.perf_counter()
+    return output
+
+
 class RequestDriver(ABC):
     """Abstract base class for a driver that handles API requests to different backends."""
 
     def __init__(
         self,
+        *,
+        session: aiohttp.ClientSession,
         tokenizer: PreTrainedTokenizerBase | None = None,
         extra_body: Mapping[str, Any] | None = None,
         backend: Backend | None = None,
@@ -302,7 +641,9 @@ class RequestDriver(ABC):
         """Initialize the request driver.
 
         Args:
-            tokenizer: Optional tokenizer for per-chunk TPOT computation.
+            session: The client session whose connections this driver's
+                requests share.
+            tokenizer: Optional tokenizer for per-chunk TPOT.
             extra_body: Optional arbitrary top-level fields merged onto every
                 request payload (last-writer-wins). Consumed by the
                 text-generation drivers (chat completions, completions, and
@@ -312,9 +653,44 @@ class RequestDriver(ABC):
                 server-reported-timing workaround for the ``atom`` backend.
                 TODO(ATOM): remove once ATOM streams chat/completions correctly.
         """
+        self.session = session
         self.tokenizer = tokenizer
         self.extra_body = extra_body
         self.backend = backend
+        # Per-run constants that the drivers would otherwise rebuild on every
+        # request. The wrapper drivers below delegate and never read them.
+        self._sampling_cache: (
+            tuple[SamplingFieldsKey, SamplingFields] | None
+        ) = None
+        self._auth: Mapping[str, str] | None = None
+
+    def _sampling_fields(self, sampling: SamplingConfig) -> SamplingFields:
+        """The request payload fields *sampling* contributes, built once per run.
+
+        Keyed on the four values, not the object: callers rebuild an equal
+        ``SamplingConfig`` per request, so identity would miss every time, and
+        holding the object itself would keep reporting the old fields after
+        an in-place edit, because comparing it to itself always matches.
+        """
+        key = (
+            sampling.temperature,
+            sampling.thinking_temperature,
+            sampling.top_p,
+            sampling.top_k,
+        )
+        cached = self._sampling_cache
+        if cached is not None and cached[0] == key:
+            return cached[1]
+        fields: dict[str, float | int] = {}
+        _apply_sampling_to_request_payload(fields, sampling)
+        self._sampling_cache = (key, fields)
+        return fields
+
+    def _auth_headers(self) -> Mapping[str, str]:
+        """The run's bearer auth headers, read from the environment once."""
+        if self._auth is None:
+            self._auth = openai_bearer_auth_headers()
+        return self._auth
 
     @abstractmethod
     async def request(
@@ -344,7 +720,9 @@ class ProgressBarRequestDriver(RequestDriver):
             request_driver: The underlying request driver to wrap.
             pbar: Progress bar to update after each request completes.
         """
-        super().__init__(tokenizer=request_driver.tokenizer)
+        super().__init__(
+            session=request_driver.session, tokenizer=request_driver.tokenizer
+        )
         self.request_driver = request_driver
         self.pbar = pbar
 
@@ -409,274 +787,984 @@ class TRTLLMRequestDriver(RequestDriver):
         api_url = request_func_input.api_url
         assert api_url.endswith("generate_stream")
 
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            base_payload: dict[
-                str, bool | str | int | float | list[ChatMessage]
-            ] = {
-                "text_input": request_func_input.prompt,
-                "ignore_eos": request_func_input.ignore_eos,
-                "stream": True,
-            }
+        base_payload: dict[
+            str, bool | str | int | float | list[ChatMessage]
+        ] = {
+            "text_input": request_func_input.prompt,
+            "ignore_eos": request_func_input.ignore_eos,
+            "stream": True,
+        }
 
-            if request_func_input.max_tokens is not None:
-                base_payload["max_tokens"] = request_func_input.max_tokens
-            _apply_sampling_to_request_payload(
-                base_payload, request_func_input.sampling
+        if request_func_input.max_tokens is not None:
+            base_payload["max_tokens"] = request_func_input.max_tokens
+        _apply_sampling_to_request_payload(
+            base_payload, request_func_input.sampling
+        )
+        payload = _build_final_payload(base_payload, self.extra_body)
+        body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(
+                RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                encode_error,
             )
-            payload = _build_final_payload(base_payload, self.extra_body)
 
-            output = RequestFuncOutput()
-            output.prompt_len = request_func_input.prompt_len
+        output = RequestFuncOutput()
+        output.prompt_len = request_func_input.prompt_len
 
-            ttft = 0.0
-            st = time.perf_counter()
-            output.request_submit_time = st
-            most_recent_timestamp = st
-            try:
-                async with session.post(url=api_url, json=payload) as response:
-                    if response.status == 200:
-                        async for event in iter_events(response.content):
-                            data = _TRTLLMChunk.model_validate_json(event.data)
-                            chunk_text = data.text_output
-                            output.generated_text += chunk_text
+        ttft = 0.0
+        chunk_texts: list[str] = []
+        chunk_texts_chars = 0
+        st = time.perf_counter()
+        output.request_submit_time = st
+        most_recent_timestamp = st
+        try:
+            async with self.session.post(
+                url=api_url, data=body, headers=_JSON_HEADERS
+            ) as response:
+                if response.status == 200:
+                    # Each TRT-LLM event is stamped after its own parse rather
+                    # than at its read's arrival, so its ITL carries the parse
+                    # cost. There is no sentinel to stop at.
+                    decoder = SSEDecoder()
+                    async for chunk_bytes in response.content.iter_any():
+                        for event in decoder.feed(chunk_bytes):
+                            chunk = _decode_chunk(event.data)
+                            if not isinstance(chunk, Mapping):
+                                raise _malformed_chunk(
+                                    "expected a JSON object", event.data
+                                )
+                            chunk_text = _required_text_field(
+                                chunk.get("text_output"),
+                                "text_output",
+                                event.data,
+                            )
                             timestamp = time.perf_counter()
+                            chunk_texts.append(chunk_text)
+                            chunk_texts_chars += len(chunk_text)
+                            if self.tokenizer is not None:
+                                output.pending_tpot_ends.append(
+                                    chunk_texts_chars
+                                )
                             # First token
                             if ttft == 0.0:
-                                ttft = time.perf_counter() - st
+                                ttft = timestamp - st
                                 output.ttft = ttft
 
                             # Decoding phase
                             else:
                                 itl_value = timestamp - most_recent_timestamp
                                 output.itl.append(itl_value)
-                                tpot = _compute_chunk_tpot(
-                                    self.tokenizer, chunk_text, itl_value
-                                )
-                                if tpot is not None:
-                                    output.tpot.append(tpot)
 
                             most_recent_timestamp = timestamp
 
-                        output.latency = most_recent_timestamp - st
-                        output.success = True
+                    output.latency = most_recent_timestamp - st
+                    output.success = True
 
-                    else:
-                        output.error = response.reason or ""
-                        output.success = False
-            except Exception:
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                else:
+                    output.error = response.reason or ""
+                    output.success = False
+        except Exception:
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
 
-            return output
+        output.generated_text = "".join(chunk_texts)
+        return output
 
 
-def _compute_chunk_tpot(
-    tokenizer: PreTrainedTokenizerBase | None,
-    chunk_text: str,
-    itl_value: float,
-) -> float | None:
-    """Compute per-chunk time-per-output-token.
+def _append_slice_tpots(
+    pending: Sequence[tuple[RequestFuncOutput, str, float]],
+    tokenizer: PreTrainedTokenizerBase,
+    failures: list[str],
+) -> set[int]:
+    """Tokenizes one slice of chunks and appends each chunk's TPOT.
 
-    Note: This is approximate. Re-tokenizing the chunk text may not exactly
-    match the server's tokenization of the generated output.
+    Args:
+        pending: The slice's (response, chunk text, ITL) triples.
+        tokenizer: The tokenizer that turns each chunk's text into tokens.
+        failures: Receives a description of the first tokenizer failure, so the
+            one warning per run can say what went wrong.
+
+    Returns:
+        The responses in the slice whose TPOT this slice dropped. A tokenizer
+        that raises, or returns a different number of encodings than it was
+        handed, leaves the whole slice unattributed; the affected responses
+        also lose the TPOT of every earlier slice, so no response ends up with
+        partial coverage.
     """
-    if tokenizer is None or not chunk_text:
-        return None
-    chunk_tokens = len(
-        tokenizer(chunk_text, add_special_tokens=False).input_ids
+    try:
+        encoded = tokenizer(
+            [text for _, text, _ in pending], add_special_tokens=False
+        )
+        slice_tpots = [
+            itl_value / len(token_ids) if token_ids else None
+            for (_, _, itl_value), token_ids in zip(
+                pending, encoded.input_ids, strict=True
+            )
+        ]
+    except Exception as exc:
+        # A tokenizer that rejects the generated text is the benchmark's
+        # problem, not the request's: drop per-chunk TPOT for these responses
+        # rather than failing the run's whole result over it.
+        if not failures:
+            failures.append(f"{type(exc).__name__}: {exc}")
+        for output, _, _ in pending:
+            output.tpot.clear()
+        return {id(output) for output, _, _ in pending}
+    for (output, _, _), tpot in zip(pending, slice_tpots, strict=True):
+        if tpot is not None:
+            output.tpot.append(tpot)
+    return set()
+
+
+def _malformed_chunk(why: str, data: str) -> TypeError:
+    """Builds the client's error for a chunk it cannot read.
+
+    The payload snippet is what makes the failure actionable: the shape came
+    from the server, so whoever reads the log needs the bytes that broke it.
+    """
+    return TypeError(f"Malformed stream chunk: {why}: {data[:200]!r}")
+
+
+def _decode_chunk(data: str) -> Any:
+    """Decodes one event's data, quoting the payload if it is not JSON."""
+    try:
+        return msgspec.json.decode(data)
+    except msgspec.DecodeError as exc:
+        raise _malformed_chunk(f"not valid JSON ({exc})", data) from exc
+
+
+def _text_field(value: Any, field: str, data: str) -> str:
+    """Returns one streamed text field, reading an absent value as no text.
+
+    Chat deltas may legitimately carry a null field, and a field we do not
+    model is not an error. A field that is present with another type is
+    rejected, because it would silently become missing text.
+    """
+    if value is None:
+        return ""
+    if not isinstance(value, str):
+        raise _malformed_chunk(f"expected {field} to be a string", data)
+    return value
+
+
+def _required_text_field(value: Any, field: str, data: str) -> str:
+    """Returns a text field the chunk must carry as a string.
+
+    Used where a null would not mean "the server sent no text this chunk" but
+    a schema the client does not understand: a completions ``choice.text`` is
+    the response's text, not an optional delta field.
+    """
+    if not isinstance(value, str):
+        raise _malformed_chunk(f"expected {field} to be a string", data)
+    return value
+
+
+def _server_token_stats(usage: Mapping[str, Any]) -> ServerTokenStats:
+    """Reads one chunk's ``usage`` object into the run's token stats."""
+    details = usage.get("prompt_tokens_details")
+    cached = (
+        details.get("cached_tokens") if isinstance(details, Mapping) else None
     )
-    if chunk_tokens > 0:
-        return itl_value / chunk_tokens
-    return None
+    return ServerTokenStats(
+        prompt_tokens=_usage_count(usage.get("prompt_tokens")),
+        completion_tokens=_usage_count(usage.get("completion_tokens")),
+        total_tokens=_usage_count(usage.get("total_tokens")),
+        cached_tokens=_usage_count(cached) or 0,
+        cached_tokens_reported=isinstance(details, Mapping),
+    )
 
 
-class _PromptTokensDetails(BaseModel):
-    cached_tokens: int = 0
+def _usage_count(value: Any) -> int | None:
+    """Coerces one server-reported token count to an int.
+
+    Providers are lax here, sending ``3``, ``3.0`` or ``"3"`` for the same
+    count, and the counts feed integer arithmetic in the post-run metrics. A
+    bool is rejected rather than coerced: ``true`` in a count field is a
+    schema change, not a count of one.
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise TypeError(f"usage count is not an integer: {value!r}")
+    if isinstance(value, int):
+        return value
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise TypeError(f"usage count is not an integer: {value!r}") from None
+    if not number.is_integer():
+        raise TypeError(f"usage count is not an integer: {value!r}")
+    return int(number)
 
 
-class _UsageChunk(BaseModel):
-    prompt_tokens: int | None = None
-    completion_tokens: int | None = None
-    total_tokens: int | None = None
-    prompt_tokens_details: _PromptTokensDetails | None = None
+def compute_chunk_tpots(
+    outputs: Iterable[RequestFuncOutput],
+    tokenizer: PreTrainedTokenizerBase | None,
+    *,
+    disable_tqdm: bool | None = None,
+) -> None:
+    """Fills ``tpot`` from the chunk offsets recorded while running.
+
+    Runs after the requests, so the event loop never tokenizes inside the
+    measured window, one slice of text at a time.
+
+    Note:
+        The values are approximate: re-tokenizing the chunk text the client
+        received need not match the server's own tokenization of what it
+        generated.
+    """
+    outputs = list(outputs)
+    if tokenizer is None or not any(
+        output.success and len(output.pending_tpot_ends) > 1
+        for output in outputs
+    ):
+        for output in outputs:
+            output.pending_tpot_ends = array("I")
+        return
+
+    logger.info(f"Computing per-chunk TPOT for {len(outputs)} responses...")
+    unsynced = 0  # Responses whose offsets and ITLs disagree.
+    failed_slices = 0  # Tokenizer calls that left a slice unattributed.
+    failures: list[str] = []  # The first such failure, for the one warning.
+    dropped: set[int] = set()  # Responses a slice left without TPOT.
+    pending: list[tuple[RequestFuncOutput, str, float]] = []
+    with tqdm(desc="Per-chunk TPOT", unit="slice", disable=disable_tqdm) as bar:
+        for output in outputs:
+            offsets = output.pending_tpot_ends
+            output.pending_tpot_ends = array("I")
+            if not output.success or output.cancelled or not offsets:
+                continue
+            if len(offsets) - 1 != len(output.itl):
+                # One offset pair and one ITL per streamed chunk, so this can
+                # only mean the recording desynchronized. Skip this response
+                # rather than lose the whole run's TPOT to it.
+                unsynced += 1
+                continue
+            for (start, end), itl_value in zip(
+                pairwise(offsets), output.itl, strict=True
+            ):
+                if end <= start:
+                    continue
+                pending.append(
+                    (output, output.generated_text[start:end], itl_value)
+                )
+                if len(pending) < _TPOT_TOKENIZE_SLICE:
+                    continue
+                dropped_slice = _append_slice_tpots(
+                    pending, tokenizer, failures
+                )
+                pending.clear()
+                bar.update(1)
+                if dropped_slice:
+                    failed_slices += 1
+                    dropped |= dropped_slice
+                    # The refused slice held this response's newest chunk and
+                    # cleared everything it had, so its remaining chunks would
+                    # only record a tail.
+                    break
+        if pending:
+            dropped_slice = _append_slice_tpots(pending, tokenizer, failures)
+            bar.update(1)
+            if dropped_slice:
+                failed_slices += 1
+                dropped |= dropped_slice
+
+    if dropped or unsynced:
+        detail = f" First failure: {failures[0]}." if failures else ""
+        calls = "call" if failed_slices == 1 else "calls"
+        logger.warning(
+            "Per-chunk TPOT dropped for %d of %d responses: %d had chunk"
+            " offsets out of step with their ITLs, and %d tokenizer %s"
+            " failed.%s",
+            len(dropped) + unsynced,
+            len(outputs),
+            unsynced,
+            failed_slices,
+            calls,
+            detail,
+        )
 
 
-class _ChatDelta(BaseModel):
-    reasoning: str | None = None
-    reasoning_content: str | None = None
-    content: str | None = None
-    tool_calls: list[ChoiceDeltaToolCall] | None = None
+def _delta_text(delta: Mapping[str, Any], data: str) -> str:
+    """Extracts all generated text carried by a chat streaming delta.
 
-
-class _ChatChoice(BaseModel):
-    delta: _ChatDelta
-
-
-class _CompletionChoice(BaseModel):
-    text: str
-
-
-class _ErrorDetail(BaseModel):
-    message: str = ""
-    code: str = ""
-    param: str = ""
-    type: str = ""
-
-
-class _ChatCompletionChunk(BaseModel):
-    usage: _UsageChunk | None = None
-    choices: list[_ChatChoice] = []
-    error: _ErrorDetail | None = None
-
-
-class _CompletionChunk(BaseModel):
-    usage: _UsageChunk | None = None
-    choices: list[_CompletionChoice] = []
-    error: _ErrorDetail | None = None
-
-
-class _TRTLLMChunk(BaseModel):
-    text_output: str
-
-
-_ChunkT = TypeVar("_ChunkT", _ChatCompletionChunk, _CompletionChunk)
-
-
-def _extract_chat_delta_text(data: _ChatCompletionChunk) -> str:
-    """Extracts all generated text carried by a chat streaming chunk.
-
-    "reasoning" and "reasoning_content" are NOT official OpenAI fields.
+    ``reasoning`` and ``reasoning_content`` are NOT official OpenAI fields.
     Different model providers and serving frameworks may emit one or both to
-    stream chain-of-thought tokens separately from "content". These fields may
-    also be None in some chunks. We merge them here to preserve all streamed
-    text.
+    stream chain-of-thought tokens separately from ``content``. These fields
+    may also be None in some chunks. We merge them here to preserve all
+    streamed text.
 
     Tool-call fragments (function name and argument bytes) also count: a pure
     tool-call turn has no ``content`` by design, and without this a successful
     agentic response is misreported as "No text content captured".
+
+    A field of the wrong type fails here, against the chunk that carried it,
+    rather than surfacing as a surprising result in ``finish()``.
     """
-    delta = data.choices[0].delta
-    tool_call_text = "".join(
-        (tc.function.name or "") + (tc.function.arguments or "")
-        for tc in delta.tool_calls or []
-        if tc.function is not None
+    reasoning = _text_field(delta.get("reasoning"), "delta.reasoning", data)
+    reasoning_content = _text_field(
+        delta.get("reasoning_content"), "delta.reasoning_content", data
     )
-    return (
-        (delta.reasoning or "")
-        + (delta.reasoning_content or "")
-        + (delta.content or "")
-        + tool_call_text
-    )
+    content = _text_field(delta.get("content"), "delta.content", data)
+    tool_calls = delta.get("tool_calls")
+    if content and not (reasoning or reasoning_content or tool_calls):
+        # Fast path: a plain content chunk is nearly every chunk of a normal
+        # generation.
+        return content
+    text = reasoning + reasoning_content + content
+    for call in tool_calls or ():
+        if not isinstance(call, Mapping):
+            raise _malformed_chunk(
+                "expected each tool call to be a JSON object", data
+            )
+        function = call.get("function")
+        if isinstance(function, Mapping):
+            text += _text_field(
+                function.get("name"), "tool_calls[].function.name", data
+            ) + _text_field(
+                function.get("arguments"),
+                "tool_calls[].function.arguments",
+                data,
+            )
+    return text
+
+
+# How many reads the replay parses before yielding to the event loop. The read
+# loop hands over at most ``_READS_PER_REPLAY`` reads at a time, so this splits
+# one replay into two stretches and no more: a finished stream's parse never
+# stalls the streams still being measured for longer than that.
+_REPLAY_READS_PER_YIELD = 32
+
+# How many reads and events the read loop holds before parsing them, which
+# bounds what a long stream costs in memory. A read carrying one event costs
+# about 0.4 KB, but a read the client fell behind on carries many, so the event
+# count is what bounds a bunched stream. Neither limit changes the result.
+_READS_PER_REPLAY = 64
+_REPLAY_EVENTS = 4096
+
+# What makes a read skip its deferred parse for an immediate one: an error
+# must end the request at its read, not at the end of a stream the server may
+# hold open.
+#
+# ``rror`` is the ``error`` key's tail, and it also matches SGLang's
+# ``object: error`` chunk, which spells no key at all. It covers every spelling
+# that leaves an ``r`` and the ``o`` literal. A payload that escapes one of
+# those letters carries no ``rror``, so the two escapes that can hide it are
+# needles too: ``\u0072`` is an escaped ``r`` and ``\u006f`` an escaped ``o``,
+# the latter in both hex cases because JSON allows either. An escaped ``e``
+# needs no needle -- the rest of the key still spells ``rror``.
+#
+# No encoder escapes an ASCII letter, so these only match a payload that
+# actually hid the key, and escaped non-ASCII *content* -- which a stdlib
+# ``json.dumps`` writes for every CJK or emoji character -- still reads
+# deferred. Matching ``\u`` alone would not have that property: it would send
+# every such read down the eager path and give back the CPU this loop exists to
+# save. Text that happens to spell ``rror`` or ``\u0072`` only costs its own
+# read the deferred parse.
+_ERROR_SCAN = (
+    "rror",
+    "\\u0072",
+    "\\u006f",
+    "\\u006F",
+)
+
+
+def _read_may_carry_error(datas: Sequence[str]) -> bool:
+    """Whether any event of a read may report an error.
+
+    Plain loops rather than ``any`` over a generator: this runs once per socket
+    read, on the read loop the measurement depends on.
+    """
+    for data in datas:
+        for needle in _ERROR_SCAN:
+            if needle in data:
+                return True
+    return False
+
+
+class OpenAIStreamRecorder:
+    """Measures one streamed OpenAI-style response.
+
+    The measurement lands in a :class:`RequestFuncOutput`: TTFT at the first
+    chunk carrying text, one inter-chunk latency per later text chunk, latency
+    at the last event, and the server's usage counts.
+
+    Per-chunk TPOT comes from :func:`compute_chunk_tpots` after the run, which
+    re-tokenizes the recorded chunks.
+
+    Time comes from the socket reads, one clock read each: a read's text events
+    split the gap since the previous one evenly, so the last lands on the read's
+    arrival time. The request's first text event is TTFT and takes its read's
+    time as is, and so do that read's other text events: it gives them no gap
+    to measure, so each counts towards ``itl_unresolved`` instead of adding a
+    sample. Every later read's text events split its gap, so how the first read
+    was batched moves samples between ``itl`` and ``itl_unresolved`` and never
+    changes their sum.
+
+    Args:
+        prompt_len: The prompt length to record on the output.
+        chat: Whether the stream carries chat completion chunks rather than
+            completion chunks.
+        tokenizer: The tokenizer for per-chunk TPOT, or ``None`` to skip it.
+        is_cache_warmup: Accepts a completed, usage-bearing generation without
+            visible text when its output is discarded for cache seeding.
+        max_tokens: The request's output-token budget, or ``None`` if it set
+            none. A budget of at most two tokens lets a measured response
+            without visible text succeed; see :meth:`finish`.
+        start: When the request was submitted, as a ``time.perf_counter()``
+            value. A caller that spends time building the request passes the
+            stamp it took before that work, so TTFT and latency cover it; the
+            default reads the clock now.
+    """
+
+    def __init__(
+        self,
+        *,
+        prompt_len: int,
+        chat: bool,
+        tokenizer: PreTrainedTokenizerBase | None = None,
+        is_cache_warmup: bool = False,
+        max_tokens: int | None = None,
+        start: float | None = None,
+    ) -> None:
+        self.output = RequestFuncOutput()
+        self.output.prompt_len = prompt_len
+        self._chat = chat
+        self._tokenizer = tokenizer
+        self._generated_text: list[str] = []
+        self._generated_chars = 0
+        # The reply's own fields, kept apart for replay. Streamed tool calls
+        # arrive in fragments (id, then name, then arguments), so each index
+        # collects its fragments and joins them once.
+        self._content: list[str] = []
+        self._reasoning: list[str] = []
+        self._tool_calls: dict[int, tuple[list[str], list[str], list[str]]] = {}
+        # Which call each streamed id names, and the call the last fragment
+        # belonged to: a server that omits ``index`` gives a fragment nothing
+        # else to attach to.
+        self._tool_call_ids: dict[str, int] = {}
+        self._last_tool_call_index: int | None = None
+        self._ttft = 0.0
+        self._st = time.perf_counter() if start is None else start
+        self.output.request_submit_time = self._st
+        self._most_recent_timestamp = self._st
+        self._has_content = False
+        self._is_cache_warmup = is_cache_warmup
+        self._max_tokens = max_tokens
+        self._finish_reason: str | None = None
+        self._finish_reason_time = 0.0
+        self._stream_complete = False
+        self._latency = 0.0
+        self._done = False
+
+    @property
+    def done(self) -> bool:
+        """Whether the request finished, was cancelled, or failed."""
+        return self._done
+
+    @property
+    def stream_complete(self) -> bool:
+        """Whether the stream reached ``[DONE]``, so reading can stop."""
+        return self._stream_complete
+
+    def on_read(
+        self, datas: Sequence[str], *, arrived: float | None = None
+    ) -> RequestFuncOutput | None:
+        """Records the events of one socket read.
+
+        The read's arrival time is split evenly across its text events, so the
+        last of them lands on it.
+
+        Args:
+            datas: The events' data fields, in stream order.
+            arrived: When the read arrived, as a ``time.perf_counter()``
+                value; ``None`` reads the clock now.
+
+        Returns:
+            ``None`` to keep reading the stream, or the request's output when
+            an event reported an error and the request is over.
+        """
+        if self.stream_complete:
+            return None
+        # Stamped at arrival, before the parse, for latency, TTFT and ITL alike.
+        timestamp = time.perf_counter() if arrived is None else arrived
+        self._latency = timestamp - self._st
+
+        # Decode first: splitting the read's one time needs its text events.
+        events: list[tuple[Mapping[str, Any], str, str]] = []
+        for data in datas:
+            if data == "[DONE]":
+                self._stream_complete = True
+                break
+            try:
+                chunk = _decode_chunk(data)
+                if not isinstance(chunk, Mapping):
+                    raise _malformed_chunk("expected a JSON object", data)
+                text = self._chunk_text(chunk, data)
+            except Exception:
+                # The read's earlier events arrived and were measured, so
+                # record them before the bad chunk fails the request.
+                self._record_read(events, timestamp)
+                raise
+            error = chunk.get("error")
+            if error is None and chunk.get("object") == "error":
+                # SGLang reports a failed generation in the chunk's own
+                # fields: ``{"object": "error", "message": ...}``.
+                error = chunk
+            if error is not None:
+                # The read's earlier events arrived and were measured, so
+                # record them before the error ends the request.
+                self._record_read(events, timestamp)
+                message = (
+                    error.get("message")
+                    if isinstance(error, Mapping)
+                    else error
+                )
+                return self.fail(str(message or data))
+            events.append((chunk, data, text))
+
+        self._record_read(events, timestamp)
+        return None
+
+    def _record_read(
+        self,
+        events: Sequence[tuple[Mapping[str, Any], str, str]],
+        timestamp: float,
+    ) -> None:
+        """Records a read's decoded events, splitting its one time evenly.
+
+        Each event travels with the chunk it was decoded from, so the text and
+        the channels behind it are recorded together and cannot desync.
+        """
+        text_events = sum(1 for _, _, text in events if text)
+        if text_events:
+            self.output.stream_events_per_read[text_events] = (
+                self.output.stream_events_per_read.get(text_events, 0) + 1
+            )
+
+        # The read's text events split the gap since the previous one, so the
+        # last lands on the read's time. The run's first text event keeps the
+        # read's time too -- TTFT is never interpolated earlier.
+        previous = self._most_recent_timestamp
+        split = (timestamp - previous) / text_events if text_events else 0.0
+        first_text = self._ttft == 0.0
+        rank = 0
+        for chunk, data, text_content in events:
+            event_time = timestamp
+            measure_itl = True
+            if text_content:
+                if first_text:
+                    # TTFT is this read's arrival, and the read's other text
+                    # events share it, so there is no gap to report: a 0.0
+                    # sample would only drag the percentiles down.
+                    measure_itl = False
+                else:
+                    rank += 1
+                    event_time = previous + rank * split
+            self._record_event(
+                chunk, data, text_content, event_time, measure_itl=measure_itl
+            )
+
+    async def replay(
+        self, reads: Sequence[tuple[float, Sequence[str]]]
+    ) -> RequestFuncOutput | None:
+        """Records stored reads, in order.
+
+        The read loop defers parsing to here so it does no decoding while it
+        has a server to keep up with, and calls it every few reads so a long
+        stream's stored reads stay bounded.
+
+        Args:
+            reads: Each read's arrival time and event data fields, in order.
+
+        Returns:
+            ``None``, or the request's output when an event reported an error.
+        """
+        for index, (arrived, datas) in enumerate(reads):
+            if index % _REPLAY_READS_PER_YIELD == 0:
+                await asyncio.sleep(0)
+            result = self.on_read(datas, arrived=arrived)
+            if result is not None:
+                return result
+            if self.stream_complete:
+                # Nothing after [DONE] is measured.
+                break
+        return None
+
+    def _chunk_text(self, chunk: Mapping[str, Any], data: str) -> str:
+        """Returns the text a chunk carries, empty when it carries none.
+
+        Pure: a read is decoded before any of it is recorded, so the text a
+        failure reports is independent of how far recording got.
+        """
+        choices = chunk.get("choices")
+        if choices is None:
+            return ""
+        if not isinstance(choices, list):
+            raise _malformed_chunk("expected choices to be a JSON array", data)
+        if not choices:
+            return ""
+        choice = choices[0]
+        if not isinstance(choice, Mapping):
+            raise _malformed_chunk(
+                "expected each choice to be a JSON object", data
+            )
+        if not self._chat:
+            return _required_text_field(choice.get("text"), "choice.text", data)
+        delta = choice.get("delta")
+        if not isinstance(delta, Mapping):
+            raise _malformed_chunk(
+                "expected the choice to carry a delta object", data
+            )
+        return _delta_text(delta, data)
+
+    def _record_channels(self, delta: Mapping[str, Any]) -> None:
+        """Records a chat delta's channels, for replay as a chat turn.
+
+        Called from the event recording, on the chunk the merged text came
+        from, so the channels and that text cannot desync.
+
+        ``reasoning`` and ``reasoning_content`` are not official OpenAI fields:
+        providers stream chain-of-thought under one or both. Their fragments are
+        concatenated as they arrive and replayed under the first key the server
+        used, since a chat template renders one reasoning field. Tool calls
+        stream in fragments (id, then name, then arguments), so each call
+        collects its fragments and joins them once.
+
+        A call with neither an index nor an id continues the previous call, so
+        two such calls in one delta merge into a single replayed call. That can
+        only lose a call, never fail the request: the merged arguments are not
+        valid JSON, so the replay falls back to the turn's text.
+        """
+        content = delta.get("content")
+        if content:
+            self._content.append(content)
+        reasoning = delta.get("reasoning")
+        reasoning_content = delta.get("reasoning_content")
+        if reasoning or reasoning_content:
+            if not self._reasoning:
+                # The server's key comes with the first fragment and repeats
+                # after that.
+                self.output.reasoning_field = (
+                    "reasoning_content" if reasoning_content else "reasoning"
+                )
+            self._reasoning.append(reasoning or "")
+            self._reasoning.append(reasoning_content or "")
+        for call in delta.get("tool_calls") or ():
+            index = call.get("index")
+            call_id = call.get("id")
+            if index is None:
+                # A server that omits the index sends one call per fragment,
+                # so the position inside this delta cannot key them. An id the
+                # stream has not seen starts a new call, and a fragment with
+                # no id continues the last one.
+                index = self._tool_call_ids.get(call_id) if call_id else None
+                if index is None:
+                    if call_id:
+                        index = max(self._tool_calls, default=-1) + 1
+                    else:
+                        last = self._last_tool_call_index
+                        index = 0 if last is None else last
+            if call_id:
+                self._tool_call_ids.setdefault(call_id, index)
+            self._last_tool_call_index = index
+            fragments = self._tool_calls.get(index)
+            if fragments is None:
+                fragments = self._tool_calls[index] = ([], [], [])
+            ids, names, arguments = fragments
+            if call_id and not ids:
+                # The first fragment carries the id; later ones repeat it.
+                ids.append(call_id)
+            function = call.get("function")
+            if not isinstance(function, Mapping):
+                # Same tolerance as the text path: a fragment the client
+                # cannot read adds nothing, rather than failing the request.
+                continue
+            name = function.get("name")
+            argument = function.get("arguments")
+            if name:
+                names.append(name)
+            if argument:
+                arguments.append(argument)
+
+    def _record_event(
+        self,
+        chunk: Mapping[str, Any],
+        data: str,
+        text_content: str,
+        timestamp: float,
+        *,
+        measure_itl: bool = True,
+    ) -> None:
+        """Records one decoded chunk at *timestamp*.
+
+        Args:
+            chunk: The chunk the text was decoded from.
+            data: The event's raw data field, for a malformed-chunk error.
+            text_content: The text *chunk* carries, empty when it carries none.
+            timestamp: The event's time, as a ``time.perf_counter()`` value.
+            measure_itl: Whether this event has a gap behind it to report. A
+                later event sharing its read's arrival does not.
+        """
+        # Parse usage from any chunk that reports it.
+        usage = chunk.get("usage")
+        if usage:
+            if not isinstance(usage, Mapping):
+                raise _malformed_chunk(
+                    "expected usage to be a JSON object", data
+                )
+            try:
+                self.output.server_token_stats = _server_token_stats(usage)
+            except TypeError as exc:
+                raise _malformed_chunk(str(exc), data) from exc
+
+        choices = chunk.get("choices")
+        if choices is None:
+            return
+        if not isinstance(choices, list):
+            raise _malformed_chunk("expected choices to be a JSON array", data)
+        if not choices:
+            return
+        choice = choices[0]
+        finish_reason = choice.get("finish_reason")
+        if finish_reason is not None:
+            self._finish_reason = finish_reason
+            self._finish_reason_time = timestamp
+        delta = choice.get("delta")
+        if delta is not None and not isinstance(delta, Mapping):
+            raise _malformed_chunk(
+                "expected the choice to carry a delta object", data
+            )
+        if delta and delta.get("tool_calls"):
+            # Read off the chunk the text came from, so a pure text extraction
+            # cannot report a call this event never recorded.
+            self.output.tool_call_returned = True
+        delta = choices[0].get("delta")
+        if self._chat and delta is not None:
+            # The channels a replayed turn is built from are recorded here,
+            # with the event, not while the read is being decoded.
+            self._record_channels(delta)
+        if not text_content:
+            return
+
+        # A response only counts as content-bearing once it streams actual
+        # text or tool-call fragments. Chunks that carry only a role or
+        # finish_reason, or that put text in a delta field we don't model,
+        # leave this False so the request is flagged rather than recorded
+        # as a success with ttft=0 and no tokens.
+        self._has_content = True
+        # Kept together: the offset recorded below indexes this text, so the
+        # two must never desync.
+        self._generated_chars += len(text_content)
+        self._generated_text.append(text_content)
+        if self._tokenizer is not None:
+            # Store end offsets, not chunk copies, to keep memory flat. The
+            # offsets stay paired with ``itl`` (one more offset than samples,
+            # as :func:`compute_chunk_tpots` expects), so an event with no
+            # measured gap moves the read's boundary instead of adding one:
+            # its text carries the same time as the event before it.
+            offsets = self.output.pending_tpot_ends
+            if measure_itl or not len(offsets):
+                offsets.append(self._generated_chars)
+            else:
+                offsets[-1] = self._generated_chars
+
+        if self._ttft == 0.0:
+            self._ttft = timestamp - self._st
+            self.output.ttft = self._ttft
+        elif measure_itl:
+            self.output.itl.append(timestamp - self._most_recent_timestamp)
+        else:
+            # A later text event of the first text read: it shares the read's
+            # arrival with the event before it, so the read leaves the sample
+            # count one short. Count it, so the shortfall is a measurement.
+            self.output.itl_unresolved += 1
+
+        self._most_recent_timestamp = timestamp
+
+    def finish(self) -> RequestFuncOutput:
+        """Marks a fully-received stream complete.
+
+        Returns:
+            The request's output.
+        """
+        self._done = True
+        completion_tokens = self.output.server_token_stats.completion_tokens
+        cache_warmup_completed = (
+            self._is_cache_warmup
+            and self._stream_complete
+            and (completion_tokens or 0) > 0
+        )
+        # A one- or two-token budget can be spent entirely on tokens the
+        # server's reasoning or tool parser consumes as delimiters (GLM's
+        # ``</think>``), so a correct response may carry no visible text.
+        # Accept that only when the server confirms it generated exactly the
+        # tiny budget; every other measured response without text still fails.
+        tiny_budget_exhausted = (
+            self._stream_complete
+            and self._finish_reason == "length"
+            and self._max_tokens is not None
+            and 0 < self._max_tokens <= 2
+            and completion_tokens == self._max_tokens
+        )
+        if tiny_budget_exhausted and not self._has_content:
+            self._ttft = self._finish_reason_time - self._st
+            self.output.ttft = self._ttft
+        if (
+            not self._has_content
+            and not cache_warmup_completed
+            and not tiny_budget_exhausted
+        ):
+            self.output.error = (
+                "No text content captured from the response"
+                " (choices were present but"
+                " delta.reasoning/reasoning_content/content/"
+                "tool_calls were all empty). The model may stream"
+                " text in a field this client does not parse."
+            )
+            self.output.success = False
+        else:
+            self.output.generated_text = "".join(self._generated_text)
+            self.output.content_text = "".join(self._content)
+            self.output.reasoning_text = "".join(self._reasoning)
+            self.output.tool_calls = [
+                AssistantToolCall(
+                    # A server that sends no id gets one the tool result can
+                    # answer.
+                    id=ids[0] if ids else f"call_{index}",
+                    function=ToolCallFunction(
+                        name="".join(names), arguments="".join(arguments)
+                    ),
+                )
+                for index, (ids, names, arguments) in sorted(
+                    self._tool_calls.items()
+                )
+            ]
+            self.output.success = True
+            self.output.latency = self._latency
+        return self.output
+
+    def fail(self, error: str) -> RequestFuncOutput:
+        """Marks the request failed.
+
+        Args:
+            error: The failure's description.
+
+        Returns:
+            The request's output.
+        """
+        self._done = True
+        self.output.error = error
+        self.output.success = False
+        # Keep the text the request received before it failed: those events
+        # were recorded, and a per-event reader kept them too.
+        self.output.generated_text = "".join(self._generated_text)
+        return self.output
+
+    def cancel(self) -> RequestFuncOutput:
+        """Marks the request cancelled by the client.
+
+        Resets the output, discarding all collected measurements.
+
+        Returns:
+            The request's output.
+        """
+        self._done = True
+        self.output = RequestFuncOutput(
+            cancelled=True, request_submit_time=time.perf_counter()
+        )
+        return self.output
+
+
+def _body_headers(headers: Mapping[str, str]) -> dict[str, str]:
+    """*headers* with the JSON content type a ``json=`` body used to set.
+
+    A pre-serialized body no longer lets aiohttp infer the content type, so the
+    caller sets it here. The request's own headers win, and the dict passed in
+    is left alone: the drivers cache their auth headers per run.
+    """
+    return {**_JSON_HEADERS, **headers}
 
 
 async def _run_openai_stream_request(
     *,
     api_url: str,
-    payload: dict[str, Any],
+    body: bytes,
     headers: Mapping[str, str],
     prompt_len: int,
-    chunk_type: type[_ChunkT],
-    content_extractor: Callable[[_ChunkT], str],
+    chat: bool,
     tokenizer: PreTrainedTokenizerBase | None = None,
+    is_cache_warmup: bool = False,
+    max_tokens: int | None = None,
+    session: aiohttp.ClientSession,
+    start: float | None = None,
 ) -> RequestFuncOutput:
-    output = RequestFuncOutput()
-    output.prompt_len = prompt_len
-
-    generated_text = ""
-    ttft = 0.0
-    st = time.perf_counter()
-    output.request_submit_time = st
-    most_recent_timestamp = st
-    has_content = False
-    latency = 0.0
-
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        try:
-            async with session.post(
-                url=api_url, json=payload, headers=headers
-            ) as response:
-                if response.status == 200:
-                    async for event in iter_events(response.content):
-                        latency = time.perf_counter() - st
-                        if event.data == "[DONE]":
-                            continue
-
-                        data = chunk_type.model_validate_json(event.data)
-
-                        if data.error:
-                            output.error = data.error.message or event.data
-                            output.success = False
-                            return output
-
-                        # Parse usage from any chunk that reports it.
-                        if data.usage:
-                            output.server_token_stats = ServerTokenStats(
-                                prompt_tokens=data.usage.prompt_tokens,
-                                completion_tokens=data.usage.completion_tokens,
-                                total_tokens=data.usage.total_tokens,
-                                cached_tokens=(
-                                    data.usage.prompt_tokens_details.cached_tokens
-                                    if data.usage.prompt_tokens_details
-                                    else 0
-                                ),
-                            )
-
-                        # Skip content processing for chunks with no choices.
-                        if not data.choices:
-                            continue
-
-                        # Only track timing for chunks with actual text
-                        text_content = content_extractor(data)
-                        if text_content:
-                            # A response only counts as content-bearing once it
-                            # streams actual text or tool-call fragments.
-                            # Chunks that carry only a role or finish_reason,
-                            # or that put text in a delta field we don't model,
-                            # leave this False so the request is flagged rather
-                            # than recorded as a success with ttft=0 and no
-                            # tokens.
-                            has_content = True
-                            timestamp = time.perf_counter()
-                            # First token
-                            if ttft == 0.0:
-                                ttft = time.perf_counter() - st
-                                output.ttft = ttft
-
-                            # Decoding phase
-                            else:
-                                itl_value = timestamp - most_recent_timestamp
-                                output.itl.append(itl_value)
-                                tpot = _compute_chunk_tpot(
-                                    tokenizer, text_content, itl_value
-                                )
-                                if tpot is not None:
-                                    output.tpot.append(tpot)
-
-                            most_recent_timestamp = timestamp
-                            generated_text += text_content
-                    if not has_content:
-                        output.error = (
-                            "No text content captured from the response"
-                            " (choices were present but"
-                            " delta.reasoning/reasoning_content/content/"
-                            "tool_calls were all empty). The model may stream"
-                            " text in a field this client does not parse."
-                        )
-                        output.success = False
-                    else:
-                        output.generated_text = generated_text
-                        output.success = True
-                        output.latency = latency
-                else:
-                    output.error = response.reason or ""
-                    output.success = False
-
-        except Exception:
-            output.success = False
-            exc_info = sys.exc_info()
-            output.error = "".join(traceback.format_exception(*exc_info))
-    return output
+    recorder = OpenAIStreamRecorder(
+        prompt_len=prompt_len,
+        chat=chat,
+        tokenizer=tokenizer,
+        is_cache_warmup=is_cache_warmup,
+        max_tokens=max_tokens,
+        start=start,
+    )
+    try:
+        async with session.post(
+            url=api_url, data=body, headers=_body_headers(headers)
+        ) as response:
+            if response.status != 200:
+                return recorder.fail(response.reason or "")
+            decoder = SSEDecoder()
+            reads: list[tuple[float, list[str]]] = []
+            buffered_events = 0
+            async for chunk in response.content.iter_any():
+                # One clock read per socket read, taken before the split, so
+                # the interval is arrival to arrival.
+                arrived = time.perf_counter()
+                datas = [event.data for event in decoder.feed(chunk)]
+                if not datas:
+                    continue
+                if _read_may_carry_error(datas):
+                    # A read that may name an error is parsed now, so an error
+                    # ends the request at its read rather than at the end of a
+                    # stream the server holds open. The reads before it are
+                    # recorded first, to keep the events in stream order.
+                    result = await recorder.replay(reads)
+                    reads.clear()
+                    buffered_events = 0
+                    if result is None:
+                        result = recorder.on_read(datas, arrived=arrived)
+                    if result is not None:
+                        return result
+                    if recorder.stream_complete:
+                        # Nothing after [DONE] is measured; drain the rest so
+                        # the connection stays poolable.
+                        async for _ in response.content.iter_chunked(1 << 16):
+                            pass
+                        break
+                    continue
+                reads.append((arrived, datas))
+                buffered_events += len(datas)
+                if "[DONE]" in datas:
+                    # Nothing after it is measured; drain the rest so the
+                    # connection stays poolable.
+                    async for _ in response.content.iter_chunked(1 << 16):
+                        pass
+                    break
+                if (
+                    len(reads) >= _READS_PER_REPLAY
+                    or buffered_events >= _REPLAY_EVENTS
+                ):
+                    result = await recorder.replay(reads)
+                    reads.clear()
+                    buffered_events = 0
+                    if result is not None:
+                        return result
+            result = await recorder.replay(reads)
+            return result if result is not None else recorder.finish()
+    except Exception:
+        exc_info = sys.exc_info()
+        return recorder.fail("".join(traceback.format_exception(*exc_info)))
 
 
 class OpenAICompletionsRequestDriver(RequestDriver):
@@ -695,42 +1783,87 @@ class OpenAICompletionsRequestDriver(RequestDriver):
             "OpenAI Completions API URL must end with 'completions' or 'profile'."
         )
 
-        base_payload: dict[
-            str, bool | str | int | float | list[ChatMessage]
-        ] = {
+        payload: dict[str, object] = {
             "model": request_func_input.model,
             "prompt": request_func_input.prompt,
             "best_of": 1,
             "stream": True,
+            "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,
+            **self._sampling_fields(request_func_input.sampling),
         }
 
         if request_func_input.max_tokens is not None:
-            base_payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(
-            base_payload, request_func_input.sampling
-        )
-        payload = _build_final_payload(base_payload, self.extra_body)
-
-        headers = openai_bearer_auth_headers()
-
+            payload["max_tokens"] = request_func_input.max_tokens
+        payload = _build_final_payload(payload, self.extra_body)
+        body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(
+                RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                encode_error,
+            )
+        # The window opens after the body is serialized, so the encode is not
+        # charged to TTFT: see `_serialize_request_body`.
+        start = time.perf_counter()
         return await _run_openai_stream_request(
             api_url=api_url,
-            payload=payload,
-            headers=headers,
+            body=body,
+            headers=self._auth_headers(),
             prompt_len=request_func_input.prompt_len,
-            chunk_type=_CompletionChunk,
-            content_extractor=lambda data: data.choices[0].text,
+            chat=False,
             tokenizer=self.tokenizer,
+            is_cache_warmup=request_func_input.is_cache_warmup,
+            max_tokens=request_func_input.max_tokens,
+            session=self.session,
+            start=start,
         )
+
+
+def _record_message_channels(
+    output: RequestFuncOutput, message: Mapping[str, object]
+) -> None:
+    """Keeps a non-streamed chat message's fields apart for replay."""
+    reasoning_content = message.get("reasoning_content")
+    reasoning = message.get("reasoning")
+    if isinstance(reasoning_content, str) and reasoning_content:
+        output.reasoning_text = reasoning_content
+        output.reasoning_field = "reasoning_content"
+    elif isinstance(reasoning, str) and reasoning:
+        output.reasoning_text = reasoning
+        output.reasoning_field = "reasoning"
+    content = message.get("content")
+    output.content_text = content if isinstance(content, str) else ""
+    tool_calls = message.get("tool_calls")
+    calls = (
+        [call for call in tool_calls if isinstance(call, dict)]
+        if isinstance(tool_calls, list)
+        else []
+    )
+    try:
+        output.tool_calls = [
+            AssistantToolCall.model_validate(
+                # A call the server sent without an id still needs one its tool
+                # result can answer, as the streamed path synthesizes.
+                {**call, "id": call.get("id") or f"call_{index}"}
+            )
+            for index, call in enumerate(calls)
+        ]
+    except ValidationError:
+        # A shape the chat API does not define -- arguments as an object, type
+        # ``custom``, no function, a name that is not a string -- is not a call
+        # this client can answer. Raising here would take the whole run down
+        # with it, so the turn replays as text instead.
+        output.tool_calls = []
 
 
 async def _run_atom_nonstream_chat_request(
     *,
     api_url: str,
-    payload: dict[str, Any],
+    body: bytes,
     headers: Mapping[str, str],
     prompt_len: int,
+    session: aiohttp.ClientSession,
+    start: float | None = None,
 ) -> RequestFuncOutput:
     """ATOM workaround: non-streaming chat request using server-reported timing.
 
@@ -744,37 +1877,47 @@ async def _run_atom_nonstream_chat_request(
     """
     output = RequestFuncOutput()
     output.prompt_len = prompt_len
-    output.request_submit_time = time.perf_counter()
-
-    async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-        try:
-            async with session.post(
-                url=api_url, json=payload, headers=headers
-            ) as response:
-                if response.status != 200:
-                    output.error = response.reason or ""
-                    output.success = False
-                    return output
-                body = await response.json()
-        except Exception:
-            output.success = False
-            output.error = "".join(traceback.format_exception(*sys.exc_info()))
-            return output
+    output.request_submit_time = time.perf_counter() if start is None else start
 
     try:
-        message = body["choices"][0].get("message") or {}
+        async with session.post(
+            url=api_url, data=body, headers=_body_headers(headers)
+        ) as response:
+            if response.status != 200:
+                output.error = response.reason or ""
+                output.success = False
+                return output
+            response_body = await response.json()
+    except Exception:
+        output.success = False
+        output.error = "".join(traceback.format_exception(*sys.exc_info()))
+        return output
+
+    try:
+        message = response_body["choices"][0].get("message") or {}
     except (KeyError, IndexError, TypeError):
         output.success = False
-        output.error = f"Malformed chat completion response: {body!r}"
+        output.error = f"Malformed chat completion response: {response_body!r}"
         return output
 
     # Merge reasoning/reasoning_content/content (ATOM puts <mm:think> in content).
+    # Tool-call name and argument text counts too, as in the streaming path: a
+    # pure tool-call response has no content by design.
+    tool_calls = message.get("tool_calls") or []
+    output.tool_call_returned = bool(tool_calls)
+    _record_message_channels(output, message)
     generated_text = (
         (message.get("reasoning") or "")
         + (message.get("reasoning_content") or "")
         + (message.get("content") or "")
+        + "".join(
+            (fn.get("name") or "") + (fn.get("arguments") or "")
+            for tc in tool_calls
+            if isinstance(tc, dict)
+            and isinstance(fn := tc.get("function"), dict)
+        )
     )
-    usage = body.get("usage") or {}
+    usage = response_body.get("usage") or {}
     ttft_s = usage.get("ttft_s")
     tpot_s = usage.get("tpot_s")
     latency_s = usage.get("latency_s")
@@ -804,6 +1947,7 @@ async def _run_atom_nonstream_chat_request(
         completion_tokens=completion_tokens,
         total_tokens=usage.get("total_tokens"),
         cached_tokens=prompt_details.get("cached_tokens", 0),
+        cached_tokens_reported="cached_tokens" in prompt_details,
     )
     # No per-token latencies: synthesize a flat ITL/TPOT series from the mean
     # tpot_s so itl_ms/step_tpot_ms aren't NaN (headline TPOT still latency-based).
@@ -830,77 +1974,83 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             "OpenAI Chat Completions API URL must end with 'chat/completions'."
         )
 
-        if isinstance(request_func_input.prompt, str):  # question only
-            content = [{"type": "text", "text": request_func_input.prompt}]
-            messages_data = [
-                {"role": "user", "content": content},
-            ]
-        else:  # conversation
-            messages_data = [
-                msg.model_dump() for msg in request_func_input.prompt
-            ]
+        messages_json, images_attached = _chat_messages_json(
+            request_func_input.prompt,
+            request_func_input.images,
+            request_func_input.wire_history,
+        )
 
-        base_payload: dict[
-            str,
-            bool | str | int | float | list[dict[str, Any]] | dict[str, Any],
-        ] = {
+        payload: dict[str, object] = {
             "model": request_func_input.model,
-            "messages": messages_data,
+            "messages": messages_json,
             "stream": True,
             "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,
+            **self._sampling_fields(request_func_input.sampling),
         }
 
         if request_func_input.max_tokens is not None:
-            base_payload["max_tokens"] = request_func_input.max_tokens
-        _apply_sampling_to_request_payload(
-            base_payload, request_func_input.sampling
-        )
+            payload["max_tokens"] = request_func_input.max_tokens
         if request_func_input.response_format is not None:
-            # Convert TypedDict to plain dict so mypy accepts the assignment into
-            # base_payload (since a TypedDict is stricter than a dict[str, Any]).
-            base_payload["response_format"] = dict(
-                request_func_input.response_format
-            )
+            payload["response_format"] = request_func_input.response_format
         if request_func_input.tools:
-            base_payload["tools"] = request_func_input.tools
-        for img in request_func_input.images:
-            # TODO: Remove this type ignore
-            # (error: Value of type "object" is not indexable)
-            base_payload["messages"][0]["content"].append(img)  # type: ignore[index, union-attr]
-        payload = _build_final_payload(base_payload, self.extra_body)
+            payload["tools"] = request_func_input.tools
+        payload = _build_final_payload(payload, self.extra_body)
 
-        headers = {
-            "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
-        }
+        headers = dict(self._auth_headers())
         if request_func_input.session_id:
             headers["X-Session-ID"] = request_func_input.session_id
         if request_func_input.cache_salt:
             headers["X-Cache-Salt"] = request_func_input.cache_salt
 
+        # Stamped after the encode in both branches, so the encode is charged
+        # to neither TTFT nor latency: see `_serialize_request_body`.
         if self.backend == "atom":
             # ATOM doesn't per-token-stream chat/completions: send non-streaming
             # and read timing from `usage`. TODO(ATOM): remove once it streams.
             nonstream_payload = dict(payload)
             nonstream_payload["stream"] = False
             nonstream_payload.pop("stream_options", None)
-            return await _run_atom_nonstream_chat_request(
+            body, encode_error = _serialize_request_body(nonstream_payload)
+            if encode_error:
+                return _failed_before_sending(
+                    RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                    encode_error,
+                )
+            start = time.perf_counter()
+            output = await _run_atom_nonstream_chat_request(
                 api_url=api_url,
-                payload=nonstream_payload,
+                body=body,
                 headers=headers,
                 prompt_len=request_func_input.prompt_len,
+                session=self.session,
+                start=start,
             )
-
-        return await _run_openai_stream_request(
-            api_url=api_url,
-            payload=payload,
-            headers=headers,
-            prompt_len=request_func_input.prompt_len,
-            chunk_type=_ChatCompletionChunk,
-            content_extractor=_extract_chat_delta_text,
-            tokenizer=self.tokenizer,
+        else:
+            body, encode_error = _serialize_request_body(payload)
+            if encode_error:
+                return _failed_before_sending(
+                    RequestFuncOutput(prompt_len=request_func_input.prompt_len),
+                    encode_error,
+                )
+            start = time.perf_counter()
+            output = await _run_openai_stream_request(
+                api_url=api_url,
+                body=body,
+                headers=headers,
+                prompt_len=request_func_input.prompt_len,
+                chat=True,
+                tokenizer=self.tokenizer,
+                is_cache_warmup=request_func_input.is_cache_warmup,
+                max_tokens=request_func_input.max_tokens,
+                session=self.session,
+                start=start,
+            )
+        output.tools_offered = "tools" in payload
+        output.carries_image = (
+            images_attached or request_func_input.prompt_carries_image
         )
+        return output
 
 
 _GENERATED_MEDIA_TYPES = frozenset({"output_image", "output_video"})
@@ -1014,47 +2164,49 @@ class OpenResponsesRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
+            **self._auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
+        request_body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(output, encode_error)
+
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, json=payload, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    body = await response.json()
-                    output.num_generated_outputs = _count_generated_media(body)
-                    if output.num_generated_outputs <= 0:
-                        output.error = (
-                            "No output_image or output_video content found in"
-                            " OpenResponses response body."
-                        )
-                        output.success = False
-                        return output
-
-                    output.success = True
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, data=request_body, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                output.num_generated_outputs = _count_generated_media(body)
+                if output.num_generated_outputs <= 0:
+                    output.error = (
+                        "No output_image or output_video content found in"
+                        " OpenResponses response body."
+                    )
+                    output.success = False
+                    return output
+
+                output.success = True
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _build_sglang_pixel_generation_payload(
@@ -1089,6 +2241,7 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a pixel generation request to sglang."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "SglangPixelGenerationRequestDriver requires"
@@ -1105,48 +2258,48 @@ class SglangPixelGenerationRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
+            **self._auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
+        request_body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(output, encode_error)
+
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, json=payload, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    body = await response.json()
-                    # sglang returns {"data": [{"b64_json": "..."}, ...]}
-                    data = body.get("data", [])
-                    output.num_generated_outputs = len(data)
-                    if output.num_generated_outputs <= 0:
-                        output.error = (
-                            "No images found in sglang response body."
-                        )
-                        output.success = False
-                        return output
-
-                    output.success = True
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, data=request_body, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                # sglang returns {"data": [{"b64_json": "..."}, ...]}
+                data = body.get("data", [])
+                output.num_generated_outputs = len(data)
+                if output.num_generated_outputs <= 0:
+                    output.error = "No images found in sglang response body."
+                    output.success = False
+                    return output
+
+                output.success = True
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _add_input_reference(
@@ -1174,6 +2327,8 @@ def _add_input_reference(
 
 
 class SglangVideoPayload(TypedDict):
+    """The JSON body of a sglang video generation request."""
+
     model: str
     prompt: str
     width: NotRequired[int]
@@ -1187,8 +2342,15 @@ class SglangVideoPayload(TypedDict):
 
 def _build_sglang_video_payload(
     request_func_input: PixelGenerationRequestFuncInput,
-) -> SglangVideoPayload:
+) -> SglangVideoPayload | Mapping[str, object]:
     """Build JSON payload for sglang's POST /v1/videos endpoint."""
+    options = request_func_input.image_options
+    schema = get_video_request_schema(
+        options.request_schema if options else None
+    )
+    if schema is not None:
+        return schema.build_payload(request_func_input)
+
     payload = SglangVideoPayload(
         model=request_func_input.model,
         prompt=request_func_input.prompt,
@@ -1253,6 +2415,32 @@ def _build_sglang_video_form(
 _SGLANG_VIDEO_POLL_INTERVAL_S = 1.0
 
 
+async def _fetch_sglang_video_content(
+    session: aiohttp.ClientSession,
+    poll_url: str,
+    headers: dict[str, str],
+    output: PixelGenerationRequestFuncOutput,
+) -> bool:
+    """Downloads the mp4 of a completed sglang video job.
+
+    Returns whether the download succeeded; on failure the reason is recorded on
+    ``output.error``.
+    """
+    async with session.get(url=f"{poll_url}/content", headers=headers) as resp:
+        if resp.status != 200:
+            body = await resp.text()
+            output.error = (
+                f"Content HTTP {resp.status}: {body}"
+                if body
+                else (resp.reason or "")
+            )
+            return False
+        if not await resp.read():
+            output.error = "Empty mp4 in sglang video content response."
+            return False
+    return True
+
+
 class SglangVideoRequestDriver(RequestDriver):
     """Request driver for sglang's async /v1/videos endpoint.
 
@@ -1263,6 +2451,7 @@ class SglangVideoRequestDriver(RequestDriver):
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a video generation request to sglang."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "SglangVideoRequestDriver requires"
@@ -1273,101 +2462,114 @@ class SglangVideoRequestDriver(RequestDriver):
             raise ValueError("Sglang video URL must end with '/videos'.")
         base_url = api_url.rstrip("/")
 
+        options = request_func_input.image_options
+        schema = get_video_request_schema(
+            options.request_schema if options else None
+        )
         # image-to-video uploads the conditioning image, which requires
         # multipart/form-data; text-to-video stays JSON. Let aiohttp set the
         # multipart Content-Type (with boundary) for the form path.
-        headers = dict(openai_bearer_auth_headers())
-        if request_func_input.input_image_paths:
+        headers = dict(self._auth_headers())
+        output = PixelGenerationRequestFuncOutput()
+        if request_func_input.input_image_paths and schema is None:
             post_kwargs: dict[str, Any] = {
                 "data": _build_sglang_video_form(request_func_input)
             }
         else:
             headers["Content-Type"] = "application/json"
-            post_kwargs = {
-                "json": _build_sglang_video_payload(request_func_input)
-            }
+            post_body, encode_error = _serialize_request_body(
+                _build_sglang_video_payload(request_func_input)
+            )
+            if encode_error:
+                return _failed_before_sending(output, encode_error)
+            post_kwargs = {"data": post_body}
 
-        output = PixelGenerationRequestFuncOutput()
         start = time.perf_counter()
         output.request_submit_time = start
 
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=base_url, headers=headers, **post_kwargs
-                ) as response:
-                    if response.status != 200:
-                        body = await response.text()
+        try:
+            async with self.session.post(
+                url=base_url, headers=headers, **post_kwargs
+            ) as response:
+                if response.status != 200:
+                    body = await response.text()
+                    output.latency = time.perf_counter() - start
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                job_id = body.get("id")
+                if not job_id:
+                    output.latency = time.perf_counter() - start
+                    output.error = "No job id in sglang video POST response."
+                    output.success = False
+                    return output
+
+            poll_url = f"{base_url}/{job_id}"
+            while True:
+                async with self.session.get(
+                    url=poll_url, headers=headers
+                ) as poll_response:
+                    if poll_response.status != 200:
+                        body = await poll_response.text()
                         output.latency = time.perf_counter() - start
                         output.error = (
-                            f"HTTP {response.status}: {body}"
+                            f"Poll HTTP {poll_response.status}: {body}"
                             if body
-                            else (response.reason or "")
+                            else (poll_response.reason or "")
                         )
                         output.success = False
                         return output
 
-                    body = await response.json()
-                    job_id = body.get("id")
-                    if not job_id:
+                    poll_body = await poll_response.json()
+                    status = poll_body.get("status", "")
+
+                    if status == "completed":
+                        if (
+                            schema is not None
+                            and not await _fetch_sglang_video_content(
+                                self.session, poll_url, headers, output
+                            )
+                        ):
+                            output.latency = time.perf_counter() - start
+                            output.success = False
+                            return output
                         output.latency = time.perf_counter() - start
+                        output.num_generated_outputs = 1
+                        output.success = True
+
+                        inference_time = poll_body.get("inference_time_s")
+                        if inference_time:
+                            logger.debug(
+                                "sglang video: inference_time=%s s",
+                                inference_time,
+                            )
+                        return output
+
+                    if status in ("failed", "error"):
+                        output.latency = time.perf_counter() - start
+                        error_info = poll_body.get("error", {})
                         output.error = (
-                            "No job id in sglang video POST response."
+                            error_info.get("message", "")
+                            if isinstance(error_info, dict)
+                            else str(error_info)
                         )
                         output.success = False
                         return output
 
-                poll_url = f"{base_url}/{job_id}"
-                while True:
-                    async with session.get(
-                        url=poll_url, headers=headers
-                    ) as poll_response:
-                        if poll_response.status != 200:
-                            body = await poll_response.text()
-                            output.latency = time.perf_counter() - start
-                            output.error = (
-                                f"Poll HTTP {poll_response.status}: {body}"
-                                if body
-                                else (poll_response.reason or "")
-                            )
-                            output.success = False
-                            return output
+                    await asyncio.sleep(_SGLANG_VIDEO_POLL_INTERVAL_S)
 
-                        poll_body = await poll_response.json()
-                        status = poll_body.get("status", "")
-
-                        if status == "completed":
-                            output.latency = time.perf_counter() - start
-                            output.num_generated_outputs = 1
-                            output.success = True
-
-                            inference_time = poll_body.get("inference_time_s")
-                            if inference_time:
-                                logger.debug(
-                                    "sglang video: inference_time=%s s",
-                                    inference_time,
-                                )
-                            return output
-
-                        if status == "failed":
-                            output.latency = time.perf_counter() - start
-                            error_info = poll_body.get("error", {})
-                            output.error = (
-                                error_info.get("message", "")
-                                if isinstance(error_info, dict)
-                                else str(error_info)
-                            )
-                            output.success = False
-                            return output
-
-                        await asyncio.sleep(_SGLANG_VIDEO_POLL_INTERVAL_S)
-
-            except Exception:
-                output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
-                return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _build_vllm_omni_pixel_generation_payload(
@@ -1401,12 +2603,15 @@ def _build_vllm_omni_pixel_generation_payload(
 
 
 class VllmOmniPixelGenerationRequestDriver(RequestDriver):
-    """Request driver for vllm-omni's /v1/chat/completions endpoint
-    (diffusion image generation)."""
+    """Request driver for vllm-omni's chat completions endpoint.
+
+    Targets ``/v1/chat/completions`` for diffusion image generation.
+    """
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a pixel generation request to vllm-omni."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "VllmOmniPixelGenerationRequestDriver requires"
@@ -1423,61 +2628,61 @@ class VllmOmniPixelGenerationRequestDriver(RequestDriver):
 
         headers = {
             "Content-Type": "application/json",
-            **openai_bearer_auth_headers(),
+            **self._auth_headers(),
         }
 
         output = PixelGenerationRequestFuncOutput()
+        request_body, encode_error = _serialize_request_body(payload)
+        if encode_error:
+            return _failed_before_sending(output, encode_error)
+
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, json=payload, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    body = await response.json()
-                    # vllm-omni returns chat completions format with image
-                    # data in choices[].message.content[].image_url.url
-                    choices = body.get("choices", [])
-                    count = 0
-                    for choice in choices:
-                        message = choice.get("message", {})
-                        content = message.get("content", [])
-                        if isinstance(content, list):
-                            count += sum(
-                                1
-                                for item in content
-                                if isinstance(item, dict)
-                                and item.get("type") == "image_url"
-                            )
-
-                    output.num_generated_outputs = count
-                    if output.num_generated_outputs <= 0:
-                        output.error = (
-                            "No images found in vllm-omni response body."
-                        )
-                        output.success = False
-                        return output
-
-                    output.success = True
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, data=request_body, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                body = await response.json()
+                # vllm-omni returns chat completions format with image
+                # data in choices[].message.content[].image_url.url
+                choices = body.get("choices", [])
+                count = 0
+                for choice in choices:
+                    message = choice.get("message", {})
+                    content = message.get("content", [])
+                    if isinstance(content, list):
+                        count += sum(
+                            1
+                            for item in content
+                            if isinstance(item, dict)
+                            and item.get("type") == "image_url"
+                        )
+
+                output.num_generated_outputs = count
+                if output.num_generated_outputs <= 0:
+                    output.error = "No images found in vllm-omni response body."
+                    output.success = False
+                    return output
+
+                output.success = True
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 def _build_vllm_omni_video_payload(
@@ -1510,12 +2715,15 @@ def _build_vllm_omni_video_payload(
 
 
 class VllmOmniVideoRequestDriver(RequestDriver):
-    """Request driver for vllm-omni's /v1/videos/sync endpoint
-    (diffusion video generation)."""
+    """Request driver for vllm-omni's videos endpoint.
+
+    Targets ``/v1/videos/sync`` for diffusion video generation.
+    """
 
     async def request(
         self, request_func_input: BaseRequestFuncInput
     ) -> PixelGenerationRequestFuncOutput:
+        """Sends a video generation request to vllm-omni."""
         if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
             raise TypeError(
                 "VllmOmniVideoRequestDriver requires"
@@ -1529,7 +2737,7 @@ class VllmOmniVideoRequestDriver(RequestDriver):
 
         # For image-to-video the conditioning image rides along as the
         # `input_reference` file, which requires multipart/form-data. The
-        # text-to-video path keeps its existing form-encoded dict POST.
+        # text-to-video path posts a form-encoded dict.
         payload = _build_vllm_omni_video_payload(request_func_input)
         if request_func_input.input_image_paths:
             form = aiohttp.FormData()
@@ -1537,56 +2745,56 @@ class VllmOmniVideoRequestDriver(RequestDriver):
                 form.add_field(field_name, value)
             _add_input_reference(form, request_func_input.input_image_paths)
             post_data: Any = form
+            # A copy per request: the cached dict is shared by every request.
+            headers = dict(self._auth_headers())
         else:
-            post_data = payload
-
-        headers = openai_bearer_auth_headers()
+            # aiohttp would form-encode the dict as it writes the request, so
+            # the encoding would land inside the window; encode it first.
+            post_data = _serialize_form_body(payload)
+            headers = {**self._auth_headers(), **_FORM_HEADERS}
 
         output = PixelGenerationRequestFuncOutput()
+
         start = time.perf_counter()
         output.request_submit_time = start
-
-        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
-            try:
-                async with session.post(
-                    url=api_url, data=post_data, headers=headers
-                ) as response:
-                    output.latency = time.perf_counter() - start
-                    if response.status != 200:
-                        body = await response.text()
-                        output.error = (
-                            f"HTTP {response.status}: {body}"
-                            if body
-                            else (response.reason or "")
-                        )
-                        output.success = False
-                        return output
-
-                    video_bytes = await response.read()
-                    if not video_bytes:
-                        output.error = (
-                            "Empty response body from /v1/videos/sync."
-                        )
-                        output.success = False
-                        return output
-
-                    output.num_generated_outputs = 1
-                    output.success = True
-
-                    inference_time = response.headers.get("X-Inference-Time-S")
-                    if inference_time:
-                        logger.debug(
-                            "vllm-omni video: inference_time=%s s",
-                            inference_time,
-                        )
-
-                    return output
-            except Exception:
+        try:
+            async with self.session.post(
+                url=api_url, data=post_data, headers=headers
+            ) as response:
                 output.latency = time.perf_counter() - start
-                output.success = False
-                exc_info = sys.exc_info()
-                output.error = "".join(traceback.format_exception(*exc_info))
+                if response.status != 200:
+                    body = await response.text()
+                    output.error = (
+                        f"HTTP {response.status}: {body}"
+                        if body
+                        else (response.reason or "")
+                    )
+                    output.success = False
+                    return output
+
+                video_bytes = await response.read()
+                if not video_bytes:
+                    output.error = "Empty response body from /v1/videos/sync."
+                    output.success = False
+                    return output
+
+                output.num_generated_outputs = 1
+                output.success = True
+
+                inference_time = response.headers.get("X-Inference-Time-S")
+                if inference_time:
+                    logger.debug(
+                        "vllm-omni video: inference_time=%s s",
+                        inference_time,
+                    )
+
                 return output
+        except Exception:
+            output.latency = time.perf_counter() - start
+            output.success = False
+            exc_info = sys.exc_info()
+            output.error = "".join(traceback.format_exception(*exc_info))
+            return output
 
 
 class RequestCounter:
@@ -1730,7 +2938,7 @@ def get_request_driver_class(
       /v1/chat/completions   -> VllmOmniPixelGenerationRequestDriver
     The correct endpoint is typically auto-selected by PIXEL_GEN_DEFAULT_ENDPOINT
     (or VIDEO_GEN_DEFAULT_ENDPOINT for text-to-video) in benchmark_serving.py
-    based on the --backend flag and task.
+    based on the backend, task and any registered video request schema.
     """
     if task in PIXEL_GENERATION_TASKS:
         if api_url.endswith("responses"):

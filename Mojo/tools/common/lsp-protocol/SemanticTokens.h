@@ -47,15 +47,17 @@ StringRef toLspSemanticTokenType(SemanticTokenKind kind);
 // SemanticToken Modifier
 //===----------------------------------------------------------------------===//
 
-/// This enum represents all the different modifiers that can be applied to
-/// highlighted tokens.
-enum class SemanticTokenModifier {
-  kCount,
-};
+/// The only token modifiers are address spaces: address space `n` is modifier
+/// bit `n`, named `addressSpace<n>` in the LSP legend. The server passes the
+/// integer through unchanged rather than naming address spaces, because their
+/// meaning depends on the target; the client decides what to call them. This
+/// many address spaces get a modifier, which covers every one the stdlib
+/// names; higher, target-specific ones are not reported.
+constexpr unsigned kNumSemanticTokenModifiers = 16;
 
-/// Convert the given token modifier into a string representing the LSP token
-/// modifier.
-StringRef toLspSemanticTokenModifier(SemanticTokenModifier modifier);
+/// Convert the given token modifier bit into a string representing the LSP
+/// token modifier.
+StringRef toLspSemanticTokenModifier(unsigned modifier);
 
 //===----------------------------------------------------------------------===//
 // SemanticToken Token
@@ -71,9 +73,11 @@ struct SemanticToken {
   bool operator==(const SemanticToken &rhs) const;
   bool operator<(const SemanticToken &rhs) const;
 
-  /// Add a modifier to the token.
-  SemanticToken &addModifier(SemanticTokenModifier modifier) {
-    modifiers |= 1 << static_cast<unsigned>(modifier);
+  /// Mark the token as living in the given address space, if that address
+  /// space has a modifier.
+  SemanticToken &setAddressSpace(int64_t addressSpace) {
+    if (addressSpace >= 0 && addressSpace < kNumSemanticTokenModifiers)
+      modifiers |= 1u << addressSpace;
     return *this;
   }
 

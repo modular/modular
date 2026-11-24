@@ -18,10 +18,10 @@ from std.testing import TestSuite
 def test_log_with_env() raises:
     var log = Logger()
 
-    # CHECK: {{.*}}DEBUG{{.*}}::: hello world
+    # CHECK: {{.*}}debug{{.*}}::: hello world
     log.debug("hello", "world")
 
-    # CHECK: {{.*}}INFO{{.*}}::: hello
+    # CHECK: {{.*}}info{{.*}}::: hello
     log.info("hello")
 
 

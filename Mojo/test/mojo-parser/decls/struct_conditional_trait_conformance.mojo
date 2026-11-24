@@ -28,7 +28,7 @@
 # The struct should NOT have any constraint in its trait type.
 # CHECK: lit.struct.decl @UnconditionalMovable<T: !AnyType_Deinitable_Movable>
 # CHECK-NOT: where #kgen.constraint
-# CHECK-SAME: attributes
+# CHECK-SAME: {{$}}
 struct UnconditionalMovable[T: Movable & Deinitable](Movable):
     var value: Self.T
 
@@ -459,8 +459,8 @@ struct Moco4214RaiseList[T: AnyType](
     comptime Output: AnyType where conforms_to(Self.T, Movable) = Moco4214Payload
 
     # CHECK-LABEL: lit.fn @"make(struct_conditional_trait_conformance::Moco4214RaiseList
-    # CHECK-SAME: %__error__: !lit.ref<!Error,{{.*}}> byref_error
-    # CHECK-SAME: %__result__: !lit.ref<!Moco4214Payload,{{.*}}> byref_result
+    # CHECK-SAME: %__error__: !lit.ref<!Error,{{[^>]*}}> byref_error
+    # CHECK-SAME: %__result__: !lit.ref<!Moco4214Payload,{{[^>]*}}> byref_result
     def make(self) raises -> Self.Output where conforms_to(Self.T, Movable):
         return Moco4214Payload(456)
 

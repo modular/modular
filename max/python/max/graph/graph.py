@@ -19,16 +19,18 @@ import functools
 import inspect
 import io
 import itertools
+import sys
 import traceback
+import weakref
 from collections import OrderedDict
-from collections.abc import Callable, Generator, Iterable, Sequence
+from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
-from typing import Any, TypeGuard, TypeVar, cast
+from typing import Any, TypeAlias, TypeGuard, TypeVar, cast
 
-from max import mlir
+from max import mlir, tree
 from max._core import Attribute as _Attribute
 from max._core import Block, OpBuilder, Operation
 from max._core import Type as _Type
@@ -52,6 +54,7 @@ from mojo.paths import (
     is_mojo_source_package_path,
 )
 
+from ._api_boundary import api_boundary, callers_of_api
 from .type import (
     BufferType,
     DeviceRef,
@@ -61,6 +64,17 @@ from .type import (
     _ChainType,
 )
 from .value import BufferValue, TensorValue, TensorValueLike, Value, _ChainValue
+
+GraphOutputs: TypeAlias = (
+    Value[Any]
+    | TensorValueLike
+    | Sequence["GraphOutputs"]
+    | Mapping[Any, "GraphOutputs"]
+)
+"""What a graph outputs: values, or a tree of them whose leaves are the
+outputs in order. Sequences and mappings rather than :data:`max.tree.Tree`'s
+lists and dicts, so a ``list[TensorValue]`` or a typed group is accepted.
+Mapping keys only name the outputs, so any key type is."""
 from .weight import Weight
 
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
@@ -81,6 +95,30 @@ _DEVICE_INFO_MAPPING_ATTR_NAME = "mo.device_info_mapping"
 T = TypeVar("T")
 
 
+class ProfileScopeColor(str, Enum):
+    """Named color for the optional in-region ``Graph.profile_scope`` range.
+
+    These names mirror the palette accepted by the GPU tracing backend.
+    """
+
+    MODULAR_PURPLE = "modular_purple"
+    """The Modular brand purple."""
+    BLUE = "blue"
+    """The color blue."""
+    GREEN = "green"
+    """The color green."""
+    ORANGE = "orange"
+    """The color orange."""
+    PURPLE = "purple"
+    """The color purple."""
+    RED = "red"
+    """The color red."""
+    WHITE = "white"
+    """The color white."""
+    YELLOW = "yellow"
+    """The color yellow."""
+
+
 def _is_chain_value(value: _Value[Any]) -> TypeGuard[_Value[_mo.ChainType]]:
     return isinstance(value.type, _mo.ChainType)
 
@@ -90,7 +128,16 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
 
     def __init__(self, graph: Graph) -> None:
         super().__init__()
-        self._graph = graph
+        # Weak because the graph owns this map. A strong reference would form
+        # a cycle, keeping a dropped graph and its MLIR module alive until
+        # the next garbage collection.
+        self._graph_ref = weakref.ref(graph)
+
+    @property
+    def _graph(self) -> Graph:
+        graph = self._graph_ref()
+        assert graph is not None, "the graph of these chains was freed"
+        return graph
 
     @staticmethod
     def _sort_key(device: DeviceRef) -> tuple[str, int]:
@@ -162,7 +209,7 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
         combines them, updates the host chain to the merged result, and
         returns it.
 
-        Duplicates are removed (e.g., if ``DeviceRef.CPU()`` appears in
+        Duplicates are removed (for example, if ``DeviceRef.CPU()`` appears in
         ``devices``, the host chain isn't listed twice).
         """
         keys = list(dict.fromkeys((DeviceRef.CPU(), *devices)))
@@ -195,6 +242,10 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
         return f"_DeviceChainMap({{{items}}})"
 
 
+def _analysis_key(analysis: _graph.Analysis) -> frozenset[str]:
+    return frozenset(str(p) for p in analysis.library_paths)
+
+
 class KernelLibrary:
     """Manages custom kernel libraries and operations for a graph.
 
@@ -206,6 +257,9 @@ class KernelLibrary:
 
     _analysis: _graph.Analysis
     _analysis_cache: dict[frozenset[str], _graph.Analysis] = {}
+    # Set once this library's analysis is in the cache, where other libraries
+    # with the same paths read it.
+    _shares_analysis: bool = False
 
     def __init__(self, paths: Iterable[Path] = ()) -> None:
         context = default_mlir_context()
@@ -229,7 +283,22 @@ class KernelLibrary:
             path: The :class:`pathlib.Path` to the kernel library to be added to the
                 current analysis.
         """
-        self._analysis.add_path(path)
+        if not self._shares_analysis:
+            self._analysis.add_path(path)
+            return
+        # Other libraries read the shared analysis, so this one moves to the
+        # analysis for its new paths rather than changing it.
+        analysis = _graph.Analysis(
+            default_mlir_context(), [*self._analysis.library_paths, path]
+        )
+        cached = KernelLibrary._analysis_cache.get(_analysis_key(analysis))
+        if cached is not None:
+            self._analysis = cached
+            return
+        # Built now, as the shared one was, so a bad package raises here.
+        _ = analysis.symbol_names
+        self._analysis = analysis
+        self._shares_analysis = False
 
     def load_paths(self, custom_extensions: Iterable[Path]) -> None:
         """Loads custom operations from provided library paths.
@@ -258,16 +327,39 @@ class KernelLibrary:
                     + f"Mojo source or binary package: {ext_path}"
                 )
 
+    def _shared_analysis(self) -> _graph.Analysis:
+        """Returns the analysis that every library with these paths reads.
+
+        Building an analysis parses its kernel libraries, which is slow, so
+        libraries with the same paths share one. That includes those with no
+        extra paths, which every eager op's graph has.
+        """
+        if self._shares_analysis:
+            return self._analysis
+        key = _analysis_key(self._analysis)
+        cached = KernelLibrary._analysis_cache.get(key)
+        if cached is None:
+            # Built before it's shared, so a bad package raises for this
+            # library alone.
+            _ = self._analysis.symbol_names
+            cached = KernelLibrary._analysis_cache.setdefault(
+                key, self._analysis
+            )
+        self._analysis = cached
+        self._shares_analysis = True
+        return cached
+
     def __getitem__(self, kernel: str):
-        if kernel not in self._analysis.symbol_names:
+        analysis = self._shared_analysis()
+        if kernel not in analysis.symbol_names:
             raise KeyError(kernel)
-        return self._analysis.kernel(kernel)
+        return analysis.kernel(kernel)
 
     def __contains__(self, kernel: str) -> bool:
-        return kernel in self._analysis.symbol_names
+        return kernel in self._shared_analysis().symbol_names
 
     def __iter__(self):
-        yield from sorted(self._analysis.symbol_names)
+        yield from sorted(self._shared_analysis().symbol_names)
 
     def verify_custom_op(self, custom_op: mlir.Operation) -> None:
         """Verifies that a custom operation is valid within the current context.
@@ -276,18 +368,31 @@ class KernelLibrary:
             custom_op: The :obj:`mlir.Operation` to be verified against the
                 current kernel library analysis.
         """
-        paths = self._analysis.library_paths
-        if paths:
-            cache_key = frozenset(str(p) for p in paths)
-            cached = KernelLibrary._analysis_cache.get(cache_key)
-            if cached is not None:
-                self._analysis = cached
-                self._analysis.verify_custom_op(custom_op)
-                return
-            self._analysis.verify_custom_op(custom_op)
-            KernelLibrary._analysis_cache[cache_key] = self._analysis
-        else:
-            self._analysis.verify_custom_op(custom_op)
+        self._shared_analysis().verify_custom_op(custom_op)
+
+    def resolves(
+        self, kernel: str, graph_op: mlir.Operation, device: DeviceRef
+    ) -> bool:
+        """Returns whether a kernel registered as *kernel* applies to *device*.
+
+        A registration may be scoped to some devices only, by their API,
+        architecture or model, so a kernel that is registered under a name
+        does not apply to every device.
+
+        Args:
+            kernel: The registered name of the kernel to look up.
+            graph_op: The operation of the graph. Its module carries the
+                info of each device, which the scope of a registration is
+                matched against.
+            device: The device to resolve the kernel for.
+
+        Returns:
+            ``True`` if exactly one registration of *kernel* is selected for
+            *device*.
+        """
+        return self._shared_analysis().resolves_kernel(
+            kernel, graph_op, device.device_type.value, device.id
+        )
 
     def has_shape_function(self, kernel: str) -> bool:
         """Returns whether *kernel* registers a shape function.
@@ -307,7 +412,7 @@ class KernelLibrary:
         """
         if kernel not in self:
             raise KeyError(f"no kernel named {kernel!r} in the kernel library")
-        return self._analysis.has_shape_function(kernel)
+        return self._shared_analysis().has_shape_function(kernel)
 
 
 _default_custom_extensions: tuple[Path, ...] = ()
@@ -323,6 +428,24 @@ def default_custom_extensions() -> tuple[Path, ...]:
     effect unless a backend registers a library.
     """
     return _default_custom_extensions
+
+
+def _resolved_custom_extensions(
+    custom_extensions: Iterable[Path],
+) -> list[Path]:
+    """Unions *custom_extensions* with the process-global overlay.
+
+    Explicit paths keep their order and come first; an overlay path already
+    given explicitly is not repeated. This is the one place that ordering
+    lives, so anything that has to agree with what a :class:`Graph` links
+    against (a shape-function probe, a compiled-binding cache key) resolves
+    through here rather than combining the two lists its own way.
+    """
+    extensions = list(custom_extensions)
+    extensions.extend(
+        path for path in default_custom_extensions() if path not in extensions
+    )
+    return extensions
 
 
 @contextlib.contextmanager
@@ -359,8 +482,12 @@ class DevicePlacementPolicy(Enum):
     """
 
     Ignore = "ignore"
+    """Transfer silently, without any message."""
     Warn = "warn"
+    """Emit a ``UserWarning`` naming the op; the default policy."""
     Error = "error"
+    """Raise ``ValueError``, making the implicit transfer a hard build-time
+    failure."""
 
 
 # From https://stackoverflow.com/a/76301341
@@ -396,8 +523,24 @@ def _location(
         # - Avoids reference cycles
         # - Doesn't keep references to closures
 
-        # Always remove at least _location
-        tb = traceback.extract_stack()[: -(ignore_frames + 1)]
+        # Below the call into the graph API, the frames are MAX's
+        # implementation of the op. An op built through an internal path has
+        # no boundary on its stack and keeps every frame.
+        callers = (
+            callers_of_api(sys._getframe(1))
+            if _InferenceSession.debug.source_tracebacks_hide_internal
+            else None
+        )
+        tb: list[traceback.FrameSummary]
+        if callers is not None:
+            tb = list(
+                traceback.StackSummary.extract(
+                    (frame, frame.f_lineno) for frame in callers
+                )
+            )
+        else:
+            # Always remove at least _location
+            tb = traceback.extract_stack()[: -(ignore_frames + 1)]
         location = (
             _graph.frame_loc(mlir.Context.current, tb)
             if tb
@@ -427,6 +570,24 @@ def _to_mlir(o: Any) -> Any:
     elif isinstance(o, dict):
         return {k: _to_mlir(v) for k, v in o.items()}
     return o
+
+
+def _unwrap_to_cmlir(arg: Any) -> Any:
+    """Converts graph API values, types and attributes to ``max.mlir`` ones."""
+    if isinstance(arg, Value):
+        return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore[attr-defined]
+    elif isinstance(arg, Type):
+        return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
+    elif isinstance(arg, list | tuple):
+        return [_unwrap_to_cmlir(elem) for elem in arg]
+    elif isinstance(arg, _Attribute):
+        return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
+    elif isinstance(arg, _Type):
+        return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
+    elif isinstance(arg, _Value):
+        return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore[attr-defined]
+    else:
+        return arg
 
 
 # MLIR assembly text must be read and written through the ``max.mlir`` bindings
@@ -512,7 +673,8 @@ class Module:
     same ``module=`` argument adds each graph as a top-level op in this
     module.
 
-    Example:
+    For example, build two graphs into a shared module, load them in one
+    compilation unit, then execute both:
 
     .. code-block:: python
 
@@ -554,7 +716,7 @@ class Module:
 
     The wrapped MLIR module is exposed as :attr:`mlir_module` for code that
     must reach the underlying representation (graph compiler internals,
-    serializers, etc.); routine users should not need it.
+    serializers and so on); routine users should not need it.
     """
 
     mlir_module: builtin.ModuleOp
@@ -644,6 +806,15 @@ class GraphDebugConfig:
     def source_tracebacks(self, value: bool) -> None:
         _InferenceSession.debug.source_tracebacks = value
 
+    @property
+    def source_tracebacks_hide_internal(self) -> bool:
+        """See :attr:`max.engine.DebugConfig.source_tracebacks_hide_internal`."""
+        return _InferenceSession.debug.source_tracebacks_hide_internal
+
+    @source_tracebacks_hide_internal.setter
+    def source_tracebacks_hide_internal(self, value: bool) -> None:
+        _InferenceSession.debug.source_tracebacks_hide_internal = value
+
 
 class Graph:
     """Represents a single MAX graph.
@@ -707,7 +878,7 @@ class Graph:
         )
 
     These examples only use the :obj:`max.graph` package, but most models also
-    use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
+    use :class:`~max.nn.legacy.Module` and other building blocks from :obj:`max.nn.legacy`.
     To learn more, see `Build a model graph with Module
     </develop/modules>`_.
 
@@ -743,6 +914,9 @@ class Graph:
     _current_block: mlir.Block
     _should_verify_ops: bool
     _has_chain_input: bool
+    # How the value passed to :meth:`output` nests the outputs; ``None`` for a
+    # graph read back from MLIR, which records no structure.
+    _output_structure: tree.TreeDef | None = None
     # Per-device chains that ensure the correct sequence of device execution.
     # ``device_chains[DeviceRef.CPU()]`` is the host orchestration chain (the
     # chain advanced by host-side ops like ``debug.print``, ``mo.call``, and
@@ -751,6 +925,10 @@ class Graph:
     device_chains: _DeviceChainMap
 
     _kernel_library: KernelLibrary
+    # The extension paths as the caller named them, before `_import_kernels`
+    # built any source package into a `.mojoc`. A `.mojoc`'s bytes depend on
+    # the tree it was built in; the sources do not.
+    _source_extension_paths: list[Path]
 
     _subgraphs: dict[str, Graph] = {}
 
@@ -759,8 +937,7 @@ class Graph:
     def __init__(
         self,
         name: str,
-        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
-        | None = None,
+        forward: Callable[..., GraphOutputs | None] | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
         *args,
@@ -785,6 +962,7 @@ class Graph:
             if isinstance(dim, SymbolicDim)
         )
         self._context_state = []
+        self._data_dependent_dims = 0
         self._should_verify_ops = True
 
         with _location() as loc:
@@ -842,18 +1020,17 @@ class Graph:
                     _ChainValue.from_mlir(mlir_maybe_chain_value)
                 )
 
-        # Initialize the kernel library and load custom extensions paths.
-        # Process-global defaults are appended after any explicit extensions so
-        # graphs built without `custom_extensions` still reach a backend's
-        # kernel overlays (see `default_custom_extensions`).
-        self._kernel_library = kernel_library or KernelLibrary()
-        extensions = list(custom_extensions)
-        extensions.extend(
-            path
-            for path in default_custom_extensions()
-            if path not in extensions
+        # Resolving through `_resolved_custom_extensions` is what lets a graph
+        # built without `custom_extensions` still reach a backend's kernel
+        # overlays (see `default_custom_extensions`). The resolved paths are
+        # kept before `_import_kernels` builds a source package into a `.mojoc`
+        # whose bytes depend on where it was built, so anything that has to
+        # compare two runs' kernel libraries reads the sources instead.
+        self._source_extension_paths = _resolved_custom_extensions(
+            custom_extensions
         )
-        self._import_kernels(extensions)
+        self._kernel_library = kernel_library or KernelLibrary()
+        self._import_kernels(self._source_extension_paths)
 
         self._subgraphs = {}
 
@@ -866,16 +1043,16 @@ class Graph:
             # constructor.
             with self:
                 result = forward(*self.inputs, *args, **kwargs)
-                # Account for forward methods that return None, a single
-                # output, or multiple outputs.
-                outputs = (
-                    ()
-                    if result is None
-                    else (result,)
-                    if not isinstance(result, Iterable)
-                    else result
-                )
-                self.output(*outputs)
+                # Forward returns None, one value, a tree such as a tuple or a
+                # named dict, or any other iterable of values.
+                if result is None:
+                    self.output()
+                elif tree.is_node(result):
+                    self.output(result)
+                elif isinstance(result, Iterable):
+                    self.output(*result)
+                else:
+                    self.output(result)
 
     @functools.cached_property
     def inputs(self) -> Sequence[Value[Any]]:
@@ -898,8 +1075,7 @@ class Graph:
     def add_subgraph(
         self,
         name: str,
-        forward: Callable[..., Value[Any] | Iterable[Value[Any]] | None]
-        | None = None,
+        forward: Callable[..., GraphOutputs | None] | None = None,
         input_types: Iterable[Type[Any]] = (),
         path: Path | None = None,
         custom_extensions: Iterable[Path] = [],
@@ -922,32 +1098,31 @@ class Graph:
         - **Kernel fusion:** The compiler can't fuse ops across the subgraph
           boundary, which may reduce throughput marginally.
 
-        For models with a :class:`~max.nn.Module`, prefer
-        :meth:`~max.nn.Module.build_subgraph`, which handles weight prefixes
+        For models with a :class:`~max.nn.legacy.Module`, prefer
+        :meth:`~max.nn.legacy.Module.build_subgraph`, which handles weight prefixes
         automatically.
 
-        Examples:
-            Define a subgraph that adds 1 to every element, then call it on a
-            graph input:
+        For example, define a subgraph that adds 1 to every element, then
+        call it on a graph input:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                from max.dtype import DType
-                from max.graph import Graph, ops
-                from max.graph.type import TensorType, DeviceRef
+            from max.dtype import DType
+            from max.graph import Graph, ops
+            from max.graph.type import TensorType, DeviceRef
 
-                input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
+            input_type = TensorType(DType.float32, [10], DeviceRef.CPU())
 
-                with Graph("main", input_types=[input_type]) as graph:
-                    with graph.add_subgraph(
-                        "add_one", input_types=[input_type]
-                    ) as sub:
-                        x = sub.inputs[0].tensor
-                        one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
-                        sub.output(ops.elementwise.add(x, one))
+            with Graph("main", input_types=[input_type]) as graph:
+                with graph.add_subgraph(
+                    "add_one", input_types=[input_type]
+                ) as sub:
+                    x = sub.inputs[0].tensor
+                    one = ops.constant(1, DType.float32, device=DeviceRef.CPU())
+                    sub.output(ops.elementwise.add(x, one))
 
-                    result = ops.call(sub, graph.inputs[0])
-                    graph.output(*result)
+                result = ops.call(sub, graph.inputs[0])
+                graph.output(*result)
 
         Args:
             name: The name identifier for the subgraph. Must be unique within
@@ -1033,7 +1208,9 @@ class Graph:
 
     @contextlib.contextmanager
     def profile_scope(
-        self, name: str, color: str | None = None
+        self,
+        name: str,
+        color: ProfileScopeColor | None = None,
     ) -> Generator[None]:
         """Labels every op created within this block for profiling.
 
@@ -1050,17 +1227,18 @@ class Graph:
 
         .. code-block:: python
 
-            from max.graph import Graph
+            from max.graph import Graph, ProfileScopeColor
             with Graph("main") as graph:
-                with graph.profile_scope("draft_forward", color="orange"):
+                with graph.profile_scope(
+                    "draft_forward", color=ProfileScopeColor.ORANGE
+                ):
                     ...  # ops here trace as "kernel_name [draft_forward]"
 
         Args:
             name: The scope label to attach to every op created inside this
                 block.
-            color: Optional NVTX color name for the in-region range bracketing
-                mechanism. Has no effect on the per-kernel trace name. Invalid
-                values are silently ignored by the backend.
+            color: Optional NVTX color for the in-region range bracketing
+                mechanism. Has no effect on the per-kernel trace name.
 
         Note:
             Scopes are tracked in a single module-level ContextVar. Do not
@@ -1068,8 +1246,9 @@ class Graph:
             ``profile_scope`` is still active; labels would leak between the
             two graphs.
         """
+        color_str: str | None = color.value if color is not None else None
         current = _CURRENT_PROFILE_SCOPES.get()
-        token = _CURRENT_PROFILE_SCOPES.set((*current, (name, color)))
+        token = _CURRENT_PROFILE_SCOPES.set((*current, (name, color_str)))
         try:
             yield
         finally:
@@ -1101,7 +1280,7 @@ class Graph:
         into the outer graph's chain timeline. ``_weights`` is snapshotted
         because :meth:`add_weight` keys its cache by Python identity:
         same-name weights with different ``Weight`` instances across blocks
-        (e.g., separate ``Weight("w", ...)`` calls in the ``true_fn`` and
+        (such as separate ``Weight("w", ...)`` calls in the ``true_fn`` and
         ``false_fn`` of an ``ops.cond``) need each block to start with an
         empty cache so each branch creates its own ``mo.constant.external``
         op (the graph compiler resolves both to the same registry entry).
@@ -1152,7 +1331,8 @@ class Graph:
             diags = "\n  ".join(diagnostics)
             raise ValueError(f"Diagnostics:\n    {diags}\n{e}") from None
         finally:
-            handle.detach()  # type: ignore
+            # Doesn't cause a mypy error in the OSS repo for some reason
+            handle.detach()  # type: ignore[attr-defined, unused-ignore]
 
     @_classproperty
     def current(cls) -> Graph:
@@ -1232,25 +1412,10 @@ class Graph:
         attach_profile_scopes: bool = True,
         **kwargs,
     ) -> tuple[list[Value[Any]], mlir.OpView]:
-        # Convert args from instances of Python graph-api Value() to mlir.Value
-        def unwrap(arg: Any) -> Any:
-            if isinstance(arg, Value):
-                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore[attr-defined]
-            elif isinstance(arg, Type):
-                return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
-            elif isinstance(arg, list | tuple):
-                return [unwrap(elem) for elem in arg]
-            elif isinstance(arg, _Attribute):
-                return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
-            elif isinstance(arg, _Type):
-                return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
-            elif isinstance(arg, _Value):
-                return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore[attr-defined]
-            else:
-                return arg
-
-        unwrapped_args = tuple(unwrap(arg) for arg in args)
-        unwrapped_kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
+        unwrapped_args = tuple(_unwrap_to_cmlir(arg) for arg in args)
+        unwrapped_kwargs = {
+            k: _unwrap_to_cmlir(arg) for k, arg in kwargs.items()
+        }
 
         ip = _ip or mlir.InsertionPoint(self._body)
 
@@ -1336,60 +1501,70 @@ class Graph:
             entries
         )
 
-    def output(self, *outputs: Value[Any] | TensorValueLike) -> None:
+    @api_boundary
+    def output(self, *outputs: GraphOutputs) -> None:
         """Sets the output values of the graph and finalizes construction.
 
         Call this once after building all ops. The graph can't be executed
         until ``output()`` has been called. Subsequent calls to
         :attr:`output_types` read back the types of the values passed here.
 
-        Examples:
-            Build a graph that doubles its input and set the output:
+        For example, build a graph that doubles its input and set the
+        output:
 
-            .. code-block:: python
+        .. code-block:: python
 
-                from max.dtype import DType
-                from max.graph import DeviceRef, Graph, ops
-                from max.graph.type import TensorType
+            from max.dtype import DType
+            from max.graph import DeviceRef, Graph, ops
+            from max.graph.type import TensorType
 
-                input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
+            input_type = TensorType(DType.float32, [4], DeviceRef.CPU())
 
-                with Graph("double", input_types=[input_type]) as graph:
-                    x = graph.inputs[0].tensor
-                    two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
-                    graph.output(ops.elementwise.mul(x, two))
+            with Graph("double", input_types=[input_type]) as graph:
+                x = graph.inputs[0].tensor
+                two = ops.constant(2.0, DType.float32, device=DeviceRef.CPU())
+                graph.output(ops.elementwise.mul(x, two))
+
+        Pass one named tree, such as a dict of logits and hidden states, to
+        name each output by its path in it; :attr:`output_tree` then returns
+        the output types in that structure.
 
         Args:
-            outputs: The output values of the graph. Each value may be a
-                :class:`Value` or any :class:`~max.graph.TensorValueLike`.
+            outputs: The output values of the graph, or a single tree whose
+                leaves they are. Each value may be a :class:`Value` or any
+                :class:`~max.graph.TensorValueLike`.
         """
+        root = (
+            outputs[0]
+            if len(outputs) == 1 and tree.is_node(outputs[0])
+            else outputs
+        )
+        leaves, self._output_structure = tree.flatten(root)
+        if any(isinstance(leaf, str) for leaf in leaves):
+            raise TypeError(
+                f"graph outputs {leaves} include a string, as when a named"
+                " tree is unpacked into its keys: pass the tree itself, as"
+                " graph.output(outputs)"
+            )
         outputs = tuple(
-            o if isinstance(o, Value) else TensorValue(o) for o in outputs
+            o if isinstance(o, Value) else TensorValue(o) for o in leaves
         )
         outputs = cast(tuple[Value[Any], ...], outputs)
         # mo.output doesn't support infer_type
-        graph_body_args = self._graph_body.arguments
         output_values: list[Value[Any]] = list(outputs)
         if self._has_chain_input:
             output_values = self.device_chains.pack(output_values)
         mlir_values: list[_Value[Any]] = [v._mlir_value for v in output_values]
 
-        # We have a type mismatch now, these are MLIR types
-        # Convert from max._core.Type to mlir.Type using CAPI bridge
-        output_types = [
-            mlir.Type._CAPICreate(value.type._CAPIPtr)  # type: ignore[attr-defined]
-            for value in mlir_values
-        ]
-
-        # Need to set some more stuff.
-        function_type = mlir.FunctionType.get(
-            graph_body_args.types,
-            output_types,
+        op = Operation._from_cmlir(self._mlir_op)
+        assert isinstance(op, _mo.GraphOp)
+        function_type = builtin.FunctionType(
+            [arg.type for arg in op.regions[0].front.arguments],
+            [value.type for value in mlir_values],
         )
-        signature = mlir.Type.parse(f"!kgen.generator<{function_type}>")
-        self._mlir_op.attributes["signature"] = mlir.TypeAttr.get(signature)
-        self._mlir_op.attributes["functionType"] = mlir.TypeAttr.get(
-            function_type
+        op.function_type = builtin.TypeAttr(function_type)
+        op.signature = builtin.TypeAttr(
+            kgen.FuncTypeGeneratorType([], function_type)
         )
 
         self._add_op_generated(
@@ -1402,13 +1577,12 @@ class Graph:
         # Set the result_names metadata on the staged op, which is needed by
         # the engine for execution.
         # Note that result_names here needs to match kMgpModelResultNames.
-        input_names = [f'"input{i}"' for i in range(len(self.inputs))]
-        self._mlir_op.attributes["argument_names"] = mlir.Attribute.parse(
-            f"[{', '.join(input_names)}]"
+        attrs = op.discardable_attributes
+        attrs["argument_names"] = builtin.ArrayAttr(
+            [builtin.StringAttr(f"input{i}") for i in range(len(self.inputs))]
         )
-        output_names = [f'"output{i}"' for i in range(len(output_types))]
-        self._mlir_op.attributes["result_names"] = mlir.Attribute.parse(
-            f"[{', '.join(output_names)}]"
+        attrs["result_names"] = builtin.ArrayAttr(
+            [builtin.StringAttr(f"output{i}") for i in range(len(mlir_values))]
         )
 
         self._subgraphs = {}
@@ -1424,9 +1598,14 @@ class Graph:
             ) from None
 
     def _erase_output_if_present(self) -> None:
-        terminator = self._body.operations[-1]
-        if isinstance(terminator, mo.OutputOp):
-            terminator.erase()
+        """Erases the terminator, if ``output()`` already added one.
+
+        Failure paths call this to make the graph extendable again, so it must
+        not raise where it would replace the caller's exception.
+        """
+        operations = self._body.operations
+        if operations and isinstance(operations[-1], mo.OutputOp):
+            operations[-1].erase()
 
     @property
     def output_types(self) -> list[Type[Any]]:
@@ -1453,8 +1632,26 @@ class Graph:
 
         return [Value.from_mlir(val).type for val in operand_values]
 
+    @property
+    def output_tree(self) -> tree.Tree[Type[Any]]:
+        """The output types, nested as they were passed to :meth:`output()`.
+
+        A single named tree, such as a dict of logits and hidden states, names
+        each output by its path in it; separate values, or a graph read back
+        from MLIR, give a tuple.
+
+        Raises:
+            TypeError: If the graph has not yet been terminated by a call to
+                :meth:`output()`.
+        """
+        types = self.output_types
+        if self._output_structure is None:
+            return tuple(types)
+        return tree.unflatten(self._output_structure, types)
+
     def _load_mlir(self, path: Path) -> None:
         self._context_state = []
+        self._data_dependent_dims = 0
         with open(path) as f:
             context = default_mlir_context()
             with _location():
@@ -1474,6 +1671,7 @@ class Graph:
             if isinstance(paths_attr, mlir.ArrayAttr):
                 kernels_paths = [Path(str(x)) for x in paths_attr]
         self._kernel_library = KernelLibrary(kernels_paths)
+        self._source_extension_paths = kernels_paths
 
     def copy(self) -> Graph:
         """Creates a deep copy of this graph.
@@ -1486,7 +1684,19 @@ class Graph:
 
         Returns:
             A new :class:`Graph` wrapping a deep copy of this graph's module.
+
+        Raises:
+            ValueError: If a custom op in this graph has a data-dependent
+                output dim; a copy would restart their per-graph numbering
+                (see :meth:`_allocate_data_dependent_ordinal`).
         """
+        if self._data_dependent_dims:
+            raise ValueError(
+                f"graph {self.name!r} cannot be copied: it holds "
+                f"{self._data_dependent_dims} data-dependent custom op output "
+                "dim(s), whose numbering a copy would restart under the same "
+                "graph name"
+            )
         module = self._module.clone()
         assert isinstance(module, builtin.ModuleOp)
         copied = Graph.__new__(Graph)
@@ -1498,8 +1708,22 @@ class Graph:
         # module body block.
         copied._mlir_op = mlir.Operation._CAPICreate(module.body[0]._CAPIPtr)
         copied._kernel_library = self._kernel_library
+        copied._source_extension_paths = list(self._source_extension_paths)
+        copied._data_dependent_dims = 0
         return copied
 
+    def _allocate_data_dependent_ordinal(self) -> int:
+        """Returns the next ordinal for a data-dependent custom op output dim.
+
+        Restarts at zero per graph so generated dim names are stable across
+        processes for IR cache keys; :meth:`copy` refuses a graph that has
+        allocated any, since a copy would restart the sequence.
+        """
+        index = self._data_dependent_dims
+        self._data_dependent_dims = index + 1
+        return index
+
+    @api_boundary
     def add_weight(
         # TODO(GEX-2121): Remove `force_initial_weight_on_host`
         self,
@@ -1617,7 +1841,7 @@ class GraphBlock:
     don't leak into the outer graph.
 
     Pass the block's :attr:`mlir_block` to an op wrapper that accepts a
-    pre-built block (e.g., ``mo.if_(..., then_block=...)``); the wrapper
+    pre-built block (such as ``mo.if_(..., then_block=...)``); the wrapper
     moves the block into the op's region.
 
     Implementation note: the MLIR upstream Python binding requires every
@@ -1641,6 +1865,13 @@ class GraphBlock:
         with _location() as loc:
             arg_locs = [loc for _ in mlir_arg_types]
             self._scratch_module = builtin.ModuleOp(location=loc)
+            # The scratch module stands in for the graph's module while ops
+            # are built here, and some checks read module attributes, such as
+            # `ops.custom`'s check against the graph's device info.
+            graph_attrs = self._graph._module.discardable_attributes
+            scratch_attrs = self._scratch_module.discardable_attributes
+            for name in graph_attrs:
+                scratch_attrs[name] = graph_attrs[name]
             scratch_builder = OpBuilder(self._scratch_module.body.end)
             self._scratch_graph_op = _mo.GraphOp(
                 scratch_builder,
@@ -1663,7 +1894,7 @@ class GraphBlock:
     def mlir_block(self) -> mlir.Block:
         """The underlying ``mlir.Block``.
 
-        Pass this to op wrappers that accept a pre-built block (e.g.,
+        Pass this to op wrappers that accept a pre-built block (such as
         ``mo.IfOp(..., then_block=...)``).
         """
         return self._mlir_block
@@ -1700,6 +1931,7 @@ class GraphBlock:
         self._block_ctx = None
         return ctx.__exit__(exc_type, exc_val, exc_tb)
 
+    @api_boundary
     def output(
         self,
         *values: Value[Any] | TensorValueLike,
@@ -1714,14 +1946,14 @@ class GraphBlock:
 
         ``terminator`` defaults to ``mo.YieldOp``. Pass a different
         terminator (or an adapter callable) when the block's owning op
-        expects a non-yield terminator — e.g., ``mo.while``'s condition
+        expects a non-yield terminator — for example, ``mo.while``'s condition
         block uses ``mo.WhileConditionOp(condition, operands)``, which
         splits its first operand off from the rest.
 
         Verification is paused around the terminator's construction because
         the block is still parked in scratch — ``mo.yield``'s parent-type
         check will run later, against the real owning op, when the
-        surrounding control-flow op (e.g., ``mo.if``) is created.
+        surrounding control-flow op (such as ``mo.if``) is created.
         """
         graph = self._graph
         with graph._pause_verification():

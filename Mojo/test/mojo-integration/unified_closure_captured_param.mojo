@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# RUN: env MOJO_ENABLE_PARAMETRIC_CLOSURE_TRAIT=1 %mojo %s 1 2 3 4 | FileCheck %s
 # RUN: %mojo %s 1 2 3 4 | FileCheck %s
 
 from std.sys import argv

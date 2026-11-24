@@ -3,6 +3,38 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+# Tests below launch GPU kernels and allocate device buffers, so they need an
+# accelerator constraint and MAX's device-side host bindings.
+_GPU_TESTS = [
+    "test_init_vector.mojo",
+]
+
+# `init_vector_launch` does not build for Metal, so neither does this test. The
+# sibling test of the same launcher, //max/kernels/test/gpu/basics:
+# test_init_vector_gpu.mojo, is excluded from the Apple leg for the MetalAIRPass
+# address-space propagation bug (FIXME: KERN-2360), and the rowwise FP8 test that
+# exercises the neighbouring initializers, //max/kernels/test/gpu/linalg:
+# test_grouped_matmul_rowwise_scaled_fp8.mojo, is excluded for the Metal compile
+# blowing past the 900s ceiling (FIXME: MOCO-4405). Match those exclusions rather
+# than add a target no Apple GPU can compile.
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+mojo_test(
+    name = "test_init_vector.mojo.test",
+    srcs = ["test_init_vector.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+    deps = [
+        "//max:internal_utils",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
@@ -14,5 +46,8 @@ package(default_visibility = ["//max:consumers"])
             "@mojo//:std",
         ],
     )
-    for src in glob(["**/*.mojo"])
+    for src in glob(
+        ["**/*.mojo"],
+        exclude = _GPU_TESTS,
+    )
 ]

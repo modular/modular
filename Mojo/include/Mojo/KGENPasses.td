@@ -172,8 +172,7 @@ def LowerClosures : Pass<"lower-closures", "ModuleOp"> {
   let description = [{
     The `lower-closures` pass transforms `async` functions into normal
     `kgen.func` by adding the required POP-level coroutine machinery, and it
-    lowers inline closure operations like `co.execute` and
-    `kgen.stage_closure` by lifting their regions into top-level functions.
+    lowers `co.execute` by lifting its region into a top-level function.
   }];
 
   let dependentDialects = ["POPDialect"];
@@ -198,25 +197,6 @@ def LowerAsyncFunctions : Pass<"lower-async-functions", "ModuleOp"> {
     "KGENDialect",
     "mlir::index::IndexDialect",
     "mlir::ub::UBDialect",
-  ];
-}
-
-//===----------------------------------------------------------------------===//
-// OutlineClosures
-//===----------------------------------------------------------------------===//
-
-def OutlineClosures : Pass<"outline-closures", "ModuleOp"> {
-  let summary = "Outlines region parameters into explicit closures.";
-  let description = [{
-    This pass outlines region parameters into functions that are called with
-    a struct that contains all captures.
-  }];
-
-  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
-
-  let options = [
-    Option<"debugBuild", "debug-build", "bool", "false",
-           "Whether to check locations for parameter uses.">
   ];
 }
 
@@ -354,6 +334,14 @@ def LowerPOPToLLVM : Pass<"lower-pop-to-llvm"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"inlinePrecompiledMLIR", "inline-precompiled-mlir", "bool",
+           /*default=*/"true",
+           "Mark the precompiled conversion snippets (e.g. fp8 -> f32) "
+           "`always_inline`, so LLVM folds them into the caller instead of "
+           "leaving an out-of-line call.">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -428,6 +416,14 @@ def LowerGlobalPOPToLLVM : Pass<"lower-global-pop-to-llvm", "ModuleOp"> {
   }];
 
   let dependentDialects = ["::mlir::LLVM::LLVMDialect"];
+
+  let options = [
+    Option<"inlinePrecompiledMLIR", "inline-precompiled-mlir", "bool",
+           /*default=*/"true",
+           "Mark the precompiled conversion snippets `always_inline`, so "
+           "LLVM folds them into the caller instead of leaving an "
+           "out-of-line call.">,
+  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -526,7 +522,12 @@ def ElaborateGenerators : Pass<"elaborate-generators", "ModuleOp"> {
     Option<"loopUnrollingWarnThreshold", "loop-unrolling-warn-threshold",
            "unsigned", "65536",
            "Threshold to warn if a loop is unrolled for too many times, "
-           "default value is 65536, set to 0 to disable the warning.">
+           "default value is 65536, set to 0 to disable the warning.">,
+    Option<"printStats", "print-stats", "bool", "false",
+           "Print to stderr what elaboration produced: each `comptime for` "
+           "loop with its iteration count and the operations its unrolled "
+           "iterations hold, and the interpreter calls for comptime values "
+           "with their cache hits and the CPU time to interpret the rest.">
   ];
 }
 
@@ -572,23 +573,6 @@ def ApplyInliner : Pass<"apply-inliner", "ModuleOp"> {
     parameter calls to functions that just return an argument or a constant. The
     primary goal of this pass is to simplify parameter expressions in the IR.
   }];
-}
-
-//===----------------------------------------------------------------------===//
-// ResolveCompilerPromises
-//===----------------------------------------------------------------------===//
-
-def ResolveCompilerPromises : Pass<"resolve-compiler-promises", "ModuleOp"> {
-  let summary = "reverse callgraph specialization to resolve promises";
-  let description = [{
-    TODO
-  }];
-
-  let dependentDialects = [
-    "MDialect",
-    "mlir::index::IndexDialect",
-    "mlir::ub::UBDialect",
-  ];
 }
 
 //===----------------------------------------------------------------------===//
@@ -774,13 +758,13 @@ def Mem2Reg : Pass<"mem-2-reg"> {
     %0 = pop.stack_allocation 1 x index
     pop.store %arg0, %0 : !kgen.pointer<index>
     %1 = pop.load %0 : !kgen.pointer<index>
-    kgen.return %1 : index
+    hlcf.return %1 : index
     ```
 
     Will become:
 
     ```mlir
-    kgen.return %arg0 : index
+    hlcf.return %arg0 : index
     ```
 
     However, stores within a nested region will not be elided (yet).
@@ -793,7 +777,7 @@ def Mem2Reg : Pass<"mem-2-reg"> {
       pop.store %arg1, %0 : !kgen.pointer<index>
     }
     %1 = pop.load %0 : !kgen.pointer<index>
-    kgen.return %1 : index
+    hlcf.return %1 : index
     ```
   }];
 
@@ -896,6 +880,9 @@ def SimplifyCF : Pass<"simplify-cf", "KGEN::FuncOp"> {
               "the number of trivial loops erased">,
     Statistic<"numErasedTry", "num-erased-try",
               "the number of trivial try erased">,
+    Statistic<"numImpliedConditions", "num-implied-conditions",
+              "the number of if conditions implied by a region that never "
+              "falls through">,
   ];
 }
 
@@ -921,6 +908,25 @@ def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
   ];
 
   let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// DecomposeFunctionArguments
+//===----------------------------------------------------------------------===//
+
+def DecomposeFunctionArguments
+    : Pass<"decompose-function-arguments", "ModuleOp"> {
+  let summary = "Flatten struct arguments into their leaf fields";
+  let description = [{
+    The `decompose-function-arguments` pass flattens `kgen.struct` arguments
+    of every `kgen.func` into leaf fields and rewrites the body and the
+    surviving `kgen.call` sites to match. Which arguments to flatten, and
+    each leaf's attributes and convention, come from a
+    `FunctionArgumentDecompositionPolicy`; the pipeline-registered form uses
+    the default policy, which flattens every struct argument.
+  }];
+
+  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
 }
 
 //===----------------------------------------------------------------------===//
@@ -977,32 +983,6 @@ def StripParserMetadata : Pass<"strip-parser-metadata"> {
 }
 
 //===----------------------------------------------------------------------===//
-// LowerRuntimeClosures
-//===----------------------------------------------------------------------===//
-
-def LowerRuntimeClosures : Pass<"lower-runtime-closures", "ModuleOp"> {
-  let summary = "Lowers closure types into struct of two pointers";
-
-  let description = [{
-    In the runtime-closures pass, we lifted nested functions into top level
-     functions and replaced references to them with kgen closure operations.
-     In this pass, the closure operations are lowered to llvm dialect.
-
-    1) The op that represents a closure creation should lower to
-        (a) a top level function that knows how to unpack the state
-            and call the lifted function
-        (b) an allocation of memory and storage of captured state
-        (c) creation of a struct that contains a pointer to (a) and a pointer to (b)
-    2) The op that represents a closure inmvocation should be lowered to
-        (a) extraction of function pointer from struct
-        (b) extraction of data pointer from struct
-        (c) invoke function with (b) + dynamic arguments
-  }];
-
-  let dependentDialects = ["KGENDialect", "POP::POPDialect"];
-}
-
-//===----------------------------------------------------------------------===//
 // SynthesizeDebugInfo
 //===----------------------------------------------------------------------===//
 
@@ -1029,6 +1009,61 @@ def SynthesizeDebugInfo : Pass<"synth-debuginfo", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
+// RotateLoops
+//===----------------------------------------------------------------------===//
+
+def RotateLoops: Pass<"rotate-loops", "KGEN::FuncOp"> {
+  let summary = "move a loop's exiting test to the top of its body.";
+  let description = [{
+    Rotating a loop means moving its exiting test to the top of the body, so
+    that the test decides whether to run an iteration before any of that
+    iteration runs, instead of part way through it.
+
+    This is a canonicalization rather than an optimization: every op runs
+    exactly as many times as it did before. What it buys is one shape for
+    every loop, which `raise-for-loops` needs. An `hlcf.for` evaluates its
+    bound before the body, so raising a loop whose test follows part of its
+    body gives one iteration too few; without rotation, each shape an
+    `hlcf.loop` can take would need its own check that raising it is correct.
+
+    The ops that were ahead of the test are duplicated: one copy runs before
+    the loop, ahead of the first test, and one at the end of the body, ahead
+    of the next. What the copies define is carried from one iteration to the
+    next.
+
+    ```mlir
+    // Before: the store runs for %i = %n down to 0, one more time than the
+    // ops behind the test.
+    hlcf.loop (%i = %n : index) {
+      pop.store %i, %p : !kgen.pointer<index>
+      %c = index.cmp eq(%i, %idx0)
+      hlcf.if %c { hlcf.break } else { hlcf.yield }
+      %next = index.sub %i, %idx1
+      hlcf.continue %next : index
+    }
+
+    // After: the test leads, and the store still runs that many times.
+    pop.store %n, %p : !kgen.pointer<index>
+    hlcf.loop (%i = %n : index) {
+      %c = index.cmp eq(%i, %idx0)
+      hlcf.if %c { hlcf.break } else { hlcf.yield }
+      %next = index.sub %i, %idx1
+      pop.store %next, %p : !kgen.pointer<index>
+      hlcf.continue %next : index
+    }
+    ```
+
+    A loop does not rotate when the ops ahead of its test must not be
+    duplicated: a convergent function, an op carrying a region, a stack
+    allocation, or more ops than `kgen-rotate-loops-max-ops` allows it to
+    copy. Nor does it when the test itself reads memory, since the test stays
+    where it is while the rest of the body moves past it.
+  }];
+
+  let dependentDialects = ["HLCF::HLCFDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // RaiseForLoops
 //===----------------------------------------------------------------------===//
 
@@ -1040,6 +1075,127 @@ def RaiseForLoops: Pass<"raise-for-loops", "KGEN::FuncOp"> {
   }];
 
   let dependentDialects = ["HLCF::HLCFDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// LowerHLCFToSCF
+//===----------------------------------------------------------------------===//
+
+def LowerHLCFToSCF : Pass<"lower-hlcf-to-scf", "ModuleOp"> {
+  let summary = "Lower HLCF structured control flow to SCF";
+  let description = [{
+    The `lower-hlcf-to-scf` pass lowers `hlcf.for`, `hlcf.if`, `hlcf.switch`,
+    and `hlcf.loop` with their terminators to their SCF equivalents. An
+    `hlcf.if` holding `elif` regions becomes one `scf.if` per condition, each
+    nested in the previous one's `else` region.
+
+    A region's own ops are still POP-typed when the region is converted, so a
+    value crossing a region boundary — a `!pop.scalar` operand or result — is
+    bridged with an `unrealized_conversion_cast` that a later lowering
+    resolves.
+
+    A function-terminating `hlcf.return` or `hlcf.unreachable` is left for the
+    function conversion. An `hlcf.unreachable` that ends a converted region
+    becomes a yield of `ub.poison`, since control never reaches it.
+
+    Run `raise-for-loops` first. A Mojo `for i in range(...)` arrives as an
+    `hlcf.loop`; without the raise it reaches SCF as `scf.while` rather than
+    `scf.for`.
+
+    `scf` has no branch that leaves more than the region it sits in, and
+    `scf.while` carries its state out through a single after-region
+    `scf.yield`. So an `hlcf.loop` lowers only when its `continue`/`break`
+    terminates the loop body itself:
+
+    ```mlir
+    // Lowered: the exits terminate the body.
+    hlcf.loop {
+      "work"() : () -> ()
+      hlcf.continue
+    }
+    ```
+
+    An exit one region deeper does not lower, such as the `break` of an
+    `if ...: break` in the loop body. Reaching the loop's
+    yield from there means threading the loop state out through the
+    `scf.if` results, which this pass does not do at this moment:
+
+    ```mlir
+    // Rejected: the `break` would have to leave both the `hlcf.if`
+    // and the loop body.
+    hlcf.loop {
+      hlcf.if %c {
+        hlcf.break
+      } else {
+        hlcf.yield
+      }
+      hlcf.continue
+    }
+    ```
+
+    The exception is the exit check of a `while cond:` loop. The loop splits
+    there into the two regions of an `scf.while`. In pseudo-IR, for
+    `while 8 * j < n: use(8 * j); j += 1`:
+
+    ```
+    hlcf.loop (%j = %init) {       scf.while (%j = %init) {
+      %k = %j * 8                    %k = %j * 8
+      %c = %k < %n                   %c = %k < %n
+      hlcf.if %c {                   scf.condition(%c) %j
+        hlcf.yield                 } do {
+      } else {                     ^bb0(%j2):
+        hlcf.break                   %k2 = %j2 * 8
+      }                              use(%k2)
+      use(%k)                        scf.yield %j2 + 1
+      hlcf.continue %j + 1         }
+    }
+    ```
+
+    A pure op such as `%k` is recomputed after the check instead of passed
+    through `scf.condition`.
+
+    A `continue`/`break` inside a nested loop is lowered with that loop,
+    unless its label names an outer loop. It then exits the outer loop from
+    a nested region, which is rejected.
+
+    Rejected the same way: a loop whose bound is inclusive (`sle`/`sge`),
+    which `scf.for` would run one iteration short; a `for` whose yielded
+    induction variable is not its own `step` advance, which would change the
+    trip count; and an `hlcf.return` nested in a region, which needs an exit
+    `scf` has no form for. Rejected means the op fails to legalize: the pass
+    reports the op and fails, rather than lowering it to something that
+    behaves differently.
+
+    With `for-only`, only `hlcf.for` is lowered and any other HLCF control
+    flow is rejected.
+  }];
+
+  let options = [
+    Option<"forOnly", "for-only", "bool", "false",
+           "Lower only `hlcf.for`; other HLCF control flow fails to legalize.">,
+  ];
+
+  let dependentDialects = [
+    "HLCF::HLCFDialect", "mlir::arith::ArithDialect",
+    "mlir::index::IndexDialect", "mlir::scf::SCFDialect", "mlir::ub::UBDialect"
+  ];
+}
+
+//===----------------------------------------------------------------------===//
+// LowerKGENToArith
+//===----------------------------------------------------------------------===//
+
+def LowerKGENToArith : Pass<"lower-kgen-to-arith", "ModuleOp"> {
+  let summary = "Lower scalar KGEN/POP arithmetic to Arith/Index";
+  let description = [{
+    The `lower-kgen-to-arith` pass lowers scalar `kgen.param.constant` and
+    the scalar POP arithmetic, compare, select, and builtin-cast ops to
+    `arith`/`index`, bridging the still-`!pop.scalar` boundaries with
+    `unrealized_conversion_cast`s. SIMD forms (`!pop.simd<N, T>`, N > 1) are
+    left untouched for a target lowering.
+  }];
+
+  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::index::IndexDialect"];
 }
 
 //===----------------------------------------------------------------------===//
@@ -1075,6 +1231,19 @@ def LowerLoops: Pass<"lower-loops", "KGEN::FuncOp"> {
 
   let dependentDialects = ["HLCF::HLCFDialect", "mlir::index::IndexDialect",
                            "POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
+// ForceAlwaysInline
+//===----------------------------------------------------------------------===//
+
+def ForceAlwaysInline : Pass<"force-always-inline", "KGEN::FuncOp"> {
+  let summary = "Mark every non-external function `always_inline`.";
+  let description = [{
+    Sets `InlineLevel::Always` on every `kgen.func` that has a body. External
+    functions are left alone, since they have nothing to inline. This pass does
+    not check for inline cycles; the inliner does that.
+  }];
 }
 
 //===----------------------------------------------------------------------===//

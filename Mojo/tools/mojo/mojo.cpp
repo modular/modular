@@ -21,7 +21,6 @@
 #include "Run/mojo-run.h"
 
 #include "Config/Version.h"
-#include "Mojo/Support/CLOptionUtils.h"
 #include "Mojo/Support/Configuration.h"
 #include "Mojo/Support/Constants.h"
 #include "Mojo/Support/ForceLinkMLIRC.h"
@@ -32,7 +31,6 @@
 #include "Support/LogicalResult.h"
 #include "Support/Process.h"
 
-#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
@@ -50,15 +48,8 @@
 using namespace M;
 
 #define DRIVER_OPTIONS_PATH "DriverOptions.inc"
+#include "DriverOptionsHelpTexts.inc"
 #include "Support/Driver/OptTable.inc"
-
-namespace {
-struct DriverOptTable : public llvm::opt::PrecomputedOptTable {
-  DriverOptTable()
-      : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
-                                       InfoTable, OptionPrefixesUnion) {}
-};
-} // namespace
 
 //===----------------------------------------------------------------------===//
 // `main` entry point
@@ -68,7 +59,6 @@ int main(int argc, char **argv) {
   // Force linking of MLIR C symbols to JIT Mojo code relying on the mlir
   // bindings.
   KGEN::forceLinkMLIRC();
-  M::registerCommandFlags();
 
   // Install LLVM signal handlers and convert `argc` and `argv` for Windows
   // hosts.
@@ -108,10 +98,10 @@ int main(int argc, char **argv) {
   //   position.
   // - One of the registered subcommands.
   // - A positional ("input") argument, or an option, that we don't recognize.
-  DriverOptTable options;
+  options::Table optTable;
   llvm::opt::InputArgList args(arguments.begin(), arguments.end());
   unsigned index = 0;
-  std::unique_ptr<llvm::opt::Arg> firstArg = options.ParseOneArg(args, index);
+  std::unique_ptr<llvm::opt::Arg> firstArg = optTable.ParseOneArg(args, index);
   switch (firstArg->getOption().getID()) {
   case options::OPT_version: {
     // Print the version and exit.
@@ -215,15 +205,11 @@ int main(int argc, char **argv) {
   case options::OPT_help:
     // Print the top level driver help text and exit.
     return State(programName, ArrayRef(arguments).slice(1))
-        .printHelp(
-#include "DriverOptionsHelpText.inc"
-        );
+        .printHelp(options::helpTexts().help);
   case options::OPT_help_hidden:
     // Print the top level driver help hidden text and exit.
     return State(programName, ArrayRef(arguments).slice(1))
-        .printHelp(
-#include "DriverOptionsHelpHiddenText.inc"
-        );
+        .printHelp(options::helpTexts().helpHidden);
 
   case options::OPT_INPUT: {
     // This could be a subcommand, or it could be an input file for the `run`

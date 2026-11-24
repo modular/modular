@@ -1,0 +1,136 @@
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootPath":"lit","capabilities":{},"trace":"off"}}
+// -----
+// Arms take the indent of the last case and spell their subject like the
+// patterns above it: tuples bare, structs as keyword patterns. A same-line
+// body has no indent of its own, so its arm indents the body below `case`.
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+  "uri":"test:///styles.mojo",
+  "languageId":"mojo",
+  "version":1,
+  "text":"@fieldwise_init\nstruct Flags:\n    var a: Bool\n    var b: Bool\n\ndef foo(flag: Bool, f: Flags):\n    match flag:\n        case True: pass\n\n    match flag, flag:\n    case True, _: pass\n\n    match f:\n    case Flags(a=True, b=True): pass\n"
+}}}
+// -----
+{"jsonrpc":"2.0","id":1,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///styles.mojo"
+  },
+  "range":{
+    "start":{"line":6,"character":10}, "end":{"line":6,"character":10}
+  },
+  "context":{
+    "diagnostics":[],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 1
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK-NEXT:    {
+// CHECK-NEXT:      "edit": {
+// CHECK-NEXT:        "changes": {
+// CHECK-NEXT:          "test:///styles.mojo": [
+// CHECK-NEXT:            {
+// CHECK-NEXT:              "newText": "\n        case False:\n            pass",
+// CHECK-NEXT:              "range": {
+// CHECK-NEXT:                "end": {
+// CHECK-NEXT:                  "character": 23,
+// CHECK-NEXT:                  "line": 7
+// CHECK-NEXT:                },
+// CHECK-NEXT:                "start": {
+// CHECK-NEXT:                  "character": 23,
+// CHECK-NEXT:                  "line": 7
+// CHECK-NEXT:                }
+// CHECK-NEXT:              }
+// CHECK-NEXT:            }
+// CHECK-NEXT:          ]
+// CHECK-NEXT:        }
+// CHECK-NEXT:      },
+// CHECK-NEXT:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// CHECK-NEXT:    }
+// CHECK-NEXT:  ]
+// -----
+{"jsonrpc":"2.0","id":2,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///styles.mojo"
+  },
+  "range":{
+    "start":{"line":9,"character":10}, "end":{"line":9,"character":10}
+  },
+  "context":{
+    "diagnostics":[],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 2
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK-NEXT:    {
+// CHECK-NEXT:      "edit": {
+// CHECK-NEXT:        "changes": {
+// CHECK-NEXT:          "test:///styles.mojo": [
+// CHECK-NEXT:            {
+// CHECK-NEXT:              "newText": "\n    case False, False:\n        pass\n    case False, True:\n        pass",
+// CHECK-NEXT:              "range": {
+// CHECK-NEXT:                "end": {
+// CHECK-NEXT:                  "character": 22,
+// CHECK-NEXT:                  "line": 10
+// CHECK-NEXT:                },
+// CHECK-NEXT:                "start": {
+// CHECK-NEXT:                  "character": 22,
+// CHECK-NEXT:                  "line": 10
+// CHECK-NEXT:                }
+// CHECK-NEXT:              }
+// CHECK-NEXT:            }
+// CHECK-NEXT:          ]
+// CHECK-NEXT:        }
+// CHECK-NEXT:      },
+// CHECK-NEXT:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// CHECK-NEXT:    }
+// CHECK-NEXT:  ]
+// -----
+{"jsonrpc":"2.0","id":3,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///styles.mojo"
+  },
+  "range":{
+    "start":{"line":12,"character":10}, "end":{"line":12,"character":10}
+  },
+  "context":{
+    "diagnostics":[],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 3
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK-NEXT:    {
+// CHECK-NEXT:      "edit": {
+// CHECK-NEXT:        "changes": {
+// CHECK-NEXT:          "test:///styles.mojo": [
+// CHECK-NEXT:            {
+// CHECK-NEXT:              "newText": "\n    case Flags(a=False, b=False):\n        pass\n    case Flags(a=False, b=True):\n        pass\n    case Flags(a=True, b=False):\n        pass",
+// CHECK-NEXT:              "range": {
+// CHECK-NEXT:                "end": {
+// CHECK-NEXT:                  "character": 36,
+// CHECK-NEXT:                  "line": 13
+// CHECK-NEXT:                },
+// CHECK-NEXT:                "start": {
+// CHECK-NEXT:                  "character": 36,
+// CHECK-NEXT:                  "line": 13
+// CHECK-NEXT:                }
+// CHECK-NEXT:              }
+// CHECK-NEXT:            }
+// CHECK-NEXT:          ]
+// CHECK-NEXT:        }
+// CHECK-NEXT:      },
+// CHECK-NEXT:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// CHECK-NEXT:    }
+// CHECK-NEXT:  ]
+// -----
+{"jsonrpc":"2.0","id":10,"method":"shutdown"}
+// -----
+{"jsonrpc":"2.0","method":"exit"}

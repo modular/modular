@@ -50,8 +50,11 @@ class InputModality(str, Enum):
     """
 
     TEXT = "text"
+    """The architecture accepts text input."""
     IMAGE = "image"
+    """The architecture accepts image input."""
     VIDEO = "video"
+    """The architecture accepts video input."""
 
 
 class PipelineTask(str, Enum):

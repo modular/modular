@@ -7,7 +7,7 @@
 // CHECK: kgen.param.constant: (index) -> index = <@callee>
 kgen.func @keep_function_pointer() -> !kgen.generator<(index) -> index> {
   %0 = kgen.param.constant: (index) -> index = <@callee>
-  kgen.return %0 : !kgen.generator<(index) -> index>
+  hlcf.return %0 : !kgen.generator<(index) -> index>
 }
 
 // CHECK-LABEL: kgen.func @inline_me
@@ -17,7 +17,7 @@ kgen.func @inline_me(%arg0: index) -> index {
   // call-graph has no remaining callers of @callee, but the
   // `kgen.param.constant` in @keep_function_pointer still references it.
   %0 = kgen.call @callee(%arg0) : (index) -> index
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // @callee must still exist after the pass because
@@ -25,5 +25,5 @@ kgen.func @inline_me(%arg0: index) -> index {
 // CHECK-LABEL: kgen.func @callee
 kgen.func @callee(%arg0: index) -> index {
   %0 = index.add %arg0, %arg0
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }

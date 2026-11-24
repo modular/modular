@@ -217,11 +217,27 @@ typedef struct M_WeightsRegistry M_WeightsRegistry;
 /// When you're done, call `M_freeSafetensors()`.
 typedef struct M_Safetensors M_Safetensors;
 
+/// Holds the tensors parsed from one or more GGUF files.
+///
+/// The tensor data is borrowed from the loaded files and stays valid for the
+/// lifetime of this object. You can enumerate tensors and read their data;
+/// block-quantized tensors are exposed as `uint8` blocks.
+///
+/// You can create this with `M_loadGGUF()`.
+/// When you're done, call `M_freeGGUF()`.
+typedef struct M_GGUF M_GGUF;
+
+/// Serializes tensors and metadata into one or more GGUF files.
+///
+/// You can create this with `M_newGGUFWriter()`.
+/// When you're done, call `M_freeGGUFWriter()`.
+typedef struct M_GGUFWriter M_GGUFWriter;
+
 /// Represents the type of device. `M_HOST` is the CPU; `M_ACCELERATOR`
-/// is any non-CPU compute device (GPU or NPU). The closed set of valid
+/// is any non-CPU compute device. The closed set of valid
 /// device labels is enforced by `EngineContext::create` -- see
 /// `Support/DeviceSpecs.h` for the label constants and
-/// `max/internal/lib/API/c/EngineContext.cpp` for the validating guard.
+/// `max/lib/max_license/API/c/EngineContext.cpp` for the validating guard.
 #ifdef __cplusplus
 typedef enum M_DeviceType : int {
 #else

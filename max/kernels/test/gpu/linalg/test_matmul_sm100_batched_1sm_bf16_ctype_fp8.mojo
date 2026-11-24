@@ -16,12 +16,10 @@ from std.testing import assert_equal
 import linalg.matmul.vendor.blas as vendor_blas
 from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 
 # from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import (
-    Coord,
     CoordLike,
     Idx,
     TileTensor,
@@ -36,7 +34,7 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 
 from std.utils.index import Index, IndexList
-from std.utils.static_tuple import StaticTuple
+from std.utils.coord import Coord
 
 
 def simple_init() -> Bool:
@@ -55,9 +53,9 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    block_tile_shape: IndexList[3],
-    mma_shape: IndexList[3],
-    cluster_shape: StaticTuple[Int32, 3],
+    block_tile_shape: Tuple[Int, Int, Int],
+    mma_shape: Tuple[Int, Int, Int],
+    cluster_shape: Tuple[Int, Int, Int],
     cta_group: Int,
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
@@ -68,33 +66,31 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     k_group_size: Int = 1,
     accum_dtype: DType = .float32,
 ](ctx: DeviceContext, batch: BatchType, m: MType, n: NType, k: KType) raises:
-    var B = Int(batch.value())
-    var M = Int(m.value())
-    var N = Int(n.value())
-    var K = Int(k.value())
+    var B = Int(batch)
+    var M = Int(m)
+    var N = Int(n)
+    var K = Int(k)
 
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({B},"
         t" {M}, {N}, {K})"
-        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
-        t" {cluster_shape[1]}, {cluster_shape[2]})"
+        t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=(Int({cluster_shape[0]}),"
+        t" Int( {cluster_shape[1]}), Int({cluster_shape[2]}))"
         t" swapAB={swapAB} k_group_size={k_group_size}"
     )
 
-    var a_shape = row_major(Coord(batch, m, Idx[KType.static_value]))
+    var a_shape = row_major(batch, m, Idx[KType.static_value])
     var b_shape = row_major(
-        Coord(
-            batch,
-            Idx[NType.static_value if transpose_b else KType.static_value],
-            Idx[KType.static_value if transpose_b else NType.static_value],
-        )
+        batch,
+        Idx[NType.static_value if transpose_b else KType.static_value],
+        Idx[KType.static_value if transpose_b else NType.static_value],
     )
-    var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
-    var c_ref_shape = row_major(Coord(batch, m, Idx[NType.static_value]))
+    var c_shape = row_major(batch, m, Idx[NType.static_value])
+    var c_ref_shape = row_major(batch, m, Idx[NType.static_value])
 
-    var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
-    var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
-    var c_size = Int(batch.value()) * Int(m.value()) * Int(n.value())
+    var a_size = Int(batch) * Int(m) * Int(k)
+    var b_size = Int(batch) * Int(n) * Int(k)
+    var c_size = Int(batch) * Int(m) * Int(n)
 
     var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -129,16 +125,18 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
                         b_type
                     ]()
     else:
-        rand(a_host._storage, a_host.num_elements(), min=-1.0, max=1.0)
-        rand(b_host._storage, b_host.num_elements(), min=-1.0, max=1.0)
+        rand(a_host.as_span(), min=-1.0, max=1.0)
+        rand(b_host.as_span(), min=-1.0, max=1.0)
 
     # Move operands to device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(
-            cluster_shape[0], cluster_shape[1], cluster_shape[2]
+        cluster_shape=(
+            Int(cluster_shape[0]),
+            Int(cluster_shape[1]),
+            Int(cluster_shape[2]),
         ),
         mma_shape=mma_shape,
         block_swizzle_size=block_swizzle_size,
@@ -156,15 +154,15 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     # Reference: per-batch vendor_blas.matmul
     for b in range(B):
         var a_2d = TileTensor(
-            a_tensor._storage + b * M * K,
+            a_tensor._storage.unsafe_offset(b * M * K),
             row_major((M, K)),
         )
         var b_2d = TileTensor(
-            b_tensor._storage + b * N * K,
+            b_tensor._storage.unsafe_offset(b * N * K),
             row_major((N, K)),
         )
         var c_ref_2d = TileTensor(
-            c_ref_tensor._storage + b * M * N,
+            c_ref_tensor._storage.unsafe_offset(b * M * N),
             row_major((M, N)),
         )
 
@@ -212,10 +210,8 @@ def main() raises:
         # 1SM (cta_group=1) tests with 128x128x16 and 64x128x16 MMA shapes
         comptime for bm in [64, 128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(
-                    cta_group * bm, cta_group * bn, MMA_K
-                )
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (cta_group * bm, cta_group * bn, MMA_K)
 
                 # Basic
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
@@ -224,7 +220,7 @@ def main() raises:
                     .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -241,7 +237,7 @@ def main() raises:
                     .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -258,7 +254,7 @@ def main() raises:
                     .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                 ](
                     ctx,
@@ -271,10 +267,8 @@ def main() raises:
         # swapAB tests (1SM)
         comptime for bm in [64, 128]:
             comptime for bn in [64, 128]:
-                comptime block_tile_shape = Index(bm, bn, BK)
-                comptime umma_shape = Index(
-                    cta_group * bm, cta_group * bn, MMA_K
-                )
+                comptime block_tile_shape = (bm, bn, BK)
+                comptime umma_shape = (cta_group * bm, cta_group * bn, MMA_K)
 
                 test_blackwell_batched_matmul_tma_umma_warp_specialized[
                     dtype,
@@ -282,7 +276,7 @@ def main() raises:
                     .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                     swapAB=True,
                 ](
@@ -299,7 +293,7 @@ def main() raises:
                     .float8_e4m3fn,
                     block_tile_shape,
                     umma_shape,
-                    cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+                    cluster_shape=(1, 1, 1),
                     cta_group=cta_group,
                     swapAB=True,
                 ](

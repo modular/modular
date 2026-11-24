@@ -7,7 +7,7 @@ This series of blog posts will showcase how one can:
 
 1. Write a high-performance GPU kernel on Blackwell that offers performance
    competitive to that of NVIDIA's cuBLAS implementation.
-2. Shows how one can leverage Mojo's special features to make the kernel as
+2. Show how one can leverage Mojo's special features to make the kernel as
    simple as possible.
 
 It is our hope that this series of blogs serves as *the reference worklog* for
@@ -22,9 +22,9 @@ its importance for LLMs, and why we need to optimize it. Then we explain what a
 GPU is, GPU history since Ampere, and finally how to write a simple (not super
 performant) implementation of matmul on a GPU in 4 lines of Mojo.
 
-In Part 2, we’ll explain the hardware instructions introduced in Blackwell
-GPUs, and continue improve on our kernels' performance to make it leverage the
-new hardware instructions. As we continue through the blog series, we will
+In Part 2, we’ll explain the hardware instructions introduced in Blackwell GPUs,
+and continue to improve on our kernels' performance to make it leverage the new
+hardware instructions. As we continue through the blog series, we will
 incrementally leverage new Blackwell features to improve our matmul
 implementation until the end of the series where we achieve performance that
 surpasses that of NVIDIA's cuBLAS library.
@@ -64,7 +64,7 @@ encouraged to read our blog post from
 
 ### Why does matmul matter today?
 
-All LLMs, be it Meta's Llama, Alibaba's Qwen, Deepseek, Anthropics' Claude,
+All LLMs, be it Meta's Llama, Alibaba's Qwen, DeepSeek, Anthropic's Claude,
 OpenAI's ChatGPT, or Google's Gemini, utilize matrix multiplications at their
 core. These matmuls might be disguised under multiple names, for instance, the
 multi-layer perceptron (MLP) which is sometimes called the Linear layer is an
@@ -73,7 +73,7 @@ mixture of experts, etc.
 
 In fact, if we look at a profile from the Llama 8B model using FP8 on 2xB200,
 we observe that over 83% of the model's runtime is occupied executing some
-variant of matmul (e.g. linear, attention and mlp layers).
+variant of matmul (for example linear, attention and mlp layers).
 
 ![piechart.jpg](./img/matmul-on-blackwell-part-1/img01-piechart.jpeg)
 ///caption
@@ -94,10 +94,10 @@ simplicity, let’s assume both A and B matrices are square, such that:
 Simplified illustration of matrix multiplication
 ///
 
-If we want to do the matmul on a CPU, then here’s pseudocode code we’ll have to
+If we want to do the matmul on a CPU, then here’s the pseudocode we’ll have to
 write:
 
-```mojo
+```pseudocode
 for row in range(M):
  for col in range(N):
   for inner in range(K):
@@ -115,45 +115,49 @@ Matrix multiplication as a collection of inner products
 CPUs are limited to on the order of a few hundred cores (with lower-end CPUs
 having around 32 cores and high-end models having on the order of 128 cores).
 GPUs, on the other hand, offer massive parallelism: modern GPUs handle over
-100,000 threads simultaneously (B200s can handle up to 151,552 threads), making
-them the ideal hardware choice for repetitive, data-parallel operations like
-matrix multiplication.
+100,000 threads concurrently (a B200 can handle up to 303,104 resident
+threads across its 148 SMs; 2,048 threads or 64 warps per SM), making them the
+ideal hardware choice for repetitive, data-parallel operations like matrix
+multiplication.
 
 To accelerate things even further, recent GPUs (since Volta) have a dedicated
 fast hardware unit for matrix multiply accumulate (MMA) operations called
 tensor core. While originally Tensor cores were limited to small matmuls (on
-the order of 16x16x16), the 5th generation tensors cores introduced in
-Blackwell can perform a large sub-matrix multiplication (up to 256x256x16).
-This enables the Blackwell GPUs to increase the peak computation throughput.
+the order of 16x16x16), the 5th generation tensor cores introduced in
+Blackwell can perform a large sub-matrix multiplication (up to 256x256x16
+across a 2-SM CTA pair). This enables the Blackwell GPUs to increase the peak
+computation throughput.
 
 ### GPU from the hardware architect perspective?
 
 To understand GPUs better, let's look at how the GPU is organized from a
-hardware architecture perspective. A GPU, like other [Von
-Neumann](https://en.wikipedia.org/wiki/Von_Neumann_architecture) architectures,
-is composed of elements that compute (commonly known as Arithmetic Logical
-Units or ALUs), and elements that load/store the data for these computations. A
-GPU will contain several Streaming Multiprocessor
-([SM](https://max.modular.com/glossary/gpu/streaming-multiprocessor)), [L2
-Cache and global memory](https://max.modular.com/glossary/gpu/memory) which
-are shared among these SMs, and an interconnect to the host device (CPU).
+hardware architecture perspective. A GPU, like other
+[Von Neumann](https://en.wikipedia.org/wiki/Von_Neumann_architecture)
+architectures, is composed of elements that compute (commonly known as
+Arithmetic Logic Units or ALUs), and elements that load/store the data for these
+computations. A GPU will contain several Streaming Multiprocessor
+([SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/)),
+[L2 Cache and global memory](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/gpu-memory/)
+which are shared among these SMs, and an interconnect to the host device (CPU).
 
 ![image.png](./img/matmul-on-blackwell-part-1/img04-gpu-arch.jpeg)
 ///caption
 GPU architecture
 ///
 
-Threads on a GPU are grouped into blocks which are called [Thread
-Blocks](https://max.modular.com/glossary/gpu/thread-block) or Cooperative
-Thread Arrays (CTAs). Each of these blocks gets scheduled onto **a single**
-[SM](https://max.modular.com/glossary/gpu/streaming-multiprocessor). Each SM,
-in turn, access the data via a shared L2 cache which loads data from global
-memory. The threads in each SM have access to two more memory regions:
+Threads on a GPU are grouped into blocks which are called
+[Thread Blocks](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks)
+or Cooperative Thread Arrays (CTAs). Each of these blocks gets scheduled onto
+**a single**
+[SM](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/streaming-multiprocessors/).
+Each SM, in turn, accesses the data via a shared L2 cache which loads data from
+global memory. The threads in each SM have access to two more memory regions:
 
 1. Registers which are local variables and are private to each thread.
-2. Shared memory which is visible across threads in an SM*. Since Hopper,
-   multiple CTAs can form a cluster and CTAs within the same cluster can access
-   each other's shared memory.*
+2. Shared memory which resides on the SM and is visible across threads *within
+   a CTA (thread block)*. *Since Hopper, multiple CTAs can form a cluster and
+   CTAs within the same cluster can access each other's shared memory
+   (distributed shared memory).*
 
 ![image.png](./img/matmul-on-blackwell-part-1/img05-gpu-memory-arch.jpeg)
 ///caption
@@ -180,8 +184,8 @@ the B matrix is `KxN` in dimension
 A CUDA core processes a fused multiplication and addition operation at a time,
 so we are multiplying a single element from matrix `A` by another element from
 matrix `B` and accumulating the value in `C` per instruction. A Tensor Core, on
-the other hand, computes an MMA operation (e.g. a 64×128 tile), in a single
-instruction.
+the other hand, computes an MMA operation (for example a 64×128 tile), in a
+single instruction.
 
 ![Screenshot 2025-08-25 at 7.30.18 PM.png](./img/matmul-on-blackwell-part-1/img07-tensor-core-2.jpeg)
 ///caption Matrix multiplication with a single CUDA core ///
@@ -211,12 +215,15 @@ in subsequent posts).
 A detailed description of GPU programming fundamentals is beyond the scope of
 this blog post. There are many resources that explain the GPU programming
 paradigm, and a great resource is
-<https://puzzles.modular.com/introduction.html> and the GPU
-[glossary](https://max.modular.com/glossary/).
+<https://puzzles.modular.com/introduction.html> and the
+[GPU architecture fundamentals](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/).
 
 As a result of the massive parallelism afforded to by the GPU, one has to think
 about GPU programming differently. For example, while, in traditional CPU
 programming we process data sequentially through loops:
+
+The following conceptual fragments assume the application supplies `data`,
+`result`, and `process()`; they aren't standalone programs.
 
 ```mojo
 # CPU approach
@@ -231,7 +238,7 @@ would look like:
 
 ```mojo
 # GPU approach (conceptual)
-thread_id = global_idx.x
+var thread_id = global_idx.x
 result[thread_id] = process(data[thread_id])
 ```
 
@@ -242,16 +249,17 @@ If we think about the [Flynn
 taxonomy](https://en.wikipedia.org/wiki/Flynn%27s_taxonomy), this maps into the
 Single Instruction Multiple Threads (SIMT) programming model.
 
-When launching a [kernel](https://max.modular.com/glossary/gpu/kernel)
+When launching a
+[kernel](https://handbook.modular.com/kernel-optimization/kernel-optimization-for-llm-inference/#what-is-a-gpu-kernel)
 (calling the function), you specify the number of threads in each
-[block](https://max.modular.com/glossary/gpu/thread-block) (also called block
-size), and how many blocks you want to launch (called the
-[grid](https://max.modular.com/glossary/gpu/grid) size). Each block gets
-mapped to an SM by the hardware. As a result, threads within the same block can
-share memory and synchronize with each other, but cannot directly communicate
-across blocks- unless they are within the same cluster (discussed later). Note
-that while each block of threads is executed on only one of the SM’s, but each
-SM can execute multiple blocks (CTAs):
+[block](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#thread-blocks)
+(also called block size), and how many blocks you want to launch (called the
+[grid](https://handbook.modular.com/kernel-optimization/gpu-architecture-fundamentals/threads-warps-blocks/#grids-and-indexing)
+size). Each block gets mapped to an SM by the hardware. As a result, threads
+within the same block can share memory and synchronize with each other, but
+cannot directly communicate across blocks- unless they are within the same
+cluster (discussed later). Note that while each block of threads is executed on
+only one of the SMs, each SM can execute multiple blocks (CTAs):
 
 ![Screenshot 2025-08-25 at 7.08.36 PM.png](./img/matmul-on-blackwell-part-1/img09-gpu-work-allocation.jpeg)
 
@@ -299,7 +307,7 @@ additional layer: the cluster, positioned between the block and the grid.
 ![Screenshot 2025-08-25 at 7.22.33 PM.png](./img/matmul-on-blackwell-part-1/img12-cta-clusters.jpeg)
 ///caption Thread block clustering ///
 
-Visualized, this how a cluster will get scheduled on the GPU:
+Visualized, this is how a cluster will get scheduled on the GPU:
 
 ![Screenshot 2025-08-25 at 8.23.47 PM.png](./img/matmul-on-blackwell-part-1/img13-cta-cluster-scheduling.jpeg)
 //caption Thread block cluster scheduling ///
@@ -314,13 +322,14 @@ hardware provides to enable us to squeeze the best performance out of each GPU.
 ### NVIDIA's Ampere architecture
 
 Released in May 2020, Ampere advanced Tensor Cores considerably (even though
-tensor cores were introduced a few generations earlier) From a spec point of
+tensor cores were introduced a few generations earlier). From a spec point of
 view, Ampere had:
 
 - 108 Streaming Multiprocessors (SMs)
 - 4 Tensor Cores per SM
 - 80GB High Bandwidth Memory (up to 2.0 TB/s)
-- 192KB combined Shared Memory + L1 cache per SM
+- 192KB combined Shared Memory + L1 cache per SM (up to 164KB configurable as
+  Shared Memory)
 - 65,536 registers per SM
 - 40MB L2 Cache shared between all SMs
 - Asynchronous copies to allow deeper software pipeline between global ->
@@ -339,11 +348,13 @@ for wide LLM deployments today. Hopper had the following specifications:
 - 132 Streaming Multiprocessors (SMs)
 - 4 Tensor Cores per SM
 - 80GB High Bandwidth Memory (3.35TB/s)
-- 256KB combined Shared Memory + L1 cache per SM
+- 256KB combined Shared Memory + L1 cache per SM (up to 228KB configurable as
+  Shared Memory)
 - 65,536 registers per SM
 - 50MB L2 Cache shared between all SMs
 - Introduced a TMA engine to optimize block memory copies
-- Is not forward compatible with next generation hardware
+- Architecture-specific WGMMA instructions (`sm_90a`) are not
+  forward-compatible with next generation hardware
 
 ![image.png](./img/matmul-on-blackwell-part-1/img15-hopper.jpeg)
 //caption
@@ -352,19 +363,20 @@ Hopper architecture
 
 ### NVIDIA's Blackwell architecture
 
-Blackwell is the latest NVIDIA architecture and is currently the SOTA
-architecture for LLM deployment. It improved upon Hopper and Ampere by
-increasing the compute capacity as well as providing a few key features to
-enable faster execution:
+At the time this post was originally published, Blackwell was the latest
+shipping NVIDIA architecture and the SOTA architecture for LLM deployment. It
+improved upon Hopper and Ampere by increasing the compute capacity as well as
+providing a few key features to enable faster execution:
 
 - 148 Streaming Multiprocessors (SMs)
 - 4 Tensor Cores per SM
-- 7.672 TB/s High Bandwidth Memory
-- 228 KB combined Shared Memory + L1 cache per SM
+- 180 GB High Bandwidth Memory (HBM3e, up to 8.0 TB/s)
+- 256 KB combined Shared Memory + L1 cache per SM (up to 228 KB configurable as
+  Shared Memory)
 - 65,536 registers per SM
-- 192 MB L2 Cache shared between all SMs
+- 126 MB L2 Cache shared between all SMs
 - 5th Generation Tensor core architecture
-- **256 KB of Tensor Memory**
+- **256 KB of Tensor Memory per SM**
 
 Blackwell’s architecture can be more or less visualized as follows:
 
@@ -375,8 +387,8 @@ Blackwell architecture
 
 ### GPU comparison at a glance
 
-To give the reader’s a sense of the magnitude of the differences, here’s a
-table comparing peer-to-peer performance:
+To give readers a sense of the magnitude of the differences, here’s a table
+comparing generation-to-generation performance:
 
 | Metric                       | A100 (Baseline) | H100 | H200 | B100 | B200 |
 |------------------------------|-----------------|------|------|------|------|
@@ -384,6 +396,9 @@ table comparing peer-to-peer performance:
 | **NVLink Bandwidth**         | 1.0x            | 1.5x | 1.5x | 3.0x | 3.0x |
 | **Peak BF16 TFLOPS (dense)** | 1.0x            | 3.2x | 3.2x | 5.6x | 7.2x |
 | **Peak FP8 TFLOPS (dense)**  | N/A             | 1.0x | 1.0x | 1.8x | 2.3x |
+
+*Note: Because A100 does not natively support FP8, the **Peak FP8 TFLOPS
+(dense)** row uses H100 (`1.0x`) as the baseline.*
 
 As the GPU becomes more powerful in terms of FLOPs/s and bandwidth, the
 programming model to achieve this peak performance also evolves. Below is a
@@ -401,7 +416,7 @@ blocked compute, and we had to do something like: Load data from global → Wait
 As a result, one would perform double buffering operations on pre-Ampere
 architecture and use multiple CTAs per SM for overlapping data transfer and
 computation. This caused contention for the SM’s limited memory resources, and
-force trade-offs between memory latency and optimal tiling.
+forced trade-offs between memory latency and optimal tiling.
 
 ### Ampere optimization
 
@@ -491,11 +506,16 @@ Armed with the understanding of GPU programming and the hardware, we can now,
 *finally*, translate our matmul function over to a GPU matmul kernel. This is
 trivial, and can be done like so:
 
+The snippets in this section are context-dependent fragments, not standalone
+programs. They assume the tensor arguments and coordinates defined below. The
+second operand is stored transposed as an `N x K` row-major tensor, so each
+thread reads `b[col, k]` while computing the logical `M x N` output.
+
 ```mojo
-acc = Float32(0)
+var acc = Float32(0)
 for k in range(K):
-    acc += a[global_idx.y, k] * b[global_idx.x, k]
-c[row, col] = acc
+    acc += (a[row, k] * b[col, k]).cast[.float32]()
+c[row, col] = acc.cast[.bfloat16]()
 ```
 
 We created a 2D grid of threads large enough to cover our entire C matrix:
@@ -503,39 +523,60 @@ We created a 2D grid of threads large enough to cover our entire C matrix:
 - Each thread computes one element of the output matrix C, and that element is
   based on that thread’s unique id
 
-    ```python
-    row = global_idx.y
-    col = global_idx.x
+    ```mojo
+    var row = global_idx.y
+    var col = global_idx.x
     ```
 
 - Thread blocks are mapped to tiles of the output matrix
 
 The kernel does this dot product for every output in the C matrix, all at once.
 
-![image.png](./img/matmul-on-blackwell-part-1/img21-dot-product.jpeg
+![image.png](./img/matmul-on-blackwell-part-1/img21-dot-product.jpeg)
 ///caption
 Concurrent dot product for every output
 ///
 
-The inputs to the matmul function is a LayoutTensor. To learn more about
-LayoutTensor, see [Using
-LayoutTensor](https://mojolang.org/docs/manual/layout/tensors/) in the Mojo
-Manual
+The inputs to the matmul function are native `TileTensor` views. Each layout is
+a type implementing `TensorLayout`;
+`RowMajorLayout[ComptimeInt[M], ComptimeInt[N]]` is that static layout type. To
+learn more, see
+[Using TileTensor](https://max.modular.com/tile-tensor/tensors/).
 
 ```mojo
+from max.gpu import global_idx
+from layout import ComptimeInt, RowMajorLayout, TileTensor
+
+
 def matmul_kernel[
     M: Int, N: Int, K: Int
 ](
-    c: LayoutTensor[DType.bfloat16, Layout.row_major(M, N)],
-    a: LayoutTensor[DType.bfloat16, Layout.row_major(M, K)],
-    b: LayoutTensor[DType.bfloat16, Layout.row_major(N, K)],
+    c: TileTensor[.bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[N]], MutAnyOrigin],
+    a: TileTensor[.bfloat16, RowMajorLayout[ComptimeInt[M], ComptimeInt[K]], ImmutAnyOrigin],
+    b: TileTensor[.bfloat16, RowMajorLayout[ComptimeInt[N], ComptimeInt[K]], ImmutAnyOrigin],
 ):
-# previous 4 lines of code
+    var row = global_idx.y
+    var col = global_idx.x
+    if row >= M or col >= N:
+        return
+
+    var acc = Float32(0)
+    for k in range(K):
+        acc += (a[row, k] * b[col, k]).cast[.float32]()
+    c[row, col] = acc.cast[.bfloat16]()
 ```
+
+The output view is mutable, and the input views are immutable. These types use
+the default scalar `DefaultEngine` and generic address space; they refer to
+GPU-resident memory when passed to the kernel. A view doesn't own its storage,
+so keep the backing buffers alive until device work completes. A host launcher
+must match the declared layout, engine, and origin types, and must not launch
+overlapping writes to the same output element. The coordinate guard handles
+threads outside the matrix; the tensor view doesn't supply bounds checking.
 
 This allows us to abstract away the algebra required to index/offset into
 memory to fetch it (for instance, for matrix A, that would’ve been `a[row * K +
-col]` ).
+k]`).
 
 ### Data types and casting
 
@@ -553,31 +594,39 @@ larger range makes it great for deep learning applications and LLMs, where you
 need to accommodate gradients over many orders of magnitude, and where
 precision of individual values is not critical.
 
-There is however a catch: when accumulating many values (K iterations),
-rounding errors in BF16 compound rapidly (because its Mantissa is small, it has
-a smaller granularity between hops). To prevent this, we can change our code to
-accumulate the intermediates in higher precision:
+There is however a catch: BF16 multiplication rounds each product before it
+reaches the FP32 accumulator. Across K iterations, these rounding errors can
+compound because BF16 has a small mantissa. The code already accumulates in
+FP32; casting both operands before multiplication also computes each product
+in higher precision:
 
 ```mojo
+var acc = Float32(0)
 for k in range(K):
- acc += a[global_idx.y, k].cast[DType.float32]() *
-     b[global_idx.x, k].cast[DType.float32]()
-c[global_idx.y, global_idx.x] = acc.cast[DType.bfloat16]()
+    acc += (
+        a[row, k].cast[.float32]() * b[col, k].cast[.float32]()
+    )
+c[row, col] = acc.cast[.bfloat16]()
 ```
 
 Using FP32 for accumulation preserves numerical accuracy during the reduction,
 while still getting the memory benefits of BFloat16. Note that tensor cores
-    would accumulate BFloat16 in Float32 as well. The reduction result is then
-    downcast to BFloat16 before storing to global memory.
+would accumulate BFloat16 in Float32 as well. The reduction result is then
+downcast to BFloat16 before storing to global memory.
 
-To measure the performance of our kernel, we run the
-[code](https://github.com/modular/modular/blob/main/max/kernels/test/gpu/linalg/matmul_blackwell_iterative/0_naive_sm100.mojo)
-and measure how many FLOPS (FLoating-point OPerations per Second) it achieves.
+To measure the performance of our kernel, we measure how many FLOPS
+(FLoating-point OPerations per Second) it achieves. A runnable naive baseline is
+available in the current
+[code](https://github.com/modular/modular/blob/main/max/kernels/test/gpu/linalg/matmul_blackwell_iterative/1_naive_sm100.mojo).
+That baseline stores B as a `K x N` row-major tensor and reads `b[k, col]`,
+unlike the transposed `N x K` storage used in the illustrative snippets above.
 In this setup, we multiply matrix $A (M*K) * B (K*N) = C (M*N)$. There are $M*N$
 elements in the output, each of which took a dot product of size K (K
 multiplications and K additions). Hence, our kernel does $(M*N)*2K$ flops in
 total, and the performance, in FLOPS, is calculated as $2*m*n*k / time$. Our
-kernel gives us 5 TFLOPs.
+kernel gave us 5 TFLOPs in the original measurements reported in this post. The
+figures below retain those historical results; the updated illustrative API
+snippets aren't a new performance measurement.
 
 ![01.png](./img/matmul-on-blackwell-part-1/img23-naive-perf.jpeg)
 ///caption

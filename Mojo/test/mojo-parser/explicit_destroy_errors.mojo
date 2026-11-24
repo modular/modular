@@ -17,8 +17,10 @@
 from std.builtin._coroutine import Coroutine, RaisingCoroutine, AnyCoroutine
 
 
-@explicit_destroy("Must use consume!")
-struct EmptyExplicit(Deinitable where False, Movable where False):
+struct EmptyExplicit(
+    Deinitable where False else "Must use consume!",
+    Movable where False,
+):
     def __init__(out self):
         pass
 
@@ -31,9 +33,8 @@ def errorExample():
     _ = EmptyExplicit()
 
 
-@explicit_destroy("Must use consume!")
 struct DeinitableContainerOfExplicitWithAutoDel(
-    Deinitable where False, Movable where False
+    Deinitable where False else "Must use consume!", Movable where False
 ):
     var m: EmptyExplicit
 
@@ -97,7 +98,7 @@ def callsWith():
 
 
 # CHECK-LABEL: lit.fn @"testAsyncVoid
-async def testAsyncVoid():
+__async def testAsyncVoid():
     pass
 
 
@@ -105,8 +106,10 @@ async def testAsyncVoid():
 
 
 # MOCO-2787 - Linear types do not error if they contain an explicit deinit
-@explicit_destroy("must use __deinit__() explicitly")
-struct ExplicitWithDeinit(Deinitable where False, Movable where False):
+struct ExplicitWithDeinit(
+    Deinitable where False else "must use __deinit__() explicitly",
+    Movable where False,
+):
     def __init__(out self):
         pass
 
@@ -285,6 +288,56 @@ def testWhereFalseCustomMessage():
     _ = WhereFalseCustom()
 
 
+# The reason on an always-false `Deinitable` conformance is that message,
+# without a decorator. This is the replacement for `@explicit_destroy("...")`.
+struct NotDeinitableReason(not Deinitable else "use consume()"):
+    def __init__(out self):
+        pass
+
+
+def testNotDeinitableReason():
+    # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
+    _ = NotDeinitableReason()
+
+
+# Without a reason, `not Deinitable` gets the same default message as the
+# `where False` spelling.
+struct NotDeinitableLinear(not Deinitable, Movable where False):
+    def __init__(out self):
+        pass
+
+
+def testNotDeinitableLinear():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'NotDeinitableLinear' does not conform to 'Deinitable' and must be explicitly destroyed}}
+    _ = NotDeinitableLinear()
+
+
+# The older `where False` spelling carries a reason the same way.
+struct WhereFalseReason(Deinitable where False else "use consume()"):
+    def __init__(out self):
+        pass
+
+
+def testWhereFalseReason():
+    # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
+    _ = WhereFalseReason()
+
+
+# The reason on a conditional `Deinitable` conformance is the message for the
+# parameters that make it linear.
+struct CondReason[cond: Bool](
+    Deinitable where cond else "use consume()", Movable where False
+):
+    def __init__(out self):
+        pass
+
+
+def testCondReason():
+    # expected-error @below {{abandoned without being explicitly destroyed: use consume()}}
+    _ = CondReason[False]()
+    _ = CondReason[True]()
+
+
 # A conditional Deinitable slot that the struct's own where-clause
 # renders unsatisfiable (`where not (n > 0)` under `where n > 0`) is an opt-out
 # indistinguishable from the literal `where False` above: for any instantiable
@@ -304,6 +357,93 @@ def testContradictedLinear():
 
 
 # ===----------------------------------------------------------------------=== #
+# The synthesized message lists the `deinit self` methods (MOCO-4422)
+# ===----------------------------------------------------------------------=== #
+
+
+struct OneDeinitMethod(Deinitable where False):
+    # expected-note @+1 {{call 'close()' to explicitly destroy 'OneDeinitMethod'}}
+    def close(deinit self):
+        pass
+
+
+def testOneDeinitMethod(var l: OneDeinitMethod):
+    # expected-error @-1 {{'l' abandoned without being explicitly destroyed: type 'OneDeinitMethod' does not conform to 'Deinitable' and must be explicitly destroyed}}
+    pass
+
+
+# A method that is not `deinit self`, a static method, and an overload of a
+# noted method are all left out. A method taking further arguments is shown
+# with `(...)`.
+struct TwoDeinitMethods(Deinitable where False):
+    def read(self) -> Int:
+        return 0
+
+    @staticmethod
+    def make() -> Self:
+        return Self()
+
+    def __init__(out self):
+        pass
+
+    # expected-note @+1 {{call 'close()' to explicitly destroy 'TwoDeinitMethods'}}
+    def close(deinit self):
+        pass
+
+    def close(deinit self, code: Int):
+        pass
+
+    # expected-note @+1 {{call 'close_with(...)' to explicitly destroy 'TwoDeinitMethods'}}
+    def close_with(deinit self, code: Int):
+        pass
+
+
+def testTwoDeinitMethods():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'TwoDeinitMethods' does not conform to 'Deinitable' and must be explicitly destroyed}}
+    _ = TwoDeinitMethods()
+
+
+# `__deinit__` is the implicit destructor, so it is not listed.
+struct CondDeinitMethods[cond: Bool](Deinitable where cond):
+    def __init__(out self):
+        pass
+
+    def __deinit__(deinit self) where Self.cond:
+        pass
+
+    # expected-note @+1 {{call 'a()' to explicitly destroy 'CondDeinitMethods'}}
+    def a(deinit self):
+        pass
+
+    # expected-note @+1 {{call 'b()' to explicitly destroy 'CondDeinitMethods'}}
+    def b(deinit self):
+        pass
+
+    # expected-note @+1 {{call 'c()' to explicitly destroy 'CondDeinitMethods'}}
+    def c(deinit self):
+        pass
+
+
+def testCondDeinitMethods():
+    # expected-error @below {{abandoned without being explicitly destroyed: type 'CondDeinitMethods' does not conditionally conform to 'Deinitable' for these parameters}}
+    _ = CondDeinitMethods[False]()
+
+
+# A message the author wrote replaces the list.
+struct CustomMessageDeinitMethod(Deinitable where False else "use close()"):
+    def __init__(out self):
+        pass
+
+    def close(deinit self):
+        pass
+
+
+def testCustomMessageDeinitMethod():
+    # expected-error @below {{abandoned without being explicitly destroyed: use close()}}
+    _ = CustomMessageDeinitMethod()
+
+
+# ===----------------------------------------------------------------------=== #
 # Indirect mutable assignment of a linear type
 # ===----------------------------------------------------------------------=== #
 
@@ -313,12 +453,14 @@ def testContradictedLinear():
 # target's type is linear the reference has no user-visible name, so the
 # diagnostic describes the abandoned value generically and relies on the
 # source location to point at the offending expression.
-@explicit_destroy("use consume()")
-struct IndirectAssignLinear(Movable, Deinitable where False):
+struct IndirectAssignLinear(
+    Movable,
+    Deinitable where False else "use consume()",
+):
     def __init__(out self):
         pass
 
 
-def testIndirectAssignLinear(p: UnsafePointer[IndirectAssignLinear, MutAnyOrigin]):
+def testIndirectAssignLinear(p: Pointer[IndirectAssignLinear, MutAnyOrigin]):
     # expected-error @+1 {{value abandoned without being explicitly destroyed: use consume()}}
     p[] = IndirectAssignLinear()^

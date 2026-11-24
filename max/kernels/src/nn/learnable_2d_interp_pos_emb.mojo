@@ -17,8 +17,9 @@ Equivalent to ``Learnable2DInterpPosEmbDivided_fixed.forward()`` from
 ``nvidia/Kimi-K2.5-NVFP4/modeling_kimi_k25.py``.
 
 For each video described by ``grid_thws``:
-  1. Bicubic-interpolates the learnable 2D weight grid from (H, W) to (h, w).
-     When ``(h, w) == (H, W)`` the grid is used directly.
+  1. Interpolates the learnable 2D weight grid from (H, W) to (h, w),
+     bicubically by default or bilinearly when ``bilinear`` is set. When
+     ``(h, w) == (H, W)`` the grid is used directly.
   2. If ``t > 1`` adds a 1D sincos temporal embedding per frame.
   3. Adds the result element-wise to ``x``.
 
@@ -30,10 +31,15 @@ Tensor layout (all row-major):
   - ``output``:      (L, dim)           x + interpolated position embedding
 """
 
-from std.math import clamp, floor
+from std.math import clamp, floor, max, min
 
 from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.host import DeviceContext
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
 from layout import TensorLayout, TensorEngine, TileTensor
 
 
@@ -42,7 +48,7 @@ from layout import TensorLayout, TensorEngine, TileTensor
 # ---------------------------------------------------------------------------
 
 
-@always_inline
+@inline(.always)
 def _cubic_weight(x: Float32) -> Float32:
     """Catmull-Rom cubic weight (a = -0.75), matching PyTorch F.interpolate."""
     var a: Float32 = -0.75
@@ -62,7 +68,7 @@ def _cubic_weight(x: Float32) -> Float32:
 # ---------------------------------------------------------------------------
 
 
-@__name(t"learnable_2d_interp_pos_emb_{dtype}")
+@__name(t"learnable_2d_interp_pos_emb_{dtype}_{bilinear}")
 def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
@@ -80,6 +86,7 @@ def _gpu_kernel[
     TimeLayoutType: TensorLayout,
     time_origin: ImmOrigin,
     TimeEngine: TensorEngine,
+    bilinear: Bool = False,
 ](
     output: TileTensor[
         dtype, OutputLayoutType, output_origin, Engine=OutputEngine
@@ -101,11 +108,13 @@ def _gpu_kernel[
 ):
     """GPU kernel: one block per output position, threads stride over dim.
 
-    output[l, d] = x[l, d] + bicubic(weight, hh, ww)[d]
+    output[l, d] = x[l, d] + interp(weight, hh, ww)[d]
                    + (time_weight[tt, d] if t > 1 else 0)
 
-    Bicubic uses half-pixel coords and Catmull-Rom kernel (a = -0.75),
-    or falls back to direct lookup when (h, w) == (H, W).
+    Both modes use half-pixel coords. Bicubic uses the Catmull-Rom kernel
+    (a = -0.75); bilinear clamps source coords at zero and rounds the
+    interpolated value to ``dtype``. Either falls back to direct lookup when
+    (h, w) == (H, W).
 
     Args:
         output: (L, dim) output tensor on device.
@@ -140,59 +149,81 @@ def _gpu_kernel[
     var t: Int = 0
     var h: Int = 0
     var w: Int = 0
-    for img in range(_N):
-        t = Int(grid_thws[img, 0])
-        h = Int(grid_thws[img, 1])
-        w = Int(grid_thws[img, 2])
-        var img_len = t * h * w
-        if pos_idx < offset + img_len:
-            break
-        offset += img_len
 
-    var local_pos = pos_idx - offset
-    var tt, hw_pos = divmod(local_pos, h * w)
-    var hh, ww = divmod(hw_pos, w)
+    with PDL():
+        for img in range(_N):
+            t = Int(grid_thws[img, 0])
+            h = Int(grid_thws[img, 1])
+            w = Int(grid_thws[img, 2])
+            var img_len = t * h * w
+            if pos_idx < offset + img_len:
+                break
+            offset += img_len
 
-    var no_interp = h == _H and w == _W
-    var scale_h = Float32(_H) / Float32(h)
-    var scale_w = Float32(_W) / Float32(w)
+        var local_pos = pos_idx - offset
+        var tt, hw_pos = divmod(local_pos, h * w)
+        var hh, ww = divmod(hw_pos, w)
 
-    # Precompute bicubic mapping for this spatial position.
-    var ih_floor: Int = 0
-    var iw_floor: Int = 0
-    var dy: Float32 = 0
-    var dx: Float32 = 0
-    if not no_interp:
-        var in_h = (Float32(hh) + 0.5) * scale_h - 0.5
-        var in_w = (Float32(ww) + 0.5) * scale_w - 0.5
-        ih_floor = Int(floor(in_h))
-        iw_floor = Int(floor(in_w))
-        dy = in_h - Float32(ih_floor)
-        dx = in_w - Float32(iw_floor)
+        var no_interp = h == _H and w == _W
+        var scale_h = Float32(_H) / Float32(h)
+        var scale_w = Float32(_W) / Float32(w)
 
-    # Threads stride over _dim channels.
-    for d in range(thread_idx.x, _dim, block_dim.x):
-        var pos_val: Float32
-        if no_interp:
-            pos_val = Float32(weight[hh, ww, d][0])
-        else:
-            var val: Float32 = 0
-            comptime for i in range(4):
-                var yp = clamp(ih_floor + i - 1, 0, _H - 1)
-                var wy = _cubic_weight(Float32(i) - 1.0 - dy)
-                comptime for j in range(4):
-                    var xp = clamp(iw_floor + j - 1, 0, _W - 1)
-                    var wx = _cubic_weight(Float32(j) - 1.0 - dx)
-                    val += Float32(weight[yp, xp, d][0]) * wy * wx
-            pos_val = val
+        # Precompute the half-pixel coordinates for this position.
+        var ih_floor: Int = 0
+        var iw_floor: Int = 0
+        var dy: Float32 = 0
+        var dx: Float32 = 0
+        if not no_interp:
+            var in_h = (Float32(hh) + 0.5) * scale_h - 0.5
+            var in_w = (Float32(ww) + 0.5) * scale_w - 0.5
+            comptime if bilinear:
+                in_h = max(in_h, 0.0)
+                in_w = max(in_w, 0.0)
+            ih_floor = Int(floor(in_h))
+            iw_floor = Int(floor(in_w))
+            dy = in_h - Float32(ih_floor)
+            dx = in_w - Float32(iw_floor)
 
-        var time_val: Float32 = 0
-        if t > 1:
-            time_val = time_weight[tt, d][0]
+        # Threads stride over _dim channels.
+        for d in range(thread_idx.x, _dim, block_dim.x):
+            var pos_val: Float32
+            if no_interp:
+                pos_val = Float32(weight[hh, ww, d][0])
+            elif bilinear:
+                var y0 = min(ih_floor, _H - 1)
+                var x0 = min(iw_floor, _W - 1)
+                var y1 = min(y0 + 1, _H - 1)
+                var x1 = min(x0 + 1, _W - 1)
+                var w00 = Float32(weight[y0, x0, d][0])
+                var w01 = Float32(weight[y0, x1, d][0])
+                var w10 = Float32(weight[y1, x0, d][0])
+                var w11 = Float32(weight[y1, x1, d][0])
+                # Match the reference's rounding at BF16 interpolation ties.
+                var top = (w01 - w00).fma(dx, w00)
+                var bottom = (w11 - w10).fma(dx, w10)
+                pos_val = (bottom - top).fma(dy, top)
+            else:
+                var val: Float32 = 0
+                comptime for i in range(4):
+                    var yp = clamp(ih_floor + i - 1, 0, _H - 1)
+                    var wy = _cubic_weight(Float32(i) - 1.0 - dy)
+                    comptime for j in range(4):
+                        var xp = clamp(iw_floor + j - 1, 0, _W - 1)
+                        var wx = _cubic_weight(Float32(j) - 1.0 - dx)
+                        val += Float32(weight[yp, xp, d][0]) * wy * wx
+                pos_val = val
 
-        output[pos_idx, d] = Scalar[dtype](
-            Float32(x[pos_idx, d][0]) + pos_val + time_val
-        )
+            comptime if bilinear:
+                # The reference materializes interpolation before adding x.
+                pos_val = Float32(Scalar[dtype](pos_val))
+
+            var time_val: Float32 = 0
+            if t > 1:
+                time_val = time_weight[tt, d][0]
+
+            output[pos_idx, d] = Scalar[dtype](
+                Float32(x[pos_idx, d][0]) + pos_val + time_val
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -202,6 +233,7 @@ def _gpu_kernel[
 
 def learnable_2d_interp_pos_emb[
     dtype: DType,
+    bilinear: Bool = False,
 ](
     output: TileTensor[mut=True, dtype, ...],
     x: TileTensor[dtype, ...],
@@ -212,12 +244,14 @@ def learnable_2d_interp_pos_emb[
 ) raises:
     """Applies learnable 2D interpolated position embedding on GPU.
 
-    For each video described by ``grid_thws``, bicubic-interpolates ``weight``
+    For each video described by ``grid_thws``, interpolates ``weight``
     from (_H, _W) to (h, w), optionally adds temporal sincos embedding, and
     adds the result element-wise to ``x``.
 
     Parameters:
         dtype: Element type of ``x``, ``weight``, and ``output``.
+        bilinear: Uses bilinear interpolation with a dtype-rounded positional
+            intermediate. Defaults to the existing bicubic behavior.
 
     Args:
         output: (L, dim) output tensor.
@@ -258,17 +292,19 @@ def learnable_2d_interp_pos_emb[
         time_weight.LayoutType,
         ImmOrigin(time_weight.origin),
         time_weight.Engine,
+        bilinear,
     ]
     ctx.enqueue_function[kernel](
         output,
-        x.as_immut(),
-        weight.as_immut(),
-        grid_thws.as_immut(),
-        time_weight.as_immut(),
+        x.as_imm(),
+        weight.as_imm(),
+        grid_thws.as_imm(),
+        time_weight.as_imm(),
         Int32(N),
         Int32(dim),
         Int32(H),
         Int32(W),
         grid_dim=(L,),
         block_dim=(BLOCK_SIZE,),
+        attributes=pdl_launch_attributes(PDLLevel.ON),
     )

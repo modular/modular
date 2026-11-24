@@ -32,12 +32,11 @@ Usage:
 
 from std.sys import size_of
 
-from max.gpu.host import DeviceContext, FuncAttribute
+from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.host.info import B200
-from layout import TileTensor, flatten_leading
+from layout import TileTensor, coord, flatten_leading
 from structured_kernels.tile_types import create_tma_tile
 
-from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig
@@ -136,9 +135,6 @@ def grouped_matmul_1d2d_blockwise_fp8[
     ]
     comptime smem_size = size_of[SmemType]()
 
-    # B200 SMEM limit
-    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
-
     # Instantiate kernel type -- layout params derived from caller's TileTensors
     # so types match by construction in enqueue_function.
     comptime KernelType = BlockwiseFP8_1D2DMatmulKernel[
@@ -153,11 +149,7 @@ def grouped_matmul_1d2d_blockwise_fp8[
         config=config,
         static_N=expert_n,
         static_K=K,
-        cluster_shape=StaticTuple[Int32, 3](
-            Int32(config.cluster_shape[0]),
-            Int32(config.cluster_shape[1]),
-            Int32(config.cluster_shape[2]),
-        ),
+        cluster_shape=config.cluster_shape,
         b_scales_engine=type_of(b_scales_2d).Engine,
         c_device_engine=type_of(c_device).Engine,
         offsets_engine=type_of(a_offsets).Engine,
@@ -170,25 +162,28 @@ def grouped_matmul_1d2d_blockwise_fp8[
     var a_tma_op = create_tma_tile[
         KernelType.ATileLayout,
         KernelType.ADescLayout,
-        Index(BM // config.cluster_shape[1], BK),
+        coord[BM // config.cluster_shape[1], BK],
         swizzle_mode=config.a_swizzle,
     ](ctx, a_device)
 
     var b_tma_op = create_tma_tile[
         KernelType.BTileLayout,
         KernelType.BDescLayout,
-        Index(
-            BN // (config.cluster_shape[0] // config.cta_group), BK
-        ) if transpose_b else Index(
-            BK, BN // (config.cluster_shape[0] // config.cta_group)
-        ),
+        coord[
+            BN
+            // (
+                config.cluster_shape[0] // config.cta_group
+            ) if transpose_b else BK,
+            BK if transpose_b else BN
+            // (config.cluster_shape[0] // config.cta_group),
+        ],
         swizzle_mode=config.b_swizzle,
     ](ctx, b_2d)
 
     var a_scales_tma_op = create_tma_tile[
         KernelType.AScalesLayout,
         KernelType.AScalesLayout,
-        Index(1, BM),
+        coord[1, BM],
     ](ctx, a_scales)
 
     var grid_dim = (
@@ -213,11 +208,10 @@ def grouped_matmul_1d2d_blockwise_fp8[
         c_device,
         Int32(num_active_experts),
         UInt32(K),
-        grid_dim=grid_dim,
-        block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
-        shared_mem_bytes=smem_size,
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(b200_smem)
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=grid_dim,
+            block_dim=(32 * (load_warps + mma_warps + epilogue_warps)),
+            shared_mem_bytes=smem_size,
         ),
     )
 
@@ -262,17 +256,17 @@ def grouped_matmul_dynamic_scaled_fp8_1d2d[
         num_active_experts: Number of active experts.
         ctx: Device context for kernel launch.
     """
-    comptime umma_shape: IndexList[3] = Index(64, 64, 32)
+    comptime umma_shape = (64, 64, 32)
     # A-scales: 1 x BM floats per pipeline stage
-    comptime BM = umma_shape[0]  # cta_group=1
+    comptime BM = Int(umma_shape[0])  # cta_group=1
     comptime a_scales_smem_per_stage = BM * size_of[DType.float32]()
 
     comptime a_type = DType.float8_e4m3fn
     comptime b_type = DType.float8_e4m3fn
     comptime c_type = type_of(c).dtype
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-        cluster_shape=Index(1, 1, 1),
-        mma_shape=umma_shape,
+        cluster_shape=(1, 1, 1),
+        mma_shape=(umma_shape[0], umma_shape[1], umma_shape[2]),
         cta_group=1,
         AB_swapped=False,
         k_group_size=1,

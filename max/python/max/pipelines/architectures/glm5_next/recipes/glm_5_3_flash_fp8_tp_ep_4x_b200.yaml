@@ -1,0 +1,39 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+# 4x B200 recipe for GLM-5.3-Flash: text, image and video input.
+#
+# TP4 attention, EP4 MoE. Two B200s leave no room for a KV pool: there the
+# Jenga cache needs at least seven 6.57 GiB huge blocks per GPU.
+#   MAX plans against 160.75 GiB per GPU, the 90% of free memory its memory
+#     manager takes, so 0.9 of it is 578.7 GiB over four GPUs. Weights take
+#     302.5 GiB (the MTP layer stays unloaded), activations 10.5 GiB and
+#     signal buffers 1.1 GiB, which leaves 264.6 GiB. The planner commits
+#     the 92.0 GiB a full batch of eight 16K sequences needs: 23.0 GiB per
+#     GPU, seven 3.29 GiB huge blocks, which hold 17 such sequences.
+# The KV cache stays BF16: the checkpoint ships `kv_b_proj` unquantized, so
+# there are no absorbed scales for an FP8 latent cache.
+model:
+  model_path: zai-org/GLM-5.3-Flash
+  device_specs: [0, 1, 2, 3]
+  data_parallel_degree: 1
+  max_length: 16384
+  kv_cache:
+    device_memory_utilization: 0.9
+
+runtime:
+  ep_size: 4
+  max_batch_input_tokens: 8192
+  max_batch_size: 8
+
+sampling:
+  enable_structured_output: true

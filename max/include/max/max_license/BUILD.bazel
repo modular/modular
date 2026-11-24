@@ -1,0 +1,16 @@
+# Headers for the //max/lib/max_license libraries. They are found through the
+# `max/include` root that //max:CAPI.headers puts on the include path.
+package(default_visibility = ["//max:consumers"])
+
+filegroup(
+    name = "MOFDriver.headers",
+    srcs = ["MOF/InitAllDialects.h"] + glob(["MOF/Driver/**/*.h"]),
+)
+
+filegroup(
+    name = "max.headers",
+    srcs = glob([
+        "API/**/*.h",
+        "MOF/API/**/*.h",
+    ]),
+)

@@ -74,16 +74,18 @@ SRD-OOB or filter-zero multiplies in the MMA.
 
 from std.math import ceildiv, min
 from std.sys import size_of, simd_width_of
-from max.gpu import WARP_SIZE
-from max.gpu.intrinsics import AMDBufferResource
-from std.memory import AddressSpace
-from std.sys.intrinsics import readfirstlane
+from max.gpu import WARP_SIZE, lane_id
+from max.gpu.intrinsics import (
+    AMDBufferResource,
+    ds_read_tr16_b64,
+    readfirstlane,
+)
 from std.collections import Optional
 
 from layout import TensorEngine, TensorLayout, TileTensor
 from layout.swizzle import Swizzle
 
-from structured_kernels.amd_tile_io import GMemTile, SMemTile, TileLoader
+from structured_kernels.amd_tile_io import RegTile, SMemTile, TileLoader
 
 
 # ===----------------------------------------------------------------------=== #
@@ -272,6 +274,17 @@ struct TileLoaderLDSIm2col[
     comptime _is_uniform_substrip = (
         Self.tile_cols <= Self.C and Self.C % Self.tile_cols == 0
     )
+    # A call whose lanes span several 32-column sub-tiles (one per warp
+    # column) can still stay inside one (kh, kw) substrip per *warp* when `C`
+    # is a multiple of the sub-tile width: C = 96 with a 64-column tile, where
+    # only one tile in three sits wholly inside a pixel. The substrip and its
+    # first channel then come from warp-uniform values, not per-lane divides.
+    comptime _is_warp_uniform_substrip = (
+        not Self._is_uniform_substrip
+        and not Self.use_full_tile_width
+        and Self.subtile_cols <= Self.C
+        and Self.C % Self.subtile_cols == 0
+    )
 
     # Derivations mirror `TileLoaderLDS`. The `stride` between adjacent
     # M-elements in NHWC linear memory is C (W*C jumps occur across
@@ -394,7 +407,7 @@ struct TileLoaderLDSIm2col[
             " — tile_rows must be >= 1."
         )
 
-    @always_inline
+    @inline(.always)
     def __init__[
         InLayout: TensorLayout,
         InEngine: TensorEngine,
@@ -549,7 +562,7 @@ struct TileLoaderLDSIm2col[
             var c = Int(src_nhwc.dim[3]())
             nr = n * h * w * c
         self.buffer = AMDBufferResource(
-            readfirstlane(src_nhwc.ptr), readfirstlane(nr)
+            readfirstlane(src_nhwc.unsafe_ptr()), readfirstlane(nr)
         )
         self.num_records = nr
 
@@ -591,7 +604,7 @@ struct TileLoaderLDSIm2col[
         self.rt_d_out = 0
         self.rt_spatial_dhw = 0
 
-    @always_inline
+    @inline(.always)
     def __init__[
         InLayout: TensorLayout,
         InEngine: TensorEngine,
@@ -670,7 +683,7 @@ struct TileLoaderLDSIm2col[
         comptime assert Self.C > 0, "TileLoaderLDSIm2col.C must be > 0"
         var nr = n * runtime_h * runtime_w * c
         self.buffer = AMDBufferResource(
-            readfirstlane(src_nhwc.ptr), readfirstlane(nr)
+            readfirstlane(src_nhwc.unsafe_ptr()), readfirstlane(nr)
         )
         self.num_records = nr
 
@@ -711,7 +724,7 @@ struct TileLoaderLDSIm2col[
         self.rt_d_out = 0
         self.rt_spatial_dhw = 0
 
-    @always_inline
+    @inline(.always)
     def __init__[
         InLayout: TensorLayout,
         InEngine: TensorEngine,
@@ -792,7 +805,7 @@ struct TileLoaderLDSIm2col[
         comptime assert Self.C > 0, "TileLoaderLDSIm2col.C must be > 0"
         var nr = n * runtime_d * runtime_h * runtime_w * c
         self.buffer = AMDBufferResource(
-            readfirstlane(src_ndhwc.ptr), readfirstlane(nr)
+            readfirstlane(src_ndhwc.unsafe_ptr()), readfirstlane(nr)
         )
         self.num_records = nr
 
@@ -834,10 +847,10 @@ struct TileLoaderLDSIm2col[
         self.rt_d_out = runtime_d_out
         self.rt_spatial_dhw = runtime_d_out * runtime_h_out * runtime_w_out
 
-    @always_inline
+    @inline(.always)
     def load_tile(
         self,
-        dst: SMemTile[Self.dtype, _, _],
+        dst: SMemTile[Self.dtype, _, _, ...],
         m_offset: Int,
         k_offset: Int,
     ):
@@ -899,7 +912,9 @@ struct TileLoaderLDSIm2col[
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
                     ](tile_idx, 0)
-                    var smem_ptr = readfirstlane(rebind[SmemPtr](warp_tile.ptr))
+                    var smem_ptr = readfirstlane(
+                        rebind[SmemPtr](warp_tile.unsafe_ptr())
+                    )
 
                     var full_byte = (
                         tile_idx * Self.warp_subtile_bytes + lane_byte
@@ -939,7 +954,9 @@ struct TileLoaderLDSIm2col[
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
                     ](tile_idx, 0)
-                    var smem_ptr = readfirstlane(rebind[SmemPtr](warp_tile.ptr))
+                    var smem_ptr = readfirstlane(
+                        rebind[SmemPtr](warp_tile.unsafe_ptr())
+                    )
 
                     var tile_row = m_eff + i * Self.rows_per_iteration
                     var uniform_offset = k_eff + tile_row * Self.C
@@ -1017,13 +1034,15 @@ struct TileLoaderLDSIm2col[
                 comptime if Self._is_uniform_substrip:
                     substrip_uniform = k_eff // Self.C
                     comptime if Self._is_3d:
-                        var rs_uniform = substrip_uniform % (Self.R * Self.S)
-                        kq_uniform = substrip_uniform // (Self.R * Self.S)
-                        kh_uniform = rs_uniform // Self.S
-                        kw_uniform = rs_uniform % Self.S
+                        var rs_uniform: Int
+                        kq_uniform, rs_uniform = divmod(
+                            substrip_uniform, Self.R * Self.S
+                        )
+                        kh_uniform, kw_uniform = divmod(rs_uniform, Self.S)
                     else:
-                        kh_uniform = substrip_uniform // Self.S
-                        kw_uniform = substrip_uniform % Self.S
+                        kh_uniform, kw_uniform = divmod(
+                            substrip_uniform, Self.S
+                        )
                     c_base_uniform = k_eff % Self.C
 
                 comptime for i in range(Self.num_iterations):
@@ -1035,7 +1054,9 @@ struct TileLoaderLDSIm2col[
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
                     ](tile_idx, 0)
-                    var smem_ptr = readfirstlane(rebind[SmemPtr](warp_tile.ptr))
+                    var smem_ptr = readfirstlane(
+                        rebind[SmemPtr](warp_tile.unsafe_ptr())
+                    )
 
                     var full_byte = (
                         tile_idx * Self.warp_subtile_bytes + lane_byte
@@ -1064,13 +1085,11 @@ struct TileLoaderLDSIm2col[
                         var k_lane = k_eff + swizzled_col
                         var substrip_lane = k_lane // Self.C
                         comptime if Self._is_3d:
-                            var rs_lane = substrip_lane % (Self.R * Self.S)
-                            kq = substrip_lane // (Self.R * Self.S)
-                            kh = rs_lane // Self.S
-                            kw = rs_lane % Self.S
+                            var rs_lane: Int
+                            kq, rs_lane = divmod(substrip_lane, Self.R * Self.S)
+                            kh, kw = divmod(rs_lane, Self.S)
                         else:
-                            kh = substrip_lane // Self.S
-                            kw = substrip_lane % Self.S
+                            kh, kw = divmod(substrip_lane, Self.S)
                         c_lane = k_lane % Self.C
 
                     # M decomposition.
@@ -1253,25 +1272,36 @@ struct TileLoaderLDSIm2col[
                 comptime if Self._is_uniform_substrip:
                     var substrip_uniform = k_eff // Self.C
                     comptime if Self._is_3d:
-                        var rs_uniform = substrip_uniform % (Self.R * Self.S)
-                        kq = substrip_uniform // (Self.R * Self.S)
-                        kh = rs_uniform // Self.S
-                        kw = rs_uniform % Self.S
+                        var rs_uniform: Int
+                        kq, rs_uniform = divmod(
+                            substrip_uniform, Self.R * Self.S
+                        )
+                        kh, kw = divmod(rs_uniform, Self.S)
                     else:
-                        kh = substrip_uniform // Self.S
-                        kw = substrip_uniform % Self.S
+                        kh, kw = divmod(substrip_uniform, Self.S)
                     c_lane = (k_eff % Self.C) + self.thread_col
+                elif Self._is_warp_uniform_substrip:
+                    var warp_col = self.warp_id % Self.num_warp_cols
+                    var k_warp = k_eff + warp_col * Self.subtile_cols
+                    var substrip_warp = k_warp // Self.C
+                    comptime if Self._is_3d:
+                        var rs_warp: Int
+                        kq, rs_warp = divmod(substrip_warp, Self.R * Self.S)
+                        kh, kw = divmod(rs_warp, Self.S)
+                    else:
+                        kh, kw = divmod(substrip_warp, Self.S)
+                    c_lane = (k_warp % Self.C) + (
+                        self.thread_col % Self.subtile_cols
+                    )
                 else:
                     var k_lane = k_eff + self.thread_col
                     var substrip_lane = k_lane // Self.C
                     comptime if Self._is_3d:
-                        var rs_lane = substrip_lane % (Self.R * Self.S)
-                        kq = substrip_lane // (Self.R * Self.S)
-                        kh = rs_lane // Self.S
-                        kw = rs_lane % Self.S
+                        var rs_lane: Int
+                        kq, rs_lane = divmod(substrip_lane, Self.R * Self.S)
+                        kh, kw = divmod(rs_lane, Self.S)
                     else:
-                        kh = substrip_lane // Self.S
-                        kw = substrip_lane % Self.S
+                        kh, kw = divmod(substrip_lane, Self.S)
                     c_lane = k_lane % Self.C
 
                 comptime for i in range(Self.num_iterations):
@@ -1283,7 +1313,9 @@ struct TileLoaderLDSIm2col[
                     var warp_tile = dst.tile[
                         Self.rows_per_warp, Self.tile_cols
                     ](tile_idx, 0)
-                    var smem_ptr = readfirstlane(rebind[SmemPtr](warp_tile.ptr))
+                    var smem_ptr = readfirstlane(
+                        rebind[SmemPtr](warp_tile.unsafe_ptr())
+                    )
 
                     var h_in = (
                         h_out * Self.stride_h
@@ -1359,3 +1391,230 @@ struct TileLoaderLDSIm2col[
                             if d_out >= D_out_eff:
                                 d_out -= D_out_eff
                                 n += 1
+
+
+# ===----------------------------------------------------------------------=== #
+# Filter operand read straight from an RSCF `[K, F]` tensor
+# ===----------------------------------------------------------------------=== #
+#
+# An RSCF filter is `F`-contiguous, but an MFMA B fragment wants eight
+# consecutive `K` values per lane. Instead of repacking the filter to FRSC in a
+# separate launch, the sub-tile is DMA'd into LDS in its natural `[K][N]`
+# orientation and the fragments are gathered with the transposing LDS read
+# (`ds_read_b64_tr_b16`, CDNA4).
+#
+# LDS layout of one `[tile_k][tile_n]` sub-tile: row `k` holds `tile_n`
+# elements; the row's 16-byte chunks are paired (32 bytes = 16 elements, the
+# span of one MMA N tile) and the pair index is XORed with a function of the
+# row, so the sixteen lanes of one transposed read (four rows, one pair each)
+# and the two lane groups sharing a cycle land on distinct banks.
+
+
+@always_inline
+def rscf_pair_swizzle[pairs: Int](row: Int) -> Int:
+    """XOR mask applied to the 32-byte pair index of LDS row `row`.
+
+    Parameters:
+        pairs: Number of 32-byte pairs per row (a power of two).
+
+    Args:
+        row: Row (K index) within the sub-tile.
+
+    Returns:
+        A value in `[0, pairs)`.
+    """
+    return ((row >> 1) + 2 * (row >> 3)) & (pairs - 1)
+
+
+struct TileLoaderLDSRscf[
+    dtype: DType,
+    tile_k: Int,
+    tile_n: Int,
+    F: Int,
+    num_loading_warps: Int = 4,
+    active: Bool = True,
+]:
+    """DRAM->LDS DMA of `[tile_k][tile_n]` sub-tiles of an RSCF filter.
+
+    The source is the filter viewed as a row-major `[K_real, F]` matrix. Rows
+    at or past `K_real` and columns at or past `F` read as zero: the first by
+    the buffer descriptor's bounds, the second by routing the lane to the
+    `num_records` sentinel. Each call issues `tile_k * tile_n / (8 *
+    256)` (16-byte) `buffer_load_*_lds` per lane, the same count as the FRSC
+    `TileLoaderLDS` for a `tile_n x tile_k` tile, so the schedule's vmcnt
+    accounting is unchanged.
+
+    Parameters:
+        dtype: Element type (16-bit).
+        tile_k: K rows per sub-tile.
+        tile_n: N columns per sub-tile.
+        F: Row length of the source matrix (output channels).
+        num_loading_warps: Warps cooperating on each load.
+        active: When False the loader is an inert placeholder: it checks
+            nothing and `load_tile` must not be called. Lets a kernel that
+            also supports another B path hold one of these unconditionally.
+    """
+
+    comptime chunk = 16 // size_of[Self.dtype]()
+    comptime chunks_per_row = Self.tile_n // Self.chunk
+    comptime rows_per_wave = WARP_SIZE // Self.chunks_per_row
+    comptime num_iterations = Self.tile_k // (
+        Self.num_loading_warps * Self.rows_per_wave
+    )
+    comptime wave_elems = WARP_SIZE * Self.chunk
+
+    var buffer: AMDBufferResource
+    var num_records: Int
+    var n_anchor: Int
+    var warp_id: Int
+    var row0: Int
+    var chunk_col: Int
+
+    @inline(.always)
+    def __init__(
+        out self,
+        src: TileTensor[Self.dtype, ...],
+        warp_id: Int,
+        lane: Int,
+        *,
+        n_anchor: Int,
+    ):
+        """Builds the loader.
+
+        Args:
+            src: The filter as a row-major `[K_real, F]` tensor.
+            warp_id: Warp identifier within the loading warp group.
+            lane: Lane identifier within the warp.
+            n_anchor: First filter column of the block's N tile.
+        """
+        comptime if Self.active:
+            comptime assert (
+                size_of[Self.dtype]() == 2
+            ), "RSCF direct B is 16-bit"
+            comptime assert Self.F % Self.chunk == 0, "F must fill whole chunks"
+            comptime assert (
+                Self.chunks_per_row >= 2 and Self.chunks_per_row % 2 == 0
+            ), "sub-tile rows must hold whole 32-byte pairs"
+            comptime assert (
+                Self.num_iterations >= 1
+                and Self.tile_k
+                == Self.num_iterations
+                * Self.num_loading_warps
+                * Self.rows_per_wave
+            ), "sub-tile must be covered by whole wave-sized strips"
+            # Row `row0 + i * num_loading_warps * rows_per_wave` swizzles like
+            # `row0` only if the strip pitch is a multiple of 16.
+            comptime assert (
+                Self.num_loading_warps * Self.rows_per_wave
+            ) % 16 == 0, "strip pitch must preserve the row swizzle"
+        var nr = Int(src.dim[0]()) * Self.F if Self.active else 0
+        self.buffer = AMDBufferResource(
+            readfirstlane(src.unsafe_ptr()), readfirstlane(nr)
+        )
+        self.num_records = nr
+        self.n_anchor = n_anchor
+        self.warp_id = warp_id
+        comptime if Self.active:
+            var lane_row, phys_chunk = divmod(lane, Self.chunks_per_row)
+            self.row0 = warp_id * Self.rows_per_wave + lane_row
+            var pair, within = divmod(phys_chunk, 2)
+            var logical_pair = pair ^ rscf_pair_swizzle[
+                Self.chunks_per_row // 2
+            ](self.row0)
+            self.chunk_col = (logical_pair * 2 + within) * Self.chunk
+        else:
+            self.row0 = 0
+            self.chunk_col = 0
+
+    @inline(.always)
+    def load_tile(
+        self,
+        dst: Pointer[Scalar[Self.dtype], address_space=.SHARED, ...],
+        n_offset: Int,
+        k_offset: Int,
+    ):
+        """Loads one sub-tile into LDS.
+
+        Args:
+            dst: Start of the `[tile_k][tile_n]` LDS sub-tile.
+            n_offset: First column of the sub-tile within the block's N tile.
+            k_offset: First K row of the sub-tile.
+        """
+        comptime SmemPtr = Pointer[
+            Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
+        ]
+        var n_eff = self.n_anchor + n_offset + self.chunk_col
+        var in_range = n_eff < Self.F
+
+        comptime for i in range(Self.num_iterations):
+            var row = (
+                k_offset
+                + self.row0
+                + i * (Self.num_loading_warps * Self.rows_per_wave)
+            )
+            var addr = row * Self.F + n_eff
+            if not in_range:
+                addr = self.num_records
+            var smem_ptr = readfirstlane(
+                rebind[SmemPtr](
+                    dst.unsafe_offset(
+                        (i * Self.num_loading_warps + self.warp_id)
+                        * Self.wave_elems
+                    )
+                )
+            )
+            self.buffer.load_to_lds[width=Self.chunk](
+                Int32(addr), smem_ptr, scalar_offset=Int32(0)
+            )
+
+
+@always_inline
+def load_rscf_b_fragments[
+    dtype: DType,
+    reg_layout: TensorLayout,
+    //,
+    tile_n: Int,
+    num_k_mmas: Int,
+    quad_n: Int,
+](
+    smem: Pointer[Scalar[dtype], address_space=.SHARED, ...],
+    reg_quad: RegTile[mut=True, dtype, reg_layout, _],
+    pair0: Int,
+):
+    """Gathers B fragments from a `[K][tile_n]` LDS sub-tile (16x16x32 MFMA).
+
+    For N tile `j` and K step `kk`, lane `l` receives
+    `B[32 * kk + 8 * (l / 16) + 0..7][16 * (pair0 + j) + l % 16]` as two
+    `ds_read_b64_tr_b16` of four consecutive K rows each. This is the layout
+    `load_lds_fragment` produces from an FRSC tile, so A and B agree on the K
+    order within a lane.
+
+    Parameters:
+        dtype: Element type (16-bit).
+        reg_layout: Layout of the destination register tile.
+        tile_n: Row length of the LDS sub-tile in elements.
+        num_k_mmas: K steps of 32 per sub-tile.
+        quad_n: N tiles of 16 loaded into `reg_quad`.
+
+    Args:
+        smem: Start of the LDS sub-tile.
+        reg_quad: Destination `[quad_n, num_k_mmas * 8]` register tile.
+        pair0: Index of the first 32-byte pair this warp reads.
+    """
+    comptime pairs = tile_n // 16
+    var group, i = divmod(lane_id(), 16)
+    var row_lo = 8 * group + i // 4
+    var row_hi = row_lo + 4
+    var swz_lo = rscf_pair_swizzle[pairs](row_lo)
+    var swz_hi = rscf_pair_swizzle[pairs](row_hi)
+    var col = (i % 4) * 4
+
+    comptime for j in range(quad_n):
+        var off_lo = row_lo * tile_n + ((pair0 + j) ^ swz_lo) * 16 + col
+        var off_hi = row_hi * tile_n + ((pair0 + j) ^ swz_hi) * 16 + col
+
+        comptime for kk in range(num_k_mmas):
+            comptime k_off = kk * 32 * tile_n
+            var lo = ds_read_tr16_b64(smem.unsafe_offset(off_lo + k_off))
+            var hi = ds_read_tr16_b64(smem.unsafe_offset(off_hi + k_off))
+            reg_quad.store[width=8]((j, kk * 8), lo.join(hi))

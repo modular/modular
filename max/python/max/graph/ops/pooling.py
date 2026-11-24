@@ -14,15 +14,16 @@
 
 from __future__ import annotations
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo, rmo
 from max.dtype import DType
 
 from ..dim import DimLike
 from ..graph import Graph
 from ..shape import Shape
-from ..type import TensorType
+from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
+from .validation import assert_same_device
 
 
 def avg_pool2d(
@@ -197,6 +198,7 @@ def roi_align(
         )
     if mode not in ("AVG", "MAX"):
         raise ValueError(f"roi_align mode must be 'AVG' or 'MAX', got '{mode}'")
+    assert_same_device(input=input, rois=rois)
 
     device = input.type.device
     num_rois = rois.type.shape[0]
@@ -208,13 +210,15 @@ def roi_align(
         device,
     )
 
-    oh_val = constant(output_height, DType.int64, device)
-    ow_val = constant(output_width, DType.int64, device)
-    scale_val = constant(spatial_scale, DType.float32, device)
-    ratio_val = constant(sampling_ratio, DType.float32, device)
+    # The four numeric scalars are host operands (MO_SingleDeviceWithHostOperands).
+    host = DeviceRef.CPU()
+    oh_val = constant(output_height, DType.int64, host)
+    ow_val = constant(output_width, DType.int64, host)
+    scale_val = constant(spatial_scale, DType.float32, host)
+    ratio_val = constant(sampling_ratio, DType.float32, host)
 
     return Graph.current._add_op_generated(
-        rmo.MoRoiAlignOp,
+        mo.RoiAlignOp,
         result_type,
         input,
         rois,

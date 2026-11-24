@@ -48,8 +48,7 @@ def _code_at(
 ) -> Int:
     """Reads element `col` from a packed FP6 row as a raw 6-bit code."""
     var bit_offset = col * 6
-    var byte_index = bit_offset // 8
-    var shift = bit_offset % 8
+    var byte_index, shift = divmod(bit_offset, 8)
     var low = UInt32(stream[unsafe_offset=row_base + byte_index]) >> UInt32(
         shift
     )
@@ -105,16 +104,9 @@ def test_mxfp6_dequant[
     comptime tol = Float32(0.0)
 
     print(
-        "  fmt=",
-        "E2M3" if fmt == FP6Format.E2M3 else "E3M2",
-        " rows=",
-        num_rows,
-        " cols=",
-        num_cols,
-        " dtype=",
-        out_dtype,
-        " scale_exp=",
-        scale_exp,
+        t"  fmt= {'E2M3' if fmt == FP6Format.E2M3 else 'E3M2'}  rows="
+        t" {num_rows}  cols= {num_cols}  dtype= {out_dtype}  scale_exp="
+        t" {scale_exp}"
     )
 
     comptime in_size = num_rows * packed_cols
@@ -191,14 +183,8 @@ def test_mxfp6_dequant[
         if err > tol:
             if num_mismatches < 5:
                 print(
-                    "    MISMATCH [",
-                    i // num_cols,
-                    ",",
-                    i % num_cols,
-                    "]: got=",
-                    got,
-                    " expected=",
-                    want,
+                    t"    MISMATCH [ {i // num_cols} , {i % num_cols} ]: got="
+                    t" {got}  expected= {want}"
                 )
             num_mismatches += 1
 

@@ -14,9 +14,34 @@
 #include "Mojo/HLCFDialect/HLCFDialect.h"
 #include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoInterfaces.h"
+#include "mlir/Interfaces/FoldInterfaces.h"
 
 using namespace M;
 using namespace HLCF;
+
+namespace {
+
+//===----------------------------------------------------------------------===//
+// HLCFDialectFoldInterface
+//===----------------------------------------------------------------------===//
+
+struct HLCFDialectFoldInterface : public mlir::DialectFoldInterface {
+  using DialectFoldInterface::DialectFoldInterface;
+
+  /// Never hoist a constant out of a declaration scope. We could scan the
+  /// parameters declarations to find the highest scope a constant could be
+  /// hoisted into, but that is expensive to do. We also do not hoist constants
+  /// out of ops that define a subprogram location scope, since the hoisted
+  /// constant would carry incorrect scope information into their new scope.
+  bool shouldMaterializeInto(Region *region) const override {
+    if (DebugInfo::shouldMaterializeConstantsInto(*region))
+      return true;
+    return isa<KGEN::DeclInterface>(region->getParentOp());
+  }
+};
+
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // HLCFDialect
@@ -24,6 +49,8 @@ using namespace HLCF;
 
 void M::HLCF::HLCFDialect::initialize() {
   registerAttributes();
+
+  addInterfaces<HLCFDialectFoldInterface>();
 
   addOperations<
 #define GET_OP_LIST

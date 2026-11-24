@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 import numpy as np
+import pytest
 import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn import ConvTranspose1d, WeightNormConvTranspose1d
+from max.graph import DeviceRef, Graph, TensorType, ops
+from max.graph.type import ConvInputLayout, FilterLayout
+from max.nn.legacy import ConvTranspose1d, WeightNormConvTranspose1d
 from test_common.numerics import pytorch_disable_tf32_dtype
 from torch import nn
 
@@ -46,7 +48,6 @@ def test_conv_transpose1d() -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.ConvTranspose1d(
@@ -58,7 +59,6 @@ def test_conv_transpose1d() -> None:
         dilation=dilation,
         output_padding=output_padding,
         bias=False,
-        device=torch_device,
     )
 
     max_conv = ConvTranspose1d(
@@ -79,17 +79,12 @@ def test_conv_transpose1d() -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
     # load weights to max
     state_dict = {"weight": torch_conv.weight.data.detach().cpu()}
     max_conv.load_state_dict(state_dict)
-
-    # get_torch_output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # get_max_output
     session = InferenceSession(devices=[Accelerator()])
@@ -102,6 +97,12 @@ def test_conv_transpose1d() -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    # get_torch_output
+    input_sequence = input_sequence.to(torch_device)
+    torch_conv = torch_conv.to(torch_device)
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
 
     max_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(max_conv_result, Buffer)
@@ -137,7 +138,6 @@ def test_conv_transpose1d_bias() -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     torch_conv = nn.ConvTranspose1d(
@@ -170,7 +170,6 @@ def test_conv_transpose1d_bias() -> None:
         torch.rand(
             size=torch_conv.weight.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -178,7 +177,6 @@ def test_conv_transpose1d_bias() -> None:
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -189,10 +187,6 @@ def test_conv_transpose1d_bias() -> None:
     }
 
     max_conv.load_state_dict(state_dict)
-
-    # get_torch_output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # get_max_output
     session = InferenceSession(devices=[Accelerator()])
@@ -205,6 +199,12 @@ def test_conv_transpose1d_bias() -> None:
     )
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
+
+    # get_torch_output
+    input_sequence = input_sequence.to(torch_device)
+    torch_conv = torch_conv.to(torch_device)
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
 
     max_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(max_conv_result, Buffer)
@@ -240,7 +240,6 @@ def test_weight_norm_conv_transpose1d() -> None:
     input_sequence = torch.rand(
         size=(batch_size, in_channels, length),
         dtype=torch_dtype,
-        device=torch_device,
     )
 
     # Create PyTorch model with weight norm
@@ -277,21 +276,18 @@ def test_weight_norm_conv_transpose1d() -> None:
         torch.rand(
             size=torch_conv.weight_v.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     torch_conv.weight_g.data = nn.Parameter(
         torch.rand(
             size=torch_conv.weight_g.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
     torch_conv.bias.data = nn.Parameter(
         torch.rand(
             size=torch_conv.bias.data.shape,
             dtype=torch_dtype,
-            device=torch_device,
         )
     )
 
@@ -302,10 +298,6 @@ def test_weight_norm_conv_transpose1d() -> None:
         "bias": torch_conv.bias.data.detach().cpu(),
     }
     max_conv.load_state_dict(state_dict)
-
-    # Get PyTorch output
-    with torch.no_grad():
-        torch_conv_result = torch_conv(input_sequence)
 
     # Get MAX output
     session = InferenceSession(devices=[Accelerator()])
@@ -319,6 +311,12 @@ def test_weight_norm_conv_transpose1d() -> None:
 
     compiled = session.load(graph, weights_registry=max_conv.state_dict())
 
+    # Get PyTorch output
+    input_sequence = input_sequence.to(torch_device)
+    torch_conv = torch_conv.to(torch_device)
+    with torch.no_grad():
+        torch_conv_result = torch_conv(input_sequence)
+
     max_conv_result = compiled.execute(input_sequence)[0]
     assert isinstance(max_conv_result, Buffer)
 
@@ -329,4 +327,105 @@ def test_weight_norm_conv_transpose1d() -> None:
         equal_nan=True,
         rtol=ACCURACY_RTOL,
         atol=ACCURACY_ATOL,
+    )
+
+
+def test_conv2d_transpose_fused_epilogue() -> None:
+    """An add on the conv_transpose output fuses into it as an epilogue."""
+    device = DeviceRef.GPU()
+    shape = (1, 1, 2, 2)
+    with Graph(
+        "conv2d_transpose_fused_epilogue",
+        input_types=(
+            TensorType(DType.float32, shape, device=device),
+            TensorType(DType.float32, shape, device=device),
+        ),
+    ) as graph:
+        x, w = (value.tensor for value in graph.inputs)
+        out = ops.conv2d_transpose(
+            x,
+            w,
+            input_layout=ConvInputLayout.NCHW,
+            filter_layout=FilterLayout.CFRS,
+        )
+        graph.output(out + 1.0)
+
+    compiled = InferenceSession(devices=[Accelerator()]).load(graph)
+    result = compiled.execute(
+        torch.ones(shape, device="cuda"), torch.ones(shape, device="cuda")
+    )[0]
+    assert isinstance(result, Buffer)
+
+    # All-ones 2x2 input and 2x2 kernel overlap 1, 2, or 4 times per output.
+    expected = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dtype=np.float32)
+    np.testing.assert_array_equal(
+        result.to_numpy(), (expected + 1).reshape(1, 1, 3, 3)
+    )
+
+
+@pytorch_disable_tf32_dtype
+@pytest.mark.parametrize("fused", [False, True])
+@pytest.mark.parametrize(
+    "in_channels, out_channels, height, width, kernel, stride, dilation, padding",
+    [
+        # The geometries B200 serves with a dedicated kernel, and a near miss
+        # of each that goes to cuDNN.
+        (512, 1024, 1, 550, (1, 7), (1, 1), (1, 1), (0, 3)),
+        (2, 3, 1, 9, (1, 5), (1, 1), (1, 1), (0, 0)),
+        (4, 6, 8, 9, (3, 5), (1, 2), (2, 2), (1, 1)),
+        (4, 6, 8, 10, (3, 5), (1, 2), (2, 2), (1, 1)),
+    ],
+)
+def test_conv2d_transpose_nchw_against_torch(
+    in_channels: int,
+    out_channels: int,
+    height: int,
+    width: int,
+    kernel: tuple[int, int],
+    stride: tuple[int, int],
+    dilation: tuple[int, int],
+    padding: tuple[int, int],
+    fused: bool,
+) -> None:
+    """The NCHW / CFRS transposed convolution matches torch, with and without
+    an add fused into it as the epilogue."""
+    device = DeviceRef.GPU()
+    x_shape = (1, in_channels, height, width)
+    w_shape = (in_channels, out_channels, *kernel)
+    with Graph(
+        "conv2d_transpose_nchw",
+        input_types=(
+            TensorType(DType.float32, x_shape, device=device),
+            TensorType(DType.float32, w_shape, device=device),
+        ),
+    ) as graph:
+        x, w = (value.tensor for value in graph.inputs)
+        out = ops.conv2d_transpose(
+            x,
+            w,
+            stride=stride,
+            dilation=dilation,
+            padding=(padding[0], padding[0], padding[1], padding[1]),
+            input_layout=ConvInputLayout.NCHW,
+            filter_layout=FilterLayout.CFRS,
+        )
+        graph.output(out + 1.0 if fused else out)
+
+    compiled = InferenceSession(devices=[Accelerator()]).load(graph)
+    torch.manual_seed(0)
+    x_host = torch.rand(x_shape, device="cuda")
+    w_host = torch.rand(w_shape, device="cuda")
+    result = compiled.execute(x_host, w_host)[0]
+    assert isinstance(result, Buffer)
+
+    expected = torch.nn.functional.conv_transpose2d(
+        x_host, w_host, stride=stride, padding=padding, dilation=dilation
+    )
+    if fused:
+        expected = expected + 1.0
+    np.testing.assert_allclose(
+        result.to_numpy(),
+        expected.cpu().numpy(),
+        rtol=ACCURACY_RTOL,
+        atol=1e-3,
     )

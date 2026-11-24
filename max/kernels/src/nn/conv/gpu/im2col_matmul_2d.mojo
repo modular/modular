@@ -21,21 +21,29 @@ tensor cores without the TMA im2col descriptor layer.
 - K = R * S * C_in            (filter-flattened reduction axis)
 - N = C_out                   (output channels)
 
-Gate: bf16, groups=1, dilation=1, kernel > 1×1 (the vectorized naive
-kernel wins on 1×1), K >= 16 (below MMA_K).
+Gate: bf16 (fp16 on CUDA only for strided convs with a small scratch),
+groups=1, dilation=1, kernel > 1×1 (the vectorized naive kernel wins on
+1×1), K >= 16 (below MMA_K).
 """
 
-from std.math import ceildiv
-from std.math.uutils import udivmod
-from std.sys.info import has_apple_gpu_accelerator, size_of
+from std.math import ceildiv, divmod
+from std.sys.info import align_of, size_of
 from max.gpu import block_dim, block_idx, global_idx, thread_idx
-from max.gpu.host import DeviceContext
-from layout import Coord, Idx, TileTensor, row_major
+from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
+from max.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
+)
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.matmul.gpu.apple import ConvIm2colParams, enqueue_apple_conv2d
-from std.utils.index import IndexList
-from linalg.utils import elementwise_epilogue_type
-from nn.conv.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.conv_utils import (
+    ConvSimdComputeFn,
+    ConvSimdEpilogueFn,
+    no_conv_simd_compute_fn,
+    no_conv_simd_epilogue_fn,
+)
 
 
 # =========================================================================
@@ -43,12 +51,29 @@ from nn.conv.conv_utils import elementwise_simd_epilogue_type
 # =========================================================================
 
 
+@always_inline
+def _udivmod32(a: Int, b: Int) -> Tuple[Int, Int]:
+    """Divmod of non-negative values below 2**32, in 32-bit arithmetic.
+
+    The 64-bit division behind `udivmod` costs ~100 instructions per thread,
+    which made the im2col copy instruction-bound.
+    """
+    var q = Int(UInt32(a) // UInt32(b))
+    return (q, a - q * b)
+
+
 @__name(t"conv2d_im2col_nhwc_{dtype}")
 def _im2col_nhwc_kernel[
     dtype: DType,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmOrigin,
+    InputEngine: TensorEngine,
+    OutLayoutType: TensorLayout,
+    out_origin: MutOrigin,
+    OutEngine: TensorEngine,
 ](
-    output_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    input_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    output: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
+    input: TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
     batch_size: Int32,
     H: Int32,
     W: Int32,
@@ -63,13 +88,20 @@ def _im2col_nhwc_kernel[
     stride_w: Int32,
     m_offset: Int32,
     m_count: Int32,
+    K_pad: Int32,
+    c_major: Int32,
 ):
     """Write rows [m_offset, m_offset + m_count) of the 4D im2col matrix.
 
     M = batch * H_out * W_out (linearized output pixel).
     K = R * S * C (filter-flattened reduction axis).
-    Output is laid out [m_count, K] row-major starting at `output_ptr`.
+    Output is laid out [m_count, K_pad] row-major starting at `output`,
+    with the K_pad - K trailing columns of each row zero.
     Dilation is assumed to be 1 (enforced at dispatch time).
+
+    A nonzero `c_major` orders K as `(c, r, s)` instead of `(r, s, c)`, which
+    is the flattening of an FCRS filter, so that filter can be the matmul's B
+    operand without a repack.
 
     Block-per-row layout: one block handles a single output pixel (row of
     the im2col matrix); threads within the block cooperate on the K axis.
@@ -89,6 +121,7 @@ def _im2col_nhwc_kernel[
     var _m_offset = Int(m_offset)
     var _m_count = Int(m_count)
     var local_m = block_idx.x
+
     if local_m >= _m_count:
         return
 
@@ -97,71 +130,253 @@ def _im2col_nhwc_kernel[
 
     # Per-block decomposition (amortized across block_dim threads).
     var HW_out = _H_out * _W_out
-    var batch, spatial = udivmod(m, HW_out)
-    var h_out, w_out = udivmod(spatial, _W_out)
+    var batch, spatial = _udivmod32(m, HW_out)
+    var h_out, w_out = _udivmod32(spatial, _W_out)
 
     var h_in_base = h_out * _stride_h - _pad_h
     var w_in_base = w_out * _stride_w - _pad_w
-    var batch_base = batch * _H * _W * _C
-    var hw_stride = _W * _C
-    var w_stride = _C
 
     var SC = _S * _C
+    var RS = _R * _S
 
-    var row_base = local_m * K
+    var Kp = Int(K_pad)
+    var row_base = local_m * Kp
     var k = thread_idx.x
-    while k < K:
-        var r, sc = udivmod(k, SC)
-        var s, c = udivmod(sc, _C)
+    with PDL():
+        while k < Kp:
+            var val = Scalar[dtype](0)
+            if k < K:
+                var r: Int
+                var s: Int
+                var c: Int
+                if c_major != 0:
+                    var rs: Int
+                    c, rs = _udivmod32(k, RS)
+                    r, s = _udivmod32(rs, _S)
+                else:
+                    var sc: Int
+                    r, sc = _udivmod32(k, SC)
+                    s, c = _udivmod32(sc, _C)
 
-        var h_in = h_in_base + r
-        var w_in = w_in_base + s
+                var h_in = h_in_base + r
+                var w_in = w_in_base + s
+                if 0 <= h_in < _H and 0 <= w_in < _W:
+                    val = input.load((batch, h_in, w_in, c))[0]
 
-        var val = Scalar[dtype](0)
-        if 0 <= h_in < _H and 0 <= w_in < _W:
-            var in_idx = batch_base + h_in * hw_stride + w_in * w_stride + c
-            val = input_ptr[in_idx]
+            output.raw_store(row_base + k, val)
+            k += block_dim.x
 
-        output_ptr.store(row_base + k, val)
-        k += block_dim.x
+
+@__name(t"conv2d_im2col_rows_{dtype}")
+def _im2col_nhwc_rows_kernel[
+    dtype: DType,
+    InputLayoutType: TensorLayout,
+    input_origin: ImmOrigin,
+    InputEngine: TensorEngine,
+    filter_is_fcrs: Bool,
+    FilterLayoutType: TensorLayout,
+    filter_origin: ImmOrigin,
+    FilterEngine: TensorEngine,
+    dense_fcrs: Bool,
+    OutLayoutType: TensorLayout,
+    out_origin: MutOrigin,
+    OutEngine: TensorEngine,
+    DstLayoutType: TensorLayout,
+    dst_origin: MutOrigin,
+    DstEngine: TensorEngine,
+](
+    output: TileTensor[dtype, OutLayoutType, out_origin, Engine=OutEngine],
+    input: TileTensor[dtype, InputLayoutType, input_origin, Engine=InputEngine],
+    batch_size: Int32,
+    H: Int32,
+    W: Int32,
+    C: Int32,
+    R: Int32,
+    S: Int32,
+    H_out: Int32,
+    W_out: Int32,
+    pad_h: Int32,
+    pad_w: Int32,
+    stride_h: Int32,
+    stride_w: Int32,
+    m_offset: Int32,
+    m_count: Int32,
+    K_pad: Int32,
+    sc_magic: UInt64,
+    filter: TileTensor[
+        dtype, FilterLayoutType, filter_origin, Engine=FilterEngine
+    ],
+    filter_dst: TileTensor[dtype, DstLayoutType, dst_origin, Engine=DstEngine],
+    F: Int32,
+    filter_blocks: Int32,
+    rs_magic: UInt64,
+):
+    """The (r, s, c)-ordered im2col copy for a dense NHWC input.
+
+    Row r of a patch is S * C contiguous elements of the NHWC input when its S
+    columns are in bounds, so element k of an output row sits at
+    `r * W * C + k - r * S * C` from the row's first input element, one
+    reciprocal multiply instead of the per-element divides and 4-D indexing
+    of `_im2col_nhwc_kernel` (which is instruction-bound). Lanes stay on
+    consecutive k, so loads and stores coalesce. A block whose columns clip
+    falls back to the per-element path. This kernel only orders K as
+    `(r, s, c)`; `sc_magic` is `2**32 // (S * C) + 1`, exact for K_pad * S * C
+    < 2**32.
+
+    The last `filter_blocks` blocks of the grid write the transposed filter,
+    so the repack overlaps the copy instead of running as its own launch. A
+    `dense_fcrs` filter (row-major `[F, C, R, S]`) takes one block per filter
+    and a source-order read: `rs_magic` is `2**32 // (R * S) + 1`. Any other
+    filter takes one thread per element (`_transpose_filter_elem`).
+    """
+    var _H = Int(H)
+    var _W = Int(W)
+    var _C = Int(C)
+    var _R = Int(R)
+    var _S = Int(S)
+    var local_m = block_idx.x
+
+    with PDL():
+        if local_m >= Int(m_count):
+            var fb = local_m - Int(m_count)
+            if fb >= Int(filter_blocks):
+                return
+            comptime if dense_fcrs:
+                var Kd = _R * _S * _C
+                var Kpd = Int(K_pad)
+                var RSd = _R * _S
+                var f_src = fb * Kd
+                var f_dst = fb * Kpd
+                var t = thread_idx.x
+                while t < Kpd:
+                    if t < Kd:
+                        var c = Int((UInt64(t) * rs_magic) >> 32)
+                        filter_dst.raw_store(
+                            f_dst + (t - c * RSd) * _C + c,
+                            filter.raw_load(f_src + t),
+                        )
+                    else:
+                        filter_dst.raw_store(f_dst + t, Scalar[dtype](0))
+                    t += block_dim.x
+            else:
+                var tid = fb * block_dim.x + thread_idx.x
+                if tid < Int(F) * Int(K_pad):
+                    _transpose_filter_elem[dtype, filter_is_fcrs](
+                        tid, filter, filter_dst, _R, _S, _C, Int(K_pad)
+                    )
+            return
+
+        var K = _R * _S * _C
+        var Kp = Int(K_pad)
+        var m = Int(m_offset) + local_m
+        var batch, spatial = _udivmod32(m, Int(H_out) * Int(W_out))
+        var h_out, w_out = _udivmod32(spatial, Int(W_out))
+        var h0 = h_out * Int(stride_h) - Int(pad_h)
+        var w0 = w_out * Int(stride_w) - Int(pad_w)
+
+        var SC = _S * _C
+        var row_base = local_m * Kp
+        var magic = sc_magic
+        var w_in_bounds = w0 >= 0 and w0 + _S <= _W
+        # A pointer, not `input.raw_load`: the loop is instruction bound, and
+        # re-adding this row offset to every index costs 8 instructions and
+        # 0.3 us on the 896 x 896 patch embed. `input` is dense (`fuse_ct`).
+        var src_row = input.unsafe_ptr().unsafe_offset(
+            ((batch * _H + h0) * _W + w0) * _C
+        )
+
+        var k = thread_idx.x
+        if w_in_bounds:
+            while k < Kp:
+                var val = Scalar[dtype](0)
+                if k < K:
+                    var r = Int((UInt64(k) * magic) >> 32)
+                    var h_in = h0 + r
+                    if 0 <= h_in < _H:
+                        val = src_row[r * _W * _C + k - r * SC]
+                output.raw_store(row_base + k, val)
+                k += block_dim.x
+        else:
+            while k < Kp:
+                var val = Scalar[dtype](0)
+                if k < K:
+                    var r, sc = _udivmod32(k, SC)
+                    var sx, c = _udivmod32(sc, _C)
+                    var h_in = h0 + r
+                    var w_in = w0 + sx
+                    if 0 <= h_in < _H and 0 <= w_in < _W:
+                        val = input.load((batch, h_in, w_in, c))[0]
+                output.raw_store(row_base + k, val)
+                k += block_dim.x
+
+
+@always_inline
+def _transpose_filter_elem[
+    dtype: DType,
+    filter_is_fcrs: Bool,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
+    DstLayoutType: TensorLayout,
+    dst_origin: MutOrigin,
+    DstEngine: TensorEngine,
+](
+    tid: Int,
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst: TileTensor[dtype, DstLayoutType, dst_origin, Engine=DstEngine],
+    R: Int,
+    S: Int,
+    C: Int,
+    K_pad: Int,
+):
+    """Writes element `tid` of the [F, K_pad] transposed filter: zero in the
+    K_pad - K trailing columns of each row."""
+    var f, k = _udivmod32(tid, K_pad)
+    if k >= R * S * C:
+        dst.raw_store(tid, Scalar[dtype](0))
+        return
+
+    var r, sc = _udivmod32(k, S * C)
+    var s, c = _udivmod32(sc, C)
+
+    var val: Scalar[dtype]
+    comptime if filter_is_fcrs:
+        val = src.load((f, c, r, s))[0]
+    else:
+        val = src.load((r, s, c, f))[0]
+    dst.raw_store(tid, val)
 
 
 @__name(t"conv2d_transpose_filter_to_nk_{dtype}_{filter_is_fcrs}")
 def _transpose_filter_to_nk[
     dtype: DType,
     filter_is_fcrs: Bool,
+    SrcLayoutType: TensorLayout,
+    src_origin: ImmOrigin,
+    SrcEngine: TensorEngine,
+    DstLayoutType: TensorLayout,
+    dst_origin: MutOrigin,
+    DstEngine: TensorEngine,
 ](
-    src_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
-    dst_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    src: TileTensor[dtype, SrcLayoutType, src_origin, Engine=SrcEngine],
+    dst: TileTensor[dtype, DstLayoutType, dst_origin, Engine=DstEngine],
     R: Int32,
     S: Int32,
     C: Int32,
     F: Int32,
+    K_pad: Int32,
 ):
-    """Transpose RSCF or FCRS filter layout to [F, R*S*C] for matmul transpose_b.
+    """Transpose RSCF or FCRS filter layout to [F, K_pad] for matmul
+    transpose_b, where K = R*S*C and the K_pad - K trailing columns are zero.
     """
-    var _R = Int(R)
-    var _S = Int(S)
-    var _C = Int(C)
-    var _F = Int(F)
-    var K = _R * _S * _C
-    var total = _F * K
     var tid = global_idx.x
-    if tid >= total:
-        return
 
-    var f, k = udivmod(tid, K)
-
-    var SC = _S * _C
-    var r, sc = udivmod(k, SC)
-    var s, c = udivmod(sc, _C)
-
-    var src_idx: Int
-    comptime if filter_is_fcrs:
-        src_idx = f * _C * _R * _S + c * _R * _S + r * _S + s
-    else:
-        src_idx = (r * _S + s) * _C * _F + c * _F + f
-    dst_ptr.store(tid, src_ptr.load(src_idx))
+    with PDL():
+        if tid >= Int(F) * Int(K_pad):
+            return
+        _transpose_filter_elem[dtype, filter_is_fcrs](
+            tid, src, dst, Int(R), Int(S), Int(C), Int(K_pad)
+        )
 
 
 # =========================================================================
@@ -171,24 +386,57 @@ def _transpose_filter_to_nk[
 comptime _DEFAULT_M_TILE_BYTE_BUDGET = 256 * 1024 * 1024
 comptime _MIN_M_TILE = 1024
 
+# fp16 is routed here only for the two classes where cuDNN measured weak and
+# this path measured faster; every other fp16 conv stays on cuDNN, which wins
+# or ties on the strided 3x3 / 7x7 / small-patch shapes and on the WAN VAE
+# shapes:
+#  - a non-overlapping patchify (stride == filter) with >= 2 GFLOP of work,
+#    e.g. the 896x896 3 -> 1152 14x14 patch embed (cuDNN 133 us vs 35 us);
+#  - a strided Conv1D (1 x S filter, stride (1, >1)) with >= 2M filter
+#    elements, e.g. 512 -> 1024 1x5 stride 2 (cuDNN 39 us vs 12 us).
+comptime _FP16_PATCHIFY_MIN_FLOPS = 2_000_000_000
+comptime _FP16_CONV1D_MIN_FILTER_ELEMS = 2 * 1024 * 1024
+
+
+def _fp16_im2col_wins(
+    stride: Coord[Int, Int], R: Int, S: Int, M: Int, N: Int, K: Int
+) -> Bool:
+    var patchify = (
+        stride[0] == R
+        and stride[1] == S
+        and 2 * M * N * K >= _FP16_PATCHIFY_MIN_FLOPS
+    )
+    var conv1d = (
+        R == 1
+        and stride[0] == 1
+        and stride[1] > 1
+        and N * K >= _FP16_CONV1D_MIN_FILTER_ELEMS
+    )
+    return patchify or conv1d
+
 
 def dispatch_im2col_matmul_conv2d[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ConvSimdEpilogueFn = type_of(no_conv_simd_epilogue_fn),
+    ComputeFnType: ConvSimdComputeFn = type_of(no_conv_simd_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
-    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
     m_tile_byte_budget: Int = _DEFAULT_M_TILE_BYTE_BUDGET,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    symmetric_padding: IndexList[2],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    symmetric_padding: Coord[Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
+    compute_fn: ComputeFnType = no_conv_simd_compute_fn,
 ) raises -> Bool:
     """Try to dispatch a 2-D conv as explicit im2col + generic matmul.
 
@@ -204,14 +452,17 @@ def dispatch_im2col_matmul_conv2d[
             (inferred).
         filter_type: Element `DType` of the filter tensor (inferred).
         output_type: Element `DType` of the output tensor (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: True if the filter is laid out as
             `[F, C, R, S]`; False for `[R, S, C, F]` (defaults to `False`).
-        maybe_epilogue_func: Optional SIMD elementwise epilogue applied to
-            each output element in 4D `(batch, h, w, channel)` coordinates
-            (defaults to `None`).
+        has_epilogue_fn: True when `epilogue_fn` stores the output instead
+            of the matmul (defaults to `False`).
         m_tile_byte_budget: Byte budget cap for the im2col `[M, K]` scratch
             tile used to chunk the M axis (defaults to
             `_DEFAULT_M_TILE_BYTE_BUDGET`).
+        has_compute_fn: True when the matmul stores `compute_fn` of each
+            output value (defaults to `False`).
 
     Args:
         input: 4D NHWC input activation tensor of shape
@@ -227,12 +478,23 @@ def dispatch_im2col_matmul_conv2d[
         num_groups: Group count; must be `1` to dispatch.
         ctx: Device context used to enqueue kernels and allocate scratch
             buffers.
+        epilogue_fn: SIMD elementwise epilogue applied to each output
+            element in 4D `(batch, h, w, channel)` coordinates; used only
+            when `has_epilogue_fn` is true.
+        compute_fn: SIMD elementwise transform of each output element in
+            4D `(batch, h, w, channel)` coordinates; used only when
+            `has_compute_fn` is true.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
 
-    comptime if input_type != .bfloat16:
+    comptime if input_type != .bfloat16 and (
+        input_type != .float16 or ctx.target.is_apple_gpu()
+    ):
         return False
 
     if num_groups != 1:
@@ -267,6 +529,10 @@ def dispatch_im2col_matmul_conv2d[
     var K = _R * _S * C_in
     var N = C_out
 
+    comptime if input_type == .float16:
+        if not _fp16_im2col_wins(stride, _R, _S, full_M, N, K):
+            return False
+
     # Minimum sane K. _matmul_gpu's SM100 path handles small K fine, but
     # K < 16 is below MMA_K even for bf16 and not worth the scratch.
     if K < 16:
@@ -276,52 +542,106 @@ def dispatch_im2col_matmul_conv2d[
     # matmul launch cost; the naive kernel wins on these. On B200 we
     # measured naive at 0.21 ms vs im2col at 0.66 ms for C_out=3.
     # Apple has no naive FCRS path, so the matmul must take small N too.
-    comptime if not has_apple_gpu_accelerator():
+    comptime if not ctx.target.is_apple_gpu():
         if N < 16:
             return False
 
-    # Filter transpose runs once, before the M-tile loop.
-    var filter_size = filter.num_elements()
-    var filter_nk_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_nk_ptr = filter_nk_buf.unsafe_ptr()
+    # The tensor-core GEMM needs 16-byte rows, so K is padded with zero
+    # columns up to a multiple of 8 elements (both operands are padded). An
+    # unaligned K otherwise falls off the Mojo SM100 matmul onto a slow
+    # vendor kernel (33 us vs 8 us at the patch-embed shape).
+    var K_pad = K
+    comptime if not ctx.target.is_apple_gpu():
+        K_pad = ceildiv(K, 16 // size_of[input_type]()) * (
+            16 // size_of[input_type]()
+        )
 
-    comptime transpose_block = 256
-    var transpose_grid = ceildiv(filter_size, transpose_block)
-
-    # The kernel expects (R, S, C, F) — reorder FCRS dims to match.
-    var R_dim: Int
-    var S_dim: Int
-    var C_dim: Int
-    var F_dim: Int
-    comptime if filter_is_fcrs:
-        F_dim = Int(filter.dim[0]())
-        C_dim = Int(filter.dim[1]())
-        R_dim = Int(filter.dim[2]())
-        S_dim = Int(filter.dim[3]())
-    else:
-        R_dim = Int(filter.dim[0]())
-        S_dim = Int(filter.dim[1]())
-        C_dim = Int(filter.dim[2]())
-        F_dim = Int(filter.dim[3]())
-
-    ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
-        filter.ptr,
-        filter_nk_ptr,
-        Int32(R_dim),
-        Int32(S_dim),
-        Int32(C_dim),
-        Int32(F_dim),
-        grid_dim=transpose_grid,
-        block_dim=transpose_block,
+    # A dense FCRS filter with an aligned K is already the (C_out, K) matrix
+    # for K ordered (c, r, s), so the matmul reads it in place and the im2col
+    # matrix is built in that order. Other filters are transposed once, before
+    # the M-tile loop.
+    var filter_in_place = filter_is_fcrs and filter.is_row_major and K_pad == K
+    var filter_nk_buf = Optional[DeviceBuffer[filter_type]]()
+    var filter_nk_ptr: MutPointer[Scalar[filter_type], MutUntrackedOrigin] = (
+        filter.unsafe_ptr()
+        .unsafe_mut_cast[True]()
+        .unsafe_origin_cast[MutUntrackedOrigin]()
+        .unsafe_address_space_cast[.GENERIC]()
     )
+
+    # The row-copy kernel also repacks the filter in its trailing blocks. Its
+    # reciprocal multiply is exact for K_pad * S * C < 2**32.
+    comptime fuse_ct = (
+        input.is_row_major
+        and not ctx.target.is_apple_gpu()
+        and input_type == filter_type
+    )
+    comptime dense_fcrs = filter_is_fcrs and filter.is_row_major
+    var fuse_transpose = (
+        fuse_ct
+        and not filter_in_place
+        and K_pad * max(_S * C_in, _R * _S) < 1 << 32
+    )
+
+    var filter_size = N * K_pad
+    if not filter_in_place:
+        filter_nk_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
+        filter_nk_ptr = (
+            filter_nk_buf.value()
+            .unsafe_ptr()
+            .unsafe_origin_cast[MutUntrackedOrigin]()
+        )
+    var filter_nk = TileTensor(filter_nk_ptr, row_major(N, K_pad))
+
+    if not filter_in_place:
+        if not fuse_transpose:
+            comptime transpose_block = 256
+            var transpose_grid = ceildiv(filter_size, transpose_block)
+
+            # The kernel expects (R, S, C, F) — reorder FCRS dims to match.
+            var R_dim: Int
+            var S_dim: Int
+            var C_dim: Int
+            var F_dim: Int
+            comptime if filter_is_fcrs:
+                F_dim = Int(filter.dim[0]())
+                C_dim = Int(filter.dim[1]())
+                R_dim = Int(filter.dim[2]())
+                S_dim = Int(filter.dim[3]())
+            else:
+                R_dim = Int(filter.dim[0]())
+                S_dim = Int(filter.dim[1]())
+                C_dim = Int(filter.dim[2]())
+                F_dim = Int(filter.dim[3]())
+
+            comptime transpose_kernel = _transpose_filter_to_nk[
+                filter_type,
+                filter_is_fcrs,
+                filter.LayoutType,
+                ImmOrigin(filter.origin),
+                filter.Engine,
+                filter_nk.LayoutType,
+                filter_nk.origin,
+                filter_nk.Engine,
+            ]
+            ctx.enqueue_function[transpose_kernel](
+                filter.as_imm(),
+                filter_nk,
+                Int32(R_dim),
+                Int32(S_dim),
+                Int32(C_dim),
+                Int32(F_dim),
+                Int32(K_pad),
+                grid_dim=transpose_grid,
+                block_dim=transpose_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            )
 
     # If multiple tiles are needed, equalize to avoid a tiny ragged tail
     # tile that would under-use the matmul.
-    var bytes_per_row = K * size_of[input_type]()
+    var bytes_per_row = K_pad * size_of[input_type]()
     var m_tile_by_budget = m_tile_byte_budget // bytes_per_row
-    var m_tile_cap = (
-        m_tile_by_budget if m_tile_by_budget > _MIN_M_TILE else _MIN_M_TILE
-    )
+    var m_tile_cap = max(m_tile_by_budget, _MIN_M_TILE)
     var m_tile: Int
     if full_M <= m_tile_cap:
         m_tile = full_M
@@ -329,8 +649,8 @@ def dispatch_im2col_matmul_conv2d[
         var num_tiles = ceildiv(full_M, m_tile_cap)
         m_tile = ceildiv(full_M, num_tiles)
 
-    var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K)
-    var im2col_ptr = im2col_buf.unsafe_ptr()
+    var im2col_buf = ctx.enqueue_create_buffer[input_type](m_tile * K_pad)
+    var im2col = TileTensor(im2col_buf, row_major(m_tile, K_pad))
 
     var HW_out = _H_out * _W_out
 
@@ -340,75 +660,177 @@ def dispatch_im2col_matmul_conv2d[
         var m_count = min(m_tile, remaining)
 
         # Block-per-row: one block per output pixel, threads cooperate on K.
-        comptime im2col_block = 256
-        ctx.enqueue_function[_im2col_nhwc_kernel[input_type]](
-            im2col_ptr,
-            input.ptr,
-            Int32(batch),
-            Int32(_H),
-            Int32(_W),
-            Int32(C_in),
-            Int32(_R),
-            Int32(_S),
-            Int32(_H_out),
-            Int32(_W_out),
-            Int32(symmetric_padding[0]),
-            Int32(symmetric_padding[1]),
-            Int32(stride[0]),
-            Int32(stride[1]),
-            Int32(m_offset),
-            Int32(m_count),
-            grid_dim=m_count,
-            block_dim=im2col_block,
-        )
+        var launched = False
+        comptime if fuse_ct:
+            if fuse_transpose:
+                # Few threads per row: each recomputes the row's index setup.
+                comptime rows_block = 64
+                comptime rows_kernel = _im2col_nhwc_rows_kernel[
+                    input_type,
+                    input.LayoutType,
+                    ImmOrigin(input.origin),
+                    input.Engine,
+                    filter_is_fcrs,
+                    filter.LayoutType,
+                    ImmOrigin(filter.origin),
+                    filter.Engine,
+                    dense_fcrs,
+                    im2col.LayoutType,
+                    im2col.origin,
+                    im2col.Engine,
+                    filter_nk.LayoutType,
+                    filter_nk.origin,
+                    filter_nk.Engine,
+                ]
+                # The filter is repacked once, by the first tile's launch.
+                var filter_blocks = 0
+                if m_offset == 0:
+                    filter_blocks = N if dense_fcrs else ceildiv(
+                        N * K_pad, rows_block
+                    )
+                ctx.enqueue_function[rows_kernel](
+                    im2col,
+                    input.as_imm(),
+                    Int32(batch),
+                    Int32(_H),
+                    Int32(_W),
+                    Int32(C_in),
+                    Int32(_R),
+                    Int32(_S),
+                    Int32(_H_out),
+                    Int32(_W_out),
+                    Int32(symmetric_padding[0]),
+                    Int32(symmetric_padding[1]),
+                    Int32(stride[0]),
+                    Int32(stride[1]),
+                    Int32(m_offset),
+                    Int32(m_count),
+                    Int32(K_pad),
+                    (UInt64(1) << 32) // UInt64(_S * C_in) + 1,
+                    filter.as_imm(),
+                    filter_nk,
+                    Int32(N),
+                    Int32(filter_blocks),
+                    (UInt64(1) << 32) // UInt64(_R * _S) + 1,
+                    grid_dim=m_count + filter_blocks,
+                    block_dim=rows_block,
+                    attributes=pdl_launch_attributes(PDLLevel.ON),
+                )
+                launched = True
 
-        var a_tt = TileTensor(im2col_ptr, row_major(Coord(m_count, K)))
-        var b_tt = TileTensor(filter_nk_ptr, row_major(Coord(N, K)))
+        if not launched:
+            comptime im2col_block = 256
+            comptime im2col_kernel = _im2col_nhwc_kernel[
+                input_type,
+                input.LayoutType,
+                ImmOrigin(input.origin),
+                input.Engine,
+                im2col.LayoutType,
+                im2col.origin,
+                im2col.Engine,
+            ]
+            ctx.enqueue_function[im2col_kernel](
+                im2col,
+                input.as_imm(),
+                Int32(batch),
+                Int32(_H),
+                Int32(_W),
+                Int32(C_in),
+                Int32(_R),
+                Int32(_S),
+                Int32(_H_out),
+                Int32(_W_out),
+                Int32(symmetric_padding[0]),
+                Int32(symmetric_padding[1]),
+                Int32(stride[0]),
+                Int32(stride[1]),
+                Int32(m_offset),
+                Int32(m_count),
+                Int32(K_pad),
+                Int32(1 if filter_in_place else 0),
+                grid_dim=m_count,
+                block_dim=im2col_block,
+                attributes=pdl_launch_attributes(PDLLevel.ON),
+            )
+
+        var a_tt = TileTensor(im2col_buf, row_major(m_count, K_pad))
+        var b_tt = filter_nk
         # NHWC rows are contiguous in the flattened [M, N] layout.
         var c_engine = output._offset_storage(m_offset * N)
-        var c_tt = TileTensor(c_engine, row_major(Coord(m_count, N)))
+        var c_tt = TileTensor(c_engine, row_major(m_count, N))
 
-        comptime if maybe_epilogue_func:
-            comptime epilogue_4d = maybe_epilogue_func.value()
+        comptime if has_epilogue_fn:
 
-            @__parameter
-            @always_inline
-            @__copy_capture(HW_out, _W_out, m_offset)
+            @inline(.always)
             def _gemm_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,
                 *,
-                alignment: Int = 1,
-            ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-                var full_m = m_offset + coords_2d[0]
-                var n_idx = coords_2d[1]
-                var batch_idx = full_m // HW_out
-                var sp = full_m - batch_idx * HW_out
-                var h_idx = sp // _W_out
-                var w_idx = sp - h_idx * _W_out
-                epilogue_4d(
-                    IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+                alignment: Int,
+            ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+                var HW_out, var _W_out, var m_offset, var epilogue_fn
+            }:
+                comptime assert (
+                    coords_2d.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var full_m = m_offset + Int(coords_2d[0])
+                var n_idx = Int(coords_2d[1])
+                var batch_idx, sp = divmod(full_m, HW_out)
+                var h_idx, w_idx = divmod(sp, _W_out)
+                # A tail element arrives with alignment 1; closures that pass
+                # it to a store as bytes would split it into byte stores.
+                epilogue_fn[alignment=max(alignment, align_of[output_type]())](
+                    (batch_idx, h_idx, w_idx, n_idx),
                     rebind[SIMD[output_type, _width]](val),
                 )
 
-            _matmul_gpu[
-                use_tensor_core=True,
-                transpose_b=True,
-                elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                    _gemm_epilogue
-                ),
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            _matmul_gpu[use_tensor_core=True, transpose_b=True](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_epilogue, ctx
+            )
+        elif has_compute_fn:
+
+            @inline(.always)
+            def _gemm_compute[
+                _dtype: DType,
+                _width: SIMDLength,
+                *,
+                alignment: Int,
+            ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+                var HW_out, var _W_out, var m_offset, var compute_fn
+            } -> SIMD[_dtype, _width]:
+                comptime assert (
+                    coords_2d.rank == 2
+                ), "the matmul epilogue contract is rank 2"
+                var full_m = m_offset + Int(coords_2d[0])
+                var n_idx = Int(coords_2d[1])
+                var batch_idx, sp = divmod(full_m, HW_out)
+                var h_idx, w_idx = divmod(sp, _W_out)
+                return rebind[SIMD[_dtype, _width]](
+                    compute_fn(
+                        (batch_idx, h_idx, w_idx, n_idx),
+                        rebind[SIMD[output_type, _width]](val),
+                    )
+                )
+
+            _matmul_gpu[use_tensor_core=True, transpose_b=True](
+                c_tt, a_tt.as_imm(), b_tt.as_imm(), _gemm_compute, ctx
+            )
         else:
             _matmul_gpu[
                 use_tensor_core=True,
                 transpose_b=True,
-            ](c_tt, a_tt.as_immut(), b_tt.as_immut(), ctx)
+            ](c_tt, a_tt.as_imm(), b_tt.as_imm(), ctx)
 
         m_offset += m_count
 
-    # Synchronize so scratch stays alive until kernels finish.
-    # TODO: stream-callback lifetime management would allow pipelining.
-    ctx.synchronize()
+    # Freeing the scratch here does not free it early. The block goes back on
+    # this context's free list, and every kernel that reads it was enqueued
+    # earlier on this same stream, so any reuse for later work on the stream is
+    # ordered behind those reads; migration of a freed block to the device-wide
+    # parent free list (the only way another stream can see it) is gated on a
+    # device event recorded after this point. Synchronizing instead drains the
+    # queue once per conv, which stalls the host until the GEMMs retire and
+    # empties the queue between convs in a chain.
     _ = filter_nk_buf^
     _ = im2col_buf^
     return True
@@ -418,22 +840,27 @@ def dispatch_fused_im2col_conv2d_apple[
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    EpilogueFnType: ConvSimdEpilogueFn = type_of(no_conv_simd_epilogue_fn),
+    ComputeFnType: ConvSimdComputeFn = type_of(no_conv_simd_compute_fn),
     //,
     filter_is_fcrs: Bool = False,
-    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    has_epilogue_fn: Bool = False,
+    has_compute_fn: Bool = False,
 ](
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[mut=True, output_type, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    symmetric_padding: IndexList[2],
+    stride: Coord[Int, Int],
+    dilation: Coord[Int, Int],
+    symmetric_padding: Coord[Int, Int],
     num_groups: Int,
     ctx: DeviceContext,
+    epilogue_fn: EpilogueFnType = no_conv_simd_epilogue_fn,
+    compute_fn: ComputeFnType = no_conv_simd_compute_fn,
 ) raises -> Bool:
     """Apple M5 fused online-im2col conv2d (no `[M, K]` scratch materialised).
 
-    Apple silicon (`compute_capability == 5`). Mirrors the MI355 conv pattern:
+    Apple silicon (`compute_capability >= 5`). Mirrors the MI355 conv pattern:
     the filter is transposed to the `(C_out, K=R*S*C_in)` NK matrix once (the
     same kernel the materialised path uses), then `enqueue_apple_conv2d` runs the
     simdgroup-tiled GEMM with the A operand gathered from the NHWC input on the
@@ -455,11 +882,14 @@ def dispatch_fused_im2col_conv2d_apple[
             (inferred).
         filter_type: Element `DType` of the filter tensor (inferred).
         output_type: Element `DType` of the output tensor (inferred).
+        EpilogueFnType: Type of `epilogue_fn` (inferred).
+        ComputeFnType: Type of `compute_fn` (inferred).
         filter_is_fcrs: True if the filter is laid out as
             `[F, C, R, S]`; False for `[R, S, C, F]` (defaults to `False`).
-        maybe_epilogue_func: Optional SIMD elementwise epilogue applied to
-            each output element in 4D `(batch, h, w, channel)` coordinates
-            (defaults to `None`).
+        has_epilogue_fn: True when `epilogue_fn` stores the output instead
+            of the GEMM (defaults to `False`).
+        has_compute_fn: True when the GEMM stores `compute_fn` of each
+            output value (defaults to `False`).
 
     Args:
         input: 4D NHWC input activation tensor of shape
@@ -475,10 +905,19 @@ def dispatch_fused_im2col_conv2d_apple[
         num_groups: Group count; must be `1` to dispatch.
         ctx: Device context used to enqueue kernels and allocate scratch
             buffers.
+        epilogue_fn: SIMD elementwise epilogue applied to each output
+            element in 4D `(batch, h, w, channel)` coordinates; used only
+            when `has_epilogue_fn` is true.
+        compute_fn: SIMD elementwise transform of each output element in
+            4D `(batch, h, w, channel)` coordinates; used only when
+            `has_compute_fn` is true.
     """
     comptime assert input.flat_rank == 4, "input must be rank 4 (NHWC)"
     comptime assert filter.flat_rank == 4, "filter must be rank 4"
     comptime assert output.flat_rank == 4, "output must be rank 4 (NHWC)"
+    comptime assert not (
+        has_epilogue_fn and has_compute_fn
+    ), "a store epilogue excludes the compute epilogue"
 
     comptime if input_type != .bfloat16:
         return False
@@ -533,6 +972,7 @@ def dispatch_fused_im2col_conv2d_apple[
     var filter_size = filter.num_elements()
     var filter_nk_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
     var filter_nk_ptr = filter_nk_buf.unsafe_ptr()
+    var filter_nk_dst = TileTensor(filter_nk_ptr, row_major(N, K))
 
     comptime transpose_block = 256
     var transpose_grid = ceildiv(filter_size, transpose_block)
@@ -552,15 +992,28 @@ def dispatch_fused_im2col_conv2d_apple[
         C_dim = Int(filter.dim[2]())
         F_dim = Int(filter.dim[3]())
 
-    ctx.enqueue_function[_transpose_filter_to_nk[filter_type, filter_is_fcrs]](
-        filter.ptr,
-        filter_nk_ptr,
+    comptime transpose_kernel = _transpose_filter_to_nk[
+        filter_type,
+        filter_is_fcrs,
+        filter.LayoutType,
+        ImmOrigin(filter.origin),
+        filter.Engine,
+        filter_nk_dst.LayoutType,
+        filter_nk_dst.origin,
+        filter_nk_dst.Engine,
+    ]
+    ctx.enqueue_function[transpose_kernel](
+        filter.as_imm(),
+        filter_nk_dst,
         Int32(R_dim),
         Int32(S_dim),
         Int32(C_dim),
         Int32(F_dim),
-        grid_dim=transpose_grid,
-        block_dim=transpose_block,
+        Int32(K),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=transpose_grid,
+            block_dim=transpose_block,
+        ),
     )
 
     # The Apple conv launcher takes a single `in_type` for input and filter
@@ -569,12 +1022,12 @@ def dispatch_fused_im2col_conv2d_apple[
     comptime assert (
         filter_type == input_type
     ), "Apple fused conv expects filter dtype == input dtype (bf16)"
-    var filter_nk_in_ptr = rebind[
-        UnsafePointer[Scalar[input_type], MutAnyOrigin]
-    ](filter_nk_ptr)
-    var filter_nk = TileTensor(filter_nk_in_ptr, row_major(Coord(N, K)))
+    var filter_nk_in_ptr = rebind[MutPointer[Scalar[input_type], MutAnyOrigin]](
+        filter_nk_ptr
+    )
+    var filter_nk = TileTensor(filter_nk_in_ptr, row_major(N, K))
     # Flat (M, N) view of the NHWC output buffer (NHWC rows are contiguous).
-    var c_tt = output.reshape(row_major(Coord(full_M, N)))
+    var c_tt = output.reshape(row_major(full_M, N))
 
     var conv = ConvIm2colParams(
         H=Int32(H),
@@ -590,43 +1043,74 @@ def dispatch_fused_im2col_conv2d_apple[
         stride_w=Int32(stride[1]),
     )
 
-    comptime if maybe_epilogue_func:
-        comptime epilogue_4d = maybe_epilogue_func.value()
+    comptime if has_epilogue_fn:
         var HW_out = _H_out * _W_out
 
-        @__parameter
-        @always_inline
-        @__copy_capture(HW_out, _W_out)
+        @inline(.always)
         def _gemm_epilogue[
             _dtype: DType,
             _width: SIMDLength,
             *,
-            alignment: Int = 1,
-        ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):
-            var full_m = coords_2d[0]
-            var n_idx = coords_2d[1]
-            var batch_idx = full_m // HW_out
-            var sp = full_m - batch_idx * HW_out
-            var h_idx = sp // _W_out
-            var w_idx = sp - h_idx * _W_out
-            epilogue_4d(
-                IndexList[4](batch_idx, h_idx, w_idx, n_idx),
+            alignment: Int,
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+            var HW_out, var _W_out, var epilogue_fn
+        }:
+            comptime assert (
+                coords_2d.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var full_m = Int(coords_2d[0])
+            var n_idx = Int(coords_2d[1])
+            var batch_idx, sp = divmod(full_m, HW_out)
+            var h_idx, w_idx = divmod(sp, _W_out)
+            epilogue_fn(
+                (batch_idx, h_idx, w_idx, n_idx),
                 rebind[SIMD[output_type, _width]](val),
             )
 
         enqueue_apple_conv2d[
             in_type=input_type,
             c_type=output_type,
-            elementwise_lambda_fn=Optional[elementwise_epilogue_type](
-                _gemm_epilogue
-            ),
-        ](c_tt, input, filter_nk, conv, ctx)
+            has_epilogue_fn=True,
+        ](c_tt, input, filter_nk, conv, ctx, _gemm_epilogue)
+    elif has_compute_fn:
+        var HW_out = _H_out * _W_out
+
+        @inline(.always)
+        def _gemm_compute[
+            _dtype: DType,
+            _width: SIMDLength,
+            *,
+            alignment: Int,
+        ](coords_2d: Coord, val: SIMD[_dtype, _width]) {
+            var HW_out, var _W_out, var compute_fn
+        } -> SIMD[_dtype, _width]:
+            comptime assert (
+                coords_2d.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            var full_m = Int(coords_2d[0])
+            var n_idx = Int(coords_2d[1])
+            var batch_idx, sp = divmod(full_m, HW_out)
+            var h_idx, w_idx = divmod(sp, _W_out)
+            return rebind[SIMD[_dtype, _width]](
+                compute_fn(
+                    (batch_idx, h_idx, w_idx, n_idx),
+                    rebind[SIMD[output_type, _width]](val),
+                )
+            )
+
+        enqueue_apple_conv2d[
+            in_type=input_type,
+            c_type=output_type,
+            has_compute_fn=True,
+        ](c_tt, input, filter_nk, conv, ctx, compute_fn=_gemm_compute)
     else:
         enqueue_apple_conv2d[
             in_type=input_type,
             c_type=output_type,
         ](c_tt, input, filter_nk, conv, ctx)
 
-    ctx.synchronize()
+    # See `dispatch_im2col_matmul_conv2d` for the lifetime argument. Metal
+    # command buffers retain the buffers they are bound against until they
+    # complete, so releasing ours here does not free the pages under the GPU.
     _ = filter_nk_buf^
     return True

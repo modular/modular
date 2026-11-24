@@ -1,0 +1,1064 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""DeepSeek-V4.1's call on ModuleV3, and the DSpark stages its checkpoint ships.
+
+The drafter is not a second model with its own cache: its stages store their
+context KV in the target's sliding-window leaf, at the layer slots the
+resolver already reserves. The block driver is graph-value typed, so the
+verify and the proposer convert at their own boundary -- ``as_tensors`` and
+:meth:`PagedCacheValues.from_upstream` on the way in, ``as_graph_values`` on
+the way out.
+
+The ModuleV3 target and drafter run on one mesh rather than per-device
+replicas, so each adapter method stages the single-device values the driver
+hands it onto that mesh (``F.distributed_broadcast``, the trunk's own
+staging rule) and collapses its driver-facing results back to rank 0.
+
+Under data parallelism the mesh's one axis is the replica axis: the trunk
+splits the merged window per rank in-graph (the driver hands it
+``data_parallel_splits`` and the host mirror of the merged offsets), the
+drafter's stage weights replicate and each rank drafts its own replica's
+block rows, and the two heads gather every replica's rows back to the
+global batch -- the trunk's own ``logits`` pattern, which keeps the accept,
+the drafts and every driver-facing tensor at the global width the block
+driver's phases expect. The greedy draft head never joins the vocabulary:
+each rank argmaxes its own vocab shard of every row and only the per-row
+winners cross the mesh.
+
+The graph takes the trunk's own extras past the canonical tail, which the
+trunk's batch processor prepares for every batch, and a step's image span
+rows, which the verify merges as the trunk does.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
+from typing import Any
+
+from max import functional as F
+from max import tree
+from max.driver import Buffer
+from max.dtype import DType
+from max.graph import BufferType, Dim, TensorType, TensorValue, Value, ops
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.ep import init as ep_init
+from max.nn.kv_cache import KVCacheInputsPerDevice, MultiKVCacheParams
+from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
+from max.nn.outputs import ReturnHiddenStates
+from max.pipelines.architectures.deepseekV41.engram_lookback import (
+    read_engram_lookback,
+    record_engram_lookback,
+)
+from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.lib.utils import split_replicated_batch
+from max.pipelines.speculative._tensor_compat import (
+    as_graph_values,
+    as_tensors,
+)
+from max.pipelines.speculative.block_driver import (
+    Accepted,
+    ArgmaxDraftSampler,
+    BlockBatch,
+    DraftSampler,
+    SampledDraftSampler,
+)
+from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.driver import (
+    SequentialBatch,
+    gather_variable_rows,
+)
+from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
+from max.pipelines.speculative.spec_input_types import draft_probs_rows_name
+from max.pipelines.speculative.spec_target import Verified
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    DeviceMesh,
+    Replicated,
+    Sharded,
+    Unknown,
+)
+
+from .deepseekV41 import DeepseekV41, _slice_requests
+from .dspark_drafter import DSparkDrafter
+from .history import distributed_history, read_history, record_history
+from .inputs import DeepseekV41Inputs
+from .interface import V41Config, extra_input_names
+from .layers.attention import absolute_positions
+from .model_config import DeepseekV41Config
+from .registration import (
+    RegisteredDeepseekV41Inputs,
+    artifact_trailing_input_tree,
+)
+
+__all__ = [
+    "ADAPTER",
+    "WINDOW_LEAF",
+    "DSparkDeepseekV41Proposer",
+    "DeepseekV41BlockTarget",
+    "TrunkTaps",
+    "block_row_positions",
+    "context_store_origins",
+    "window_starts",
+]
+
+
+WINDOW_LEAF = "swa"
+"""The leaf holding the trunk's sliding window and the drafter's slots."""
+
+TrunkTaps = tuple[Tensor, Tensor, Tensor]
+"""The verify payload: the taps, and the rows and positions that produced them.
+
+``(taps, row_offsets, positions)`` over the merged verify window. The
+proposer stores each stage's context KV from exactly these, so the store
+lands at the positions the verify forward ran at -- never re-derived, which
+is where an off-by-one would sit silently.
+"""
+
+
+def _to_lead(t: Tensor) -> Tensor:
+    """Rank 0's copy of a mesh tensor; single-device tensors pass through."""
+    return t.local_shards[0] if t.is_distributed else t
+
+
+def _extras(
+    batch: BlockBatch,
+    config: V41Config,
+    data_parallel_degree: int,
+    *,
+    artifact: bool = False,
+) -> dict[str, Tensor]:
+    """The trunk's extras, out of the driver's ``extra`` carry-all.
+
+    The names come off the trunk's own config view -- the one view the
+    trunk's forward was built from, at its data-parallel degree -- so the
+    adapter can never stage an extras set the trunk disagrees with.
+
+    Raises:
+        ValueError: If any extra is missing. A silent default here would
+            feed the trunk garbage masks and Engram windows, so the miss is
+            loud.
+    """
+    names = extra_input_names(config, data_parallel_degree, artifact=artifact)
+    missing = [name for name in names if name not in batch.extra]
+    if missing:
+        raise ValueError(
+            f"the DSpark verify batch is missing graph inputs: {missing}"
+        )
+    return {name: as_tensors(batch.extra[name]) for name in names}
+
+
+def _vision(batch: BlockBatch, mesh: DeviceMesh) -> VisionInputs[Tensor] | None:
+    """The step's image span rows, replicated over the mesh.
+
+    A step that encodes images verifies no drafts, so the scatter indices,
+    which address the prompt rows, address the merged window too.
+
+    Returns:
+        ``None`` when the graph takes no image rows.
+    """
+    if not batch.vision_embeddings:
+        return None
+    replicated = DeviceMapping.replicated(mesh)
+    return VisionInputs(
+        embeddings=Tensor.from_shard_values(
+            batch.vision_embeddings, replicated
+        ),
+        scatter_indices=Tensor.from_shard_values(
+            batch.vision_scatter_indices, replicated
+        ),
+    )
+
+
+def _leaf_kv(
+    batch: BlockBatch,
+    kv_params: MultiKVCacheParams,
+    mesh: DeviceMesh,
+    dp: int,
+) -> dict[str, PagedCacheValues]:
+    """The trunk's per-leaf caches: the window leaf plus the passthroughs.
+
+    Under data parallelism every device's record is its own replica's, so
+    the mapping keeps the per-device fields unrelated (the trunk's own
+    staging rule); under tensor parallelism they all hold the same latent
+    cache, so the mapping replicates.
+    """
+    mapping = DeviceMapping(mesh, (Unknown(),) if dp > 1 else (Replicated(),))
+    kv: dict[str, PagedCacheValues] = {}
+    for name in kv_params.children:
+        if name == "lookback_history":
+            continue
+        per_device = (
+            batch.kv_collections
+            if name == WINDOW_LEAF
+            else batch.passthrough_kv[name]
+        )
+        paged: list[UpstreamPagedCacheValues] = []
+        for record in per_device:
+            assert isinstance(record, KVCacheInputsPerDevice)
+            paged.append(record)
+        kv[name] = PagedCacheValues.from_upstream(paged, mapping)
+    return kv
+
+
+def block_row_positions(
+    block_offsets: Tensor,
+    cache_lengths: Tensor,
+    total: Dim,
+) -> Tensor:
+    """Each block row's absolute position: ``L_r + j``.
+
+    The block's row ``j`` of request ``r`` sits at the request's post-commit
+    cache length plus ``j`` -- the anchor token is that length's own
+    position, since the commit covered it. The arithmetic is the trunk's
+    own step positions (:func:`absolute_positions`), which preserves the
+    histogram-cumsum batch ids, the zero-length end sink, and the
+    padded-row clamping that keeps out-of-batch gathers in bounds.
+    """
+    return absolute_positions(block_offsets, cache_lengths, total)
+
+
+def window_starts(swa: PagedCacheValues) -> Tensor:
+    """Each request's first block position, read off the block cache.
+
+    The block cache's lengths sit past the tokens the accept committed, so
+    the anchor's position -- the window reads everything below it -- is the
+    length itself.
+    """
+    return F.cast(swa.cache_lengths, DType.int32)
+
+
+def _shard_block_ids(
+    ids: Tensor, splits: Tensor, block_size: int, mapping: DeviceMapping
+) -> Tensor:
+    """The flat draft block ids as per-replica rows, request-major.
+
+    One flat block holds ``K`` rows per request, so a replica's rows are
+    the contiguous span its requests own: ``[splits[r] * K,
+    splits[r+1] * K)``. The ids arrive on rank 0, so one broadcast puts
+    every rank's copy in place before its span is cut out -- the same
+    broadcast-then-slice the trunk runs on the merged window.
+    """
+    replicated = F.distributed_broadcast(ids, mapping.mesh)
+    shards = []
+    for rank, shard in enumerate(replicated.local_shards):
+        shards.append(
+            F.slice_tensor(
+                shard,
+                [
+                    (
+                        slice(
+                            splits[rank] * block_size,
+                            splits[rank + 1] * block_size,
+                        ),
+                        f"dspark_block_rows_r{rank}",
+                    )
+                ],
+            )
+        )
+    return Tensor.from_shard_values(shards, mapping)
+
+
+def _dp_gather_variable_rows(
+    hidden: Tensor,
+    row_offsets: Tensor,
+    return_n_logits: Tensor,
+    mesh: DeviceMesh,
+    *,
+    join: bool = True,
+) -> Tensor:
+    """Each request's last ``n`` hidden rows, gathered per rank then joined.
+
+    The data-parallel form of the framework's ``gather_variable_rows``:
+    the gather runs once per rank over its own rows (rule-less functional
+    body, so no per-shard shape arithmetic reaches graph IR), and one
+    allgather reconstitutes the global batch in rank order -- which is
+    global request order by construction of the splits. Allgathering the
+    whole merged window would move every prefill row four times; only
+    each request's last ``n`` rows ride the collective.
+    """
+    n_range = F.range(
+        return_n_logits[0],
+        0,
+        -1,
+        out_dim="return_n_logits_range",
+        dtype=DType.int64,
+        device=mesh.devices[0],
+    )
+    n_range = F.distributed_broadcast(n_range, mesh)
+
+    def _body(
+        h: TensorValue, offsets: TensorValue, n: TensorValue
+    ) -> TensorValue:
+        rows = ops.unsqueeze(offsets[1:], -1) - n
+        return ops.gather(h, ops.reshape(rows, (-1,)), axis=0)
+
+    variable_h = F.functional(_body)(
+        hidden, row_offsets, n_range
+    ).rebind_mapping(hidden.mapping)
+    return F.allgather(variable_h, tensor_axis=0) if join else variable_h
+
+
+def context_store_origins(
+    row_offsets: Tensor, positions: Tensor, dtype: DType
+) -> Tensor:
+    """Each request's storage origin: its first payload row's position.
+
+    A narrowed verify keeps each request's last window rows, and the
+    payload's ``positions`` are those rows' absolute positions -- already
+    advanced past the rows the narrowing dropped. The block driver's
+    context cache lengths are the engine-staged pre-iteration lengths,
+    unshifted by the drop, so storing from them would write kept row ``i``
+    of request ``r`` at ``L_r + i`` while its true position -- the one the
+    window read resolves through the lookup table -- is
+    ``L_r + shift_r + i``: the drafter's window ring rotates by
+    ``shift mod window`` until the decode steps' stores have overwritten
+    it. The first payload row's own position is the origin the store
+    needs: ``L_r + shift_r`` on a narrowed chunk, and exactly ``L_r`` on
+    every unshifted one (decode steps, chunks no longer than the
+    window), where it equals the staged length the store used before.
+
+    Under data parallelism the offsets and positions are per-rank
+    sharded tensors whose row axes the shape rules cannot project
+    (slicing an expression-dim shard reshard-rises), so the gather runs
+    per rank over its own shards -- the ``_per_rank_positions`` pattern.
+    """
+    if row_offsets.is_distributed:
+        shards = [
+            _context_store_origins_local(offsets, pos, dtype)
+            for offsets, pos in zip(
+                row_offsets.local_shards,
+                positions.local_shards,
+                strict=True,
+            )
+        ]
+        return Tensor.from_shard_values(shards, positions.mapping)
+    return _context_store_origins_local(row_offsets, positions, dtype)
+
+
+def _context_store_origins_local(
+    row_offsets: Tensor, positions: Tensor, dtype: DType
+) -> Tensor:
+    """The storage origins over one rank's rows."""
+    starts = F.cast(row_offsets[:-1], positions.dtype)
+    return F.gather(positions, starts, axis=0).cast(dtype)
+
+
+def _sample_next(
+    sampler: DraftSampler, mesh: DeviceMesh
+) -> Callable[[Tensor, int], Tensor]:
+    """Bridges the driver's per-position sampler into the drafter's loop.
+
+    The driver's samplers take one single-device value and hold each row's
+    sampling parameters on the mesh's first device, while the drafter's
+    step logits are replicated on the mesh. So each step draws from rank
+    0's copy of the whole batch, and the picked ids are broadcast back onto
+    the mesh, where the next step's Markov bias reads them. The greedy
+    :class:`ArgmaxDraftSampler` is routed around the bridge in :meth:`head`.
+    """
+
+    # The framework's sampler protocol spells its inputs as graph values
+    # while the test samplers take ``Tensor``s, so the call crosses the
+    # boundary the same way ``_tensor_compat`` does: dynamically, on the
+    # runtime types.
+    def sample(step_logits: Tensor, position: int) -> Tensor:
+        sample_next: Any = sampler.sample_next
+        picked = as_tensors(sample_next(_to_lead(step_logits), position))
+        return F.distributed_broadcast(picked, mesh)
+
+    return sample
+
+
+class DeepseekV41BlockTarget:
+    """Verifies the previous drafts with the trunk over the merged window.
+
+    Every prompt and draft token of the merged window runs through the
+    trunk, so their KV is written whatever the accept later commits: rows
+    past the committed length are overwritten by the next verify before any
+    read, since that verify starts at the committed length and every read
+    sits below the reader's own row. The VARIABLE logits are the last
+    ``num_speculative_tokens + 1`` rows of each request -- the recovered,
+    the drafted, and the bonus positions -- and the taps ride to the
+    proposer with the rows and positions that produced them.
+    """
+
+    def __init__(
+        self, target: DeepseekV41, kv_params: MultiKVCacheParams
+    ) -> None:
+        self.target = target
+        self.kv_params = kv_params
+        self.takes_distributed_inputs = target.dp > 1
+        self.replica_logits = False
+
+    def __call__(
+        self, batch: SequentialBatch | BlockBatch
+    ) -> Verified[TrunkTaps]:
+        """Runs the trunk over the merged window and returns its taps."""
+        assert isinstance(batch, BlockBatch)
+        target = self.target
+        dp = target.dp
+        if target.ep_config is not None and batch.ep_inputs is None:
+            raise ValueError(
+                "the trunk runs expert-parallel but the batch carries "
+                "no EP collective inputs"
+            )
+        ep = ep_init.flat_buffers(
+            target.ep_config,
+            [as_tensors(value) for value in batch.ep_inputs or ()],
+            target.mesh,
+        )
+        input_row_offsets_i64 = None
+        if dp > 1:
+            if batch.host_merged_offsets is None:
+                raise ValueError(
+                    "data parallelism needs the host mirror of the merged "
+                    "row offsets"
+                )
+            # The trunk splits the merged window by request from the int64
+            # host mirror (gather indices are int64); the canonical
+            # signature declares the mirror uint32, so widen it here.
+            input_row_offsets_i64 = F.cast(
+                as_tensors(batch.host_merged_offsets), DType.int64
+            )
+        b = target.batch_from_parts(
+            as_tensors(batch.merged_tokens),
+            as_tensors(batch.merged_offsets),
+            _leaf_kv(batch, self.kv_params, target.mesh, dp),
+            _extras(
+                batch,
+                target.interface_config,
+                dp,
+                artifact=getattr(
+                    target.config, "raw_checkpoint_weights", False
+                ),
+            ),
+            data_parallel_splits=(
+                as_tensors(batch.data_parallel_splits)
+                if batch.data_parallel_splits is not None
+                else None
+            ),
+            input_row_offsets_i64=input_row_offsets_i64,
+            ep=ep,
+            history=(
+                distributed_history(
+                    batch.passthrough_kv["lookback_history"],
+                    DeviceMapping(
+                        target.mesh, (Unknown(),) if dp > 1 else (Replicated(),)
+                    ),
+                )
+                if "lookback_history" in self.kv_params.children
+                else None
+            ),
+            # The merged frame's draft rows per request, read off the
+            # draft_tokens input's own width so the narrowing can widen
+            # its kept-row bound by exactly what this step appended: a
+            # verify chunk's K placeholder rows must not crowd real rows
+            # out of the drafter's stored window (0 on a pure prefill,
+            # where nothing is appended and the bound is the bare window).
+            draft_width=as_tensors(
+                ops.shape_to_tensor([batch.num_draft_tokens])[0]
+            ),
+            vision=_vision(batch, target.mesh),
+        )
+        stream, pre = target.embed_stream(b)
+        stream, pre, taps = target.run_trunk_with_taps(b, stream, pre)
+        hidden = target.hidden_states(stream, pre)
+        # The acceptance sampler reads one flat request-major block of
+        # num_steps + 1 logit rows per request, which is exactly what the
+        # last-K+1 gather produces over the merged window. Under data
+        # parallelism the gather runs per rank over its own rows and one
+        # allgather reconstitutes the global batch -- the trunk's own
+        # ``logits`` pattern.
+        if dp > 1:
+            var_h = _dp_gather_variable_rows(
+                hidden,
+                b.row_offsets,
+                as_tensors(batch.return_n_logits),
+                target.mesh,
+                join=not self.replica_logits,
+            )
+        else:
+            var_h, _ = gather_variable_rows(
+                hidden,
+                b.row_offsets,
+                as_tensors(batch.return_n_logits),
+                target.mesh,
+            )
+        per_replica = (
+            [
+                as_graph_values(value)
+                for value in target.logits_per_replica(var_h).local_shards
+            ]
+            if self.replica_logits
+            else None
+        )
+        return Verified(
+            logits=(
+                per_replica[0]
+                if per_replica is not None
+                else as_graph_values(target.logits_all_rows(var_h))
+            ),
+            replica_logits=per_replica,
+            hidden=(taps, b.row_offsets, b.positions),
+            roll_forward=(
+                self._record_lookback
+                if "lookback_history" in batch.passthrough_kv
+                else _record_lookback_buffer
+                if "engram_lookback_history" in batch.extra
+                else None
+            ),
+        )
+
+    def _record_lookback(self, batch: BlockBatch) -> None:
+        """Records each row's lookback window for the next step to read.
+
+        Only that step reads it, so it may be recorded before this step's
+        draft runs. The window is read back out of the history the same way
+        the trunk read it: a copy of the batch's rows only.
+        """
+        assert batch.num_accepted is not None
+        target = self.target
+        mesh, dp = target.mesh, target.dp
+        mapping = DeviceMapping(
+            mesh, (Unknown(),) if dp > 1 else (Replicated(),)
+        )
+        history = distributed_history(
+            batch.passthrough_kv["lookback_history"], mapping
+        )
+        tokens = F.distributed_broadcast(as_tensors(batch.tokens), mesh)
+        offsets = F.distributed_broadcast(
+            as_tensors(batch.input_row_offsets), mesh
+        )
+        lookback = F.distributed_broadcast(
+            as_tensors(batch.extra["engram_lookback_ids"].tensor), mesh
+        )
+        source = F.distributed_broadcast(
+            as_tensors(batch.extra["engram_lookback_source"].tensor), mesh
+        )
+        drafts = F.distributed_broadcast(as_tensors(batch.draft_tokens), mesh)
+        accepted = F.distributed_broadcast(as_tensors(batch.num_accepted), mesh)
+        if dp > 1:
+            assert batch.data_parallel_splits is not None
+            assert batch.host_input_row_offsets is not None
+            splits = as_tensors(batch.data_parallel_splits)
+            sharded = DeviceMapping(mesh, (Sharded(0),))
+            tokens, offsets = split_replicated_batch(
+                tokens,
+                offsets,
+                as_tensors(batch.host_input_row_offsets).cast(DType.int64),
+                splits,
+                sharded,
+            )
+            lookback = _slice_requests(
+                lookback, splits, sharded, "history_lookback"
+            )
+            source = _slice_requests(source, splits, sharded, "history_source")
+            drafts = _slice_requests(drafts, splits, sharded, "history_drafts")
+            accepted = _slice_requests(
+                accepted, splits, sharded, "history_accepted"
+            )
+        lookback = read_history(
+            history.pool, history.live_row_ids, lookback, source
+        )
+        record_history(
+            history.pool,
+            history.live_row_ids,
+            lookback,
+            tokens,
+            offsets,
+            drafts,
+            accepted,
+        )
+
+
+def _record_lookback_buffer(batch: BlockBatch) -> None:
+    """Records each row's window in a bare MEF's history buffer input.
+
+    Batch row ``i``'s window lands in buffer row ``i``, which the next
+    step's source map names, as the bare-MEF registry contract specifies.
+    """
+    assert batch.num_accepted is not None
+    history = batch.extra["engram_lookback_history"].buffer
+    record_engram_lookback(
+        history,
+        read_engram_lookback(
+            batch.extra["engram_lookback_ids"].tensor,
+            batch.extra["engram_lookback_source"].tensor,
+            history,
+        ),
+        batch.tokens,
+        batch.input_row_offsets,
+        batch.draft_tokens,
+        batch.num_accepted,
+    )
+
+
+class DSparkDeepseekV41Proposer:
+    """Drafts a block with the DSpark stages; every position drafts.
+
+    The block is the committed token then ``block_size - 1`` noise slots,
+    and the drafter embeds it through the target's own embedding, so
+    :meth:`embed_block` passes the ids through. The stages read their
+    context windows from the sliding-window leaf and attend over them plus
+    the block itself.
+    """
+
+    samples_from_anchor = True
+    supports_zero_draft_rows = False
+
+    def __init__(
+        self,
+        drafter: DSparkDrafter,
+        target: DeepseekV41,
+        config: DeepseekV41Config,
+        *,
+        per_replica_head: bool = False,
+        per_replica_probs: bool = False,
+    ) -> None:
+        if config.dspark_noise_token_id is None:
+            raise ValueError(
+                "DeepSeek-V4.1 DSpark needs dspark_noise_token_id to fill "
+                "the draft block"
+            )
+        self.drafter = drafter
+        self.target = target
+        self.config = config
+        self.per_replica_head = per_replica_head
+        self.per_replica_probs = per_replica_probs
+        self.mesh = drafter.mesh
+        self.block_size = config.dspark_block_size
+        self.mask_token_id = config.dspark_noise_token_id
+        # The trunk's replica count: TP1 per rank under data parallelism,
+        # so the drafter's stage weights replicate and the proposer slices
+        # the block per replica instead of broadcasting it.
+        self.dp = drafter.data_parallel_degree
+        # The vocab-parallel draft is the data-parallel route: each rank
+        # drafts over its own vocab shard of the trunk's lm_head and only
+        # the per-row ``(max, index)`` winners cross the mesh. The joined
+        # head (which allgathers the bf16 logits onto rank 0 and
+        # broadcasts them back as float32) stays as the greedy head's
+        # tensor-parallel route.
+        self.vocab_parallel_draft = self.dp > 1
+
+    def materialize(
+        self,
+        batch: BlockBatch,
+        target_hidden: TrunkTaps,
+        ctx_kv: list[UpstreamPagedCacheValues],
+    ) -> None:
+        """Stores each stage's context KV for every verified token.
+
+        The staged context cache carries the unshifted pre-iteration
+        lengths, so the store's base is replaced with the payload's own
+        storage origins -- the first retained row's position of each
+        request -- which the narrowed verify has already advanced past
+        the dropped rows. The block cache (``pre + commit``) is the
+        driver's, untouched.
+        """
+        taps, row_offsets, positions = target_hidden
+        mapping = (
+            DeviceMapping(self.mesh, (Unknown(),))
+            if self.dp > 1
+            else DeviceMapping.replicated(self.mesh)
+        )
+        swa = PagedCacheValues.from_upstream(ctx_kv, mapping)
+        self.drafter.store_context(
+            replace(
+                swa,
+                cache_lengths=context_store_origins(
+                    row_offsets, positions, swa.cache_lengths.dtype
+                ),
+            ),
+            taps,
+            row_offsets,
+            positions,
+        )
+
+    def embed_block(
+        self, batch: BlockBatch, block_ids: TensorValue
+    ) -> list[TensorValue]:
+        """Hands the ids through; the drafter embeds them itself."""
+        return [block_ids]
+
+    def _dp_embed(self, splits: Tensor) -> Callable[[Tensor], Tensor]:
+        """The DP embed: full batch in, per-replica rows out.
+
+        The target's embedding is vocab-sharded over the replica axis, so
+        its gather all-reduces across the mesh and every rank must hold the
+        same rows -- the trunk's own rule (embed the full replicated
+        batch, split afterwards). The drafter embeds inside its forward,
+        so the callable it receives re-broadcasts the sharded ids, embeds
+        the global batch once, and cuts each rank's K-strided span back
+        out.
+        """
+
+        def embed(sharded_ids: Tensor) -> Tensor:
+            # One allgather reconstitutes the global block in rank order --
+            # global request order by construction of the splits -- so the
+            # vocab-sharded gather all-reduces while every rank still
+            # holds the same rows.
+            full = F.allgather(sharded_ids, tensor_axis=0)
+            hidden = self.target.embed(full)
+            k = self.block_size
+            shards = []
+            for rank, shard in enumerate(hidden.local_shards):
+                start = splits[rank] * k
+                end = splits[rank + 1] * k
+                shards.append(
+                    F.slice_tensor(
+                        shard,
+                        [
+                            (
+                                slice(start, end),
+                                f"dspark_block_rows_r{rank}",
+                            )
+                        ],
+                    )
+                )
+            return Tensor.from_shard_values(
+                shards, DeviceMapping(self.mesh, (Sharded(0),))
+            )
+
+        return embed
+
+    def forward_block(
+        self,
+        batch: BlockBatch,
+        embeds: list[TensorValue],
+        offsets: list[TensorValue],
+        block_kv: list[UpstreamPagedCacheValues],
+    ) -> Tensor:
+        """Runs the DSpark stages over each request's draft block.
+
+        Each stage attends over its window of stored context -- everything
+        below the block's start -- plus the block's own rows.
+
+        Under data parallelism each rank drafts its own replica's block:
+        the ids, offsets and windows carry per-rank rows, and the embed
+        runs on the full replicated batch first (the vocab-sharded gather
+        all-reduces while every rank still holds the same rows).
+        """
+        if self.dp == 1:
+            ids = F.distributed_broadcast(as_tensors(embeds[0]), self.mesh)
+            block_offsets = F.distributed_broadcast(
+                as_tensors(offsets[0]), self.mesh
+            )
+            swa = PagedCacheValues.from_upstream(
+                block_kv, DeviceMapping.replicated(self.mesh)
+            )
+            starts = window_starts(swa)
+            positions = block_row_positions(
+                block_offsets, swa.cache_lengths, ids.shape[0]
+            )
+            windows = self.drafter.windows(swa, starts)
+            return self.drafter.forward_block(
+                ids, positions, windows, embed=self.target.embed
+            )
+        if batch.data_parallel_splits is None:
+            raise ValueError(
+                "a data-parallel block batch must carry data_parallel_splits"
+            )
+        row_sharded = DeviceMapping(self.mesh, (Sharded(0),))
+        splits = as_tensors(batch.data_parallel_splits)
+        # One flat request-major block, K rows per request, so a replica's
+        # rows are the contiguous span its requests own.
+        ids = _shard_block_ids(
+            as_tensors(embeds[0]), splits, self.block_size, row_sharded
+        )
+        embed = self._dp_embed(splits)
+        block_offsets = Tensor.from_shard_values(
+            [as_tensors(offset) for offset in offsets], row_sharded
+        )
+        swa = PagedCacheValues.from_upstream(
+            block_kv, DeviceMapping(self.mesh, (Unknown(),))
+        )
+        # The per-device cache lengths are each replica's own record, so
+        # the starts build per shard: a rule-based cast over the
+        # Unknown-mapped field has no feasible plan on the replica axis.
+        starts = Tensor.from_shard_values(
+            [
+                F.cast(shard, DType.int32)
+                for shard in swa.cache_lengths.local_shards
+            ],
+            row_sharded,
+        )
+        positions = Tensor.from_shard_values(
+            [
+                absolute_positions(offsets, lengths, shard.shape[0])
+                for offsets, lengths, shard in zip(
+                    block_offsets.local_shards,
+                    swa.cache_lengths.local_shards,
+                    ids.local_shards,
+                    strict=True,
+                )
+            ],
+            row_sharded,
+        )
+        windows = self.drafter.windows(swa, starts)
+        return self.drafter.forward_block(ids, positions, windows, embed=embed)
+
+    def head(
+        self,
+        batch: BlockBatch,
+        block_hs: Tensor,
+        accepted: Accepted,
+        sampler: DraftSampler,
+    ) -> TensorValue:
+        """Turns the block's hidden states into draft tokens, one at a time."""
+        block_hs = as_tensors(block_hs)
+        if self.dp > 1 and self.per_replica_head:
+            return self._replica_head(batch, block_hs, accepted, sampler)
+        # The committed anchors arrive on rank 0 (the accept runs there),
+        # so stage them onto the mesh where the serial loop and the
+        # replicated Markov head live. Under data parallelism the block
+        # rows are sharded, so one allgather reconstitutes the global batch
+        # in rank order -- global request order by construction of the
+        # splits -- before the head runs, the trunk's own ``logits``
+        # pattern.
+        if self.dp > 1 and block_hs.is_distributed:
+            block_hs = F.allgather(block_hs, tensor_axis=0)
+        anchors = F.distributed_broadcast(
+            as_tensors(accepted.next_tokens), self.mesh
+        )
+        greedy = type(sampler) is ArgmaxDraftSampler
+        if greedy and self.vocab_parallel_draft:
+            # Every rank already holds the whole batch's hidden rows and
+            # its own vocab shard of the head, so the greedy loop runs
+            # vocab-parallel and exchanges only each row's per-shard
+            # winner -- not the ``[b * block_size, vocab]`` float32 logits
+            # the joined head would broadcast to every rank.
+            return as_graph_values(
+                self.drafter.draft_vocab_parallel(
+                    block_hs, self.target.head.weight, anchors
+                )
+            )
+        # The joined head's logits land on rank 0 (its allgather takes
+        # rank 0's copy), so they are re-staged onto the mesh too.
+        logits = F.distributed_broadcast(
+            self.drafter.logits(block_hs, self.target.head.weight),
+            self.mesh,
+        )
+        # The driver's greedy sampler draws through ``ops.argmax`` on one
+        # device, so the bridge would broadcast every step's pick back onto
+        # the mesh. The drafter's own greedy is the same argmax over
+        # ``F.argmax``, whose SPMD reduction rule runs replicated on the
+        # mesh, so exactly the greedy class bypasses the bridge; a
+        # subclass that overrides ``sample_next`` is its own sampler and
+        # still goes through it.
+        drafts, _ = self.drafter.draft(
+            logits,
+            anchors,
+            sampler=None if greedy else _sample_next(sampler, self.mesh),
+        )
+        return as_graph_values(_to_lead(drafts))
+
+    def _replica_head(
+        self,
+        batch: BlockBatch,
+        hidden: Tensor,
+        accepted: Accepted,
+        sampler: DraftSampler,
+    ) -> TensorValue:
+        """Draws replica-local proposals and retains each replica's true q."""
+        assert batch.data_parallel_splits is not None
+        splits = as_tensors(batch.data_parallel_splits)
+        rows = [f"dspark_head_rows_{rank}" for rank in range(self.dp)]
+
+        def select(value: TensorValue) -> list[TensorValue]:
+            replicas = F.distributed_broadcast(as_tensors(value), self.mesh)
+            return [
+                as_graph_values(
+                    F.slice_tensor(
+                        shard,
+                        [(slice(splits[rank], splits[rank + 1]), rows[rank])],
+                    )
+                )
+                for rank, shard in enumerate(replicas.local_shards)
+            ]
+
+        samplers: Sequence[DraftSampler] = (
+            sampler.split(select, rows)
+            if isinstance(sampler, SampledDraftSampler)
+            else [sampler] * self.dp
+        )
+        anchors = select(accepted.next_tokens)
+        weights = self.target.replicated_head_weight()
+        drafted = []
+        for rank, (local_hidden, local_anchor, local_sampler) in enumerate(
+            zip(hidden.local_shards, anchors, samplers, strict=True)
+        ):
+            # Module is a pytree: each local view keeps the same code and
+            # selects that rank's parameter shards, without copying weights.
+            local = tree.map(
+                lambda tensor, index=rank: (
+                    tensor.local_shards[index]
+                    if tensor.is_distributed
+                    else tensor
+                ),
+                self.drafter,
+                leaf=Tensor,
+            )
+            logits = local.logits(local_hidden, weights.local_shards[rank])
+            greedy = type(local_sampler) is ArgmaxDraftSampler
+            local_ids, _ = local.draft(
+                logits,
+                as_tensors(local_anchor),
+                sampler=(
+                    None
+                    if greedy
+                    else lambda values, step, sample=local_sampler: as_tensors(
+                        sample.sample_next(as_graph_values(values), step)
+                    )
+                ),
+            )
+            drafted.append(as_graph_values(local_ids))
+        if isinstance(sampler, SampledDraftSampler):
+            distributions = [
+                local.distributions()
+                for local in samplers
+                if isinstance(local, SampledDraftSampler)
+            ]
+            if self.per_replica_probs:
+                sampler.adopt_replica_distributions(
+                    [
+                        value.rebind(
+                            [draft_probs_rows_name(rank), *value.shape[1:]]
+                        )
+                        for rank, value in enumerate(distributions)
+                    ]
+                )
+            else:
+                sampler.adopt_distributions(
+                    ops.allgather(distributions, batch.signal_buffers)[0]
+                )
+        return ops.allgather(drafted, batch.signal_buffers)[0].rebind(
+            [accepted.next_tokens.shape[0], self.block_size]
+        )
+
+
+def verify(
+    target: Any,
+    target_config: Any,
+    hidden_states: ReturnHiddenStates,
+    draft_config: Any,
+) -> DeepseekV41BlockTarget:
+    """Returns the verify of a DeepSeek-V4.1 trunk, returning DSpark's taps.
+
+    Raises:
+        ValueError: If the pairing doesn't read selected layers, as only
+            block drafts do.
+    """
+    del target_config, draft_config
+    if hidden_states != ReturnHiddenStates.SELECTED_LAYERS:
+        raise ValueError(
+            "A DeepSeek-V4.1 target verifies only for block drafts, which"
+            f" read selected layers. Got {hidden_states.value}."
+        )
+    assert isinstance(target, DeepseekV41)
+    return DeepseekV41BlockTarget(target, target.kv_params)
+
+
+def block_proposer(
+    verify: Any,
+    draft: Any,
+    draft_config: Any,
+    speculative: SpeculativeConfig,
+) -> DSparkDeepseekV41Proposer:
+    """Returns the proposer of the DSpark stages, on the verify's trunk."""
+    assert isinstance(verify, DeepseekV41BlockTarget)
+    assert isinstance(draft, DSparkDrafter)
+    assert isinstance(draft_config, DeepseekV41Config)
+    verify.replica_logits = speculative.draft_probs_layout == "replica"
+    return DSparkDeepseekV41Proposer(
+        draft,
+        verify.target,
+        draft_config,
+        per_replica_head=speculative.draft_head_parallelism == "replica",
+        per_replica_probs=verify.replica_logits,
+    )
+
+
+def ep_input_tree(target: Any) -> object | None:
+    """Returns the group that names the routed experts' EP inputs, if any."""
+    assert isinstance(target, DeepseekV41)
+    if target.ep_config is None:
+        return None
+    return ep_init.payload_types(target.ep_config)
+
+
+def trailing_input_types(
+    target_config: Any,
+) -> list[TensorType | BufferType]:
+    """Returns the trunk's extras the graph takes past the canonical tail."""
+    assert isinstance(target_config, DeepseekV41Config)
+    return [dtype for _, dtype in target_config.dspark_trailing_inputs]
+
+
+def trailing_input_tree(target_config: Any) -> Mapping[str, object] | None:
+    """Keeps the actual trailing declaration order in the named fused signature."""
+    assert isinstance(target_config, DeepseekV41Config)
+    if not target_config.raw_checkpoint_weights:
+        return None
+    return artifact_trailing_input_tree(target_config.dspark_trailing_inputs)
+
+
+def batch_trailing_buffers(target_inputs: object) -> list[Buffer]:
+    """Returns the extras the trunk's batch processor prepared."""
+    assert isinstance(
+        target_inputs, (DeepseekV41Inputs, RegisteredDeepseekV41Inputs)
+    )
+    return list(target_inputs.extras)
+
+
+def extra(target_config: Any, trailing: Sequence[Value[Any]]) -> dict[str, Any]:
+    """Returns the trunk's extras by name, as its verify reads them."""
+    assert isinstance(target_config, DeepseekV41Config)
+    names = [name for name, _ in target_config.dspark_trailing_inputs]
+    return dict(zip(names, trailing, strict=True))
+
+
+def _takes_vision_inputs(target_config: Any) -> bool:
+    """Omits image inputs for a text-only registered deployment."""
+    assert isinstance(target_config, DeepseekV41Config)
+    # The retained bare-MEF ABI continues to declare its original image slots.
+    return (
+        not target_config.raw_checkpoint_weights
+        or target_config.vision is not None
+    )
+
+
+def _takes_prefill_rows(target_config: Any) -> bool:
+    """Returns whether the DSpark verify commits a prefill row.
+
+    Only the data-parallel (DEP) layout takes one.
+    """
+    return target_config.data_parallel_degree > 1
+
+
+ADAPTER = TargetAdapter(
+    primary_kv=WINDOW_LEAF,
+    verify=verify,
+    block_proposer=block_proposer,
+    ep_input_tree=ep_input_tree,
+    # The graph takes no in-thinking input, as the fused graph the serving
+    # engine binds doesn't.
+    relaxed_thinking_acceptance=False,
+    prepares_every_batch=True,
+    takes_vision_inputs=_takes_vision_inputs,
+    trailing_input_types=trailing_input_types,
+    trailing_input_tree=trailing_input_tree,
+    batch_trailing_buffers=batch_trailing_buffers,
+    extra=extra,
+    verify_takes_prefill_rows=_takes_prefill_rows,
+)

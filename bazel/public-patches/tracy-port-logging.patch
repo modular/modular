@@ -1,0 +1,22 @@
+diff --git a/public/client/TracyProfiler.cpp b/public/client/TracyProfiler.cpp
+index e665eaa..9bc0989 100644
+--- a/public/client/TracyProfiler.cpp
++++ b/public/client/TracyProfiler.cpp
+@@ -1894,6 +1894,7 @@ void Profiler::Worker()
+     }
+     if( !isListening )
+     {
++        printf("TRACY: Process id %ld failed to listen on port %d\n", (long)pid, dataPort);
+         for(;;)
+         {
+             if( ShouldExit() )
+@@ -1906,6 +1907,9 @@ void Profiler::Worker()
+             std::this_thread::sleep_for( std::chrono::milliseconds( 10 ) );
+         }
+     }
++    else {
++        printf("TRACY: Process id %ld is listening on port %d\n", (long)pid, dataPort);
++    }
+
+ #ifndef TRACY_NO_BROADCAST
+     m_broadcast = (UdpBroadcast*)tracy_malloc( sizeof( UdpBroadcast ) );

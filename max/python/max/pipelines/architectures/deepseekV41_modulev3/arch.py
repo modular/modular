@@ -1,0 +1,80 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Registers DeepSeek-V4.1 ModuleV3 text and image generation."""
+
+from max.graph.weights import WeightsFormat
+from max.pipelines.context import TextAndVisionContext
+from max.pipelines.lib import GraphRole, SupportedArchitecture
+from max.pipelines.modeling.types import InputModality, PipelineTask
+
+# Registers the ``deepseekv4`` reasoning parser at import.
+from .. import deepseekV4 as _deepseekV4  # noqa: F401
+
+# Registers the ``deepseekv41`` tool parser at import.
+from ..deepseekV41 import tool_parser as _v41_tool_parser  # noqa: F401
+from ..deepseekV41.arch import deepseekV41_arch
+from . import weight_adapters
+from .registration import (
+    DeepseekV41VisionEncoder,
+    RegisteredDeepseekV41BatchProcessor,
+    RegisteredDeepseekV41Config,
+    RegisteredDeepseekV41Decoder,
+)
+from .tokenizer import DeepseekV41Tokenizer
+
+deepseekV41_modulev3_arch = SupportedArchitecture(
+    name="DeepseekV41ForCausalLM_ModuleV3",
+    task=PipelineTask.TEXT_GENERATION,
+    example_repo_ids=[
+        "nvidia/DeepSeek-V4.1-Flash-NVFP4",
+    ],
+    default_encoding=RegisteredDeepseekV41Config.DEFAULT_ENCODING,
+    supported_encodings=RegisteredDeepseekV41Config.SUPPORTED_ENCODINGS,
+    # TP2/TP4 shard attention and MoE over replicated request rows. DP/EP
+    # runs one full attention replica per device with routed experts shared.
+    multi_gpu_supported=True,
+    supports_empty_batches=False,
+    modules={
+        GraphRole.DECODER: RegisteredDeepseekV41Decoder,
+        GraphRole.VISION: DeepseekV41VisionEncoder,
+    },
+    tokenizer=DeepseekV41Tokenizer,
+    tokenizer_family=deepseekV41_arch.tokenizer_family,
+    context_type=TextAndVisionContext,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    default_weights_format=WeightsFormat.safetensors,
+    # Only a pipeline artifact loads the raw weight rules. Serving and bare
+    # MEF exports keep the adapter and the registry weight and graph contract
+    # Mach checks during migration.
+    weight_adapters={
+        WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
+    },
+    weight_rules=weight_adapters.deepseek_v41_weight_rules,
+    use_weight_rules=True,
+    weight_rules_for_artifacts_only=True,
+    # The trunk serves every request with a zero window start and a zero
+    # write floor; a request resumed from cached pages would read its
+    # window from position 0 and land compressor and indexer writes in
+    # blocks the cached prefix shares with other sessions. Prefix caching
+    # stays off until resuming from cached pages is supported, and an
+    # artifact export records it off.
+    required_arguments={"enable_prefix_caching": False},
+    config=RegisteredDeepseekV41Config,
+    batching=RegisteredDeepseekV41BatchProcessor,
+    reasoning_parser="deepseekv4",
+    tool_parser="deepseekv41",
+    format_spec=deepseekV41_arch.format_spec,
+    checkpoint_drafts={"dspark": "DSparkDeepseekV41DraftModel"},
+    # The serving engine boots the fused graph by this name.
+    spec_decode_graph_names={"dspark": "UnifiedDSparkDeepseekV41ModuleV3"},
+)

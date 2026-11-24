@@ -31,9 +31,9 @@ from std.time import sleep
 def bench_func[
     dtype: DType, M: Int, N: Int, K: Int, stages: Int
 ](mut m: Bench, mode: Mode, pe_rank: Int) raises:
-    @always_inline
+    @inline(.always)
     def bench_iter(mut b: Bencher):
-        @always_inline
+        @inline(.always)
         def call_fn():
             sleep(0.01)
 
@@ -81,6 +81,8 @@ def main() raises:
     var m = Bench(BenchConfig(max_iters=1, max_batch_size=1))
     var pe_rank = m.check_mpirun()
     update_bench_config_args(m)
-    bench_func[dtype, shape[0], shape[1], shape[2], stages](m, mode, pe_rank)
+    bench_func[dtype, Int(shape[0]), Int(shape[1]), Int(shape[2]), stages](
+        m, mode, pe_rank
+    )
 
     m.dump_report()

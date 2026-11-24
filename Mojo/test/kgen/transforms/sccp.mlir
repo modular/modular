@@ -45,8 +45,8 @@ kgen.func @loop_generates_constant() -> (index, index) {
     hlcf.yield %1: index
   }
 
-  // CHECK: kgen.return [[IDX11]], [[IDX9]]
-  kgen.return %2, %7 : index, index
+  // CHECK: hlcf.return [[IDX11]], [[IDX9]]
+  hlcf.return %2, %7 : index, index
 }
 
 // CHECK-LABEL: @not_much_can_be_known
@@ -86,8 +86,8 @@ kgen.func @not_much_can_be_known(%cond: !kgen.scalar<bool>) -> (index, index) {
     hlcf.continue %6, %b7 : index, !kgen.scalar<bool>
   }
 
-  // CHECK: kgen.return [[IDX9]], [[V0:%.*]]
-  kgen.return %1, %2 : index, index
+  // CHECK: hlcf.return [[IDX9]], [[V0:%.*]]
+  hlcf.return %1, %2 : index, index
 }
 
 // CHECK-LABEL: @should_not_crash
@@ -98,11 +98,11 @@ kgen.func @should_not_crash() -> (i1) {
     hlcf.loop "_loop_0" {
         hlcf.continue "_loop_0"
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
 
   %6 = index.cmp slt(%2, %idx0)
-  kgen.return %6 : i1
+  hlcf.return %6 : i1
 }
 
 
@@ -150,7 +150,7 @@ kgen.func @nested_if_constant_result(%cond: !kgen.scalar<bool>) -> index {
     hlcf.yield %0: index
   }
 
-  kgen.return %2 : index
+  hlcf.return %2 : index
 }
 
 // CHECK-LABEL: @test_switches
@@ -214,8 +214,8 @@ kgen.func @test_switches(%arg0: index) -> (index, index, index) {
     hlcf.yield %idx2: index
   }
 
-  // CHECK: kgen.return [[IDX9]], [[V4]], [[INDEX2]]
-  kgen.return %2, %4, %5: index, index, index
+  // CHECK: hlcf.return [[IDX9]], [[V4]], [[INDEX2]]
+  hlcf.return %2, %4, %5: index, index, index
 }
 
 kgen.func @test_for_loop(%arg0: index) -> (index) {
@@ -235,8 +235,8 @@ kgen.func @test_for_loop(%arg0: index) -> (index) {
     hlcf.for.yield [induction_var (%1 : index)] [retvals (%2: index)] [iterargs ()]
   }
 
-  // CHECK: kgen.return [[IDX3]]
-  kgen.return %0: index
+  // CHECK: hlcf.return [[IDX3]]
+  hlcf.return %0: index
 }
 
 // CHECK-LABEL: @nested_loops
@@ -283,8 +283,8 @@ kgen.func @nested_loops() -> index {
     hlcf.continue %3 : index
   }
 
-  // CHECK: kgen.return [[IDX10]]
-  kgen.return %2: index
+  // CHECK: hlcf.return [[IDX10]]
+  hlcf.return %2: index
 }
 
 // CHECK-LABEL: @loop_generates_constant_but_hits_limit
@@ -333,8 +333,8 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
     hlcf.yield %1: index
   }
 
-  // CHECK: kgen.return [[V2]], [[V7]]
-  kgen.return %2, %7 : index, index
+  // CHECK: hlcf.return [[V2]], [[V7]]
+  hlcf.return %2, %7 : index, index
 }
 
 
@@ -392,8 +392,8 @@ kgen.func @loop_generates_constant_but_hits_limit() -> (index, index) {
      %b10 = pop.cast_from_builtin %10 : i1 to !kgen.scalar<bool>
      hlcf.continue %b10 : !kgen.scalar<bool>
    }
-   // CHECK: kgen.return %idx6, %idx1
-   kgen.return %2, %6 : index, index
+   // CHECK: hlcf.return %idx6, %idx1
+   hlcf.return %2, %6 : index, index
  }
 
 // COM: A break under an unknown condition is only one of the loop's exits, so
@@ -433,8 +433,8 @@ kgen.func @partial_early_exit(%cond: !kgen.scalar<bool>) -> index {
   }
 
   // COM: the result stays the loop's, not the guarded break's value.
-  // CHECK: kgen.return [[R]] : index
-  kgen.return %0: index
+  // CHECK: hlcf.return [[R]] : index
+  hlcf.return %0: index
 }
 
 // COM: A break under a condition that folds to false cannot execute, so it does
@@ -464,8 +464,8 @@ kgen.func @break_in_untaken_branch() -> index {
     hlcf.continue %2 : index
   }
 
-  // CHECK: kgen.return %idx5
-  kgen.return %0: index
+  // CHECK: hlcf.return %idx5
+  hlcf.return %0: index
 }
 
 // COM: A break in a switch case the index does not select cannot execute.
@@ -495,8 +495,8 @@ kgen.func @break_in_untaken_switch_case() -> index {
     hlcf.continue %2 : index
   }
 
-  // CHECK: kgen.return %idx5
-  kgen.return %0: index
+  // CHECK: hlcf.return %idx5
+  hlcf.return %0: index
 }
 
 // COM: A break leaving the outer loop from inside an inner one that stops at
@@ -523,8 +523,8 @@ kgen.func @outer_break_from_unconverged_inner() -> index {
     hlcf.break "outer" %arg0 : index
   }
 
-  // CHECK: kgen.return [[R]] : index
-  kgen.return %0: index
+  // CHECK: hlcf.return [[R]] : index
+  hlcf.return %0: index
 }
 
 // COM: A continue that re-enters an outer loop is one of its entry edges.
@@ -561,8 +561,8 @@ kgen.func @outer_continue_from_unconverged_inner() -> index {
     hlcf.break "outer" %arg0 : index
   }
 
-  // CHECK: kgen.return [[R]] : index
-  kgen.return %0: index
+  // CHECK: hlcf.return [[R]] : index
+  hlcf.return %0: index
 }
 
 // COM: The second break cannot execute: the first one always leaves the loop.
@@ -589,24 +589,24 @@ kgen.func @break_dominated_by_break(%cond: !kgen.scalar<bool>) -> index {
     hlcf.continue %1 : index
   }
 
-  // CHECK: kgen.return %idx5
-  kgen.return %0: index
+  // CHECK: hlcf.return %idx5
+  hlcf.return %0: index
 }
 
 // CHECK-LABEL: @none_hlcf_controlflownode_donot_crash
 kgen.generator @none_hlcf_controlflownode_donot_crash() -> index {
   // COM: Conservatively mark all results as Unknown, but process the subregions.
   kgen.param.declare condition: scalar<bool> = <false>
-  %0 = kgen.param.if <condition> -> index {
+  %0 = hlcf.comptime.if condition -> index {
     %i0 = index.constant 0
-    kgen.param.yield %i0: index
+    hlcf.comptime.yield %i0: index
   } else {
     %i1 = index.constant 1
-    kgen.param.yield %i1: index
+    hlcf.comptime.yield %i1: index
   }
 
-  // CHECK: kgen.return [[V0:%.*]]
-  kgen.return %0: index
+  // CHECK: hlcf.return [[V0:%.*]]
+  hlcf.return %0: index
 }
 
 // COM: This test should not fail with lattice value assertion due to early exits in the loop.
@@ -636,7 +636,7 @@ kgen.func @should_continue() -> index {
   }
   // CHECK: kgen.call @f([[IDX0]]) : (index) -> index
   %1 = kgen.call @f(%0) : (index) -> index
-  kgen.return %1: index
+  hlcf.return %1: index
 }
 
 
@@ -679,7 +679,7 @@ kgen.func @indirect_loop_break(%cond: index) -> index {
   }
   // CHECK: kgen.call @f([[V0]])
   %1 = kgen.call @f(%0) : (index) -> index
-  kgen.return %1: index
+  hlcf.return %1: index
 }
 
 
@@ -708,10 +708,255 @@ kgen.func @single_unreachable_indirect_loop_break(%cond: index) -> index {
       %19 = index.sub %arg2, %idx1
       hlcf.continue %19, %arg3 : index, index
     }
-    kgen.unreachable
+    hlcf.unreachable
   }
 
   // CHECK: kgen.call @f([[V0]])
   %1 = kgen.call @f(%0) : (index) -> index
-  kgen.return %1: index
+  hlcf.return %1: index
+}
+
+// COM: An elif chain is a single multi-arm `hlcf.if`, so the then, else, elif
+// COM: condition and elif arm regions all go through the generic fallthrough
+// COM: path. Constants in each region must still fold, and constants from the
+// COM: enclosing scope stay known after the chain.
+// CHECK-LABEL: @elif_chain
+kgen.func @elif_chain(%cond0: !kgen.scalar<bool>, %cond1: !kgen.scalar<bool>) -> (index, index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %idx3 = index.constant 3
+  %idx5 = index.constant 5
+
+  // CHECK-DAG: [[IDX6:%.*]] = index.constant 6
+  // CHECK-DAG: [[IDX5:%.*]] = index.constant 5
+  // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
+  // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
+  // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
+  // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
+  // CHECK-DAG: [[TRUE:%.*]] = kgen.param.constant: scalar<bool> = <true>
+
+  // CHECK: [[V0:%.*]] = hlcf.if
+  %0 = hlcf.if %cond0 -> index {
+    // COM: folds to true.
+    %1 = index.cmp sgt(%idx3, %idx2)
+    %b1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    // CHECK: hlcf.yield [[IDX1]]
+    hlcf.yield %idx1 : index
+  } else {
+    // CHECK: hlcf.if.elifcond.yield
+    hlcf.if.elifcond.yield %cond1
+  } then {
+    %2 = index.add %idx1, %idx5
+    // CHECK: hlcf.yield [[IDX6]]
+    hlcf.yield %2 : index
+  } else {
+    // COM: folds to 5.
+    %3 = index.mul %idx1, %idx5
+    // CHECK: hlcf.yield [[IDX5]]
+    hlcf.yield %3 : index
+  }
+
+  // COM: The chain's result is unknown, but the constants after it still fold.
+  // CHECK: hlcf.return [[V0]], [[IDX6]]
+  %4 = index.add %idx1, %idx5
+  hlcf.return %0, %4 : index, index
+}
+
+// COM: The same chain in a loop body goes through the fallthrough path once per
+// COM: iteration. Multiplying the chain's result keeps the loop result unknown.
+// CHECK-LABEL: @elif_chain_in_loop
+kgen.func @elif_chain_in_loop(%cond0: !kgen.scalar<bool>, %cond1: !kgen.scalar<bool>) -> (index, index) {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+  %idx7 = index.constant 7
+
+  // CHECK-DAG: [[IDX7:%.*]] = index.constant 7
+  // CHECK-DAG: [[IDX3:%.*]] = index.constant 3
+  // CHECK-DAG: [[IDX2:%.*]] = index.constant 2
+  // CHECK-DAG: [[IDX1:%.*]] = index.constant 1
+  // CHECK-DAG: [[IDX0:%.*]] = index.constant 0
+
+  // CHECK: [[LOOP:%.*]] = hlcf.loop
+  %0 = hlcf.loop(%arg0 = %idx0 : index) -> index {
+    %1 = index.cmp slt(%arg0, %idx2)
+    %b1 = pop.cast_from_builtin %1 : i1 to !kgen.scalar<bool>
+    // CHECK: hlcf.if.elifcond.yield
+    %2 = hlcf.if %b1 -> index {
+      hlcf.yield %arg0 : index
+    } else {
+      hlcf.if.elifcond.yield %cond1
+    } then {
+      hlcf.yield %idx7 : index
+    } else {
+      %3 = index.add %idx1, %idx7
+      hlcf.yield %3 : index
+    }
+    %4 = index.mul %2, %2
+    hlcf.continue %4 : index
+  }
+
+  // CHECK: hlcf.return [[LOOP]], [[IDX3]]
+  %5 = index.add %idx1, %idx2
+  hlcf.return %0, %5 : index, index
+}
+
+// COM: MOCO-5350 with a constant bound: the loop runs once and must fold to
+// COM: 1, not stay on the entry value.
+// CHECK-LABEL: @elif_dead_abort_arm_constant_bound
+kgen.func @elif_dead_abort_arm_constant_bound() -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+
+  %0 = hlcf.loop(%i = %idx0 : index) -> index {
+    %cond = index.cmp slt(%i, %idx1)
+    %bcond = pop.cast_from_builtin %cond : i1 to !kgen.scalar<bool>
+    hlcf.if %bcond {
+      hlcf.yield
+    } else {
+      hlcf.break %i : index
+    }
+    %inc = index.add %i, %idx1
+    %neg = index.cmp slt(%inc, %idx0)
+    %bneg = pop.cast_from_builtin %neg : i1 to !kgen.scalar<bool>
+    hlcf.if %bneg {
+      %nonneg = index.cmp sge(%inc, %idx0)
+      %bnonneg = pop.cast_from_builtin %nonneg : i1 to !kgen.scalar<bool>
+      hlcf.if %bnonneg {
+        hlcf.unreachable
+      } else {
+        hlcf.yield
+      }
+      hlcf.yield
+    } else {
+      %neg2 = index.cmp slt(%inc, %idx0)
+      %bneg2 = pop.cast_from_builtin %neg2 : i1 to !kgen.scalar<bool>
+      hlcf.if.elifcond.yield %bneg2
+    } then {
+      hlcf.yield
+    } else {
+      hlcf.yield
+    }
+    hlcf.continue %inc : index
+  }
+
+  // CHECK: [[ONE:%.*]] = kgen.param.constant = <1>
+  // CHECK: hlcf.return [[ONE]] : index
+  hlcf.return %0 : index
+}
+
+// CHECK-LABEL: @match_region_terminators_do_not_leave
+kgen.func @match_region_terminators_do_not_leave(%cond: !kgen.scalar<bool>) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+
+  %0 = hlcf.match -> index {
+    hlcf.if %cond {
+      hlcf.match.complete %idx0 : index
+    } else {
+      hlcf.match.next
+    }
+    hlcf.unreachable
+  }
+  case {
+    hlcf.match.complete %idx1 : index
+  }
+  else {
+    hlcf.yield %idx2 : index
+  }
+
+  // CHECK: [[THREE:%.*]] = index.constant 3
+  // CHECK: hlcf.return [[THREE]] : index
+  %2 = index.add %idx1, %idx2
+  hlcf.return %2 : index
+}
+
+// COM: The first condition is a parameter, so the elif arm may run. It yields,
+// COM: so the chain does reach the add after it and the add must fold.
+// CHECK-LABEL: @comptime_if_nonconstant_first_cond_keeps_elif
+kgen.generator @comptime_if_nonconstant_first_cond_keeps_elif<
+    c0: scalar<bool>, c1: scalar<bool>>() -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+
+  %0 = hlcf.comptime.if c0 -> index {
+    hlcf.return %idx0 : index
+  } elif c1 {
+    hlcf.comptime.yield %idx1 : index
+  } else {
+    hlcf.return %idx2 : index
+  }
+
+  // CHECK: [[THREE:%.*]] = index.constant 3
+  // CHECK: hlcf.return [[THREE]] : index
+  %1 = index.add %idx1, %idx2
+  hlcf.return %1 : index
+}
+
+// COM: lit.try raises from inside a for nested in the try body. The except
+// COM: region yields, so the loop keeps running and its result must stay
+// COM: unknown instead of folding to the break value in the try body.
+// CHECK-LABEL: @raise_in_for_inside_try_does_not_leave
+kgen.func @raise_in_for_inside_try_does_not_leave(%end: index) -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  %idx2 = index.constant 2
+
+  // CHECK: [[LOOP:%.*]] = hlcf.loop
+  %r = hlcf.loop(%acc = %idx0 : index) -> index {
+    lit.try "t0" {
+      hlcf.for [%idx0 to %end step %idx1 slt add] (%i = %idx0 : index) {
+        kgen.call @may_raise(%i) : (index) -> ()
+        lit.try.raise "t0" handler 0
+      }
+      hlcf.break %idx2 : index
+    }
+    except () {
+      lit.try.yield
+    } else () {
+      lit.try.yield
+    }
+    %next = index.add %acc, %idx1
+    hlcf.continue %next : index
+  }
+
+  // CHECK-NOT: hlcf.return %idx
+  // CHECK: hlcf.return [[LOOP]]
+  hlcf.return %r : index
+}
+
+// COM: bound recursion in lit.try.raise
+// CHECK-LABEL: @raise_targets_enclosing_try
+kgen.func @raise_targets_enclosing_try() -> index {
+  %idx0 = index.constant 0
+  lit.try "t0" {
+    lit.try.raise "t0" handler 0
+  } except () {
+    lit.try.raise "t0" handler 0
+  } else () {
+    lit.try.yield
+  }
+  // CHECK: lit.try
+  hlcf.return %idx0 : index
+}
+
+// COM: Every arm of this comptime.if returns, so nothing after it in the
+// COM: function can execute and SCCP must stop analyzing here. If it keeps
+// COM: going it folds the index.add below into a constant.
+// CHECK-LABEL: @no_fallthrough_after_all_arms_return
+kgen.func @no_fallthrough_after_all_arms_return() -> index {
+  %idx0 = index.constant 0
+  %idx1 = index.constant 1
+  kgen.param.declare condition: scalar<bool> = <false>
+  %0 = hlcf.comptime.if condition -> index {
+    hlcf.return %idx0 : index
+  } else {
+    hlcf.return %idx1 : index
+  }
+  // CHECK: index.add
+  %1 = index.add %idx0, %idx1
+  hlcf.return %1 : index
 }

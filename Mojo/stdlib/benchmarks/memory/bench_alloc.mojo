@@ -15,10 +15,10 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 def bench_allocation(mut b: Bencher) raises:
-    @always_inline
+    @inline(.always)
     def call_fn():
         for _ in range(10000):
-            var allocation = alloc[Int]({count = 100}).into_managed()
+            var allocation = alloc[Int]({length = 100}).into_managed()
             var a = allocation.unsafe_ptr()
             keep(a)
 

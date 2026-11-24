@@ -19,12 +19,12 @@ from std.utils.index import Index
 
 
 def test_kernel():
-    var problem_shape = Index(12, 12, 20)
+    var problem_shape = (12, 12, 20)
 
     var scheduler = TileScheduler[
-        problem_shape=Index(12, 12, 20),
-        tile_shape=Index(4, 4, 4),
-        grid_shape=Index(2, 2),
+        problem_shape=(12, 12, 20),
+        tile_shape=(Int(4), Int(4), Int(4)),
+        grid_shape=(2, 2),
     ](problem_shape)
 
     var num_output_tiles = scheduler.num_output_tiles()

@@ -38,7 +38,8 @@ class GPUDiagContext:
         with GPUDiagContext() as ctx:
             stats = ctx.get_stats()
             for gpu_id, gpu_stats in stats.items():
-                print(f"GPU {gpu_id}:  {gpu_stats.memory.used_bytes} bytes used")
+                if gpu_stats.memory is not None:
+                    print(f"GPU {gpu_id}:  {gpu_stats.memory.used_bytes} bytes used")
     """
 
     def __init__(self) -> None:
@@ -82,8 +83,8 @@ class GPUDiagContext:
 
         Returns:
             A dictionary mapping GPU identifiers to their current statistics.
-            NVIDIA GPUs are prefixed with ``nv`` (e.g., ``nv0``, ``nv1``) and AMD
-            GPUs are prefixed with ``amd`` (e.g., ``amd0``, ``amd1``).
+            NVIDIA GPUs are prefixed with ``nv`` (such as ``nv0``, ``nv1``) and AMD
+            GPUs are prefixed with ``amd`` (such as ``amd0``, ``amd1``).
         """
         stats: dict[str, GPUStats] = {}
         if self._nvml is not None:

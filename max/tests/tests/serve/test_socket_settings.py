@@ -19,12 +19,11 @@ from max.serve.api_server import (
 
 
 def test_setting_throws_occupied_port() -> None:
-    # Ensure port occupied
+    # Use a free port from the OS. A fixed port can be held by another test
+    # on a shared host, and then this test checks nothing.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
-        try:
-            sock.bind(("", 8000))
-        except OSError:
-            # It's okay if it's occupied already for some reason.
-            pass
+        sock.bind(("", 0))
+        sock.listen()
+        port = sock.getsockname()[1]
         with pytest.raises(ValueError):
-            validate_port_is_free(8000)
+            validate_port_is_free(port)

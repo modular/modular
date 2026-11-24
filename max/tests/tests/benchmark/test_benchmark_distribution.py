@@ -13,11 +13,15 @@
 
 """Unit tests for benchmark_shared.distribution module."""
 
+from collections.abc import Callable
+from unittest.mock import Mock
+
 import numpy as np
 import pytest
 from max.benchmark.benchmark_shared.datasets.distribution import (
     BaseDistribution,
     Burr12Distribution,
+    CategoricalDistribution,
     ConstantDistribution,
     ContinuousDistribution,
     DiscreteDistribution,
@@ -34,14 +38,15 @@ from max.benchmark.benchmark_shared.datasets.distribution import (
 # ---------------------------------------------------------------------------
 
 
-def test_float_returns_constant() -> None:
-    dist = BaseDistribution.from_distribution_parameter(42.0)
-    assert isinstance(dist, ConstantDistribution)
-    assert dist.value == 42.0
-
-
-def test_str_float_returns_constant() -> None:
-    dist = BaseDistribution.from_distribution_parameter("42.0")
+@pytest.mark.parametrize(
+    "param",
+    [
+        pytest.param(42.0, id="float"),
+        pytest.param("42.0", id="str_float"),
+    ],
+)
+def test_float_returns_constant(param: float | str) -> None:
+    dist = BaseDistribution.from_distribution_parameter(param)
     assert isinstance(dist, ConstantDistribution)
     assert dist.value == 42.0
 
@@ -50,6 +55,110 @@ def test_returns_same_value() -> None:
     dist = ConstantDistribution(value=42.0)
     assert dist.sample_value() == 42.0
     assert dist.sample_value() == 42.0
+
+
+# ---------------------------------------------------------------------------
+# CategoricalDistribution
+# ---------------------------------------------------------------------------
+
+
+def test_categorical_empty_values_raises() -> None:
+    with pytest.raises(ValueError, match="at least one value"):
+        CategoricalDistribution(values=[], weights=[])
+
+
+def test_categorical_mismatched_lengths_raises() -> None:
+    with pytest.raises(ValueError, match="same length"):
+        CategoricalDistribution(values=[1.0, 2.0], weights=[1.0])
+
+
+def test_categorical_negative_weight_raises() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        CategoricalDistribution(values=[1.0, 2.0], weights=[1.0, -1.0])
+
+
+def test_categorical_nonfinite_weight_raises() -> None:
+    """nan passes both `w < 0` and `sum(w) <= 0`, so it must be caught here or
+    it surfaces later inside np.random.choice."""
+    for bad in (float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="finite"):
+            CategoricalDistribution(values=[1.0, 2.0], weights=[1.0, bad])
+
+
+def test_categorical_nonfinite_value_raises() -> None:
+    for bad in (float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="finite"):
+            CategoricalDistribution(values=[1.0, bad], weights=[1.0, 1.0])
+
+
+def test_categorical_all_zero_weights_raises() -> None:
+    with pytest.raises(ValueError, match="positive value"):
+        CategoricalDistribution(values=[1.0, 2.0], weights=[0.0, 0.0])
+
+
+def test_categorical_weights_summing_to_inf_still_sample() -> None:
+    """Each weight is finite, but their sum overflows; dividing by that sum
+    would send every probability to 0 and np.random.choice would reject it."""
+    np.random.seed(0)
+    dist = CategoricalDistribution(values=[1.0, 2.0], weights=[1e308, 1e308])
+    samples = [dist.sample_value() for _ in range(200)]
+    assert set(samples) == {1.0, 2.0}
+    assert 0.3 < samples.count(1.0) / len(samples) < 0.7
+
+
+def test_categorical_string_with_weights() -> None:
+    dist = BaseDistribution.from_distribution_parameter(
+        "Cat(1024:0.7, 512:0.2, 2048:0.1)"
+    )
+    assert isinstance(dist, CategoricalDistribution)
+    assert dist.values == [1024.0, 512.0, 2048.0]
+    assert dist.weights == [0.7, 0.2, 0.1]
+
+
+def test_categorical_string_lowercase() -> None:
+    dist = BaseDistribution.from_distribution_parameter("cat(1, 2, 3)")
+    assert isinstance(dist, CategoricalDistribution)
+
+
+def test_categorical_string_uniform_weights_default_to_one() -> None:
+    dist = BaseDistribution.from_distribution_parameter("Cat(512, 1024)")
+    assert isinstance(dist, CategoricalDistribution)
+    assert dist.weights == [1.0, 1.0]
+
+
+def test_categorical_string_single_value() -> None:
+    dist = BaseDistribution.from_distribution_parameter("Cat(512)")
+    assert isinstance(dist, CategoricalDistribution)
+    assert dist.sample_value() == 512.0
+
+
+def test_categorical_string_empty_entry_raises() -> None:
+    with pytest.raises(ValueError, match="Cat"):
+        BaseDistribution.from_distribution_parameter("Cat()")
+
+
+def test_categorical_string_non_numeric_raises() -> None:
+    with pytest.raises(ValueError, match="Cannot parse numeric"):
+        BaseDistribution.from_distribution_parameter("Cat(1:1, 2:notaweight)")
+
+
+def test_categorical_samples_only_given_values() -> None:
+    dist = CategoricalDistribution(values=[1.0, 2.0, 3.0], weights=[1, 1, 1])
+    samples = {dist.sample_value() for _ in range(200)}
+    assert samples <= {1.0, 2.0, 3.0}
+
+
+def test_categorical_weights_need_not_sum_to_one() -> None:
+    np.random.seed(0)
+    dist = CategoricalDistribution(values=[1.0, 2.0], weights=[9.0, 1.0])
+    samples = [dist.sample_value() for _ in range(5000)]
+    frequency_of_1 = samples.count(1.0) / len(samples)
+    assert abs(frequency_of_1 - 0.9) < 0.03
+
+
+def test_categorical_is_not_continuous_or_discrete() -> None:
+    assert not issubclass(CategoricalDistribution, ContinuousDistribution)
+    assert not issubclass(CategoricalDistribution, DiscreteDistribution)
 
 
 # ---------------------------------------------------------------------------
@@ -106,12 +215,6 @@ def test_get_value_within_bounds() -> None:
         assert 1.0 <= val <= 10.0
 
 
-def test_uniform_is_continuous() -> None:
-    dist = UniformDistribution(lower=0.0, upper=1.0)
-    assert isinstance(dist, ContinuousDistribution)
-    assert isinstance(dist, BaseDistribution)
-
-
 # ---------------------------------------------------------------------------
 # DiscreteUniformDistribution
 # ---------------------------------------------------------------------------
@@ -140,12 +243,6 @@ def test_discrete_uniform_returns_ints_within_bounds() -> None:
         val = dist.sample_value()
         assert isinstance(val, int)
         assert 1 <= val <= 10
-
-
-def test_discrete_uniform_is_discrete() -> None:
-    dist = DiscreteUniformDistribution(lower=0, upper=5)
-    assert isinstance(dist, DiscreteDistribution)
-    assert isinstance(dist, BaseDistribution)
 
 
 def test_discrete_uniform_non_int_raises() -> None:
@@ -188,12 +285,6 @@ def test_nb_samples_near_expected_mean() -> None:
     expected_mean = 1 + n * (1 - p) / p
     samples = [dist.sample_value() for _ in range(2000)]
     assert abs(np.mean(samples) - expected_mean) < 0.5
-
-
-def test_nb_is_discrete() -> None:
-    dist = NegativeBinomialDistribution(n=1, p=0.5)
-    assert isinstance(dist, DiscreteDistribution)
-    assert isinstance(dist, BaseDistribution)
 
 
 # ---------------------------------------------------------------------------
@@ -283,19 +374,19 @@ def test_unrecognized_string_raises() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_burr12_non_positive_c_raises() -> None:
-    with pytest.raises(ValueError, match="c"):
-        Burr12Distribution(c=0.0, d=1.0, scale=1.0)
-
-
-def test_burr12_non_positive_d_raises() -> None:
-    with pytest.raises(ValueError, match="d"):
-        Burr12Distribution(c=1.0, d=-0.5, scale=1.0)
-
-
-def test_burr12_non_positive_scale_raises() -> None:
-    with pytest.raises(ValueError, match="scale"):
-        Burr12Distribution(c=1.0, d=1.0, scale=0.0)
+@pytest.mark.parametrize(
+    ("kwargs", "match"),
+    [
+        pytest.param(dict(c=0.0, d=1.0, scale=1.0), "c", id="c"),
+        pytest.param(dict(c=1.0, d=-0.5, scale=1.0), "d", id="d"),
+        pytest.param(dict(c=1.0, d=1.0, scale=0.0), "scale", id="scale"),
+    ],
+)
+def test_burr12_non_positive_param_raises(
+    kwargs: dict[str, float], match: str
+) -> None:
+    with pytest.raises(ValueError, match=match):
+        Burr12Distribution(**kwargs)
 
 
 def test_burr12_string() -> None:
@@ -318,21 +409,19 @@ def test_burr12_string_missing_param_raises() -> None:
         BaseDistribution.from_distribution_parameter("Burr12(1, 2)")
 
 
-def test_burr12_sample_is_stable_for_tiny_u(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_burr12_sample_is_stable_for_tiny_u() -> None:
     # For u below ~2^-53, (1 - u) rounds to 1.0 and the naive form
     # (1 - u)**(-1/d) - 1.0 collapses to 0.0. The expm1/log1p form preserves
     # precision: the true value is ~u/d for small u.
     tiny_u = 1e-18
     d = 0.569
-    monkeypatch.setattr(np.random, "uniform", lambda low=0.0, high=1.0: tiny_u)
+    rng = Mock(uniform=lambda low=0.0, high=1.0: tiny_u)
 
     # Sanity check: the naive form is broken at this u.
     assert (1.0 - tiny_u) ** (-1.0 / d) - 1.0 == 0.0
 
     dist = Burr12Distribution(c=2.389, d=d, scale=214.8)
-    sample = dist.sample_value()
+    sample = dist.sample_value(rng)
     assert sample > 0.0
     # Expected: scale * (u/d)**(1/c). Within 1% of the analytic small-u limit.
     expected = dist.scale * (tiny_u / d) ** (1.0 / dist.c)
@@ -366,3 +455,94 @@ def test_discrete_distributions_are_discrete() -> None:
         NegativeBinomialDistribution,
     ):
         assert issubclass(dist_cls, DiscreteDistribution)
+
+
+# ---------------------------------------------------------------------------
+# Random stream selection
+# ---------------------------------------------------------------------------
+
+
+def _burr12_from_global_uniform() -> float:
+    u = np.random.uniform(low=0.0, high=1.0)
+    return float(214.8 * np.expm1(-np.log1p(-u) / 0.569) ** (1.0 / 2.389))
+
+
+# Each distribution that draws, paired with the np.random call it must match
+# when it samples from the global stream.
+_DRAWING_DISTRIBUTIONS = [
+    pytest.param(
+        CategoricalDistribution(
+            values=[1.0, 2.0, 3.0], weights=[1.0, 1.0, 2.0]
+        ),
+        lambda: float(np.random.choice([1.0, 2.0, 3.0], p=[0.25, 0.25, 0.5])),
+        id="categorical",
+    ),
+    pytest.param(
+        NormalDistribution(mean=100.0, std=5.0),
+        lambda: float(np.random.normal(loc=100.0, scale=5.0)),
+        id="normal",
+    ),
+    pytest.param(
+        UniformDistribution(lower=1.0, upper=9.0),
+        lambda: float(np.random.uniform(low=1.0, high=9.0)),
+        id="uniform",
+    ),
+    pytest.param(
+        GammaDistribution(shape=2.0, scale=3.0),
+        lambda: float(np.random.gamma(shape=2.0, scale=3.0)),
+        id="gamma",
+    ),
+    pytest.param(
+        LogNormalDistribution(mean=1.0, std=0.5),
+        lambda: float(np.random.lognormal(mean=1.0, sigma=0.5)),
+        id="lognormal",
+    ),
+    pytest.param(
+        Burr12Distribution(c=2.389, d=0.569, scale=214.8),
+        _burr12_from_global_uniform,
+        id="burr12",
+    ),
+    pytest.param(
+        DiscreteUniformDistribution(lower=1, upper=1000),
+        lambda: int(np.random.randint(low=1, high=1001)),
+        id="discrete_uniform",
+    ),
+    pytest.param(
+        NegativeBinomialDistribution(n=3, p=0.2),
+        lambda: int(np.random.negative_binomial(n=3, p=0.2)) + 1,
+        id="negative_binomial",
+    ),
+]
+
+
+@pytest.mark.parametrize(("dist", "global_draw"), _DRAWING_DISTRIBUTIONS)
+def test_default_stream_matches_seeded_global_numpy_draws(
+    dist: BaseDistribution, global_draw: Callable[[], float]
+) -> None:
+    np.random.seed(1234)
+    expected = [global_draw() for _ in range(8)]
+
+    np.random.seed(1234)
+    assert [dist.sample_value() for _ in range(8)] == expected
+
+
+@pytest.mark.parametrize(
+    "dist",
+    [pytest.param(p.values[0], id=p.id) for p in _DRAWING_DISTRIBUTIONS],
+)
+def test_explicit_rng_is_seeded_and_independent_of_global_stream(
+    dist: BaseDistribution,
+) -> None:
+    np.random.seed(0)
+    rng = np.random.RandomState(7)
+    expected = [dist.sample_value(rng) for _ in range(8)]
+    # Draws from rng must not advance the global stream.
+    assert np.random.random() == np.random.RandomState(0).random()
+
+    np.random.seed(99)
+    rng = np.random.RandomState(7)
+    actual = []
+    for _ in range(8):
+        actual.append(dist.sample_value(rng))
+        np.random.random()
+    assert actual == expected

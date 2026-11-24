@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from ._cache_busting import CacheBustingBuffer, CACHE_BUST_BYTES
-from ._measure import correlation, cosine, kl_div
+from ._measure import cosine, kl_div
 from ._testing import (
     assert_almost_equal,
     assert_equal,
@@ -25,6 +25,7 @@ from ._utils import (
     Timer,
     arg_parse,
     bench_compile_time,
+    coprime_multiplier,
     get_defined_shape,
     human_readable_size,
     init_vector_launch,

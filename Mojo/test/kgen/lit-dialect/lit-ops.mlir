@@ -16,6 +16,18 @@ lit.struct.decl @FooStruct<size, dtype: dtype, ty: type> {
 lit.struct.decl @EmptyStruct {
 }
 
+// A case's payload types are absent until they are resolved.
+// CHECK-LABEL: lit.struct.decl @Color {
+// CHECK-NEXT: lit.enum.case red : []{{$}}
+// CHECK-NEXT: lit.enum.case rgb : [index, index] <docString = #doc_string>
+// CHECK-NEXT: lit.enum.case unresolved{{$}}
+// CHECK-NEXT: } <isEnum>
+lit.struct.decl @Color {
+  lit.enum.case red : []
+  lit.enum.case rgb : [index, index] <docString = #lit.doc.string<"Red, green.">>
+  lit.enum.case unresolved
+} <isEnum>
+
 // CHECK-LABEL: lit.struct.decl @ValueType
 lit.struct.decl @ValueType
  // CHECK-NEXT: move :() -> () @ValueType::@__moveinit__
@@ -28,14 +40,14 @@ lit.struct.decl @ValueType
 kgen.generator @struct_insert(%a: index, %struct: !lit.struct<@FooStruct<2, :dtype f32, :type i32>>) {
   // CHECK: lit.struct.insert %{{.*}}, %{{.*}}[a] : index into !lit.struct<@FooStruct
   %0 = lit.struct.insert %a, %struct[a] : index into !lit.struct<@FooStruct<2, :dtype f32, :type i32>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @struct_extract
 kgen.generator @struct_extract(%struct: !lit.struct<@FooStruct<2, :dtype f32, :type i32>>) {
   // CHECK: lit.struct.extract %{{.*}}[a] : index from !lit.struct<@FooStruct
   %0 = lit.struct.extract %struct[a] : index from !lit.struct<@FooStruct<2, :dtype f32, :type i32>>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.fn @calls[imm a, mut b]
@@ -44,7 +56,7 @@ lit.fn @calls[imm a, mut b](%arg0: !lit.generator<[2]() -> ()>) {
   lit.call @calls[imm a, mut b]() : !lit.generator<[2]() -> ()>
   // CHECK: lit.call_indirect %arg0[imm a, mut b]() : !lit.generator<[2]() -> ()>
   lit.call_indirect %arg0[imm a, mut b]() : !lit.generator<[2]() -> ()>
-  kgen.return
+  hlcf.return
 }
 
 // One implementation of dynamic_thing
@@ -55,14 +67,14 @@ lit.fn @vardecl<ty : dtype>(%x : i32) {
 
   // CHECK-NEXT: %origin = lit.var.decl "origin" var : !lit.ref<index, mut lt>
   %origin = lit.var.decl "origin" var : !lit.ref<index, mut lt>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7>
 lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7> {
   // CHECK-NEXT: lit.fn @foo() {
   lit.fn @foo() {
-    kgen.return
+    hlcf.return
   }
 
   // CHECK: %size = lit.var.decl "size" var : !lit.ref<scalar<ty>, mut life>
@@ -72,7 +84,7 @@ lit.struct.decl @SomeStruct<ty: dtype, n: scalar<si32> = 7> {
   // CHECK-NEXT: kgen.param.constant: dtype = <ty>
   lit.fn @getMyType() -> !kgen.dtype {
     %dtype = kgen.param.constant: dtype = <ty>
-    kgen.return %dtype : !kgen.dtype
+    hlcf.return %dtype : !kgen.dtype
   }
 }
 
@@ -89,9 +101,9 @@ lit.struct.decl @struct_param_passing_kinds<
 // CHECK-LABEL: lit.trait.decl @T {
 lit.trait.decl @T {
   // CHECK: lit.fn @f{{.*}}
-  // CHECK-NEXT:  kgen.unreachable
+  // CHECK-NEXT:  hlcf.unreachable
   lit.fn @f() -> !kgen.none {
-    kgen.unreachable
+    hlcf.unreachable
   }
 }
 
@@ -117,8 +129,8 @@ lit.fn @ref_immut<life: origin<true>>(%ref1: !lit.ref<@MyStruct, mut life>)
  -> !lit.ref<@MyStruct, muttoimm life> {
   // CHECK: %0 = lit.ref.immut %ref1 : <!lit.struct<@MyStruct>, mut life>
   %ref2 = lit.ref.immut %ref1: <!lit.struct<@MyStruct>, mut life>
-  // CHECK: kgen.return %0 : !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
-  kgen.return %ref2: !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
+  // CHECK: hlcf.return %0 : !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
+  hlcf.return %ref2: !lit.ref<!lit.struct<@MyStruct>, muttoimm life>
 }
 
 lit.fn @ref_upcast<life: origin<true>>(
@@ -128,8 +140,8 @@ lit.fn @ref_upcast<life: origin<true>>(
   %ref2 = lit.ref.upcast %ref1
     : !lit.ref<!lit.struct<@MyStruct>, mut life>
     -> !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
-  // CHECK: kgen.return %0 : !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
-  kgen.return %ref2
+  // CHECK: hlcf.return %0 : !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
+  hlcf.return %ref2
     : !lit.ref<!lit.struct<@MyStruct>, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
 }
 
@@ -142,7 +154,7 @@ lit.fn @ref_upcast_field_to_subtree<life: origin<true>>(
   %ref2 = lit.ref.upcast %ref1
     : !lit.ref<index, mut #lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "_memory">>
     -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
-  kgen.return %ref2
+  hlcf.return %ref2
     : !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
 }
 
@@ -154,7 +166,7 @@ lit.fn @ref_upcast_field_subtree_to_parent<life: origin<true>>(
   %ref2 = lit.ref.upcast %ref1
     : !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "f"> : !lit.origin<true>>>
     -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
-  kgen.return %ref2
+  hlcf.return %ref2
     : !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
 }
 
@@ -166,7 +178,7 @@ lit.fn @ref_upcast_nested_to_mid_subtree<life: origin<true>>(
   %ref2 = lit.ref.upcast %ref1
     : !lit.ref<index, mut #lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>, "z">>
     -> !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>>>
-  kgen.return %ref2
+  hlcf.return %ref2
     : !lit.ref<index, mut #lit.origin.subtree<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>>>
 }
 
@@ -177,7 +189,7 @@ lit.fn @ref_upcast_nested_to_root_subtree<life: origin<true>>(
   %ref2 = lit.ref.upcast %ref1
     : !lit.ref<index, mut #lit.origin.field<#lit.origin.field<#kgen.param.decl.ref<"life"> : !lit.origin<true>, "y"> : !lit.origin<true>, "z">>
     -> !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
-  kgen.return %ref2
+  hlcf.return %ref2
     : !lit.ref<index, mut #lit.origin.subtree<#kgen.param.decl.ref<"life"> : !lit.origin<true>>>
 }
 
@@ -185,8 +197,8 @@ lit.fn @ref_pointer<life: origin<true>, ilife: origin<false>>
      (%ref1: !lit.ref<@MyStruct, mut life>) {
   // CHECK: %0 = lit.ref.to_pointer %ref1 : <!lit.struct<@MyStruct>, mut life>
   %ptr = lit.ref.to_pointer %ref1: <!lit.struct<@MyStruct>, mut life>
-  // CHECK: %1 = lit.ref.from_pointer %0 : <!lit.struct<@MyStruct>, imm ilife>
-  %ref2 = lit.ref.from_pointer %ptr: !lit.ref<!lit.struct<@MyStruct>, imm ilife>
+  // CHECK: %1 = lit.ref.from_pointer %0 "reference value" : <!lit.struct<@MyStruct>, imm ilife>
+  %ref2 = lit.ref.from_pointer %ptr "reference value" : !lit.ref<!lit.struct<@MyStruct>, imm ilife>
 
   // CHECK: %2 = lit.ref.to_pointer %1 : <!lit.struct<@MyStruct>, imm ilife>
   %ptr2 = lit.ref.to_pointer %ref2: !lit.ref<!lit.struct<@MyStruct>, imm ilife>
@@ -206,25 +218,55 @@ lit.fn @ref_kgen_ptr<life: origin<true>, ilife: origin<false>>
 
 // CHECK-LABEL: @ref_pack_from_pointer_pack
 kgen.generator @ref_pack_from_pointer_pack(
-    %pack: !kgen.struct<(pointer<index, 4>, pointer<f32, 4>) isParamPack>) {
-  // CHECK: %0 = lit.ref.pack.from_pointer_pack %arg0 : <(pointer<index, 4>, pointer<f32, 4>) isParamPack> -> <:param_list<type> [index, f32], imm #lit.any.origin, 4>
+    %pack: !kgen.struct<(pointer<index, 4>, pointer<f32, 4>)>) {
+  // CHECK: %0 = lit.ref.pack.from_pointer_pack %arg0 : <(pointer<index, 4>, pointer<f32, 4>)> -> <:param_list<type> [index, f32], imm #lit.any.origin, 4>
   %0 = lit.ref.pack.from_pointer_pack %pack
-    : !kgen.struct<(pointer<index, 4>, pointer<f32, 4>) isParamPack>
+    : !kgen.struct<(pointer<index, 4>, pointer<f32, 4>)>
    -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin, 4>
-  kgen.return
+  hlcf.return
 }
 
-// CHECK-LABEL: lit.fn @nested_function_region
-lit.fn @nested_function_region() {
-  // CHECK-NEXT: hlcf.loop
-  hlcf.loop {
-    // CHECK-NEXT: lit.fn nested_fn()
-    lit.fn nested_fn() {
-      kgen.return
-    }
-    hlcf.continue
-  }
-  kgen.return
+// CHECK-LABEL: @ref_pack_concat
+kgen.generator @ref_pack_concat<Ts: param_list<type>>(
+    %a: !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+    %b: !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>) {
+  // CHECK: %0 = lit.ref.pack.concat(%arg0, %arg1) : !lit.ref.pack<:param_list<type> [index], imm #lit.any.origin>, !lit.ref.pack<:param_list<type> Ts, imm #lit.any.origin> -> <:param_list<type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+  %0 = lit.ref.pack.concat(%a, %b)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], imm #lit.any.origin>,
+      !lit.ref.pack<:param_list<!kgen.type> Ts, imm #lit.any.origin>
+   -> !lit.ref.pack<:param_list<!kgen.type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, imm #lit.any.origin>
+  hlcf.return
+}
+
+// The producer rebinds each operand to the common origin of the result.
+// CHECK-LABEL: @ref_pack_concat_union_origin
+kgen.generator @ref_pack_concat_union_origin<a: origin<true>, b: origin<true>, Ts: param_list<type>>(
+    %x: !lit.ref.pack<:param_list<!kgen.type> [index], mut a>,
+    %y: !lit.ref.pack<:param_list<!kgen.type> Ts, mut b>) {
+  // CHECK: %[[X:.*]] = kgen.rebind %arg0 : !lit.ref.pack<:param_list<type> [index], mut a> to !lit.ref.pack<:param_list<type> [index], mut {a, b}>
+  // CHECK: %[[Y:.*]] = kgen.rebind %arg1 : !lit.ref.pack<:param_list<type> Ts, mut b> to !lit.ref.pack<:param_list<type> Ts, mut {a, b}>
+  // CHECK: lit.ref.pack.concat(%[[X]], %[[Y]]) : !lit.ref.pack<:param_list<type> [index], mut {a, b}>, !lit.ref.pack<:param_list<type> Ts, mut {a, b}> -> <:param_list<type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, mut {a, b}>
+  %0 = kgen.rebind %x : !lit.ref.pack<:param_list<!kgen.type> [index], mut a> to !lit.ref.pack<:param_list<!kgen.type> [index], mut {a, b}>
+  %1 = kgen.rebind %y : !lit.ref.pack<:param_list<!kgen.type> Ts, mut b> to !lit.ref.pack<:param_list<!kgen.type> Ts, mut {a, b}>
+  %2 = lit.ref.pack.concat(%0, %1)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], mut {a, b}>,
+      !lit.ref.pack<:param_list<!kgen.type> Ts, mut {a, b}>
+   -> !lit.ref.pack<:param_list<!kgen.type> #kgen.param_list.concat<#kgen.param_list<[index], Ts> : !kgen.param_list<param_list<type>>>, mut {a, b}>
+  hlcf.return
+}
+
+// The verifier compares origins canonically. Thus, the order of the members
+// of a union is not important.
+// CHECK-LABEL: @ref_pack_concat_union_order
+kgen.generator @ref_pack_concat_union_order<a: origin<true>, b: origin<true>>(
+    %x: !lit.ref.pack<:param_list<!kgen.type> [index], mut {b, a}>,
+    %y: !lit.ref.pack<:param_list<!kgen.type> [f32], mut {a, b}>) {
+  // CHECK: lit.ref.pack.concat(%arg0, %arg1)
+  %0 = lit.ref.pack.concat(%x, %y)
+    : !lit.ref.pack<:param_list<!kgen.type> [index], mut {b, a}>,
+      !lit.ref.pack<:param_list<!kgen.type> [f32], mut {a, b}>
+   -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], mut {a, b}>
+  hlcf.return
 }
 
 // -----
@@ -233,7 +275,7 @@ lit.fn @nested_function_region() {
 lit.struct.decl @A {
   // CHECK-NEXT: lit.fn @foo
   lit.fn @foo(%self: !lit.struct<@A>) {
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -245,7 +287,7 @@ lit.struct.decl @B {
     kgen.call_param[(!lit.struct<@A>) -> (): @A::@foo](%a)
 
     kgen.call @A::@foo(%a) : (!lit.struct<@A>) -> ()
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -255,7 +297,7 @@ lit.fn @main(%a: !lit.struct<@A>, %b: !lit.struct<@B>) {
   kgen.call_param[(!lit.struct<@B>, !lit.struct<@A>) -> (): @B::@foo](%b, %a)
   // CHECK-NEXT: constant: (!lit.struct<@A>) -> () = <@A::@foo>
   %0 = kgen.param.constant: (!lit.struct<@A>) -> () = <@A::@foo>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.struct.decl @CrazyParams<*"m`": origin<false>> {
@@ -273,7 +315,7 @@ lit.struct.decl @A<N> {
   // CHECK-NEXT: lit.fn @foo<M>
   lit.fn @foo<M>(%self: !lit.struct<@A<N>>) -> index {
     %0 = kgen.param.constant = <add(N, M)>
-    kgen.return %0 : index
+    hlcf.return %0 : index
   }
 }
 
@@ -281,7 +323,7 @@ lit.struct.decl @A<N> {
 lit.fn @main(%a: !lit.struct<@A<1>>) {
   // CHECK-NEXT: call_param[(!lit.struct<@A<1>>) -> index: @A::@foo<1, 2>]
   %- = kgen.call_param[(!lit.struct<@A<1>>) -> index: @A::@foo<1, 2>](%a)
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.struct.decl @NoFields {
@@ -297,15 +339,15 @@ lit.fn @raises_error(%raise: !kgen.scalar<bool>, %err: !lit.struct<@Error>, %val
   hlcf.if %raise {
     // CHECK: %[[ERR:.*]] = kgen.variant.create %err
     %result = kgen.variant.create %err, 0 : <@Error, @Int>
-    // CHECK: kgen.return %[[ERR]]
-    kgen.return %result : !kgen.variant<@Error, @Int>
+    // CHECK: hlcf.return %[[ERR]]
+    hlcf.return %result : !kgen.variant<@Error, @Int>
   } else {
     hlcf.yield
   }
   // CHECK: %[[VALUE:.*]] = kgen.variant.create %value
   %result = kgen.variant.create %value, 1 : <@Error, @Int>
-  // CHECK: kgen.return %[[VALUE]]
-  kgen.return %result : !kgen.variant<@Error, @Int>
+  // CHECK: hlcf.return %[[VALUE]]
+  hlcf.return %result : !kgen.variant<@Error, @Int>
 }
 
 // CHECK-LABEL: @try_op
@@ -327,7 +369,7 @@ lit.fn @try_op(%err: !lit.struct<@Error>, %int: !lit.struct<@Int>) -> !lit.struc
     // CHECK-NEXT: lit.try.yield
     lit.try.yield
   }
-  kgen.return %int : !lit.struct<@Int>
+  hlcf.return %int : !lit.struct<@Int>
 }
 
 // CHECK-LABEL: @try_in_loop
@@ -371,8 +413,8 @@ lit.fn @try_in_loop(%cond: !kgen.scalar<bool>) {
   } else {
     lit.loop.yield
   }
-  // CHECK: kgen.return
-  kgen.return
+  // CHECK: hlcf.return
+  hlcf.return
 }
 
 // -----
@@ -389,7 +431,7 @@ lit.file_module @module {
   lit.struct.decl @B {
     // CHECK-NEXT: lit.fn @foo(%{{.*}}: !B, %{{.*}}: !kgen.pointer<!A>
     lit.fn @foo(%self: !lit.struct<@module::@B>, %a: !kgen.pointer<@module::@A>) {
-      kgen.return
+      hlcf.return
     }
   }
 }
@@ -398,7 +440,7 @@ lit.file_module @module {
 lit.fn @main(%a: !kgen.pointer<@module::@A>, %b: !lit.struct<@module::@B>) {
   // CHECK-NEXT: call_param[(!B, !kgen.pointer<!A>) -> (): @module::@B::@foo]
   kgen.call_param[(!lit.struct<@module::@B>, !kgen.pointer<@module::@A>) -> (): @module::@B::@foo](%b, %a)
-  kgen.return
+  hlcf.return
 }
 
 lit.struct.decl @Error {}
@@ -470,13 +512,13 @@ lit.struct.decl @GiveMeDefault {
 // CHECK-LABEL: lit.fn @default_struct
 // CHECK-SAME: !lit.struct<@GiveMeDefault> = {1}
 lit.fn @default_struct(%arg0: !lit.struct<@GiveMeDefault> = {1}) {
-  kgen.return
+  hlcf.return
 }
 
 
 lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.param<ty>> {
   lit.fn @some_func() {
-    kgen.return
+    hlcf.return
   }
 }
 
@@ -484,7 +526,7 @@ lit.struct.decl @OuterParams<ty: type, fn: () -> !kgen.param<ty>> {
 lit.fn @ref_it() {
   // CHECK: F: <type, () -> !kgen.param<*(1,0)>>() -> () = <@OuterParams::@some_func>
   kgen.param.declare F: <type, () -> !kgen.param<*(1,0)>>() -> () = <@OuterParams::@some_func>
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: lit.struct.decl @FuncParamStruct
@@ -543,14 +585,14 @@ lit.fn @lit_loop() {
     lit.loop.yield
   } {unrollLevel = #hlcf<unroll_level full>}
 
-  kgen.return
+  hlcf.return
 }
 
 // -----
 
 lit.fn @load_consume(%arg0 : !lit.ref<index, mut #lit.any.origin>) -> index {
   %0 = lit.load.consume %arg0 : !lit.ref<index, mut #lit.any.origin>
-  kgen.return %0 : index
+  hlcf.return %0 : index
 }
 
 // -----
@@ -568,7 +610,7 @@ lit.fn @origin_callee<lt: !lit.origin<false>>(%x: !lit.ref<index, mut lt>) -> ()
 kgen.generator @bind_params_origin_unbound(%fn: !FnWithOrigin) {
   // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>>(!lit.ref<index, imm *(0,0)>) -> ()>, ? to !lit.generator<<origin<false>>
   %partial = lit.bind_params %fn : !FnWithOrigin, ? to !FnWithOrigin
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @bind_params_origin_bound
@@ -577,14 +619,14 @@ kgen.generator @bind_params_origin_bound(%fn: !FnWithOrigin, %x: !lit.ref<index,
   %bound = lit.bind_params %fn : !FnWithOrigin, :origin<false> #lit.any.origin to !FnBound
   // CHECK: lit.call_indirect %{{.*}}(%{{.*}}) : !lit.generator<(!lit.ref<index, imm #lit.any.origin>) -> ()>
   lit.call_indirect %bound(%x) : !FnBound
-  kgen.return
+  hlcf.return
 }
 
 // CHECK-LABEL: @bind_params_origin_discharged
 kgen.generator @bind_params_origin_discharged(%fn: !FnWithOriginAndConstraints) {
   // CHECK: lit.bind_params %{{.*}} : !lit.generator<<origin<false>, {{.*}}>(!lit.ref<index, imm *(0,0)>) -> ()>, :origin<false> #lit.any.origin | "10" to !lit.generator<<{<true, {{.*}}>}>(!lit.ref<index, imm #lit.any.origin>) -> ()>
   %bound = lit.bind_params %fn : !FnWithOriginAndConstraints, :origin<false> #lit.any.origin | "10" to !FnOriginBoundOneConstraint
-  kgen.return
+  hlcf.return
 }
 
 // -----
@@ -607,3 +649,21 @@ lit.fn @has_body_constraints<
   lit.return %none : !kgen.none
   lit.end_fn
 }
+
+// -----
+
+// CHECK-LABEL: lit.package namespace @ns {
+// CHECK-NEXT: lit.package @sub {
+lit.package namespace @ns {
+  lit.package @sub {
+  }
+}
+
+// CHECK-LABEL: lit.package @pkg {
+lit.package @pkg {
+}
+
+// CHECK-LABEL: lit.package @dependent {
+// CHECK-NEXT: } <dependencies = [@pkg, @ns::@sub]>
+lit.package @dependent {
+} <dependencies = #kgen<link.dependencies[@pkg, @ns::@sub]>>

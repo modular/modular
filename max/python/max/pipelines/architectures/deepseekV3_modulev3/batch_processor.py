@@ -15,16 +15,15 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
 
 import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.comm.ep import EPCommInitializer
-from max.nn.kv_cache import KVCacheInputsInterface
+from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
 from max.pipelines.context import TextContext
+from max.pipelines.lib.ep_initializer import EPInitializerLike
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -36,9 +35,7 @@ from max.pipelines.lib.utils import compute_data_parallel_splits
 from ..deepseekV2_modulev3.batch_processor import (
     DeepseekV2ModuleV3BatchProcessor,
 )
-
-if TYPE_CHECKING:
-    from .model import DeepseekV3Inputs
+from .inputs import DeepseekV3Inputs
 
 
 class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
@@ -48,7 +45,7 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
-        self._ep_comm_initializer: EPCommInitializer | None = None
+        self._ep_comm_initializer: EPInitializerLike | None = None
         dp_degree = runtime.pipeline_config.model.data_parallel_degree
         self._batch_context_lengths = [
             Buffer.zeros(shape=[1], dtype=DType.int32)
@@ -59,7 +56,7 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         )
 
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: EPInitializerLike | None
     ) -> None:
         """Wires EP buffers created during model ``load_model``."""
         self._ep_comm_initializer = initializer
@@ -145,10 +142,8 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         tokens: Buffer,
         input_row_offsets: Buffer,
         return_n_logits: Buffer,
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer],
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer],
     ) -> DeepseekV3Inputs:
-        from .model import DeepseekV3Inputs
-
         return DeepseekV3Inputs(
             tokens=tokens,
             input_row_offsets=input_row_offsets,
@@ -161,7 +156,7 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
         """Packs the ragged batch.
@@ -170,8 +165,6 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         device-0 batch plus the CPU ``data_parallel_splits`` boundaries the
         forward splits it by.
         """
-        from .model import DeepseekV3Inputs
-
         assert kv_cache_inputs is not None
         device0 = self.runtime.devices[0]
         dp_degree = self._dp_degree

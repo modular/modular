@@ -7,6 +7,12 @@ _NO_ASAN = [
     "test_assertion.mojo",
 ]
 
+# Crash test that times out in external CI after the crash handler prints its
+# trace. Temporary, until crash-test slowness is fixed.
+_SKIP_EXTERNAL_CI = [
+    "test_assert_aborts.mojo",
+]
+
 _PLATFORM_CONSTRAINTS = {
     src: select({
         "//:asan": ["@platforms//:incompatible"],
@@ -23,6 +29,7 @@ _PLATFORM_CONSTRAINTS = {
             "--debug-level",
             "full",
         ],
+        tags = ["skip-external-ci"] if src in _SKIP_EXTERNAL_CI else [],
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
             "@mojo//:std",

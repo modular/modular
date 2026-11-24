@@ -145,11 +145,11 @@ def test_var_implicit() raises:
     _ = y
 
 
-# --- Move capture: var name^ ---
+# --- Transfer capture: var name^ ---
 
 
-def test_move_capture() raises:
-    """Move capture: `var data^` transfers ownership into closure."""
+def test_transfer_capture() raises:
+    """Transfer capture: `var data^` transfers ownership into closure."""
     var data: List[Int] = [1, 2, 3]
 
     def take_data() {var data^} -> Int:
@@ -363,8 +363,8 @@ def main() raises:
     test_var_snapshot()
     test_var_implicit()
 
-    # Move capture
-    test_move_capture()
+    # Transfer capture
+    test_transfer_capture()
 
     # Copyable closures
     test_var_caret_copyable()

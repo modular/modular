@@ -21,9 +21,8 @@ from std.io.io import _printf
 from std.os import abort
 from std.reflection.type_info import _unqualified_type_name
 from std.sys import size_of
-from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
-from std.ffi import CStringSlice
+from std.ffi import CStringSpan, c_char
 
 from std.bit import byte_swap
 from std.memory import bitcast, unsafe_memcpy
@@ -48,16 +47,16 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
         self.at_element_start = True
         self.sep = sep
 
-    @always_inline
+    @inline(.always)
     def next_element(mut self):
         """Mark the start of the next element in the sequence."""
         self.at_element_start = True
 
-    @always_inline
-    def write_string(mut self, string: StringSlice):
+    @inline(.always)
+    def write_string(mut self, string: StringSpan):
         self.write(string)
 
-    @always_inline
+    @inline(.always)
     def write[*Ts: Writable](mut self, *args: *Ts):
         if self.at_element_start:
             if not self.is_first_element:
@@ -69,7 +68,7 @@ struct _SequenceWriter[W: Writer, origin: MutOrigin](Movable, Writer):
             args[i].write_to(self.writer[])
 
 
-@always_inline
+@inline(.always)
 def write_sequence_to[
     W: Writer
 ](
@@ -114,7 +113,7 @@ def write_sequence_to[
     writer.write_string(end)
 
 
-@always_inline
+@inline(.always)
 def write_sequence_to[
     *Ts: Writable,
 ](
@@ -143,7 +142,7 @@ def write_sequence_to[
     args._write_to(writer, start=start, end=end, sep=sep)
 
 
-@always_inline
+@inline(.always)
 def write_sequence_to[
     size: Int,
 ](
@@ -189,7 +188,7 @@ def write_sequence_to[
 struct TypeNames[*Ts: AnyType](ImplicitlyCopyable, Writable):
     """A wrapper type that writes a comma-separated list of type names."""
 
-    @always_inline
+    @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         def elements[i: Int](mut writer: Some[Writer]) {}:
             writer.write_string(_unqualified_type_name[Self.Ts[i]]())
@@ -199,13 +198,13 @@ struct TypeNames[*Ts: AnyType](ImplicitlyCopyable, Writable):
         )
 
 
-@always_inline
+@inline(.always)
 def write_repr_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
     t.write_repr_to(writer)
 
 
-@always_inline
+@inline(.always)
 def write_to[T: AnyType](t: T, mut writer: Some[Writer]):
     comptime assert conforms_to(T, Writable), "T must be Writable"
     t.write_to(writer)
@@ -226,7 +225,7 @@ struct Repr[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
 
     var _value: Pointer[Self.T, Self.o]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, ref[Self.o] value: Self.T):
         """Constructs a `Repr` wrapper around a reference to a value.
 
@@ -235,7 +234,7 @@ struct Repr[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
         """
         self._value = Pointer(to=value)
 
-    @always_inline
+    @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         """Writes the repr representation of the wrapped value.
 
@@ -263,7 +262,7 @@ struct Named[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
     var _name: StaticString
     var _value: Pointer[Self.T, Self.o]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, name: StaticString, ref[Self.o] value: Self.T):
         """Constructs a `Named` wrapper for a field.
 
@@ -274,7 +273,7 @@ struct Named[T: Writable, o: ImmOrigin](ImplicitlyCopyable, Writable):
         self._name = name
         self._value = Pointer(to=value)
 
-    @always_inline
+    @inline(.always)
     def write_to(self, mut writer: Some[Writer]):
         """Writes the named field in the format `name=value`.
 
@@ -304,7 +303,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
 
     var _writer: Pointer[Self.T, Self.o]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, ref[Self.o] writer: Self.T, name: StaticString):
         """Constructs a `FormatStruct` and writes the struct name.
 
@@ -315,7 +314,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         writer.write_string(name)
         self._writer = Pointer(to=writer)
 
-    @always_inline
+    @inline(.always)
     def params[*Ts: Writable](self, *args: *Ts) -> ref[self] Self:
         """Writes type parameters in bracket notation `[param1, param2, ...]`.
 
@@ -335,7 +334,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         args._write_to(self._writer[], start="[", end="]")
         return self
 
-    @always_inline
+    @inline(.always)
     def fields[*Ts: Writable](self, *args: *Ts):
         """Writes field values in parentheses `(field1, field2, ...)`.
 
@@ -352,7 +351,7 @@ struct FormatStruct[T: Writer, o: MutOrigin](Movable):
         comptime assert Ts.all_conforms_to[Writable]()  # satisfy where clause.
         args._write_to(self._writer[], start="(", end=")")
 
-    @always_inline
+    @inline(.always)
     def fields(self, fields_fn: Some[def[T: Writer](mut T)]):
         """Writes field values in parentheses using a callback function.
 
@@ -385,11 +384,11 @@ comptime FLUSHING_WRITE_BUFFER_BYTES = get_defined_int[
 """The default capacity of a `_FlushingWriteBuffer`."""
 
 
-@no_inline
+@inline(.never)
 def _fixed_buffer_exceeded() -> Never:
     """Reports a `_FixedWriteBuffer` overflow and aborts.
 
-    Kept separate from its `@always_inline` callers (and shared between them)
+    Kept separate from its `@inline(.always)` callers (and shared between them)
     so this rarely-taken path doesn't duplicate its `_printf`/`abort` sequence
     at every `_FixedWriteBuffer` write site.
     """
@@ -416,8 +415,8 @@ struct _FixedWriteBuffer(Writer):
         self._data = {uninitialized = True}
         self._pos = 0
 
-    @always_inline
-    def write_string(mut self, string: StringSlice):
+    @inline(.always)
+    def write_string(mut self, string: StringSpan):
         var len_bytes = string.byte_length()
         if len_bytes + self._pos > FIXED_WRITE_BUFFER_BYTES:
             _fixed_buffer_exceeded()
@@ -430,17 +429,16 @@ struct _FixedWriteBuffer(Writer):
 
     def nul_terminate(
         mut self,
-    ) -> CStringSlice[origin_of(self).unsafe_mut_cast[False]()]:
+    ) -> CStringSpan[origin_of(self)]:
         if self._pos + 1 > FIXED_WRITE_BUFFER_BYTES:
             _fixed_buffer_exceeded()
         self._data.unsafe_ptr()[unsafe_offset=self._pos] = 0
         self._pos += 1
 
-        return CStringSlice(
+        return CStringSpan(
             unsafe_from_ptr=self._data.unsafe_ptr()
-            .unsafe_bitcast[Int8]()
-            .as_imm()
-            .unsafe_origin_cast[ImmOrigin(origin_of(self))]()
+            .unsafe_bitcast[c_char]()
+            .unsafe_origin_cast[origin_of(self)]()
         )
 
 
@@ -469,7 +467,7 @@ struct _FlushingWriteBuffer[
 
     def flush(mut self):
         self.writer[].write_string(
-            StringSlice(
+            StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=self.data.unsafe_ptr(), length=self.pos
                 )
@@ -477,7 +475,7 @@ struct _FlushingWriteBuffer[
         )
         self.pos = 0
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         var len_bytes = string.byte_length()
         # If span is too large to fit in buffer, write directly and return
         if len_bytes > Int(Self.capacity_bytes):
@@ -509,7 +507,7 @@ struct _TotalWritableBytes(Writer):
     ](
         out self,
         values: Span[T, _],
-        sep: StringSlice[origin] = StringSlice[origin](),
+        sep: StringSpan[origin] = StringSpan[origin](),
     ):
         self.size = 0
         var length = len(values)
@@ -520,11 +518,11 @@ struct _TotalWritableBytes(Writer):
             for i in range(1, length):
                 self.write(sep, values[i])
 
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         self.size += string.byte_length()
 
 
-def _ord_ascii(s: StringSlice) -> UInt8:
+def _ord_ascii(s: StringLiteral[_]) -> UInt8:
     return UInt8(ord(s))
 
 
@@ -537,7 +535,7 @@ comptime _hex_table = SIMD[.uint8, 16](
 # fmt: on
 
 
-@always_inline
+@inline(.always)
 def _hex_digits_to_hex_chars(
     decimal: Scalar,
 ) -> SIMD[.uint8, size_of[decimal.dtype]() * 2]:
@@ -548,12 +546,11 @@ def _hex_digits_to_hex_chars(
     ```mojo
     from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
-    from std.utils import StringSlice
     from std.format._utils import _hex_digits_to_hex_chars
 
     def main() raises:
         var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-        comptime S = StringSlice[origin_of(items)]
+        comptime S = StringSpan[origin_of(items)]
         var ptr = items.unsafe_ptr()
         ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
         assert_equal("0001f525", S(unsafe_from_utf8=Span(unsafe_ptr=ptr, length=8)))
@@ -571,7 +568,7 @@ def _hex_digits_to_hex_chars(
     )
 
 
-@always_inline
+@inline(.always)
 def _write_hex[
     *, amnt_hex_bytes: Int
 ](mut writer: Some[Writer], decimal: Scalar):
@@ -582,7 +579,6 @@ def _write_hex[
     ```mojo
     from std.memory import unsafe_memset_zero
     from std.testing import assert_equal
-    from std.utils import StringSlice
     from std.format._utils import _write_hex
     var s = String()
     _write_hex[amnt_hex_bytes=8](s, UInt32(ord("🔥")))
@@ -603,24 +599,25 @@ def _write_hex[
     comptime `u` = Byte(ord("u"))
     comptime `U` = Byte(ord("U"))
 
-    comptime if amnt_hex_bytes == 2:
-        var chars = _hex_digits_to_hex_chars(UInt8(decimal))
-        var buf = Array[Byte, 4](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `x`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
-    elif amnt_hex_bytes == 4:
-        var chars = _hex_digits_to_hex_chars(UInt16(decimal))
-        var buf = Array[Byte, 6](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `u`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
-    else:
-        var chars = _hex_digits_to_hex_chars(UInt32(decimal))
-        var buf = Array[Byte, 10](uninitialized=True)
-        buf[0] = `\\`
-        buf[1] = `U`
-        buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
-        writer.write_string(StringSlice(unsafe_from_utf8=Span(buf)))
+    comptime match amnt_hex_bytes:
+        case 2:
+            var chars = _hex_digits_to_hex_chars(UInt8(decimal))
+            var buf = Array[Byte, 4](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `x`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSpan(unsafe_from_utf8=Span(buf)))
+        case 4:
+            var chars = _hex_digits_to_hex_chars(UInt16(decimal))
+            var buf = Array[Byte, 6](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `u`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSpan(unsafe_from_utf8=Span(buf)))
+        case _:
+            var chars = _hex_digits_to_hex_chars(UInt32(decimal))
+            var buf = Array[Byte, 10](uninitialized=True)
+            buf[0] = `\\`
+            buf[1] = `U`
+            buf.unsafe_ptr().unsafe_offset(2).unsafe_store(chars)
+            writer.write_string(StringSpan(unsafe_from_utf8=Span(buf)))

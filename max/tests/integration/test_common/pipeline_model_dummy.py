@@ -24,7 +24,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType
 from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import (
-    KVCacheInputsInterface,
+    KVCacheInputs,
     KVCacheParams,
     KVCacheQuantizationConfig,
 )
@@ -48,6 +48,7 @@ from max.pipelines.modeling.types import (
     PipelineTask,
     PipelineTokenizer,
     TextGenerationRequest,
+    TokenIds,
 )
 from transformers import AutoConfig
 
@@ -77,7 +78,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
@@ -249,10 +250,8 @@ class DummyTextTokenizer(TextTokenizer):
     ) -> npt.NDArray[np.integer[Any]]:
         return self._delegate.encode(prompt, add_special_tokens)
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs
-    ) -> str:
-        return self._delegate.decode(encoded, **kwargs)
+    async def decode(self, encoded: TokenIds, **kwargs) -> str:
+        return self._delegate.decode(np.atleast_1d(encoded), **kwargs)
 
     class Delegate:
         def __init__(self, max_length: int) -> None:
@@ -333,9 +332,7 @@ class DummyPixelTokenizer(
     ) -> npt.NDArray[np.integer[Any]]:
         return np.array([], dtype=np.int64)
 
-    async def decode(
-        self, encoded: npt.NDArray[np.integer[Any]], **kwargs: Any
-    ) -> str:
+    async def decode(self, encoded: TokenIds, **kwargs: Any) -> str:
         return ""
 
 
@@ -443,28 +440,6 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
         "float32",
         "bfloat16",
         "float8_e4m3fn",
-    },
-    pipeline_model=DummyLlamaPipelineModel,
-    tokenizer=DummyTextTokenizer,
-    context_type=TextContext,
-    multi_gpu_supported=True,
-    default_weights_format=WeightsFormat.gguf,
-    config=DummyLlamaArchConfig,
-)
-
-DUMMY_LLAMA_GPTQ_ARCH = SupportedArchitecture(
-    name="LlamaForCausalLM",
-    task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=[
-        "hugging-quants/Meta-Llama-3.1-8B-Instruct-GPTQ-INT4",
-        "jakiAJK/DeepSeek-R1-Distill-Llama-8B_GPTQ-int4",
-        "modularai/Llama-3.1-8B-Instruct-GGUF",
-    ],
-    default_encoding="float32",
-    supported_encodings={
-        "gptq",
-        "float32",
-        "bfloat16",
     },
     pipeline_model=DummyLlamaPipelineModel,
     tokenizer=DummyTextTokenizer,

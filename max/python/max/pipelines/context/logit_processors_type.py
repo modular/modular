@@ -71,6 +71,11 @@ class ProcessorInputs:
 
 
 LogitsProcessor: TypeAlias = Callable[[ProcessorInputs], None]
+"""Callback that rewrites logits for a single sequence before sampling.
+
+Implementations mutate the ``logits`` buffer in place, for example to
+suppress tokens or apply a bias.
+"""
 
 
 @dataclass
@@ -96,3 +101,8 @@ class BatchProcessorInputs:
 
 
 BatchLogitsProcessor: TypeAlias = Callable[[BatchProcessorInputs], None]
+"""Callback that rewrites logits for a whole batch before sampling.
+
+Implementations mutate the ``logits`` buffer in place, using
+``logit_offsets`` to locate each sequence's slice.
+"""

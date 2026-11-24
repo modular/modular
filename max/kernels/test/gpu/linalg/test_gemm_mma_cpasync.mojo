@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the non-swapAB GEMM tensor-core kernel."""
 
-from std.math import ceildiv
 from std.random import random_float64
 
 from max.gpu.host import DeviceContext
 from std.memory import alloc
+from std.memory.alloc import unsafe_alloc
 
 from linalg.gemv import gemm_mma_cpasync
 import linalg.matmul.vendor.blas as vendor_blas
 
 from internal_utils import assert_almost_equal
+from std.testing import assert_equal
 
-from layout import TileTensor, Coord, Idx, row_major
-from std.utils import IndexList
+from layout import TileTensor, Coord, row_major
 
 
 def run_gemm_mma_cpasync[
@@ -46,28 +46,20 @@ def run_gemm_mma_cpasync[
     reference applies either way.
     """
     print(
-        "== gemm_tc  M=",
-        gemm_m,
-        " K=",
-        gemm_k,
-        " N=",
-        gemm_n,
-        " tile_k=",
-        tile_k,
-        " swapAB=",
-        swapAB,
+        t"== gemm_tc  M= {gemm_m}  K= {gemm_k}  N= {gemm_n}  tile_k= {tile_k} "
+        t" swapAB= {swapAB}"
     )
-    print("dtypes: act=", a_type, " weight=", b_type, " out=", c_type)
+    print(t"dtypes: act= {a_type}  weight= {b_type}  out= {c_type}")
 
     var act_size = gemm_m * gemm_k
     var weight_size = gemm_n * gemm_k
     var out_size = gemm_m * gemm_n
 
     # Host buffers.
-    var act_host = alloc[Scalar[a_type]](act_size)
-    var weight_host = alloc[Scalar[b_type]](weight_size)
-    var out_host = alloc[Scalar[c_type]](out_size)
-    var ref_host = alloc[Scalar[c_type]](out_size)
+    var act_host = unsafe_alloc[Scalar[a_type]](act_size)
+    var weight_host = unsafe_alloc[Scalar[b_type]](weight_size)
+    var out_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var ref_host = unsafe_alloc[Scalar[c_type]](out_size)
 
     for i in range(act_size):
         act_host[i] = random_float64(min=-0.5, max=0.5).cast[a_type]()
@@ -128,8 +120,8 @@ def run_gemm_mma_cpasync[
     ctx.synchronize()
 
     # Compare in f32.
-    var out_f32 = alloc[Float32](out_size)
-    var ref_f32 = alloc[Float32](out_size)
+    var out_f32 = unsafe_alloc[Float32](out_size)
+    var ref_f32 = unsafe_alloc[Float32](out_size)
     for i in range(out_size):
         out_f32[i] = out_host[i].cast[.float32]()
         ref_f32[i] = ref_host[i].cast[.float32]()
@@ -153,32 +145,24 @@ def run_gemm_mma_cpasync_residual[
 ](gemm_m: Int, gemm_k: Int, gemm_n: Int, *, ctx: DeviceContext) raises:
     """Run GEMM TC kernel with residual epilogue: D = matmul(A,B) + residual.
 
-    Also exercises the elementwise-lambda epilogue under `swapAB`: the lambda
-    must receive the true row-major `[M, N]` index so the residual is added at
+    Also exercises the epilogue closure under `swapAB`: the closure must
+    receive the true row-major `[M, N]` index so the residual is added at
     the correct location even when the kernel tiles the transposed problem.
     """
     print(
-        "== gemm_tc+residual  M=",
-        gemm_m,
-        " K=",
-        gemm_k,
-        " N=",
-        gemm_n,
-        " tile_k=",
-        tile_k,
-        " swapAB=",
-        swapAB,
+        t"== gemm_tc+residual  M= {gemm_m}  K= {gemm_k}  N= {gemm_n}  tile_k="
+        t" {tile_k}  swapAB= {swapAB}"
     )
 
     var act_size = gemm_m * gemm_k
     var weight_size = gemm_n * gemm_k
     var out_size = gemm_m * gemm_n
 
-    var act_host = alloc[Scalar[a_type]](act_size)
-    var weight_host = alloc[Scalar[b_type]](weight_size)
-    var residual_host = alloc[Scalar[c_type]](out_size)
-    var out_host = alloc[Scalar[c_type]](out_size)
-    var ref_host = alloc[Scalar[c_type]](out_size)
+    var act_host = unsafe_alloc[Scalar[a_type]](act_size)
+    var weight_host = unsafe_alloc[Scalar[b_type]](weight_size)
+    var residual_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var out_host = unsafe_alloc[Scalar[c_type]](out_size)
+    var ref_host = unsafe_alloc[Scalar[c_type]](out_size)
 
     for i in range(act_size):
         act_host[i] = random_float64(min=-0.5, max=0.5).cast[a_type]()
@@ -209,23 +193,17 @@ def run_gemm_mma_cpasync_residual[
     var w_tensor = TileTensor(weight_dev, w_shape)
     var c_tensor = TileTensor(out_dev, c_shape)
     var residual_tensor = TileTensor(residual_dev, c_shape)
-    var c_lt = c_tensor.to_layout_tensor()
-    var residual_lt = residual_tensor.to_layout_tensor()
 
-    @__parameter
-    @always_inline
-    @__copy_capture(c_lt, residual_lt)
+    @inline(.always)
     def residual_epilogue[
-        dtype: DType, width: SIMDLength, *, alignment: Int = 1
-    ](idx: IndexList[2], val: SIMD[dtype, width]):
-        var res = residual_lt.load[width=width](idx).cast[dtype]()
-        c_lt.store[width=width](idx, (val + res).cast[c_type]())
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var residual_tensor} -> SIMD[
+        dtype, width
+    ]:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        return val + residual_tensor.load[width=width](idx).cast[dtype]()
 
-    gemm_mma_cpasync[
-        tile_k=tile_k,
-        elementwise_lambda_fn=residual_epilogue,
-        swapAB=swapAB,
-    ](
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
         c_tensor,
         a_tensor,
         w_tensor,
@@ -233,6 +211,7 @@ def run_gemm_mma_cpasync_residual[
         gemm_k,
         gemm_n,
         1,
+        residual_epilogue,
         ctx,
     )
     ctx.synchronize()
@@ -251,8 +230,8 @@ def run_gemm_mma_cpasync_residual[
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
 
-    var out_f32 = alloc[Float32](out_size)
-    var ref_f32 = alloc[Float32](out_size)
+    var out_f32 = unsafe_alloc[Float32](out_size)
+    var ref_f32 = unsafe_alloc[Float32](out_size)
     for i in range(out_size):
         out_f32[i] = out_host[i].cast[.float32]()
         ref_f32[i] = (
@@ -266,6 +245,80 @@ def run_gemm_mma_cpasync_residual[
         atol=1e-2,
         rtol=5e-2,
     )
+    print("PASSED\n")
+
+
+def run_gemm_mma_cpasync_epilogue_fn[
+    tile_k: Int = 128,
+    swapAB: Bool = False,
+](gemm_m: Int, gemm_k: Int, gemm_n: Int, *, ctx: DeviceContext) raises:
+    """Checks that a store closure receives each output at its row-major
+    `[M, N]` index and that the kernel itself leaves `c` untouched.
+
+    The closure writes the row-scaled result into a separate buffer; the power
+    of two scale keeps the comparison against the plain kernel exact.
+    """
+    print(
+        t"== gemm_tc+epilogue_fn  M= {gemm_m}  K= {gemm_k}  N= {gemm_n} "
+        t" tile_k= {tile_k}  swapAB= {swapAB}"
+    )
+    comptime dtype = DType.bfloat16
+    var act_size = gemm_m * gemm_k
+    var weight_size = gemm_n * gemm_k
+    var out_size = gemm_m * gemm_n
+
+    var act_dev = ctx.enqueue_create_buffer[dtype](act_size)
+    var weight_dev = ctx.enqueue_create_buffer[dtype](weight_size)
+    var ref_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var unused_dev = ctx.enqueue_create_buffer[dtype](out_size)
+    var out_dev = ctx.enqueue_create_buffer[dtype](out_size)
+
+    with act_dev.map_to_host() as h_act, weight_dev.map_to_host() as h_w:
+        for i in range(act_size):
+            h_act[i] = random_float64(min=-0.5, max=0.5).cast[dtype]()
+        for i in range(weight_size):
+            h_w[i] = random_float64(min=-0.5, max=0.5).cast[dtype]()
+    ctx.enqueue_memset(ref_dev, 0)
+    ctx.enqueue_memset(unused_dev, 0)
+    ctx.enqueue_memset(out_dev, 0)
+
+    var a_tensor = TileTensor(act_dev, row_major((gemm_m, gemm_k)))
+    var w_tensor = TileTensor(weight_dev, row_major((gemm_n, gemm_k)))
+    var c_shape = row_major((gemm_m, gemm_n))
+    var ref_tensor = TileTensor(ref_dev, c_shape)
+    var unused_tensor = TileTensor(unused_dev, c_shape)
+    var out_tensor = TileTensor(out_dev, c_shape)
+
+    def store_odd_rows_negated[
+        dtype: DType, width: SIMDLength, *, alignment: Int
+    ](idx: Coord, val: SIMD[dtype, width]) {var out_tensor}:
+        comptime assert idx.rank == 2, "the matmul epilogue contract is rank 2"
+        var row_scale = -2 if Int(idx[0]) % 2 == 1 else 2
+        out_tensor.store(
+            idx,
+            (val * SIMD[dtype, width](row_scale)).cast[out_tensor.dtype](),
+        )
+
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
+        ref_tensor, a_tensor, w_tensor, gemm_m, gemm_k, gemm_n, 1, ctx
+    )
+    gemm_mma_cpasync[tile_k=tile_k, swapAB=swapAB](
+        unused_tensor,
+        a_tensor,
+        w_tensor,
+        gemm_m,
+        gemm_k,
+        gemm_n,
+        1,
+        store_odd_rows_negated,
+        ctx,
+    )
+
+    with ref_dev.map_to_host() as h_ref, out_dev.map_to_host() as h_out, unused_dev.map_to_host() as h_unused:
+        for i in range(out_size):
+            var row_scale = -2 if (i // gemm_n) % 2 == 1 else 2
+            assert_equal(h_out[i], h_ref[i] * Scalar[dtype](row_scale))
+            assert_equal(h_unused[i], Scalar[dtype](0))
     print("PASSED\n")
 
 
@@ -392,3 +445,8 @@ def main() raises:
             tile_k=128,
             swapAB=True,
         ](16, 7168, 2112, ctx=ctx)
+
+        run_gemm_mma_cpasync_epilogue_fn[tile_k=128](28, 7168, 384, ctx=ctx)
+        run_gemm_mma_cpasync_epilogue_fn[tile_k=256, swapAB=True](
+            7, 7168, 2112, ctx=ctx
+        )

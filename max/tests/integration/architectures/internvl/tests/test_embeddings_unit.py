@@ -20,31 +20,6 @@ from max.driver import accelerator_count
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.architectures.internvl.internvl import InternVisionEmbeddings
-from max.pipelines.architectures.internvl.model_config import VisionConfig
-
-
-def create_test_vision_config(
-    hidden_size: int = 1024,
-    image_size: int = 448,
-    patch_size: int = 14,
-    dtype: DType = DType.bfloat16,
-) -> VisionConfig:
-    """Create a test VisionConfig."""
-    return VisionConfig(
-        dtype=dtype,
-        hidden_size=hidden_size,
-        intermediate_size=4096,
-        norm_type="layer_norm",
-        image_size=image_size,
-        patch_size=patch_size,
-        num_attention_heads=16,
-        head_dim=hidden_size // 16,
-        layer_norm_eps=1e-6,
-        qk_normalization=True,
-        qkv_bias=False,
-        num_hidden_layers=24,
-        o_proj_bias=True,
-    )
 
 
 def test_intern_vision_embeddings_init() -> None:

@@ -10,15 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Repeated 2D rotary embedding for the vision tower."""
 
 from __future__ import annotations
 
+from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.sharding import DeviceMapping, DeviceMesh, Replicated
-from max.experimental.tensor import Tensor
+from max.nn import Module
+from max.tensor import Tensor
+from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated
 from typing_extensions import Self
 
 
@@ -55,6 +56,7 @@ class Rope2DPosEmbRepeated(Module[[Tensor], Tensor]):
         self.mapping = _replicated_mapping(self.device)
 
     def to(self, target: Device | DeviceMesh | DeviceMapping) -> Self:
+        """Moves the embedding's tables onto ``target``."""
         self.mapping = _replicated_mapping(target)
         return super().to(target)
 
@@ -86,7 +88,7 @@ class Rope2DPosEmbRepeated(Module[[Tensor], Tensor]):
         flat = F.range(
             0, N, 1, out_dim=N, dtype=DType.float32, device=self.mapping
         )
-        mw = F.constant(self.max_width, DType.float32, device=self.mapping)
+        mw = float(self.max_width)
         x_pos = flat % mw
         y_pos = F.floor(flat / mw)
 

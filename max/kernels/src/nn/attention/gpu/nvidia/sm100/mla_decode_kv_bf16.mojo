@@ -24,7 +24,7 @@ methods invoked by the individual warps.
 
 from std.math import ceildiv
 from std.sys import size_of
-from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, block_idx, warp_id
+from max.gpu import MAX_THREADS_PER_BLOCK_METADATA, warp_id
 from max.gpu.sync import barrier
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.primitives.grid_controls import launch_dependent_grids
@@ -41,7 +41,6 @@ from layout.tma_async import (
 )
 from layout import (
     ComptimeInt,
-    CoordLike,
     RowMajorLayout,
     TensorEngine,
     TileTensor,
@@ -63,6 +62,8 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 from nn.attention.gpu.nvidia.common import KVTMATile
 
 from nn.attention.gpu.nvidia.sm100.mla_decode_utils import (
+    decode_pdl_wait,
+    _MLA_PDL_ALWAYS,
     MLA_SM100_Decode_Config,
     MLA_SM100_Decode_Common,
     QOTMATile,
@@ -243,7 +244,7 @@ struct MLA_SM100_Decode_KV_BF16[
             MaskType=Self.MaskType,
             SplitAccumType=Self.SplitAccumType,
         ],
-        scales_ptr: UnsafePointer[Float32, origin=MutAnyOrigin],
+        scales_ptr: MutPointer[Float32, origin=MutAnyOrigin],
         scalar_args: TileTensor[
             .int64,
             RowMajorLayout[ComptimeInt[3]],
@@ -264,12 +265,14 @@ struct MLA_SM100_Decode_KV_BF16[
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
-        var batch_size = Int(scalar_args.raw_load(0))
-        var q_max_seq_len = Int(scalar_args.raw_load(1))
-        var num_partitions = mla_decode_pack.num_partitions
+        comptime _pdl_on = Self.config.decoding_warp_split_k or _MLA_PDL_ALWAYS
+        var batch_size = Int(scalar_args[0])
+        var q_max_seq_len = Int(scalar_args[1])
+        var num_partitions = Int(mla_decode_pack.num_partitions)
         var mask = mla_decode_pack.mask
         var valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
+        decode_pdl_wait[_pdl_on]()
         var offset_position = OffsetPosition[
             Self.config,
             Self.KVLUTType,
@@ -280,7 +283,7 @@ struct MLA_SM100_Decode_KV_BF16[
         ](
             kv_lut,
             rebind[
-                UnsafePointer[
+                ImmPointer[
                     Scalar[Self.ValidLengthType.dtype],
                     ImmutAnyOrigin,
                     address_space=.GENERIC,
@@ -292,10 +295,9 @@ struct MLA_SM100_Decode_KV_BF16[
         )
 
         # Early exit for split-K: CTAs with no work (num_keys_this_split == 0)
-        # must still write -inf LSE and call launch_dependent_grids()
-        # to fulfill the PDL contract with the combine kernel. Skipping
-        # launch_dependent_grids() causes the combine kernel to hang,
-        # leading to CUDA_ERROR_ILLEGAL_ADDRESS.
+        # must still write -inf LSE for the combine. The explicit
+        # launch_dependent_grids() only releases the combine earlier; an
+        # exit without it releases at grid completion.
         comptime if Self.config.decoding_warp_split_k:
             if offset_position.num_keys_this_split == 0:
                 Self.Common_MLA_Op.pdl_early_exit(
@@ -309,14 +311,14 @@ struct MLA_SM100_Decode_KV_BF16[
 
         # EARLY EXIT: Skip blocks beyond actual sequence length for this batch
         # In ragged mode with split-K, q_max_seq_len can be > 1 (up to 8).
-        # block_idx.y ranges from 0 to q_max_seq_len-1, but some sequences
-        # may have fewer tokens. CTAs with block_idx.y >= seq_len must still
+        # seq_idx ranges from 0 to q_max_seq_len-1, but some sequences
+        # may have fewer tokens. CTAs with seq_idx >= seq_len must still
         # fulfill the PDL contract (write -inf LSE and call
         # launch_dependent_grids) or the combine kernel will hang.
         comptime if Self.ragged:
-            # In ragged mode, block_idx.y is the query token index (0 to q_max_seq_len-1)
+            # In ragged mode, seq_idx is the query token index (0 to q_max_seq_len-1)
             # But this batch might have fewer tokens than q_max_seq_len
-            if block_idx.y >= offset_position.seq_len:
+            if offset_position.seq_idx >= offset_position.seq_len:
                 comptime if Self.config.decoding_warp_split_k:
                     Self.Common_MLA_Op.pdl_early_exit(
                         offset_position.split_idx,
@@ -333,9 +335,9 @@ struct MLA_SM100_Decode_KV_BF16[
             alignment=128,
             name="mha_dynamic_shared_memory",
         ]()
-        var kv_smem = (q_smem + Self.BlockElems * Self.NumQKBlocks).bitcast[
-            Scalar[Self.kv_type]
-        ]()
+        var kv_smem = (
+            q_smem.unsafe_offset(Self.BlockElems * Self.NumQKBlocks)
+        ).unsafe_bitcast[Scalar[Self.kv_type]]()
         comptime kv_total_stages = Self.config.num_kv_stages
         # to reuse the K for V as well, we break KV as 9 stages of 64x64 to cover 64x576
         comptime kv_smem_total = Self.BlockElems * Self.NumQKBlocks * kv_total_stages
@@ -352,26 +354,28 @@ struct MLA_SM100_Decode_KV_BF16[
         # MMA/load when max is valid.
         var out_smem_total = kv_smem_total
 
-        var out_smem = out_smem_start.bitcast[Scalar[Self.output_type]]()
+        var out_smem = out_smem_start.unsafe_bitcast[Scalar[Self.output_type]]()
 
         # max_smem is double-buffered (2 x 128 elements) to avoid a race
         # condition in softmax; li_smem is a single 128-element buffer.
-        var max_smem = (out_smem + out_smem_total).bitcast[
+        var max_smem = out_smem.unsafe_offset(out_smem_total).unsafe_bitcast[
             Scalar[Self.AccumType]
         ]()
 
-        var li_smem = (
-            max_smem + 2 * WARPGROUP_SIZE
+        var li_smem = max_smem.unsafe_offset(
+            2 * WARPGROUP_SIZE
         )  # 128 x1 for SMEM correction for Softmax
         #  Now we have to define MBARS for the kernel
         var mbar_base: MBarType = (
-            (li_smem + WARPGROUP_SIZE)
-            .bitcast[SharedMemBarrier]()
+            (li_smem.unsafe_offset(WARPGROUP_SIZE))
+            .unsafe_bitcast[SharedMemBarrier]()
             .as_unsafe_any_origin()
         )
 
         var mbar_q: MBarType = mbar_base  # q uses 0
-        var mbar_kv_base: MBarType = mbar_base + 1  # barrier total[1]
+        var mbar_kv_base: MBarType = mbar_base.unsafe_offset(
+            1
+        )  # barrier total[1]
 
         var kv_pipeline = KVPipelineGeneric[
             num_kv_stages=Self.config.num_kv_stages,  # 2
@@ -381,7 +385,9 @@ struct MLA_SM100_Decode_KV_BF16[
         ](mbar_kv_base)
 
         # Move mbar_base to the first free barrier *after* KV:
-        mbar_base = mbar_kv_base + kv_pipeline.num_mbars()  # kv uses 1..4
+        mbar_base = mbar_kv_base.unsafe_offset(
+            kv_pipeline.num_mbars()
+        )  # kv uses 1..4
         # Move mbar_base to the first free barrier *after* k done:
         var s_bars = DecodeSM100MiscMBars[
             num_stages=2, num_producer=1, num_consumer=WARPGROUP_SIZE
@@ -428,14 +434,15 @@ struct MLA_SM100_Decode_KV_BF16[
             num_out_stages=OutPipeType.num_out_stages,
             num_producer=WARPGROUP_SIZE,
             num_consumer=1,
+            cta_group=Self.config.cta_group,
         ](
             mbar_base
         )  # Write uses 23 + (num_out_stages)*2
-        mbar_base += (
+        mbar_base = mbar_base.unsafe_offset(
             out_pipeline.num_mbars()
         )  # barrier total [23 + (num_out_stages)*2]
         var warp_idx = UInt32(warp_id[broadcast=True]())
-        var ptr_tmem_addr = (mbar_base).bitcast[UInt32]()
+        var ptr_tmem_addr = (mbar_base).unsafe_bitcast[UInt32]()
         var is_leader = elect() != 0
         if warp_idx == 8:
             if is_leader:
@@ -452,7 +459,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 k_tma.prefetch_descriptor()
                 o_tma.prefetch_descriptor()
         elif warp_idx == 9:
-            tcgen05_alloc[Self.config.cta_group](
+            tcgen05_alloc[Int32(Self.config.cta_group)](
                 ptr_tmem_addr, Self.config.sm100_tmem_cols
             )
         barrier()
@@ -463,7 +470,9 @@ struct MLA_SM100_Decode_KV_BF16[
                 ptr_tmem_addr[0],
                 s_bars,
                 p_bars,
-                kv_smem.bitcast[Scalar[Self.q_type]]().as_unsafe_any_origin(),
+                kv_smem.unsafe_bitcast[
+                    Scalar[Self.q_type]
+                ]().as_unsafe_any_origin(),
                 max_smem.as_unsafe_any_origin(),
                 li_smem.as_unsafe_any_origin(),
                 out_smem.as_unsafe_any_origin(),
@@ -504,7 +513,7 @@ struct MLA_SM100_Decode_KV_BF16[
                     ptr_tmem_addr[0],
                     q_smem.as_unsafe_any_origin(),
                     (kv_smem)
-                    .bitcast[Scalar[Self.q_type]]()
+                    .unsafe_bitcast[Scalar[Self.q_type]]()
                     .as_unsafe_any_origin(),
                     mbar_q,
                     s_bars,
@@ -515,7 +524,7 @@ struct MLA_SM100_Decode_KV_BF16[
                 Self.mmaPV(
                     ptr_tmem_addr[0],
                     (kv_smem)
-                    .bitcast[Scalar[Self.q_type]]()
+                    .unsafe_bitcast[Scalar[Self.q_type]]()
                     .as_unsafe_any_origin(),
                     p_bars,
                     o_bars,
@@ -533,12 +542,12 @@ struct MLA_SM100_Decode_KV_BF16[
 
         # PDL: Signal that this CTA is done so dependent grids (combine kernel) can start.
         # This must be called by all threads in the CTA after all work is complete.
-        comptime if Self.config.decoding_warp_split_k:
+        comptime if _pdl_on:
             launch_dependent_grids()
 
         if warp_idx == 9:
-            tcgen05_release_allocation_lock[Self.config.cta_group]()
-            tcgen05_dealloc[Self.config.cta_group](
+            tcgen05_release_allocation_lock[Int32(Self.config.cta_group)]()
+            tcgen05_dealloc[Int32(Self.config.cta_group)](
                 ptr_tmem_addr[0], Self.config.sm100_tmem_cols
             )
 
@@ -546,7 +555,7 @@ struct MLA_SM100_Decode_KV_BF16[
     # MLA decoding load_q and load_kv function
     # --------------------------------------------------------------------------
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load(
         q_tma: QOTMATile[
             dtype=Self.q_type,
@@ -722,7 +731,7 @@ struct MLA_SM100_Decode_KV_BF16[
     # |__T0__|__T1__|__T2__|__T3__|
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaQK(
         tmem_addr: UInt32,
         q_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -794,7 +803,7 @@ struct MLA_SM100_Decode_KV_BF16[
             tile_idx += 1
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mmaPV(
         tmem_addr: UInt32,
         kv_smem: SharedMemPointer[Scalar[Self.q_type]],
@@ -836,7 +845,9 @@ struct MLA_SM100_Decode_KV_BF16[
         )
         var p_cons = DecodePConsumer(p_bars.consumer())
         var o_prod = DecodeOProducer(o_bars.producer())
-        var p_smem_base = kv_smem + Self.NumVOBlocks * Self.BlockElems
+        var p_smem_base = kv_smem.unsafe_offset(
+            Self.NumVOBlocks * Self.BlockElems
+        )
         var p_descriptor = Self.UMMAPVSS.descriptor_p_block(p_smem_base)
         var v_descriptor = Self.UMMAPVSS.descriptor_v_block(kv_smem)
         comptime block_step = Self.config.MMA_PV_N // Self.config.BN_QK

@@ -9,7 +9,46 @@ _PACKAGES = {
 _EXTRA_ALIASES = {
     "__init__.mojo": "Mojo/stdlib/std:__init__.mojo",
     "std_srcs": "Mojo/stdlib/std:std_srcs",
+    # The `max` package the HAL DeviceContext's exports compile against. A
+    # plugin backend whose accelerator the generic HAL `max` can't resolve
+    # overrides it with its own HAL package.
+    "hal_device_context_max": "max/mojo/max/_driver/max_license:max",
 }
+
+# The built-in kernel registrations. `builtin_kernels` is a namespace rather
+# than a package, so each module under it precompiles on its own and needs its
+# own target. The alias keeps the dotted name so a label reads like the import
+# it stands for.
+_BUILTIN_KERNEL_MODULES = [
+    "_checks",
+    "_coords",
+    "_naive_tile_matmul",
+    "_tile_fusion",
+    "attention",
+    "bundled",
+    "concat_shapes",
+    "conv",
+    "conv_filter_layout",
+    "distributed",
+    "elementwise",
+    "ep",
+    "gated_residual_rms_norm",
+    "gather_scatter",
+    "kernels",
+    "kv_cache_ops",
+    "linalg_ops",
+    "logprobs",
+    "monoids",
+    "mtp",
+    "nan_check",
+    "qk_rms_norm_rope_store",
+    "quantization_ops",
+    "reductions",
+    "routed_rows_rms_norm",
+    "rowwise_normalization",
+    "rowwise_reductions",
+    "short_conv_ring",
+]
 
 _MAX_PACKAGES = {
     "algorithm": "kernels/src/algorithm",
@@ -22,7 +61,6 @@ _MAX_PACKAGES = {
     "quantization": "kernels/src/quantization",
     "extensibility": "kernels/src/graph_compiler/extensibility",
     "builtin_primitives": "kernels/src/graph_compiler/builtin_primitives",
-    "builtin_kernels": "kernels/src/graph_compiler/builtin_kernels",
     "weights_registry": "kernels/src/weights_registry",
     "internal_utils": "kernels/src/internal_utils",
     "comm": "kernels/src/comm",
@@ -36,17 +74,18 @@ _MAX_PACKAGES = {
     "_rocblas": "kernels/src/_rocblas",
     "_miopen": "kernels/src/_miopen",
     "max_mojo": "mojo/max",
+} | {
+    "builtin_kernels." + module: "kernels/src/graph_compiler/builtin_kernels:" + module
+    for module in _BUILTIN_KERNEL_MODULES
 }
 
-INTERNAL_PACKAGES = [
-    "//Kernels/lib/attn_res",
-    "//Kernels/lib/kda",
-    "//Kernels/lib/matmul_rs",
-    "//Kernels/lib/msa",
-    "//Kernels/src/mega_ffn",
-    "//max/internal/driver/src/_hal",
-    "//max/internal/driver/src/machine",
-]
+# Packages outside the `@mojo` aliases above that `ALL_MOJOPKGS` and
+# `PROD_MOJOPKGS` include. Both build from source in the open-source tree.
+#
+# Kernel packages that exist only in the internal build go in the
+# `internal_kernel_packages` attribute instead: a package listed there is
+# simply absent from the open-source build, which keeps that build standalone.
+INTERNAL_PACKAGES = []
 
 # Packages that are marked testonly and cannot be used by production targets
 _TESTONLY_MAX_PACKAGES = ["testdata"]
@@ -72,18 +111,39 @@ alias(
 
     rctx.file("BUILD.bazel", content = build_content)
     rctx.file("mojo.bzl", content = """
+# Kernel packages that exist only in this build. Empty in the open-source
+# build, where the kernels they register are not present at all -- so a BUILD
+# file concatenates it instead of naming a `//Kernels` target, and reads the
+# same in both trees. The graph compiler loads them if they resolve and skips
+# them if they do not, so an empty list costs their ops and nothing else.
+INTERNAL_KERNEL_MOJOPKGS = [
+{internal_kernel_packages}
+]
+
+# Every built-in kernel package. `builtin_kernels` is a namespace, so a target
+# that needs the whole registry names these rather than one label.
+BUILTIN_KERNEL_MOJOPKGS = [
+{builtin_kernel_packages}
+]
+
+# The module names behind those labels, for a target that builds something
+# other than the package itself (its docs, say) out of the same Bazel package.
+BUILTIN_KERNEL_MODULES = [
+{builtin_kernel_modules}
+]
+
 ALL_MOJOPKGS = [
 {packages}
 {max_packages}
 {internal_packages}
-]
+] + INTERNAL_KERNEL_MOJOPKGS
 
 # PROD_MOJOPKGS excludes testonly packages and can be used by non-test targets
 PROD_MOJOPKGS = [
 {prod_packages}
 {prod_max_packages}
 {internal_packages}
-]
+] + INTERNAL_KERNEL_MOJOPKGS
 
 _OVERRIDES = {overrides}
 
@@ -113,6 +173,18 @@ def max_aliases():
             '    "{}",'.format(name)
             for name in INTERNAL_PACKAGES
         ]),
+        builtin_kernel_modules = "\n".join([
+            '    "{}",'.format(module)
+            for module in _BUILTIN_KERNEL_MODULES
+        ]),
+        builtin_kernel_packages = "\n".join([
+            '    "//max:builtin_kernels.{}",'.format(module)
+            for module in _BUILTIN_KERNEL_MODULES
+        ]),
+        internal_kernel_packages = "\n".join([
+            '    "{}",'.format(name)
+            for name in rctx.attr.internal_kernel_packages
+        ]),
         prod_packages = "\n".join([
             '    "@mojo//:{}",'.format(name)
             for name in _PACKAGES.keys()
@@ -131,6 +203,10 @@ def max_aliases():
 mojo_aliases = repository_rule(
     implementation = _mojo_aliases_impl,
     attrs = {
+        "internal_kernel_packages": attr.string_list(
+            doc = "Kernel packages that exist only in this build, exposed as `INTERNAL_KERNEL_MOJOPKGS`.",
+            default = [],
+        ),
         "overrides": attr.string_dict(
             doc = "Override certain aliases to other targets.",
             default = {},

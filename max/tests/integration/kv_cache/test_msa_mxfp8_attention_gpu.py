@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Bit-exactness of ``mo.msa.attention.ragged.paged.mxfp8`` (MI355 / gfx950).
+"""Bit-exactness of ``attention.msa.ragged.paged.mxfp8`` (MI355 / gfx950).
 
-The MXFP8 MSA attention op replaces the pair ``mo.msa.attention.ragged.paged``
-+ ``mo.quantize.dynamic.block.scaled`` that MiniMax-M3 runs to feed its MXFP8
+The MXFP8 MSA attention op replaces the pair ``attention.msa.ragged.paged``
++ ``quantization.quantize.dynamic.block.scaled`` that MiniMax-M3 runs to feed its MXFP8
 o_proj, fusing the quantize into the split-K combine on decode (KERN-3384).
 Its contract is byte equality with that pair -- the activations feed a matmul,
 so the fusion must be a dispatch win and nothing else.
@@ -44,12 +44,16 @@ from max.driver import Accelerator, Buffer, accelerator_api
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import (
+from max.nn._graph_ops import (
     msa_sparse_attention_ragged,
     msa_sparse_attention_ragged_mxfp8,
     quantize_dynamic_block_scaled,
 )
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    PagedCacheValues,
+    packed_page_stride,
+)
 
 # MiniMax-M3 TP4 attention shape: 16 query heads over a single KV head,
 # head_dim 128, 128-token pages, 16 gathered blocks per token.
@@ -147,6 +151,7 @@ def _run_case(
             lut_in.tensor,
             max_p_in.tensor,
             max_c_in.tensor,
+            page_stride=packed_page_stride(blocks_in.buffer),
             attention_dispatch_metadata=scalar_args_in.tensor,
         )
         layer_idx = ops.constant(0, DType.uint32, device=DeviceRef.CPU())
@@ -274,7 +279,7 @@ def _run_case(
 
 @pytest.mark.skipif(
     accelerator_api() != "hip",
-    reason="mo.msa.attention.ragged.paged.mxfp8 is AMD (gfx950) only",
+    reason="attention.msa.ragged.paged.mxfp8 is AMD (gfx950) only",
 )
 def test_msa_mxfp8_matches_unfused_pair() -> None:
     """The fused op is byte-identical to attention + quantize on all routes."""

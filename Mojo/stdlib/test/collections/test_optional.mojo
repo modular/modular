@@ -19,6 +19,7 @@ from std.traits import (
     IsTriviallyMovable,
 )
 from std.sys import size_of
+from std.utils._nicheable import UnsafeNicheable
 
 from std.testing import *
 from std.testing import TestSuite
@@ -131,6 +132,38 @@ def test_optional_reg_isnot() raises:
 
     a = OptionalReg[Int](None)
     assert_false(a is not None)
+
+
+def _describe_optional_reg[
+    T: TrivialRegisterPassable & Writable
+](value: OptionalReg[T]) -> String:
+    match value:
+        case .Some(payload):
+            return String("some:", payload)
+        case .None:
+            return "none"
+
+
+def test_optional_reg_pattern_matching() raises:
+    assert_equal(_describe_optional_reg(OptionalReg(7)), "some:7")
+    assert_equal(_describe_optional_reg(OptionalReg[Int]()), "none")
+
+    var counter: OptionalReg[Int] = 1
+    if case .Some(ref count) = counter:
+        count += 41
+    assert_equal(counter.value(), 42)
+
+    var target = 5
+    comptime PointerType = Pointer[Int, origin_of(target)]
+    var ptr: OptionalReg[PointerType] = PointerType(to=target)
+    if case .Some(p) = ptr:
+        assert_equal(p[], 5)
+    else:
+        raise Error("expected a pointer")
+
+    ptr = None
+    if case .Some(_) = ptr:
+        raise Error("expected no pointer")
 
 
 def test_optional_take_mutates() raises:
@@ -341,6 +374,16 @@ def test_nicheable_size() raises:
     assert_equal(size_of[Optional[PointerType]](), size_of[PointerType]())
     assert_true(size_of[Optional[Int]]() > size_of[Int]())
 
+    # A tuple has the niches of its element with the most niches.
+    comptime Pair = Tuple[Int, PointerType]
+    assert_equal(
+        size_of[Optional[Tuple[PointerType]]](), size_of[PointerType]()
+    )
+    assert_equal(size_of[Optional[Pair]](), size_of[Pair]())
+    assert_true(
+        size_of[Optional[Tuple[Int, Int]]]() > size_of[Tuple[Int, Int]]()
+    )
+
 
 def test_optional_reg_nicheable_size() raises:
     comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]
@@ -353,6 +396,46 @@ def test_optional_to_optional_reg_implicit_conversion() raises:
     var optional = Optional[Int](42)
     var optional_reg: OptionalReg[Int] = optional
     assert_equal(optional_reg.value(), 42)
+
+
+def test_optional_reg_to_optional_implicit_conversion() raises:
+    comptime IntType = Int
+    assert_false(conforms_to(IntType, UnsafeNicheable))
+
+    var some: Optional[IntType] = OptionalReg[IntType](42)
+    assert_equal(some, Optional(42))
+
+    var none: Optional[IntType] = OptionalReg[IntType]()
+    assert_true(none is None)
+
+
+def test_optional_reg_to_optional_implicit_conversion_nicheable() raises:
+    var target = 5
+    comptime PointerType = Pointer[Int, origin_of(target)]
+    assert_true(conforms_to(PointerType, UnsafeNicheable))
+
+    var some: Optional[PointerType] = OptionalReg(PointerType(to=target))
+    if case .Some(ptr) = some:
+        assert_equal(ptr[], 5)
+    else:
+        raise Error("expected a pointer")
+
+    var none: Optional[PointerType] = OptionalReg[PointerType]()
+    assert_true(none is None)
+
+
+def test_optional_reg_to_optional_return_conversion() raises:
+    def optional_from_optional_reg(value: OptionalReg[Int]) -> Optional[Int]:
+        return value
+
+    assert_equal(optional_from_optional_reg(OptionalReg(7)), Optional(7))
+    assert_true(optional_from_optional_reg(OptionalReg[Int]()) is None)
+
+
+def test_optional_reg_round_trip() raises:
+    var optional_reg: OptionalReg[Int] = Optional(42)
+    var optional: Optional[Int] = optional_reg
+    assert_equal(optional, Optional(42))
 
 
 struct NotEquatable(Movable):
@@ -535,7 +618,7 @@ def test_optional_deinit_with_none_does_not_call_destroy() raises:
 
 # `Deinitable` but explicitly not `Movable`: rejected at the parameter
 # bound under the old `Optional[T: Movable]`, admitted under the `AnyType` floor.
-struct _NotMovable(Deinitable, Movable where False):
+struct _NotMovable(Deinitable, not Movable):
     var x: Int
 
     def __init__(out self, x: Int):
@@ -551,10 +634,9 @@ def test_optional_non_movable_element_type() raises:
 
 def test_optional_non_movable_construct_in_place() raises:
     # `init_with=` populates an `Optional` with a non-`Movable` value in place.
-    def make() -> _NotMovable:
-        return _NotMovable(7)
-
-    var opt = Optional[_NotMovable](init_with=make)
+    var opt = Optional[_NotMovable](
+        init_with=lambda () -> _NotMovable: _NotMovable(7)
+    )
     assert_true(opt)
     assert_equal(opt.bounds()[0], 1)
     assert_equal(opt.value().x, 7)
@@ -657,6 +739,49 @@ def test_optional_simd_bool() raises:
     _assert_simd_bool_round_trips[4]()
     _assert_simd_bool_round_trips[8]()
     _assert_simd_bool_round_trips[16]()
+
+
+struct _LargeOptionalPayload(Movable):
+    var head: Int
+    var words: Array[Int, 128]
+
+    def __init__(out self, seed: Int):
+        self.head = seed
+        self.words = Array[Int, 128](fill=seed)
+        for i in range(128):
+            self.words[i] += i
+
+
+@fieldwise_init
+struct _LargeNestedOptional(Movable):
+    var a: Optional[_LargeOptionalPayload]
+    var b: Optional[_LargeOptionalPayload]
+
+
+@inline(.never)
+def _make_large_nested_optional(seed: Int) -> _LargeNestedOptional:
+    return _LargeNestedOptional(
+        Optional(_LargeOptionalPayload(seed)),
+        Optional(_LargeOptionalPayload(seed + 1)),
+    )
+
+
+def test_large_nested_optional_moves() raises:
+    # Exercise the integer union tail through a return, move, and replacement.
+    var result = _make_large_nested_optional(7)
+    var moved = result^
+    assert_equal(moved.a.value().head, 7)
+    assert_equal(moved.b.value().head, 8)
+    for i in range(128):
+        assert_equal(moved.a.value().words[i], 7 + i)
+        assert_equal(moved.b.value().words[i], 8 + i)
+
+    moved.a = None
+    assert_false(moved.a)
+    moved.b = _LargeOptionalPayload(9)
+    assert_equal(moved.b.value().head, 9)
+    for i in range(128):
+        assert_equal(moved.b.value().words[i], 9 + i)
 
 
 def main() raises:

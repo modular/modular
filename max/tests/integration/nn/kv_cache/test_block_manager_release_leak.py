@@ -25,7 +25,6 @@ from typing import cast
 
 import numpy as np
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.connectors.null_connector import NullConnector
 from max.pipelines.kv_cache.paged_kv_cache.block_manager import BlockManager
 from max.pipelines.modeling.types import RequestID
 
@@ -45,7 +44,6 @@ def _make_block_manager() -> BlockManager:
     return BlockManager(
         total_num_blocks=256,
         block_size=8,
-        connector=cast(object, NullConnector()),  # type: ignore[arg-type]
         enable_prefix_caching=True,
     )
 

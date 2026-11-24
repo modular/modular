@@ -16,15 +16,20 @@ This package defines the `PluginHooks` trait — a compile-time interface that
 can be used to override selected stdlib dispatch sites without
 forking base stdlib files.
 
-The stdlib ships a default `CurrentPlugin` alias (set in `std._plugin._impl`)
-that points at `DefaultPlugin`, which leaves every hook at its default value
-and preserves the built-in code paths. A plugin can overlay
-its own `std/_plugin/_impl.mojo` that re-aliases `CurrentPlugin` to
-a specific struct. Because each hook is a `comptime Optional[...]`
-field and call sites guard the vendor path with
-`comptime if CurrentPlugin.xxx_fn:`, the default build pays no runtime or
-code-size cost for hooks the active backend does not set.
+`CurrentPlugin` is the plugin the current compilation target selects;
+`std._plugin._impl` documents how it is chosen. `DefaultPlugin` leaves every
+hook at its default value and keeps the built-in code paths. A plugin
+repository can instead supply its own `std/_plugin/_impl.mojo` that aliases
+`CurrentPlugin` to a specific struct. Hooks are `comptime` members that call
+sites resolve at compile time, so a hook left at its default costs nothing at
+runtime or in code size.
 """
 
-from ._impl import CurrentPlugin, PluginForTarget
-from ._trait import DefaultPlugin, PluginHooks
+from ._impl import CurrentPlugin
+from ._trait import (
+    StdPlugin,
+    DefaultPlugin,
+    DefaultPluginHooks,
+    PluginHooks,
+    TargetDeviceKind,
+)

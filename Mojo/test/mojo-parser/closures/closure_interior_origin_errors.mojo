@@ -17,10 +17,10 @@
 # TODO: lift this limitation
 
 struct MyList[T: AnyType](Movable where False):
-    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[
+        self.data = Pointer[
             Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
@@ -34,10 +34,10 @@ struct MyList[T: AnyType](Movable where False):
 
 
 struct MyPtr[origin: Origin[mut=False]]:
-    var p: UnsafePointer[Int, Self.origin]
+    var p: Pointer[Int, Self.origin]
 
     def __init__(out self, *, ref [Self.origin] to: Int):
-        self.p = UnsafePointer[Int, Self.origin].address_of(to)
+        self.p = Pointer[Int, Self.origin].address_of(to)
 
     def get(self) -> Int:
         return self.p[]
@@ -55,6 +55,24 @@ def test_derive_and_capture_interior[O: Origin[mut=True]](ref [O] list: MyList[I
     inner()
 
 
+# A closure cannot be called when it captures a container immutably and a
+# mutable pointer to an element of that container.
+def test_capture_container_and_mutable_element[O: Origin[mut=True]](
+    ref [O] list: MyList[Int]
+):
+    var p = Pointer(to=list[])
+
+    @always_inline
+    def inner() {imm}:
+        _ = list
+        _ = p[]
+
+    # expected-error @below {{aliasing values passed immutably to '' argument and passed mutably to '' argument in '__call__' call}}
+    # expected-note @below {{'origin_of(O["element"])' memory accessed through reference embedded in value of type 'def() -> None'}}
+    inner()
+
+
 def main():
     var list = MyList[Int]()
     test_derive_and_capture_interior(list)
+    test_capture_container_and_mutable_element(list)

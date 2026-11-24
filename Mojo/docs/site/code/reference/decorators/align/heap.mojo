@@ -26,7 +26,7 @@ def use_aligned():
     var _ = CacheAligned(42)  # `stack_value`
 
     # Heap allocation
-    var heap_alloc = alloc[CacheAligned]({count = 1})
+    var heap_alloc = alloc[CacheAligned]({length = 1})
     dealloc(heap_alloc^)
 
 

@@ -15,13 +15,14 @@
 import numpy as np
 import pytest
 import torch
+from max import tree
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.kv_cache import MHAKVCacheParams
-from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import (
     Olmo2Attention as MaxOlmo2Attention,
 )
@@ -41,7 +42,7 @@ MAX_SEQ_LEN = 4096
 def input_tensor(text_config: Olmo2Config) -> torch.Tensor:
     torch.manual_seed(39)
     # Use the hidden size from the config
-    return torch.randn(1, 11, 4096).to(torch.float32).to("cuda")
+    return torch.randn(1, 11, 4096).to(torch.float32)
 
 
 def _get_position_embeddings(
@@ -79,6 +80,7 @@ def generate_torch_outputs(
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
 ) -> torch.Tensor:
+    input_tensor = input_tensor.to("cuda")
     layer = (
         Olmo2Attention(
             text_config,
@@ -110,7 +112,6 @@ def generate_max_outputs(
     2) Attention without rope but with attention tuning
     """
     is_gpu = isinstance(device, Accelerator)
-    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_seq_len = input_tensor.shape[1]
 
@@ -152,15 +153,6 @@ def generate_max_outputs(
     )
     attention.load_state_dict(state_dict)
 
-    # Set up blank KV cache.
-    kv_manager = PagedKVCacheManager(
-        params=kv_params,
-        total_num_pages=1,
-        session=session,
-        max_batch_size=128,
-    )
-    assert isinstance(kv_manager, PagedKVCacheManager)
-
     # Construct input types.
     input_type = TensorType(
         dtype,
@@ -183,7 +175,7 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache)).inputs[0]
+        kv_collection = kv_params.unflatten_kv_inputs(iter(kv_cache))[0]
 
         graph.output(
             attention(
@@ -197,6 +189,17 @@ def generate_max_outputs(
 
     compiled = session.load(graph, weights_registry=attention.state_dict())
 
+    input_tensor = input_tensor.cuda() if is_gpu else input_tensor.cpu()
+
+    # Set up blank KV cache.
+    kv_manager = PagedKVCacheManager(
+        params=kv_params,
+        total_num_pages=1,
+        session=session,
+        max_batch_size=128,
+    )
+    assert isinstance(kv_manager, PagedKVCacheManager)
+
     # Set up cache inputs and call the compiled model.
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0])
@@ -208,7 +211,7 @@ def generate_max_outputs(
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        *kv_runtime_inputs.flatten(),
+        *tree.leaves(kv_runtime_inputs),
     )[0]
 
     return output
@@ -219,16 +222,16 @@ def test_attention(
     input_tensor: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
 ) -> None:
-    torch_output = generate_torch_outputs(
-        text_config, input_tensor, attention_weights
-    )
-
     max_output = generate_max_outputs(
         text_config=text_config,
         input_tensor=input_tensor,
         attention_weights=attention_weights,
         dtype=DType.float32,
         device=Accelerator(),
+    )
+
+    torch_output = generate_torch_outputs(
+        text_config, input_tensor, attention_weights
     )
 
     torch.testing.assert_close(

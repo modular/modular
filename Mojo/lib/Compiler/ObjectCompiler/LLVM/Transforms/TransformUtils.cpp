@@ -65,8 +65,7 @@ void CallGraphUpdater::update() {
       }
     }
 
-    llvm::LLVMContext &ctx = module.getContext();
-    llvm::IRBuilder<> builder(ctx);
+    llvm::IRBuilder<> builder(module);
     for (llvm::CallInst *call : calls) {
       llvm::Function *resolvedCallee = call->getCalledFunction();
       if (!resolvedCallee) {

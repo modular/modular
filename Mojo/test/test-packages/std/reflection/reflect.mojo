@@ -20,7 +20,7 @@ comptime _field_types_of[T: AnyType] = TypeList[
 ]
 
 
-comptime reflect[T: AnyType] = Reflected[T]
+comptime reflect = Reflected[_]
 """A compile-time alias for the reflection handle type of `T`."""
 
 

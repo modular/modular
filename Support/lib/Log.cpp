@@ -170,6 +170,19 @@ static std::string_view argAsStringView(const LogArg &arg) {
   return {arg.data.str.ptr, arg.data.str.len};
 }
 
+namespace {
+/// True while the consumer is parked in drainCv. Producers swap it in enqueue()
+/// so a record logged while the consumer is running costs no notify, and the
+/// notify a sleeping consumer needs is sent on the empty->non-empty transition
+/// only. Process-wide because logging is a process singleton; with two live
+/// loggers the worst case is a lost notify, which kIdlePollInterval bounds.
+std::atomic<bool> consumerParked{false};
+
+/// Backstop for run()'s wait, not the steady-state wakeup path: producers wake
+/// the consumer directly, so idle wakeups scale as 1/kIdlePollInterval.
+constexpr std::chrono::milliseconds kIdlePollInterval{10};
+} // namespace
+
 static llvm::json::Value argAsJSON(const LogArg &arg) {
   switch (arg.tag) {
   case LogArg::Type::Bool:
@@ -193,7 +206,7 @@ static llvm::json::Value argAsJSON(const LogArg &arg) {
   llvm_unreachable("invalid LogArg::Type value");
 }
 
-static void appendArgText(std::string &out, const LogArg &arg) {
+static void appendArgText(llvm::SmallVectorImpl<char> &out, const LogArg &arg) {
   auto append = [&out](auto &&value) {
     fmt::format_to(std::back_inserter(out), "{}", value);
   };
@@ -211,7 +224,7 @@ static void appendArgText(std::string &out, const LogArg &arg) {
   case LogArg::Type::SmallString:
   case LogArg::Type::String: {
     auto sv = argAsStringView(arg);
-    out.append(sv.data(), sv.size());
+    out.append(sv.data(), sv.data() + sv.size());
     return;
   }
   case LogArg::Type::Pointer:
@@ -220,36 +233,35 @@ static void appendArgText(std::string &out, const LogArg &arg) {
   llvm_unreachable("invalid LogArg::Type value");
 }
 
-// Renders a key-value record as space-separated key=value tokens, the
-// non-JSON counterpart to buildJSONKVLogLine.
-static std::string renderKVRecord(const LogRecord &record) {
-  std::string out;
+// Appends a key-value record as space-separated key=value tokens, the
+// non-JSON counterpart to appendJSONKVLogLine.
+static void appendKVRecord(llvm::SmallVectorImpl<char> &out,
+                           const LogRecord &record) {
   for (size_t i = 0; i + 1 < record.argCount; i += 2) {
     // MLOG_KV static-asserts that keys are strings, but a hand-built record
     // could carry something else, and reading an int64 as a pointer would
     // fault on the consumer thread. Drop the pair rather than risk that.
     if (!isStringArg(record.args[i]))
       continue;
+    // Keyed off the buffer, not the pair index, to keep the bytes identical
+    // for a leading pair whose key and value are both empty (no separator).
     if (!out.empty())
-      out += ' ';
+      out.push_back(' ');
     auto key = argAsStringView(record.args[i]);
-    out.append(key.data(), key.size());
-    out += '=';
+    out.append(key.data(), key.data() + key.size());
+    out.push_back('=');
     appendArgText(out, record.args[i + 1]);
   }
-  return out;
 }
 
-static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
-                                               Channel::Channels channel,
-                                               llvm::StringRef msg,
-                                               LogRecord::Timestamp ts) {
+static void appendJSONLogLine(llvm::SmallVectorImpl<char> &out, LogLevel level,
+                              Channel::Channels channel, llvm::StringRef msg,
+                              LogRecord::Timestamp ts) {
   // Always use full ISO 8601 with microseconds in JSON mode regardless of
   // the showTimeStamp / useIsoTimestamps / showMicroseconds config flags.
   auto timestamp = buildISOFormatString(ts, /*includeMicroseconds=*/true);
 
-  llvm::SmallString<512> jsonLogLine;
-  llvm::raw_svector_ostream svOstream(jsonLogLine);
+  llvm::raw_svector_ostream svOstream(out);
   llvm::json::OStream json(svOstream);
   json.object([&] {
     json.attribute("timestamp", timestamp);
@@ -257,19 +269,18 @@ static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
     json.attribute("channel", getChannelName(channel));
     json.attribute("message", msg);
   });
-  return jsonLogLine;
 }
 
-// Same envelope as buildJSONLogLine, but the record's pairs are promoted to
+// Same envelope as appendJSONLogLine, but the record's pairs are promoted to
 // top-level fields in place of "message" so they land as Datadog facets. A key
 // colliding with an envelope field emits a duplicate JSON key; keep keys clear
 // of "timestamp", "level" and "channel".
-static llvm::SmallString<512> buildJSONKVLogLine(const LogRecord &record) {
+static void appendJSONKVLogLine(llvm::SmallVectorImpl<char> &out,
+                                const LogRecord &record) {
   auto timestamp =
       buildISOFormatString(record.timestamp, /*includeMicroseconds=*/true);
 
-  llvm::SmallString<512> jsonLogLine;
-  llvm::raw_svector_ostream svOstream(jsonLogLine);
+  llvm::raw_svector_ostream svOstream(out);
   llvm::json::OStream json(svOstream);
   json.object([&] {
     json.attribute("timestamp", timestamp);
@@ -283,11 +294,15 @@ static llvm::SmallString<512> buildJSONKVLogLine(const LogRecord &record) {
                      argAsJSON(record.args[i + 1]));
     }
   });
-  return jsonLogLine;
 }
 
-static std::string renderRecord(const LogRecord &record) {
-  fmt::dynamic_format_arg_store<fmt::format_context> store;
+// Appends the record rendered through its format string. The arg store is
+// thread_local and cleared (not destroyed) between records, so it retains its
+// capacity and the payload is formatted straight into the caller's buffer.
+static void appendFormattedRecord(llvm::SmallVectorImpl<char> &out,
+                                  const LogRecord &record) {
+  static thread_local fmt::dynamic_format_arg_store<fmt::format_context> store;
+  store.clear();
   store.reserve(record.argCount, /*new_cap_named=*/0);
   for (const auto &arg : std::span(record.args.data(), record.argCount)) {
     switch (arg.tag) {
@@ -319,7 +334,7 @@ static std::string renderRecord(const LogRecord &record) {
       break;
     }
   }
-  return fmt::vformat(record.fmtString, store);
+  fmt::vformat_to(std::back_inserter(out), record.fmtString, store);
 }
 
 class Sink {
@@ -367,18 +382,23 @@ public:
 
 class StdoutSink : public Sink {
   std::mutex outputMutex;
+  // Bound in the constructor, which runs inside the Logger's: llvm::outs() is
+  // a function-local static, so building it before the Logger finishes
+  // construction destroys it after the Logger, whose consumer thread may
+  // still be writing during static destruction.
+  llvm::raw_fd_ostream &out = llvm::outs();
 
   // Note: outputMutex only serializes accesses made through this sink.
   // llvm::outs() is a process-global stream, so third-party writers that
   // use it directly are outside this synchronization.
   void write(llvm::StringRef msg) override {
     std::lock_guard<std::mutex> lock(outputMutex);
-    llvm::outs() << msg << "\n";
+    out << msg << "\n";
   }
 
   void flush() override {
     std::lock_guard<std::mutex> lock(outputMutex);
-    llvm::outs().flush();
+    out.flush();
   }
 };
 
@@ -461,6 +481,12 @@ Logger::Logger() {
 
 Logger::~Logger() {
   stopConsumer.store(true, std::memory_order_release);
+  {
+    // Cleared under the mutex the consumer checks it with, so the notify below
+    // cannot land between its predicate check and its wait.
+    std::lock_guard<std::mutex> lock(drainMutex);
+    consumerParked.store(false, std::memory_order_seq_cst);
+  }
   drainCv.notify_all();
   consumer.join();
 
@@ -510,6 +536,12 @@ bool Logger::enqueue(LogRecord record) {
 
   ring.itemAt(pos) = std::move(record);
   ring.publish(pos);
+  // The publish above is the empty->non-empty transition whenever the consumer
+  // has parked; it is the only case that needs a wakeup. If the consumer is
+  // running it will pick the record up on its next peek, and if it is between
+  // that peek and arming the flag it re-checks the ring after arming.
+  if (consumerParked.exchange(false, std::memory_order_seq_cst))
+    drainCv.notify_one();
   inFlightEnqueues.fetch_sub(1, std::memory_order_release);
   return true;
 }
@@ -520,26 +552,43 @@ void Logger::flushSinks() {
 }
 
 void Logger::run() {
+  // Whether any record was written to the sinks since the last flush. Sinks
+  // buffer in userspace, so the consumer pushes them to the OS when the ring
+  // drains; skipping the flush when nothing was written keeps an idle process
+  // from issuing a flush syscall on every poll.
+  bool wroteSinceFlush = false;
   while (true) {
     if (LogRecord *item = ring.peek()) {
       // Process while holding the slot so strArena_ bytes remain valid.
       processRecord(*item);
       ring.consume();
-    } else {
-      if (stopConsumer.load(std::memory_order_acquire) &&
-          inFlightEnqueues.load(std::memory_order_acquire) == 0 &&
-          ring.enqueueCount() <= ring.consumeCount())
-        break;
-      // Flush buffered sink writes to the OS before sleeping — cheaper than
-      // flushing after every record, and ensures output appears promptly when
-      // the ring drains.
-      flushSinks();
-      std::unique_lock<std::mutex> lock(drainMutex);
-      // The consumer polls every 100 us to drain the ring buffer. Messages
-      // will therefore wait up to this long to be seen in the log. Flushing
-      // will force the thread to wake up and drain the buffer as normal.
-      drainCv.wait_for(lock, std::chrono::microseconds(100));
+      wroteSinceFlush = true;
+      continue;
     }
+    if (stopConsumer.load(std::memory_order_acquire) &&
+        inFlightEnqueues.load(std::memory_order_acquire) == 0 &&
+        ring.enqueueCount() <= ring.consumeCount())
+      break;
+    // Flush buffered sink writes to the OS before sleeping — cheaper than
+    // flushing after every record, and ensures output appears promptly when
+    // the ring drains.
+    if (wroteSinceFlush) {
+      flushSinks();
+      wroteSinceFlush = false;
+    }
+    std::unique_lock<std::mutex> lock(drainMutex);
+    // Producers check this flag before notifying, so arm it before the final
+    // look at the ring: a record published between the peek above and this
+    // store saw the flag clear and stayed silent, and the re-check catches it.
+    consumerParked.store(true, std::memory_order_seq_cst);
+    if (!ring.peek() && !stopConsumer.load(std::memory_order_acquire))
+      drainCv.wait_for(lock, kIdlePollInterval, [] {
+        return !consumerParked.load(std::memory_order_acquire);
+      });
+    // Cleared unconditionally: the wait can also end on the backstop timeout
+    // with no producer having swapped the flag, and Logger::flush() and the
+    // destructor clear it to force a drain.
+    consumerParked.store(false, std::memory_order_seq_cst);
   }
   flushSinks();
 }
@@ -548,6 +597,13 @@ void Logger::flush() {
   if (!consumer.joinable())
     return;
   size_t target = ring.enqueueCount();
+  {
+    // The consumer's wake predicate is this flag being clear, so clear it
+    // under the mutex the consumer evaluates it under: that keeps the notify
+    // below from landing between its predicate check and its wait.
+    std::lock_guard<std::mutex> lock(drainMutex);
+    consumerParked.store(false, std::memory_order_seq_cst);
+  }
   drainCv.notify_one();
   SpinWaiter<> waiter;
   while (ring.consumeCount() < target)
@@ -565,24 +621,29 @@ void Logger::flush() {
 void Logger::processRecord(const LogRecord &record) {
   bool isKV = record.kind == RecordKind::KeyValue;
   auto level = record.level;
-  llvm::SmallString<512> enhancedOrJSONMsg;
+  // One buffer for the whole line: the enhanced prefix and the payload are
+  // appended in place, so a short line never touches the heap.
+  llvm::SmallString<512> line;
   if (formatState.emitJSON) {
-    enhancedOrJSONMsg =
-        isKV ? buildJSONKVLogLine(record)
-             : buildJSONLogLine(level, record.channel, renderRecord(record),
-                                record.timestamp);
-  } else {
-    auto msg = isKV ? renderKVRecord(record) : renderRecord(record);
-    if (formatState.useEnhancedFormat) {
-      enhancedOrJSONMsg =
-          buildLogPrefix(level, record.channel, record.timestamp);
-      enhancedOrJSONMsg += msg;
+    if (isKV) {
+      appendJSONKVLogLine(line, record);
     } else {
-      enhancedOrJSONMsg = msg;
+      // The JSON envelope has to quote the rendered message, so it is built in
+      // a second buffer first. Still inline for short messages.
+      llvm::SmallString<512> msg;
+      appendFormattedRecord(msg, record);
+      appendJSONLogLine(line, level, record.channel, msg, record.timestamp);
     }
+  } else {
+    if (formatState.useEnhancedFormat)
+      line += buildLogPrefix(level, record.channel, record.timestamp);
+    if (isKV)
+      appendKVRecord(line, record);
+    else
+      appendFormattedRecord(line, record);
   }
   for (const auto &sink : sinks)
-    sink->write(enhancedOrJSONMsg);
+    sink->write(line);
 }
 
 // Depends on logger state to access formatting options

@@ -26,7 +26,7 @@ struct MyAffine(Movable where False):
 def testAffineThing():
     _ = MyAffine()
     # CHECK: lit.call {{.*}}MyAffine::@"__deinit__
-    # CHECK: kgen.return
+    # CHECK: hlcf.return
 
 
 # CHECK-LABEL: lit.struct.decl @EmptyExplicit
@@ -52,8 +52,10 @@ def correctUseExample():
 
 
 # CHECK-LABEL: lit.struct.decl @ExplicitDestroyThrowing
-@explicit_destroy("end lifetime with foo()")
-struct ExplicitDestroyThrowing(Deinitable where False, Movable where False):
+struct ExplicitDestroyThrowing(
+    Deinitable where False else "end lifetime with foo()",
+    Movable where False,
+):
     var field: MyAffine
 
     # CHECK-LABEL: lit.fn @"foo

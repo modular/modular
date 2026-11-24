@@ -20,7 +20,6 @@ launch shape themselves.
 """
 
 from max.gpu.host import DeviceContext
-from std.sys.info import _has_sm_9x_or_newer
 from layout import (
     ComptimeInt,
     Coord,
@@ -29,16 +28,12 @@ from layout import (
     TensorEngine,
     TileTensor,
 )
-from layout.tile_layout import Layout
+from layout.layout import Layout
 
 from .sampling import (
+    apply_masked_penalties_to_logits,
     apply_penalties_to_logits,
     update_frequency_data,
-)
-from .topk_fi import (
-    topk_mask_logits,
-    topk_sampling_from_prob,
-    topk_softmax_sample,
 )
 from .topk_fi import topk_topp_masked_probs as _topk_topp_masked_probs_single
 from .topk_fi import (
@@ -48,6 +43,8 @@ from .topk_fi_cluster import (
     topk_topp_masked_probs_cluster,
     topk_topp_sampling_from_prob_cluster,
 )
+from .dspark_draft import dspark_draft_sample_gpu
+from .spec_glue import accept_pair, first_rejected_index
 
 
 def topk_topp_masked_probs[
@@ -72,10 +69,14 @@ def topk_topp_masked_probs[
     TopKArrEngine: TensorEngine = DefaultEngine[element_width=1],
     TopPArrEngine: TensorEngine = DefaultEngine[element_width=1],
     TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
+    *,
+    ProbsEngine: TensorEngine,
 ](
     ctx: DeviceContext,
     logits: TileTensor[mut=False, dtype, ...],
-    probs: TileTensor[.float32, ProbsLayoutType, MutAnyOrigin],
+    probs: TileTensor[
+        .float32, ProbsLayoutType, MutAnyOrigin, Engine=ProbsEngine
+    ],
     top_k_val: Int,
     top_p_val: Float32 = 1.0,
     top_k_arr: Optional[
@@ -107,7 +108,7 @@ def topk_topp_masked_probs[
     See `topk_fi.topk_topp_masked_probs` for the parameters, arguments and
     output contract; both sides share them.
     """
-    comptime if _has_sm_9x_or_newer():
+    comptime if ctx.target._is_sm_9x_or_newer():
         topk_topp_masked_probs_cluster[
             dtype,
             block_size,
@@ -118,6 +119,7 @@ def topk_topp_masked_probs[
             TopKArrEngine,
             TopPArrEngine,
             TemperatureEngine,
+            ProbsEngine=ProbsEngine,
         ](
             ctx,
             logits,
@@ -139,6 +141,7 @@ def topk_topp_masked_probs[
             TopKArrEngine,
             TopPArrEngine,
             TemperatureEngine,
+            ProbsEngine=ProbsEngine,
         ](
             ctx,
             logits,
@@ -192,6 +195,9 @@ def topk_topp_sampling_from_prob[
     SeedEngine: TensorEngine = DefaultEngine[element_width=1],
     TemperatureEngine: TensorEngine = DefaultEngine[element_width=1],
     MinPEngine: TensorEngine = DefaultEngine[element_width=1],
+    # Defaulted because `out_dist` is optional: when it is None there is no
+    # tile argument for the engine to be inferred from.
+    OutDistEngine: TensorEngine = DefaultEngine[element_width=1],
 ](
     ctx: DeviceContext,
     probs: TileTensor[mut=False, dtype, ...],
@@ -239,8 +245,11 @@ def topk_topp_sampling_from_prob[
         TileTensor[.float32, MinPLayoutType, ImmutAnyOrigin, Engine=MinPEngine]
     ] = None,
     out_dist: Optional[
-        TileTensor[dist_dtype, DistLayoutType, MutAnyOrigin]
+        TileTensor[
+            dist_dtype, DistLayoutType, MutAnyOrigin, Engine=OutDistEngine
+        ]
     ] = None,
+    num_coop_blocks: Int = 0,
 ) raises:
     """Joint top-k + top-p sampling from probability distribution.
 
@@ -250,10 +259,14 @@ def topk_topp_sampling_from_prob[
     launcher. The branch is a comptime one, so a target without
     thread-block clusters never instantiates the cluster kernels.
 
+    `num_coop_blocks` reaches only the single-block launcher, which is the one
+    that splits a row across a resident block group; the cluster launcher sizes
+    its cluster itself.
+
     See `topk_fi.topk_topp_sampling_from_prob` for the parameters,
     arguments and output contract; both sides share them.
     """
-    comptime if emit_dist and from_logits and _has_sm_9x_or_newer():
+    comptime if emit_dist and from_logits and ctx.target._is_sm_9x_or_newer():
         topk_topp_sampling_from_prob_cluster[
             dtype,
             out_idx_type,
@@ -300,4 +313,5 @@ def topk_topp_sampling_from_prob[
             temperature,
             min_p,
             out_dist,
+            num_coop_blocks=num_coop_blocks,
         )

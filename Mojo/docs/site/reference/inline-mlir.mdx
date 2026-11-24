@@ -1,7 +1,6 @@
 ---
 title: Mojo inline MLIR reference
 sidebar_label: Inline MLIR
-sidebar_position: 11
 description: >
   Use Mojo's inline MLIR built-ins to call hardware intrinsics, atomic
   operations, and GPU dialect operations that the language doesn't yet
@@ -405,6 +404,45 @@ def main():
     print(clamp(7, 0, 10))   # 7
 ```
 
+### Template form
+
+Instead of passing operands and attributes separately, you can write the
+operation as MLIR assembly text in a backtick template. The template is
+backtick text, like the MLIR names elsewhere on this page, not a Mojo
+string. The compiler reads it at compile time.
+
+Each `%{...}` placeholder names a Mojo value in scope. A runtime value
+becomes an operand, so `%{a}` and `%{b}` below become the two operands of
+`index.add`:
+
+```mojo
+var a = Int(40).__mlir_index__()
+var b = Int(2).__mlir_index__()
+var sum = __mlir_op[`index.add %{a}, %{b}`]
+```
+
+The template must contain exactly one operation. You can also use these
+features:
+
+- `%{type_of(name)}` inserts the MLIR type of a bound value, for operations
+  that spell out their types:
+
+  ```mojo
+  var x = Int(255).__mlir_index__()
+  var low_bit = __mlir_op[
+      `index.castu %{x} : %{type_of(x)} to i1`, _type=__mlir_type.i1
+  ]
+  ```
+
+- `_type` is optional. It's the only keyword argument the template form
+  accepts. If you provide it, the compiler checks it against the parsed
+  operation's result types.
+- Multiple backtick chunks are concatenated, so long templates can span
+  several lines.
+
+The compiler might not catch an invalid operation, so
+check it against the dialect's documentation.
+
 ### Special attributes
 
 Three attributes have special meaning to the compiler:
@@ -605,10 +643,8 @@ name. This example defines a region and passes it to
 execution and later resumes by running the provided region:
 
 ```mojo
-@always_inline
-def _suspend_async[
-    body: def(AnyCoroutine) capturing -> None
-]():
+@inline(.always)
+def _suspend_async(body: Some[def(AnyCoroutine) -> None]):
     # Runs when the coroutine resumes.
     # The operation passes the coroutine handle as `hdl`.
     __mlir_region await_body(
@@ -674,8 +710,7 @@ They serve as a reference for common use cases.
 
 ### Wrapper structs
 
-<!-- VERIFIED: builtin/bool.mojo, builtin/int.mojo,
-     builtin/simd.mojo -->
+<!-- VERIFIED: builtin/bool.mojo, builtin/int.mojo, simd.mojo -->
 
 The most common pattern: a Mojo struct wraps a raw MLIR type in
 a field called `_mlir_value`. The struct provides a Mojo-friendly

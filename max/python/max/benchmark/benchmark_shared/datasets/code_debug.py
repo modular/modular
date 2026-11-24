@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""InfiniteBench Code.debug long-context dataset."""
+
 from __future__ import annotations
 
 import random
@@ -52,6 +54,8 @@ has the deliberate and obvious error in A, B, C, or D.\
 
 
 class CodeDebugLine(msgspec.Struct):
+    """One row of the Code.debug JSONL file."""
+
     id: int
     context: str
     input: str
@@ -60,7 +64,10 @@ class CodeDebugLine(msgspec.Struct):
 
 
 class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
+    """InfiniteBench Code.debug dataset."""
+
     def fetch(self) -> None:
+        """Downloads the Code.debug JSONL file from Hugging Face."""
         self.dataset_path = hf_hub_download_with_retry(
             repo_id="xinrongzhang2022/InfiniteBench",
             filename="code_debug.jsonl",
@@ -73,6 +80,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
         delay_between_chat_turns: DistributionParameter | None,
         tokenizer: PreTrainedTokenizerBase,
     ) -> ChatSamples:
+        """Builds two-turn long-context sessions from Code.debug rows."""
         # Expand code_debug dataset to 2-turn chats with a pre-defined followup question
         delay_dist = BaseDistribution.from_distribution_parameter(
             delay_between_chat_turns
@@ -126,9 +134,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
         shuffle: bool = True,
         **kwargs,
     ) -> RequestSamples:
-        """
-        The Long-Context dataset workload is based on InfiniteBench Code.debug
-        """
+        """The Long-Context workload, based on InfiniteBench Code.debug."""
         assert self.dataset_path is not None, (
             "dataset_path must be provided for CodeDebugBenchmarkDataset"
         )
@@ -210,6 +216,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
     @staticmethod
     def format_code_debug_context(request_features: CodeDebugLine) -> str:
+        """Renders a row's context and options into the prompt template."""
         prompt = CODE_DEBUG_TEMPLATE.format(
             context=request_features.context,
             OPTION_A=request_features.options[0],
@@ -221,6 +228,7 @@ class CodeDebugBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
     @staticmethod
     def get_code_debug_answer(request_features: CodeDebugLine) -> str:
+        """Returns the option letter matching the row's answer."""
         if len(request_features.answer) != 1:
             raise ValueError("More than 1 answers")
         OPTIONS = "ABCD"

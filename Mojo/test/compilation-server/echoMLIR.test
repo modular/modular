@@ -6,12 +6,12 @@
 {"jsonrpc":"2.0","id":2,
  "method":"echoMLIR",
  "params":{
-    "module":"module attributes {M.target_info = #M.target<triple = \"arm64-apple-darwin23.4.0\", arch = \"apple-m3\">}{kgen.func export @inc(%arg0: index) -> index {kgen.return %arg0 : index}}"
+    "module":"module attributes {M.target_info = #M.target<triple = \"arm64-apple-darwin23.4.0\", arch = \"apple-m3\">}{kgen.func export @inc(%arg0: index) -> index {hlcf.return %arg0 : index}}"
   }
 }
 // CHECK-LABEL: "id": 2
 // CHECK-NEXT:  "jsonrpc": "2.0"
-// CHECK:  "module": "module attributes {M.target_info = #M.target<triple = \"arm64-apple-darwin23.4.0\", arch = \"apple-m3\">} {\n  kgen.func export @inc(%arg0: index) -> index {\n    kgen.return %arg0 : index\n  }\n}"
+// CHECK:  "module": "module attributes {M.target_info = #M.target<triple = \"arm64-apple-darwin23.4.0\", arch = \"apple-m3\">} {\n  kgen.func export @inc(%arg0: index) -> index {\n    hlcf.return %arg0 : index\n  }\n}"
 // -----
 {"jsonrpc":"2.0","id":4,
  "method":"echoMLIR",

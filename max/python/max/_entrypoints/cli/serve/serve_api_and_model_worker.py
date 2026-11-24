@@ -17,9 +17,11 @@
 import logging
 import os
 import signal
+import socket
 from types import FrameType
 
 import uvloop
+from fastapi import FastAPI
 from max.pipelines import PIPELINE_REGISTRY
 from max.pipelines.lib import PipelineArgs, PipelineConfig
 from max.pipelines.logging_utils import log_basic_config, log_pipeline_info
@@ -29,7 +31,6 @@ from max.serve.api_server import (
     ServingTokenGeneratorSettings,
     fastapi_app,
     fastapi_config,
-    lifespan,
     validate_port_is_free,
 )
 from max.serve.config import Settings
@@ -59,7 +60,17 @@ def _exit_on_signal(signum: int, frame: FrameType | None) -> None:
 def serve_api_server_and_model_worker(
     settings: Settings,
     pipeline_args: PipelineArgs,
+    *,
+    sockets: list[socket.socket] | None = None,
 ) -> None:
+    """Serves the API server and model worker until shutdown.
+
+    Args:
+        settings: Server settings.
+        pipeline_args: Pipeline to serve.
+        sockets: Listening sockets to serve on instead of binding
+            ``settings.host``:``settings.port``. Skips the free-port check.
+    """
     # Register custom architectures before any architecture-name lookup. Both
     # retrieve_pipeline_task and retrieve_factory below resolve by name; a custom
     # arch that overrides a built-in must be imported first, or the stale lazy
@@ -83,6 +94,7 @@ def serve_api_server_and_model_worker(
 
     # Load tokenizer and pipeline from PIPELINE_REGISTRY.
     pipeline_config = PipelineConfig.from_args(pipeline_args)
+    PIPELINE_REGISTRY.refuse_mach_only(pipeline_config)
     retrieved = PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
         task=pipeline_args.task,
@@ -115,9 +127,19 @@ def serve_api_server_and_model_worker(
 
     # Initialize and serve webserver.
     app = fastapi_app(settings, pipeline_settings)
+    serve_api(app, settings, sockets)
+
+
+def serve_api(
+    app: FastAPI,
+    settings: Settings,
+    sockets: list[socket.socket] | None,
+) -> None:
+    """Runs the API server until shutdown."""
     config = fastapi_config(app=app, server_settings=settings)
     # If likely to fail, don't waste seconds or minutes loading models
-    validate_port_is_free(settings.port)
+    if sockets is None:
+        validate_port_is_free(settings.port)
 
     server = Server(config)
 
@@ -129,10 +151,8 @@ def serve_api_server_and_model_worker(
         # the running server directly, without the fragile self-SIGINT signaling
         # the uvicorn lifespan hook previously relied on.
         try:
-            async with lifespan(
-                app, settings, pipeline_settings, app.state.zmq_endpoint_base
-            ):
-                await server.serve()
+            async with app.router.lifespan_context(app):
+                await server.serve(sockets=sockets)
         except SubprocessExit as e:
             logger.error("Worker crashed (%s), shutting down...", e)
             # quietly unwind the api-server to keep logs cleaner

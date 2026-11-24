@@ -54,7 +54,7 @@ def test_nested_try_blocks() raises:
         _ = fetch_and_parse()
     except e:
         assert_equal(e.source, "network")
-        assert_true(e.details.find("NetworkError") >= 0)
+        assert_true("NetworkError" in e.details)
 
 
 def test_error_propagation_level3() raises:
@@ -93,7 +93,7 @@ def test_reraise_as_different_type() raises:
         _ = reraise_as_different_type()
     except e:
         assert_equal(e.source, "network")
-        assert_true(e.details.find("404") >= 0)
+        assert_true("404" in e.details)
 
 
 def test_reraise_modified() raises:
@@ -102,7 +102,7 @@ def test_reraise_modified() raises:
         _ = reraise_modified()
     except e:
         assert_equal(e.code, 404)
-        assert_true(e.message.find("[Modified]") >= 0)
+        assert_true("[Modified]" in e.message)
 
 
 def test_suppress_error_returns_default() raises:
@@ -122,7 +122,7 @@ def test_application_error_from_network() raises:
     var net_err = NetworkError(code=500, message="test")
     var app_err = ApplicationError.from_network(net_err)
     assert_equal(app_err.source, "network")
-    assert_true(app_err.details.find("500") >= 0)
+    assert_true("500" in app_err.details)
 
 
 def test_application_error_from_parse() raises:
@@ -130,7 +130,7 @@ def test_application_error_from_parse() raises:
     var parse_err = ParseError(position=10, expected="number")
     var app_err = ApplicationError.from_parse(parse_err)
     assert_equal(app_err.source, "parse")
-    assert_true(app_err.details.find("10") >= 0)
+    assert_true("10" in app_err.details)
 
 
 def main() raises:

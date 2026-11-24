@@ -35,6 +35,7 @@
 #include <llvm/ADT/StringRef.h>
 
 #include <atomic>
+#include <bit>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -77,9 +78,28 @@ public:
   }
 };
 
+namespace HistogramDetail {
+constexpr uint64_t doubleToBits(double value) noexcept {
+  return std::bit_cast<uint64_t>(value);
+}
+
+constexpr double bitsToDouble(uint64_t bits) noexcept {
+  return std::bit_cast<double>(bits);
+}
+} // namespace HistogramDetail
+
 // Histograms maintain a count of data points accumulated since the last
 // read() call, as well as extrema and sum of all data points. The state
 // is reset when read.
+//
+// record() takes no lock: every field is updated with relaxed atomics, so
+// request/step threads never serialise on this instrument. read() resets the
+// window by exchanging each field back to its empty value, so it is not
+// linearisable with respect to concurrent record() calls: a sample racing with
+// read() may be dropped entirely, or split so that its value appears in one
+// window and its count in the next. The guarantees are per-field atomicity,
+// that no sample is counted twice, and that a quiescent instrument reports
+// exactly what a lock-protected one would.
 class Histogram {
 public:
   struct Snapshot {
@@ -90,25 +110,58 @@ public:
   };
 
   void record(double value) noexcept {
-    std::lock_guard<std::mutex> guard(mu);
-    ++ss.count;
-    ss.sum += value;
-    if (value < ss.min)
-      ss.min = value;
-    if (value > ss.max)
-      ss.max = value;
+    count.fetch_add(1, std::memory_order_relaxed);
+    addToSum(value);
+    // Both CAS loops retry until they install a strictly smaller (larger)
+    // value, so the final state is the minimum (maximum) of the values that
+    // completed the loop. NaN compares false against everything, so it is
+    // ignored here, matching the previous comparison-based implementation.
+    uint64_t old = min.load(std::memory_order_relaxed);
+    while (HistogramDetail::bitsToDouble(old) > value)
+      if (min.compare_exchange_weak(old, HistogramDetail::doubleToBits(value),
+                                    std::memory_order_relaxed))
+        break;
+    old = max.load(std::memory_order_relaxed);
+    while (HistogramDetail::bitsToDouble(old) < value)
+      if (max.compare_exchange_weak(old, HistogramDetail::doubleToBits(value),
+                                    std::memory_order_relaxed))
+        break;
   }
 
   Snapshot read() noexcept {
-    std::lock_guard<std::mutex> guard(mu);
-    Snapshot retVal{ss};
-    ss = Snapshot{};
+    Snapshot retVal;
+    retVal.count = count.exchange(0, std::memory_order_relaxed);
+    retVal.sum = HistogramDetail::bitsToDouble(
+        sum.exchange(0, std::memory_order_relaxed));
+    retVal.min = HistogramDetail::bitsToDouble(
+        min.exchange(kMaxBits, std::memory_order_relaxed));
+    retVal.max = HistogramDetail::bitsToDouble(
+        max.exchange(kLowestBits, std::memory_order_relaxed));
     return retVal;
   }
 
 private:
-  std::mutex mu;
-  Snapshot ss;
+  // sum holds the bit pattern of the double accumulator; a floating-point
+  // atomic has no fetch_add, so accumulate with a CAS loop.
+  void addToSum(double value) noexcept {
+    uint64_t old = sum.load(std::memory_order_relaxed);
+    while (!sum.compare_exchange_weak(
+        old,
+        HistogramDetail::doubleToBits(HistogramDetail::bitsToDouble(old) +
+                                      value),
+        std::memory_order_relaxed))
+      ;
+  }
+
+  static constexpr uint64_t kMaxBits =
+      HistogramDetail::doubleToBits(std::numeric_limits<double>::max());
+  static constexpr uint64_t kLowestBits =
+      HistogramDetail::doubleToBits(std::numeric_limits<double>::lowest());
+
+  std::atomic<uint64_t> count = 0;
+  std::atomic<uint64_t> sum = 0;
+  std::atomic<uint64_t> min = kMaxBits;
+  std::atomic<uint64_t> max = kLowestBits;
 };
 
 // This struct is created by dumping the contents of the metric maps and is

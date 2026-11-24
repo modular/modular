@@ -24,10 +24,10 @@ def use_any[*Ts: AnyType](*args: *Ts): pass
 # ===----------------------------------------------------------------------=== #
 
 struct MyList[T: AnyType](Movable where False):
-    var data: UnsafePointer[Self.T, UntrackedOrigin[mut=True]]
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
 
     def __init__(out self):
-        self.data = UnsafePointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
+        self.data = Pointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
 
     def __deinit__(deinit self):
         pass # Explicit deinit so it isn't considered trivial and elided.
@@ -152,7 +152,7 @@ def test_dominance_lifetime2(cond: Bool):
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt_ref += 4
 
-# This verifies we're handling hlcf.elif dominance correctly.
+# This verifies we're handling hlcf.if dominance correctly.
 def test_rederive_in_controlled_block(list: MyList[Int]) -> Int:
     if list[] > 0:
         return list[]
@@ -178,7 +178,7 @@ def test_vardecl_store_handling(list: MyList[Int]):
     p = Pointer(to=list[])
     _ = p
 
-def test_bad_io_concrete[attr: StringLiteral](ptr: UnsafePointer[Int, _]) -> Int:
+def test_bad_io_concrete[attr: StringLiteral](ptr: Pointer[Int, _]) -> Int:
     var str = String()
     # expected-error @+1 {{interior origin name must be a string literal, it cannot be parametric when used}}
     ref r = ptr._get_ref_with_unsafe_interior_origin[attr](str)
@@ -238,31 +238,15 @@ def test_nested_fn1():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
-    inner()
-
-def test_nested_fn2():
-    var base = MyList[Int]()
-    var p = Pointer(to=base[])
-
-    @__copy_capture(p)
-    @__parameter
-    def inner():
-        _ = p == p  # Should be fine.
-        # expected-error @+1 {{incorrect invalidation of interior origin in closure 'base["element"]'}}
-        base.mutate()
     inner()
 
 def test_nested_fn3():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
 
     base.mutate() # expected-note {{origin was invalidated here}}
@@ -272,16 +256,12 @@ def test_nested_fn4():
     var base = MyList[Int]()
     var p = Pointer(to=base[])
 
-    @__copy_capture(p)
-    @__parameter
-    def inner():
+    def inner() {var p, imm}:
         _ = p == p  # Should be fine.
 
     base.mutate()
-    _ = base[] # attempt to refresh.
-    # FIXME: This should be an error; we should make sure we have the same
-    # version of the reference as when the closure was created.
-    inner()
+    _ = base[] # expected-note {{origin was defined here, after the reference was formed}}
+    inner() # expected-error {{use of invalidated interior reference 'base["element"]'}}
 
 def test_loop_iteration(var list: List[Int]):
     # The mutate method should invalidate the active iterator.
@@ -289,3 +269,111 @@ def test_loop_iteration(var list: List[Int]):
     for _ in list:
         # expected-note @+1 {{origin was invalidated here}}
         list.append(4)
+
+# ===----------------------------------------------------------------------=== #
+# MOCO-5371 - Mutable origins in argument types and captures
+# ===----------------------------------------------------------------------=== #
+
+def mutate_through[o: MutOrigin](p: Pointer[MyList[Int], o]):
+    p[].mutate()
+
+def read_through[o: ImmOrigin](p: Pointer[MyList[Int], o]):
+    p[].access()
+
+def call_closure[F: def() -> None](f: F):
+    f()
+
+def test_mut_pointer_argument():
+    var list = MyList[Int]()
+    var p = Pointer(to=list)
+    ref elt = list[]
+    mutate_through(p)   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_imm_pointer_argument(list: MyList[Int]):
+    ref elt = list[]
+    read_through(Pointer(to=list))
+    use_any(elt)
+
+def test_read_through_mut_pointer():
+    var list = MyList[Int]()
+    var p = Pointer(to=list)
+    ref elt = list[]
+    p[].access()
+    elt += 4
+
+def test_closure_mut_capture():
+    var list = MyList[Int]()
+
+    def inner() {mut list}:
+        list.mutate()
+
+    ref elt = list[]
+    inner()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_closure_imm_capture():
+    var list = MyList[Int]()
+
+    def inner() {list}:
+        list.access()
+
+    ref elt = list[]
+    inner()
+    elt += 4
+
+def test_closure_mut_pointer_capture():
+    var list = MyList[Int]()
+    var p = Pointer(to=list)
+
+    def inner() {p}:
+        p[].mutate()
+
+    ref elt = list[]
+    inner()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_nested_closure_mut_capture():
+    var list = MyList[Int]()
+
+    def inner() {mut list}:
+        list.mutate()
+
+    def outer() {inner}:
+        inner()
+
+    ref elt = list[]
+    outer()   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+def test_closure_argument_mut_capture():
+    var list = MyList[Int]()
+
+    def inner() {mut list}:
+        list.mutate()
+
+    ref elt = list[]
+    call_closure(inner)   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
+    elt += 4
+
+@fieldwise_init
+struct MyView[origin: MutOrigin]:
+    var data: Pointer[MyList[Int], Self.origin]
+
+def mutate_viewed_element[o: MutOrigin](view: MyView[o]):
+    view.data[].mutate()
+
+# A mutable view cannot resize its container, but it can resize an element.
+def test_mut_view_argument():
+    var list = MyList[MyList[Int]]()
+    ref outer = list[]
+    var view = MyView(Pointer(to=outer))
+    ref elt = outer[]
+    mutate_viewed_element(view)   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]["element"]'}}
+    elt += 4

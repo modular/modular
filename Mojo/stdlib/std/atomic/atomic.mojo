@@ -22,7 +22,7 @@ from std.atomic import Atomic
 from std.collections.string.string_span import _get_kgen_string
 from std.memory._poison import _check_not_poison
 from std.os import abort
-from std.sys.info import is_nvidia_gpu, is_apple_gpu
+from std._plugin import CurrentPlugin
 
 from std.builtin.dtype import _integral_type_of, _unsigned_integral_type_of
 from std.memory import bitcast
@@ -31,9 +31,9 @@ from std.memory import bitcast
 # Ordering
 # ===-----------------------------------------------------------------------===#
 
-comptime _DEFAULT_ARITHMETIC_ORDERING = Ordering.RELAXED if is_apple_gpu() else Ordering.SEQUENTIAL
+comptime _DEFAULT_ARITHMETIC_ORDERING = CurrentPlugin.default_atomic_ordering
 comptime _DEFAULT_COMPARISON_ORDERING = _DEFAULT_ARITHMETIC_ORDERING
-comptime _DEFAULT_MEMORY_ORDERING = Ordering.SEQUENTIAL
+comptime _DEFAULT_MEMORY_ORDERING = Ordering.sequential
 
 
 struct Ordering(
@@ -48,13 +48,13 @@ struct Ordering(
     orderings for atomic operations.
 
     Attributes:
-        NOT_ATOMIC: Not atomic.
-        UNORDERED: Unordered.
-        RELAXED: Relaxed.
-        ACQUIRE: Acquire.
-        RELEASE: Release.
-        ACQUIRE_RELEASE: Acquire-release.
-        SEQUENTIAL: Sequentially consistent.
+        not_atomic: Not atomic.
+        unordered: Unordered.
+        relaxed: Relaxed.
+        acquire: Acquire.
+        release: Release.
+        acquire_release: Acquire-release.
+        sequential: Sequentially consistent.
     """
 
     var _value: UInt8
@@ -62,22 +62,50 @@ struct Ordering(
     This is the underlying value of the memory ordering.
     """
 
-    comptime NOT_ATOMIC = Self(0)
+    comptime not_atomic = Self(0)
     """Not atomic."""
-    comptime UNORDERED = Self(1)
+    comptime unordered = Self(1)
     """Unordered."""
-    comptime RELAXED = Self(2)
+    comptime relaxed = Self(2)
     """Relaxed."""
-    comptime ACQUIRE = Self(3)
+    comptime acquire = Self(3)
     """Acquire."""
-    comptime RELEASE = Self(4)
+    comptime release = Self(4)
     """Release."""
-    comptime ACQUIRE_RELEASE = Self(5)
+    comptime acquire_release = Self(5)
     """Acquire-release."""
-    comptime SEQUENTIAL = Self(6)
+    comptime sequential = Self(6)
     """Sequentially consistent."""
 
-    @always_inline
+    @deprecated(use=not_atomic)
+    comptime NOT_ATOMIC = Self.not_atomic
+    """Deprecated: The former name of `not_atomic`."""
+
+    @deprecated(use=unordered)
+    comptime UNORDERED = Self.unordered
+    """Deprecated: The former name of `unordered`."""
+
+    @deprecated(use=relaxed)
+    comptime RELAXED = Self.relaxed
+    """Deprecated: The former name of `relaxed`."""
+
+    @deprecated(use=acquire)
+    comptime ACQUIRE = Self.acquire
+    """Deprecated: The former name of `acquire`."""
+
+    @deprecated(use=release)
+    comptime RELEASE = Self.release
+    """Deprecated: The former name of `release`."""
+
+    @deprecated(use=acquire_release)
+    comptime ACQUIRE_RELEASE = Self.acquire_release
+    """Deprecated: The former name of `acquire_release`."""
+
+    @deprecated(use=sequential)
+    comptime SEQUENTIAL = Self.sequential
+    """Deprecated: The former name of `sequential`."""
+
+    @inline(.always)
     def __init__(out self, value: UInt8):
         """Constructs a new Ordering object.
 
@@ -98,7 +126,7 @@ struct Ordering(
         """
         return self._value == other._value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         """Compares two Ordering objects for inequality.
 
@@ -117,22 +145,22 @@ struct Ordering(
             A string slice representation of this ordering.
         """
 
-        if self == Self.NOT_ATOMIC:
-            return "Ordering.NOT_ATOMIC"
-        if self == Self.UNORDERED:
-            return "Ordering.UNORDERED"
-        if self == Self.RELAXED:
-            return "Ordering.RELAXED"
-        if self == Self.ACQUIRE:
-            return "Ordering.ACQUIRE"
-        if self == Self.RELEASE:
-            return "Ordering.RELEASE"
-        if self == Self.ACQUIRE_RELEASE:
-            return "Ordering.ACQUIRE_RELEASE"
-        if self == Self.SEQUENTIAL:
-            return "Ordering.SEQUENTIAL"
+        if self == Self.not_atomic:
+            return "Ordering.not_atomic"
+        if self == Self.unordered:
+            return "Ordering.unordered"
+        if self == Self.relaxed:
+            return "Ordering.relaxed"
+        if self == Self.acquire:
+            return "Ordering.acquire"
+        if self == Self.release:
+            return "Ordering.release"
+        if self == Self.acquire_release:
+            return "Ordering.acquire_release"
+        if self == Self.sequential:
+            return "Ordering.sequential"
 
-        return "Ordering.UNKNOWN"
+        return "Ordering.unknown"
 
     def write_to(self, mut writer: Some[Writer]):
         """Write the string representation of this `Ordering` to a writer.
@@ -151,26 +179,26 @@ struct Ordering(
         """
         writer.write_string(self.as_string_slice())
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __mlir_attr(self) -> __mlir_type.`!kgen.deferred`:
         """Returns the MLIR attribute representation of the Ordering object.
 
         Returns:
             The MLIR attribute representation of the Ordering object.
         """
-        if self == Self.NOT_ATOMIC:
+        if self == Self.not_atomic:
             return __mlir_attr.`#pop.atomic_ordering<not_atomic>`
-        if self == Self.UNORDERED:
+        if self == Self.unordered:
             return __mlir_attr.`#pop.atomic_ordering<unordered>`
-        if self == Self.RELAXED:
+        if self == Self.relaxed:
             return __mlir_attr.`#pop.atomic_ordering<monotonic>`
-        if self == Self.ACQUIRE:
+        if self == Self.acquire:
             return __mlir_attr.`#pop.atomic_ordering<acquire>`
-        if self == Self.RELEASE:
+        if self == Self.release:
             return __mlir_attr.`#pop.atomic_ordering<release>`
-        if self == Self.ACQUIRE_RELEASE:
+        if self == Self.acquire_release:
             return __mlir_attr.`#pop.atomic_ordering<acq_rel>`
-        if self == Self.SEQUENTIAL:
+        if self == Self.sequential:
             return __mlir_attr.`#pop.atomic_ordering<seq_cst>`
 
         abort()
@@ -181,7 +209,7 @@ struct Ordering(
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def fence[
     ordering: Ordering = _DEFAULT_MEMORY_ORDERING,
     *,
@@ -231,7 +259,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
     occur through atomic primitive operations.
     """
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, var value: Self.T):
         """Constructs a new atomic value.
 
@@ -241,7 +269,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         self._value = value^
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def load[
         dtype: DType,
         //,
@@ -277,7 +305,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return result
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def load[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](self: Atomic[Scalar[dtype], scope=_]) -> Scalar[dtype]:
@@ -292,7 +320,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return type_of(self).load[ordering=ordering](Pointer(to=self._value))
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def fetch_add[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](
@@ -335,7 +363,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return Scalar[dtype](mlir_value=res)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _xchg[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](
@@ -375,7 +403,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return Scalar[dtype](mlir_value=res)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def store[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](
@@ -404,7 +432,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         ](value._mlir_value, ptr._get_kgen_pointer())
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def store[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_MEMORY_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], value: Scalar[dtype]):
@@ -420,7 +448,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         type_of(self).store[ordering=ordering](value_addr, value)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def fetch_add[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]) -> Scalar[
@@ -447,7 +475,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return type_of(self).fetch_add[ordering=ordering](value_addr, rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def __iadd__[
         dtype: DType, //
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]):
@@ -465,7 +493,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _ = self.fetch_add(rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def fetch_sub[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_ARITHMETIC_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]) -> Scalar[
@@ -504,7 +532,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         return Scalar[dtype](mlir_value=res)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def __isub__[
         dtype: DType,
         //,
@@ -523,7 +551,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _ = self.fetch_sub(rhs)
 
     @staticmethod
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def compare_exchange[
         dtype: DType,
         *,
@@ -593,7 +621,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         ](atomic_integral_ptr, expected_integral_ptr, desired_integral)
 
     @__allow_legacy_custom_self_type
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def compare_exchange[
         dtype: DType,
         //,
@@ -632,7 +660,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         ](Pointer(to=self._value), expected, desired)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def max[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
@@ -661,7 +689,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _max_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def max[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]):
@@ -685,7 +713,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         type_of(self).max[ordering=ordering](Pointer(to=self._value), rhs)
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def min[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](
@@ -714,7 +742,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
         _min_impl[scope=Self.scope, ordering=ordering](ptr, rhs)
 
     @__allow_legacy_custom_self_type
-    @always_inline
+    @inline(.always)
     def min[
         dtype: DType, //, *, ordering: Ordering = _DEFAULT_COMPARISON_ORDERING
     ](mut self: Atomic[Scalar[dtype], scope=_], rhs: Scalar[dtype]):
@@ -745,7 +773,7 @@ struct Atomic[T: Deinitable & Movable, *, scope: StaticString = ""]:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def _compare_exchange_integral_impl[
     dtype: DType,
     //,
@@ -818,7 +846,7 @@ def _compare_exchange_integral_impl[
     return success
 
 
-@always_inline
+@inline(.always)
 def _max_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Ordering
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
@@ -831,7 +859,7 @@ def _max_impl_base[
     ](value_addr._get_kgen_pointer(), rhs._mlir_value)
 
 
-@always_inline
+@inline(.always)
 def _min_impl_base[
     dtype: DType, //, *, scope: StaticString, ordering: Ordering
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
@@ -844,7 +872,7 @@ def _min_impl_base[
     ](value_addr._get_kgen_pointer(), rhs._mlir_value)
 
 
-@always_inline
+@inline(.always)
 def _max_impl[
     dtype: DType,
     //,
@@ -852,7 +880,9 @@ def _max_impl[
     scope: StaticString,
     ordering: Ordering,
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
-    comptime if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if (
+        CurrentPlugin.atomic_float_minmax_via_int and dtype.is_floating_point()
+    ):
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:
@@ -870,7 +900,7 @@ def _max_impl[
     _max_impl_base[scope=scope, ordering=ordering](ptr, rhs)
 
 
-@always_inline
+@inline(.always)
 def _min_impl[
     dtype: DType,
     //,
@@ -878,7 +908,9 @@ def _min_impl[
     scope: StaticString,
     ordering: Ordering,
 ](ptr: MutPointer[Scalar[dtype], ...], rhs: Scalar[dtype]):
-    comptime if is_nvidia_gpu() and dtype.is_floating_point():
+    comptime if (
+        CurrentPlugin.atomic_float_minmax_via_int and dtype.is_floating_point()
+    ):
         comptime integral_type = _integral_type_of[dtype]()
         comptime unsigned_integral_type = _unsigned_integral_type_of[dtype]()
         if rhs >= 0:

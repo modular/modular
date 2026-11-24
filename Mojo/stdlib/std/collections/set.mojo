@@ -19,7 +19,7 @@ from std.format._utils import (
     Named,
     TypeNames,
 )
-from std.hashlib import Hasher, default_hasher
+from std.hash import Hasher, default_hasher
 
 from .dict import (
     Dict,
@@ -32,18 +32,17 @@ from .dict import (
 )
 
 
-@explicit_destroy(
-    "Use `deinit_with()` to explicitly destroy a `Set` with a"
-    " non-`Deinitable` element type"
-)
 struct Set[
     T: KeyElement,
-    H: Hasher = default_hasher,
+    H: Hasher & Defaultable & Deinitable = default_hasher,
 ](
     Boolable,
     Comparable where conforms_to(T, Copyable) and conforms_to(T, Equatable),
     Copyable where conforms_to(T, Copyable),
-    Deinitable where conforms_to(T, Deinitable),
+    Deinitable where conforms_to(T, Deinitable) else (
+        "Use `deinit_with()` to explicitly destroy a `Set` with a"
+        " non-`Deinitable` element type"
+    ),
     Equatable where conforms_to(T, Copyable) and conforms_to(T, Equatable),
     Hashable where conforms_to(T, Copyable) and conforms_to(T, Hashable),
     Iterable,
@@ -425,7 +424,7 @@ struct Set[
         write_sequence_to(writer, iterate, start="{", end="}")
         _ = iterator^
 
-    @no_inline
+    @inline(.never)
     def write_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Writable):
@@ -436,7 +435,7 @@ struct Set[
         """
         self._write_self_to[is_repr=False](writer)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(
         self, mut writer: Some[Writer]
     ) where conforms_to(Self.T, Copyable) and conforms_to(Self.T, Writable):

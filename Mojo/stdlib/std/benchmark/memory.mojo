@@ -25,7 +25,7 @@ from std.atomic import Ordering, fence
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def clobber_memory():
     """Forces all pending memory writes to be flushed to memory.
 
@@ -36,4 +36,4 @@ def clobber_memory():
 
     # This operation corresponds to  atomic_signal_fence(memory_order_acq_rel)
     # in C++.
-    fence[Ordering.ACQUIRE_RELEASE, scope="singlethread"]()
+    fence[Ordering.acquire_release, scope="singlethread"]()

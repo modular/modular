@@ -18,7 +18,6 @@ formatted reporting. It includes support for colored output, timing statistics,
 and flexible test selection via CLI arguments.
 """
 
-from std.math import ceil, floor
 from std.os import sep
 from std.time import perf_counter_ns
 from std.utils._ansi import Color, Text
@@ -81,19 +80,55 @@ def _writeln[
 
 
 @fieldwise_init
-struct TestResult(Equatable, ImplicitlyCopyable, Writable):
+struct TestResult(EnumLike, Equatable, ImplicitlyCopyable, Writable):
     """A test result code."""
 
     var _value: Int
 
-    comptime PASS = Self(0)
+    # `pass` is a keyword, so this declaration needs backticks. Uses such as
+    # `TestResult.pass` and `.pass` do not.
+    comptime `pass` = Self(0)
     """The test passed."""
 
-    comptime FAIL = Self(1)
+    comptime fail = Self(1)
     """The test failed."""
 
-    comptime SKIP = Self(2)
+    comptime skip = Self(2)
     """The test was skipped."""
+
+    @deprecated("Use `TestResult.pass` instead.")
+    comptime PASS = Self.pass
+    """Deprecated: The former name of `pass`."""
+
+    @deprecated(use=fail)
+    comptime FAIL = Self.fail
+    """Deprecated: The former name of `fail`."""
+
+    @deprecated(use=skip)
+    comptime SKIP = Self.skip
+    """Deprecated: The former name of `skip`."""
+
+    comptime _enum_case_names = ParameterList.of[
+        "pass".value,
+        "fail".value,
+        "skip".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, Tuple[]
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "TestResult has no payload"
 
     def __eq__(self, rhs: Self) -> Bool:
         """Compare two test result codes for equality.
@@ -112,14 +147,15 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
         Args:
             writer: The writer to output the result code to.
         """
-        if self == Self.PASS:
-            writer.write(Text[Color.GREEN]("PASS"))
-        elif self == Self.FAIL:
-            writer.write(Text[Color.RED]("FAIL"))
-        elif self == Self.SKIP:
-            writer.write(Text[Color.YELLOW]("SKIP"))
+        match self:
+            case .pass:
+                writer.write(Text[Color.GREEN]("pass"))
+            case .fail:
+                writer.write(Text[Color.RED]("fail"))
+            case .skip:
+                writer.write(Text[Color.YELLOW]("skip"))
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this test result to a writer.
 
@@ -127,12 +163,13 @@ struct TestResult(Equatable, ImplicitlyCopyable, Writable):
             writer: The writer to output to.
         """
         writer.write_string("TestResult.")
-        if self == Self.PASS:
-            writer.write_string("PASS")
-        elif self == Self.FAIL:
-            writer.write_string("FAIL")
-        elif self == Self.SKIP:
-            writer.write_string("SKIP")
+        match self:
+            case .pass:
+                writer.write_string("pass")
+            case .fail:
+                writer.write_string("fail")
+            case .skip:
+                writer.write_string("skip")
 
 
 struct TestReport(Copyable, Writable):
@@ -166,7 +203,7 @@ struct TestReport(Copyable, Writable):
         return {
             name = name^,
             duration_ns = duration_ns,
-            result = TestResult.PASS,
+            result = .pass,
         }
 
     @staticmethod
@@ -184,7 +221,7 @@ struct TestReport(Copyable, Writable):
         return {
             name = name^,
             duration_ns = duration_ns,
-            result = TestResult.FAIL,
+            result = .fail,
             error = error^,
         }
 
@@ -198,7 +235,7 @@ struct TestReport(Copyable, Writable):
         Returns:
             A new skipped test report.
         """
-        return {name = name^, duration_ns = 0, result = TestResult.SKIP}
+        return {name = name^, duration_ns = 0, result = .skip}
 
     @doc_hidden
     def __init__(
@@ -231,7 +268,7 @@ struct TestReport(Copyable, Writable):
         writer.write(" [ ", _format_nsec(self.duration_ns), " ] ")
         writer.write(Text[Color.CYAN](self.name))
 
-        if self.result == TestResult.FAIL:
+        if self.result == .fail:
             writer.write(
                 "\n",
                 _Indent(
@@ -240,7 +277,7 @@ struct TestReport(Copyable, Writable):
                 ),
             )
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this test report to a writer.
 
@@ -293,9 +330,9 @@ struct TestSuiteReport(Copyable, Writable):
 
         for ref report in self.reports:
             self.total_duration_ns += report.duration_ns
-            if report.result == TestResult.FAIL:
+            if report.result == .fail:
                 self.failures += 1
-            elif report.result == TestResult.SKIP:
+            elif report.result == .skip:
                 self.skipped += 1
         self.passed = len(self.reports) - self.failures - self.skipped
 
@@ -347,7 +384,7 @@ struct TestSuiteReport(Copyable, Writable):
                 sep=" ",
             )
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this test suite report to a writer.
 
@@ -371,8 +408,9 @@ struct _Test(Copyable):
     var name: StaticString
 
 
-@explicit_destroy("TestSuite must be destroyed via `run()`")
-struct TestSuite(Deinitable where False, Movable):
+struct TestSuite(
+    not Deinitable else "TestSuite must be destroyed via `run()`", Movable
+):
     """A suite of tests to run.
 
     You can automatically collect and register test functions starting with
@@ -424,7 +462,7 @@ struct TestSuite(Deinitable where False, Movable):
     var cli_args: List[StaticString]
     """The raw command line arguments passed to the test suite."""
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         *,
@@ -461,7 +499,7 @@ struct TestSuite(Deinitable where False, Movable):
                         "' has nonconforming signature",
                     )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def discover_tests[
         test_funcs: Tuple, /
@@ -560,18 +598,17 @@ struct TestSuite(Deinitable where False, Movable):
                     " test not found in suite: ",
                     arg,
                 )
-            if self.allow_list:
-                self.allow_list[].add(arg)
+            if case .Some(ref allow_list) = self.allow_list:
+                allow_list.add(arg)
             else:
                 self.skip_list.add(arg)
 
     def _should_skip(self, test: _Test) -> Bool:
         if test.name in self.skip_list:
             return True
-        if not self.allow_list:
+        __guard case .Some(allow_list) = self.allow_list else:
             return False
-        # SAFETY: We know that `self.allow_list` is not `None` here.
-        return test.name not in self.allow_list.unsafe_value()
+        return test.name not in allow_list
 
     def _validate_skip_list(self) raises:
         # TODO: _Test doesn't conform to Equatable, so we can't use
@@ -658,7 +695,7 @@ struct TestSuite(Deinitable where False, Movable):
         var report = self.generate_report(skip_all=skip_all)
 
         if report.failures > 0:
-            raise Error(report^)
+            raise Error(report)
         if not quiet:
             print(report)
 

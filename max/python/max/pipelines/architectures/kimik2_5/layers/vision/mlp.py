@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The vision encoder's feed-forward."""
 
 from __future__ import annotations
 
@@ -22,9 +23,9 @@ from max.graph import (
     TensorValue,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.nn.activation import activation_function_from_name
-from max.nn.layer import Module, Shardable
-from max.nn.linear import Linear
+from max.nn.legacy.activation import activation_function_from_name
+from max.nn.legacy.layer import Module, Shardable
+from max.nn.legacy.linear import Linear
 from max.nn.quant_config import QuantConfig
 
 

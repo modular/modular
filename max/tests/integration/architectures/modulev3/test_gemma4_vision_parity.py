@@ -25,10 +25,10 @@ from typing import Any
 import numpy as np
 import numpy.typing as npt
 import torch
+from max import functional as F
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.experimental import functional as F
 from max.graph import DeviceRef, Graph, TensorType
 from max.pipelines.architectures.gemma4.vision_model.pooling import (
     compute_pool_gather_index,
@@ -181,7 +181,7 @@ def _run_graph_tower(
         patches, pos_ids, cu, pgi, msl = values
         # The graph tower takes one tensor per device for each ragged input.
         outputs = tower([patches], [pos_ids], [cu], [pgi], msl)
-        graph.output(*outputs)
+        graph.output(outputs)
 
     compiled = session.load(graph, weights_registry=tower.state_dict())
     result = compiled.execute(*_input_buffers(inputs, device))[0]

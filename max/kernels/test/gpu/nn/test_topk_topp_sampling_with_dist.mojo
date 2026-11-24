@@ -23,6 +23,7 @@ so the exact cases stay at moderate widths.
 """
 
 from std.math import exp, sqrt
+from std.utils.numerics import inf, isfinite, nan, neg_inf
 from max.gpu.host import DeviceContext, HostBuffer
 from layout import TileTensor, row_major
 from std.testing import assert_almost_equal, assert_equal, assert_true
@@ -152,7 +153,7 @@ def run_sampling[
     # so the unfiltered fast path is only reachable with a null optional here.
     # A buffer of zeros leaves the optional engaged and takes the slow path.
     var min_p_t = (
-        TileTensor(min_p_dev, row_major(rows)).as_unsafe_any_origin().as_immut()
+        TileTensor(min_p_dev, row_major(rows)).as_unsafe_any_origin().as_imm()
     )
     var min_p_arg = Optional(min_p_t)
     if not pass_min_p:
@@ -172,16 +173,16 @@ def run_sampling[
             d,
             rng_seed=TileTensor(seed_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_k_arr=TileTensor(top_k_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_p_arr=TileTensor(top_p_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             temperature=TileTensor(temp_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             min_p=min_p_arg,
             out_dist=TileTensor(
                 dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
@@ -197,16 +198,16 @@ def run_sampling[
             d,
             rng_seed=TileTensor(seed_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_k_arr=TileTensor(top_k_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             top_p_arr=TileTensor(top_p_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             temperature=TileTensor(temp_dev, row_major(rows))
             .as_unsafe_any_origin()
-            .as_immut(),
+            .as_imm(),
             min_p=min_p_arg,
             out_dist=TileTensor(
                 dist_dev, row_major(rows, d) if emit_dist else row_major(1, 1)
@@ -316,16 +317,90 @@ def test_dist_matches_reference[
         )
 
 
-def test_tokens_match_without_dist(
+def test_degenerate_rows_emit_zero_dist[
+    dtype: DType = .float32
+](ctx: DeviceContext, *, single_block: Bool = False) raises:
+    """A row with no usable distribution emits zeros, never NaN.
+
+    Speculative decoding reads `q == 0` as "no distribution for this row" and
+    never divides by it, so a NaN row poisons its rejection residual instead.
+    Two shapes reach that contract: a row whose own max is non-finite (`+Inf`
+    or all-NaN -- every weight goes NaN, so nothing ever accepts) and, the
+    shape the kernel fuzzer found, a row holding a lone NaN. The row max
+    ignores a NaN logit, so only that weight goes NaN: the rest of the row
+    still accepts its draw and the row's total mass is NaN.
+    """
+    comptime rows = 4
+    comptime d = 64
+    comptime live_row = 3
+    var logits_host = ctx.enqueue_create_host_buffer[dtype](rows * d)
+    for row in range(rows):
+        for col in range(d):
+            logits_host[row * d + col] = scrambled_logit(row, col).cast[dtype]()
+    # Row 0: a lone NaN (finite max, NaN total mass).
+    logits_host[d // 2] = nan[dtype]()
+    # Row 1: all `-Inf` (every weight zero).
+    for col in range(d):
+        logits_host[1 * d + col] = neg_inf[dtype]()
+    # Row 2: a single `+Inf` (the row max goes `+Inf`: every weight NaN).
+    logits_host[2 * d + 3] = inf[dtype]()
+
+    var run = run_sampling[dtype](
+        ctx,
+        logits_host,
+        rows,
+        d,
+        k=0,
+        top_p=1.0,
+        temperature=1.0,
+        seed_base=7,
+        single_block=single_block,
+    )
+
+    for row in range(live_row):
+        for col in range(d):
+            assert_equal(
+                run.dist[row * d + col],
+                0.0,
+                msg=String(
+                    t"row={row} col={col}: a row with no distribution must"
+                    t" emit zeros"
+                ),
+            )
+        assert_true(
+            run.tokens[row] >= 0 and run.tokens[row] < d,
+            msg=String(t"row={row}: token {run.tokens[row]} is out of range"),
+        )
+
+    # The live row is untouched: the kernel still emits a full distribution.
+    var dist_sum = 0.0
+    for col in range(d):
+        var got = run.dist[live_row * d + col]
+        assert_true(
+            isfinite(got),
+            msg=String(t"live row col={col}: non-finite probability"),
+        )
+        dist_sum += got
+    assert_almost_equal(
+        dist_sum,
+        1.0,
+        rtol=1e-3,
+        msg=String("live row: dist must sum to 1"),
+    )
+
+
+def test_token_in_its_distribution(
     ctx: DeviceContext, rows: Int, d: Int, *, k: Int, top_p: Float64
 ) raises:
-    """`emit_dist` must not change which token the sampler picks.
+    """Each drawn token carries mass in the distribution emitted with it, and
+    the same seeds draw the same tokens again.
 
-    The production sampler runs the same kernel with `emit_dist=False`, so
-    the extra output has to be inert.
+    Speculative decoding reads the drafted token's probability back out of
+    that distribution, so a token outside it would be a draft the verifier
+    can only reject.
     """
     var logits_host = fill_logits[.float32](ctx, rows, d)
-    var with_dist = run_sampling[.float32, emit_dist=True](
+    var first = run_sampling[.float32, emit_dist=True](
         ctx,
         logits_host,
         rows,
@@ -335,7 +410,7 @@ def test_tokens_match_without_dist(
         temperature=1.0,
         seed_base=99,
     )
-    var without_dist = run_sampling[.float32, emit_dist=False](
+    var again = run_sampling[.float32, emit_dist=True](
         ctx,
         logits_host,
         rows,
@@ -346,10 +421,15 @@ def test_tokens_match_without_dist(
         seed_base=99,
     )
     for row in range(rows):
+        var token = first.tokens[row]
+        assert_true(
+            first.dist[row * d + token] > 0,
+            String(t"row={row}: token {token} has no mass in its distribution"),
+        )
         assert_equal(
-            with_dist.tokens[row],
-            without_dist.tokens[row],
-            msg=String(t"row={row}: emit_dist changed the sampled token"),
+            token,
+            again.tokens[row],
+            msg=String(t"row={row}: the same seed drew a different token"),
         )
 
 
@@ -481,6 +561,9 @@ def main() raises:
             ctx, rows=4, d=1024, k=-1, top_p=0.9, temperature=1.0
         )
         test_dist_matches_reference(
+            ctx, rows=2, d=16384, k=-1, top_p=0.9, temperature=1.0
+        )
+        test_dist_matches_reference(
             ctx, rows=4, d=1024, k=64, top_p=0.8, temperature=0.7
         )
         # Greedy rows: temperature 0 is clamped and collapses to the argmax.
@@ -498,10 +581,10 @@ def main() raises:
         # A vocabulary whose per-CTA slice does not fit the shared-memory
         # budget: the launcher falls back to the single-block kernel and its
         # emit_dist tail, which are otherwise unexercised on cluster devices.
-        test_tokens_match_without_dist(ctx, rows=2, d=249856, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=2, d=249856, k=40, top_p=0.95)
         # Exercise two- and four-block row groups.
-        test_tokens_match_without_dist(ctx, rows=100, d=16384, k=40, top_p=0.95)
-        test_tokens_match_without_dist(ctx, rows=50, d=32768, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=100, d=16384, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=50, d=32768, k=40, top_p=0.95)
         # Vocabularies narrower than one block: under a cluster most CTAs own
         # no elements and contribute only reduction identities -- the shape
         # the rejection sampler reaches with its unit-test vocabularies.
@@ -589,12 +672,18 @@ def main() raises:
             single_block=True,
         )
 
-        test_tokens_match_without_dist(ctx, rows=8, d=1024, k=32, top_p=0.9)
+        # A row with no usable distribution must emit zeros, never NaN: spec
+        # decode reads `q == 0` as "no distribution for this row" and never
+        # divides by it. Both launch shapes own that contract.
+        test_degenerate_rows_emit_zero_dist(ctx)
+        test_degenerate_rows_emit_zero_dist(ctx, single_block=True)
+
+        test_token_in_its_distribution(ctx, rows=8, d=1024, k=32, top_p=0.9)
         # Real Llama-3.1-8B vocabulary width.
-        test_tokens_match_without_dist(ctx, rows=2, d=128256, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=2, d=128256, k=40, top_p=0.95)
         # A vocabulary in the two-CTA window: too wide for one CTA's staging
         # budget, narrow enough to split across two.
-        test_tokens_match_without_dist(ctx, rows=2, d=98304, k=40, top_p=0.95)
+        test_token_in_its_distribution(ctx, rows=2, d=98304, k=40, top_p=0.95)
 
         test_empirical_distribution(ctx, rows=8192, d=64, k=8, top_p=1.0)
         test_empirical_distribution(ctx, rows=8192, d=128, k=-1, top_p=0.9)

@@ -20,10 +20,10 @@ from std.testing import TestSuite, assert_false, assert_true
 def _assert_ordered(text: String, first: String, second: String) raises:
     """Asserts that both substrings appear in `text` and that `first`
     occurs before `second`."""
-    var first_pos = text.find(first)
-    var second_pos = text.find(second)
-    assert_true(first_pos >= 0, String(t"expected to find {first}"))
-    assert_true(second_pos >= 0, String(t"expected to find {second}"))
+    __guard case .Some(first_pos) = text.find(first) else:
+        raise Error(t"expected to find {first}")
+    __guard case .Some(second_pos) = text.find(second) else:
+        raise Error(t"expected to find {second}")
     assert_true(
         first_pos < second_pos,
         String(t"{first} must precede {second}"),
@@ -71,7 +71,7 @@ def test_compile_compare_exchange() raises:
 
 def test_compile_store() raises:
     def my_store_function(mut atm: Atomic[Int32, scope="agent"], v: Int32):
-        Atomic[Int32, scope="agent"].store[ordering=Ordering.RELEASE](
+        Atomic[Int32, scope="agent"].store[ordering=.release](
             Pointer(to=atm._value), v
         )
 
@@ -83,9 +83,7 @@ def test_compile_store() raises:
 
 def test_compile_store_default_scope() raises:
     def my_store_function(mut atm: Atomic[Int64], v: Int64):
-        Atomic[Int64].store[ordering=Ordering.RELEASE](
-            Pointer(to=atm._value), v
-        )
+        Atomic[Int64].store[ordering=.release](Pointer(to=atm._value), v)
 
     var asm = compile_info[my_store_function, emission_kind="llvm"]()
 
@@ -98,7 +96,7 @@ def test_compile_xchg() raises:
     def my_xchg_function(
         mut atm: Atomic[Int32, scope="agent"], v: Int32
     ) -> Int32:
-        return Atomic[Int32, scope="agent"]._xchg[ordering=Ordering.SEQUENTIAL](
+        return Atomic[Int32, scope="agent"]._xchg[ordering=.sequential](
             Pointer(to=atm._value), v
         )
 

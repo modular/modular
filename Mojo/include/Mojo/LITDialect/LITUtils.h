@@ -45,6 +45,7 @@ class ErrorOr;
 
 namespace KGEN {
 class FnEffects;
+class KGENParamPrinter;
 class ParamDeclAttr;
 class ParamDeclRefAttr;
 class ParamIndexRefAttr;
@@ -95,6 +96,8 @@ TypedAttr getEmptyStructValue(Type type);
 /// without quotes. This prints "kgen style" not user style.
 ParseResult parseOriginParamValue(AsmParser &p, TypedAttr &result);
 void printOriginParamValue(AsmPrinter &p, TypedAttr value);
+void printOriginParamValue(AsmPrinter &p, TypedAttr value,
+                           KGEN::KGENParamPrinter &printer);
 inline void printOriginParamValue(AsmPrinter &p, Operation *, TypedAttr value) {
   printOriginParamValue(p, value);
 }
@@ -365,8 +368,8 @@ private:
 /// Determine whether an assumption proves or disproves a proposition.
 ///
 /// An internally inconsistent assumption proves the proposition vacuously.
-/// Top-level `eq` facts in the assumption are closed under symmetry and
-/// transitivity via union-find, so e.g. `(A == C) ∧ (B == C)` proves `A == B`.
+/// Canonicalization folds identity, conformance, and negation, so
+/// `(A == C) ∧ (B == C)` proves `A == B`.
 TriBool isPropositionImplied(TypedAttr proposition, TypedAttr assumption);
 
 /// Returns true if `assumption` implies `proposition`.
@@ -374,25 +377,38 @@ inline bool isImplicationProven(TypedAttr proposition, TypedAttr assumption) {
   return isPropositionImplied(proposition, assumption).isTrue();
 }
 
-/// Determine how a list of assumptions relate to a goal proposition.
-///
-/// The assumptions are interpreted as a conjunction; an empty list therefore
-/// represents `True`. Returns `yes` if the conjunction proves the goal, `no` if
-/// it disproves the goal, and `unknown` when neither relation is provable.
-TriBool isPropositionImplied(TypedAttr proposition,
-                             ArrayRef<TypedAttr> assumptions);
+/// Returns the conjunction of `propositions` as an assumption set.
+TypedAttr buildAssumptions(ArrayRef<TypedAttr> propositions, MLIRContext *ctx);
 
-/// Similar to isPropositionImplied but rebinds propositions using the
-/// evaluator prior to checking the constraint.
-TriBool isPropositionImplied(ConstraintAttr proposition,
-                             ArrayRef<ConstraintAttr> assumptions,
-                             ParameterEvaluator &evaluator);
+/// Returns the conjunction of the propositions of `constraints` as an
+/// assumption set.
+TypedAttr buildAssumptions(ArrayRef<ConstraintAttr> constraints,
+                           MLIRContext *ctx);
 
-/// Given a type expression and a set of assumptions, compute the effective
-/// trait bound implied by any `conforms_to(type, Trait)` constraints. Returns a
-/// null TraitType if no refinements apply.
+/// Returns the assumption set holding the facts of both `lhs` and `rhs`.
+TypedAttr conjoinAssumptions(TypedAttr lhs, TypedAttr rhs);
+
+/// Returns the assumption set holding the facts of `assumptions` and the
+/// propositions of `constraints`.
+TypedAttr conjoinAssumptions(TypedAttr assumptions,
+                             ArrayRef<ConstraintAttr> constraints);
+
+/// Returns true if `assumptions` prove that `proposition` cannot hold.
+bool isPropositionPrecluded(TypedAttr proposition, TypedAttr assumptions);
+
+/// Visit each `TypeConformsToTraitAttr` found in a constraint proposition.
+/// Canonical AND is already flattened to a single n-ary node, so a single
+/// top-level loop over its operands is sufficient. OR / NOT are not visited
+/// since they are not definite knowledge.
+void forEachConformsToInProposition(
+    TypedAttr proposition,
+    llvm::function_ref<void(TypeConformsToTraitAttr)> callback);
+
+/// Given a type expression and an assumption set, compute the effective trait
+/// bound implied by any `conforms_to(type, Trait)` clauses. Returns a null
+/// TraitType if no refinements apply.
 TraitType getTraitBoundFromAssumptions(
-    TypedAttr typeAttr, ArrayRef<ConstraintAttr> assumptions,
+    TypedAttr typeAttr, TypedAttr assumptions,
     llvm::function_ref<TraitDeclOp(SymbolRefAttr)> traitDeclResolver);
 
 /// TODO: `ClosureEmitter.cpp` has a nearly identical helper
@@ -422,7 +438,6 @@ populateTraitBindingEvaluator(TraitSymbolAttr traitSymbol,
 constexpr StringLiteral kFnRegisterInternal = "register_internal";
 constexpr StringLiteral kFnRegister = "register";
 constexpr StringLiteral kFnRegisterShapeFunction = "register_shape_function";
-constexpr StringLiteral kMoggExecuteFuncName = "execute";
 
 /// Mojo package and type leaf names used to recognise extensibility kernel
 /// types in MLIR symbol references.

@@ -13,12 +13,30 @@
 """Shared helpers for RDNA Wave32 attention kernels."""
 
 from std.sys import simd_width_of
+from std.sys.info import _is_amd_rdna4
 from max.gpu import warp_id as get_warp_id
 from std.math.uutils import udivmod
-from std.utils import IndexList
 
 
-@always_inline
+@inline(.always)
+def wmma_acc_row(elem: Int, lane_half: Int) -> Int:
+    """Row of WMMA C/D element `elem` held by a lane in half `lane_half`.
+
+    RDNA3 (gfx11) interleaves the two lane halves: row = elem*2 + lane_half.
+    RDNA4 (gfx12) gives lanes 0-15 rows 0-7 and lanes 16-31 rows 8-15:
+    row = elem + 8*lane_half.
+
+    Args:
+        elem: Index of the element in the lane's C/D fragment.
+        lane_half: `lane // 16`.
+    """
+    comptime if _is_amd_rdna4():
+        return elem + 8 * lane_half
+    else:
+        return elem * 2 + lane_half
+
+
+@inline(.always)
 def pad[dtype: DType, depth: Int, size: Int]() -> Int:
     """V-SMEM row padding to avoid bank conflicts. Skipped for depth=64.
 
@@ -33,8 +51,8 @@ def pad[dtype: DType, depth: Int, size: Int]() -> Int:
     return size + padding
 
 
-@always_inline
-def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
+@inline(.always)
+def get_warp_coords[BN: Int, WN: Int]() -> Tuple[Int, Int]:
     """Return `(warp_row, warp_col)` for the current warp given a BN×WN grid.
 
     Parameters:
@@ -43,5 +61,4 @@ def get_warp_coords[BN: Int, WN: Int]() -> IndexList[2]:
             is `BN // WN`.
     """
     comptime num_warps_n = BN // WN
-    var warp_row, warp_col = udivmod(get_warp_id(), num_warps_n)
-    return IndexList[2](warp_row, warp_col)
+    return udivmod(get_warp_id(), num_warps_n)

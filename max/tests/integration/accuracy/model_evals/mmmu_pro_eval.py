@@ -56,9 +56,11 @@ from datasets import load_dataset
 from eval_common import (
     ChatClient,
     GenParams,
-    build_chat_kwargs,
+    chat_completion,
+    dump_config,
     dump_score,
     make_client,
+    response_fields,
     run_parallel,
     select_rows,
     strip_think,
@@ -230,10 +232,8 @@ def infer(
 ) -> dict[str, Any]:
     """Runs and grades a single MMMU-Pro sample."""
     content, all_choices, index2ans = build_content(sample, is_vision)
-    resp = client.chat.completions.create(
-        **build_chat_kwargs(
-            model, [{"role": "user", "content": content}], params
-        )
+    resp = chat_completion(
+        client, model, [{"role": "user", "content": content}], params
     )
     choice = resp.choices[0]
     raw = strip_think(choice.message.content)
@@ -254,10 +254,11 @@ def infer(
         "raw": raw[:800],
         "completion_tokens": completion_tokens,
         "finish_reason": finish_reason,
+        **response_fields(choice),
     }
 
 
-def load_mmmu_pro(hf_config: str) -> Any:
+def load_mmmu_pro(hf_config: str, revision: str | None = None) -> Any:
     """Loads one MMMU-Pro config, retrying through a corrupt shared HF cache.
 
     The shared runner HF cache races under concurrent jobs and can delete a
@@ -271,6 +272,7 @@ def load_mmmu_pro(hf_config: str) -> Any:
                 "MMMU/MMMU_Pro",
                 hf_config,
                 split="test",
+                revision=revision,
                 download_mode="force_redownload" if attempt else None,
             )
         except (FileNotFoundError, OSError) as e:
@@ -303,6 +305,9 @@ def run_config(
     row_ids: str | None,
     params: GenParams,
     workers: int,
+    base_url: str,
+    *,
+    dataset_revision: str | None = None,
 ) -> dict[str, Any]:
     """Runs one MMMU-Pro config and writes its ``results.jsonl`` + ``score.json``.
 
@@ -315,9 +320,9 @@ def run_config(
     configs for the overall stats.
     """
     out_dir.mkdir(parents=True, exist_ok=True)
-    indexed_dataset = select_rows(
-        list(load_mmmu_pro(hf_config)), limit, row_ids
-    )
+    dataset = list(load_mmmu_pro(hf_config, dataset_revision))
+    indexed_dataset = select_rows(dataset, limit, row_ids)
+    dump_config(str(out_dir), base_url, params, indexed_dataset, dataset)
     is_vision = hf_config == "vision"
 
     def fn(item: tuple[int, dict[str, Any]]) -> dict[str, Any]:
@@ -327,13 +332,13 @@ def run_config(
     def on_error(
         item: tuple[int, dict[str, Any]], exc: Exception
     ) -> dict[str, Any]:
-        idx, _ = item
-        # Count a failed/timed-out request as wrong rather than dropping it (the
-        # sentinel ground truth can never match a real answer).
+        idx, sample = item
+        # Count a failed/timed-out request as wrong rather than dropping it:
+        # an empty prediction never matches an answer letter.
         return {
             "prompt_index": idx,
             "predicted": "",
-            "ground_truth": "__ERROR__",
+            "ground_truth": sample["answer"],
             "error": str(exc),
         }
 
@@ -365,6 +370,7 @@ def run_config(
         str(out_dir),
         {
             "config": hf_config,
+            "dataset_revision": dataset_revision,
             "accuracy": accuracy,
             "correct": correct,
             "total": total,
@@ -427,6 +433,10 @@ def run_config(
     help="Per-request seed for reproducibility (omitted when unset).",
 )
 @click.option(
+    "--dataset-revision",
+    help="Hugging Face revision of MMMU/MMMU_Pro (default: main).",
+)
+@click.option(
     "--workers", type=int, default=32, help="Max concurrent requests."
 )
 @click.option(
@@ -435,6 +445,21 @@ def run_config(
 @click.option("--max-tokens", type=int, default=65536, show_default=True)
 @click.option("--temperature", type=float, default=1.0, show_default=True)
 @click.option("--top-p", type=float, default=0.95, show_default=True)
+@click.option(
+    "--chat-template-kwargs",
+    default=None,
+    help="JSON object sent as chat_template_kwargs, e.g. "
+    "'{\"reasoning_effort\": 100}'. Unset sends none.",
+)
+@click.option(
+    "--rate-limit-retry-s",
+    type=float,
+    default=0.0,
+    show_default=True,
+    help="Seconds to keep resending a request the endpoint refuses with HTTP "
+    "429, for a gateway that caps concurrency. 0 records the 429 as an "
+    "errored row.",
+)
 @click.option(
     "--metric-prefix",
     default="MMMU_PRO",
@@ -449,6 +474,11 @@ def run_config(
     "score). Override when scoring a different model so PASSED reflects "
     "that model's bar instead of MiniMax-M3's.",
 )
+@click.option(
+    "--score-only",
+    is_flag=True,
+    help="Report scores without a baseline comparison or pass/fail result.",
+)
 def main(
     base_url: str,
     model: str,
@@ -457,18 +487,29 @@ def main(
     limit: int | None,
     row_ids: str | None,
     seed: int | None,
+    dataset_revision: str | None,
     workers: int,
     out_dir: str,
     max_tokens: int,
     temperature: float,
     top_p: float,
+    chat_template_kwargs: str | None,
+    rate_limit_retry_s: float,
     metric_prefix: str,
     baseline: float,
+    score_only: bool,
 ) -> None:
     """Runs MMMU-Pro against a running OpenAI-compatible server and scores it."""
     client = make_client(base_url)
     params = GenParams(
-        max_tokens=max_tokens, temperature=temperature, top_p=top_p, seed=seed
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        seed=seed,
+        chat_template_kwargs=(
+            json.loads(chat_template_kwargs) if chat_template_kwargs else None
+        ),
+        rate_limit_retry_s=rate_limit_retry_s,
     )
     out_root = Path(out_dir)
 
@@ -483,6 +524,8 @@ def main(
             row_ids,
             params,
             workers,
+            base_url,
+            dataset_revision=dataset_revision,
         )
     if run_vision:
         results_by_config["vision"] = run_config(
@@ -494,6 +537,8 @@ def main(
             row_ids,
             params,
             workers,
+            base_url,
+            dataset_revision=dataset_revision,
         )
 
     scores = {k: v["accuracy"] for k, v in results_by_config.items()}
@@ -520,15 +565,17 @@ def main(
     overall_stop_ratio = (
         round(total_stopped / total_non_error, 4) if total_non_error else 0.0
     )
-    threshold = baseline * 0.98
-    passed = bool(scores) and overall >= threshold
+    threshold = None if score_only else baseline * 0.98
+    passed = (
+        None if threshold is None else bool(scores) and overall >= threshold
+    )
     summary = {
         **scores,
         "overall": overall,
         "mean_output_tokens": mean_output_tokens,
         "p50_output_tokens": p50_output_tokens,
         "stop_ratio": overall_stop_ratio,
-        "baseline": baseline,
+        "baseline": None if score_only else baseline,
         "threshold": threshold,
         "passed": passed,
     }
@@ -551,7 +598,8 @@ def main(
             f.write(f"{metric_prefix}_MEAN_TOKENS={mean_output_tokens:.0f}\n")
             f.write(f"{metric_prefix}_P50_TOKENS={p50_output_tokens:.0f}\n")
             f.write(f"{metric_prefix}_STOP_RATIO={overall_stop_ratio:.4f}\n")
-            f.write(f"{metric_prefix}_PASSED={'true' if passed else 'false'}\n")
+            passed_value = "" if passed is None else str(passed).lower()
+            f.write(f"{metric_prefix}_PASSED={passed_value}\n")
 
 
 if __name__ == "__main__":

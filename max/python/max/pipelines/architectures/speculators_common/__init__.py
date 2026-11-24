@@ -14,7 +14,7 @@
 
 The format-level pieces of the speculators DSpark contract — config-schema
 parsing, the d2t vocabulary mapping, and checkpoint weight handling —
-reused by every unified speculators-DSpark architecture. The generic
+reused by every speculators-format DSpark draft. The generic
 ``DSparkDraftModel`` registration and the draft nn.Module live in the
 ``dspark_draft`` package.
 """
@@ -28,7 +28,6 @@ from .draft_config import (
 from .weight_adapters import (
     SKIPPED_DRAFT_KEYS,
     SKIPPED_DRAFT_PREFIXES,
-    merge_unified_state_dict,
     validate_draft_checkpoint_weights,
 )
 
@@ -39,6 +38,5 @@ __all__ = [
     "DSparkSpeculatorsDraftConfig",
     "construct_draft_kv_params",
     "map_draft_to_target_vocab",
-    "merge_unified_state_dict",
     "validate_draft_checkpoint_weights",
 ]

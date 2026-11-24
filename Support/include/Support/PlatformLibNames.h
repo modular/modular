@@ -16,15 +16,13 @@
 #ifndef SUPPORT_PLATFORMLIBNAMES_H
 #define SUPPORT_PLATFORMLIBNAMES_H
 
+#include "Support/SymbolExport.h"
 #include "llvm/Support/ErrorHandling.h"
 #include <string>
 
 namespace M {
-struct PlatformLibrary {
-
+struct MODULAR_CXX_EXPORT PlatformLibrary {
   static std::string getSharedLibraryName(llvm::StringRef name);
-
-  static std::string getStaticLibraryName(llvm::StringRef name);
 };
 } // namespace M
 

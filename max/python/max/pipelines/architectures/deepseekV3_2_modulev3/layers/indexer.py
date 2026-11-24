@@ -1,0 +1,673 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Lightning Indexer layer for DeepseekV3.2, in the ModuleV3 API."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from max import functional as F
+from max.driver import CPU, accelerator_api
+from max.dtype import DType
+from max.nn import Module
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.common_layers.context_parallel import (
+    dcp_rank_tensor,
+    dcp_ranks,
+    merge_topk,
+)
+from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.quant_linear import QuantizedLinear
+from max.nn.kernels import (
+    hisparse_resolve,
+    indexer_k_quantize_store,
+    indexer_q_rope_quantize,
+    mla_fp8_index_top_k_physical,
+    mla_fp8_index_top_k_physical_cp,
+    mla_fp8_index_top_k_with_physical,
+    quantize_dynamic_scaled_float8,
+    rope_ragged,
+    store_k_cache_ragged,
+    store_k_scale_cache_ragged,
+)
+from max.nn.norm import LayerNorm
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+from max.tensor import Tensor
+from max.tensor.sharding.mappings import DeviceMapping
+from max.tensor.sharding.placements import Sharded
+
+from ..model_config import HiSparseInputs
+from .prefill_context_parallel import PrefillContextParallel
+
+
+def _scales_mapping(mapping: DeviceMapping) -> DeviceMapping:
+    """The placements of the scales for an activation mapped as ``mapping``.
+
+    ``quantize_dynamic_scaled_float8`` returns scales as
+    ``[head_dim // block_size, M_padded]``, so the extent that varies from one
+    rank to the next is axis 1, not axis 0. Copying the activation's mapping
+    claims the wrong axis once ``M`` is sharded, as it is under data
+    parallelism. ``Replicated`` is kept as it is: there every rank's scales
+    buffer holds every column, which is the tensor-parallel case.
+    """
+    return DeviceMapping(
+        mapping.mesh,
+        tuple(
+            Sharded(1) if placement == Sharded(0) else placement
+            for placement in mapping.placements
+        ),
+    )
+
+
+def act_quant(
+    x: Tensor, quant_config: QuantConfig, block_size: int = 128
+) -> tuple[Tensor, Tensor]:
+    """Quantizes the activation's last axis and returns its scales.
+
+    The scales are float32 powers of two, the values a ``float8_e8m0fnu``
+    scale holds.
+    """
+    *x_dims, head_dim = x.shape
+    x = x.reshape((-1, head_dim))
+    assert int(head_dim) % block_size == 0
+
+    x_q, x_scales = quantize_dynamic_scaled_float8(
+        x,
+        quant_config.input_scale,
+        quant_config.weight_scale,
+        scales_type=DType.float32,
+        group_size_or_per_token=block_size,
+        out_type=DType.float8_e4m3fn,
+        pow2_scales=True,
+    )
+    # Both outputs take the input's placements; the scales have a different
+    # shape than the quantized tensor, which a placements-only mapping allows.
+    # The scales' per-rank extent is axis 1, so a shard of ``M`` moves there.
+    x_scales = x_scales.rebind_mapping(_scales_mapping(x.mapping))
+    x = x_q.rebind_mapping(x.mapping)
+    rows = x
+
+    # Scales layout from ``quantize_dynamic_scaled_float8`` is
+    # ``[head_dim // block_size, M_padded]``; ``M`` is padded for TMA (16-byte
+    # alignment of the scale row length). Slice to ``num_rows``, then fold
+    # multiple K-block scale rows into one per token when ``head_dim > block_size``.
+    if x_scales.is_distributed:
+        # Each device trims its own scales to its own rows. On a ``(dp, tp)``
+        # mesh a per-device row count is not a bound the slice rule can
+        # place, so the slice runs per device.
+        x_scales = F.call_on_mesh(
+            lambda scales, local: scales[:, : local.shape[0]],
+            x_scales.mesh,
+            out_specs=x_scales.mapping,
+        )(x_scales, rows)
+    else:
+        x_scales = x_scales[:, : rows.shape[0]]
+    x = x.reshape((*x_dims, head_dim))
+    num_k_groups = int(head_dim) // block_size
+    if num_k_groups > 1:
+        x_scales = F.max(x_scales, axis=0)
+    x_scales = x_scales.reshape((*x_dims, 1))
+
+    return x, x_scales
+
+
+def indexer_act_quant_config(quant_config: QuantConfig) -> QuantConfig:
+    """Returns the quant config used for dynamic FP8 activation quant in the indexer.
+
+    Full FP8 checkpoints reuse the model quant config. Mixed-precision paths
+    (for example NVFP4 MoE with bf16 MLA) still dynamic-quantize indexer
+    activations with block size 128.
+    """
+    if quant_config.format == QuantFormat.BLOCKSCALED_FP8:
+        return quant_config
+    return QuantConfig(
+        input_scale=InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=(1, 128),
+        ),
+        weight_scale=WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=DType.float32,
+            block_size=(128, 128),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+        format=QuantFormat.BLOCKSCALED_FP8,
+    )
+
+
+class Indexer(
+    Module[
+        [
+            Tensor,
+            Tensor,
+            Tensor,
+            Tensor,
+            PagedCacheValues,
+            Tensor,
+            PagedCacheValues,
+            MHAMaskVariant,
+            HiSparseInputs | None,
+        ],
+        Tensor,
+    ]
+):
+    """Selects the top-k keys that sparse MLA attends to."""
+
+    def __init__(
+        self,
+        dim: int,
+        index_n_heads: int,
+        index_head_dim: int,
+        qk_rope_head_dim: int,
+        index_topk: int,
+        q_lora_rank: int,
+        quant_config: QuantConfig,
+        rope_interleaved: bool = False,
+        dcp_size: int = 1,
+        dcp_interleave: int = 1,
+    ) -> None:
+        super().__init__()
+        self.dcp_size = dcp_size
+        self.dcp_interleave = dcp_interleave
+        self.dim = dim
+        self.n_heads = index_n_heads
+        self.head_dim = index_head_dim
+        self.rope_head_dim = qk_rope_head_dim
+        self.rope_interleaved = rope_interleaved
+        # The rotation covers the leading half of each head, so a non-zero
+        # rope width must be exactly half of ``index_head_dim``.
+        if qk_rope_head_dim != 0 and qk_rope_head_dim * 2 != index_head_dim:
+            raise ValueError(
+                "indexer rope width must be 0 or half of index_head_dim; got"
+                f" qk_rope_head_dim={qk_rope_head_dim} with"
+                f" index_head_dim={index_head_dim}"
+            )
+        self.index_topk = index_topk
+        self.q_lora_rank = q_lora_rank
+        self.softmax_scale = self.head_dim**-0.5
+        self.quant_config = indexer_act_quant_config(quant_config)
+
+        indexer_weights_fp8 = quant_config.format == QuantFormat.BLOCKSCALED_FP8
+        linear_quant_config = quant_config if indexer_weights_fp8 else None
+
+        self.wq_b = QuantizedLinear(
+            in_dim=self.q_lora_rank,
+            out_dim=self.n_heads * self.head_dim,
+            bias=False,
+            quant_config=linear_quant_config,
+        )  # lora up projection
+        self.wk = QuantizedLinear(
+            in_dim=self.dim,
+            out_dim=self.head_dim,
+            bias=False,
+            quant_config=linear_quant_config,
+        )
+        # V2 runs this norm in float32 and casts back, which ``keep_dtype=False``
+        # reproduces; the default would reduce in the activation dtype.
+        self.k_norm = LayerNorm(dim=self.head_dim, keep_dtype=False)
+        self.weights_proj = QuantizedLinear(
+            in_dim=self.dim,
+            out_dim=self.n_heads,
+            bias=False,
+        )  # DS casts to f32
+
+    def _fused_tails(
+        self, q: Tensor, k: Tensor, freqs_cis: Tensor
+    ) -> tuple[bool, bool]:
+        """Whether the query's and the key's tails each run as one launch.
+
+        :func:`indexer_q_rope_quantize` and :func:`indexer_k_quantize_store`
+        rotate interleaved pairs only, take one scale per 128-channel head or
+        key, and are built for a 32-lane warp. The query op reads a rope table
+        exactly as wide as the rotation. The key op also normalizes with a
+        weight and a bias, needs the cache's scale granularity to be 128
+        channels, and stores every position, which decode context parallelism
+        does not.
+        """
+        fusable = (
+            (self.rope_interleaved or not self.rope_head_dim)
+            and self.head_dim == 128
+            and freqs_cis.dtype == DType.bfloat16
+            and accelerator_api() == "cuda"
+        )
+        fuse_q = (
+            fusable
+            and q.dtype == DType.bfloat16
+            and (
+                not self.rope_head_dim
+                or int(freqs_cis.shape[1]) == self.rope_head_dim
+            )
+        )
+        fuse_k = (
+            fusable
+            and k.dtype == DType.bfloat16
+            and self.quant_config.scales_granularity_mnk[2] == 128
+            and self.dcp_size == 1
+            and self.k_norm.weight is not None
+            and self.k_norm.bias is not None
+        )
+        return fuse_q, fuse_k
+
+    def forward(
+        self,
+        x: Tensor,
+        qr: Tensor,
+        freqs_cis: Tensor,
+        input_row_offsets: Tensor,
+        indexer_k_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        mla_collection: PagedCacheValues,
+        mask_variant: MHAMaskVariant,
+        hisparse: HiSparseInputs | None = None,
+    ) -> Tensor:
+        """Runs the indexer over the activations and the normed queries.
+
+        Args:
+            x: Tensor of shape (total_seq_len, dim) Input activations.
+            qr: Tensor of shape (total_seq_len, q_lora_rank) Pre-normed queries.
+            freqs_cis: Tensor of shape (seq_len, head_dim) RoPE frequencies.
+            input_row_offsets: Tensor of shape (total_seq_len + 1) Ragged-tensor
+                index that tells where each sequence (batch item) starts and
+                ends in a concatenated "ragged" input.
+            indexer_k_collection: Indexer's K cache values
+            layer_idx: Layer index for cache lookup
+            mla_collection: The MLA cache the selected rows index.
+            mask_variant: Mask applied to the index scores.
+            hisparse: The HiSparse tables, to rewrite the selections on
+                host-only pages to hot-buffer rows.
+
+        Returns:
+            Tensor of shape (total_seq_len, index_topk): the physical rows in
+            ``mla_collection`` of the top k keys selected for MLA to attend
+            to, ``-1`` past a token's candidates.
+        """
+        rows = self._select(
+            x,
+            qr,
+            freqs_cis,
+            input_row_offsets,
+            indexer_k_collection,
+            layer_idx,
+            mla_collection,
+            mask_variant,
+            hisparse,
+            with_positions=False,
+        )
+        assert isinstance(rows, Tensor)
+        return rows
+
+    def forward_with_positions(
+        self,
+        x: Tensor,
+        qr: Tensor,
+        freqs_cis: Tensor,
+        input_row_offsets: Tensor,
+        indexer_k_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        mla_collection: PagedCacheValues,
+        mask_variant: MHAMaskVariant,
+    ) -> tuple[Tensor, Tensor]:
+        """Runs :meth:`forward` and also returns the keys' token positions.
+
+        A pipeline stage hands the positions to the next stage. Such a stage
+        runs without decode context parallelism or HiSparse.
+
+        Args:
+            x: As for :meth:`forward`.
+            qr: As for :meth:`forward`.
+            freqs_cis: As for :meth:`forward`.
+            input_row_offsets: As for :meth:`forward`.
+            indexer_k_collection: As for :meth:`forward`.
+            layer_idx: As for :meth:`forward`.
+            mla_collection: As for :meth:`forward`.
+            mask_variant: As for :meth:`forward`.
+
+        Returns:
+            The selected keys' rows in ``mla_collection``, as :meth:`forward`
+            returns them, and their token positions.
+        """
+        selected = self._select(
+            x,
+            qr,
+            freqs_cis,
+            input_row_offsets,
+            indexer_k_collection,
+            layer_idx,
+            mla_collection,
+            mask_variant,
+            None,
+            with_positions=True,
+        )
+        assert isinstance(selected, tuple)
+        return selected
+
+    def _select(
+        self,
+        x: Tensor,
+        qr: Tensor,
+        freqs_cis: Tensor,
+        input_row_offsets: Tensor,
+        indexer_k_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        mla_collection: PagedCacheValues,
+        mask_variant: MHAMaskVariant,
+        hisparse: HiSparseInputs | None,
+        *,
+        with_positions: bool,
+    ) -> Tensor | tuple[Tensor, Tensor]:
+        """Runs the indexer for :meth:`forward` and its positions variant.
+
+        With ``with_positions`` it also returns the keys' token positions.
+        """
+        # qr comes projected to lora rank and pre-normed;
+        # q_lora_rank -> self.n_heads * self.head_dim
+        q = self.wq_b(qr)
+        q = q.reshape((-1, self.n_heads, self.head_dim))
+        k = self.wk(x)  # dim -> head_dim
+        fused_q_quant, fused_k_store = self._fused_tails(q, k, freqs_cis)
+
+        if fused_q_quant:
+            q_fp8, q_scale = indexer_q_rope_quantize(
+                q,
+                freqs_cis,
+                input_row_offsets,
+                indexer_k_collection.cache_lengths,
+                rope_dim=self.rope_head_dim,
+            )
+            q_fp8 = q_fp8.rebind_mapping(q.mapping)
+            q_scale = F.unsqueeze(q_scale.rebind_mapping(q.mapping), axis=-1)
+        else:
+            if self.rope_head_dim:
+                q_pe, q_nope = F.chunk(q, chunks=2, axis=-1)
+                q_pe = rope_ragged(
+                    q_pe,
+                    input_row_offsets,
+                    indexer_k_collection.cache_lengths,
+                    freqs_cis,
+                    interleaved=self.rope_interleaved,
+                ).rebind_mapping(q_pe.mapping)
+                q = F.concat([q_pe, q_nope], axis=-1)
+            q_fp8, q_scale = act_quant(q, self.quant_config)
+
+        granularity = self.quant_config.scales_granularity_mnk[2]
+        if fused_k_store:
+            # The key's LayerNorm, rope, FP8 quantize and both cache stores in
+            # one launch that rounds where the separate ops do.
+            indexer_k_quantize_store(
+                indexer_k_collection,
+                k,
+                self.k_norm.weight,
+                self.k_norm.bias,
+                self.k_norm.eps,
+                freqs_cis,
+                input_row_offsets,
+                indexer_k_collection.cache_lengths,
+                layer_idx,
+                quantization_granularity=granularity,
+                rope_dim=self.rope_head_dim,
+            )
+        else:
+            k = self.k_norm(k)
+            if self.rope_head_dim:
+                k_pe, k_nope = F.chunk(k, chunks=2, axis=-1)
+                k_pe = F.squeeze(
+                    rope_ragged(
+                        F.unsqueeze(k_pe, axis=-2),
+                        input_row_offsets,
+                        indexer_k_collection.cache_lengths,
+                        freqs_cis,
+                        interleaved=self.rope_interleaved,
+                    ).rebind_mapping(k_pe.mapping),
+                    axis=-2,
+                )
+                k = F.concat([k_pe, k_nope], axis=-1)
+            k_fp8, k_scale = act_quant(k, self.quant_config)
+
+            # Under decode context parallelism each rank stores only the
+            # positions it owns; ``dcp_rank`` is a host scalar per device.
+            dcp_kwargs: dict[str, Any] = {}
+            if self.dcp_size > 1:
+                dcp_kwargs = dict(
+                    dcp_size=self.dcp_size,
+                    dcp_interleave=self.dcp_interleave,
+                    dcp_rank=dcp_ranks(q.mesh, self.dcp_size),
+                )
+            store_k_cache_ragged(
+                indexer_k_collection,
+                F.unsqueeze(k_fp8, axis=1),
+                input_row_offsets,
+                layer_idx,
+                **dcp_kwargs,
+            )
+            store_k_scale_cache_ragged(
+                indexer_k_collection,
+                F.unsqueeze(k_scale, axis=1),
+                input_row_offsets,
+                layer_idx,
+                quantization_granularity=granularity,
+                **dcp_kwargs,
+            )
+
+        # DeepSeek projects the scoring weights in float32.
+        proj = self.weights_proj.weight
+        assert isinstance(proj, Tensor)
+        weights = (
+            F.cast(x, DType.float32) @ F.cast(proj, DType.float32).T
+        ) * self.n_heads**-0.5  # dim -> n_heads
+        weights = F.unsqueeze(weights, axis=-1) * q_scale * self.softmax_scale
+
+        if self.dcp_size > 1:
+            # Each rank scores its own keys; the merge keeps the group-wide
+            # top-k rows this rank owns, packed with their count.
+            local_rows, local_scores = mla_fp8_index_top_k_physical_cp(
+                q_fp8,
+                F.squeeze(weights, axis=-1),
+                input_row_offsets,
+                indexer_k_collection,
+                mla_collection,
+                layer_idx,
+                dcp_rank_tensor(q_fp8.mesh, self.dcp_size),
+                self.index_topk,
+                self.quant_config.scales_granularity_mnk[2],
+                self.dcp_size,
+                self.dcp_interleave,
+                mask_variant,
+            )
+            return merge_topk(local_rows, local_scores, self.dcp_size)
+
+        if with_positions:
+            positions, rows = mla_fp8_index_top_k_with_physical(
+                q_fp8,
+                F.squeeze(weights, axis=-1),
+                input_row_offsets,
+                indexer_k_collection,
+                mla_collection,
+                layer_idx,
+                self.index_topk,
+                self.quant_config.scales_granularity_mnk[2],
+                mask_variant,
+            )
+            return (
+                rows.rebind_mapping(q_fp8.mapping),
+                positions.rebind_mapping(q_fp8.mapping),
+            )
+        if hisparse is None:
+            return mla_fp8_index_top_k_physical(
+                q_fp8,
+                F.squeeze(weights, axis=-1),
+                input_row_offsets,
+                indexer_k_collection,
+                mla_collection,
+                layer_idx,
+                self.index_topk,
+                self.quant_config.scales_granularity_mnk[2],
+                mask_variant,
+            ).rebind_mapping(q_fp8.mapping)
+
+        # HiSparse rewrites the selections on host-only pages in place, so it
+        # needs the logical positions beside the physical rows. The group is
+        # the cache slot this layer already reads, its rank among the ``full``
+        # layers, passed as a runtime input so the layers sharing one MoE
+        # subgraph body each keep their own LRU state.
+        logical, physical = mla_fp8_index_top_k_with_physical(
+            q_fp8,
+            F.squeeze(weights, axis=-1),
+            input_row_offsets,
+            indexer_k_collection,
+            mla_collection,
+            layer_idx,
+            self.index_topk,
+            self.quant_config.scales_granularity_mnk[2],
+            mask_variant,
+        )
+        return hisparse_resolve(
+            physical,
+            logical,
+            input_row_offsets,
+            mla_collection,
+            hisparse.host_table,
+            hisparse.hot_table,
+            layer_idx,
+            hisparse.params,
+        ).rebind_mapping(q_fp8.mapping)
+
+    def forward_pcp(
+        self,
+        x: Tensor,
+        qr: Tensor,
+        freqs_cis: Tensor,
+        indexer_k_collection: PagedCacheValues,
+        layer_idx: Tensor,
+        pcp: PrefillContextParallel,
+        whole: Tensor,
+    ) -> Tensor:
+        """Selects each rank's top-k under prefill context parallelism.
+
+        ``x`` and ``qr`` are this rank's rows (:meth:`PrefillContextParallel
+        .local_rows`). The group all-gathers the chunk's keys, each rank
+        stores the positions it owns into its DCP cache and every position
+        into the whole-context scratch, then scores its own queries against
+        the scratch, which ``pcp.fill_prefix`` filled with the cached prefix.
+        The top-k is each query's own: no merge across ranks.
+
+        Args:
+            x: This rank's activations, ``[rows, dim]``.
+            qr: This rank's pre-normed query latents, ``[rows, q_lora_rank]``.
+            freqs_cis: RoPE frequencies.
+            indexer_k_collection: The DCP indexer key cache.
+            layer_idx: The indexer cache slot of this layer.
+            pcp: The step's split.
+            whole: A tensor of the whole batch's rows, for placements.
+
+        Returns:
+            ``[rows, index_topk]`` physical rows of the selected keys in
+            ``pcp.mla_scratch`` (twice as wide over an NVFP4 latent).
+        """
+        scratch_view = pcp.indexer_view
+        assert (
+            pcp.indexer_view_fields is not None
+            and pcp.mla_view_fields is not None
+        )
+        q = self.wq_b(qr)
+        q = q.reshape((q.shape[0], self.n_heads, self.head_dim))
+        k = self.k_norm(self.wk(x))
+        if self.rope_head_dim:
+            q_pe, q_nope = F.chunk(q, chunks=2, axis=-1)
+            q_pe = rope_ragged(
+                q_pe,
+                pcp.row_offsets,
+                scratch_view.cache_lengths,
+                freqs_cis,
+                interleaved=self.rope_interleaved,
+            ).rebind_mapping(q_pe.mapping)
+            q = F.concat([q_pe, q_nope], axis=-1)
+            k_pe, k_nope = F.chunk(k, chunks=2, axis=-1)
+            k_pe = F.squeeze(
+                rope_ragged(
+                    F.unsqueeze(k_pe, axis=-2),
+                    pcp.row_offsets,
+                    scratch_view.cache_lengths,
+                    freqs_cis,
+                    interleaved=self.rope_interleaved,
+                ).rebind_mapping(k_pe.mapping),
+                axis=-2,
+            )
+            k = F.concat([k_pe, k_nope], axis=-1)
+
+        # Quantization is per row, so quantizing the gathered keys matches
+        # quantizing each rank's own.
+        k_fp8, k_scale = act_quant(pcp.gather_rows(k, whole), self.quant_config)
+        k_rows = F.unsqueeze(k_fp8, axis=1)
+        k_scales = F.unsqueeze(k_scale, axis=1)
+        granularity = self.quant_config.scales_granularity_mnk[2]
+        # The DCP cache keeps only the positions each rank owns.
+        store_k_cache_ragged(
+            indexer_k_collection,
+            k_rows,
+            pcp.batch_row_offsets,
+            layer_idx,
+            dcp_size=self.dcp_size,
+            dcp_interleave=self.dcp_interleave,
+            dcp_rank=dcp_ranks(x.mesh, self.dcp_size),
+        )
+        store_k_scale_cache_ragged(
+            indexer_k_collection,
+            k_scales,
+            pcp.batch_row_offsets,
+            layer_idx,
+            quantization_granularity=granularity,
+            dcp_size=self.dcp_size,
+            dcp_interleave=self.dcp_interleave,
+            dcp_rank=dcp_ranks(x.mesh, self.dcp_size),
+        )
+        # The scratch keeps every position, in its only layer.
+        slot = F.constant(0, DType.uint32, device=CPU())
+        store_k_cache_ragged(
+            pcp.indexer_scratch, k_rows, pcp.batch_row_offsets, slot
+        )
+        store_k_scale_cache_ragged(
+            pcp.indexer_scratch,
+            k_scales,
+            pcp.batch_row_offsets,
+            slot,
+            quantization_granularity=granularity,
+        )
+
+        q_fp8, q_scale = act_quant(q, self.quant_config)
+        proj = self.weights_proj.weight
+        assert isinstance(proj, Tensor)
+        weights = (
+            F.cast(x, DType.float32) @ F.cast(proj, DType.float32).T
+        ) * self.n_heads**-0.5
+        weights = F.unsqueeze(weights, axis=-1) * q_scale * self.softmax_scale
+        return mla_fp8_index_top_k_physical(
+            q_fp8,
+            F.squeeze(weights, axis=-1),
+            pcp.row_offsets,
+            scratch_view,
+            pcp.mla_view,
+            slot,
+            self.index_topk,
+            granularity,
+            MHAMaskVariant.CAUSAL_MASK,
+        ).rebind_mapping(q_fp8.mapping)

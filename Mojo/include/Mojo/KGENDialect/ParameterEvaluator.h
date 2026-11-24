@@ -19,6 +19,7 @@
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
 #include "Support/ForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/FunctionExtras.h"
 
@@ -52,14 +53,23 @@ void collectParameterReferences(Attribute attr,
 /// references to named parameters. `requiredSignatureDepth` is set to the
 /// minimum signature depth needed for the type to be valid. This fails if an
 /// invalid parameter expression exists.
-void collectParameterReferences(Type type,
-                                SmallVectorImpl<ParamDeclRefAttr> &results,
-                                bool &hasCtxEvalExpr,
-                                size_t &requiredSignatureDepth);
+MODULAR_CXX_EXPORT void collectParameterReferences(
+    Type type, SmallVectorImpl<ParamDeclRefAttr> &results, bool &hasCtxEvalExpr,
+    size_t &requiredSignatureDepth);
 
 /// Return true if the specified type contains parameter references, e.g.
 /// `!kgen.scalar<dt>` returns true, but `!kgen.scalar<f32>` returns false.
 bool isParameterizedType(Type type);
+
+/// How a materialization error affects the expression being materialized.
+enum class MaterializationErrorKind {
+  /// The expression produced a value that is illegal. Reported immediately.
+  Illegal,
+  /// The expression did not fold to a value. Reported only if the materialized
+  /// result does not fold, so a parent that folds without this expression's
+  /// value drops the error.
+  Unfolded,
+};
 
 class ParameterEvaluationContext;
 class ParameterEvaluator;
@@ -109,6 +119,42 @@ class ParameterEvaluationContext {
 public:
   virtual ~ParameterEvaluationContext();
 
+  //===--------------------------------------------------------------------===//
+  // Function interpretation frames
+  //===--------------------------------------------------------------------===//
+  //
+  // Interpreting a function re-enters evaluation on the same call stack. The
+  // callee's body is itself an expression that may interpret further
+  // functions. A recursive callee terminates only once its parameters fold to
+  // constants. Bounding the nesting turns an otherwise unbounded stack into an
+  // expression that is left unevaluated.
+
+  /// The maximum number of function interpretations that may nest.
+  static constexpr size_t kMaxFunctionInterpretationDepth = 32;
+
+  /// An RAII guard for interpreting one function. Entering is fallible:
+  /// exceeding the maximum depth leaves the frame unentered, and the guard
+  /// converts to false. Callers must check it and give up on interpreting
+  /// rather than proceed.
+  class [[nodiscard]] FunctionInterpretationFrame {
+  public:
+    explicit FunctionInterpretationFrame(ParameterEvaluationContext &context);
+    ~FunctionInterpretationFrame();
+
+    FunctionInterpretationFrame(const FunctionInterpretationFrame &) = delete;
+    FunctionInterpretationFrame &
+    operator=(const FunctionInterpretationFrame &) = delete;
+
+    explicit operator bool() const { return entered; }
+
+  private:
+    bool entered;
+  };
+
+  /// The number of function interpretations currently nested on this call
+  /// stack.
+  size_t getFunctionInterpretationDepth() const;
+
   /// Evaluate the provided attribute. First tries context-specific evaluation
   /// via evaluateContextSpecific(), then falls back to the attribute's
   /// evaluateWithContext() interface method.
@@ -143,8 +189,12 @@ public:
   /// resolved struct's generator.This is correct for every context except the
   /// parser, where conformances are instead resolved via `ASTDecl` lookup
   /// (might need a lazy resolution).
+  ///
+  /// `witnessName` is the entry the caller will read. The parser resolves only
+  /// that entry; the default ignores it.
   virtual Operation *resolveConformanceForStruct(ResolvedStructHandle resolved,
-                                                 TraitSymbolAttr traitSymbol);
+                                                 TraitSymbolAttr traitSymbol,
+                                                 StringAttr witnessName);
 
   /// Create an evaluator configured with the provided parameters.
   /// This callback style is necessary because we have derived evaluators that
@@ -171,7 +221,11 @@ public:
   /// Emit an error for an ill-formed expression during materialization.
   /// This is a no-op in non-materialization contexts, but callers can
   /// always call this method regardless of context.
-  virtual void emitMaterializationError(const Twine &message);
+  // Overrides must not redeclare the default argument: callers go through this
+  // base class, so the default here is the one that applies.
+  virtual void emitMaterializationError(
+      const Twine &message,
+      MaterializationErrorKind kind = MaterializationErrorKind::Illegal);
 
   /// Returns the target info for the context, which may not be available in all
   /// contexts. If target info is not available, returns null.
@@ -188,6 +242,17 @@ public:
   /// context.
   virtual FuncInterface resolveFunctionDecl(SymbolRefAttr symbol) = 0;
 };
+
+/// Marks a generator whose `inlinedForm` can reach an apply of itself, directly
+/// or around a cycle of other generators.
+inline constexpr llvm::StringLiteral kRecursiveInlinedFormAttrName =
+    "kgen.recursive_inlined_form";
+
+/// Whether expanding `generator`'s inlined form under `paramValues` can
+/// terminate. Only meaningful for an argument-less generator; see the
+/// implementation.
+bool canExpandInlinedForm(GeneratorOp generator,
+                          ArrayRef<TypedAttr> paramValues);
 
 /// An evaluation context that exposes a LockedSymbolTableCollection.
 class SymTabEvaluationContext : public ParameterEvaluationContext {
@@ -238,7 +303,7 @@ private:
 ///
 /// - Rules for ParamIndexRefAttr:
 /// The attr/type initially passed to the evaluator is considered to be at
-/// depth `inputDepth` (0 for most cases, but can be overridden by the user).
+/// depth 0, unless the caller supplies a starting depth via `replaceAtDepth`.
 /// Only index references that point back to index bindings at this depth are
 /// candidates for substitution (see IRAIDAI and PSTIAIRAID for details).
 ///
@@ -247,7 +312,8 @@ private:
 /// (i.e. not all the index bindings are registered, only a given prefix of the
 /// index bindings are registered), the user can manually set the total number
 /// of index bindings so that the assertion is only triggered for real errors.
-class ParameterEvaluator final : public ParameterReplacer<ParameterEvaluator> {
+class MODULAR_CXX_EXPORT ParameterEvaluator
+    : public ParameterReplacer<ParameterEvaluator> {
 public:
   /// Instantiate a new parameter evaluator with the given parameter values.
   ParameterEvaluator(ArrayRef<ParamDeclAttr> paramDecls,
@@ -259,10 +325,9 @@ public:
   ParameterEvaluator(
       DenseMap<StringAttr, TypedAttr> declBindings =
           DenseMap<StringAttr, TypedAttr>(),
-      ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>(),
-      size_t inputDepth = 0)
+      ArrayRef<TypedAttr> indexBindings = SmallVector<TypedAttr>())
       : declBindings(std::move(declBindings)),
-        indexBindings(std::move(indexBindings)), inputDepth(inputDepth) {}
+        indexBindings(std::move(indexBindings)) {}
 
   /// Set the evaluation context to use.
   void setEvaluationContext(ParameterEvaluationContext *context) {
@@ -345,22 +410,18 @@ public:
   /// Get all the input parameters.
   ArrayRef<TypedAttr> getIndexBindings() const { return indexBindings; }
 
-  /// Set the relative input depth.
-  void setInputDepth(size_t depth) { inputDepth = depth; }
-  size_t getInputDepth() const { return inputDepth; }
-
   void clearCache() { rewritten.clear(); }
 
 private:
   // CRTP methods.
-  Type doReplace(Type type, size_t rootDepth);
-  Attribute doReplace(Attribute attr, size_t rootDepth);
+  Type doReplace(Type type, size_t depth);
+  Attribute doReplace(Attribute attr, size_t depth);
   friend class ParameterReplacer<ParameterEvaluator>;
 
   /// Handle the `cond` operator. This needs to return a tri-state: whether the
   /// condition can be narrowed to an integer constant and whether we need to
   /// suspend, which is that the bool represents.
-  std::pair<IntegerAttr, bool> narrowCondOp(Attribute attr, size_t rootDepth);
+  std::pair<IntegerAttr, bool> narrowCondOp(Attribute attr, size_t depth);
 
   /// These are the name-based parameter bindings.
   DenseMap<StringAttr, TypedAttr> declBindings;
@@ -374,13 +435,6 @@ private:
   /// The optional context to use for evaluating contextually evaluated
   /// attributes.
   ParameterEvaluationContext *evaluationContext = nullptr;
-
-public:
-  /// The relative depth from the generator where the index-based parameter
-  /// bindings are from. This is zero for most applications, but should be set
-  /// accordingly when substituting attributes or types inside a generator, see
-  /// PSTIAIRAID.
-  size_t inputDepth = 0;
 };
 
 //===----------------------------------------------------------------------===//
@@ -399,14 +453,12 @@ struct PartiallySpecializedInputParams {
   /// match the generator's body-constraint list in size.
   llvm::BitVector dischargedBodyConstraints;
 
-  /// Given an input parameter specification `paramTypes` and the full set of
-  /// bindings `paramBindings`, create a partially specialized input parameter
-  /// specification.
-  ///
-  /// The bindings may be partially specified, with holes represented by
-  /// UnboundAttrs.
+  /// Given an input parameter specification `paramTypes` and the bindings
+  /// `paramBindings`, create a partially specialized input parameter
+  /// specification. An input that `paramBindings` leaves unbound stays an
+  /// input of the specialization.
   static std::optional<PartiallySpecializedInputParams>
-  from(ArrayRef<Type> paramTypes, ArrayRef<TypedAttr> paramBindings,
+  from(ArrayRef<Type> paramTypes, ParamsBindingArrayAttr paramBindings,
        ParameterEvaluationContext *evaluationContext,
        function_ref<InFlightDiagnostic()> emitErrorFn,
        const llvm::BitVector &dischargedBodyConstraints = llvm::BitVector());

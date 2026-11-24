@@ -16,21 +16,20 @@ from std.math import ceil, iota
 
 from extensibility import *
 
-from std.utils.index import IndexList
 
 # ===-----------------------------------------------------------------------===#
 # Arange op
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def arange[
     dtype: DType, simd_width: Int
 ](
     start: Scalar[dtype],
     stop: Scalar[dtype],
     step: Scalar[dtype],
-    index: IndexList[1],
+    index: Int,
 ) -> SIMD[dtype, simd_width]:
     """Computes a `simd_width`-wide vector of evenly-spaced values for the `arange` operation.
 
@@ -50,21 +49,21 @@ def arange[
     Returns:
         A SIMD vector holding the computed range values for this tile.
     """
-    return start + (iota[dtype, simd_width](Scalar[dtype](index[0])) * step)
+    return start + (iota[dtype, simd_width](Scalar[dtype](index)) * step)
 
 
-@always_inline
+@inline(.always)
 def arange_shape[
     dtype: DType
 ](
     start: Scalar[dtype],
     stop: Scalar[dtype],
     step: Scalar[dtype],
-) raises -> IndexList[1]:
+) raises -> Int:
     """Computes the output shape (number of elements) for the `arange` operation.
 
     Validates that `step` is non-zero and consistent with the `start`/`stop`
-    ordering, then returns the element count as a single-element `IndexList`.
+    ordering, then returns the element count as a single `Int`.
 
     Parameters:
         dtype: Element type of the range values.
@@ -75,7 +74,7 @@ def arange_shape[
         step: Spacing between consecutive values.
 
     Returns:
-        A single-element `IndexList` holding the number of generated values.
+        A single `Int` holding the number of generated values.
 
     Raises:
         Error: If `step` is zero, or if the `start`/`stop`/`step` ordering is invalid.
@@ -90,6 +89,6 @@ def arange_shape[
         if step < 0 and start < stop:
             raise Error("[range] requires (stop <= start) for negative step")
 
-        return IndexList[1](len(range(Int(start), Int(stop), Int(step))))
+        return len(range(Int(start), Int(stop), Int(step)))
     else:
-        return IndexList[1](Int(ceil(abs(stop - start) / abs(step))))
+        return Int(ceil(abs(stop - start) / abs(step)))

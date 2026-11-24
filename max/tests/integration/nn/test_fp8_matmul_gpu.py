@@ -17,17 +17,17 @@ import triton
 import triton.language as tl
 from max.driver import Buffer
 from max.dtype import DType
-from max.engine.api import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn import (
+from max.engine.api import InferenceSession, Model
+from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.nn._graph_ops import (
+    dynamic_scaled_matmul,
+    quantize_dynamic_scaled_float8,
+)
+from max.nn.quant_config import (
     InputScaleSpec,
     ScaleGranularity,
     ScaleOrigin,
     WeightScaleSpec,
-)
-from max.nn.kernels import (
-    dynamic_scaled_matmul,
-    quantize_dynamic_scaled_float8,
 )
 from test_common.graph_utils import is_b100_b200, is_h100_h200
 
@@ -234,19 +234,15 @@ def create_triton_fp8_result(
     return result
 
 
-def create_max_fp8_result(
+def load_max_fp8_matmul(
     session: InferenceSession,
-    input_tensor: torch.Tensor,
-    weight_tensor: torch.Tensor,
-    weight_scales: torch.Tensor,
+    N: int,
+    K: int,
     a_tile_size: tuple[int, int],
     b_tile_size: tuple[int, int],
     input_scale_spec: InputScaleSpec,
     weight_scale_spec: WeightScaleSpec,
-) -> torch.Tensor:
-    K = input_tensor.shape[-1]
-    N = weight_tensor.shape[0]
-
+) -> Model:
     def _build_graph():  # noqa: ANN202
         with Graph(
             "fp8_matmul",
@@ -283,9 +279,15 @@ def create_max_fp8_result(
             graph.output(result)
         return graph
 
-    graph = _build_graph()
-    compiled = session.load(graph)
+    return session.load(_build_graph())
 
+
+def create_max_fp8_result(
+    compiled: Model,
+    input_tensor: torch.Tensor,
+    weight_tensor: torch.Tensor,
+    weight_scales: torch.Tensor,
+) -> torch.Tensor:
     # we need to view the torch fp8 tensor as uint8, as torch.Tensor doesn't support
     # to_dlpack() for fp8 dtype.
     _weight_tensor = weight_tensor.view(torch.uint8)
@@ -380,6 +382,25 @@ def test_linear_gpu(
     assert a_tile_size[1] == b_tile_size[1], (
         "a and b must have the same tile size in the K dimension"
     )
+    compiled = load_max_fp8_matmul(
+        gpu_session,
+        N,
+        K,
+        a_tile_size,
+        b_tile_size,
+        input_scale_spec=InputScaleSpec(
+            granularity=input_scale_granularity,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=DType.float32,
+            block_size=a_tile_size,
+        ),
+        weight_scale_spec=WeightScaleSpec(
+            granularity=weight_scale_granularity,
+            dtype=DType.float32,
+            block_size=b_tile_size,
+        ),
+    )
+
     torch.manual_seed(42)
 
     input_tensor = torch.randn(
@@ -415,23 +436,7 @@ def test_linear_gpu(
     )
 
     max_result = create_max_fp8_result(
-        gpu_session,
-        input_tensor,
-        weight_tensor,
-        weight_scales,
-        a_tile_size,
-        b_tile_size,
-        input_scale_spec=InputScaleSpec(
-            granularity=input_scale_granularity,
-            origin=ScaleOrigin.DYNAMIC,
-            dtype=DType.float32,
-            block_size=a_tile_size,
-        ),
-        weight_scale_spec=WeightScaleSpec(
-            granularity=weight_scale_granularity,
-            dtype=DType.float32,
-            block_size=b_tile_size,
-        ),
+        compiled, input_tensor, weight_tensor, weight_scales
     )
 
     torch.testing.assert_close(
@@ -440,3 +445,141 @@ def test_linear_gpu(
         rtol=ACCURACY_RTOL,
         atol=ACCURACY_ATOL,
     )
+
+
+AMAX_FLOOR = 1e-4
+FLOOR_GROUP_SIZE = 128
+# Per-group max-abs, one per group along K: under the floor, just over it
+# (bf16(1e-4) rounds up), and well above it.
+FLOOR_GROUP_MAGNITUDES = (1e-6, 1e-4, 0.5, 3e-6)
+
+
+def _block_scale_specs(
+    scales_type: DType,
+) -> tuple[InputScaleSpec, WeightScaleSpec]:
+    return (
+        InputScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            dtype=scales_type,
+            block_size=(1, FLOOR_GROUP_SIZE),
+        ),
+        WeightScaleSpec(
+            granularity=ScaleGranularity.BLOCK,
+            dtype=scales_type,
+            block_size=(FLOOR_GROUP_SIZE, FLOOR_GROUP_SIZE),
+        ),
+    )
+
+
+@pytest.mark.skipif(
+    not (is_h100_h200() or is_b100_b200()),
+    reason="float8 requires H100 or H200",
+)
+def test_quantize_dynamic_scaled_float8_amax_floor(
+    gpu_session: InferenceSession,
+) -> None:
+    """Checks that `amax_floor` survives the graph-to-kernel parameter bridge.
+
+    The kernel test calls the Mojo entry point directly, so only a graph run
+    covers the string encoding, the custom-op parameter binding and the
+    kernel-side parse. The comparisons are relative, which keeps them
+    independent of how the kernel rounds to e8m0: a group under the floor has
+    to land on the same scale as a group whose max-abs sits at the floor.
+    """
+    M = 16
+    K = FLOOR_GROUP_SIZE * len(FLOOR_GROUP_MAGNITUDES)
+    input_scale_spec, weight_scale_spec = _block_scale_specs(
+        DType.float8_e8m0fnu
+    )
+
+    with Graph(
+        "fp8_quant_amax_floor",
+        input_types=(
+            TensorType(DType.bfloat16, [M, K], device=DeviceRef.GPU()),
+        ),
+    ) as graph:
+        x = graph.inputs[0].tensor
+        outputs: list[TensorValue] = []
+        for amax_floor in (AMAX_FLOOR, 0.0):
+            outputs.extend(
+                quantize_dynamic_scaled_float8(
+                    x,
+                    input_scale_spec,
+                    weight_scale_spec,
+                    group_size_or_per_token=FLOOR_GROUP_SIZE,
+                    scales_type=DType.float8_e8m0fnu,
+                    amax_floor=amax_floor,
+                )
+            )
+        graph.output(outputs)
+
+    compiled = gpu_session.load(graph)
+
+    signs = torch.ones(FLOOR_GROUP_SIZE)
+    signs[::3] = -1.0
+    x_host = (
+        torch.cat([m * signs for m in FLOOR_GROUP_MAGNITUDES])
+        .repeat(M, 1)
+        .to(torch.bfloat16)
+    )
+    q_f, s_f, q_b, s_b = compiled.execute(x_host.cuda())
+
+    # e8m0 has no DLPack mapping; its byte is the biased power-of-two exponent.
+    def scale_bits(buf: Buffer) -> torch.Tensor:
+        return torch.from_dlpack(buf.view(DType.uint8)).cpu()
+
+    def fp8_values(buf: Buffer) -> torch.Tensor:
+        return (
+            torch.from_dlpack(buf.view(DType.uint8))
+            .view(torch.float8_e4m3fn)
+            .float()
+            .cpu()
+        )
+
+    floored, base = scale_bits(s_f), scale_bits(s_b)
+    below, at_floor, above, below_2 = range(len(FLOOR_GROUP_MAGNITUDES))
+
+    torch.testing.assert_close(floored[below], floored[at_floor])
+    torch.testing.assert_close(floored[below_2], floored[at_floor])
+    assert (floored[below] > base[below]).all()
+    assert (floored[below_2] > base[below_2]).all()
+    torch.testing.assert_close(floored[at_floor], base[at_floor])
+    torch.testing.assert_close(floored[above], base[above])
+
+    scales = torch.exp2(floored.float() - 127.0)[:, :M].T
+    dequantized = fp8_values(q_f) * scales.repeat_interleave(
+        FLOOR_GROUP_SIZE, dim=1
+    )
+    # e4m3 keeps 3 mantissa bits, so rounding is within 2**-4 relative.
+    torch.testing.assert_close(dequantized, x_host.float(), rtol=0.07, atol=0.0)
+    above_cols = slice(above * FLOOR_GROUP_SIZE, (above + 1) * FLOOR_GROUP_SIZE)
+    torch.testing.assert_close(
+        fp8_values(q_f)[:, above_cols], fp8_values(q_b)[:, above_cols]
+    )
+
+
+@pytest.mark.parametrize("amax_floor", [float("nan"), float("inf"), -1e-4])
+def test_quantize_dynamic_scaled_float8_rejects_invalid_amax_floor(
+    amax_floor: float,
+) -> None:
+    input_scale_spec, weight_scale_spec = _block_scale_specs(
+        DType.float8_e8m0fnu
+    )
+    with Graph(
+        "fp8_quant_invalid_amax_floor",
+        input_types=(
+            TensorType(
+                DType.bfloat16, [16, FLOOR_GROUP_SIZE], device=DeviceRef.GPU()
+            ),
+        ),
+    ) as graph:
+        with pytest.raises(ValueError, match="finite and non-negative"):
+            quantize_dynamic_scaled_float8(
+                graph.inputs[0].tensor,
+                input_scale_spec,
+                weight_scale_spec,
+                group_size_or_per_token=FLOOR_GROUP_SIZE,
+                scales_type=DType.float8_e8m0fnu,
+                amax_floor=amax_floor,
+            )

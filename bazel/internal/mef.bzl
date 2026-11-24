@@ -1,26 +1,13 @@
 """Generate MEF files from python Graphs."""
 
 load("@cfg_workaround.bzl", "TARGET_CONSTRAINTS")
+load("@mojo//:mojo.bzl", "BUILTIN_KERNEL_MOJOPKGS", "INTERNAL_KERNEL_MOJOPKGS")
 load(":modular_genrule.bzl", "modular_genrule")
 load(":modular_py_binary.bzl", "modular_py_binary")
 
 # All transitive mojo dependencies of //max:kernels
 MOJO_DEPS = [
-    # Internal-only kernel packages. Each is imported by a graph-op
-    # registration in //max:builtin_kernels, so its .mojopkg has to be on the
-    # graph compiler's runtime import path -- otherwise the whole
-    # builtin_kernels package body fails to resolve. This list is flat, not
-    # transitive, so adding a //Kernels/... dep to //max:builtin_kernels
-    # requires adding it here too. The open-source build has none of these
-    # packages; the OSS `mef` wrapper in //oss/modular/bazel:api.bzl rewrites
-    # them to their prebuilt @modular_wheel equivalents.
-    "//Kernels/lib/attn_res",
-    "//Kernels/lib/kda",
-    "//Kernels/lib/matmul_rs",
-    "//Kernels/lib/msa",
-    "//Kernels/src/mega_ffn",
     "//max:algorithm",
-    "//max:builtin_kernels",
     "//max:builtin_primitives",
     "//max:_cublas",
     "//max:_cudnn",
@@ -42,9 +29,9 @@ MOJO_DEPS = [
     "//max:weights_registry",
     "//max:max_mojo",
     "@mojo//:std",
-]
+] + INTERNAL_KERNEL_MOJOPKGS
 
-def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS, **kwargs):
+def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS, testonly = False, **kwargs):
     """Generate mef file from a python executable.
 
     The generated file will be {name}.mef.
@@ -55,6 +42,7 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
         args: Args added to the python file's execution
         target_compatible_with: Constraints for platform execution
         mojo_deps: Additional mojo dependencies to add to the python file's execution
+        testonly: Marks both generated targets testonly, for a MEF only tests consume
         **kwargs: forwarded to the `py_binary` target
     """
     py_binary_name = name + ".py_binary"
@@ -66,12 +54,14 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
         main = src,
         target_compatible_with = target_compatible_with,
         mojo_deps = mojo_deps,
+        testonly = testonly,
         **kwargs
     )
 
     modular_genrule(
         name = name,
         outs = [mef_name],
+        testonly = testonly,
         exec_compatible_with = TARGET_CONSTRAINTS + target_compatible_with,
         target_compatible_with = target_compatible_with + select({
             "//:asan": ["@platforms//:incompatible"],  # TODO: SDLC-4011
@@ -82,9 +72,16 @@ def mef(name, src, args = [], target_compatible_with = [], mojo_deps = MOJO_DEPS
             "MODULAR_MOJO_MAX_IMPORT_PATH=" + ",".join([
                 "$$(dirname $(location {}))".format(dep)
                 for dep in mojo_deps
+            ] + [
+                # The built-in kernels are a namespace: their packages sit in
+                # `builtin_kernels/`, which resolves from its parent. One entry
+                # covers them all, so the list stays the length of `mojo_deps`.
+                "$$(dirname $$(dirname $(location {})))".format(
+                    BUILTIN_KERNEL_MOJOPKGS[0],
+                ),
             ]),
             "$(location :" + py_binary_name + ")",
             "$(location :" + mef_name + ")",
         ] + args),
-        tools = [":" + py_binary_name] + mojo_deps,
+        tools = [":" + py_binary_name] + mojo_deps + BUILTIN_KERNEL_MOJOPKGS,
     )

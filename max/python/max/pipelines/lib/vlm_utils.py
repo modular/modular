@@ -19,11 +19,11 @@ from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental import functional as F
-from max.experimental.sharding.rules import ternary_rule
+from max import functional as F
 from max.graph import TensorValue, ops
-from max.nn.kernels import scatter_nd_skip_oob_indices
-from max.pipelines.context import TextAndVisionContext
+from max.nn._graph_ops import scatter_nd_skip_oob_indices
+from max.pipelines.context import ImageMetadata, TextAndVisionContext
+from max.tensor.sharding.rules import ternary_rule
 
 
 def merge_multimodal_embeddings(
@@ -59,8 +59,7 @@ def merge_multimodal_embeddings(
         )
 
     # Scatter the multimodal embeddings into inputs_embeds at the specified
-    # indices. Any negative values in the indices means that the corresponding
-    # update will be skipped.
+    # indices. An index outside [-dim, dim) skips its update.
     return scatter_nd_skip_oob_indices(
         input=inputs_embeds,
         updates=multimodal_embeddings,
@@ -108,6 +107,60 @@ def compute_windowed_merge_indices(
                 )
         total_active_tokens += ctx.tokens.active_length
 
+    if not parts:
+        return np.array([], dtype=np.int32)
+    return np.concatenate(parts)
+
+
+def _compute_selected_merge_indices(
+    batch: Sequence[TextAndVisionContext],
+    selected_contexts: Sequence[TextAndVisionContext],
+    selected_images: Sequence[Sequence[ImageMetadata]],
+) -> npt.NDArray[np.int32]:
+    """Compute scatter indices for exactly the images an encoder ran on.
+
+    Emits one index per embedding row of each selected image, in the
+    selection's order, which is the order those rows come out of the encoder.
+    The rows are the image's placeholder positions rather than its whole span:
+    a span can hold tokens that embed as text, such as a mistral_large4
+    image's break and end tokens or a video clip's timestamp text. A row
+    inside its context's active window gets its batch offset; a row outside it
+    (an image the window bisects) gets the out-of-bounds sentinel the merge
+    skips. Contexts that were not selected contribute no rows but still
+    advance the batch offset.
+
+    Args:
+        batch: Sequence of VLM contexts.
+        selected_contexts: The contexts the encoder ran on, a subset of
+            ``batch`` in batch order.
+        selected_images: The images encoded for each selected context.
+
+    Returns:
+        npt.NDArray[np.int32]: Merge indices, some of which may be negative.
+    """
+    oob_idx = np.iinfo(np.int32).min
+    images_by_ctx = {
+        id(ctx): images
+        for ctx, images in zip(selected_contexts, selected_images, strict=True)
+    }
+    parts: list[npt.NDArray[np.int32]] = []
+    total_active_tokens = 0
+    for ctx in batch:
+        active_len = ctx.tokens.active_length
+        selected = images_by_ctx.get(id(ctx), ())
+        if selected:
+            positions = np.asarray(ctx.image_token_indices, dtype=np.int64)
+            for img in selected:
+                img_lo = int(np.searchsorted(positions, img.start_idx))
+                rows = positions[img_lo : img_lo + img.embedding_rows]
+                relative = rows - ctx.tokens.processed_length
+                in_window = (relative >= 0) & (relative < active_len)
+                parts.append(
+                    np.where(
+                        in_window, relative + total_active_tokens, oob_idx
+                    ).astype(np.int32)
+                )
+        total_active_tokens += active_len
     if not parts:
         return np.array([], dtype=np.int32)
     return np.concatenate(parts)

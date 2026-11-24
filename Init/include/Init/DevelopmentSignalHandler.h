@@ -14,6 +14,8 @@
 #ifndef INIT_DEVELOPMENT_SIGNAL_HANDLER_H
 #define INIT_DEVELOPMENT_SIGNAL_HANDLER_H
 
+#include "Support/SymbolExport.h"
+
 namespace llvm {
 class StringRef;
 }
@@ -33,7 +35,7 @@ void registerDevelopmentSignalHandler(llvm::StringRef programName);
 /// Enable Python stack traces in signal handlers using async-safe faulthandler.
 /// This configures the signal handler to use SIGUSR2 to trigger Python stack
 /// traces without GIL deadlock risks.
-void enablePythonStackTraceCallback();
+MODULAR_CXX_EXPORT void enablePythonStackTraceCallback();
 
 } // namespace M::Init
 

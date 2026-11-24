@@ -20,6 +20,9 @@
 #include "IREmitter.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/MojoParser/ASTDecl.h"
+#include "OverloadSet.h"
+#include "ParamBindings.h"
+#include "ParserEvaluationContext.h"
 
 #include "Mojo/LITDialect/LITOps.h"
 
@@ -129,7 +132,8 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
   // can use that directly.
   if (auto baseRef = loadVal.getIfMLValue()) {
     auto fieldPtr =
-        RefStructGEROp::create(*emitter.builder, loc, baseRef, getField());
+        RefStructGEROp::create(*emitter.builder, loc, baseRef, getField(),
+                               &emitter.shared.getEvaluationContext());
     emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
     // Done: no tmp, no __setitem__, in-place mutation via the ref.
     return MBValue(baseRef);
@@ -151,7 +155,8 @@ CValue StoredAttributeRefDLValue::emitStore(ASTExprAnd<CValue> value,
 
   // Store into the field.
   auto fieldPtr =
-      RefStructGEROp::create(*emitter.builder, loc, loadMR, getField());
+      RefStructGEROp::create(*emitter.builder, loc, loadMR, getField(),
+                             &emitter.shared.getEvaluationContext());
   emitter.emitStoreToLValue(value, MLValue(fieldPtr), EC_AttributeRefBase);
 
   // Store the whole result back, transferring ownership as an MRValue.
@@ -283,6 +288,27 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     return BValue();
   }
 
+  // If the value is an MRValue, we can extract the elements directly as
+  // individual RValues to avoid copying them into the ultimate destination.
+  if (value.ir.getIfMRValue()) {
+    SmallVector<CValue, 4> elements;
+    if (failed(TupleNode::getConsumedElements(value.ir, value.expr, emitter,
+                                              elements)))
+      return BValue();
+
+    for (auto [element, lvalue] : llvm::zip(elements, eltLValues)) {
+      LValue lv = lvalue.ir.getIfLValue();
+      assert(lv && "Each dest is known to be an lvalue");
+      ExprDest eltDest(lv, EC_TupleElement);
+      if (!emitter.emitCResult(element, value.expr, eltDest)) {
+        eltDest.resetForError(emitter);
+        return BValue();
+      }
+    }
+
+    return MRValue(value.ir.getMValueReference());
+  }
+
   // Emit the input value to a BValue, loading it if it is an LValue and
   // decaying from an RValue. We need to do this because each of the tuple
   // subscript operations we generate below will operate on this same IR value
@@ -300,13 +326,8 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
     assert(lv && "Each dest is known to be an lvalue");
     ExprDest eltDest(lv, EC_TupleElement);
 
-    // Bind the i parameters.  Int explicitly constructs from index type now.
-    TypedAttr indexAttr =
-        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-
-    CValue intIndexCValue =
-        emitter.emitInt(ASTExprAnd<PValue>{PValue(indexAttr), value.expr},
-                        ExprContext::EC_CallParamValue);
+    CValue intIndexCValue = emitter.emitInt(index, value.expr->getLoc(),
+                                            ExprContext::EC_CallParamValue);
     if (!intIndexCValue) {
       eltDest.resetForError(emitter);
       return BValue();
@@ -338,7 +359,7 @@ CValue TupleDLValue::emitStore(ASTExprAnd<CValue> value,
 ListPatternDLValue::ListPatternDLValue(ArrayRef<ExprNode *> eltExprs,
                                        ASTType listType,
                                        PatternDeclKind patternDeclKind,
-                                       const ExprNode *expr)
+                                       const ListLiteralNode *expr)
     : BaseDLValue(listType), expr(expr),
       eltExprs(eltExprs.begin(), eltExprs.end()),
       patternDeclKind(patternDeclKind) {}
@@ -356,26 +377,43 @@ CValue ListPatternDLValue::emitLoad(ExprDest &dest, IREmitter &emitter) const {
 
 CValue ListPatternDLValue::emitStore(ASTExprAnd<CValue> value,
                                      IREmitter &emitter) const {
-  // Okay we have a type like List[T] that has a __len__ and __getitem__ method.
-  // First call __len__ to see if it agrees with the number of elements in the
-  // pattern.
+  ASTType valueType = value.ir.getRValueType();
+  auto sizedConformance =
+      valueType
+          .conformsToBuiltinTrait("Sized", value.expr->getLoc(), emitter.shared,
+                                  emitter.getDeclScope().getScopeAssumptions())
+          .first;
+  if (!sizedConformance.isTrue()) {
+    auto diag = emitter.emitError(value.expr->getLoc());
+    if (sizedConformance.isUnknown())
+      diag << "cannot prove that value of type " << valueType
+           << " conforms to 'Sized'";
+    else
+      diag << "value of type " << valueType << " does not conform to 'Sized'";
+    diag << value.expr->getRange();
+    return {};
+  }
 
-  // Build `value.__len__()` and the expected pattern length, then call
-  // `check_list_length(actual, expected)` which raises on mismatch.
+  // Emit the input to a BValue so the length check and each __getitem__ can
+  // reuse it without reloading an LValue or consuming an RValue multiple times.
   SMLoc loc = expr->getLoc();
-
-  SyntheticNode valueNode(loc, value.ir);
-  AttributeRefNode lenAttr(&valueNode, loc, "__len__");
-  CallNode lenCall(&lenAttr, loc, /*operands=*/{}, loc);
-  AnyValue actualLen = emitter.emitExpr(&lenCall, EC_CollectionLiteral);
-  if (!actualLen)
+  BValue bvalue = emitter.emitBValue(value, EC_CollectionLiteral);
+  if (!bvalue)
     return {};
 
-  TypedAttr countAttr =
-      IntegerAttr::get(IndexType::get(emitter.getContext()), eltExprs.size());
-  CValue expectedLen = emitter.emitInt(
-      ASTExprAnd<PValue>{PValue(countAttr), expr}, EC_CallParamValue);
-  if (!expectedLen)
+  // The minimum is the # of patterns in the list literal: the * pattern can
+  // be empty though, so it doesn't count.
+  CValue minimumLength = emitter.emitInt(
+      eltExprs.size() - expr->starIndex.has_value(), loc, EC_CallParamValue);
+  if (!minimumLength)
+    return {};
+
+  CValue isExact = emitter.emitBool(
+      ASTExprAnd<PValue>{
+          BoolAttr::get(emitter.getContext(), !expr->starIndex.has_value()),
+          expr},
+      EC_CallParamValue);
+  if (!isExact)
     return {};
 
   // Look up check_list_length the same way paramfor_has_next is resolved.
@@ -387,8 +425,9 @@ CValue ListPatternDLValue::emitStore(ASTExprAnd<CValue> value,
 
   CallOperands checkOperands(CallSyntax::kDirectCall, expr,
                              EC_CollectionLiteral);
-  checkOperands.add({actualLen, expr});
-  checkOperands.add({expectedLen, expr});
+  checkOperands.add({bvalue, expr});
+  checkOperands.add({minimumLength, expr});
+  checkOperands.add({isExact, expr});
 
   ParamBindings bindings(emitter.getDeclScope(), expr);
   OverloadSet checkCall("check_list_length", checkFns, std::move(bindings),
@@ -396,31 +435,90 @@ CValue ListPatternDLValue::emitStore(ASTExprAnd<CValue> value,
   if (!checkCall.emitCall(std::move(checkOperands), emitter))
     return {};
 
-  // Okay, now that we know the length is correct, loop over each element of the
-  // collection, calling __getitem__ to get the element and store it into the
-  // corresponding list pattern element.
+  // If there is a * pattern e.g. [a, b, *c, d, e], we need to compute the index
+  // that d and e will live at as well as the range that c will cover.  We do
+  // this by calling `collection.__len__()` to get the actual length and doing
+  // simple math.  We only need this if the * pattern is present and not the
+  // last element in the list.
+  CValue suffixStart;
+  if (expr->starIndex && *expr->starIndex + 1 != eltExprs.size()) {
+    // Emit the call to collection.__len__() to get the actual length.
+    SyntheticNode valueNode(loc, bvalue);
+    AttributeRefNode lenAttr(&valueNode, loc, "__len__");
+    CallNode lenCall(&lenAttr, loc, /*operands=*/{}, loc);
+    CValue actualLength =
+        emitter.emitExprCValue(&lenCall, EC_CollectionLiteral);
+    if (!actualLength)
+      return {};
 
-  // Emit the input to a BValue so each __getitem__ can reuse it without
-  // reloading an LValue or consuming an RValue multiple times.
-  BValue bvalue = emitter.emitBValue(value, EC_CollectionLiteral);
-  if (!bvalue)
-    return {};
+    // Start of the suffix is length-#trailing.
+    size_t suffixLength = eltExprs.size() - *expr->starIndex - 1;
+    CValue suffixLengthValue =
+        emitter.emitInt(suffixLength, loc, EC_CallParamValue);
+    if (!suffixLengthValue)
+      return {};
+    SyntheticNode actualLengthNode(loc, actualLength);
+    SyntheticNode suffixLengthNode(loc, suffixLengthValue);
+    BinOpNode subtract(ExprNode::kSub, &actualLengthNode, loc,
+                       &suffixLengthNode);
+    suffixStart = emitter.emitExprCValue(&subtract, EC_CollectionLiteral);
+    if (!suffixStart)
+      return {};
+  }
 
+  // Now that we know the length is correct, extract and store each element.
   SyntheticNode baseNode(loc, bvalue);
   for (auto [index, eltExpr] : llvm::enumerate(eltExprs)) {
-    // Build `base.__getitem__(42)` syntactically.
-    TypedAttr indexAttr =
-        IntegerAttr::get(IndexType::get(emitter.getContext()), index);
-    CValue indexCValue = emitter.emitInt(
-        ASTExprAnd<PValue>{PValue(indexAttr), expr}, EC_CallParamValue);
-    if (!indexCValue)
-      return {};
-    SyntheticNode indexNode(loc, indexCValue);
-    Operand indexOperand(&indexNode, loc, ArgUnpackStyle::kPositional);
+    // If this is the * pattern, emit a slice operation to extract the suffix.
+    if (expr->starIndex && index == *expr->starIndex) {
+      CValue startValue = emitter.emitInt(index, loc, EC_CallParamValue);
+      if (!startValue)
+        return {};
 
+      SyntheticNode startNode(loc, startValue);
+      std::optional<SyntheticNode> endNode;
+      if (suffixStart)
+        endNode.emplace(loc, suffixStart);
+      SliceLiteralNode slice(&startNode, loc, endNode ? &*endNode : nullptr, {},
+                             nullptr);
+      Operand sliceOperand(&slice, loc, ArgUnpackStyle::kPositional);
+      SubscriptNode subscript(&baseNode, loc, sliceOperand, loc);
+
+      ExprDest eltDest(eltExpr, EC_CollectionLiteral);
+      eltDest.setPatternDeclKind(patternDeclKind);
+      if (!emitter.emitExpr(&subscript, eltDest))
+        return {};
+      continue;
+    }
+
+    // Otherwise, we have a single pattern like "x".  Figure out its offset in
+    // the collection based on whether it is before or after the * pattern.
+    CValue indexValue;
+    if (!expr->starIndex || index < *expr->starIndex) {
+      indexValue = emitter.emitInt(index, loc, EC_CallParamValue);
+    } else {
+      size_t suffixOffset = index - *expr->starIndex - 1;
+      if (suffixOffset == 0) {
+        indexValue = suffixStart;
+      } else {
+        CValue offsetValue =
+            emitter.emitInt(suffixOffset, loc, EC_CallParamValue);
+        if (!offsetValue)
+          return {};
+        SyntheticNode suffixStartNode(loc, suffixStart);
+        SyntheticNode offsetNode(loc, offsetValue);
+        BinOpNode add(ExprNode::kAdd, &suffixStartNode, loc, &offsetNode);
+        indexValue = emitter.emitExprCValue(&add, EC_CollectionLiteral);
+      }
+    }
+    if (!indexValue)
+      return {};
+
+    // Build `base.__getitem__(42)` syntactically.
+    SyntheticNode indexNode(loc, indexValue);
+    Operand indexOperand(&indexNode, loc, ArgUnpackStyle::kPositional);
     AttributeRefNode getItemAttr(&baseNode, loc, "__getitem__");
     CallNode getItemCall(&getItemAttr, loc, indexOperand, loc);
-
     ExprDest eltDest(eltExpr, EC_CollectionLiteral);
     eltDest.setPatternDeclKind(patternDeclKind);
     if (!emitter.emitExpr(&getItemCall, eltDest))

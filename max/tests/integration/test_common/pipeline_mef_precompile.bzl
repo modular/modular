@@ -12,10 +12,16 @@ and initializes those artifacts instead of compiling.
 Note this is *not* the MEF cache. Reusing artifacts by path avoids matching a
 compile key that covers the host CPU target, kernel-package contents and the
 build configuration -- none of which agree between a build action and a test --
-and a mismatch raises rather than silently falling back to a full recompile. The
-consumer still has to build the same graphs, so config the pipeline derives from
-device memory must be pinned on both sides; the manifest check reports it when it
-is not.
+and a graph with no artifact raises rather than silently falling back to a full
+recompile. The consumer still has to build the same graphs, so config the
+pipeline derives from device memory must be pinned on both sides.
+
+The consumer has to pass ``--no-precompiled-mefs-verify-body`` as well. The
+record compiles under virtual devices, so the graphs it builds carry a
+compile-only memory plan and weight staging; the program it produces is the one
+the run needs, but the graph text is not the text a run with real devices
+builds. The name-and-signature match is what says the artifact is the right
+one here, and the consuming test's assertions say it runs.
 
 Public API:
 
@@ -30,47 +36,23 @@ run``/``test``, never when exec'd as a build tool, so read the binary's
 those short_path vars resolve.
 """
 
-def _targets_from_mojo_toolchain(ctx):
-    """Reads the GPU and host-CPU targets to compile for off the mojo toolchain.
+load("//bazel/internal:mojo_targets.bzl", "mojo_targets_from_toolchain")  # buildifier: disable=bzl-visibility
 
-    Same derivation as ``mef_precompile.bzl``, so a call site names neither: the
-    toolchain already describes the lane being built for, and the artifacts have
-    to agree with it.
+def _precompiled_pipeline_mefs_impl(ctx):
+    mef_dir = ctx.actions.declare_directory(ctx.attr.name + "_mefs")
 
-    Args:
-        ctx: The rule context.
+    targets = mojo_targets_from_toolchain(ctx)
+    target = targets.accelerator
+    cpu_target = targets.cpu_target
 
-    Returns:
-        The GPU target as ``"api:arch"`` and the host-CPU codegen descriptor.
-    """
-    toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
-
-    target = None
-    cpu_target = None
-    for copt in toolchain.copts:
-        if copt.startswith("--target-accelerator="):
-            target = copt.removeprefix("--target-accelerator=")
-        elif copt.startswith("--target-cpu="):
-            cpu_target = copt.removeprefix("--target-cpu=")
-
-    # A pipeline compiles for an accelerator or not at all, so say so here rather
-    # than hand the producer a target of `None` and let it fail confusingly. A
-    # target gated to a GPU lane never reaches this.
+    # A pipeline compiles for an accelerator or not at all, so say so here
+    # rather than hand the producer an empty target and let it fail
+    # confusingly. A target gated to a GPU lane never reaches this.
     if not target:
         fail(
             "the mojo toolchain names no target accelerator, so there is " +
             "nothing to precompile for; gate this target to a GPU lane",
         )
-
-    # Mojo and the graph compiler spell the vendor differently.
-    target = target.replace("nvidia", "cuda")
-    target = target.replace("amdgpu", "hip")
-    return target, cpu_target
-
-def _precompiled_pipeline_mefs_impl(ctx):
-    mef_dir = ctx.actions.declare_directory(ctx.attr.name + "_mefs")
-
-    target, cpu_target = _targets_from_mojo_toolchain(ctx)
 
     binary = ctx.attr.producer[DefaultInfo].files_to_run
     env = dict(ctx.attr.producer[RunEnvironmentInfo].environment)

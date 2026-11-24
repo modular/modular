@@ -21,6 +21,13 @@ To enable in-runtime NVTX markers, set ``MODULAR_ENABLE_PROFILING`` to ``on``
 or ``detailed`` before running your code. Without it, profiling calls are
 no-ops with minimal overhead.
 
+The host-side spans reach NVTX (or roctx) through ``libmax_profiler_shim.so``,
+which is loaded at runtime. A wheel install finds it on its own; a source build
+does not, and needs ``MODULAR_PROFILER_SHIM`` set to the shim's path (the
+``br-nsys``, ``bt-nsys`` and ``*-rocprof`` aliases do this for you). Without it
+the host-side spans are dropped and only kernel-level ranges appear in the
+capture.
+
 The profiler exposes two layers:
 
 1. **In-source spans**: :class:`Tracer` (context manager / manual stack) and
@@ -29,7 +36,7 @@ The profiler exposes two layers:
 2. **One-shot CLI capture**: :func:`maybe_reexec_under_nsys` re-launches the
    current process under ``nsys profile`` and renders a top-N kernel summary
    on exit; :func:`profiled_region` is the corresponding context manager
-   that brackets the timed region with ``cudaProfilerStart``/``Stop`` and
+   that brackets the timed region with ``cuProfilerStart``/``Stop`` and
    prints a ``cProfile`` Python/CPU summary. These power the
    ``--profile`` flag on ``max generate`` / ``max benchmark``.
 """

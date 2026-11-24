@@ -13,6 +13,8 @@
 
 # ===----------------------------------------------------------------------=== #
 #
+# Portions Copyright (c) 2018 Łukasz Langa, licensed under the MIT License.
+#
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
@@ -271,28 +273,37 @@ class LineGenerator(Visitor[Line]):
                 yield from self.visit(child)
 
     def visit_match_stmt(self, node: Node) -> Iterator[Line]:
-        """Visit a match / __match statement.
+        """Visits a match statement, including the deprecated __match spelling.
 
-        In Mojo mode, cases share the match indent (no extra indent around the
-        case blocks). Skip the Python-style INDENT/DEDENT wrapper when present.
+        Cases are indented under the header. Input written with cases at the
+        header's own indent is reindented on the way out.
         """
         normalize_invisible_parens(
             node, parens_after=set(), preview=self.mode.preview
         )
 
         yield from self.line()
+        yield from self._visit_match_children(node)
+
+    def _visit_match_children(self, node: Node) -> Iterator[Line]:
+        """Emit a match statement's children, indenting flat case lists."""
+        has_indent = any(
+            isinstance(child, Leaf) and child.type == token.INDENT
+            for child in node.children
+        )
+        opened = False
         for child in node.children:
             if (
-                self.mode.is_mojo
-                and isinstance(child, Leaf)
-                and child.type in (token.INDENT, token.DEDENT)
+                not has_indent
+                and not opened
+                and isinstance(child, Node)
+                and child.type == syms.case_block
             ):
-                # Preserve any comments carried on DEDENT without changing depth.
-                if child.type == token.DEDENT and child.prefix:
-                    yield from self.line()
-                    yield from self.visit_default(child)
-                continue
+                yield from self.line(+1)
+                opened = True
             yield from self.visit(child)
+        if opened:
+            yield from self.line(-1)
 
     def visit_case_block(self, node: Node) -> Iterator[Line]:
         """Visit a case block."""
@@ -349,7 +360,7 @@ class LineGenerator(Visitor[Line]):
             yield from self.line()
 
     def visit_comptime_stmt(self, node: Node) -> Iterator[Line]:
-        """Visit `comptime if`, `comptime for`, `comptime assert`, `comptime x = ...`."""
+        """Visit comptime compound statements and variable declarations."""
         yield from self.line()
 
         children = iter(node.children)
@@ -360,11 +371,24 @@ class LineGenerator(Visitor[Line]):
                 break
 
         internal_stmt = next(children)
-        if internal_stmt.type in (syms.if_stmt, syms.for_stmt):
+        assert isinstance(internal_stmt, Node)
+        if internal_stmt.type == syms.match_stmt:
+            # Visit the match children directly to avoid the initial line
+            # break that visit_match_stmt adds. Cases are indented under the
+            # header, including input that was written flat.
+            yield from self._visit_match_children(internal_stmt)
+        elif internal_stmt.type in (
+            syms.if_stmt,
+            syms.for_stmt,
+            syms.guard_stmt,
+        ):
             # Visit child statement's children directly to avoid the
-            # initial line break that visit_if_stmt/visit_for_stmt add.
-            for child in internal_stmt.children:
-                yield from self.visit(child)
+            # initial line break that visit_if_stmt/for_stmt add.
+            if self._has_conditional_clauses(internal_stmt):
+                yield from self._visit_conditional_stmt_children(internal_stmt)
+            else:
+                for child in internal_stmt.children:
+                    yield from self.visit(child)
         else:
             # Simple case (alias_stmt_body, comptime_assert_stmt_body):
             # visit normally, then consume the trailing NEWLINE.
@@ -389,10 +413,113 @@ class LineGenerator(Visitor[Line]):
         for child in internal_stmt.children:
             yield from self.visit(child)
 
+    def _has_conditional_clauses(self, node: Node) -> bool:
+        """Return whether `node` has semicolon-separated conditional clauses."""
+        return any(
+            isinstance(child, Leaf) and child.type == token.SEMI
+            for child in node.children
+        )
+
+    def _append_clause_semicolon(self, leaf: Leaf) -> None:
+        # The header stays on one line here. `conditional_clause_split` breaks
+        # it at these semicolons only if it is too long.
+        leaf.prefix = ""
+        self.current_line.append(leaf, preformatted=True)
+
+    def _visit_conditional_clauses(self, node: Node) -> Iterator[Line]:
+        """Emit the clauses after the first semicolon of a conditional."""
+        for child in node.children:
+            if isinstance(child, Leaf) and child.type == token.SEMI:
+                self._append_clause_semicolon(child)
+                continue
+
+            # The grammar needs these tokens to parse a header that continues
+            # on the next lines. The formatter chooses its own line breaks.
+            if isinstance(child, Leaf) and child.type in (
+                token.NEWLINE,
+                token.INDENT,
+            ):
+                continue
+
+            yield from self.visit(child)
+
+    def _visit_conditional_clause_tail(self, node: Node) -> Iterator[Line]:
+        """Emit the portion of a conditional after its first semicolon."""
+        conditions, *rest = node.children
+        # A single inline clause is not wrapped in `inline_if_conditions`, so
+        # `conditions` can be a plain expression, even a lone leaf.
+        if conditions.type in (
+            syms.inline_if_conditions,
+            syms.multiline_if_conditions,
+        ):
+            yield from self._visit_conditional_clauses(cast(Node, conditions))
+        else:
+            yield from self.visit(conditions)
+        if conditions.type == syms.multiline_if_conditions:
+            # This DEDENT closes the INDENT of the continued clauses.
+            assert rest[-1].type == token.DEDENT
+            rest.pop()
+
+        for child in rest:
+            yield from self.visit(child)
+
+    def _visit_conditional_stmt_children(self, node: Node) -> Iterator[Line]:
+        """Emit a conditional statement containing multiple clauses."""
+        after_semicolon = False
+        for child in node.children:
+            if isinstance(child, Leaf) and child.type == token.SEMI:
+                self._append_clause_semicolon(child)
+                after_semicolon = True
+                continue
+
+            if after_semicolon and isinstance(child, Node):
+                yield from self._visit_conditional_clause_tail(child)
+                after_semicolon = False
+                continue
+
+            yield from self.visit(child)
+
+    def visit_if_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit an if statement."""
+        if not self._has_conditional_clauses(node):
+            yield from self.visit_stmt(
+                node, keywords={"if", "else", "elif"}, parens={"if", "elif"}
+            )
+            return
+
+        normalize_invisible_parens(
+            node, parens_after={"if", "elif"}, preview=self.mode.preview
+        )
+        yield from self.line()
+        yield from self._visit_conditional_stmt_children(node)
+
+    def visit_guard_stmt(self, node: Node) -> Iterator[Line]:
+        """Visit a guard statement."""
+        if not self._has_conditional_clauses(node):
+            yield from self.visit_stmt(
+                node, keywords={"__guard"}, parens={"__guard"}
+            )
+            return
+
+        normalize_invisible_parens(
+            node, parens_after={"__guard"}, preview=self.mode.preview
+        )
+        yield from self.line()
+        yield from self._visit_conditional_stmt_children(node)
+
     def visit_decorators(self, node: Node) -> Iterator[Line]:
         """Visit decorators."""
         for child in node.children:
             yield from self.line()
+            yield from self.visit(child)
+
+    def visit_decorated(self, node: Node) -> Iterator[Line]:
+        """Visit a decorated statement."""
+        for child in node.children:
+            # A decorated `var` ends in its own NEWLINE, whose prefix holds the
+            # trailing comment of the `var` line.
+            if child.type != token.NEWLINE:
+                yield from self.line()
             yield from self.visit(child)
 
     def visit_power(self, node: Node) -> Iterator[Line]:
@@ -549,12 +676,17 @@ class LineGenerator(Visitor[Line]):
         """Sorts the conformance/inheritance list for struct/trait nodes in-place.
 
         Each conformance entry in the arglist is either:
-        - A bare NAME leaf (unconditional conformance), or
-        - An 'argument' node whose first child is a NAME leaf (conditional
-          conformance with a where clause).
+        - A bare NAME leaf (unconditional conformance),
+        - An 'argument' node whose first child is the trait (conditional
+          conformance with a where clause, or an opt-out with an `else`
+          reason), or
+        - A 'not_test' node over a NAME leaf (`not Trait`, the opt-out), which
+          sorts under the trait it names.
 
         We sort the full entries as units keyed by their trait name so that
-        where clauses stay attached to the correct trait.
+        where clauses stay attached to the correct trait. An entry we cannot
+        key -- a trait composition, say -- keeps its slot and the rest sort
+        around it.
         """
 
         for child in node.children:
@@ -567,12 +699,12 @@ class LineGenerator(Visitor[Line]):
 
         def _conformance_name(entry: LN) -> str | None:
             """Return the trait name for a conformance entry, or None."""
+            if isinstance(entry, Node) and entry.type == syms.argument:
+                entry = entry.children[0]
+            if isinstance(entry, Node) and entry.type == syms.not_test:
+                entry = entry.children[1]
             if isinstance(entry, Leaf) and entry.type == token.NAME:
                 return entry.value
-            if isinstance(entry, Node) and entry.type == syms.argument:
-                first = entry.children[0]
-                if isinstance(first, Leaf) and first.type == token.NAME:
-                    return first.value
             return None
 
         # Collect (index, entry) pairs for conformance entries (skip commas).
@@ -610,12 +742,17 @@ class LineGenerator(Visitor[Line]):
         parens: set[str],
         nodeTypes: set[int] | None = None,
     ):
-        # Only sort for struct/trait, not regular class
+        # Only sort for struct/enum/union/trait, not regular class
         from mblib2to3.pgen2 import token as mtoken
 
         if nodeTypes is None:
             nodeTypes = set()
-        if node.children[0].type in (mtoken.STRUCT, mtoken.TRAIT):
+        if node.children[0].type in (
+            mtoken.STRUCT,
+            mtoken.ENUM,
+            mtoken.UNION,
+            mtoken.TRAIT,
+        ):
             self._sort_struct_trait_conformances(node)
         # Fallback to original logic
         yield from self.visit_stmt(node, keywords, parens, nodeTypes)
@@ -636,9 +773,6 @@ class LineGenerator(Visitor[Line]):
             v, keywords=set(), parens={"assert", ","}
         )
         # comptime_stmt is handled by the visit_comptime_stmt method below.
-        self.visit_if_stmt = partial(
-            v, keywords={"if", "else", "elif"}, parens={"if", "elif"}
-        )
         self.visit_while_stmt = partial(
             v, keywords={"while", "else"}, parens={"while"}
         )
@@ -665,7 +799,13 @@ class LineGenerator(Visitor[Line]):
             self.visit_classdef_sorted,
             keywords={"class"},
             parens=Ø,
-            nodeTypes={mtoken.STRUCT, mtoken.TRAIT, mtoken.EXTENSION},
+            nodeTypes={
+                mtoken.STRUCT,
+                mtoken.ENUM,
+                mtoken.UNION,
+                mtoken.TRAIT,
+                mtoken.EXTENSION,
+            },
         )
         self.visit_expr_stmt = partial(v, keywords=Ø, parens=ASSIGNMENTS)
         self.visit_return_stmt = partial(
@@ -674,7 +814,6 @@ class LineGenerator(Visitor[Line]):
         self.visit_import_from = partial(v, keywords=Ø, parens={"import"})
         self.visit_del_stmt = partial(v, keywords=Ø, parens={"del"})
         self.visit_async_funcdef = self.visit_async_stmt
-        self.visit_decorated = self.visit_decorators
 
         # Mojo-specific declarations
         from mblib2to3.pgen2 import token as mtoken
@@ -729,6 +868,8 @@ def transform_line(
             transformers = [string_merge, string_paren_strip]
         else:
             transformers = []
+    elif any(leaf.type == token.SEMI for leaf in line.leaves[:-1]):
+        transformers = [conditional_clause_split]
     elif line.is_def:
         transformers = [left_hand_split]
     else:
@@ -816,6 +957,30 @@ def transform_line(
         yield line
 
 
+def conditional_clause_split(
+    line: Line, _features: Collection[Feature] = ()
+) -> Iterator[Line]:
+    """Split a conditional header into one line per clause.
+
+    Each clause after the first gets a two-space continuation indent, which
+    the language uses to tell clauses apart from the four-space body.
+    """
+    current_line = Line(mode=line.mode, depth=line.depth)
+    for leaf in line.leaves:
+        if not current_line.leaves:
+            leaf.prefix = ""
+        current_line.append(leaf, preformatted=True, track_bracket=True)
+        for comment_after in line.comments_after(leaf):
+            current_line.append(comment_after, preformatted=True)
+        if leaf.type == token.SEMI:
+            yield current_line
+            current_line = Line(
+                mode=line.mode, depth=line.depth, indent_offset=2
+            )
+    if current_line.leaves:
+        yield current_line
+
+
 class _BracketSplitComponent(Enum):
     head = auto()
     body = auto()
@@ -823,16 +988,17 @@ class _BracketSplitComponent(Enum):
 
 
 def _is_named_effect_paren(leaf: Leaf) -> bool:
-    """Is `leaf` the opening paren of a `named_effect` (e.g. `abi` in `abi("C")`)?
+    """Is `leaf` the opening paren of a named effect or access set?
 
-    A `named_effect` is `NAME '(' STRING ')'` on a function type or definition.
-    Its parenthesized string must not be used as a line-split point.
+    These clauses have the form `NAME '(' STRING ')'` on a function type or
+    definition. Their parenthesized strings must not be used as line-split
+    points.
     """
     parent = leaf.parent
     return (
         leaf.type == token.LPAR
         and parent is not None
-        and parent.type == syms.named_effect
+        and parent.type in {syms.named_effect, syms.accesses_clause}
     )
 
 
@@ -894,6 +1060,28 @@ def left_hand_split(
     for result in (head, body, tail):
         if result:
             yield result
+
+
+def _closes_where_condition_with_message(closing_bracket: Leaf) -> bool:
+    """Does `closing_bracket` close a `where ... else` clause's condition?
+
+    A `where` message trails its condition rather than sitting inside a bracket
+    with it, so omitting these parens leaves the last bracket *within* the
+    condition as the only split point, stranding the operands before it up on
+    the head line. Keeping them splits the whole condition out instead.
+    """
+    atom = closing_bracket.parent
+    if atom is None or atom.type != syms.atom:
+        return False
+    clause = atom.parent
+    if clause is None or clause.type != syms.where_clause:
+        return False
+    return any(
+        isinstance(child, Leaf)
+        and child.type == token.NAME
+        and child.value == "else"
+        for child in clause.children
+    )
 
 
 def right_hand_split(
@@ -969,6 +1157,7 @@ def right_hand_split(
         and not body.contains_standalone_comments(0)
         # and we can actually remove the parens
         and can_omit_invisible_parens(body, line_length)
+        and not _closes_where_condition_with_message(closing_bracket)
     ):
         omit = {id(closing_bracket), *omit}
         try:
@@ -1048,7 +1237,11 @@ def bracket_split_build_line(
     such has its first leaf's prefix normalized and a trailing comma added when
     expected.
     """
-    result = Line(mode=original.mode, depth=original.depth)
+    result = Line(
+        mode=original.mode,
+        depth=original.depth,
+        indent_offset=original.indent_offset,
+    )
     if component is _BracketSplitComponent.body:
         result.inside_brackets = True
         result.depth += 1
@@ -1157,7 +1350,10 @@ def delimiter_split(
             )
 
     current_line = Line(
-        mode=line.mode, depth=line.depth, inside_brackets=line.inside_brackets
+        mode=line.mode,
+        depth=line.depth,
+        indent_offset=line.indent_offset,
+        inside_brackets=line.inside_brackets,
     )
     lowest_depth = sys.maxsize
     trailing_comma_safe = True
@@ -1173,6 +1369,7 @@ def delimiter_split(
             current_line = Line(
                 mode=line.mode,
                 depth=line.depth,
+                indent_offset=line.indent_offset,
                 inside_brackets=line.inside_brackets,
             )
             current_line.append(leaf)
@@ -1203,6 +1400,7 @@ def delimiter_split(
             current_line = Line(
                 mode=line.mode,
                 depth=line.depth,
+                indent_offset=line.indent_offset,
                 inside_brackets=line.inside_brackets,
             )
     if current_line:
@@ -1226,7 +1424,10 @@ def standalone_comment_split(
         raise CannotSplit("Line does not have any standalone comments")
 
     current_line = Line(
-        mode=line.mode, depth=line.depth, inside_brackets=line.inside_brackets
+        mode=line.mode,
+        depth=line.depth,
+        indent_offset=line.indent_offset,
+        inside_brackets=line.inside_brackets,
     )
 
     def append_to_line(leaf: Leaf) -> Iterator[Line]:

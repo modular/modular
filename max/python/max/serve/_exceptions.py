@@ -46,8 +46,7 @@ _oom_pattern = re.compile(".*OUT_OF_MEMORY.*")
 
 @contextmanager
 def detect_and_wrap_ooms() -> Iterator[None]:
-    """
-    Detect  OOM errors and wrap them in a more helpful exception.
+    """Detect  OOM errors and wrap them in a more helpful exception.
 
     This function checks if the given exception is a out-of-memory error
     and wraps it in a OOMError with helpful guidance if so.
@@ -58,7 +57,6 @@ def detect_and_wrap_ooms() -> Iterator[None]:
     Returns:
         OOMError if it's OOM, otherwise the original exception
     """
-
     try:
         yield
     except Exception as exception:

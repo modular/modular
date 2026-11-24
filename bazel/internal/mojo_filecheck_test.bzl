@@ -80,7 +80,7 @@ def mojo_filecheck_test(
             "@llvm-project//llvm:FileCheck",
             "@llvm-project//llvm:not",
         ],
-        env = env | GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(exec_properties) | {
+        env = env | GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(default_exec_properties | exec_properties) | {
             "BINARY": "$(location :{}.binary)".format(name),
             "EXPECT_CRASH": "1" if expect_crash else "0",
             "EXPECT_FAIL": "1" if expect_fail else "0",

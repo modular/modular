@@ -67,6 +67,7 @@ modular_py_library(
         requirement("numpy"),
         requirement("pydantic"),
         requirement("prometheus-client"),
+        requirement("typing-extensions"),
         "//max/python/max/experimental/cascade/core",
         "//max/python/max/serve:process_control",
     ],

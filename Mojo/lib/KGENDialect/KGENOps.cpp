@@ -23,7 +23,6 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Support/Compiler/OperationUtils.h"
-#include "Support/Compiler/VerifyUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "Support/STLExtras.h"
@@ -39,9 +38,6 @@
 
 using namespace M;
 using namespace KGEN;
-
-using HLCF::parseLoop;
-using HLCF::printLoop;
 
 //===----------------------------------------------------------------------===//
 // ParamConstantOp
@@ -73,11 +69,11 @@ static LogicalResult verifyParamValueOp(OpT op) {
                           << " does not match result type " << op.getType();
 }
 
-/// Return true if the parameter value contains symbol constants, making the
+/// Return true if the parameter value contains function symbols, making the
 /// operation implicit parametric.
-static bool containsSymbolConstants(TypedAttr value) {
+static bool containsFuncSymbols(TypedAttr value) {
   mlir::AttrTypeWalker walker;
-  walker.addWalk([](SymbolConstantAttr) { return WalkResult::interrupt(); });
+  walker.addWalk([](FuncSymbolAttr) { return WalkResult::interrupt(); });
   return walker.walk(value).wasInterrupted();
 }
 
@@ -104,25 +100,11 @@ void ParamConstantOp::getAsmResultNames(
 }
 
 bool ParamConstantOp::isImplicitlyParametric() {
-  return containsSymbolConstants(getValue());
+  return containsFuncSymbols(getValue());
 }
 
 void ParamConstantOp::walkDefinitions(
     function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
-
-void ParamConstantOp::getEffects(
-    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
-
-  // This is a hack designed to stop the CSE of "none" in closures.
-  //
-  // See MSTDL-1123 for more context, but until cross-device compilation is
-  // more robust, we need this to avoid some edge case behavior around None.
-  //
-  // TODO(MOCO-1101): remove the need for this and make op Pure again.
-  if (isa<KGEN::NoneType>(getValue().getType()) &&
-      getOperation()->getParentOfType<KGEN::ParamDeclareRegionOp>())
-    effects.emplace_back(mlir::MemoryEffects::Allocate::get());
-}
 
 //===----------------------------------------------------------------------===//
 // ParamMaterializeOp
@@ -131,7 +113,7 @@ void ParamConstantOp::getEffects(
 LogicalResult ParamMaterializeOp::verify() { return verifyParamValueOp(*this); }
 
 bool ParamMaterializeOp::isImplicitlyParametric() {
-  return containsSymbolConstants(getValue());
+  return containsFuncSymbols(getValue());
 }
 
 void ParamMaterializeOp::walkDefinitions(
@@ -171,118 +153,6 @@ LogicalResult ParamDeclareOp::verify() {
   return emitOpError("declares a parameter with type ")
          << getParamDecl().getType() << " but parameter expression has type "
          << getValue().getType();
-}
-
-//===----------------------------------------------------------------------===//
-// ParamDeclareRegionOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseRegionOnly(OpAsmParser &p,
-                                   ParamDeclArrayAttr &inputParams,
-                                   TypeAttr &functionType, TypeAttr &type,
-                                   InlineLevelAttr &inlineLevel, Region &body) {
-  SmallVector<OpAsmParser::Argument> args;
-  FunctionType functionTypeValue;
-  FuncTypeGeneratorType sigGenType;
-  llvm::SMLoc bodyLoc;
-  ParamDeclArrayAttr resultParams;
-  if (parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
-                                     functionTypeValue, sigGenType) ||
-      parseOptionalInline(p, inlineLevel) || p.getCurrentLocation(&bodyLoc) ||
-      p.parseRegion(body, args))
-    return failure();
-  if (!resultParams.empty())
-    return p.emitError(p.getCurrentLocation(), "invalid result parameters");
-
-  // Form the Signature.
-  SmallVector<Type> argTypes;
-  for (const OpAsmParser::Argument &arg : args)
-    argTypes.push_back(arg.type);
-  functionType = TypeAttr::get(functionTypeValue);
-  type = TypeAttr::get(sigGenType);
-  return success();
-}
-
-static ParseResult
-parseRegionDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
-                       StringAttr &sourceName, ParamDeclArrayAttr &inputParams,
-                       TypeAttr &functionType, TypeAttr &type,
-                       InlineLevelAttr &inlineLevel, Region &body) {
-  StringAttr paramName;
-  if (parseParamName(p, paramName))
-    return failure();
-
-  if (p.parseOptionalLSquare()) {
-    sourceName = paramName;
-  } else {
-    std::string str;
-    if (p.parseKeywordOrString(&str) || p.parseRSquare())
-      return failure();
-    sourceName = StringAttr::get(p.getContext(), str);
-  }
-
-  if (p.parseEqual() ||
-      parseRegionOnly(p, inputParams, functionType, type, inlineLevel, body))
-    return failure();
-  paramDecl = ParamDeclAttr::get(paramName, type.getValue());
-  return success();
-}
-
-static void printRegionOnly(OpAsmPrinter &p, Operation *op,
-                            ParamDeclArrayAttr inputParams,
-                            TypeAttr functionType, TypeAttr type,
-                            InlineLevelAttr inlineLevel, Region &body) {
-  printFunctionFuncTypeGenerator(p, &body, inputParams, {},
-                                 cast<FunctionType>(functionType.getValue()),
-                                 cast<FuncTypeGeneratorType>(type.getValue()));
-  printOptionalInline(p, inlineLevel.getValue());
-  p << ' ';
-  p.printRegion(body, /*printEntryBlockArgs=*/false);
-}
-
-static void printRegionDeclaration(OpAsmPrinter &p, Operation *op,
-                                   ParamDeclAttr paramDecl,
-                                   StringAttr sourceName,
-                                   ParamDeclArrayAttr inputParams,
-                                   TypeAttr functionType, TypeAttr type,
-                                   InlineLevelAttr inlineLevel, Region &body) {
-  printParamName(p, paramDecl.getName());
-  if (paramDecl.getName() != sourceName) {
-    p << "[";
-    p.printKeywordOrString(sourceName.getValue());
-    p << "]";
-  }
-  p << " = ";
-  printRegionOnly(p, op, inputParams, functionType, type, inlineLevel, body);
-}
-
-bool ParamDeclareRegionOp::isIsolatedFromAbove(unsigned regionNum) {
-  assert(regionNum == 0);
-  return getIsolated();
-}
-
-void ParamDeclareRegionOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
-  assert(regionNum == 0);
-  setIsolated(true);
-}
-
-void ParamDeclareRegionOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {
-  walkDef(getParamDecl(), &getBodyRegion());
-}
-
-/// This operation has no uses to collect in its current scope.
-void ParamDeclareRegionOp::collectParameterUses(
-    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
-}
-
-LogicalResult ParamDeclareRegionOp::verify() {
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
-      !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
-                       "arguments, got ")
-           << argsArray.size();
-  return success();
 }
 
 //===----------------------------------------------------------------------===//
@@ -356,38 +226,6 @@ void ParamApplyOp::renameDeclarations(ArrayRef<ParamDeclAttr> decls) {
 }
 
 //===----------------------------------------------------------------------===//
-// ReturnOp
-//===----------------------------------------------------------------------===//
-
-bool ReturnOp::isParentNode(Operation *op) { return isa<FunctionLike>(op); }
-
-void ReturnOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
-LogicalResult ReturnOp::verify() {
-  auto func = (*this)->getParentOfType<KGEN::FunctionLike>();
-  if (!func)
-    return emitOpError("expected to be nested inside a function");
-  return checkOperandTypes(*this, func.getResultTypes());
-}
-
-//===----------------------------------------------------------------------===//
-// UnreachableOp
-//===----------------------------------------------------------------------===//
-
-/// Unreachable can terminate any control flow operation.
-bool UnreachableOp::isParentNode(Operation *op) { return true; }
-
-/// No branch targets.
-void UnreachableOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {}
-
-//===----------------------------------------------------------------------===//
 // ParamAssertOp
 //===----------------------------------------------------------------------===//
 
@@ -399,6 +237,75 @@ void ParamAssertOp::walkDefinitions(
 bool ParamAssertOp::isImplicitlyParametric() { return true; }
 
 //===----------------------------------------------------------------------===//
+// WitnessOp
+//===----------------------------------------------------------------------===//
+
+/// Parses an optional `public`, `private` or `nested` keyword, as `func.func`
+/// spells symbol visibility.
+static ParseResult parseSymVisibility(AsmParser &p, StringAttr &visibility) {
+  StringRef keyword;
+  if (succeeded(
+          p.parseOptionalKeyword(&keyword, {"public", "private", "nested"})))
+    visibility = p.getBuilder().getStringAttr(keyword);
+  return success();
+}
+
+static void printSymVisibility(AsmPrinter &p, Operation *,
+                               StringAttr visibility) {
+  if (visibility)
+    p << visibility.getValue() << ' ';
+}
+
+/// Parses the optional `<fnAttrs = {...}, fnArgAttrs = [...]>` clause that
+/// closes a function signature. Both are properties, so without this they
+/// would print after the body, where `prop-dict` puts them.
+template <typename FnAttrsT, typename FnArgAttrsT>
+static ParseResult parseFnAttrClause(OpAsmParser &p, FnAttrsT &fnAttrs,
+                                     FnArgAttrsT &fnArgAttrs) {
+  if (p.parseOptionalLess())
+    return success();
+  do {
+    StringRef keyword;
+    llvm::SMLoc loc = p.getCurrentLocation();
+    if (p.parseKeyword(&keyword) || p.parseEqual())
+      return failure();
+    if (keyword == "fnAttrs") {
+      if (p.parseAttribute(fnAttrs))
+        return failure();
+    } else if (keyword == "fnArgAttrs") {
+      if (p.parseAttribute(fnArgAttrs))
+        return failure();
+    } else {
+      return p.emitError(loc, "expected 'fnAttrs' or 'fnArgAttrs'");
+    }
+  } while (succeeded(p.parseOptionalComma()));
+  return p.parseGreater();
+}
+
+/// Prints the clause `parseFnAttrClause` reads, and nothing when both are at
+/// their defaults.
+template <typename FnAttrsT, typename FnArgAttrsT>
+static void printFnAttrClause(OpAsmPrinter &p, FnAttrsT fnAttrs,
+                              FnArgAttrsT fnArgAttrs) {
+  bool hasFnAttrs = fnAttrs && !fnAttrs.empty();
+  bool hasArgAttrs = fnArgAttrs && !fnArgAttrs.empty();
+  if (!hasFnAttrs && !hasArgAttrs)
+    return;
+  p << " <";
+  if (hasFnAttrs) {
+    p << "fnAttrs = ";
+    p.printAttribute(fnAttrs);
+  }
+  if (hasArgAttrs) {
+    if (hasFnAttrs)
+      p << ", ";
+    p << "fnArgAttrs = ";
+    p.printAttribute(fnArgAttrs);
+  }
+  p << '>';
+}
+
+//===----------------------------------------------------------------------===//
 // GeneratorOp
 //===----------------------------------------------------------------------===//
 
@@ -406,8 +313,8 @@ static ParseResult
 parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
                  StringAttr &symName, TypeAttr &signatureAttr,
                  TypeAttr &functionTypeAttr, ParamDeclArrayAttr &inputParams,
-                 InlineLevelAttr &inlineLevel, DecoratorsAttr &decorators,
-                 NamedAttrList &attrs, Region &body) {
+                 Attribute &inlineLevel, DecoratorsAttr &decorators,
+                 ArrayAttr &fnAttrs, ArrayAttr &fnArgAttrs, Region &body) {
   if (parseSymbolExport(p, exportKind) || p.parseSymbolName(symName))
     return failure();
 
@@ -425,8 +332,18 @@ parseGeneratorOp(OpAsmParser &p, ExportKindAttr &exportKind,
   functionTypeAttr = TypeAttr::get(functionType);
 
   if (parseOptionalInline(p, inlineLevel) ||
-      parseOptionalDecorators(p, decorators) ||
-      p.parseOptionalAttrDictWithKeyword(attrs) ||
+      parseOptionalDecorators(p, decorators))
+    return failure();
+
+  // The printer spells out a signature the printed types cannot rebuild.
+  if (succeeded(p.parseOptionalKeyword("signature"))) {
+    FuncTypeGeneratorType explicitSignature;
+    if (p.parseType(explicitSignature))
+      return failure();
+    signatureAttr = TypeAttr::get(explicitSignature);
+  }
+
+  if (parseFnAttrClause(p, fnAttrs, fnArgAttrs) ||
       p.parseRegion(body, args, /*enableNameShadowing=*/true))
     return failure();
   return success();
@@ -436,8 +353,8 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
                              ExportKindAttr exportKind, StringAttr symName,
                              TypeAttr signature, TypeAttr functionType,
                              ParamDeclArrayAttr inputParams,
-                             InlineLevelAttr inlineLevel,
-                             DecoratorsAttr decorators, DictionaryAttr attrs,
+                             Attribute inlineLevel, DecoratorsAttr decorators,
+                             ArrayAttr fnAttrs, ArrayAttr fnArgAttrs,
                              Region &body) {
   printSymbolExport(p, op, exportKind);
   p << ' ';
@@ -446,30 +363,35 @@ static void printGeneratorOp(OpAsmPrinter &p, Operation *op,
       p, &body, inputParams, /*resultParams=*/{},
       cast<FunctionType>(functionType.getValue()),
       cast<FuncTypeGeneratorType>(signature.getValue()));
-  printOptionalInline(p, inlineLevel.getValue());
+  printOptionalInline(p, inlineLevel);
   printOptionalDecorators(p, op, decorators);
 
-  auto gen = cast<GeneratorOp>(op);
-  SmallVector<StringRef, 10> elidedAttrs{
-      gen.getExportKindAttrName(),        gen.getSymNameAttrName(),
-      gen.getFuncTypeGeneratorAttrName(), gen.getFunctionTypeAttrName(),
-      gen.getInputParamsAttrName(),       gen.getInlineLevelAttrName(),
-      gen.getDecoratorsAttrName()};
-  ArrayAttr emptyArray = ArrayAttr::get(op->getContext(), {});
-  if (attrs.get(gen.getLLVMMetadataArrayAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getLLVMMetadataArrayAttrName());
-  if (attrs.get(gen.getLLVMArgMetadataArrayAttrName()) == emptyArray)
-    elidedAttrs.push_back(gen.getLLVMArgMetadataArrayAttrName());
-  p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
+  // The parser rebuilds `funcTypeGenerator` from the printed body-view types,
+  // which only works when they reference nothing but the input parameters. A
+  // signature that names a parameter the body lifts, for example, has to be
+  // printed as well.
+  auto signatureType = cast<FuncTypeGeneratorType>(signature.getValue());
+  FuncType signatureBody = signatureType.getBody();
+  if (FuncTypeGeneratorType::remapToFuncTypeGenerator(
+          inputParams.getValue(), cast<FunctionType>(functionType.getValue()),
+          signatureBody.getArgConventions(),
+          signatureBody.getFnEffects()) != signatureType) {
+    p << " signature ";
+    p.printType(signatureType);
+  }
+  printFnAttrClause(p, fnAttrs, fnArgAttrs);
 
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 LogicalResult GeneratorOp::verify() {
-  if (ArrayAttr argsArray = getLLVMArgMetadataArray();
+  if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
+    return failure();
+
+  if (ArrayAttr argsArray = getFnArgAttrs();
       !argsArray.empty() && argsArray.size() != getNumArguments())
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+    return emitOpError("FnArgAttrArray size does not equal number of "
                        "arguments, got ")
            << argsArray.size();
 
@@ -502,8 +424,9 @@ LogicalResult GeneratorOp::verify() {
 
 static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
                                StringAttr &name, TypeAttr &signature,
-                               InlineLevelAttr &inlineLevel,
-                               DecoratorsAttr &decorators, NamedAttrList &attrs,
+                               Attribute &inlineLevel,
+                               DecoratorsAttr &decorators,
+                               DictionaryAttr &fnAttrs, ArrayAttr &fnArgAttrs,
                                Region &body) {
   if (parseSymbolExport(p, exportKind) || p.parseSymbolName(name))
     return failure();
@@ -532,7 +455,7 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
 
   if (parseOptionalInline(p, inlineLevel) ||
       parseOptionalDecorators(p, decorators) ||
-      p.parseOptionalAttrDictWithKeyword(attrs) ||
+      parseFnAttrClause(p, fnAttrs, fnArgAttrs) ||
       p.parseRegion(body, args, /*enableNameShadowing=*/true))
     return failure();
   return success();
@@ -540,11 +463,10 @@ static ParseResult parseFuncOp(OpAsmParser &p, ExportKindAttr &exportKind,
 
 static void printFuncOp(OpAsmPrinter &p, Operation *op,
                         ExportKindAttr exportKind, StringAttr name,
-                        TypeAttr signature, InlineLevelAttr inlineLevel,
-                        DecoratorsAttr decorators, DictionaryAttr attrs,
-                        Region &body) {
+                        TypeAttr signature, Attribute inlineLevel,
+                        DecoratorsAttr decorators, DictionaryAttr fnAttrs,
+                        ArrayAttr fnArgAttrs, Region &body) {
   FuncType sig = cast<FuncTypeGeneratorType>(signature.getValue()).getBody();
-  auto func = cast<FuncOp>(op);
 
   printSymbolExport(p, op, exportKind);
   p << ' ';
@@ -556,31 +478,19 @@ static void printFuncOp(OpAsmPrinter &p, Operation *op,
   printSignatureValues(p, printArg, sig.getValues(), sig.getArgConventions(),
                        sig.getFnEffects(),
                        /*optionalResultList=*/true);
-  printOptionalInline(p, inlineLevel.getValue());
+  printOptionalInline(p, inlineLevel);
   printOptionalDecorators(p, op, decorators);
-
-  SmallVector<StringRef, 8> elidedAttrs{
-      func.getExportKindAttrName(), func.getSymNameAttrName(),
-      func.getFuncTypeGeneratorAttrName(), func.getInlineLevelAttrName(),
-      func.getDecoratorsAttrName()};
-  if (attrs.get(func.getLLVMMetadataAttrName()) ==
-      DictionaryAttr::get(op->getContext()))
-    elidedAttrs.push_back(func.getLLVMMetadataAttrName());
-  if (attrs.get(func.getLLVMArgMetadataAttrName()) ==
-      ArrayAttr::get(op->getContext(), {}))
-    elidedAttrs.push_back(func.getLLVMArgMetadataAttrName());
-  if (attrs.get(func.getCrossDeviceCapturesAttrName()) ==
-      StringArrayAttr::get(func.getContext(), {}))
-    elidedAttrs.push_back(func.getCrossDeviceCapturesAttrName());
-  p.printOptionalAttrDictWithKeyword(attrs.getValue(), elidedAttrs);
+  printFnAttrClause(p, fnAttrs, fnArgAttrs);
 
   p << ' ';
   p.printRegion(body, /*printEntryBlockArgs=*/false);
 }
 
 LogicalResult FuncOp::verify() {
-  // Skip body-based checks for functions whose body has not been filled in yet
-  // (e.g. populate_captures stubs created before offload compilation).
+  if (failed(verifyInlineLevel(*this, getInlineLevelAttr())))
+    return failure();
+
+  // External declarations have no body to check.
   if (getBodyRegion().empty())
     return success();
   FunctionType type = getFunctionType();
@@ -597,11 +507,11 @@ LogicalResult FuncOp::verify() {
              << " but function type expected " << type;
     }
   }
-  if (ArrayAttr argsArray = getLLVMArgMetadata();
-      !argsArray.empty() && argsArray.size() != getNumArguments()) {
-    return emitOpError("LLVMArgMetadataArray size does not equal number of "
+  if (ArrayAttr fnArgAttrs = getFnArgAttrs();
+      !fnArgAttrs.empty() && fnArgAttrs.size() != getNumArguments()) {
+    return emitOpError("fnArgAttrs size does not equal number of "
                        "arguments, got ")
-           << argsArray.size();
+           << fnArgAttrs.size();
   }
   return success();
 }
@@ -609,6 +519,10 @@ LogicalResult FuncOp::verify() {
 //===----------------------------------------------------------------------===//
 // ExternGeneratorOp
 //===----------------------------------------------------------------------===//
+
+TypedAttr ExternGeneratorOp::getInlineLevel() {
+  return KGEN::getInlineLevelAttr(getContext(), InlineLevel::Never);
+}
 
 static ParseResult parseExternGenerator(OpAsmParser &p, TypeAttr &signature,
                                         TypeAttr &functionType,
@@ -734,6 +648,17 @@ void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
   }
 }
 
+FailureOr<ArrayAttr>
+StructGeneratorOp::getAnnotations(std::optional<int> fieldIdx) {
+  if (!fieldIdx.has_value())
+    return getAnnotationsAttr();
+
+  auto structType = cast<StructInstanceType>(getValueDomainType());
+  if (fieldIdx < structType.getFields().size())
+    return structType.getFields()[*fieldIdx].getAnnotations();
+  return failure();
+}
+
 //===----------------------------------------------------------------------===//
 // StructInstanceOp
 //===----------------------------------------------------------------------===//
@@ -763,7 +688,7 @@ static void printStructInstanceSpec(OpAsmPrinter &p, Operation *op,
 //===----------------------------------------------------------------------===//
 
 static ParseResult
-parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
+parseCallOp(OpAsmParser &p, TypedAttr &calleeAttr,
             SmallVectorImpl<OpAsmParser::UnresolvedOperand> &operands,
             SmallVectorImpl<Type> &operandTypes,
             SmallVectorImpl<Type> &resultTypes) {
@@ -778,31 +703,32 @@ parseCallOp(OpAsmParser &p, SymbolConstantAttr &calleeCst,
   FunctionType functionType;
   if (parseKGENFuncTypeGenerator(p, functionType, signature))
     return failure();
-  calleeCst = SymbolConstantAttr::get(callee, signature, paramValues);
+  calleeAttr = FuncSymbolGenerator::get(
+      {},
+      FuncSymbolAttr::get(callee, signature.getInstantiatedBody(),
+                          paramValues.getValue()),
+      signature.getParamListAttrs());
   llvm::append_range(operandTypes, functionType.getInputs());
   llvm::append_range(resultTypes, functionType.getResults());
   return success();
 }
 
-static void printCallOp(OpAsmPrinter &p, Operation *op,
-                        SymbolConstantAttr calleeCst, ValueRange operands,
-                        TypeRange operandTypes, TypeRange resultTypes) {
-  p << calleeCst.getSymbol();
-  printParameterValues(p, calleeCst.getParamValues());
+static void printCallOp(OpAsmPrinter &p, Operation *op, TypedAttr calleeAttr,
+                        ValueRange operands, TypeRange operandTypes,
+                        TypeRange resultTypes) {
+  FuncSymbolGenerator callee(calleeAttr);
+  p << callee.getSymbol();
+  printParameterValues(p, callee.getParamValues());
   p << '(';
   p.printOperands(operands);
   p << ") : ";
   printSignatureValues(
       p, FunctionType::get(op->getContext(), operandTypes, resultTypes),
-      calleeCst.getType());
+      callee.getType());
 }
 
-void CallOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {
+void CallOp::concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee) {
   setCalleeAttr(callee);
-}
-
-void CallOp::setCalleeAttr(TypedAttr callee) {
-  setCalleeAttr(cast<SymbolConstantAttr>(callee));
 }
 
 FailureOr<InlineResult> CallOp::prepInline(mlir::RewriterBase &b) {
@@ -823,6 +749,8 @@ static LogicalResult verifyCallOp(Operation *op, ValueRange args,
 }
 
 LogicalResult CallOp::verify() {
+  if (!FuncSymbolGenerator::dynCast(getCallee()))
+    return emitOpError("expected callee to be a function symbol generator");
   return verifyCallOp(*this, getOperands(), getCalleeType().getBody());
 }
 
@@ -838,7 +766,7 @@ LogicalResult CallIndirectOp::verify() {
 // CallParamOp
 //===----------------------------------------------------------------------===//
 
-void CallParamOp::concretizeCallee(IRRewriter &b, SymbolConstantAttr callee) {
+void CallParamOp::concretizeCallee(IRRewriter &b, FuncSymbolGenerator callee) {
   b.replaceOpWithNewOp<CallOp>(*this, getResultTypes(), callee, getOperands());
 }
 
@@ -850,349 +778,32 @@ FailureOr<InlineResult> CallParamOp::prepInline(mlir::RewriterBase &b) {
 LogicalResult CallParamOp::verify() {
   return verifyCallOp(*this, getOperands(), getCalleeType().getBody());
 }
-
 //===----------------------------------------------------------------------===//
-// ParamForOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult ParamForOp::verify() {
-  if (getNumOperands() != getNumResults()) {
-    return emitOpError("has ")
-           << getNumOperands() << " operands but " << getNumResults()
-           << " results; it should be the same";
-  }
-  for (auto [i, argTy, resTy] :
-       llvm::enumerate(getOperandTypes(), getResultTypes())) {
-    if (argTy == resTy)
-      continue;
-    return emitOpError("operand #")
-           << i << " has type " << argTy
-           << " but corresponding result has type " << resTy;
-  }
-  return success();
-}
-
-void ParamForOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  targets.emplace_back(0, getOperands());
-}
-
-ValueRange ParamForOp::getEntryArguments(std::optional<unsigned> target) {
-  if (!target)
-    return getResults();
-  if (*target == 0)
-    return getBody().getArguments();
-  assert(*target == 1);
-  return getElseRegion().getArguments();
-}
-
-ArrayRef<ParamDeclAttr> ParamForOp::getInputParams() {
-  // HACK: The interface requires an ArrayRef, but we only have a single
-  // element. Returning `getParamDecl` will cause a reference to a temporary to
-  // be formed. Grab the reference directly from the DictionaryAttr. We know
-  // alphabetically it will be last attribute.
-  assert((*this)->getRegisteredInfo()->getAttributeNames().back() ==
-         getParamDeclAttrName());
-  static_assert(sizeof(std::pair<Attribute, ParamDeclAttr>) ==
-                        sizeof(NamedAttribute) &&
-                    alignof(std::pair<Attribute, ParamDeclAttr>) ==
-                        alignof(NamedAttribute),
-                "hack doesn't work");
-  return {&((const std::pair<Attribute, ParamDeclAttr> *)&(*this)
-                ->getAttrs()
-                .back())
-               ->second,
-          1};
-}
-
-void ParamForOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
-
-bool ParamForOp::isImplicitlyParametric() { return true; }
-
-void ParamForOp::collectParameterUsesBelow(
-    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
-}
-
-bool ParamForOp::isIsolatedFromAbove(unsigned regionNum) {
-  if (regionNum == 0)
-    return getBodyIsolated();
-  assert(regionNum == 1);
-  return getElseIsolated();
-}
-
-void ParamForOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
-  if (regionNum == 0)
-    return setBodyIsolated(true);
-  assert(regionNum == 1);
-  return setElseIsolated(true);
-}
-
-bool ParamForBreakOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
-}
-
-void ParamForBreakOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  // Branch to after the loop operation.
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
-bool ParamForContinueOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
-}
-
-void ParamForContinueOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  // Branch to the beginning of the body region only (not the else region).
-  targets.emplace_back(0, getOperands());
-}
-
-bool ParamForGotoElseOp::isParentNode(Operation *op) {
-  return isa<ParamForOp>(op);
-}
-
-void ParamForGotoElseOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.empty() && "Shouldn't exist by mem2reg time");
-  // Branch to the beginning of the else region.
-  targets.emplace_back(1, ValueRange());
-}
-
-//===----------------------------------------------------------------------===//
-// ParamIfOp
-//===----------------------------------------------------------------------===//
-
-bool ParamIfOp::isIsolatedFromAbove(unsigned regionNum) {
-  switch (regionNum) {
-  case 0:
-    return getThenIsolated();
-  case 1:
-    return getElseIsolated();
-  default:
-    llvm_unreachable("unknown region number");
-  }
-}
-
-void ParamIfOp::notifyKnownIsolatedFromAbove(unsigned regionNum) {
-  switch (regionNum) {
-  case 0:
-    setThenIsolated(true);
-    break;
-  case 1:
-    setElseIsolated(true);
-    break;
-  default:
-    llvm_unreachable("unknown region number");
-  }
-}
-
-void ParamIfOp::getEntryTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.empty());
-  targets.emplace_back(0);
-  targets.emplace_back(1);
-}
-
-ValueRange ParamIfOp::getEntryArguments(std::optional<unsigned> target) {
-  if (!target)
-    return getResults();
-  assert(*target == 0 || *target == 1);
-  return {};
-}
-
-void ParamIfOp::walkDefinitions(
-    function_ref<void(ParamDeclAttr, const ParamDefValue &)> walkDef) {}
-
-bool ParamIfOp::isImplicitlyParametric() { return true; }
-
-/// This operation has no uses to collect in the scopes it defines.
-void ParamIfOp::collectParameterUsesBelow(
-    function_ref<void(Attribute)> scanAttr, function_ref<void(Type)> scanType) {
-}
-
-//===----------------------------------------------------------------------===//
-// ParamYieldOp
-//===----------------------------------------------------------------------===//
-
-bool ParamYieldOp::isParentNode(Operation *op) {
-  return isa<ParamForOp, ParamIfOp>(op);
-}
-
-void ParamYieldOp::getBranchTargets(
-    ArrayRef<Attribute> operands,
-    SmallVectorImpl<HLCF::ControlFlowTarget> &targets) {
-  assert(operands.size() == getNumOperands());
-  // Branch to after the if operation.
-  targets.emplace_back(std::nullopt, getOperands());
-}
-
-//===----------------------------------------------------------------------===//
-// StageClosureOp
-//===----------------------------------------------------------------------===//
-
-static ParseResult parseStageClosureOp(OpAsmParser &p, Type &resultType,
-                                       Region &body) {
-  // we expect the following syntax:
-  // kgen.stage_closure = () capturing -> index {
-  // } { name = foo }
-  FuncTypeGeneratorType signatureType;
-  ParamDeclArrayAttr inputParams;
-  ParamDeclArrayAttr resultParams;
-  FunctionType functionTypeValue;
-  SmallVector<OpAsmParser::Argument> args;
-  llvm::SMLoc bodyLoc;
-  if (p.parseEqual() ||
-      parseFunctionFuncTypeGenerator(p, args, inputParams, resultParams,
-                                     functionTypeValue, signatureType) ||
-      p.getCurrentLocation(&bodyLoc) || p.parseRegion(body, args))
-    return failure();
-  if (!inputParams.empty() || !resultParams.empty())
-    return p.emitError(bodyLoc, "staged closures cannot have parameters");
-  resultType = signatureType;
-  return success();
-}
-
-static void printStageClosureOp(OpAsmPrinter &p, Operation *op,
-                                FuncTypeGeneratorType resultType,
-                                Region &body) {
-  p << "= ";
-  printFunctionFuncTypeGenerator(p, &body, {}, {},
-                                 resultType.getBody().getValues(), resultType);
-  p << ' ';
-  p.printRegion(body, /*printEntryBlockArgs=*/false);
-}
-
-//===----------------------------------------------------------------------===//
-// CreateClosureOp
+// CreateFuncPtrOp
 //===----------------------------------------------------------------------===//
 
 LogicalResult
-CreateClosureOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
+CreateFuncPtrOp::inferReturnTypes(MLIRContext *ctx, std::optional<Location> loc,
                                   Adaptor adaptor,
                                   SmallVectorImpl<Type> &results) {
   auto callee = dyn_cast_or_null<TypedAttr>(adaptor.getCalleeAttr());
   if (!callee) {
     return mlir::emitOptionalError(
-        loc, "'create_closure' expected TypedAttr 'callee'");
+        loc, "'create_func_ptr' expected TypedAttr 'callee'");
   }
   auto sigGen = dyn_cast<FuncTypeGeneratorType>(callee.getType());
   if (!sigGen) {
     return mlir::emitOptionalError(
         loc,
-        "'create_closure' attribute 'callee' must have FuncTypeGeneratorType");
+        "'create_func_ptr' attribute 'callee' must have FuncTypeGeneratorType");
   }
-
-  ValueRange captures = adaptor.getOperands();
-  FuncType sig = sigGen.getBody();
-  unsigned numCaptures = captures.size();
-  if (numCaptures > sig.getNumArguments()) {
-    return mlir::emitOptionalError(loc, "provided ", numCaptures,
-                                   " operands but callee only has ",
-                                   sig.getNumArguments(), " to bind");
-  }
-
-  ArrayRef<Type> newArgTypes = sig.getArguments().drop_front(numCaptures);
-  ArrayRef<ArgConvention> newArgConvs =
-      sig.getArgConventions().drop_front(numCaptures);
-
-  FnEffects effects = sig.getFnEffects();
-  if (!captures.empty())
-    effects.setCapturing();
-
-  // Drop the first `numCaptures` positional pogs from `argListAttrs` (they're
-  // now bound by the closure).
-  PogListAttr argListAttrs = sig.getArgListAttrs();
-  if (argListAttrs && !argListAttrs.getPogs().empty()) {
-    ArrayRef<PogMetadataAttr> newPogs =
-        argListAttrs.getPogs().drop_front(numCaptures);
-    argListAttrs =
-        PogListAttr::get(ctx, newPogs, argListAttrs.getBodyConstraints(),
-                         argListAttrs.getOrigVariadicConvention());
-  }
-  results.push_back(FuncTypeGeneratorType::get(
-      sigGen.getInputParamTypes(),
-      Builder(ctx).getFunctionType(newArgTypes, sig.getResults()), newArgConvs,
-      effects, sig.getMetadata(), sigGen.getParamListAttrs(), argListAttrs));
+  results.push_back(sigGen);
   return mlir::success();
 }
 
-static ParseResult
-parseClosureCaptureTypes(AsmParser &p, TypedAttr callee,
-                         ArrayRef<OpAsmParser::UnresolvedOperand> captures,
-                         SmallVectorImpl<Type> &captureTypes) {
-  auto sigGen = dyn_cast<FuncTypeGeneratorType>(callee.getType());
-  if (!sigGen) {
-    return p.emitError(p.getCurrentLocation(),
-                       "expected type of callee to be FuncTypeGeneratorType");
-  }
-  FuncType sig = sigGen.getBody();
-
-  unsigned numCaptures = captures.size();
-  if (numCaptures > sig.getNumArguments()) {
-    return p.emitError(p.getCurrentLocation(), "provided ")
-           << numCaptures << " operands but callee only has "
-           << sig.getNumArguments() << " to bind";
-  }
-
-  ArrayRef<Type> inputs = sig.getArguments().take_front(numCaptures);
-  captureTypes.append(inputs.begin(), inputs.end());
-  return success();
-}
-
-static void printClosureCaptureTypes(AsmPrinter &p, Operation *,
-                                     TypedAttr callee, ValueRange captures,
-                                     TypeRange captureTypes) {}
-
-LogicalResult CreateClosureOp::verify() {
-  FuncType calleeSig = getCalleeType().getBody();
-  if (getNumOperands() > calleeSig.getNumArguments()) {
-    return emitOpError("provided ")
-           << getNumOperands() << " operands but callee only has "
-           << calleeSig.getNumArguments() << " to bind";
-  }
-  unsigned expectedArgs = calleeSig.getNumArguments() - getNumOperands();
-  FuncType sig = getType().getBody();
-  if (sig.getNumArguments() != expectedArgs) {
-    return emitOpError("result signature has ")
-           << sig.getNumArguments() << " arguments but expected "
-           << expectedArgs;
-  }
-
-  for (auto [i, type, argType] :
-       llvm::enumerate(getOperandTypes(),
-                       calleeSig.getArguments().take_front(getNumOperands()))) {
-    if (type != argType) {
-      return emitOpError("operand #")
-             << i << " has type " << type
-             << " but callee argument type expected " << argType;
-    }
-  }
-  for (auto [i, type, argType] :
-       llvm::enumerate(sig.getArguments(),
-                       calleeSig.getArguments().drop_front(getNumOperands()))) {
-    if (type != argType) {
-      return emitOpError("result signature argument #")
-             << i << " type is " << argType << " but expected to be " << type;
-    }
-  }
-
-  if (!getCaptures().empty() && !sig.isCapturing())
-    return emitOpError("has captures, so result signature must be 'capturing'");
-  return success();
-}
-
-FailureOr<InlineResult> CreateClosureOp::prepInline(mlir::RewriterBase &b) {
-  auto op = StageClosureOp::create(b, getLoc(), getType());
-  return {{op, [](Operation *) {}}};
+FailureOr<InlineResult> CreateFuncPtrOp::prepInline(mlir::RewriterBase &b) {
+  // Materializing a function pointer is not a call and cannot be inlined.
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -1389,6 +1000,38 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
            << ": " << expectedType;
   }
 
+  return success();
+}
+
+LogicalResult StructConcatOp::verify() {
+  if (getStructs().empty())
+    return emitOpError() << "expected at least one operand";
+
+  std::optional<SmallVector<Type>> resultTypes = getType().getElementTypes();
+  if (!resultTypes)
+    return success();
+
+  SmallVector<Type> operandTypes;
+  for (Type type : getStructs().getTypes()) {
+    std::optional<SmallVector<Type>> types =
+        cast<StructType>(type).getElementTypes();
+    if (!types)
+      return success();
+    llvm::append_range(operandTypes, *types);
+  }
+
+  if (operandTypes.size() != resultTypes->size()) {
+    return emitOpError() << "operands have " << operandTypes.size()
+                         << " elements but the result has "
+                         << resultTypes->size();
+  }
+  for (auto [i, operandType, resultType] :
+       llvm::enumerate(operandTypes, *resultTypes)) {
+    if (!isEqualCanon(operandType, resultType)) {
+      return emitOpError() << "element #" << i << " has type " << operandType
+                           << " but the result has " << resultType;
+    }
+  }
   return success();
 }
 
@@ -1646,14 +1289,12 @@ LogicalResult StructLoadIndirectOp::inferReturnTypes(
            << adaptor.getStructValue().getType();
   // The result type is the same as the input type, but with a layer of pointers
   // stripped off. The struct type may be parametric, so we need to use the
-  // ParamOperatorAttr to remove the pointer layer. Preserve `isParamPack` on
-  // the result when the operand is a variadic pack (same as former
-  // `kgen.pack.load`).
+  // ParamOperatorAttr to remove the pointer layer.
   auto mappedTypes = ParamOperatorAttr::get(
       POC::VariadicPtrRemoveMap, structType.getElementTypesVariadic());
+  assert(structType.getDomain() != StructDomain::Value && "Unexpected domain");
   types.push_back(StructType::get(ctx, mappedTypes, /*memOnly*/ {},
-                                  /*minAlign*/ {},
-                                  structType.getIsParamPack()));
+                                  /*minAlign*/ {}, structType.getDomain()));
   return success();
 }
 

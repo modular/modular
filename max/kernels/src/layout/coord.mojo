@@ -13,7 +13,7 @@
 """Subpackage exposing `std.utils.coord` as `layout.coord` for kernel imports."""
 
 from std.utils.coord import (
-    All,
+    _CoordReplaceAt,
     ComptimeInt,
     Coord,
     CoordLike,
@@ -23,8 +23,6 @@ from std.utils.coord import (
     coord_to_index_list,
     crd2idx,
     idx2crd,
-    _All,
-    _AllStatic,
     _IsNotTuplePredicate,
     _CeilDiv,
     _CoordToDynamic,
@@ -35,3 +33,12 @@ from std.utils.coord import (
     _MultiplyByScalar,
     _NestedDynamicCoord,
 )
+
+comptime UNKNOWN_VALUE = -1
+"""Sentinel extent for a dimension whose size is not known at compile time.
+
+Typed layouts model such dimensions as runtime `Scalar` values; this constant is
+only for the places that build a `Coord` of extents and need a marker they can
+test against, such as TMA descriptors with a dynamic leading dimension. It is
+negative so that any real extent compares greater than it.
+"""

@@ -257,9 +257,8 @@ SmallVector<PogMetadataAttr> PogListAttr::toPogs(
   return pogs;
 }
 
-bool PogListAttr::isConstant() const {
-  return llvm::all_of(getPogs(), ParameterAttr::isSimpleConstant);
-}
+// We can not parametrize a pog list at the moment.
+bool PogListAttr::isConstant() const { return true; }
 
 //===----------------------------------------------------------------------===//
 // PogListAttr generator hooks
@@ -369,11 +368,13 @@ LogicalResult PogListAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   bool sawVariadic = false;
   auto verifyVariadicIdx = [&](size_t idx, VariadicKind kind) -> LogicalResult {
     bool isPack = kind == VariadicKind::PackVarArg;
-    if (isPack || kind == VariadicKind::PosVarArg) {
+    if (isPack || kind == VariadicKind::PosVarArg)
       sawVariadic = true;
-      if (origVariadicConvention == ArgConvention::ByRefError)
-        return emitError() << "variadic convention not specified";
-    }
+    // The convention of a pack argument holds its element convention, so only
+    // a list needs one here.
+    if (kind == VariadicKind::PosVarArg &&
+        origVariadicConvention == ArgConvention::ByRefError)
+      return emitError() << "variadic convention not specified";
 
     if (idx >= numEl) {
       return emitError() << "variadic " << (isPack ? "pack " : "")

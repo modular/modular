@@ -15,6 +15,9 @@
 #include "Support/Configuration.h"
 #include "Support/FileSystemExtras.h"
 #include "Support/Telemetry/Logs.h"
+#include "opentelemetry/exporters/otlp/otlp_http_log_record_exporter_options.h"
+#include "opentelemetry/exporters/otlp/otlp_http_metric_exporter_options.h"
+#include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
 
 #include <atomic>
@@ -23,6 +26,7 @@
 #include <fstream>
 #include <mutex>
 #include <thread>
+#include <utility>
 
 #include <stdlib.h>
 
@@ -798,7 +802,7 @@ TEST(Telemetry, DISABLED_ProgramInvocationNoCrashReporting) {
   EXPECT_FALSE(err.isError()) << err.getError();
 }
 
-TEST(Telemetry, DISABLED_LocalIDs) {
+TEST(Telemetry, LocalIDs) {
   auto origIDs = createLocalIDs();
   // The IDs are memoized: every caller in the process must observe identical
   // values, since the crash reporting and usage telemetry lanes rely on
@@ -806,6 +810,138 @@ TEST(Telemetry, DISABLED_LocalIDs) {
   auto newIDs = createLocalIDs();
   EXPECT_EQ(origIDs.machine, newIDs.machine);
   EXPECT_EQ(origIDs.session, newIDs.session);
+  EXPECT_EQ(origIDs.machineSource, newIDs.machineSource);
+}
+
+static std::string readWholeFile(const std::filesystem::path &path) {
+  auto bufOr = llvm::MemoryBuffer::getFile(path.string(), /*IsText=*/true);
+  EXPECT_TRUE(bufOr) << bufOr.getError().message();
+  return bufOr ? (*bufOr)->getBuffer().str() : std::string();
+}
+
+TEST(Telemetry, InstallIdCreatedOncePerFolder) {
+  ErrorOr<TempDir> dir = TempDir::create("telemetry-installid-%%%%%%%%");
+  ASSERT_FALSE(dir.isError()) << dir.getError();
+
+  auto [first, firstSource] = readOrCreateInstallId(dir->getPath());
+  EXPECT_EQ(firstSource, kMachineSourceInstallId);
+  EXPECT_EQ(first.size(), 32u);
+  EXPECT_EQ(first.find_first_not_of("0123456789abcdef"), std::string::npos);
+  EXPECT_EQ(readWholeFile(dir->getPath() / "installId"), first + "\n");
+
+  EXPECT_EQ(readOrCreateInstallId(dir->getPath()).first, first);
+
+  ErrorOr<TempDir> other = TempDir::create("telemetry-installid-%%%%%%%%");
+  ASSERT_FALSE(other.isError()) << other.getError();
+  auto [otherId, otherSource] =
+      readOrCreateInstallId(other->getPath() / "nested");
+  EXPECT_EQ(otherSource, kMachineSourceInstallId);
+  EXPECT_NE(otherId, first);
+}
+
+TEST(Telemetry, InstallIdInvalidFileIsLeftAlone) {
+  ErrorOr<TempDir> dir = TempDir::create("telemetry-installid-%%%%%%%%");
+  ASSERT_FALSE(dir.isError()) << dir.getError();
+  std::filesystem::path file = dir->getPath() / "installId";
+
+  for (const std::string &invalid :
+       {std::string(), std::string("not-an-id\n"), std::string(32, 'A') + "\n",
+        std::string(5000, 'a')}) {
+    std::ofstream(file) << invalid;
+    EXPECT_EQ(
+        readOrCreateInstallId(dir->getPath()),
+        std::make_pair(kUnknownId.str(), StringRef(kMachineSourceCorrupted)));
+    EXPECT_EQ(readWholeFile(file), invalid);
+  }
+
+  std::ofstream(file) << "  " << std::string(32, 'b') << "\r\n";
+  EXPECT_EQ(
+      readOrCreateInstallId(dir->getPath()),
+      std::make_pair(std::string(32, 'b'), StringRef(kMachineSourceInstallId)));
+
+  std::filesystem::remove(file);
+  ASSERT_TRUE(std::filesystem::create_directory(file));
+  EXPECT_EQ(readOrCreateInstallId(dir->getPath()).second,
+            kMachineSourceCorrupted);
+}
+
+TEST(Telemetry, InstallIdFolderFailures) {
+  ErrorOr<TempDir> dir = TempDir::create("telemetry-installid-%%%%%%%%");
+  ASSERT_FALSE(dir.isError()) << dir.getError();
+  EXPECT_EQ(readOrCreateInstallId("relative-data-folder"),
+            std::make_pair(kUnknownId.str(), StringRef(kMachineSourceNone)));
+  EXPECT_FALSE(std::filesystem::exists("relative-data-folder"));
+  std::filesystem::permissions(dir->getPath(),
+                               std::filesystem::perms::owner_read |
+                                   std::filesystem::perms::owner_exec,
+                               std::filesystem::perm_options::replace);
+  // Root ignores the mode bits.
+  if (llvm::sys::fs::access(dir->getPath().string(),
+                            llvm::sys::fs::AccessMode::Write))
+    EXPECT_EQ(readOrCreateInstallId(dir->getPath()).second, kMachineSourceNone);
+  std::filesystem::permissions(dir->getPath(),
+                               std::filesystem::perms::owner_all,
+                               std::filesystem::perm_options::replace);
+  EXPECT_TRUE(std::filesystem::is_empty(dir->getPath()));
+}
+
+TEST(Telemetry, MachineIdDerivation) {
+  const auto &ids = createLocalIDs();
+  EXPECT_EQ(ids.session.size(), 32u);
+  EXPECT_NE(ids.machine, ids.session);
+  // The literal strings are the wire contract.
+  EXPECT_THAT(ids.machineSource,
+              testing::AnyOf("install-id", "none", "corrupted"));
+  if (ids.machineSource != kMachineSourceInstallId.str()) {
+    EXPECT_EQ(ids.machine, "unknown");
+    return;
+  }
+
+  // Bazel's TEST_TMPDIR selects the folder, so this reads the memoized id.
+  auto folderOr = getInstallIdFolder();
+  ASSERT_FALSE(folderOr.isError()) << folderOr.getError();
+  EXPECT_EQ(readOrCreateInstallId(*folderOr).first, ids.machine);
+}
+
+TEST(Telemetry, MachineIdSourceResourceAttribute) {
+  LogFileSetup logFileSetup("logs");
+  TempFile tmpFile = logFileSetup.getLogFile("log", "0");
+  Config settings(logFileSetup.getConfig());
+  TelemetryContext ctx(settings);
+
+  auto logger = ctx.getLogger("basic.log");
+  logger->emitL0Event("test.MachineIdSource");
+  ctx.flush();
+
+  const auto &ids = createLocalIDs();
+
+  auto err = readFileUnderLock(
+      tmpFile.getPath(), [&](const std::filesystem::path &path) {
+        auto mbufOr = llvm::MemoryBuffer::getFile(path.string(),
+                                                  /*IsText=*/true);
+        EXPECT_TRUE(mbufOr) << mbufOr.getError().message();
+        std::unique_ptr<llvm::MemoryBuffer> mbuf = std::move(*mbufOr);
+
+        bool eventFound = false;
+        bool machineIdFound = false;
+        bool sourceFound = false;
+        iterateMessages(mbuf->getBuffer(), [&](StringRef message) {
+          if (getEventName(message) != "test.MachineIdSource")
+            return;
+          eventFound = true;
+          machineIdFound = message.contains("machineid: " + ids.machine);
+          sourceFound =
+              message.contains("machineid.source: " + ids.machineSource);
+        });
+
+        EXPECT_TRUE(eventFound) << "expected to find test.MachineIdSource";
+        EXPECT_TRUE(machineIdFound)
+            << "expected machineid resource attribute " << ids.machine;
+        EXPECT_TRUE(sourceFound)
+            << "expected machineid.source resource attribute "
+            << ids.machineSource;
+      });
+  EXPECT_FALSE(err.isError()) << err.getError();
 }
 
 // RAII utility for overriding an environment variable.
@@ -826,6 +962,22 @@ private:
   StringRef name;
   const char *oldValue = nullptr;
 };
+
+TEST(Telemetry, InstallIdFolder) {
+  ErrorOr<TempDir> dir = TempDir::create("telemetry-installid-%%%%%%%%");
+  ASSERT_FALSE(dir.isError()) << dir.getError();
+
+  // State belongs to the user: MODULAR_HOME must not move it, TEST_TMPDIR does.
+  EnvSetter modularHome("MODULAR_HOME", dir->getPath().c_str());
+  auto folderOr = getInstallIdFolder();
+  ASSERT_FALSE(folderOr.isError()) << folderOr.getError();
+  EXPECT_NE(*folderOr, dir->getPath());
+
+  EnvSetter testTmpdir("TEST_TMPDIR", dir->getPath().c_str());
+  auto movedOr = getInstallIdFolder();
+  ASSERT_FALSE(movedOr.isError()) << movedOr.getError();
+  EXPECT_EQ(*movedOr, dir->getPath() / ".modular");
+}
 
 TEST(Telemetry, ModularEmployee) {
   ErrorOr<TempDir> tempHome =
@@ -890,6 +1042,33 @@ TEST(Telemetry, ModularEmployee) {
 TEST(Telemetry, OtlpRequestTimeout) {
   EXPECT_GT(kOtlpRequestTimeout.count(), 0);
   EXPECT_LE(kOtlpRequestTimeout.count(), 30000);
+}
+
+TEST(Telemetry, IsModularEndpoint) {
+  EXPECT_TRUE(isModularEndpoint("https://telemetry.modular.com:443"));
+  EXPECT_FALSE(isModularEndpoint("https://notmodular.com"));
+  EXPECT_TRUE(isModularEndpoint("https://u:t@telemetry.modular.com.:443"));
+  EXPECT_FALSE(isModularEndpoint("https://modular.com?@collector.example"));
+  EXPECT_TRUE(isModularEndpoint("https://collector.example#@modular.com"));
+  EXPECT_TRUE(isModularEndpoint("https://a@[b:c]@modular.com"));
+  EXPECT_FALSE(isModularEndpoint("https://modular.com:t@collector.example"));
+  EXPECT_TRUE(isModularEndpoint("https://telemetry.modular.com?x"));
+}
+
+TEST(Telemetry, OtlpHeadersDroppedForModular) {
+  EnvGuard generic("OTEL_EXPORTER_OTLP_HEADERS", "a=1");
+  EnvGuard metrics("OTEL_EXPORTER_OTLP_METRICS_HEADERS", "m=2");
+  EnvGuard logs("OTEL_EXPORTER_OTLP_LOGS_HEADERS", "l=3");
+  for (auto [endpoint, expected] :
+       {std::pair<StringRef, size_t>{"https://modular.com", 0},
+        std::pair<StringRef, size_t>{"https://collector.example", 2}}) {
+    opentelemetry::exporter::otlp::OtlpHttpMetricExporterOptions metricOptions;
+    dropHeadersForModular(metricOptions, endpoint);
+    EXPECT_EQ(metricOptions.http_headers.size(), expected) << endpoint.str();
+    opentelemetry::exporter::otlp::OtlpHttpLogRecordExporterOptions logOptions;
+    dropHeadersForModular(logOptions, endpoint);
+    EXPECT_EQ(logOptions.http_headers.size(), expected) << endpoint.str();
+  }
 }
 
 /// Verify that warnOnExportFailure emits a one-time warning to stderr with

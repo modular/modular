@@ -13,7 +13,7 @@
 
 """End-to-end tests for the new MAP-dialect fusion system's ElementwiseFuser.
 
-Every graph here is compiled with ``MAX_GC_USE_ADV_FUSION`` set, exercising
+Every graph here exercises
 ``MOToMAP`` + ``ElementwiseFuser`` end to end. These edge cases (duplicate
 operands, diamond sharing, a dtype-changing op mid-chain) are ported from
 ``ElementwiseFuser``'s own MLIR test suite -- the legacy MOGG-based fuser
@@ -33,9 +33,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 
 
-def test_add_static(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_add_static(session: InferenceSession) -> None:
     """A standalone `mo.add` compiles and runs correctly under adv fusion."""
     with Graph(
         "add_static",
@@ -53,9 +51,7 @@ def test_add_static(
     np.testing.assert_allclose(out, a + b, rtol=1e-5, atol=1e-5)
 
 
-def test_add_dynamic(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_add_dynamic(session: InferenceSession) -> None:
     """A standalone `mo.add` over a symbolic shape compiles and runs correctly."""
     with Graph(
         "add_dynamic",
@@ -73,9 +69,7 @@ def test_add_dynamic(
     np.testing.assert_allclose(out, a + b, rtol=1e-5, atol=1e-5)
 
 
-def test_two_op_chain_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_two_op_chain_fuses(session: InferenceSession) -> None:
     """`mul(add(x, y), z)` over a rank-2, partly-dynamic shape fuses correctly."""
     with Graph(
         "two_op_chain",
@@ -97,9 +91,7 @@ def test_two_op_chain_fuses(
     np.testing.assert_allclose(out, (a + b) * c, rtol=1e-5, atol=1e-5)
 
 
-def test_diamond_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_diamond_fuses(session: InferenceSession) -> None:
     """`add(mul(t0, t0), relu(t0))` where `t0 = add(x, y)` fuses into one kernel.
 
     `t0` feeds both branches of the diamond, so the fused kernel computes it
@@ -130,9 +122,7 @@ def test_diamond_fuses(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_duplicate_operand_chain_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_duplicate_operand_chain_fuses(session: InferenceSession) -> None:
     """`add(x, mul(add(x, x), x))` over a dynamic rank-1 shape fuses correctly.
 
     `x` feeds the fused kernel through several independent loads (mirrors
@@ -160,9 +150,7 @@ def test_duplicate_operand_chain_fuses(
     np.testing.assert_allclose(out, ref, rtol=1e-5, atol=1e-5)
 
 
-def test_cast_in_chain_fuses(
-    session: InferenceSession, adv_fusion_enabled: None
-) -> None:
+def test_cast_in_chain_fuses(session: InferenceSession) -> None:
     """A dtype-changing `mo.cast` inside an elementwise chain fuses in.
 
     `relu(cast(add(x, y), float64))` over a rank-2 shape with one static and
@@ -187,3 +175,30 @@ def test_cast_in_chain_fuses(
     assert out.dtype == np.float64
     ref = np.maximum((a + b).astype(np.float64), 0)
     np.testing.assert_allclose(out, ref, rtol=1e-9, atol=1e-9)
+
+
+def test_constant_folds_into_kernel_body(session: InferenceSession) -> None:
+    """`add(x, const)` folds the constant into the fused kernel's body.
+
+    `FuseConstantIterOpaqueInputs` turns a constant operand into a constant
+    resource baked into the kernel body rather than a runtime input, so the
+    kernel keeps `x` as its only real operand. This pins the mixed case (a
+    real input alongside the folded constant) and checks the constant's bytes
+    survive to execution -- the numeric result is only correct if they do.
+    """
+    with Graph(
+        "constant_folds_into_kernel_body",
+        input_types=[TensorType(DType.float32, [2, 2], device=DeviceRef.CPU())],
+    ) as graph:
+        (x,) = (v.tensor for v in graph.inputs)
+        bias = ops.constant(
+            np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32),
+            dtype=DType.float32,
+            device=DeviceRef.CPU(),
+        )
+        graph.output(x + bias)
+
+    a = np.random.randn(2, 2).astype(np.float32)
+    bias_np = np.array([[10.0, 20.0], [30.0, 40.0]], dtype=np.float32)
+    (out,) = run_and_verify_fusion(session, graph, a, fused=r"mo\.add")
+    np.testing.assert_allclose(out, a + bias_np, rtol=1e-5, atol=1e-5)

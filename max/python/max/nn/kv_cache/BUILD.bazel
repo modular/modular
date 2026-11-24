@@ -1,0 +1,24 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+# KV cache params and graph input types, shared by max.nn and max.nn.legacy.
+# Both depend on this target, so it must import neither of them.
+modular_py_library(
+    name = "kv_cache",
+    srcs = glob(["**/*.py"]),
+    docstring_example_deps = ["//max/python/max/nn"],
+    test_docstring_examples = True,
+    deps = [
+        requirement("numpy"),
+        requirement("typing-extensions"),
+        "//max/python/max:_kv_core",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/_kv_cache_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/support",
+    ],
+)

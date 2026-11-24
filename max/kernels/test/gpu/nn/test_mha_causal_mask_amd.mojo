@@ -20,9 +20,6 @@ from max.gpu import *
 from max.gpu.host import DeviceContext
 from layout import (
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
     row_major,
 )
@@ -44,7 +41,6 @@ from std.testing import (
     assert_true,
 )
 
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf
 
 
@@ -64,25 +60,14 @@ def test[
 ](
     seq_len: Int,
     num_keys: Int,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     is_benchmark: Bool = False,
 ) raises:
     print("test_mha_causal_mask")
     print(
-        "qkv_type:",
-        qkv_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "batch_size:",
-        batch_size,
+        t"qkv_type: {qkv_type} depth: {depth} num_heads: {num_heads} group:"
+        t" {group} seq_len: {seq_len} num_keys: {num_keys} batch_size:"
+        t" {batch_size}"
     )
     # Query, key, value dimensions.
     comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
@@ -109,12 +94,8 @@ def test[
         output_ptr[i] = Scalar[output_type](0)
 
     # Construct mask buffer for causal mask initialization.
-    comptime layout_4d = Layout.row_major[4]()
-    var mask = LayoutTensor[mask_type, layout_4d](
-        mask_ptr,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch_size, num_heads, seq_len, num_keys)
-        ),
+    var mask = TileTensor(
+        mask_ptr, row_major((batch_size, num_heads, seq_len, num_keys))
     )
 
     # Initialize Q, K, V in bf16, then roundtrip through qkv_type so the
@@ -144,7 +125,7 @@ def test[
             for q_idx in range(seq_len):
                 for k_idx in range(num_keys):
                     mask.store(
-                        Index(b, h, q_idx, k_idx),
+                        (b, h, q_idx, k_idx),
                         0 if q_idx + num_keys - seq_len
                         >= k_idx else min_or_neg_inf[mask_type](),
                     )
@@ -184,9 +165,9 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {
         var q_device,
         var k_device,
@@ -303,7 +284,7 @@ def test[
 comptime USE_FP8 = get_defined_bool["USE_FP8", False]()
 
 
-def test_helper[depth: Int](ctx: DeviceContext) raises:
+def test_helper[depth: Int](ctx: DeviceContext[]) raises:
     comptime dtype = DType.float8_e4m3fn if USE_FP8 else DType.bfloat16
     test[dtype, depth=depth, num_heads=1](128, 128, ctx)
     test[dtype, depth=depth, num_heads=1](384, 384, ctx)
@@ -318,6 +299,10 @@ def test_helper[depth: Int](ctx: DeviceContext) raises:
     test[dtype, depth=depth, num_heads=3, group=3](102, 102, ctx)
     test[dtype, depth=depth, num_heads=1](14, 14, ctx)
     test[dtype, depth=depth, num_heads=1](528, 528, ctx)
+    # Token gen at depth 72 takes the naive kernel, which is also the
+    # reference, so its decode cases test nothing.
+    comptime if depth == 72:
+        return
     # Token gen
     test[dtype, depth=depth, num_heads=32](1, 512, ctx, is_benchmark())
     test[dtype, depth=depth, num_heads=11](1, 256, ctx)
@@ -489,11 +474,24 @@ def test_fold_eligibility() raises:
     assert_false(
         _mha_decode_fold_ok[bf16, 128, 16, 1, 4, use_valid_length=True]()
     )
-    # A mask needing a per-tile decode check reads an S-row span that underflows.
+    # A mask needing a per-tile decode check folds only if it declares it can
+    # serve the folded span (`SlidingWindowCausalMask` does).
     assert_false(
         _mha_decode_fold_ok[
             bf16, 128, 16, 1, 4, check_mask_during_decoding=True
         ]()
+    )
+    assert_equal(
+        _mha_decode_fold_ok[
+            bf16,
+            128,
+            16,
+            1,
+            4,
+            check_mask_during_decoding=True,
+            mask_supports_fold=True,
+        ](),
+        available,
     )
 
 
@@ -566,5 +564,5 @@ def main() raises:
             comptime for depth in [128, 256]:
                 test_helper[depth](ctx)
         else:
-            comptime for depth in [64, 80, 128, 256]:
+            comptime for depth in [64, 72, 80, 128, 256]:
                 test_helper[depth](ctx)

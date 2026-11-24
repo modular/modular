@@ -18,6 +18,7 @@ Printing, formatting, JSON/YAML persistence, and related utilities.
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import logging
@@ -25,8 +26,10 @@ import math
 import os
 import re
 import statistics
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from datetime import datetime
+from io import BytesIO
 from typing import NamedTuple
 
 import numpy as np
@@ -41,6 +44,7 @@ from max.benchmark.benchmark_shared.datasets.chat_judge import (
 )
 from max.benchmark.benchmark_shared.datasets.types import (
     ChatSamples,
+    OpenAIImage,
     RequestSamples,
     Samples,
 )
@@ -55,13 +59,23 @@ from max.benchmark.benchmark_shared.metrics import (
     ThroughputMetrics,
 )
 from max.benchmark.benchmark_shared.percentile_metrics import (
+    InteractivityMetrics,
     json_safe,
 )
 from max.benchmark.benchmark_shared.server_metrics import print_server_metrics
 from max.benchmark.benchmark_shared.utils import print_section
+from max.benchmark.benchmark_shared.workload_stats import (
+    Distribution,
+    WorkloadStats,
+)
+from PIL import Image, UnidentifiedImageError
 from tabulate import tabulate
 
 logger = logging.getLogger(__name__)
+
+# Above this share of bunched reads, the evenly split ITLs are the run's own
+# bound on ITL p99 rather than a property of the server, so the console says so.
+_BUNCHED_READS_WARN_SHARE = 0.01
 
 
 def hash_string(s: str) -> str:
@@ -115,49 +129,137 @@ def print_input_prompts(samples: Samples) -> None:
         print(elide_data_uris_in_string(str(prompt_info)))
 
 
-def _format_distribution_table(
-    values: Sequence[float | int], label: str
+def _format_distribution(
+    dist: Distribution | Sequence[float | int], label: str
 ) -> str:
-    """Format distribution statistics as a mini-table with header and value rows."""
-    _STAT_COLUMNS = (
-        "min",
-        "max",
-        "mean",
-        "std",
-        "p5",
-        "p25",
-        "p50",
-        "p75",
-        "p95",
-        "p99",
-    )
-    _COL_WIDTH = 10
+    """Formats a distribution as a mini-table with header and value rows.
 
-    arr = np.array(values, dtype=float)
-    p5, p25, p50, p75, p95, p99 = np.percentile(arr, [5, 25, 50, 75, 95, 99])
-    stat_values = (
-        np.min(arr),
-        np.max(arr),
-        np.mean(arr),
-        np.std(arr),
-        p5,
-        p25,
-        p50,
-        p75,
-        p95,
-        p99,
-    )
-    header = "    " + "".join(f"{name:<{_COL_WIDTH}}" for name in _STAT_COLUMNS)
-    row = "    " + "".join(f"{v:<{_COL_WIDTH}.2f}" for v in stat_values)
-    return f"  {label}:\n{header}\n{row}"
+    Every table carries the workload stats JSON's percentiles, so the sections
+    of the dry-run report line up with each other and with production. Raw
+    values also get std, p5 and p25, which show the spread and the low end of
+    per-session quantities that a :class:`Distribution` does not keep.
+    """
+    spread: dict[str, float] = {}
+    if not isinstance(dist, Distribution):
+        summary = Distribution.of(dist)
+        assert summary is not None, f"{label}: no values to summarize"
+        arr = np.asarray(dist, dtype=float)
+        p5, p25 = np.percentile(arr, (5, 25))
+        spread = {"std": float(arr.std()), "p5": float(p5), "p25": float(p25)}
+        dist = summary
+    cells = {
+        "count": f"{dist.count}",
+        "min": f"{dist.min:.2f}",
+        "mean": f"{dist.mean:.2f}",
+        **{name: f"{v:.2f}" for name, v in spread.items()},
+        **{f"p{p}": f"{v:.2f}" for p, v in dist.percentiles.items()},
+        "max": f"{dist.max:.2f}",
+    }
+    header = "    " + "".join(f"{name:<10}" for name in cells)
+    row = "    " + "".join(f"{v:<10}" for v in cells.values())
+    lines = [f"  {label}:", header, row]
+    if dist.fraction_above:
+        shares = ", ".join(
+            f">{t // 1000}k: {share:.2%}"
+            for t, share in dist.fraction_above.items()
+        )
+        lines.append(f"    share above {shares}")
+    return "\n".join(lines)
 
 
-def print_workload_stats(samples: Samples) -> None:
+def _image_dimensions(image: OpenAIImage) -> tuple[int, int] | None:
+    """Decode a data-URI image's (width, height), or None if not decodable."""
+    url = image["image_url"]["url"]
+    if not url.startswith("data:"):
+        return None
+    try:
+        _, b64_data = url.split(",", 1)
+        with Image.open(BytesIO(base64.b64decode(b64_data))) as img:
+            return img.size
+    except (ValueError, UnidentifiedImageError, OSError):
+        return None
+
+
+def _image_long_side(image: OpenAIImage) -> int | None:
+    """Decode a data-URI image's longer side in pixels, or None if not decodable."""
+    dimensions = _image_dimensions(image)
+    return None if dimensions is None else max(dimensions)
+
+
+def _print_image_stats(
+    images_per_item: Sequence[int],
+    all_images: Sequence[OpenAIImage],
+    label: str,
+) -> None:
+    """Print image-count and (when decodable) shape distributions."""
+    if sum(images_per_item) == 0:
+        return
+    print()
+    print(_format_distribution(images_per_item, f"Image count ({label})"))
+    # One decode per image feeds both tables; long side alone cannot show
+    # what shapes a sampled --image-aspect-ratio actually produced.
+    dimensions = [
+        d for img in all_images if (d := _image_dimensions(img)) is not None
+    ]
+    if dimensions:
+        print()
+        print(
+            _format_distribution(
+                [max(d) for d in dimensions], "Image long side (px)"
+            )
+        )
+        print()
+        print(
+            _format_distribution(
+                [w / h for w, h in dimensions], "Image aspect ratio (w/h)"
+            )
+        )
+
+
+def _print_requests_sent(stats: WorkloadStats) -> None:
+    """Prints the requests the run would send, in production's terms."""
+    print()
+    print_section(title=" Requests Sent ", char="-")
+    print(f"  {'Requests:':<30} {stats.requests}")
+    if stats.context_limit is not None:
+        print(f"  {'Context limit:':<30} {stats.context_limit}")
+    if (dropped := stats.dropped_turn_fraction) is not None and dropped > 0:
+        print(
+            f"  {'Turns dropped at the limit:':<30}"
+            f" {stats.turns_dropped_at_context_limit} ({dropped:.2%})"
+        )
+    for dist, label in (
+        (stats.input_len, "Input length"),
+        (stats.input_len_first_turn, "Input length (first turn)"),
+        (stats.input_len_later_turn, "Input length (later turns)"),
+        (stats.output_len, "Output length"),
+        (stats.output_len_first_turn, "Output length (first turn)"),
+        (stats.output_len_later_turn, "Output length (later turns)"),
+        (stats.tools_per_request, "Tools per tool-offering request"),
+    ):
+        if dist is not None:
+            print()
+            print(_format_distribution(dist, label))
+    print()
+    for share, label in (
+        (stats.tool_request_fraction, "Tool-offering requests:"),
+        (stats.image_request_fraction, "Image-carrying requests:"),
+        (stats.constrained_request_fraction, "Structured-output requests:"),
+    ):
+        if share is not None:
+            print(f"  {label:<30} {share:.2%}")
+
+
+def print_workload_stats(
+    samples: Samples, stats: WorkloadStats | None = None
+) -> None:
     """Print workload distribution statistics and exit.
 
     For single-turn workloads, prints input/output length stats.
     For multi-turn workloads, additionally prints num_turns and
-    delay_until_next_message stats.
+    delay_until_next_message stats. When ``stats`` is given, also prints the
+    requests the run would send: lengths split by turn, the long-context
+    tail and the request mix.
     """
     print_section(title=" Workload Statistics ", char="=")
 
@@ -169,13 +271,18 @@ def print_workload_stats(samples: Samples) -> None:
 
         print(f"  {'Total requests:':<30} {len(samples.requests)}")
         print()
-        print(_format_distribution_table(input_lens, "Input length"))
+        print(_format_distribution(input_lens, "Input length"))
         if output_lens:
             print()
-            print(_format_distribution_table(output_lens, "Output length"))
+            print(_format_distribution(output_lens, "Output length"))
         else:
             print()
             print("  Output length:  not specified (server-determined)")
+        _print_image_stats(
+            [len(r.encoded_images) for r in samples.requests],
+            [img for r in samples.requests for img in r.encoded_images],
+            "per request",
+        )
 
     elif isinstance(samples, ChatSamples):
         sessions = samples.chat_sessions
@@ -233,28 +340,22 @@ def print_workload_stats(samples: Samples) -> None:
         else:
             print(f"  {'Total turns (across all):':<30} {total_turns}")
         print()
-        print(
-            _format_distribution_table(
-                all_input_lens, "Input length (per turn)"
-            )
-        )
+        print(_format_distribution(all_input_lens, "Input length (per turn)"))
         print()
         if all_output_lens:
             print(
-                _format_distribution_table(
+                _format_distribution(
                     all_output_lens, "Output length (per turn)"
                 )
             )
         else:
             print("  Output length (per turn):  none recorded")
         print()
-        print(
-            _format_distribution_table(num_turns_list, "Num turns per session")
-        )
+        print(_format_distribution(num_turns_list, "Num turns per session"))
         if all_delays:
             print()
             print(
-                _format_distribution_table(
+                _format_distribution(
                     all_delays, "Delay between chat turns (ms)"
                 )
             )
@@ -262,12 +363,26 @@ def print_workload_stats(samples: Samples) -> None:
             print()
             print("  Delay until next msg:  none configured")
 
+        images_per_session = [
+            sum(len(msg.images) for msg in session.messages)
+            for session in sessions
+        ]
+        all_images = [
+            img
+            for session in sessions
+            for msg in session.messages
+            for img in msg.images
+        ]
+        _print_image_stats(images_per_session, all_images, "per session")
+
+    if stats is not None:
+        _print_requests_sent(stats)
+
     print("=" * 50)
 
 
 def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
     """Print LoRA benchmark statistics if available."""
-
     print_section(title=" LoRA Adapter Benchmark Results ", char="=")
     print("{:<40} {:<10}".format("Total LoRA loads:", metrics.total_loads))
     print("{:<40} {:<10}".format("Total LoRA unloads:", metrics.total_unloads))
@@ -310,11 +425,23 @@ class PercentileRow(NamedTuple):
     metrics: _PercentileLike
 
 
+class InteractivityRow(NamedTuple):
+    """A labeled interactivity metric for the interactivity summary table."""
+
+    label: str
+    metrics: InteractivityMetrics
+
+
 def format_gpu_statistics_title(n_devices: int) -> str:
     """Section title stating GPU rows are derived across the sampled devices."""
     assert n_devices > 0, "GPU statistics title requires at least one device"
     device_label = "device" if n_devices == 1 else "devices"
     return f"GPU Statistics (aggregated across {n_devices} {device_label})"
+
+
+def gpu_utilization_group_label(group: str) -> str:
+    """GPU statistics row label for one group's utilization."""
+    return f"GPU utilization, {group} (%)"
 
 
 def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
@@ -329,6 +456,40 @@ def format_percentile_table(rows: Sequence[PercentileRow]) -> str:
             f"{row.metrics.p90:.2f}",
             f"{row.metrics.p95:.2f}",
             f"{row.metrics.p99:.2f}",
+        ]
+        for row in rows
+    ]
+    return tabulate(
+        table,
+        headers=headers,
+        tablefmt="simple_outline",
+        colalign=("left", *("right",) * (len(headers) - 1)),
+        disable_numparse=True,
+    )
+
+
+def format_interactivity_table(rows: Sequence[InteractivityRow]) -> str:
+    """Render interactivity stats as one table, one row per metric.
+
+    Interactivity carries the mean and the 50th/75th/90th/95th/99th
+    percentiles but no std, so it gets its own column set rather than the
+    Mean/Std/P50/P90/P95/P99 layout of the percentile table.
+    """
+    headers = ["Metric", "Mean", "P50", "P75", "P90", "P95", "P99"]
+    table = [
+        [
+            row.label,
+            *(
+                f"{value:.2f}"
+                for value in (
+                    row.metrics.mean,
+                    row.metrics.p50,
+                    row.metrics.p75,
+                    row.metrics.p90,
+                    row.metrics.p95,
+                    row.metrics.p99,
+                )
+            ),
         ]
         for row in rows
     ]
@@ -405,6 +566,29 @@ def print_benchmark_summary(
             "Request throughput (req/s):", summary.request_throughput
         )
     )
+    goodput_targets = " ".join(
+        f"{key}:{target:g}"
+        for key, target in (
+            ("ttft", summary.goodput_ttft_ms),
+            ("tpot", summary.goodput_tpot_ms),
+            ("e2el", summary.goodput_e2el_ms),
+        )
+        if target is not None
+    )
+    if goodput_targets:
+        if summary.request_goodput is not None:
+            print(
+                "{:<40} {:<10.5f}".format(
+                    "Request goodput (req/s):", summary.request_goodput
+                )
+            )
+        if summary.goodput_attainment is not None:
+            print(
+                "{:<40} {:<10.2%}".format(
+                    "Goodput attainment:", summary.goodput_attainment
+                )
+            )
+        print("{:<40} {:<10}".format("Goodput targets (ms):", goodput_targets))
     print("{:<40} {:<10}".format("Max Concurrency:", summary.max_concurrency))
     if (
         metrics.text_data is not None
@@ -424,6 +608,46 @@ def print_benchmark_summary(
                 summary.aggregate_tokens_per_minute,
             )
         )
+    if summary.total_tokens_per_second_per_gpu is not None:
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Total throughput per GPU (tok/s):",
+                summary.total_tokens_per_second_per_gpu,
+            )
+        )
+
+    # Each line prints only when its feature was used: a run without it would
+    # otherwise carry a permanent "0.00%" for something it never sent.
+    mix = groups.request_mix
+    if mix is not None:
+        mix_lines: list[tuple[str, float]] = []
+        if mix.constrained_request_rate:
+            mix_lines.append(
+                ("Structured-output requests:", mix.constrained_request_rate)
+            )
+            if mix.constrained_conformance_rate is not None:
+                mix_lines.append(
+                    (
+                        "  of which schema-conforming:",
+                        mix.constrained_conformance_rate,
+                    )
+                )
+        if mix.tool_request_rate:
+            mix_lines.append(("Tool-offering requests:", mix.tool_request_rate))
+            if mix.tool_call_response_rate is not None:
+                mix_lines.append(
+                    ("  of which called a tool:", mix.tool_call_response_rate)
+                )
+        if mix.image_request_rate:
+            mix_lines.append(
+                ("Image-carrying requests:", mix.image_request_rate)
+            )
+        if mix.lora_request_rate:
+            mix_lines.append(("LoRA-routed requests:", mix.lora_request_rate))
+        if mix_lines:
+            print_section(title="Request Mix")
+            for label, rate in mix_lines:
+                print(f"{label:<40} {rate:<10.2%}")
 
     latency = groups.latency_stats
     if latency is not None:
@@ -431,7 +655,11 @@ def print_benchmark_summary(
             PercentileRow(label, pm)
             for label, pm in (
                 ("TTFT (ms)", latency.ttft_ms),
+                ("TTFT constrained (ms)", latency.ttft_ms_constrained),
+                ("TTFT unconstrained (ms)", latency.ttft_ms_unconstrained),
                 ("TPOT (ms)", latency.tpot_ms),
+                ("TPOT constrained (ms)", latency.tpot_ms_constrained),
+                ("TPOT unconstrained (ms)", latency.tpot_ms_unconstrained),
                 ("Step TPOT (ms)", latency.step_tpot_ms),
                 ("ITL (ms)", latency.itl_ms),
                 ("Request Latency (ms)", latency.latency_ms),
@@ -456,12 +684,35 @@ def print_benchmark_summary(
             )
             if pm is not None
         ]
-        if throughput_rows:
+        interactivity_rows = [
+            InteractivityRow(label, im)
+            for label, im in (
+                ("Interactivity (tok/s)", throughput.interactivity_tok_s),
+                (
+                    "Full-response interactivity (tok/s)",
+                    throughput.full_response_interactivity_tok_s,
+                ),
+                (
+                    "E2E normalized interactivity (tok/s)",
+                    throughput.e2e_normalized_interactivity_tok_s,
+                ),
+            )
+            if im is not None
+        ]
+        if throughput_rows or interactivity_rows:
             print_section(title="Throughput Stats")
+        if throughput_rows:
             print(format_percentile_table(throughput_rows))
             print(
                 "  Throughput P90/P95/P99 are reversed"
                 " (bottom 10/5/1%; higher is better)"
+            )
+        if interactivity_rows:
+            print(format_interactivity_table(interactivity_rows))
+            print(
+                "  Interactivity is content-bounded (first to last content"
+                " chunk); full-response spans to request completion; E2E"
+                " normalized is content-bounded with TTFT included"
             )
 
     cache = groups.cache_stats
@@ -562,6 +813,17 @@ def print_benchmark_summary(
             )
             if values
         ]
+        # The mean across roles hides which disaggregated engine is
+        # saturated; generate-github-summary.py reads these rows into the
+        # triage line.
+        gpu_rows.extend(
+            PercentileRow(
+                gpu_utilization_group_label(group),
+                StandardPercentileMetrics([float(v) for v in values], unit="%"),
+            )
+            for group, values in gpu.gpu_utilization_by_group.items()
+            if values
+        )
         if gpu_rows:
             n_devices = max(
                 len(gpu.peak_gpu_memory_mib),
@@ -595,21 +857,77 @@ def print_benchmark_summary(
             (label, value)
             for label, value in (
                 ("Server startup time (s):", diag.server_startup_time),
+                (
+                    "Steady-state filtering:",
+                    "disabled"
+                    if diag.steady_state_mode == "disabled"
+                    else None,
+                ),
                 ("Steady-state detected:", diag.steady_state_detected),
                 ("Steady-state windows:", diag.steady_state_window_count),
                 ("Outliers rejected:", diag.num_outliers_rejected),
+                (
+                    "Worst client loop lag (ms, incl. pauses):",
+                    diag.client_loop_lag_max_ms,
+                ),
             )
             if value is not None
         ]
-        if diag_rows or diag.steady_state_warning:
+        client_rows = [
+            PercentileRow(label, pm)
+            for label, pm in (
+                ("Client event-loop lag (ms)", diag.client_loop_lag_ms),
+                ("Client loop thread busy (%)", diag.client_loop_busy),
+            )
+            if pm is not None
+        ]
+        if (
+            diag_rows
+            or diag.steady_state_warning
+            or client_rows
+            or diag.client_warning
+            or diag.stream_reads_bunched
+            or metrics.itl_unresolved
+        ):
             print_section(title="Diagnostics")
             for label, value in diag_rows:
                 if isinstance(value, float):
-                    print(f"{label:<40} {value:<10.2f}")
+                    print(f"{label:<45} {value:<10.2f}")
                 else:
-                    print(f"{label:<40} {value:<10}")
+                    print(f"{label:<45} {value:<10}")
             if diag.steady_state_warning:
                 print(f"Steady-state warning: {diag.steady_state_warning}")
+            # The result JSON always carries these; the console says them only
+            # when some of the run's reads carried several events.
+            if diag.stream_reads_bunched and diag.stream_reads:
+                share = diag.stream_reads_bunched / diag.stream_reads
+                print(
+                    f"{diag.stream_reads_bunched} of {diag.stream_reads}"
+                    " reads carried several text events;"
+                    " their ITLs were split evenly."
+                )
+                if share > _BUNCHED_READS_WARN_SHARE:
+                    print(
+                        f"WARNING: {share:.1%} of reads carried several text"
+                        " events, so their ITLs come from the read's arrival"
+                        " split evenly, not from when each token landed."
+                        " ITL p99 is bounded by the client here, not by the"
+                        " server."
+                    )
+            # A request's first text read has no earlier token to measure to,
+            # so its other text events carry no ITL sample at all. The count
+            # lives on the result rather than the diagnostics group, which is
+            # schema-mirrored in the dashboard tree.
+            if metrics.itl_unresolved:
+                print(
+                    f"{metrics.itl_unresolved} text events shared their"
+                    " read's arrival with an earlier one and carry no ITL"
+                    " sample."
+                )
+            if client_rows:
+                print(format_percentile_table(client_rows))
+            if diag.client_warning:
+                print(f"WARNING: {diag.client_warning}")
     print("=" * 50)
     if lora_manager:
         print_lora_benchmark_results(lora_manager.metrics)
@@ -620,7 +938,7 @@ def print_benchmark_summary(
     print("=" * 50)
 
 
-def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
+def _parse_metadata(metadata: Sequence[str] | None) -> dict[str, str]:
     """Parse ``KEY=VALUE`` metadata strings into a flat dict.
 
     The special key ``server_cpu`` is mapped to ``cpu``.
@@ -638,45 +956,116 @@ def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
     return result
 
 
+@dataclass(frozen=True)
+class BenchmarkRunResultLabels:
+    """The benchmark configuration a result was produced with."""
+
+    backend: Backend
+    """The serving backend benchmarked."""
+
+    benchmark_task: BenchmarkTask
+    """The task benchmarked."""
+
+    model_id: str
+    """The model benchmarked."""
+
+    tokenizer_id: str
+    """The tokenizer tokens were counted with."""
+
+    dataset_name: str
+    """The dataset the requests were drawn from."""
+
+    burstiness: float | None
+    """The arrival burstiness factor, or ``None`` when the load generator has
+    none."""
+
+    max_concurrent_conversations: int | None
+    """The limit on concurrent multi-turn sessions, or ``None``."""
+
+    client_args: Mapping[str, object]
+    """The load generator's configuration, recorded verbatim apart from the
+    iteration's request rate and concurrency."""
+
+    metadata: Sequence[str]
+    """``KEY=VALUE`` strings recorded as top-level fields."""
+
+    @classmethod
+    def from_config(
+        cls,
+        args: ServingBenchmarkConfig,
+        *,
+        benchmark_task: BenchmarkTask,
+        model_id: str,
+        tokenizer_id: str,
+    ) -> BenchmarkRunResultLabels:
+        """Builds labels for a result produced with ``args``.
+
+        Args:
+            args: The serving benchmark's configuration.
+            benchmark_task: The task benchmarked.
+            model_id: The model benchmarked.
+            tokenizer_id: The tokenizer tokens were counted with.
+
+        Returns:
+            The result's labels.
+        """
+        return cls(
+            backend=args.backend,
+            benchmark_task=benchmark_task,
+            model_id=model_id,
+            tokenizer_id=tokenizer_id,
+            dataset_name=args.dataset_name,
+            burstiness=args.burstiness,
+            max_concurrent_conversations=args.max_concurrent_conversations,
+            client_args=args.model_dump(),
+            metadata=list(args.metadata),
+        )
+
+
 def save_result_json(
     result_filename: str | None,
-    args: ServingBenchmarkConfig,
+    labels: BenchmarkRunResultLabels,
     benchmark_result: BenchmarkResult,
     *,
-    benchmark_task: BenchmarkTask,
-    model_id: str,
-    tokenizer_id: str,
     request_rate: float,
     record_max_concurrency: int | None,
 ) -> None:
-    """Persist benchmark results to *result_filename*."""
+    """Writes a benchmark result to ``result_filename``.
+
+    Args:
+        result_filename: The file to write, or ``None`` to write nothing. An
+            existing file is moved aside to ``<result_filename>.orig``.
+        labels: The benchmark configuration the result was produced with.
+        benchmark_result: The result's metrics.
+        request_rate: The iteration's request rate.
+        record_max_concurrency: The iteration's concurrency limit.
+    """
     if not result_filename:
         return
-    backend: Backend = args.backend
-    client_args = args.model_dump()
+    client_args = dict(labels.client_args)
     rr_client = str(request_rate) if request_rate < float("inf") else "inf"
     client_args["request_rate"] = rr_client
     client_args["max_concurrency"] = record_max_concurrency
     result_json: dict[str, object] = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "backend": backend,
-        "benchmark_task": benchmark_task,
-        "model_id": model_id,
-        "tokenizer_id": tokenizer_id,
+        "backend": labels.backend,
+        "benchmark_task": labels.benchmark_task,
+        "model_id": labels.model_id,
+        "tokenizer_id": labels.tokenizer_id,
         "num_prompts": (
             agg.completed
             if (agg := benchmark_result.aggregates) is not None
             else 0
         ),
-        "dataset_name": args.dataset_name,
+        "dataset_name": labels.dataset_name,
         "client_args": client_args,
         "request_rate": (
             request_rate if request_rate < float("inf") else "inf"
         ),
-        "burstiness": args.burstiness,
+        "burstiness": labels.burstiness,
         "max_concurrency": record_max_concurrency,
-        "max_concurrent_conversations": args.max_concurrent_conversations,
-        **_parse_metadata(args.metadata),
+        "max_concurrent_conversations": labels.max_concurrent_conversations,
+        **_parse_metadata(labels.metadata),
         **benchmark_result.to_result_dict(),
     }
     logger.info(f"Writing file: {result_filename}")

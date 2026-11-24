@@ -12,7 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
-from max.driver import CPU, Accelerator
+from max.driver import CPU, Accelerator, ArchitectureVersion
+from max.support.host_memory import available_host_memory
+
+GIB = 1024**3
 
 
 def test_cpu_device() -> None:
@@ -49,6 +52,15 @@ def test_stats() -> None:
     assert cpu.stats["free_memory"] <= cpu.stats["total_memory"]
 
 
+def test_cpu_free_memory_is_host_wide() -> None:
+    # Free memory is what the whole host has left, including the cgroup
+    # limit, not physical memory minus this process's footprint. Other
+    # processes can move it between the two reads.
+    available = available_host_memory()
+    assert available is not None
+    assert abs(CPU().stats["free_memory"] - available) <= GIB
+
+
 def test_max_single_alloc_size() -> None:
     # Default implementation returns the device's total memory; should be a
     # positive integer.
@@ -70,9 +82,31 @@ def test_cpu_id() -> None:
     assert 0 == cpu.id
 
 
+def test_cpu_default_id_shares_context() -> None:
+    assert CPU() == CPU(0)
+    assert CPU()._device_context_ptr() == CPU(0)._device_context_ptr()
+
+
 def test_cpu_architecture_name() -> None:
     cpu = CPU()
     with pytest.raises(
         Exception, match="failed to get device architecture name"
     ):
         _ = cpu.architecture_name
+
+
+def test_cpu_architecture_version() -> None:
+    cpu = CPU()
+    with pytest.raises(ValueError, match="the CPU device has no architecture"):
+        _ = cpu.architecture_version
+
+
+def test_architecture_version_equality() -> None:
+    gfx90a = ArchitectureVersion(9, 0, 10)
+    assert (gfx90a.major, gfx90a.minor, gfx90a.stepping) == (9, 0, 10)
+    assert gfx90a == ArchitectureVersion(9, 0, 10)
+    assert gfx90a != ArchitectureVersion(9, 0)
+    assert len({gfx90a, ArchitectureVersion(9, 0, 10)}) == 1
+    assert repr(gfx90a) == "ArchitectureVersion(major=9, minor=0, stepping=10)"
+    # Not a tuple, so it does not compare equal to one.
+    assert gfx90a != (9, 0, 10)

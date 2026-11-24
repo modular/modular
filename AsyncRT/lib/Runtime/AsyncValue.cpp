@@ -14,7 +14,6 @@
 #include "AsyncRT/Runtime/AsyncValue.h"
 #include "AsyncRT/Runtime/CPUDevice.h"
 #include "AsyncRT/Support/Chain.h"
-#include "Support/ADT/ConcurrentAppendingVector.h"
 #include "Support/Threading/SpinWaiter.h"
 #include "llvm/Support/Format.h"
 
@@ -480,8 +479,7 @@ void AsyncValue::setToErrorAndDecRef(EncodedDiagnostic diagnostic) {
 void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
   andThenSync(
       [waiter = std::move(waiter), cpuDevice = getCPUDevice()]() mutable {
-        cpuDevice->getWorkQueue()->addTask(
-            [waiter = std::move(waiter)]() mutable { waiter(); });
+        cpuDevice->getWorkQueue()->addTask(std::move(waiter));
       });
 }
 

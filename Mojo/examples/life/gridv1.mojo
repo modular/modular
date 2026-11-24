@@ -76,8 +76,8 @@ struct Grid(Copyable, Writable):
 
     @staticmethod
     def random(rows: Int, cols: Int, seed: Optional[Int] = None) -> Self:
-        if seed:
-            random.seed(seed.value())
+        if case .Some(seed) = seed:
+            random.seed(seed)
         else:
             # Seed the random number generator using the current time.
             random.seed()

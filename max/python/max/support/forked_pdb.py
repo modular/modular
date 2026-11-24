@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Attaches a debugger to a forked multiprocessing child."""
+
 from __future__ import annotations
 
 # Allow import of pdb. Ruff thinks this is debug code.
@@ -37,6 +39,10 @@ class ForkedPdb(pdb.Pdb):
     """
 
     def interaction(self, *args: Any, **kwargs: Any) -> None:
+        """Runs the interactive prompt with ``/dev/stdin`` as standard input.
+
+        The caller's ``sys.stdin`` is restored when the prompt returns.
+        """
         _stdin = sys.stdin
         try:
             sys.stdin = open("/dev/stdin")

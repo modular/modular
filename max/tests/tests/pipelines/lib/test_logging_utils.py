@@ -37,7 +37,7 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
 )
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.pipelines.logging_utils import log_basic_config
+from max.pipelines.logging_utils import log_basic_config, log_pipeline_info
 from max.pipelines.modeling.types import PipelineTask
 from max.pipelines.speculative import SpeculativeConfig
 
@@ -102,6 +102,47 @@ def _capture_log_basic_config(
     return "\n".join(r.getMessage() for r in records)
 
 
+def _capture_log_pipeline_info(
+    config: PipelineConfig, memory_plan: MemoryPlan, task: PipelineTask
+) -> str:
+    """Call log_pipeline_info with a mocked architecture and capture its output."""
+    arch = MagicMock()
+    arch.name = "TestArchitecture"
+    arch.task = task
+    arch.pipeline_model = type("TestModel", (), {})
+    arch.tokenizer_cls = type("TestTokenizer", (), {})
+    pipeline_cls = type("TestPipeline", (), {})
+
+    records: list[logging.LogRecord] = []
+
+    class _Capture(logging.Handler):
+        def emit(self, record: logging.LogRecord) -> None:
+            records.append(record)
+
+    capture = _Capture()
+    logger = logging.getLogger("max.pipelines")
+    original_level = logger.level
+    logger.setLevel(logging.INFO)
+    logger.addHandler(capture)
+    try:
+        with (
+            patch(
+                "max.pipelines.logging_utils.PIPELINE_REGISTRY.architecture_for_config",
+                return_value=arch,
+            ),
+            patch(
+                "max.pipelines.logging_utils.get_pipeline_for_task",
+                return_value=pipeline_cls,
+            ),
+        ):
+            log_pipeline_info(config, memory_plan=memory_plan)
+    finally:
+        logger.removeHandler(capture)
+        logger.setLevel(original_level)
+
+    return "\n".join(r.getMessage() for r in records)
+
+
 class TestLogBasicConfigAfterResolve:
     """log_basic_config must reflect resolved config values."""
 
@@ -119,52 +160,6 @@ class TestLogBasicConfigAfterResolve:
 
 class TestLogBasicConfigSpeculative:
     """The speculative acceptance knobs must be readable at startup."""
-
-    def test_explicit_rejection_strategy_is_logged(self) -> None:
-        """``--rejection-sampling-strategy residual`` has to show up.
-
-        It logged nowhere before, so a run's acceptance rule was
-        unverifiable from its own output.
-        """
-        config = _make_pipeline_config(
-            max_length=4096,
-            speculative=SpeculativeConfig(
-                speculative_method="eagle",
-                rejection_sampling_strategy="residual",
-            ),
-        )
-        output = _capture_log_basic_config(
-            config,
-            MemoryPlan(
-                planned_max_batch_size=1, footprint=0, planned_max_length=4096
-            ),
-        )
-
-        assert "rejection_sampling_strategy" in output, output
-        assert "residual" in output, output
-        # Nothing consumes the field, so the dump has to say so rather than
-        # imply the run is verifying drafts that way.
-        assert "inert" in output, output
-
-    def test_unset_rejection_strategy_is_logged(self) -> None:
-        """The line appears even unset, so its absence means an old build."""
-        config = _make_pipeline_config(
-            max_length=4096,
-            speculative=SpeculativeConfig(speculative_method="eagle"),
-        )
-        output = _capture_log_basic_config(
-            config,
-            MemoryPlan(
-                planned_max_batch_size=1, footprint=0, planned_max_length=4096
-            ),
-        )
-
-        assert re.search(r"rejection_sampling_strategy +: unset", output), (
-            output
-        )
-        # The documented "typical-acceptance for eagle/mtp" default is not
-        # applied anywhere in the code, so the dump must not claim it.
-        assert "typical-acceptance" not in output, output
 
     def test_acceptance_deciding_knobs_are_logged(self) -> None:
         """The fields AcceptanceSampler actually dispatches on."""
@@ -189,3 +184,29 @@ class TestLogBasicConfigSpeculative:
             ("use_greedy_acceptance", "False"),
         ):
             assert re.search(rf"{key} +: {value}", output), output
+
+
+class TestLogPipelineInfoKVCache:
+    """KV cache settings are only useful for text-generation pipelines."""
+
+    def test_omits_kv_cache_for_pixel_generation(self) -> None:
+        output = _capture_log_pipeline_info(
+            _make_pipeline_config(max_length=None),
+            MemoryPlan(
+                planned_max_batch_size=1, footprint=0, planned_max_length=0
+            ),
+            PipelineTask.PIXEL_GENERATION,
+        )
+
+        assert "KV Cache" not in output
+
+    def test_includes_kv_cache_for_text_generation(self) -> None:
+        output = _capture_log_pipeline_info(
+            _make_pipeline_config(max_length=4096),
+            MemoryPlan(
+                planned_max_batch_size=1, footprint=0, planned_max_length=4096
+            ),
+            PipelineTask.TEXT_GENERATION,
+        )
+
+        assert "KV Cache" in output

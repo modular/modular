@@ -24,6 +24,7 @@
 
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/DenseMapInfo.h"
 #include "llvm/ADT/Hashing.h"
 #include "llvm/Support/JSON.h"
@@ -53,7 +54,8 @@ struct DecodedFeatures {
 /// so duplicate names resolve to the final sign. Unsigned names (no prefix)
 /// are treated as enabled for backward compat with older serialized data.
 /// Returns an error if a sign prefix has no name after it.
-ErrorOr<DecodedFeatures> decodeFeatures(StringRef encodedFeatures);
+MODULAR_CXX_EXPORT ErrorOr<DecodedFeatures>
+decodeFeatures(StringRef encodedFeatures);
 
 //===----------------------------------------------------------------------===//
 // TargetInfo
@@ -63,7 +65,7 @@ ErrorOr<DecodedFeatures> decodeFeatures(StringRef encodedFeatures);
 ///
 /// See also HostMachineInfo and PackageTarget which have similar
 /// structure.
-struct TargetInfo {
+struct MODULAR_CXX_EXPORT TargetInfo {
   llvm::Triple triple;
   std::string arch;
 
@@ -102,7 +104,7 @@ struct TargetInfo {
 
 /// Encodes a TargetInfo's features into the signed string form expected by
 /// LLVM (e.g. "+avx2,+bmi1,-avx512f").
-std::string encodeFeatures(const TargetInfo &targetInfo);
+MODULAR_CXX_EXPORT std::string encodeFeatures(const TargetInfo &targetInfo);
 
 //===----------------------------------------------------------------------===//
 // DeviceRef
@@ -114,7 +116,7 @@ std::string encodeFeatures(const TargetInfo &targetInfo);
 /// id) is determined at runtime.
 using DeviceId = uint64_t;
 
-struct DeviceRef {
+struct MODULAR_CXX_EXPORT DeviceRef {
   std::string label;
   DeviceId id;
 
@@ -136,12 +138,11 @@ struct DeviceRef {
 };
 
 /// Well known device labels. Closed set -- adding a new label requires
-/// updating `M::Engine::Context::create` (max/internal/lib/API/c/
+/// updating `M::Engine::Context::create` (max/lib/max_license/API/c/
 /// EngineContext.cpp) to accept it, otherwise the C API will reject
 /// any device that carries the new value.
 constexpr const char *kCPULabel = "cpu";
 constexpr const char *kGPULabel = "gpu";
-constexpr const char *kNPULabel = "npu";
 
 } // namespace M
 
@@ -168,7 +169,7 @@ namespace M {
 //===----------------------------------------------------------------------===//
 
 /// Runtime analogue of DeviceSpecAttr.
-struct DeviceSpec {
+struct MODULAR_CXX_EXPORT DeviceSpec {
   DeviceRef ref;
   TargetInfo target;
 
@@ -194,7 +195,7 @@ using DeviceSpecRef = std::shared_ptr<const DeviceSpec>;
 //===----------------------------------------------------------------------===//
 
 /// Runtime analogue of DeviceSpecCollectionAttr.
-struct DeviceSpecCollection {
+struct MODULAR_CXX_EXPORT DeviceSpecCollection {
   DeviceRef host;
   std::vector<DeviceSpec> devices;
 
@@ -224,7 +225,7 @@ struct DeviceSpecCollection {
 /// feature string (e.g. "+avx2,+bmi1,-avx512f"). Scans tokens exactly;
 /// disabled tokens ("-feature") and prefix matches (e.g. "avx512" against
 /// "+avx512f") both return false.
-bool hasFeature(StringRef llvmFeatureStr, StringRef feature);
+MODULAR_CXX_EXPORT bool hasFeature(StringRef llvmFeatureStr, StringRef feature);
 
 /// Returns the SIMD bit width implied by a single plain (unsigned) feature
 /// name, e.g. "avx512f" → 512, "avx2" → 256, "hvx-length128b" → 1024,
@@ -240,17 +241,18 @@ bool hasFeature(StringRef llvmFeatureStr, StringRef feature);
 /// 128-byte vector register declares 1024. A target's entry answers "how much
 /// work fits in one register here", so that a kernel deriving its vector shape
 /// from the field lands on a shape the target can issue.
-size_t simdWidthFromFeature(StringRef plainFeature);
+MODULAR_CXX_EXPORT size_t simdWidthFromFeature(StringRef plainFeature);
 
 /// Returns the SIMD bit width implied by a comma-separated signed LLVM feature
 /// string (e.g. "+avx2,+bmi1,-avx512f"). Disabled features (leading '-') are
 /// ignored. Assumes no duplicate feature names; use decodeFeatures first if
 /// the source string may contain duplicates.
-size_t simdWidthFromFeatures(StringRef llvmFeatureStr);
+MODULAR_CXX_EXPORT size_t simdWidthFromFeatures(StringRef llvmFeatureStr);
 
 /// Returns the SIMD bit width implied by a list of plain (unsigned) feature
 /// names.
-size_t simdWidthFromFeatures(ArrayRef<std::string> plainFeatures);
+MODULAR_CXX_EXPORT size_t
+simdWidthFromFeatures(ArrayRef<std::string> plainFeatures);
 
 } // namespace M
 

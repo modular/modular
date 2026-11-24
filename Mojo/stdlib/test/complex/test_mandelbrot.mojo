@@ -16,7 +16,7 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from std.complex import ComplexScalar, ComplexFloat32, ComplexSIMD
+from std.complex import ComplexScalar, ComplexFloat32
 from std.testing import assert_equal
 
 # NOTE: This is commented out because TestSuite is part of `test_utils` which

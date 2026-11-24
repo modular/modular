@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "AsyncRT/CompilerSupport/Context.h"
+#include "Mojo/HLCFDialect/HLCFOps.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/POPDialect/POPDialect.h"
 #include "Mojo/POPDialect/POPOps.h"
@@ -23,6 +24,8 @@
 
 using namespace M;
 using namespace KGEN;
+using M::HLCF::ReturnOp;
+using M::HLCF::UnreachableOp;
 using namespace POP;
 
 namespace M::KGEN {
@@ -173,13 +176,13 @@ State Graph::doAnalysis(BlockArgument arg) {
 
     // Direct load.
     if (auto load = dyn_cast<LoadOp>(user))
-      if (!load.mightBeVolatile())
+      if (!load.isAtomicOrMightBeVolatile())
         continue;
 
     // Check stores.
     if (auto store = dyn_cast<StoreOp>(user)) {
       // Check if this is a direct capture.
-      if (store.getArg() == use.get() || store.mightBeVolatile())
+      if (store.getArg() == use.get() || store.isAtomicOrMightBeVolatile())
         return State::Capture;
       // Otherwise, this is a direct store.
       continue;
@@ -233,6 +236,11 @@ static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   case ArgConvention::ByRefResult:
   case ArgConvention::ByRefError:
     return {false, true};
+
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
+  case ArgConvention::PackOwnedMem:
+    llvm_unreachable("LowerArgConventions splits pack arguments");
   }
 }
 
@@ -257,6 +265,13 @@ void Graph::doRewrite(const Node *node) {
   SmallVector<ArgConvention> convs;
   ImplicitLocOpBuilder b{func.getLoc(), OpBuilder::atBlockBegin(body)};
   SmallVector<mlir::TypedValue<PointerType>> outArgs;
+  // A promoted 'out' leaves no argument behind, so its entry goes too.
+  ArrayRef<Attribute> oldFnArgAttrs = func.getFnArgAttrs().getValue();
+  SmallVector<Attribute> fnArgAttrs;
+  auto keepFnArgAttr = [&](size_t i) {
+    if (i < oldFnArgAttrs.size())
+      fnArgAttrs.push_back(oldFnArgAttrs[i]);
+  };
   for (auto [i, conv, state] :
        llvm::enumerate(signature.getArgConventions(), node->argStates)) {
     BlockArgument arg = func.getArgument(i);
@@ -266,6 +281,7 @@ void Graph::doRewrite(const Node *node) {
       BlockArgument newArg = body->addArgument(arg.getType(), arg.getLoc());
       arg.replaceAllUsesWith(newArg);
       convs.push_back(conv);
+      keepFnArgAttr(i);
       continue;
     }
 
@@ -284,6 +300,7 @@ void Graph::doRewrite(const Node *node) {
           body->addArgument(type.getElementType(), arg.getLoc());
       StoreOp::create(b, byval, alloc);
       convs.push_back(getByValueConvention(conv));
+      keepFnArgAttr(i);
     }
 
     // For 'out' arguments, we need to add a new SSA result to the function and
@@ -323,6 +340,9 @@ void Graph::doRewrite(const Node *node) {
   signature = FuncType::get(functionType, convs, signature.getFnEffects());
   func.setFuncTypeGenerator(
       GeneratorType::get(/*inputParamTypes=*/{}, signature));
+  if (!oldFnArgAttrs.empty()) {
+    func.setFnArgAttrsAttr(mlir::ArrayAttr::get(func.getContext(), fnArgAttrs));
+  }
 
   // For the second part of the rewrite, we perform the corresponding rewrite of
   // calls in this function.
@@ -393,10 +413,10 @@ void Graph::doRewrite(const Node *node) {
     // Finally, update the callee signature.
     functionType = FunctionType::get(func.getContext(), call->getOperandTypes(),
                                      call->getResultTypes());
-    FuncTypeGeneratorType calleeSignature = FuncTypeGeneratorType::get(
-        {}, functionType, convs, sigBase.getFnEffects());
-    call.setCalleeAttr(
-        SymbolConstantAttr::get(call.getCalleeSymbol(), calleeSignature));
+    auto calleeSignature =
+        FuncType::get(functionType, convs, sigBase.getFnEffects());
+    call.setCalleeAttr(FuncSymbolGenerator::getParamLess(call.getCalleeSymbol(),
+                                                         calleeSignature));
   }
 }
 

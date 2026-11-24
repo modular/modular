@@ -92,7 +92,7 @@ func.func @value_to_addr_arg(%arg: i32) -> i32 {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[ARG]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr loc(#[[LOC_STORE:.*]])
+  // PRESERVE: llvm.store volatile %[[ARG]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr loc(#[[LOC_STORE:.*]])
   // PRESERVE: return %[[ARG]] : i32
 
   // OPT: llvm.intr.dbg.value #{{.*}}
@@ -107,7 +107,7 @@ func.func @value_to_addr_op() -> i32 {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: return %[[VALUE]] : i32
 
@@ -123,10 +123,10 @@ func.func @value_with_two_nontrivial_ops() -> (i32, i32) {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE1:.*]] = "test.op"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #[[VARIABLE:.*]] = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: %[[VALUE2:.*]] = "test.op2"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE-NOT: llvm.intr.dbg.value #[[VARIABLE]]
   // PRESERVE: return %[[VALUE1]], %[[VALUE2]] : i32, i32
 
@@ -142,10 +142,10 @@ func.func @value_with_two_nontrivial_ops_and_kill() -> (i32, i32) {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE1:.*]] = "test.op"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.value #[[VARIABLE:.*]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: %[[VALUE2:.*]] = "test.op2"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.value #[[VARIABLE]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: %[[UNDEF:.*]] = llvm.mlir.undef
   // PRESERVE: llvm.intr.dbg.value #[[VARIABLE]] = %[[UNDEF]]
@@ -166,14 +166,14 @@ func.func @value_shared_with_two_nontrivial_ops() -> (i32, i32, i32) {
   // PRESERVE: %[[COUNT1:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
   // PRESERVE: %[[ALLOC1:.*]] = llvm.alloca %[[COUNT1]] x i32 {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE1:.*]] = "test.op"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC1]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC1]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE-DAG: llvm.intr.dbg.declare #[[VARIABLE1:.*]] = %[[ALLOC1]] : !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC2]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC2]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE-DAG: llvm.intr.dbg.declare #[[VARIABLE2:.*]] = %[[ALLOC2]] : !llvm.ptr
   // PRESERVE: %[[VALUE2:.*]] = "test.op2"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[ALLOC1]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[ALLOC1]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: %[[VALUE3:.*]] = "test.op3"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE3]], %[[ALLOC2]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE3]], %[[ALLOC2]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE-NOT: llvm.intr.dbg.value #[[VARIABLE1]]
   // PRESERVE-NOT: llvm.intr.dbg.value #[[VARIABLE2]]
   // PRESERVE: return %[[VALUE1]], %[[VALUE2]], %[[VALUE3]] : i32, i32, i32
@@ -193,7 +193,7 @@ func.func @value_with_one_kill() -> i32 {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i32 {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.value #[[LOCAL_VAR:.*]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: %[[UNDEF:.*]] = llvm.mlir.undef
   // PRESERVE: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF]]
@@ -212,7 +212,7 @@ func.func @value_with_two_kills() -> i32 {
   // PRESERVE: %[[UNDEF1:.*]] = llvm.mlir.undef
   // PRESERVE: llvm.intr.dbg.value #[[LOCAL_VAR:.*]] = %[[UNDEF1]]
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.value #[[LOCAL_VAR]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: %[[UNDEF2:.*]] = llvm.mlir.undef
   // PRESERVE: llvm.intr.dbg.value #[[LOCAL_VAR]] = %[[UNDEF2]]
@@ -246,9 +246,9 @@ func.func @two_value_to_addr_op() -> !llvm.ptr {
   // PRESERVE: %[[COUNT1:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[ALLOC1:.*]] = llvm.alloca %[[COUNT1]] x !llvm.ptr {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC1]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC1]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC1]] : !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC0]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC0]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC0]] : !llvm.ptr
   // PRESERVE: return %[[VALUE]] : !llvm.ptr
 
@@ -265,9 +265,9 @@ func.func @one_value_one_value_and_kill() -> !llvm.ptr {
   // PRESERVE: %[[COUNT1:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[ALLOC1:.*]] = llvm.alloca %[[COUNT1]] x !llvm.ptr {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
-  // PRESERVE-DAG: llvm.store volatile %[[VALUE]], %[[ALLOC1]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE-DAG: llvm.store volatile %[[VALUE]], %[[ALLOC1]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #[[LOCAL_VAR2]] = %[[ALLOC1]] : !llvm.ptr
-  // PRESERVE-DAG: llvm.store volatile %[[VALUE]], %[[ALLOC0]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE-DAG: llvm.store volatile %[[VALUE]], %[[ALLOC0]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.value #[[LOCAL_VAR3]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC0]] : !llvm.ptr
   // PRESERVE: %[[UNDEF:.*]] = llvm.mlir.undef
   // PRESERVE: llvm.intr.dbg.value #[[LOCAL_VAR3]] = %[[UNDEF]]
@@ -285,7 +285,7 @@ func.func @one_value_one_deref_to_addr_op() -> !llvm.ptr {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[VALUE]] : !llvm.ptr
   // PRESERVE: return %[[VALUE]] : !llvm.ptr
@@ -301,7 +301,7 @@ func.func @one_value_one_deref_to_addr_op_and_kill() -> !llvm.ptr {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.value #[[VARIABLE:.*]] #llvm.di_expression<[DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: llvm.intr.dbg.value #[[VARIABLE]] #llvm.di_expression<[DW_OP_deref]> = %[[VALUE]] : !llvm.ptr
   // PRESERVE: %[[UNDEF:.*]] = llvm.mlir.undef
@@ -321,7 +321,7 @@ func.func @one_arg_one_deref_to_addr_op_and_kill(%arg: !llvm.ptr) -> !llvm.ptr {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(1 : i32) : i32 loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: llvm.intr.dbg.value #[[VARIABLE:.*]] #llvm.di_expression<[DW_OP_deref, DW_OP_deref]> = %[[ALLOC]] : !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[ARG]], %[[ALLOC]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[ARG]], %[[ALLOC]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: %[[UNDEF:.*]] = llvm.mlir.undef
   // PRESERVE: llvm.intr.dbg.value #[[VARIABLE]] = %[[UNDEF]]
   // PRESERVE: return %[[ARG]] : !llvm.ptr
@@ -337,7 +337,7 @@ func.func @one_deref_one_value_to_addr_op() -> !llvm.ptr {
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x !llvm.ptr {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE:.*]] = "test.op"() : () -> !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[VALUE]] : !llvm.ptr
-  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] {alignment = 1 : i64} : !llvm.ptr, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE]], %[[ALLOC]] <alignment = 1> : !llvm.ptr, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #{{.*}} = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: return %[[VALUE]] : !llvm.ptr
 
@@ -361,11 +361,11 @@ func.func @value_with_struct_fields() -> (i32, i32) {
   // PRESERVE: %[[COUNT:.*]] = llvm.mlir.constant(8 : i32) : i32 loc(#[[LOC_UNKNOWN:.*]])
   // PRESERVE: %[[ALLOC:.*]] = llvm.alloca %[[COUNT]] x i8 {alignment = 1 : i64} : (i32) -> !llvm.ptr loc(#[[LOC_UNKNOWN]])
   // PRESERVE: %[[VALUE1:.*]] = "test.op"() : () -> i32
-  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE1]], %[[ALLOC]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: llvm.intr.dbg.declare #[[LOCAL_VAR_STRUCT]] = %[[ALLOC]] : !llvm.ptr
   // PRESERVE: %[[VALUE2:.*]] = "test.op2"() : () -> i32
   // PRESERVE: %[[GEP:.*]] = llvm.getelementptr %[[ALLOC]][4]
-  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[GEP]] {alignment = 1 : i64} : i32, !llvm.ptr
+  // PRESERVE: llvm.store volatile %[[VALUE2]], %[[GEP]] <alignment = 1> : i32, !llvm.ptr
   // PRESERVE: return %[[VALUE1]], %[[VALUE2]] : i32, i32
 
   %value1 = "test.op"() : () -> i32
@@ -603,3 +603,30 @@ func.func @line_table_loc_lowering() {
 
 // CHECK: #[[LOC1_RAW:.+]] = loc("foo.mlir":1:0)
 // CHECK: #[[LOC1]] = loc(fused<{{.*}}>[#[[LOC1_RAW]]])
+
+// -----
+
+#file = #debuginfo.file<"foo.c" in "/mlir/">
+#sp = #debuginfo.subprogram<file = #file, scope = #file, sourceName = <"foo">> : !debuginfo.subroutine<(!debuginfo.unresolved<i32>) -> (): DW_CC_normal>
+#var = #debuginfo.local_variable<scope = #sp, name = "x", file = #file, line = 1, arg = 1> : !debuginfo.unresolved<i32>
+#loc0 = loc(fused<#sp>["foo.mlir":0:0])
+#loc1 = loc(fused<#sp>["foo.mlir":1:0])
+
+module attributes {M.target_info = #M.target<triple="air64-apple-macosx", arch="apple-m1", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK-LABEL: func @metal_line_table_loc_lowering
+  // CHECK-SAME: (%[[X:.*]]: i32
+  func.func @metal_line_table_loc_lowering(%x: i32, %p: !llvm.ptr) {
+    // CHECK-NEXT: llvm.intr.dbg.value
+    // CHECK-NEXT: llvm.store %[[X]], {{.*}} loc(#[[LOC:.+]])
+    // CHECK-NEXT: llvm.inline_asm has_side_effects asm_dialect = att "nop", "" : () -> () loc(#[[LOC]])
+    // CHECK-NEXT: return
+    debuginfo.value #var = %x : i32 loc(#loc1)
+    debuginfo.line_table_loc loc(#loc1)
+    llvm.store %x, %p : i32, !llvm.ptr loc(#loc1)
+    llvm.inline_asm has_side_effects asm_dialect = att "nop", "" : () -> () loc(#loc1)
+    return loc(#loc1)
+  } loc(#loc0)
+}
+
+// CHECK: #[[LOC_RAW:.+]] = loc("foo.mlir":1:0)
+// CHECK: #[[LOC]] = loc(fused<{{.*}}>[#[[LOC_RAW]]])

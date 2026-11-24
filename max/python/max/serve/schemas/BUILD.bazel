@@ -12,6 +12,10 @@ modular_py_library(
     ],
 )
 
+# Read by //max/tests/tests/serve/schemas, which checks the hand-written
+# docs against the request schema.
+exports_files(["openai-docs.yaml"])
+
 pkg_files(
     name = "docs-schema",
     srcs = [

@@ -21,6 +21,7 @@ import sys
 import time
 from collections.abc import Callable, Iterator, Sequence
 from datetime import timedelta
+from pathlib import Path
 from typing import Any, TypeVar
 
 import click
@@ -64,7 +65,7 @@ def check_model_flag_conflict(args: list[str]) -> None:
 
 
 class WithLazyPipelineOptions(click.Command):
-    """Command wrapper that defers loading pipeline configuration options
+    """Command wrapper that defers loading pipeline configuration options.
 
     Lazily applies pipeline_config_options to the callback only when
     command help or execution is actually requested, improving startup time.
@@ -161,10 +162,9 @@ def _handle_import_error(
 
     Args:
         e: The raised error
-        subcommand: The subcommand that was run (i.e. "serve" for `max serve`)
+        subcommand: The subcommand that was run (that is, "serve" for `max serve`)
         suggestion: Which package to install, first item is when using conda, second is for wheels.
     """
-
     if sys.version_info < (3, 11):
         # Backport `add_note()`
         import exceptiongroup  # noqa: F401
@@ -195,12 +195,18 @@ def _handle_import_error(
 )
 @click.pass_context
 def main(ctx: click.Context, log_level: str = "INFO") -> None:
+    from max._entrypoints.allocator import reexec_with_jemalloc
     from max._entrypoints.cli.entrypoint import configure_cli_logging
 
     # Configure logging first, before any other initialization
     configure_cli_logging(
         level=log_level, log_prefix=os.getenv("MAX_SERVE_LOG_PREFIX")
     )
+
+    # Swapping the allocator restarts the process, so it has to happen before
+    # anything with a side effect. Logging is set up first only so that the
+    # decision is visible at debug level.
+    reexec_with_jemalloc()
 
     # Some subcommands opt out of telemetry.
     if ctx.invoked_subcommand not in _TELEMETRY_OPT_OUT_COMMANDS:
@@ -210,10 +216,8 @@ def main(ctx: click.Context, log_level: str = "INFO") -> None:
 def configure_telemetry(subcommand: str) -> None:
     try:
         from max.serve.config import Settings
-        from max.serve.telemetry.common import (
-            configure_metrics,
-            configure_tracing,
-        )
+        from max.serve.telemetry._tracing import configure_tracing
+        from max.serve.telemetry.common import configure_metrics
     except ImportError as e:
         # Note: most commands import main(), and thus run this, so this catches most subcommands.
         _handle_import_error(
@@ -233,6 +237,12 @@ def common_server_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         "--port",
         type=int,
         help="Port for the HTTP API. Defaults to ``8000``.",
+    )
+    @click.option(
+        "--host",
+        type=str,
+        default=None,
+        help="Interface to bind the HTTP API to. Defaults to MAX_SERVE_HOST.",
     )
     @click.option(
         "--headless",
@@ -301,6 +311,71 @@ def _apply_interpreter_cache_policy(allow_cold: bool) -> None:
         os.environ.setdefault(_eager_policy.ALLOW_LAZY_COMPILE_ENV_VAR, "0")
 
 
+def _refuse_eager(eager: object, reason: str) -> None:
+    """Fails a command that can't run in eager mode.
+
+    Raises:
+        click.UsageError: If ``eager`` is set.
+    """
+    if eager:
+        raise click.UsageError(reason)
+
+
+def _refuse_context_parallel(
+    degree: int | None, prefill: bool | None, command: str
+) -> None:
+    """Fails a command whose KV cache can't split positions across ranks.
+
+    MAX's own KV cache manager holds every position on every rank, so a graph
+    built for decode or prefill context parallelism would read positions its
+    rank never stored.
+
+    Raises:
+        click.UsageError: If ``degree`` is above 1 or ``prefill`` is set.
+    """
+    if (degree or 1) > 1 or prefill:
+        raise click.UsageError(
+            f"max {command} runs MAX's own KV cache manager, which doesn't"
+            " split token positions across ranks, so it can't take"
+            " --decode-context-parallel-degree or --prefill-context-parallel."
+            " Export the model with max export and serve the artifact on Mach."
+        )
+
+
+def click_option_requires(
+    requires: str,
+) -> Callable[..., Callable[..., Any]]:
+    """Decorator factory for a ``click.option`` that requires another flag.
+
+    Returns a function that builds a click option whose eager-gating callback
+    rejects the flag when ``--{requires}`` was not supplied. This centralizes
+    the dependency so the flag name is declared exactly once and stays in sync
+    between the CLI option and the error message. Gated flags default to
+    ``None`` or empty tuple, so values outside ``(None, ())`` mean the user
+    supplied them.
+    """
+
+    def option_for_flag(
+        flag: str,
+        **option_kwargs: Any,
+    ) -> Callable[..., Any]:
+        def _callback(
+            ctx: click.Context, param: click.Parameter, value: Any
+        ) -> Any:
+            if value not in (None, ()) and not ctx.params.get(requires):
+                raise click.UsageError(f"--{flag} requires --{requires}.")
+            return value
+
+        def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
+            return click.option(
+                f"--{flag}", callback=_callback, **option_kwargs
+            )(func)
+
+        return decorator
+
+    return option_for_flag
+
+
 @main.command(name="serve", cls=WithLazyPipelineOptions)
 @common_server_options
 @click.option(
@@ -324,8 +399,72 @@ def _apply_interpreter_cache_policy(allow_cold: bool) -> None:
     "refusing on a machine that `max warm-interpreter-cache` has not warmed. "
     "Equivalent to setting MAX_EAGER_ALLOW_LAZY_COMPILE=1.",
 )
+@click.option(
+    "--cascade/--no-cascade",
+    default=False,
+    # Eager so the click_option_requires("cascade") callbacks on the context
+    # knobs below see ctx.params['cascade'] populated before they run.
+    is_eager=True,
+    help=(
+        "Serve via the experimental Cascade server "
+        "(`max.experimental.cascade.serve.main.serve`) instead of the "
+        "standard API server + model worker. The resolved PipelineArgs is "
+        "forwarded to the Cascade entrypoint."
+    ),
+)
+# Cascade-only deployment knobs: these size the Cascade worker process
+# pools and select the worker transport.
+@click_option_requires("cascade")(
+    "cascade-transport",
+    type=click.Choice(["http", "grpc"], case_sensitive=False),
+    default=None,
+    help="[--cascade] Worker transport: ``http`` (default) or ``grpc``. "
+    "Sets the address format expected by ``--cascade-remote-cpu-workers`` / "
+    "``--cascade-remote-gpu-workers``.",
+)
+@click_option_requires("cascade")(
+    "cascade-local-cpu-workers",
+    type=int,
+    default=None,
+    help="[--cascade] Number of local CPU worker subprocesses. "
+    "Defaults to ``2``.",
+)
+@click_option_requires("cascade")(
+    "cascade-local-gpu-workers",
+    type=int,
+    default=None,
+    help=(
+        "[--cascade] Number of local GPU worker subprocesses. When unset, "
+        "auto-sized from ``--devices`` (one per distinct GPU set). With "
+        "``--cascade-local-cpu-workers 0`` and no remote CPU workers, every "
+        "worker runs in the server process and this must be unset or 0."
+    ),
+)
+@click_option_requires("cascade")(
+    "cascade-remote-cpu-workers",
+    multiple=True,
+    type=str,
+    help=(
+        "[--cascade] Addresses of already-running remote CPU workers "
+        "to include in the pool (repeatable). Format depends on "
+        "``--cascade-transport``: an ``http://`` or ``unix://`` URL for "
+        "``http``, ``host:port`` (or ``grpc://host:port``) for ``grpc``."
+    ),
+)
+@click_option_requires("cascade")(
+    "cascade-remote-gpu-workers",
+    multiple=True,
+    type=str,
+    help=(
+        "[--cascade] Addresses of already-running remote GPU workers "
+        "to include in the pool (repeatable). Format depends on "
+        "``--cascade-transport``: an ``http://`` or ``unix://`` URL for "
+        "``http``, ``host:port`` (or ``grpc://host:port``) for ``grpc``."
+    ),
+)
 def cli_serve(
     port: int,
+    host: str | None,
     headless: bool,
     log_prefix: str | None,
     eplb_stats: str | None,
@@ -334,6 +473,11 @@ def cli_serve(
     task_arg: tuple[str, ...],
     pretty_print_config: bool,
     allow_cold_interpreter_cache: bool,
+    cascade_transport: str | None,
+    cascade_local_cpu_workers: int | None,
+    cascade_local_gpu_workers: int | None,
+    cascade_remote_cpu_workers: tuple[str, ...],
+    cascade_remote_gpu_workers: tuple[str, ...],
     **config_kwargs: Any,
 ) -> None:
     """Start a model serving endpoint for inference.
@@ -356,6 +500,9 @@ def cli_serve(
     if port is not None:
         setting_kwargs["MAX_SERVE_PORT"] = port
 
+    if host is not None:
+        setting_kwargs["MAX_SERVE_HOST"] = host
+
     if log_prefix is not None:
         setting_kwargs["MAX_SERVE_LOG_PREFIX"] = log_prefix
 
@@ -374,15 +521,78 @@ def cli_serve(
 
     settings = Settings(**setting_kwargs)
 
+    if (
+        click.get_current_context().get_parameter_source("cascade")
+        is click.core.ParameterSource.DEFAULT
+    ):
+        config_kwargs.pop("cascade", None)
+
     # Initialize config, and serve.
     # Load tokenizer & pipeline.
+    # The flag is checked before the merge, which can reach the network, and
+    # an eager set in a config file after it.
+    refusal = (
+        "--eager is for debugging with max generate or AutoModel, not max "
+        "serve."
+    )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
+    _refuse_context_parallel(
+        config_kwargs.get("decode_context_parallel_degree"),
+        config_kwargs.get("prefill_context_parallel"),
+        "serve",
+    )
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
+    _refuse_context_parallel(
+        pipeline_args.decode_context_parallel_degree,
+        pipeline_args.prefill_context_parallel,
+        "serve",
+    )
     if not pipeline_args.model_path:
         raise click.UsageError(
             "No model specified. Pass --model with a Hugging Face repo ID "
             "or local path, e.g.:\n"
             "  max serve --model modularai/Llama-3.1-8B-Instruct-GGUF"
         )
+
+    if pipeline_args.cascade:
+        import asyncio
+
+        from max.experimental.cascade.deployment.context_config import (
+            ContextConfig,
+        )
+        from max.experimental.cascade.serve.main import (
+            _serve_deployed as cascade_serve,
+        )
+
+        # ``from_flat_kwargs`` already built ``pipeline_args``.
+        # ``_serve_deployed`` uses it unchanged. Its docstring says why
+        # this skips ``serve``.
+
+        # Build the Cascade deployment context from the cascade-only CLI
+        # knobs. Unset values fall through to ContextConfig's defaults so
+        # ``--local-gpu-workers`` unset still auto-sizes from ``--devices``
+        # inside the Cascade entrypoint.
+        context_kwargs: dict[str, Any] = {}
+        for attr, cli_value in (
+            ("transport", cascade_transport),
+            ("local_cpu_workers", cascade_local_cpu_workers),
+            ("local_gpu_workers", cascade_local_gpu_workers),
+            ("remote_cpu_workers", cascade_remote_cpu_workers),
+            ("remote_gpu_workers", cascade_remote_gpu_workers),
+        ):
+            if cli_value is not None and cli_value != ():
+                context_kwargs[attr] = cli_value
+
+        asyncio.run(
+            cascade_serve(
+                pipeline_args=pipeline_args,
+                context_config=ContextConfig(**context_kwargs),
+                host=host if host is not None else settings.host,
+                port=port if port is not None else settings.port,
+            )
+        )
+        return
 
     # Log Pipeline and Sampling Configuration
     if pretty_print_config:
@@ -427,7 +637,8 @@ def cli_serve(
     help=(
         "Images to include along with prompt, specified as URLs."
         " The images are ignored if the model does not support"
-        " image inputs."
+        " image inputs. An image generation model takes one input"
+        " image, if it reads one."
     ),
 )
 @click.option(
@@ -466,6 +677,72 @@ def cli_serve(
     show_default=True,
     help="Number of rows to show in the GPU kernel and Python profile tables.",
 )
+@click.option(
+    "--negative-prompt",
+    type=str,
+    default=None,
+    help="For an image model, what to steer the image away from.",
+)
+@click.option(
+    "--height",
+    type=int,
+    default=None,
+    help="For an image model, the image height in pixels.",
+)
+@click.option(
+    "--width",
+    type=int,
+    default=None,
+    help="For an image model, the image width in pixels.",
+)
+@click.option(
+    "--num-inference-steps",
+    type=click.IntRange(min=1),
+    default=None,
+    help="For an image model, the number of denoising steps.",
+)
+@click.option(
+    "--guidance-scale",
+    type=float,
+    default=None,
+    help="For an image model, the guidance scale.",
+)
+@click.option(
+    "--true-cfg-scale",
+    type=float,
+    default=None,
+    help=(
+        "For an image model, the true classifier-free guidance scale. "
+        "Models that use it need it above 1 and --negative-prompt."
+    ),
+)
+@click.option(
+    "--strength",
+    type=float,
+    default=None,
+    help=(
+        "For an image model, how far the input image is noised, in (0, 1]. "
+        "Z-Image reads it, and FLUX.2 ignores it."
+    ),
+)
+@click.option(
+    "--num-images-per-prompt",
+    type=click.IntRange(min=1),
+    default=1,
+    show_default=True,
+    help="For an image model, the number of images to generate.",
+)
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    default=Path("image.png"),
+    show_default=True,
+    help=(
+        "For an image model, where to save the image. The suffix picks the "
+        "format, several images get -0, -1 and so on, and a path without a "
+        "suffix is a directory, created with its parents if missing."
+    ),
+)
 def cli_pipeline(
     prompt: str,
     image_url: list[str],
@@ -473,6 +750,15 @@ def cli_pipeline(
     profile: bool,
     profile_output: str | None,
     profile_top_n: int,
+    negative_prompt: str | None,
+    height: int | None,
+    width: int | None,
+    num_inference_steps: int | None,
+    guidance_scale: float | None,
+    true_cfg_scale: float | None,
+    strength: float | None,
+    num_images_per_prompt: int,
+    output: Path,
     top_k: int,
     top_p: float,
     min_p: float,
@@ -489,20 +775,49 @@ def cli_pipeline(
     seed: int,
     **config_kwargs: Any,
 ) -> None:
-    """Generate text using the specified model.
+    """Generate text or images using the specified model.
 
     This command runs text generation using the loaded model, optionally
-    accepting image inputs for multimodal models.
+    accepting image inputs for multimodal models. For an image generation
+    model, it saves the generated images, and --image_url gives the input
+    image.
     """
-    from max._entrypoints.cli.generate import generate_text_for_pipeline
+    from max._entrypoints.cli.generate import (
+        check_flags_fit_model,
+        generate_images_for_pipeline,
+        generate_text_for_pipeline,
+        is_image_generation_model,
+    )
+    from max.pipelines import PipelineArgs
     from max.pipelines.context import SamplingParams, SamplingParamsInput
     from max.profiler import maybe_reexec_under_nsys
 
+    ctx = click.get_current_context()
+    # A boolean pair is named by both spellings, since either may be the one
+    # the user passed.
+    set_flags = {
+        param.name: "/".join(param.opts + param.secondary_opts)
+        for param in ctx.command.params
+        if param.name is not None
+        and ctx.get_parameter_source(param.name)
+        not in (None, click.core.ParameterSource.DEFAULT)
+    }
+    _refuse_context_parallel(
+        config_kwargs.get("decode_context_parallel_degree"),
+        config_kwargs.get("prefill_context_parallel"),
+        "generate",
+    )
     # When --profile is set and we have a usable nsys + NVIDIA GPU, re-exec
     # under nsys *before* loading any model state. The child process picks
     # up the same argv, detects it is running under nsys, and runs normally.
     # This keeps the parent process's wasted work to ~zero.
     if profile:
+        # An image model would fail under nsys and hide the error behind
+        # nsys's own, so the flags are checked before the re-exec.
+        args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+        check_flags_fit_model(
+            set_flags, is_image_generation_model(args), args.model_path
+        )
         maybe_reexec_under_nsys(profile_output, top_n=profile_top_n)
 
     params = SamplingParamsInput(
@@ -524,10 +839,43 @@ def cli_pipeline(
     )
 
     # Load tokenizer & pipeline.
-    from max.pipelines import PipelineArgs
     from max.pipelines.lib import MAXModelConfig
 
+    # Leaves the field unset unless the user passed the flag, so the AMD
+    # default in _with_debug_defaults can apply.
+    if (
+        click.get_current_context().get_parameter_source(
+            "disable_vendor_blas_fallback"
+        )
+        is click.core.ParameterSource.DEFAULT
+    ):
+        config_kwargs.pop("disable_vendor_blas_fallback", None)
+
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_context_parallel(
+        pipeline_args.decode_context_parallel_degree,
+        pipeline_args.prefill_context_parallel,
+        "generate",
+    )
+    image_model = is_image_generation_model(pipeline_args)
+    check_flags_fit_model(set_flags, image_model, pipeline_args.model_path)
+    if image_model:
+        generate_images_for_pipeline(
+            pipeline_args,
+            prompt,
+            image_url,
+            output,
+            negative_prompt=negative_prompt,
+            height=height,
+            width=width,
+            num_inference_steps=num_inference_steps,
+            guidance_scale=guidance_scale,
+            true_cfg_scale=true_cfg_scale,
+            strength=strength,
+            num_images_per_prompt=num_images_per_prompt,
+            seed=seed if seed is not None else 0,
+        )
+        return
     model_config = MAXModelConfig.from_pipeline_args(pipeline_args)
     generate_text_for_pipeline(
         pipeline_args,
@@ -541,6 +889,65 @@ def cli_pipeline(
         profile=profile,
         profile_top_n=profile_top_n,
     )
+
+
+@main.command(name="quantize", cls=WithLazyPipelineOptions)
+@click.option(
+    "--export-path",
+    type=click.Path(file_okay=False, path_type=Path),
+    required=True,
+    help="Write a quantized checkpoint to this directory.",
+)
+def quantize(
+    export_path: Path,
+    **config_kwargs: Any,
+) -> None:
+    """Quantize the specified model and write a quantized checkpoint.
+
+    Requires ``--export-path`` and ``--targets``. On-the-fly settings
+    (``--quantization-format``, ``--targets``, ``--error-report-dir``,
+    ``--verbose``, ``--mse-sweep-scales``) come from the pipeline's
+    quantization config; the format defaults to ``nvfp4`` when unset.
+    For graph-level error measurement without a checkpoint export, use
+    ``max export``.
+    """
+    from max._entrypoints.cli.quantize import quantize_pipeline
+    from max.pipelines import PipelineArgs
+
+    # Checkpoint export always needs a format; match the previous CLI default.
+    if not config_kwargs.get("quantization_format"):
+        config_kwargs["quantization_format"] = "nvfp4"
+    if not config_kwargs.get("targets"):
+        raise click.ClickException(
+            "Pass --targets with one or more tensor-name regexes of the"
+            " linears to quantize."
+        )
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    if pipeline_args.error_report_dir is not None:
+        _refuse_eager(
+            pipeline_args.runtime.eager,
+            "--error-report-dir names each weight by its checkpoint path, "
+            "which only a compiled graph keeps, so it can't be combined with "
+            "--eager.",
+        )
+    quantize_pipeline(pipeline_args, export_path=export_path)
+
+
+@main.command(name="quantize-report")
+@click.argument(
+    "directory",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+def quantize_report(directory: Path) -> None:
+    """Rebuild the quantization error report from a finished run.
+
+    Reads the dumps an ``--error-report-dir DIRECTORY`` run left behind,
+    prints the per-layer table and rewrites quant_error_report.json. Needs
+    neither the model nor a GPU.
+    """
+    from max._entrypoints.cli.quant_error_report import write_report
+
+    write_report(directory)
 
 
 @main.command(name="encode", cls=WithLazyPipelineOptions)
@@ -571,8 +978,7 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
     pipeline_encode(pipeline_args, prompt=prompt, num_warmups=num_warmups)
 
 
-@main.command(name="warm-cache", cls=WithLazyPipelineOptions)
-@click.option(
+_virtual_target_option = click.option(
     "--target",
     type=str,
     default=None,
@@ -582,8 +988,13 @@ def encode(prompt: str, num_warmups: int, **config_kwargs: Any) -> None:
         "compilation without requiring physical hardware."
     ),
 )
+
+
+@main.command(name="warm-cache", cls=WithLazyPipelineOptions)
+@_virtual_target_option
 def cli_warm_cache(target: str | None, **config_kwargs) -> None:
     """Load and compile the model to prepare caches."""
+    from max.engine import CompilationStopped
     from max.pipelines import PIPELINE_REGISTRY, PipelineArgs, PipelineConfig
 
     # Log what we're doing if target mode is enabled
@@ -595,8 +1006,165 @@ def cli_warm_cache(target: str | None, **config_kwargs) -> None:
             f"Compiling for target: {api} ({target_arch}) using virtual devices"
         )
 
+    refusal = (
+        "--eager runs the decoder without compiling it, so max warm-cache has "
+        "no decoder to warm. Drop --eager, or run max warm-interpreter-cache "
+        "to prepare the ops eager mode runs."
+    )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
     pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
-    PIPELINE_REGISTRY.retrieve(PipelineConfig.from_args(pipeline_args))
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
+    # Resolve the task rather than taking `retrieve`'s text-generation default,
+    # which sends a diffusion pipeline down a branch that reads the main
+    # model's HuggingFace config. Diffusion pipelines have no "main" model, so
+    # warming their cache failed before compiling anything. Architectures
+    # serving several tasks still resolve to text generation.
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task(
+        pipeline_config.models.main_architecture_name
+    )
+    try:
+        PIPELINE_REGISTRY.retrieve(pipeline_config, task=task)
+    except CompilationStopped as stopped:
+        # `pre-jit` asked for the emitted Mojo and nothing more; the
+        # pipeline has nothing left to warm.
+        logging.info(str(stopped))
+
+
+@main.command(name="export", cls=WithLazyPipelineOptions)
+@_virtual_target_option
+@click.option(
+    "--output",
+    type=click.Path(path_type=Path),
+    required=True,
+    help=(
+        "Where to write the pipeline artifact directory. ``.m`` is appended"
+        " if missing. The path must not exist."
+    ),
+)
+@click.option(
+    "--format-spec",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help=(
+        "The FormatSpec document to store in the artifact, in place of the"
+        " one the architecture names for the checkpoint."
+    ),
+)
+@click.option(
+    "--prefill-token-budget",
+    type=click.IntRange(min=1),
+    default=None,
+    help=(
+        "Prefill tokens the serving engine's scheduler gives one step, per"
+        " data-parallel replica, excluding draft rows. Defaults to the"
+        " compiled input capacity, which it doesn't change."
+    ),
+)
+@click.option(
+    "--prefill-graph-max-tokens",
+    type=click.IntRange(min=0),
+    default=0,
+    help=(
+        "The most tokens per replica a serving engine captures a prefill"
+        " step's device graph for, capped at the prefill token budget. 0"
+        " (the default) captures no prefill step."
+    ),
+)
+@click.option(
+    "--target",
+    type=str,
+    default=None,
+    help=(
+        "Target API and architecture to compile for (e.g., cuda, cuda:sm_90, "
+        "hip:gfx942, metal). When specified, uses virtual devices for "
+        "compilation without requiring physical hardware."
+    ),
+)
+def cli_export(
+    output: Path,
+    format_spec: Path | None,
+    prefill_token_budget: int | None,
+    prefill_graph_max_tokens: int,
+    target: str | None,
+    **config_kwargs: Any,
+) -> None:
+    """Build the pipeline and export it as a ``.m`` pipeline artifact.
+
+    Takes the same pipeline options as ``serve`` and ``generate`` and builds
+    the pipeline the same way, so the artifact holds the graphs a served
+    pipeline compiles, keyed by role, and the overlap helper graphs a serving
+    engine may load. For an architecture with weight rules, it also holds the
+    rules its checkpoint loads through. With ``--target``, it compiles for
+    that target on virtual devices, so no GPU is needed.
+
+    With ``--quantization-format`` and ``--targets``, the named linears
+    quantize inside those graphs via the pipeline's on-the-fly quantization
+    config. The weights the MEFs load stay the checkpoint's.
+
+    With ``--error-report-dir``, the graphs also measure each quantized
+    weight's error. The print stays in the MEF and runs whenever the graph
+    runs.
+    """
+    from max._artifact import ArtifactError
+    from max._artifact.export import export_pipeline
+    from max.pipelines import PipelineArgs, PipelineConfig
+
+    if target:
+        # The device options already switched to virtual devices for it.
+        logging.info("Exporting for target %s on virtual devices", target)
+        # Virtual devices have no memory to size the batch from, and the
+        # artifact records the batch size and captures every size up to it.
+        if config_kwargs.get("max_batch_size") is None:
+            raise click.UsageError(
+                "--target compiles on virtual devices, which cannot size the"
+                " batch; pass --max-batch-size"
+            )
+
+    refusal = (
+        "--eager runs the decoder without compiling it, so max export has "
+        "nothing to export. Drop --eager."
+    )
+    ctx = click.get_current_context()
+    quantization_format = config_kwargs.get("quantization_format")
+    targets = config_kwargs.get("targets") or ()
+    if (
+        quantization_format is None
+        and ctx.get_parameter_source("targets")
+        is not click.core.ParameterSource.DEFAULT
+    ):
+        raise click.ClickException(
+            "Pass --quantization-format to insert the --targets quantizers"
+            " into the exported graphs."
+        )
+    if quantization_format is not None and not targets:
+        raise click.ClickException(
+            "Pass --targets with one or more tensor-name regexes of the"
+            " linears to quantize."
+        )
+    if (
+        config_kwargs.get("error_report_dir") is not None
+        and quantization_format is None
+    ):
+        raise click.ClickException(
+            "--error-report-dir measures the --quantization-format"
+            " quantizers, so it needs that option."
+        )
+    _refuse_eager(config_kwargs.get("eager"), refusal)
+    pipeline_args = PipelineArgs.from_flat_kwargs(**config_kwargs)
+    _refuse_eager(pipeline_args.runtime.eager, refusal)
+    pipeline_config = PipelineConfig.from_args(pipeline_args)
+    try:
+        dest = export_pipeline(
+            pipeline_config,
+            output,
+            format_spec,
+            prefill_token_budget=prefill_token_budget,
+            prefill_capture_tokens=prefill_graph_max_tokens,
+        )
+    except ArtifactError as e:
+        raise click.ClickException(str(e)) from e
+    click.echo(f"Exported pipeline artifact to {dest}")
 
 
 def _render_warm_progress(

@@ -158,12 +158,11 @@ with the `is_owned` parameter. When set, `__del__` walks the list in reverse and
 destroys each element, matching normal argument teardown order.
 
 ```mojo
-@__parameter
-def destroy_elem(_idx: Int, var arg: ExplicitDelOnly):
+def destroy_elem(idx: Int, var arg: ExplicitDelOnly):
     arg^.destroy()
 
 def take_owned_linear(var *args: ExplicitDelOnly):
-    args^.consume_elements[destroy_elem]()
+    args^.consume_elements(destroy_elem)
 
 # Caller passes temporaries; callee consumes them one by one.
 take_owned_linear(ExplicitDelOnly(5), ExplicitDelOnly(10))
@@ -176,7 +175,7 @@ the owned view of the variadic bundle.
 ### `consume_elements` and APIs that want `var` elements
 
 Many APIs that sink a run of values use the same shape as `List`’s list-literal
-constructor: `var *values: Self.T` plus `values^.consume_elements[...]` to move
+constructor: `var *values: Self.T` plus `values^.consume_elements(...)` to move
 each argument into freshly allocated storage.
 
 ### Printing and debugging

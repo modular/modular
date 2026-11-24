@@ -13,7 +13,7 @@
 """Shared helpers for gfx950 attention kernels.
 
 Warp + fragment layout types are constructed inline in the structs that
-need them (`Softmax`, `MaskTileOp`), using TileLayout / `Coord` Layout
+need them (`Softmax`, `MaskTileOp`), using Layout / `Coord` Layout
 Algebra. Selecting concrete Layout specializations across an `Int` struct
 parameter at the struct field level (rather than a ternary between two
 different `Layout[...]` specializations) avoids the Mojo conditional-type
@@ -24,7 +24,7 @@ from max.gpu import warp_id as get_warp_id
 from std.math.uutils import udivmod
 
 
-@always_inline
+@inline(.always)
 def get_warp_coords[BN: Int, WN: Int]() -> Tuple[Int, Int]:
     """Return `(warp_row, warp_col)` for the current warp given a BN×WN grid.
 

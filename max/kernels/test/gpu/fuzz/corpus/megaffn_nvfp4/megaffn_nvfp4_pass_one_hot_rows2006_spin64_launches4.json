@@ -1,0 +1,20 @@
+{
+  "target": "megaffn_nvfp4",
+  "spec": {
+    "shape_class": 1,
+    "num_active": 16,
+    "rows": 2006,
+    "tok_seed": 1,
+    "est_avg_m": 0,
+    "walk": 0,
+    "spin_kind": 0,
+    "spin_sms": 64,
+    "spin_us": 2000,
+    "spin_smem": 1,
+    "launches": 4
+  },
+  "verdict": "PASS",
+  "oracle": "diff",
+  "detail": "One-hot routing (all 2006 rows on one of 16 experts) with 64 SMs held by a neighbour: the 2-CTA dynamic-claim walk on mirrored rings, four launches on one arrival buffer.",
+  "findings": []
+}

@@ -20,19 +20,24 @@ from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from max.gpu.compute.mma import ld_matrix, mma
 from max.gpu.compute.mma_util import store_matrix_d
-from layout import Coord, Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from layout.tensor_core import get_fragment_size, get_mma_shape
 from linalg.matmul.gpu import matmul_kernel_naive
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
 from std.utils.numerics import get_accum_type
 
 
-def test_ldmatrix_fp32(
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    a_ptr: ImmPointer[Float32, ImmutAnyOrigin],
-    b_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+def test_ldmatrix_fp32[
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+](
+    c_ptr: MutPointer[Float32, c_origin],
+    a_ptr: ImmPointer[Float32, a_origin],
+    b_ptr: ImmPointer[Float32, b_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -68,10 +73,14 @@ def test_ldmatrix_fp32(
     barrier()
 
     var a_reg = ld_matrix[4](
-        a_shared + umod(lane_id(), 16) * 8 + ufloordiv(lane_id(), 16) * 4
+        a_shared.unsafe_offset(umod(lane_id(), 16) * 8).unsafe_offset(
+            ufloordiv(lane_id(), 16) * 4
+        )
     )
     var b_reg = ld_matrix[2](
-        b_shared + umod(lane_id(), 8) * 8 + ufloordiv(lane_id(), 8) * 4
+        b_shared.unsafe_offset(umod(lane_id(), 8) * 8).unsafe_offset(
+            ufloordiv(lane_id(), 8) * 4
+        )
     )
 
     mma(d_reg, a_reg, b_reg, d_reg)
@@ -79,11 +88,15 @@ def test_ldmatrix_fp32(
 
 
 def test_ldmatrix_transposed[
-    input_type: DType, output_type: DType
+    input_type: DType,
+    output_type: DType,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
 ](
-    c_ptr: MutPointer[Scalar[output_type], MutAnyOrigin],
-    a_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
-    b_ptr: ImmPointer[Scalar[input_type], ImmutAnyOrigin],
+    c_ptr: MutPointer[Scalar[output_type], c_origin],
+    a_ptr: ImmPointer[Scalar[input_type], a_origin],
+    b_ptr: ImmPointer[Scalar[input_type], b_origin],
 ):
     comptime accum_type = get_accum_type[input_type]()
     comptime mma_shape = get_mma_shape[input_type, accum_type]()
@@ -115,10 +128,14 @@ def test_ldmatrix_transposed[
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + umod(lane, M) * K + ufloordiv(ufloordiv(lane, M) * K, 2)
+        a_shared.unsafe_offset(umod(lane, M) * K).unsafe_offset(
+            ufloordiv(ufloordiv(lane, M) * K, 2)
+        )
     )
     var b_reg = ld_matrix[b_frag_size, transpose=True](
-        b_shared + umod(lane, K) * N + ufloordiv(ufloordiv(lane, K) * N, 2)
+        b_shared.unsafe_offset(umod(lane, K) * N).unsafe_offset(
+            ufloordiv(ufloordiv(lane, K) * N, 2)
+        )
     )
 
     mma(d, a_reg, b_reg, d)
@@ -145,10 +162,10 @@ def check_ldmatrix_transposed_bf16[
     comptime N = mma_shape[1]
     comptime K = mma_shape[2]
 
-    var a_host = alloc[Scalar[input_type]](M * K)
-    var b_host = alloc[Scalar[input_type]](K * N)
-    var c_host = alloc[Scalar[output_type]](M * N)
-    var c_host_ref = alloc[Scalar[output_type]](M * N)
+    var a_host = unsafe_alloc[Scalar[input_type]](M * K)
+    var b_host = unsafe_alloc[Scalar[input_type]](K * N)
+    var c_host = unsafe_alloc[Scalar[output_type]](M * N)
+    var c_host_ref = unsafe_alloc[Scalar[output_type]](M * N)
 
     for m in range(M):
         for k in range(K):
@@ -170,37 +187,30 @@ def check_ldmatrix_transposed_bf16[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    comptime kernel_type = test_ldmatrix_transposed[input_type, output_type]
+    comptime kernel_type = test_ldmatrix_transposed[
+        input_type,
+        output_type,
+        c_origin=origin_of(c_device),
+        a_origin=origin_of(a_device),
+        b_origin=origin_of(b_device),
+    ]
     ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
         b_device,
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     ctx.enqueue_copy(c_host, c_device)
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function
-    # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(Coord(M, K)),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(Coord(K, N)),
-    )
+    var a_tt = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device, row_major(K, N)).as_imm()
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16
@@ -229,8 +239,8 @@ def check_ldmatrix_transposed_bf16[
     ctx.synchronize()
 
     for i in range(M * N):
-        var out_val = c_host.load(i)
-        var out_ref = c_host_ref.load(i)
+        var out_val = c_host.unsafe_load(i)
+        var out_ref = c_host_ref.unsafe_load(i)
         assert_almost_equal(out_val, out_ref)
 
     _ = a_device
@@ -249,10 +259,10 @@ def check_ldmatrix(
 ) raises:
     print("== test ldmatrix instruction")
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = unsafe_alloc[Float32](M * K)
+    var b_host = unsafe_alloc[Float32](K * N)
+    var c_host = unsafe_alloc[Float32](M * N)
+    var c_host_ref = unsafe_alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -279,7 +289,11 @@ def check_ldmatrix(
     comptime MMA_N = 8
     comptime MMA_K = 8
 
-    comptime kernel_type = test_ldmatrix_fp32
+    comptime kernel_type = test_ldmatrix_fp32[
+        c_origin=origin_of(c_device),
+        a_origin=origin_of(a_device),
+        b_origin=origin_of(b_device),
+    ]
     ctx.enqueue_function[kernel_type](
         c_device,
         a_device,
@@ -288,7 +302,7 @@ def check_ldmatrix(
         Int32(N),
         Int32(K),
         grid_dim=1,
-        block_dim=WARP_SIZE,
+        block_dim=ctx.default_device_info.warp_size,
     )
 
     ctx.synchronize()
@@ -296,25 +310,12 @@ def check_ldmatrix(
     ctx.enqueue_copy(c_host, c_device)
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function
-    # requires exact type matches).
     var c_ref_tt = TileTensor(
         c_device_ref,
-        row_major(Coord(M, N)),
+        row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(Coord(M, K)),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(Coord(K, N)),
-    )
+    var a_tt = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device, row_major(K, N)).as_imm()
 
     # Run naive matmul.
     comptime BLOCK_DIM = 16

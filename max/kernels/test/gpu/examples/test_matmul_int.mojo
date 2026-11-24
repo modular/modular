@@ -21,17 +21,20 @@ from std.memory import (
     unsafe_memset_zero,
     unsafe_stack_allocation,
 )
-from layout import Coord, Idx, TileTensor, row_major
+from std.memory.alloc import unsafe_alloc
+from layout import TileTensor, row_major
 
 comptime TILE_SZ_A = 128
 comptime TILE_SZ_B = 16
 comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
-def matmul(
-    a_ptr: MutPointer[Int, MutAnyOrigin],
-    b_ptr: MutPointer[Int, MutAnyOrigin],
-    c_ptr: MutPointer[Int, MutAnyOrigin],
+def matmul[
+    a_origin: MutOrigin, b_origin: MutOrigin, c_origin: MutOrigin
+](
+    a_ptr: MutPointer[Int, a_origin],
+    b_ptr: MutPointer[Int, b_origin],
+    c_ptr: MutPointer[Int, c_origin],
     m_dev: Int32,
     n_dev: Int32,
     k_dev: Int32,
@@ -40,9 +43,9 @@ def matmul(
     var m = Int(m_dev)
     var n = Int(n_dev)
     var k = Int(k_dev)
-    var a = TileTensor(a_ptr, row_major(Coord(m, k)))
-    var b = TileTensor(b_ptr, row_major(Coord(k, n)))
-    var c = TileTensor(c_ptr, row_major(Coord(m, n)))
+    var a = TileTensor(a_ptr, row_major(m, k))
+    var b = TileTensor(b_ptr, row_major(k, n))
+    var c = TileTensor(c_ptr, row_major(m, n))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -98,7 +101,7 @@ def matmul(
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
         if row < m and col + out_idx < n:
-            c[row, col + out_idx] = c_reg.load(out_idx)
+            c[row, col + out_idx] = c_reg.unsafe_load(out_idx)
 
 
 def run_matmul(ctx: DeviceContext) raises:
@@ -108,9 +111,9 @@ def run_matmul(ctx: DeviceContext) raises:
     comptime n = 512
     comptime k = 512
 
-    var a_host_ptr = alloc[Int](m * k)
-    var b_host_ptr = alloc[Int](k * n)
-    var c_host_ptr = alloc[Int](m * n)
+    var a_host_ptr = unsafe_alloc[Int](m * k)
+    var b_host_ptr = unsafe_alloc[Int](k * n)
+    var c_host_ptr = unsafe_alloc[Int](m * n)
 
     var a_host = TileTensor(a_host_ptr, row_major[m, k]())
     var b_host = TileTensor(b_host_ptr, row_major[k, n]())
@@ -135,7 +138,9 @@ def run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function[matmul](
+    ctx.enqueue_function[
+        matmul[origin_of(a_device), origin_of(b_device), origin_of(c_device)]
+    ](
         a_device,
         b_device,
         c_device,
@@ -151,7 +156,7 @@ def run_matmul(ctx: DeviceContext) raises:
 
     for i in range(10):
         for j in range(10):
-            print("at index = [", i, ",", j, "]the value is", c_host[i, j])
+            print(t"at index = [ {i} , {j} ]the value is {c_host[i, j]}")
 
 
 def main() raises:

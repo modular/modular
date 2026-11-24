@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for scatter."""
 
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import builtin, kgen, mo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -22,8 +22,7 @@ from ..type import DeviceRef
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
 from .nonzero import nonzero
-from .transfer_to import transfer_to
-from .validation import _check_device_placement, assert_same_device
+from .validation import assert_same_device
 
 
 def scatter(
@@ -63,10 +62,8 @@ def scatter(
 
     Raises:
         ValueError: If ``axis`` is out of range, if dtypes mismatch, if
-            ``indices`` dtype is not int32/int64, if ``input``, ``updates``,
-            and ``indices`` aren't on the same device, or if any input is on a
-            non-CPU device and
-            ``strict_device_placement=DevicePlacementPolicy.Error``.
+            ``indices`` dtype is not int32/int64, or if ``input``, ``updates``,
+            and ``indices`` aren't on the same device.
         Error: If ``input``, ``updates``, and ``indices`` don't have equal
             rank, if ``updates.shape`` and ``indices.shape`` differ, or if any
             ``indices`` dimension exceeds the corresponding ``input``
@@ -95,15 +92,8 @@ def scatter(
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
-    old_device = input.device if not input.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.scatter", "TODO(GEX-2197).")
-        input = transfer_to(input, DeviceRef.CPU())
-        updates = transfer_to(updates, DeviceRef.CPU())
-        indices = transfer_to(indices, DeviceRef.CPU())
-    # TODO(GEX-2197): Add GPU kernel support for scatter.
-    result = Graph.current._add_op_generated(
-        rmo.MoScatterOp,
+    return Graph.current._add_op_generated(
+        mo.ScatterOp,
         result=input.type,
         input=input,
         updates=updates,
@@ -111,9 +101,6 @@ def scatter(
         axis=builtin.IntegerAttr(builtin.IndexType(), axis),
         output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result
 
 
 def scatter_nd(
@@ -188,7 +175,7 @@ def scatter_nd(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdOp,
+        mo.ScatterNdOp,
         input.type,
         input,
         updates,
@@ -288,7 +275,7 @@ def scatter_nd_add(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdAddOp,
+        mo.ScatterNdAddOp,
         input.type,
         input,
         updates,
@@ -389,7 +376,7 @@ def scatter_nd_max(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdMaxOp,
+        mo.ScatterNdMaxOp,
         input.type,
         input,
         updates,
@@ -490,7 +477,7 @@ def scatter_nd_min(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdMinOp,
+        mo.ScatterNdMinOp,
         input.type,
         input,
         updates,
@@ -591,7 +578,7 @@ def scatter_nd_mul(
     assert_same_device(input=input, updates=updates, indices=indices)
 
     return Graph.current._add_op_generated(
-        rmo.MoScatterNdMulOp,
+        mo.ScatterNdMulOp,
         input.type,
         input,
         updates,
@@ -673,10 +660,8 @@ def scatter_add(
 
     Raises:
         ValueError: If ``axis`` is out of range, if dtypes mismatch, if
-            ``indices`` dtype is not int32/int64, if ``input``, ``updates``,
-            and ``indices`` aren't on the same device, or if any input is on a
-            non-CPU device and
-            ``strict_device_placement=DevicePlacementPolicy.Error``.
+            ``indices`` dtype is not int32/int64, or if ``input``, ``updates``,
+            and ``indices`` aren't on the same device.
         Error: If ``input``, ``updates``, and ``indices`` don't have equal
             rank, if ``updates.shape`` and ``indices.shape`` differ, or if any
             ``indices`` dimension exceeds the corresponding ``input``
@@ -705,17 +690,10 @@ def scatter_add(
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
-    old_device = input.device if not input.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.scatter_add", "TODO(GEX-2197).")
-        input = transfer_to(input, DeviceRef.CPU())
-        updates = transfer_to(updates, DeviceRef.CPU())
-        indices = transfer_to(indices, DeviceRef.CPU())
-    # TODO(GEX-2197): Add GPU kernel support for scatter_add.
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
-    result = Graph.current._add_op_generated(
-        rmo.MoScatterAddOp,
+    return Graph.current._add_op_generated(
+        mo.ScatterAddOp,
         input.type,
         input,
         updates,
@@ -723,9 +701,6 @@ def scatter_add(
         axis_constant,
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result
 
 
 def scatter_max(
@@ -802,10 +777,8 @@ def scatter_max(
 
     Raises:
         ValueError: If ``axis`` is out of range, if dtypes mismatch, if
-            ``indices`` dtype is not int32/int64, if ``input``, ``updates``,
-            and ``indices`` aren't on the same device, or if any input is on a
-            non-CPU device and
-            ``strict_device_placement=DevicePlacementPolicy.Error``.
+            ``indices`` dtype is not int32/int64, or if ``input``, ``updates``,
+            and ``indices`` aren't on the same device.
         Error: If ``input``, ``updates``, and ``indices`` don't have equal
             rank, if ``updates.shape`` and ``indices.shape`` differ, or if any
             ``indices`` dimension exceeds the corresponding ``input``
@@ -834,16 +807,10 @@ def scatter_max(
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
-    old_device = input.device if not input.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.scatter_max", "TODO(GEX-2197).")
-        input = transfer_to(input, DeviceRef.CPU())
-        updates = transfer_to(updates, DeviceRef.CPU())
-        indices = transfer_to(indices, DeviceRef.CPU())
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
-    result = Graph.current._add_op_generated(
-        rmo.MoScatterMaxOp,
+    return Graph.current._add_op_generated(
+        mo.ScatterMaxOp,
         input.type,
         input,
         updates,
@@ -851,9 +818,6 @@ def scatter_max(
         axis_constant,
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result
 
 
 def scatter_min(
@@ -932,10 +896,8 @@ def scatter_min(
 
     Raises:
         ValueError: If ``axis`` is out of range, if dtypes mismatch, if
-            ``indices`` dtype is not int32/int64, if ``input``, ``updates``,
-            and ``indices`` aren't on the same device, or if any input is on a
-            non-CPU device and
-            ``strict_device_placement=DevicePlacementPolicy.Error``.
+            ``indices`` dtype is not int32/int64, or if ``input``, ``updates``,
+            and ``indices`` aren't on the same device.
         Error: If ``input``, ``updates``, and ``indices`` don't have equal
             rank, if ``updates.shape`` and ``indices.shape`` differ, or if any
             ``indices`` dimension exceeds the corresponding ``input``
@@ -964,16 +926,10 @@ def scatter_min(
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
-    old_device = input.device if not input.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.scatter_min", "TODO(GEX-2197).")
-        input = transfer_to(input, DeviceRef.CPU())
-        updates = transfer_to(updates, DeviceRef.CPU())
-        indices = transfer_to(indices, DeviceRef.CPU())
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
-    result = Graph.current._add_op_generated(
-        rmo.MoScatterMinOp,
+    return Graph.current._add_op_generated(
+        mo.ScatterMinOp,
         input.type,
         input,
         updates,
@@ -981,9 +937,6 @@ def scatter_min(
         axis_constant,
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result
 
 
 def scatter_mul(
@@ -1059,10 +1012,8 @@ def scatter_mul(
 
     Raises:
         ValueError: If ``axis`` is out of range, if dtypes mismatch, if
-            ``indices`` dtype is not int32/int64, if ``input``, ``updates``,
-            and ``indices`` aren't on the same device, or if any input is on a
-            non-CPU device and
-            ``strict_device_placement=DevicePlacementPolicy.Error``.
+            ``indices`` dtype is not int32/int64, or if ``input``, ``updates``,
+            and ``indices`` aren't on the same device.
         Error: If ``input``, ``updates``, and ``indices`` don't have equal
             rank, if ``updates.shape`` and ``indices.shape`` differ, or if any
             ``indices`` dimension exceeds the corresponding ``input``
@@ -1091,16 +1042,10 @@ def scatter_mul(
         )
 
     assert_same_device(input=input, updates=updates, indices=indices)
-    old_device = input.device if not input.device.is_cpu() else None
-    if old_device is not None:
-        _check_device_placement("ops.scatter_mul", "TODO(GEX-2197).")
-        input = transfer_to(input, DeviceRef.CPU())
-        updates = transfer_to(updates, DeviceRef.CPU())
-        indices = transfer_to(indices, DeviceRef.CPU())
     axis_constant = constant(axis, DType.int64, DeviceRef.CPU())
 
-    result = Graph.current._add_op_generated(
-        rmo.MoScatterMulOp,
+    return Graph.current._add_op_generated(
+        mo.ScatterMulOp,
         input.type,
         input,
         updates,
@@ -1108,9 +1053,6 @@ def scatter_mul(
         axis_constant,
         kgen.ParamDeclArrayAttr([]),
     )[0].tensor
-    if old_device is not None:
-        return transfer_to(result, old_device)
-    return result
 
 
 def masked_scatter(

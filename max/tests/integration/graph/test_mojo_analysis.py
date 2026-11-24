@@ -16,10 +16,22 @@ import os
 from pathlib import Path
 
 import pytest
-from max.driver import accelerator_count
+from max.driver import (
+    accelerator_api,
+    accelerator_architecture_name,
+    accelerator_count,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, TensorType, _OpaqueType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Graph,
+    TensorType,
+    TensorValue,
+    _OpaqueType,
+    ops,
+)
 
 
 @pytest.fixture
@@ -88,6 +100,110 @@ def test_my_add_valid(
 
     # Compile the model
     session.load(graph)
+
+
+def test_api_scoped_kernel_valid(
+    session: InferenceSession, kernel_verification_ops_path: Path
+) -> None:
+    # `ops.custom` verifies against a registry built over the kernel library
+    # alone; the device's `api` comes from the graph's device info mapping.
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
+    graph = Graph(
+        "test_api_scoped_kernel_valid",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+        graph.output(
+            ops.custom(
+                "my_add_cpu_api",
+                device=DeviceRef.CPU(),
+                values=[graph.inputs[0], graph.inputs[1]],
+                out_types=[tensor_type],
+            )[0]
+        )
+
+    session.load(graph)
+
+
+def test_api_scoped_kernel_in_cond_valid(
+    kernel_verification_ops_path: Path,
+) -> None:
+    # `ops.cond` builds each branch in a block outside the graph's module, so
+    # the branch's custom op still needs the graph's device info to match.
+    device = DeviceRef.CPU()
+    tensor_type = TensorType(DType.float32, [64], device=device)
+    graph = Graph(
+        "test_api_scoped_kernel_in_cond_valid",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+        x, y = graph.inputs
+
+        def add() -> TensorValue:
+            return ops.custom(
+                "my_add_cpu_api",
+                device=device,
+                values=[x, y],
+                out_types=[tensor_type],
+            )[0].tensor
+
+        graph.output(
+            *ops.cond(
+                ops.constant(True, DType.bool, device=device),
+                [tensor_type],
+                add,
+                add,
+            )
+        )
+
+
+def _on_blackwell() -> bool:
+    # `accelerator_architecture_name` raises on a host without an accelerator.
+    return (
+        accelerator_count() > 0
+        and accelerator_api() == "cuda"
+        and accelerator_architecture_name().startswith("sm_10")
+    )
+
+
+@pytest.mark.skipif(
+    not _on_blackwell(),
+    reason="both registrations hold only on a Blackwell GPU",
+)
+def test_ambiguous_kernel_selection(
+    kernel_verification_ops_path: Path,
+) -> None:
+    # Hopper-and-Blackwell and Ampere-and-Blackwell kernels each cover an
+    # architecture that the other does not, and both hold on Blackwell, so
+    # `ops.custom` reports the tie, with each candidate and the Mojo source
+    # that declares it.
+    tensor_type = TensorType(DType.float32, [64], device=DeviceRef.GPU())
+    graph = Graph(
+        "test_ambiguous_kernel_selection",
+        input_types=[tensor_type, tensor_type],
+        output_types=[tensor_type],
+    )
+    with graph:
+        graph._import_kernels([kernel_verification_ops_path])
+
+        with pytest.raises(ValueError) as err:
+            ops.custom(
+                "my_add_ambiguous",
+                device=DeviceRef.GPU(),
+                values=[graph.inputs[0], graph.inputs[1]],
+                out_types=[tensor_type],
+            )
+    message = str(err.value)
+    assert "ambiguous kernel resolution for 'my_add_ambiguous'" in message
+    assert "MyAddHopperBlackwell: cond=" in message
+    assert "MyAddAmpereBlackwell: cond=" in message
+    assert 'arch("sm_90a")' in message
+    assert 'arch("sm_80")' in message
+    assert "__init__.mojo" in message
 
 
 def test_my_add_invalid_inputs_count(
@@ -312,25 +428,23 @@ def test_variadic_ins_outs_valid(
     session.load(graph)
 
 
-def test_variadic_size_0_invalid(kernel_verification_ops_path: Path) -> None:
+def test_variadic_size_0_valid(kernel_verification_ops_path: Path) -> None:
+    # A `TensorTuple` variadic may bind no operands.
     tensor_type = TensorType(DType.float32, [64], device=DeviceRef.CPU())
     graph = Graph(
-        "test_variadic_size_0_invalid",
+        "test_variadic_size_0_valid",
         input_types=[tensor_type],
         output_types=[tensor_type],
     )
     with graph:
         graph._import_kernels([kernel_verification_ops_path])
-        with pytest.raises(ValueError) as err:
+        graph.output(
             ops.custom(
                 "variadic_add",
                 device=DeviceRef.CPU(),
                 values=[graph.inputs[0]],
                 out_types=[tensor_type],
-            )
-        assert (
-            "Could not provide all input arguments to op 'variadic_add': missing operands starting from argument named 'input'"
-            in str(err.value)
+            )[0]
         )
 
 
@@ -378,3 +492,88 @@ def test_mutable_input_tensor_valid(
 
     # Compile the model
     session.load(graph)
+
+
+def _reduction_types(dtype: DType, shapes: list[list[int]]) -> list[TensorType]:
+    return [
+        TensorType(dtype, shape, device=DeviceRef.CPU()) for shape in shapes
+    ]
+
+
+def test_reduction_valid() -> None:
+    input_types = _reduction_types(DType.float32, [[8, 128]])
+    with Graph("test_reduction_valid", input_types=input_types) as graph:
+        ops.custom(
+            "mo.reduce.add",
+            device=DeviceRef.CPU(),
+            values=list(graph.inputs),
+            out_types=_reduction_types(DType.float32, [[8, 1]]),
+        )
+
+
+@pytest.mark.parametrize(
+    ("symbol", "inputs", "outputs", "message"),
+    [
+        (
+            "mo.reduce.add",
+            [[8, 128], [8, 128]],
+            [(DType.float32, [8, 1])],
+            "takes one input, got 2",
+        ),
+        (
+            "reduction.arg_max.tmp",
+            [[8, 128]],
+            [(DType.float32, [8, 1])],
+            "has 2 output fields, but the op has 1 results",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 1]],
+            [(DType.float32, [8, 1])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 128]],
+            [(DType.float32, [1, 1])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 128]],
+            [(DType.float32, [8, 2])],
+            "must turn exactly one input dimension into 1",
+        ),
+        (
+            "mo.reduce.add",
+            [[8, 128]],
+            [(DType.float32, [8])],
+            "results must be tensors of the input's rank",
+        ),
+        (
+            "reduction.arg_max.tmp",
+            [[4, 16]],
+            [(DType.float32, [4, 1]), (DType.int64, [1, 16])],
+            "results reduce different axes",
+        ),
+    ],
+)
+def test_reduction_invalid(
+    symbol: str,
+    inputs: list[list[int]],
+    outputs: list[tuple[DType, list[int]]],
+    message: str,
+) -> None:
+    input_types = _reduction_types(DType.float32, inputs)
+    with Graph("test_reduction_invalid", input_types=input_types) as graph:
+        with pytest.raises(ValueError) as err:
+            ops.custom(
+                symbol,
+                device=DeviceRef.CPU(),
+                values=list(graph.inputs),
+                out_types=[
+                    TensorType(dtype, shape, device=DeviceRef.CPU())
+                    for dtype, shape in outputs
+                ],
+            )
+        assert f"reduction '{symbol}' {message}" in str(err.value)

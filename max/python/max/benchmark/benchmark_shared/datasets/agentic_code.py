@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Agentic coding sessions: the message structs and the session sampler."""
+
 from __future__ import annotations
 
 import logging
@@ -23,9 +25,10 @@ from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from ._hf_download import hf_hub_download_with_retry
 from ._tokenizer_pool import TokenizerPool
+from .agentic_tools import ToolConfig
 from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
-from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
+from .multiturn_distribution_fit import build_fitted_chat_samples
 from .types import (
     ChatMessage,
     ChatSamples,
@@ -40,16 +43,22 @@ logger = logging.getLogger(__name__)
 
 
 class MessageContentPart(msgspec.Struct):
+    """One text part of a message's content."""
+
     type: Literal["text"]
     text: str = ""
 
 
 class Message(msgspec.Struct):
+    """One message, either plain text or a list of content parts."""
+
     role: str
     content: str | list[MessageContentPart] | None = None
 
 
 class Turn(msgspec.Struct):
+    """One turn in a session, with its messages and token counts."""
+
     messages: list[Message] | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -58,10 +67,14 @@ class Turn(msgspec.Struct):
 
 
 class Session(msgspec.Struct):
+    """A multi-turn session: its ordered turns."""
+
     turns: list[Turn]
 
 
 class AgenticCodeData(msgspec.Struct):
+    """The dataset file: every session it holds."""
+
     sessions: list[Session]
 
 
@@ -104,6 +117,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
     """
 
     def fetch(self) -> None:
+        """Downloads the session file from Hugging Face."""
         self.dataset_path = hf_hub_download_with_retry(
             repo_id="novita/agentic_code_dataset_22",
             filename="e22_sessions_openai.json",
@@ -119,6 +133,7 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         enable_tool_calls: bool = True,
         **kwargs,
     ) -> RequestSamples:
+        """Samples chat sessions from the agentic coding dataset."""
         assert self.dataset_path is not None, (
             "dataset_path must be set; call fetch() first"
         )
@@ -237,6 +252,46 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 texts.append(user_text)
         return texts
 
+    def _collect_tool_turn_texts(self) -> list[str]:
+        """Flatten every recorded tool message into its own pool entry."""
+        assert self.dataset_path is not None, (
+            "dataset_path must be set; call fetch() first"
+        )
+        with open(self.dataset_path, "rb") as f:
+            data = msgspec.json.decode(f.read(), type=AgenticCodeData)
+
+        texts: list[str] = []
+        skipped = 0
+        for session in data.sessions:
+            for turn in session.turns:
+                if turn.error or turn.status_code != 200:
+                    continue
+                for message in turn.messages or []:
+                    if message.role != "tool":
+                        continue
+                    content = message.content
+                    if content is None:
+                        skipped += 1
+                        continue
+                    if isinstance(content, list):
+                        text = " ".join(
+                            part.text for part in content if part.type == "text"
+                        )
+                    else:
+                        text = content
+                    if text.strip():
+                        texts.append(text)
+                    else:
+                        skipped += 1
+        if skipped:
+            logger.info(
+                "agentic-code: tool-text pool has %d entries; skipped %d"
+                " results that recorded no output.",
+                len(texts),
+                skipped,
+            )
+        return texts
+
     def gen_multiturn_sessions(
         self,
         num_sessions: int,
@@ -254,6 +309,9 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         max_num_unique_sys_prompt: int = 1,
         min_input_len: int = 4,
         min_output_len: int = 1,
+        max_output_len: int | None = None,
+        tools: Sequence[ToolConfig] | None = None,
+        agentic_rounds_per_turn: DistributionParameter | None = None,
         enable_tool_calls: bool = True,
     ) -> ChatSamples:
         """Generate multiturn ChatSessions from the agentic-code dataset.
@@ -271,6 +329,8 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 distributions. Ignored when fitting.
             shuffle: Whether to shuffle before sampling (session order when not
                 fitting; user-turn pool when fitting).
+            pool: Tokenizer pool the fitted session encoding runs under.
+                Required when ``fit_length_distributions`` is True.
             fit_length_distributions: Build sessions from pooled turns and CLI
                 distributions instead of replaying full recorded sessions.
             num_turns: Turns per session distribution when fitting.
@@ -281,6 +341,10 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
             max_num_unique_sys_prompt: System-prefix variants when fitting.
             min_input_len: Floor for sampled input lengths when fitting.
             min_output_len: Floor for sampled output lengths when fitting.
+            max_output_len: Optional ceiling that fitted output lengths are
+                clamped to.
+            tools: Tool definitions the fitted sessions' tool calls may use.
+            agentic_rounds_per_turn: Agent-loop rounds per turn when fitting.
             enable_tool_calls: When False, skip turns whose messages include
                 non-system/user roles (same as ``sample_requests``).
 
@@ -292,18 +356,27 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
         )
 
         if fit_length_distributions:
-            if pool is None:
+            if (
+                pool is None
+                or num_turns is None
+                or input_len is None
+                or output_len is None
+            ):
                 raise ValueError(
-                    "pool is required for agentic-code when "
-                    "fit_length_distributions=True"
+                    "pool, num_turns, input_len and output_len are required for"
+                    " agentic-code when fit_length_distributions=True; got"
+                    f" pool={pool!r},"
+                    f" num_turns={num_turns!r},"
+                    f" input_len={input_len!r},"
+                    f" output_len={output_len!r}."
                 )
-            assert num_turns is not None
-            assert input_len is not None
-            assert output_len is not None
             user_texts = self._collect_user_turn_texts(enable_tool_calls)
             if shuffle:
                 random.shuffle(user_texts)
-            return build_chat_samples_from_user_text_pool(
+            tool_texts = (
+                self._collect_tool_turn_texts() if tools is not None else None
+            )
+            return build_fitted_chat_samples(
                 pool=pool,
                 user_text_pool=user_texts,
                 num_sessions=num_sessions,
@@ -315,7 +388,11 @@ class AgenticCodeBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 max_num_unique_sys_prompt=max_num_unique_sys_prompt,
                 min_input_len=min_input_len,
                 min_output_len=min_output_len,
+                max_output_len=max_output_len,
                 shuffle_pool=False,
+                tools=tools,
+                agentic_rounds_per_turn=agentic_rounds_per_turn,
+                tool_text_pool=tool_texts,
                 log_prefix="agentic-code",
             )
 

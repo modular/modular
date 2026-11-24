@@ -10,6 +10,6 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     } else {
       hlcf.yield
     }
-    kgen.return
+    hlcf.return
   }
 }

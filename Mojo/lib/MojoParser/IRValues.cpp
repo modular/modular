@@ -134,6 +134,11 @@ raw_ostream &LIT::operator<<(raw_ostream &os, PValue value) {
 raw_ostream &LIT::operator<<(raw_ostream &os, OverloadSetUValue value) {
   return printStorage(os, value);
 }
+raw_ostream &LIT::operator<<(raw_ostream &os, LambdaUValue value) {
+  if (!value)
+    return os << "<<NULL>>";
+  return os << "LambdaUValue";
+}
 raw_ostream &LIT::operator<<(raw_ostream &os, InitializerUValue value) {
   return printStorage(os, value);
 }
@@ -466,6 +471,80 @@ OverloadSetUValue OverloadSetUValue::create(OverloadSet &&set) {
 }
 
 //===----------------------------------------------------------------------===//
+// LambdaUValue
+//===----------------------------------------------------------------------===//
+
+/// Reference-counted storage that keeps LambdaUValue copyable.
+struct LambdaUValue::LambdaWrapper
+    : public NonAtomicallyReferenceCounted<LambdaWrapper> {
+  SMLoc loc;
+
+  ArrayRef<ParsedArgument> args;
+  ArrayRef<ParsedArgument> params;
+
+  const ExprNode *bodyExpr = nullptr;
+
+  ArrayRef<Capture> captures;
+  bool hasExplicitCaptureList = false; // whether a `{...}` was written at all
+  std::optional<CaptureConvention> captureAllByConvention;
+
+  FnTypeGeneratorType partialSig;
+};
+
+LambdaUValue::LambdaUValue() = default;
+LambdaUValue::LambdaUValue(const LambdaUValue &existing)
+    : storage(existing.storage.copy()) {}
+LambdaUValue::LambdaUValue(RCRef<LambdaWrapper> storage)
+    : storage(std::move(storage)) {}
+LambdaUValue::~LambdaUValue() = default;
+
+LambdaUValue &LambdaUValue::operator=(const LambdaUValue &existing) {
+  storage = existing.storage.copy();
+  return *this;
+}
+
+LambdaUValue
+LambdaUValue::create(SMLoc loc, FnTypeGeneratorType partialSignature,
+                     ArrayRef<ParsedArgument> params,
+                     ArrayRef<ParsedArgument> args, const ExprNode *bodyExpr,
+                     ArrayRef<Capture> captures, bool hasExplicitCaptureList,
+                     std::optional<CaptureConvention> captureAllByConvention) {
+  assert(params.size() <= partialSignature.getInputParamTypes().size() &&
+         args.size() <= partialSignature.getArguments().size() &&
+         "more user parameters or arguments than the signature has");
+  auto *wrapper = new LambdaWrapper();
+  wrapper->loc = loc;
+  wrapper->args = args;
+  wrapper->params = params;
+  wrapper->bodyExpr = bodyExpr;
+  wrapper->captures = captures;
+  wrapper->hasExplicitCaptureList = hasExplicitCaptureList;
+  wrapper->captureAllByConvention = captureAllByConvention;
+  wrapper->partialSig = partialSignature;
+  return LambdaUValue(takeRCRef(wrapper));
+}
+
+SMLoc LambdaUValue::getLoc() const { return storage->loc; }
+FnTypeGeneratorType LambdaUValue::getPartialSignature() const {
+  return storage->partialSig;
+}
+ArrayRef<ParsedArgument> LambdaUValue::getParams() const {
+  return storage->params;
+}
+ArrayRef<ParsedArgument> LambdaUValue::getArgs() const { return storage->args; }
+const ExprNode *LambdaUValue::getBodyExpr() const { return storage->bodyExpr; }
+ArrayRef<LambdaUValue::Capture> LambdaUValue::getCaptures() const {
+  return storage->captures;
+}
+bool LambdaUValue::hasExplicitCaptureList() const {
+  return storage->hasExplicitCaptureList;
+}
+std::optional<CaptureConvention>
+LambdaUValue::getCaptureAllByConvention() const {
+  return storage->captureAllByConvention;
+}
+
+//===----------------------------------------------------------------------===//
 // InitializerUValue
 //===----------------------------------------------------------------------===//
 
@@ -497,8 +576,8 @@ InitializerUValue InitializerUValue::create(Syntax syntax,
 
 const CallOperands &InitializerUValue::get() const { return storage->operands; }
 
-static void addNoneLiteralMarker(CallOperands &operands, StringRef kwargName,
-                                 IREmitter &emitter) {
+void LIT::addNoneLiteralMarker(CallOperands &operands, StringRef kwargName,
+                               IREmitter &emitter) {
   // Emit the None in a parameter context so we don't eagerly generated IR into
   // the body of any current function.
   auto paramEmitter = emitter.getParamEmitter(EC_CollectionLiteral);
@@ -559,7 +638,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type, ExprDest &&dest,
     // {} turns into a dict with PythonObject.
 
     // Convert MySet[*(0, 0)] to MySet[?] so we can infer the parameter(s).
-    type = type.getWithUnknownParametersReplaced(emitter.shared);
+    type = type.extractAndRelinkParamRef(emitter.shared);
     if (operands.values.empty()) {
       auto getEmptyList = [&]() -> AnyValue {
         return InitializerUValue::create(InitializerUValue::kListLiteral,
@@ -656,12 +735,14 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
 
   // Otherwise, handle defaulting.
   switch (syntax) {
-  case Syntax::kSliceLiteral:
-    // TODO: This could get more aggressive, looking through implicit
-    // conversions etc.
-    emitter.emitError(get().callExpr->getLoc(),
-                      "cannot emit slice expression without a contextual type");
-    return {};
+  case Syntax::kSliceLiteral: {
+    ASTType defaultType = getDefaultType(emitter.shared);
+    if (!defaultType)
+      return {};
+    CallOperands operands =
+        getOperandsForInferredType(defaultType, std::move(dest), emitter);
+    return emitter.emitConstructorCall(defaultType, std::move(operands));
+  }
   case Syntax::kListLiteral: {
     if (get().empty()) {
       emitter.emitError(get().callExpr->getLoc(),
@@ -748,9 +829,9 @@ static const ExprNode *resolveInferredBaseAttrRef(const ExprNode *expr,
     auto &inferred = *cast<InferredAttributeRefNode>(expr);
     // Materialize the contextual type as a synthetic base expression so
     // attribute lookup can resolve against it.
-    auto *base = shared.allocPersistent<SyntheticNode>(
+    auto *base = shared.stmtAllocator.create<SyntheticNode>(
         inferred.getLoc(), AnyValue(PValue(expectedType)));
-    return shared.allocPersistent<AttributeRefNode>(
+    return shared.stmtAllocator.create<AttributeRefNode>(
         base, inferred.dotLoc, inferred.spelling, inferred.isEscaped);
   }
   case ExprNode::kCall: {
@@ -759,8 +840,8 @@ static const ExprNode *resolveInferredBaseAttrRef(const ExprNode *expr,
     auto &call = *cast<CallNode>(expr);
     auto *newCallee =
         resolveInferredBaseAttrRef(call.callee, expectedType, shared);
-    return shared.allocPersistent<CallNode>(newCallee, call.lparenLoc,
-                                            call.operands, call.rparenLoc);
+    return shared.stmtAllocator.create<CallNode>(newCallee, call.lparenLoc,
+                                                 call.operands, call.rparenLoc);
   }
   case ExprNode::kAttributeRef: {
     // Resolve the base (e.g. `.red` in `.red.opacity`), then rebuild the
@@ -768,7 +849,7 @@ static const ExprNode *resolveInferredBaseAttrRef(const ExprNode *expr,
     auto &attr = *cast<AttributeRefNode>(expr);
     auto *newBase = const_cast<ExprNode *>(
         resolveInferredBaseAttrRef(attr.base, expectedType, shared));
-    return shared.allocPersistent<AttributeRefNode>(
+    return shared.stmtAllocator.create<AttributeRefNode>(
         newBase, attr.dotLoc, attr.spelling, attr.isEscaped);
   }
   case ExprNode::kSubscript: {
@@ -776,17 +857,17 @@ static const ExprNode *resolveInferredBaseAttrRef(const ExprNode *expr,
     auto &subscript = *cast<SubscriptNode>(expr);
     auto *newBase =
         resolveInferredBaseAttrRef(subscript.base, expectedType, shared);
-    return shared.allocPersistent<SubscriptNode>(newBase, subscript.lsquareLoc,
-                                                 subscript.operands,
-                                                 subscript.rsquareLoc);
+    return shared.stmtAllocator.create<SubscriptNode>(
+        newBase, subscript.lsquareLoc, subscript.operands,
+        subscript.rsquareLoc);
   }
   case ExprNode::kParen: {
     // Peel parentheses, e.g. `(.green)` or `(.hsb_to_rgb)(...)`.
     auto &paren = *cast<ParenNode>(expr);
     auto *newSub = const_cast<ExprNode *>(
         resolveInferredBaseAttrRef(paren.subExpr, expectedType, shared));
-    return shared.allocPersistent<ParenNode>(paren.lparenLoc, newSub,
-                                             paren.rparenLoc);
+    return shared.stmtAllocator.create<ParenNode>(paren.lparenLoc, newSub,
+                                                  paren.rparenLoc);
   }
   default:
     llvm_unreachable("unexpected expression in resolveInferredBaseAttrRef");

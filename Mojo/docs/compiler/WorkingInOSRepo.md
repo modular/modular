@@ -64,10 +64,8 @@ bt //Mojo/stdlib/...
 
 > [!NOTE]
 >
-> You can't use a locally built compiler to build any of the MAX targets, so
-> use the prebuilt compiler (`--config=prebuilt-mojo`) instead. Also test any
-> standard library changes against the prebuilt compiler before you open a pull
-> request.
+> The whole tree, MAX included, is built from source with the compiler built
+> from this checkout, so there is no prebuilt-compiler mode to opt into.
 
 ## Using Mojo tools
 

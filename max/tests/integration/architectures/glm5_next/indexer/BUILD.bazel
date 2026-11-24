@@ -1,0 +1,65 @@
+# GLM-5.3-Flash (glm5_next) k-pooled DSA indexer layer tests.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_library",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "torch_reference",
+    testonly = True,
+    srcs = ["torch_reference/glm5_next_indexer.py"],
+    imports = ["."],
+    tags = ["no-mypy"],
+    deps = [requirement("torch")],
+)
+
+modular_py_test(
+    name = "indexer",
+    size = "large",
+    srcs = ["test_pooled_indexer.py"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # lazy import
+        "//max/python/max/_interpreter_ops",
+    ],
+    precompile_mefs = True,
+    precompile_shards = 4,
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        ":torch_reference",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
+)

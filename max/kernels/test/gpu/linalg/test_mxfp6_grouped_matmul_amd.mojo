@@ -40,7 +40,7 @@ from std.random import random_ui64, seed
 from std.testing import assert_true
 from std.utils import StaticTuple
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.arch.amd.block_scaled_mma import CDNA4F8F6F4MatrixFormat
 from linalg.fp6_utils import (
     FP6Format,
@@ -114,10 +114,10 @@ def _mxfp6_matmul_ref[
         var fb = SIMD[.uint8, 32](0)
         comptime for chunk in range(3):
             fa = fa.insert[offset=chunk * 8](
-                a_ptr.load[width=8](a_base + chunk * 8)
+                a_ptr.unsafe_load[width=8](a_base + chunk * 8)
             )
             fb = fb.insert[offset=chunk * 8](
-                b_ptr.load[width=8](b_base + chunk * 8)
+                b_ptr.unsafe_load[width=8](b_base + chunk * 8)
             )
 
         var av = decode_fp6_to_f32[fmt](unpack_fp6_x32(fa)) * a_scale
@@ -175,18 +175,8 @@ def test_mxfp6_grouped_matmul[
         max_tokens = max(max_tokens, num_tokens_by_expert[i])
 
     print(
-        "  ",
-        fmt_name,
-        " grouped matmul: num_experts=",
-        num_experts,
-        " N=",
-        N,
-        " K=",
-        K,
-        " num_active=",
-        num_active_experts,
-        " total_tokens=",
-        total_tokens,
+        t"   {fmt_name}  grouped matmul: num_experts= {num_experts}  N= {N}  K="
+        t" {K}  num_active= {num_active_experts}  total_tokens= {total_tokens}"
     )
 
     var a_host = ctx.enqueue_create_host_buffer[.uint8](total_tokens * K_BYTES)
@@ -270,12 +260,12 @@ def test_mxfp6_grouped_matmul[
             continue
 
         ctx.enqueue_function[_mxfp6_matmul_ref[fmt]](
-            a_dev.unsafe_ptr() + token_start * K_BYTES,
-            b_dev.unsafe_ptr() + expert_id * N * K_BYTES,
-            a_scales_dev.unsafe_ptr() + token_start * scale_K,
-            b_scales_dev.unsafe_ptr() + expert_id * N * scale_K,
-            c_ref_dev.unsafe_ptr() + token_start * N,
-            mag_dev.unsafe_ptr() + token_start * N,
+            a_dev.unsafe_ptr().unsafe_offset(token_start * K_BYTES),
+            b_dev.unsafe_ptr().unsafe_offset(expert_id * N * K_BYTES),
+            a_scales_dev.unsafe_ptr().unsafe_offset(token_start * scale_K),
+            b_scales_dev.unsafe_ptr().unsafe_offset(expert_id * N * scale_K),
+            c_ref_dev.unsafe_ptr().unsafe_offset(token_start * N),
+            mag_dev.unsafe_ptr().unsafe_offset(token_start * N),
             Int32(num_tokens),
             Int32(N),
             Int32(K),
@@ -284,25 +274,21 @@ def test_mxfp6_grouped_matmul[
             block_dim=(REF_BLOCK, REF_BLOCK),
         )
 
-    var a_tt = TileTensor(
-        a_dev, row_major(Coord(total_tokens, Idx[K_BYTES]))
-    ).as_immut()
-    var b_tt = TileTensor(
-        b_dev, row_major[num_experts, N, K_BYTES]()
-    ).as_immut()
+    var a_tt = TileTensor(a_dev, row_major(total_tokens, Idx[K_BYTES])).as_imm()
+    var b_tt = TileTensor(b_dev, row_major[num_experts, N, K_BYTES]()).as_imm()
     var a_scales_tt = TileTensor(
-        a_scales_dev, row_major(Coord(total_tokens, Idx[scale_K]))
-    ).as_immut()
+        a_scales_dev, row_major(total_tokens, Idx[scale_K])
+    ).as_imm()
     var b_scales_tt = TileTensor(
         b_scales_dev, row_major[num_experts, N, scale_K]()
-    ).as_immut()
+    ).as_imm()
     var a_offsets_tt = TileTensor(
-        a_offsets_dev, row_major(Coord(num_active_experts + 1))
+        a_offsets_dev, row_major(num_active_experts + 1)
     )
     var expert_ids_tt = TileTensor(
-        expert_ids_dev, row_major(Coord(num_active_experts))
+        expert_ids_dev, row_major(num_active_experts)
     )
-    var c_tt = TileTensor(c_dev, row_major(Coord(total_tokens, Idx[N])))
+    var c_tt = TileTensor(c_dev, row_major(total_tokens, Idx[N]))
 
     block_scaled_grouped_matmul_amd[matrix_format=_mfma_format[fmt]()](
         c_tt,
@@ -342,16 +328,8 @@ def test_mxfp6_grouped_matmul[
         if abs(got - want) > rel_tol * Float64(mag_host[i]):
             if mismatches < 3:
                 print(
-                    "      [",
-                    i // N,
-                    ",",
-                    i % N,
-                    "] got=",
-                    got,
-                    " want=",
-                    want,
-                    " mag=",
-                    Float64(mag_host[i]),
+                    t"      [ {i // N} , {i % N} ] got= {got}  want= {want} "
+                    t" mag= {Float64(mag_host[i])}"
                 )
             mismatches += 1
 

@@ -135,9 +135,8 @@ class TestPixelGenerationTokenizer:
         assert tokenizer._scheduler.max_image_seq_len == 4096
         assert tokenizer._scheduler.base_shift == 0.5
         assert tokenizer._scheduler.max_shift == 1.15
-        # PixelGenerationTokenizer forces use_empirical_mu=True for FLUX2 and
-        # FLUX2_KLEIN unconditionally (see pixel_tokenizer.py).
-        assert tokenizer._scheduler._use_empirical_mu is True
+        # Only the architecture subclasses (Flux2Tokenizer) turn this on.
+        assert tokenizer._scheduler._use_empirical_mu is False
 
     @pytest.mark.asyncio
     async def test_encode_primary_tokenizer(
@@ -347,13 +346,10 @@ class TestPixelGenerationTokenizer:
         assert latents.shape == (2, 16, 128, 128)
         assert latents.dtype == np.float32
 
-        # FLUX2 uses 4D (T, H, W, L) coordinates with a leading batch dim;
-        # other pipelines use 3D (zero, H, W) coordinates without batching.
-        # FLUX2 builds the IDs from np.arange / np.array([0]) and stacks
-        # without an explicit cast, so the result is int64 (unlike the
-        # non-FLUX2 path which explicitly casts to float32).
-        assert latent_image_ids.shape == (2, 64 * 64, 4)
-        assert latent_image_ids.dtype == np.int64
+        # The base class builds unbatched (zero, H, W) coordinates;
+        # Flux2Tokenizer overrides this with batched 4D coordinates.
+        assert latent_image_ids.shape == (64 * 64, 3)
+        assert latent_image_ids.dtype == np.float32
 
     def test_prepare_latents_deterministic(
         self, flux_model_path: str, flux_pipeline_config: PipelineConfig
@@ -397,10 +393,8 @@ class TestPixelGenerationTokenizer:
             max_length=2048,
         )
 
-        dummy_encoded = (np.array([1, 2, 3]), np.array([True, True, True]))
-
         with pytest.raises(NotImplementedError):
-            await tokenizer.decode(dummy_encoded)
+            await tokenizer.decode(np.array([1, 2, 3]))
 
     def test_properties(
         self, flux_model_path: str, flux_pipeline_config: PipelineConfig

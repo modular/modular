@@ -22,7 +22,7 @@ from std.sys import inlined_assembly
 from std.collections.string.string_span import _get_kgen_string
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def inlined_assembly[
     asm: StaticString,
     result_type: TrivialRegisterPassable,
@@ -98,6 +98,7 @@ def inlined_assembly[
             constraints=constraints_kgen_string,
             hasSideEffects=has_side_effect.__mlir_i1__(),
             isStackAligned=False.__mlir_i1__(),
+            expandPackOperandIdx=__mlir_attr.`0 : index`,
         ](loaded_pack)
         return rebind[result_type](None)
     else:
@@ -107,4 +108,5 @@ def inlined_assembly[
             constraints=constraints_kgen_string,
             hasSideEffects=has_side_effect.__mlir_i1__(),
             isStackAligned=False.__mlir_i1__(),
+            expandPackOperandIdx=__mlir_attr.`0 : index`,
         ](loaded_pack)

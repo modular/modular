@@ -20,7 +20,6 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/DebugLog.h"
 #include "llvm/Support/ErrorOr.h"
-#include "llvm/Support/Format.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
@@ -47,15 +46,10 @@
 #include <cpuid.h>
 #include <intrin.h>
 #endif // MODULAR_X86_64
-#include <iphlpapi.h>
 #include <windows.h>
-#else
-#include <ifaddrs.h>
-#include <sys/socket.h>
 #endif
 
 #ifdef __APPLE__
-#include <net/if_dl.h>
 #include <sys/sysctl.h>
 #endif
 
@@ -515,54 +509,6 @@ std::vector<size_t> CPUSystemInfo::getPreferredCpuIDs(size_t numThreads) const {
     if (cpuIDs.size() == numThreads)
       return cpuIDs;
   }
-}
-
-static std::string bytesToHexStr(uint8_t *ptr, int count) {
-  std::string s;
-  llvm::raw_string_ostream ss(s);
-  for (int i = 0; i < count; ++i) {
-    if (i > 0)
-      ss << ":";
-    ss << llvm::format_hex_no_prefix(ptr[i], 2, true);
-  }
-  return s;
-}
-
-std::vector<std::string> M::localMACs() {
-  std::vector<std::string> macs;
-#ifdef _WIN32
-  IP_ADAPTER_INFO AdapterInfo[32];
-  DWORD dwBufLen = sizeof(AdapterInfo);
-  DWORD dwStatus = GetAdaptersInfo(AdapterInfo, &dwBufLen);
-  if (dwStatus == ERROR_SUCCESS) {
-    PIP_ADAPTER_INFO pAdapterInfo = AdapterInfo;
-    while (pAdapterInfo) {
-      macs.emplace_back(
-          bytesToHexStr(pAdapterInfo->Address, pAdapterInfo->AddressLength));
-      pAdapterInfo = pAdapterInfo->Next;
-    }
-  }
-#else
-#ifdef AF_PACKET
-#define M_AF_TYPE AF_PACKET
-#else
-#define M_AF_TYPE AF_LINK
-#endif
-  struct ifaddrs *ifap, *ifaptr;
-  if (getifaddrs(&ifap) == 0) {
-    for (ifaptr = ifap; ifaptr != nullptr; ifaptr = (ifaptr)->ifa_next) {
-      if (ifaptr->ifa_addr != nullptr &&
-          ifaptr->ifa_addr->sa_family == M_AF_TYPE) {
-        uint8_t *data = reinterpret_cast<uint8_t *>(
-            (struct sockaddr_dl *)(ifaptr)->ifa_addr);
-        macs.emplace_back(bytesToHexStr(data, 6));
-      }
-    }
-    freeifaddrs(ifap);
-  }
-#undef M_AF_TYPE
-#endif
-  return macs;
 }
 
 #if HAVE_LINUX_X86_SYSTEM_INFO

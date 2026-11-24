@@ -36,6 +36,7 @@ from layout import TileTensor, row_major
 
 from linalg.matmul.gpu.amd.amd_4wave_matmul import structured_4wave_matmul
 from nn.conv.gpu.amd.amd_4wave_conv import amd_4wave_conv
+from std.math import align_up
 
 
 def _host_im2col_general[
@@ -77,10 +78,6 @@ def _host_im2col_general[
                                 ] = input_host_ptr[in_idx]
 
 
-def _round_up(x: Int, mod: Int) -> Int:
-    return ((x + mod - 1) // mod) * mod
-
-
 def _bench_one[
     a_type: DType,
     c_type: DType,
@@ -104,7 +101,7 @@ def _bench_one[
     comptime W_out = (W + 2 * pad_w - S) // stride_w + 1
     comptime M_total = N_batch * H_out * W_out
     comptime K_real = R * S * C_in
-    comptime K_padded = _round_up(K_real, 256)
+    comptime K_padded = align_up(K_real, 256)
     comptime flops = 2 * M_total * K_real * C_out
 
     # Path classification (matches the comptime branches inside
@@ -168,9 +165,8 @@ def _bench_one[
     # conv-vs-matmul ratio compares apples-to-apples (the conv path
     # also routes through the framework body for all dtypes). Use
     # `structured_4wave_matmul` for all dtypes.
-    @__parameter
-    @always_inline
-    def _ref_matmul() raises:
+    @inline(.always)
+    def _ref_matmul() raises {imm}:
         structured_4wave_matmul(im2col_2d, filter, output, ctx)
 
     # Warmup (DVFS, allocator).
@@ -224,39 +220,10 @@ def _bench_one[
     var ratio = tflops_cv / tflops_mm
 
     print(
-        "| ",
-        label,
-        " | NHWC=",
-        N_batch,
-        "x",
-        H,
-        "x",
-        W,
-        "x",
-        C_in,
-        " | RxS=",
-        R,
-        "x",
-        S,
-        " stride=",
-        stride_h,
-        " pad=",
-        pad_h,
-        " | Cout=",
-        C_out,
-        " | M=",
-        M_total,
-        " K=",
-        K_real,
-        " | ",
-        path,
-        " | conv ",
-        tflops_cv,
-        " | mm ",
-        tflops_mm,
-        " | ",
-        ratio,
-        " |",
+        t"|  {label}  | NHWC= {N_batch} x {H} x {W} x {C_in}  | RxS= {R} x {S} "
+        t" stride= {stride_h}  pad= {pad_h}  | Cout= {C_out}  | M= {M_total} "
+        t" K= {K_real}  |  {path}  | conv  {tflops_cv}  | mm  {tflops_mm}  | "
+        t" {ratio}  |"
     )
 
     keep(output_dev.unsafe_ptr())
@@ -427,9 +394,7 @@ def main() raises:
 
     with DeviceContext() as ctx:
         print(
-            "== dtype:",
-            String(a_type),
-            "(matmul ref: structured_4wave_matmul)",
+            t"== dtype: {String(a_type)} (matmul ref: structured_4wave_matmul)"
         )
         print(
             "| Shape | NHWC | RxS,stride,pad | Cout | M, K | path | conv"

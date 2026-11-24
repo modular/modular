@@ -87,7 +87,10 @@ linter(
 modular_py_binary(
     name = "action-versions-pinned",
     srcs = ["action-versions-pinned.py"],
-    deps = [requirement("pyyaml")],
+    deps = [
+        ":lint_helpers",
+        requirement("pyyaml"),
+    ],
 )
 
 mojo_binary(

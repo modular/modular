@@ -164,10 +164,19 @@ def mutateInt(mut a: Int):
     pass
 
 
+struct MemExampleMoveOnly(Movable):
+    def __init__(out self):
+        pass
+
+
+def mutateMoveOnly(mut a: MemExampleMoveOnly):
+    pass
+
+
 def initialize_in_addrspace(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @+1 {{value of type 'MemExample' cannot be copied or moved into a non-default address space}}
@@ -177,17 +186,24 @@ def initialize_in_addrspace(
 
 
 def mutate_in_addrspace(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    memtcptr: UnsafePointer[
+    memtcptr: Pointer[
         MemExampleTriviallyCopyable,
         AnyOrigin[mut=True],
         address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
+    moveptr: Pointer[
+        MemExampleMoveOnly,
+        AnyOrigin[mut=True],
+        address_space=AddressSpace(1)],
 ):
     # expected-error @+1 {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
     mutateMem(memptr[])
+    # expected-error @+2 {{value of type 'MemExampleMoveOnly' cannot be implicitly copied, it does not conform to 'ImplicitlyCopyable'}}
+    # expected-note @+1 {{consider transferring the value with '^'}}
+    mutateMoveOnly(moveptr[])
     # ok
     mutateMemTC(memtcptr[])
     # ok
@@ -195,9 +211,9 @@ def mutate_in_addrspace(
 
 
 def variadic_addr_space(
-    memptr: UnsafePointer[
+    memptr: Pointer[
         MemExample, AnyOrigin[mut=True], address_space=AddressSpace(1)],
-    regptr: UnsafePointer[
+    regptr: Pointer[
         Int, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # expected-error @below {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
@@ -386,17 +402,6 @@ def inout_ref_exclusivity(mut a: Int, mut b: Int, mut s: MyStruct):
     # expected-error @below {{aliasing values passed mutably to 'strs' argument and passed mutably to 'strs' argument in 'mutate_pack' call}}
     # expected-note @below {{'origin_of(s)' value is passed through aliasing 'mut' argument}}
     mutate_pack(s, s)
-
-
-def capture_exclusivity(var x: MemExample):
-    @__parameter
-    def capture_and_read(y: MemExample):
-        _ = x^
-
-    # FIXME(MOCO-3241): Re-enable this.
-    # xpected-error @below {{argument of call allows reading a memory location previously writable through implicit closure captures}}
-    # xpected-note @below {{'origin_of(x)' value is passed through aliasing 'imm' argument}}
-    capture_and_read(x)
 
 
 # expected-note @below {{function declared here}}
@@ -646,3 +651,86 @@ def test_subtree_origin_exclusivity(mut s: MyStruct, mut a: Int, mut b: Int):
     # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
     # expected-note @below {{'origin_of(s.a)' value is passed through aliasing 'imm' argument 'b'}}
     mutate_one_read_one(get_subtree_ref[origin_of(s)](s.a), s.a)
+
+
+# Interior origin exclusivity.
+#
+# An interior origin (x["element"]) names storage that x owns, so a mutable
+# access to it conflicts with an access to the whole of x.
+
+
+def read_one_mutate_one[A: AnyType, B: AnyType](a: A, mut b: B):
+    pass
+
+
+def read_two[A: AnyType, B: AnyType](a: A, b: B):
+    pass
+
+
+struct InteriorOwner:
+    var data: List[Int]
+    var other: Int
+
+    def first(
+        ref self,
+    ) -> ref[origin_of(self)._get_owned_interior["first"]] Int:
+        abort()
+
+    def second(
+        ref self,
+    ) -> ref[origin_of(self)._get_owned_interior["second"]] Int:
+        abort()
+
+
+def test_interior_origin_exclusivity(
+    mut l: List[Int], mut ll: List[List[Int]], mut s: InteriorOwner
+):
+    # Container and element both read: fine.
+    read_two(l, l[0])
+
+    # Element next to a sibling field of its owner: fine.
+    mutate_two(s.data[0], s.other)
+
+    # Distinct interiors of one owner: fine.
+    mutate_two(s.first(), s.second())
+
+    # MOCO-4980: immutable container vs a mutable element of it, either order.
+    # expected-error @below {{aliasing values passed immutably to 'a' argument and passed mutably to 'b' argument in 'read_one_mutate_one' call}}
+    # expected-note @below {{'origin_of(l["element"])' value is passed through aliasing 'mut' argument 'b'}}
+    read_one_mutate_one(l, l[0])
+
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(l)' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(l[0], l)
+
+    # The same interior twice.
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(l["element"])' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(l[0], l[1])
+
+    # Nested elements conflict with every container above them.
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(ll["element"])' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(ll[0][0], ll[0])
+
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(ll)' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(ll[0][0], ll)
+
+    # Container reached through a field of the owner.
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(s.data)' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(s.data[0], s.data)
+
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(s)' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(s.data[0], s)
+
+    # Immutable subtree view of the container vs a mutable element of it.
+    # expected-error @below {{aliasing values passed mutably to 'a' argument and passed immutably to 'b' argument in 'mutate_one_read_one' call}}
+    # expected-note @below {{'origin_of(origin_of(l).subtree)' value is passed through aliasing 'imm' argument 'b'}}
+    mutate_one_read_one(l[0], get_subtree_ref[origin_of(l)](l))
+
+    # expected-error @below {{aliasing values passed immutably to 'a' argument and passed mutably to 'b' argument in 'read_one_mutate_one' call}}
+    # expected-note @below {{'origin_of(l["element"])' value is passed through aliasing 'mut' argument 'b'}}
+    read_one_mutate_one(get_subtree_ref[origin_of(l)](l), l[0])

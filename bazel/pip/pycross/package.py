@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from collections import defaultdict
+from collections.abc import Collection
 from typing import Any
 
 from dependency import Dependency
@@ -22,7 +23,13 @@ from utils import assert_keys
 
 
 class Package:
-    def __init__(self, blob: dict[str, Any], all_versions: dict[str, str]):
+    def __init__(
+        self,
+        blob: dict[str, Any],
+        all_versions: dict[str, str],
+        skip_optional_deps: Collection[tuple[str, str]] = (),
+        platforms: Collection[Platform] = ALL_PLATFORMS,
+    ):
         assert_keys(
             blob,
             required={"name", "version"},
@@ -39,6 +46,7 @@ class Package:
 
         self.name = blob["name"]
         self.version = blob["version"]
+        self.platforms = platforms
         self.sdist = Download(blob["sdist"]) if "sdist" in blob else None
         self.wheels = [Download(wheel) for wheel in blob.get("wheels", [])]
 
@@ -64,6 +72,7 @@ class Package:
             Dependency(dep, all_versions)
             for deps in blob.get("optional-dependencies", {}).values()
             for dep in deps
+            if (self.name, dep["name"]) not in skip_optional_deps
         ]
         unique_dependencies: dict[str, Dependency] = {}
         for dep in all_dependencies:
@@ -91,7 +100,7 @@ class Package:
 
         downloads_by_platform: dict[Platform, Download] = {}
         sdist_platforms = set()
-        for platform in ALL_PLATFORMS:
+        for platform in self.platforms:
             potential_wheels = [
                 whl for whl in self.wheels if platform.is_compatible_with(whl)
             ]
@@ -165,10 +174,13 @@ class Package:
         if len(unique_downloads) == 1:
             actual = f'"{next(iter(unique_downloads))}",'
         else:
+            no_match_error = ""
+            if self.platforms != ALL_PLATFORMS:
+                no_match_error = f', no_match_error = "{self.name} is only available for the default Python version, see _DEFAULT_PYTHON_VERSION_ONLY in bazel/pip/pycross/generate.py"'
             newline = "\n"
             actual = f"""select({{
             {f",{newline}            ".join(sorted(f'"{k}": "{v}"' for k, v in select_values.items()))},
-        }}),"""
+        }}{no_match_error}),"""
 
         tags_line = ""
         if self.library_name.startswith("torch@"):
@@ -181,6 +193,11 @@ class Package:
             # Backport https://github.com/pytorch/pytorch/pull/167046
             patches_line = """
         post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],"""
+        elif self.library_name == "transformers@5.12.1":
+            # Backport https://github.com/huggingface/transformers/pull/46618
+            # TODO: Remove this patch when upgrading to >=5.13.0.
+            patches_line = """
+        post_install_patches = ["@@//bazel/public-patches:transformers-local-source-symlinks.patch"],"""
 
         package += f"""\
     native.alias(

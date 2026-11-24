@@ -25,6 +25,7 @@
 #include "AsyncRT/Support/Diagnostic.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Profiling/TimeProfiler.h"
+#include "Support/SymbolExport.h"
 #include "Support/TypeID.h"
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/PointerIntPair.h"
@@ -64,7 +65,7 @@ class ConcreteAsyncValue;
 /// AsyncValueRef<T> smart pointer classes. The public methods in this class
 /// are intended for advanced users who which to explicitly manage reference
 /// counting.
-class AsyncValue {
+class MODULAR_CXX_EXPORT AsyncValue {
 public:
   //===--------------------------------------------------------------------===//
   // Static creation methods for AsyncValue's

@@ -11,28 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+import pytest
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
 from smoke_tests.smoke_test import MODEL_RECIPES
 
 
-def _custom_recipe_keys() -> list[str]:
-    return [key for key in MODEL_RECIPES if "__" in key]
-
-
-def test_model_aliases_contain_exactly_one_double_underscore() -> None:
-    for alias in _custom_recipe_keys():
-        count = alias.count("__")
+def test_variants_contain_exactly_one_double_underscore() -> None:
+    for variant in (key for key in MODEL_RECIPES if "__" in key):
+        count = variant.count("__")
         assert count == 1, (
-            f"Model alias {alias!r} must contain exactly one '__'"
+            f"Model variant {variant!r} must contain exactly one '__'"
             f" (found {count})"
         )
 
 
 def test_all_model_recipes_load() -> None:
-    for alias, recipe_path in MODEL_RECIPES.items():
+    for variant, recipe_path in MODEL_RECIPES.items():
         recipe = smoke_test._load_recipe(recipe_path)
-        assert recipe.model.model_path is not None, alias
+        assert recipe.model.model_path is not None, variant
 
 
 def test_hf_repos_for_model_includes_draft_model() -> None:
@@ -44,12 +41,17 @@ def test_hf_repos_for_model_includes_draft_model() -> None:
     assert "atomicapple0/EAGLE-LLaMA3.1-Instruct-8B" in repos
 
 
+def test_hf_repos_for_model_includes_variant_repos() -> None:
+    repos = smoke_test.hf_repos_for_model("google/gemma-4-31B-it__pp_mtp")
+    assert repos == ["google/gemma-4-31B-it", "google/gemma-4-31B-it-assistant"]
+
+
 def test_hf_repos_for_model_prefers_recipe_casing() -> None:
-    """A lowercased alias still resolves to the recipe's canonical casing.
+    """A lowercased variant still resolves to the recipe's canonical casing.
 
     The cache is case-sensitive, so the prefetch script's offline probe
     only hits if the repo name matches the cached snapshot exactly. The
-    helper adds the recipe-derived `model.model_path` before the alias
+    helper adds the recipe-derived `model.model_path` before the variant
     prefix so the casefold dedup keeps the canonical casing.
     """
     repos = smoke_test.hf_repos_for_model(
@@ -58,25 +60,18 @@ def test_hf_repos_for_model_prefers_recipe_casing() -> None:
     assert repos[0] == "meta-llama/Llama-3.1-8B-Instruct"
 
 
-def test_model_aliases_lookup_is_case_insensitive() -> None:
+def test_variant_lookup_is_case_insensitive() -> None:
     for key in MODEL_RECIPES:
         assert MODEL_RECIPES.get(key.lower()) is not None
         assert MODEL_RECIPES.get(key.upper()) is not None
 
 
-def test_recipe_aliases_preserve_key_model_path_and_speculation() -> None:
+def test_variants_preserve_key_model_path_and_speculation() -> None:
     mtp_recipe = smoke_test._load_recipe(
         MODEL_RECIPES["nvidia/DeepSeek-V3.1-NVFP4__mtp"]
     )
     assert mtp_recipe.speculative is not None
     assert mtp_recipe.speculative.num_speculative_tokens == 3
-
-    kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["nvidia/Kimi-K2.7-Code-NVFP4"]
-    )
-    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.7-Code-NVFP4"
-    assert kimi_recipe.speculative is not None
-    assert kimi_recipe.speculative.num_speculative_tokens == 3
 
 
 def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
@@ -122,9 +117,9 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
     """Regression: an 8-GPU recipe on a 4-GPU runner scales down to 4."""
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
-    # amd/Kimi-K2.7-Code-MXFP4 pins device_specs [0..7] and ep_size 8.
+    # zai-org/GLM-5.3__fp8_tpep_mi355 pins device_specs [0..7] and ep_size 8.
     cmd, _ = smoke_test.get_server_cmd(
-        "max", "amd/Kimi-K2.7-Code-MXFP4", gpu_spec=("AMD MI355X", 4)
+        "max", "zai-org/GLM-5.3__fp8_tpep_mi355", gpu_spec=("AMD MI355X", 4)
     )
 
     assert cmd[cmd.index("--devices") + 1] == "gpu:0,1,2,3"
@@ -137,13 +132,28 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
 
     cmd, _ = smoke_test.get_server_cmd(
         "max",
-        "amd/Kimi-K2.7-Code-MXFP4",
+        "zai-org/GLM-5.3__fp8_tpep_mi355",
         autoscale_devices=False,
         gpu_spec=("AMD MI355X", 4),
     )
 
     assert "--devices" not in cmd
     assert "--ep-size" not in cmd
+
+
+def test_max_enables_vmm_on_amd_up_to_4_gpus(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    def vmm(gpu_spec: tuple[str, int]) -> str | None:
+        _, env = smoke_test.get_server_cmd(
+            "max", "Qwen/Qwen3.5-9B", gpu_spec=gpu_spec
+        )
+        return env.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM")
+
+    assert vmm(("AMD MI355X", 1)) == "1"
+    assert vmm(("AMD MI355X", 4)) == "1"
+    assert vmm(("AMD MI355X", 8)) is None
+    assert vmm(("NVIDIA B200", 4)) is None
 
 
 def test_vllm_minimax_keeps_flashinfer_workaround(
@@ -154,10 +164,11 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     # MiniMaxAI/MiniMax-M2.7 has no MODEL_RECIPES entry anymore (retired from
     # CI), but the "minimax-m2" vLLM workaround this test targets is specific
     # to that architecture family, so pass the still-present recipe directly.
-    cmd, env = smoke_test.get_server_cmd(
+    cmd, _ = smoke_test.get_server_cmd(
         "vllm",
         "MiniMaxAI/MiniMax-M2.7",
         recipe_path="max/pipelines/architectures/minimax_m2/recipes/minimax_m2_8x_b200.yaml",
+        serve_image="vllm/vllm-openai:v0.27.1",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -168,7 +179,68 @@ def test_vllm_minimax_keeps_flashinfer_workaround(
     assert "--data-parallel-size=8" in cmd
     assert "--attention-backend" in cmd
     assert "FLASH_ATTN" in cmd
-    assert env["VLLM_USE_FLASHINFER_MOE_FP8"] == "0"
+    assert "VLLM_USE_FLASHINFER_MOE_FP8=0" in cmd
+
+
+def test_container_args_per_vendor(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    monkeypatch.setenv("HF_TOKEN", "hf_secret")
+
+    for image, wanted, unwanted in (
+        ("vllm/vllm-openai:v0.27.1", "nvidia.com/gpu=all", "/dev/kfd"),
+        ("vllm/vllm-openai-rocm:v0.27.1", "/dev/kfd", "nvidia.com/gpu=all"),
+    ):
+        cmd, _ = smoke_test.get_server_cmd(
+            "vllm",
+            "meta-llama/Llama-3.1-8B-Instruct",
+            serve_image=image,
+            gpu_spec=("NVIDIA B200", 1),
+        )
+
+        assert wanted in cmd
+        assert unwanted not in cmd
+        assert "hf_secret" not in " ".join(cmd)
+        assert any(a.endswith("/root/.cache/huggingface/hub:ro") for a in cmd)
+
+
+@pytest.mark.parametrize(
+    "image",
+    [
+        "vllm/vllm-openai-rocm:v0.34.0",
+        f"registry.example/kimi-k3-reference@sha256:{'a' * 64}",
+    ],
+)
+def test_kimi_k3_vllm_selects_accuracy_recipe(
+    monkeypatch: MonkeyPatch,
+    image: str,
+) -> None:
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+    revision = "c" * 40
+    monkeypatch.setattr(smoke_test, "locked_revision", lambda _: revision)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "vllm", "moonshotai/Kimi-K3", serve_image=image, gpu_spec=("MI355X", 8)
+    )
+
+    for flag, value in {
+        "--tensor-parallel-size": "8",
+        "--revision": revision,
+        "--tokenizer-revision": revision,
+        "--max-model-len": "32768",
+        "--max-num-seqs": "16",
+        "--max-num-batched-tokens": "8192",
+        "--kv-cache-dtype": "bfloat16",
+        "--mamba-cache-dtype": "bfloat16",
+        "--mamba-ssm-cache-dtype": "float32",
+        "--media-io-kwargs": '{"image":{"image_mode":null}}',
+    }.items():
+        assert cmd.count(flag) == 1
+        assert cmd[cmd.index(flag) + 1] == value
+    assert "--enforce-eager" in cmd
+    assert "--no-async-scheduling" in cmd
+    assert "--no-enable-prefix-caching" in cmd
+    assert "/dev/kfd" in cmd
+    assert "VLLM_ROCM_USE_AITER_MOE_SITUV2=a8w4" in cmd
 
 
 def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
@@ -179,6 +251,7 @@ def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
     cmd, _ = smoke_test.get_server_cmd(
         "vllm",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        serve_image="vllm/vllm-openai:v0.27.1",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -195,6 +268,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -215,6 +289,7 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "nvidia/DeepSeek-V3.1-NVFP4__fp8kv",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -233,6 +308,7 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
         "meta-llama/Llama-3.1-8B-Instruct__dflash",
+        serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
 
@@ -240,21 +316,21 @@ def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
     assert "0.75" in cmd
 
 
-def test_max_get_server_cmd_recipe_alias_resolves_yaml(
+def test_max_get_server_cmd_variant_resolves_yaml(
     monkeypatch: MonkeyPatch,
 ) -> None:
     """``get_server_cmd`` must load built-in recipe YAML without importing ``max``.
 
     Serve smoke CI runs the driver under ``uv run`` without the Modular package;
     this path used to fail with ``ModuleNotFoundError: max`` when resolving
-    ``MODEL_RECIPES`` aliases.
+    ``MODEL_RECIPES`` variants.
     """
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
-    alias = "microsoft/phi-4__modulev3"
-    recipe_path = MODEL_RECIPES[alias]
+    variant = "google/gemma-3-27b-it__modulev3"
+    recipe_path = MODEL_RECIPES[variant]
     cmd, _ = smoke_test.get_server_cmd(
-        "max", alias, gpu_spec=("NVIDIA L40S", 1)
+        "max", variant, gpu_spec=("NVIDIA L40S", 1)
     )
 
     assert cmd[:3] == [
@@ -268,6 +344,31 @@ def test_max_get_server_cmd_recipe_alias_resolves_yaml(
     cfg_idx = cmd.index("--config-file")
     assert cmd[cfg_idx + 1] == recipe_path
     assert "--trust-remote-code" not in cmd
+
+
+def test_max_ci_validates_every_request(monkeypatch: MonkeyPatch) -> None:
+    """A smoke run built from the checkout validates requests, not just init."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: True)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max-ci", "google/gemma-3-27b-it__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" in cmd
+    assert cmd[cmd.index("--eager-usage-validator") + 1] == "enabled"
+
+
+def test_released_max_does_not_get_eager_usage_validator(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    """The flag is newer than the wheels ``max`` installs, so it stays off."""
+    monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
+
+    cmd, _ = smoke_test.get_server_cmd(
+        "max", "google/gemma-3-27b-it__modulev3", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--eager-usage-validator" not in cmd
 
 
 def test_merge_serve_extra_args_appends_when_absent() -> None:
@@ -323,3 +424,71 @@ def test_merge_serve_extra_args_does_not_mutate_input() -> None:
     snapshot = list(args)
     smoke_test.merge_serve_extra_args(args, "--kv-connector-config=tiered.json")
     assert args == snapshot
+
+
+@pytest.mark.parametrize("framework", ["max", "max-ci"])
+def test_flint_smoke_uses_explicit_recipe(
+    monkeypatch: MonkeyPatch, framework: str
+) -> None:
+    monkeypatch.setattr(
+        smoke_test, "_inside_bazel", lambda: framework == "max-ci"
+    )
+    model = "RecursiveSI/flint"
+    cmd, _ = smoke_test.get_server_cmd(
+        framework, model, gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert "--prefer-module-v3" in cmd
+    recipe_path = cmd[cmd.index("--config-file") + 1]
+    assert recipe_path == MODEL_RECIPES[model]
+
+
+@pytest.mark.parametrize("framework", ["max", "max-ci"])
+def test_lfm3_smoke_uses_architecture_defaults(
+    monkeypatch: MonkeyPatch, framework: str
+) -> None:
+    monkeypatch.setattr(
+        smoke_test, "_inside_bazel", lambda: framework == "max-ci"
+    )
+    cmd, _ = smoke_test.get_server_cmd(
+        framework, "LiquidAI/LFM3-1.7B", gpu_spec=("NVIDIA B200", 1)
+    )
+
+    assert cmd[cmd.index("--model") + 1] == "LiquidAI/LFM3-1.7B"
+    assert "--config-file" not in cmd
+    assert not {
+        "--max-length",
+        "--max-batch-size",
+        "--max-batch-input-tokens",
+        "--device-graph-capture",
+        "--no-device-graph-capture",
+        "--enable-overlap-scheduler",
+        "--no-enable-overlap-scheduler",
+    }.intersection(cmd)
+
+
+@pytest.mark.parametrize(
+    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
+)
+@pytest.mark.parametrize("model", ["moonshotai/Kimi-K3", "MOONSHOTAI/KIMI-K3"])
+def test_kimi_k3_vision_detection(model: str, framework: str | None) -> None:
+    assert smoke_test.is_vision_model(model, framework) is (
+        framework == "mach-ci"
+    )
+
+
+@pytest.mark.parametrize(
+    "framework", [None, "max", "max-ci", "vllm", "mach-ci"]
+)
+def test_kimi_k3_dspark_stays_text_only(framework: str | None) -> None:
+    assert not smoke_test.is_vision_model(
+        "moonshotai/Kimi-K3__dspark", framework
+    )
+    assert not smoke_test.is_vision_model(
+        "MOONSHOTAI/KIMI-K3__DSPARK", framework
+    )
+
+
+@pytest.mark.parametrize("model", ["other/Kimi-K3", "moonshotai/Kimi-K3-extra"])
+def test_kimi_k3_vision_detection_requires_exact_repo(model: str) -> None:
+    assert not smoke_test.is_vision_model(model, "mach-ci")

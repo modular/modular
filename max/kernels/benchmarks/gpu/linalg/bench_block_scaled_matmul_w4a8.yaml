@@ -1,0 +1,70 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# W4A8 (E4M3 x packed E2M1, kind::mxf8f6f4) against MXFP8, NVFP4 and MXFP4
+# on the SM100 warp-specialized block-scaled kernel, plus cuBLASLt MXFP8 and
+# NVFP4. Every format runs on the same data (matched_data) so power draw, and
+# with it the sustained clock, is comparable across formats.
+#
+# The heuristic spec is what choose_block_scaled_config returns for M >= 4096
+# on every shape in shapes_block_scaled_matmul_w4a8.yaml and every format;
+# W4A8 borrows MXFP8's, since the heuristic requires a_type == b_type.
+# MMA_N = 256 needs one accumulator stage to fit TMEM next to the scales.
+#
+# Use with:
+#   kbench bench_block_scaled_matmul_w4a8.yaml \
+#     --shapes shapes_block_scaled_matmul_w4a8.yaml
+
+name: bench_block_scaled_matmul
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_block_scaled_matmul.mojo
+
+common: &common
+  AUTOTUNING_MODE: True
+  scaling_mode: [mxfp8, nvfp4, mxfp4, w4a8]
+  TUNE_CTA_GROUP: 2
+  TUNE_BM: 128
+  TUNE_CLUSTER_DIM_Z: 1
+  TUNE_AB_SWAPPED: False
+  TUNE_K_GROUP_SIZE: 1
+  $matched_data: True
+  $verify: True
+
+params:
+# Heuristic.
+- <<: *common
+  TUNE_BN: 128
+  TUNE_NUM_ACCUM_STAGES: 1
+  TUNE_CLUSTER_DIM_X: 2
+  TUNE_CLUSTER_DIM_Y: 1
+  TUNE_BLOCK_SWIZZLE_SIZE: 8
+  TUNE_RASTER_ORDER: 1
+# Coarse tile x cluster grid, swizzle and raster pinned to the heuristic's.
+- <<: *common
+  TUNE_BN: 64
+  TUNE_NUM_ACCUM_STAGES: 2
+  TUNE_CLUSTER_DIM_X: [2, 4]
+  TUNE_CLUSTER_DIM_Y: [1, 2]
+  TUNE_BLOCK_SWIZZLE_SIZE: 8
+  TUNE_RASTER_ORDER: 1
+- <<: *common
+  TUNE_BN: [96, 128]
+  TUNE_NUM_ACCUM_STAGES: 1
+  TUNE_CLUSTER_DIM_X: [2, 4]
+  TUNE_CLUSTER_DIM_Y: [1, 2]
+  TUNE_BLOCK_SWIZZLE_SIZE: 8
+  TUNE_RASTER_ORDER: 1
+# cuBLASLt has no FP4 with E8M0 scales, so MXFP4 and W4A8 have no vendor arm.
+- use_vendor_blas: True
+  scaling_mode: [mxfp8, nvfp4]
+  $matched_data: True
+  $verify: True

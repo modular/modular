@@ -47,7 +47,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
 
 For multimodal models or models requiring custom preprocessing, you might need
 to create a custom `PipelineOracle` subclass. See existing implementations
-like `InternVLPipelineOracle` or `Qwen2_5VLPipelineOracle` as examples.
+like `Qwen3VLPipelineOracle` or `KimiK2_5PipelineOracle` as examples.
 
 ## Step 1: Dump the intermediate tensors with `debug_model`
 
@@ -372,7 +372,7 @@ Here's how to use the hooks directly in your code:
 #### MAX `PrintHook`
 
 ```python
-from max.nn.hooks import PrintHook
+from max.nn.legacy.hooks import PrintHook
 
 # Create hook and name layers
 hook = PrintHook()

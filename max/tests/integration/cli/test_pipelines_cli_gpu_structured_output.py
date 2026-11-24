@@ -27,9 +27,16 @@ def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     # Bazel hands the artifacts directory over in the environment; the pipeline
-    # is told about it explicitly.
+    # is told about it explicitly. The artifact was compiled under virtual
+    # devices, so its graph was built with the memory plan and weight staging a
+    # compile-only run has, not this one's; the program is still the one this
+    # run needs, so the body check is off.
     precompiled = os.environ.get("PRECOMPILED_MEFS_DIR")
-    reuse_flags = ["--precompiled-mefs", precompiled] if precompiled else []
+    reuse_flags = (
+        ["--precompiled-mefs", precompiled, "--no-precompiled-mefs-verify-body"]
+        if precompiled
+        else []
+    )
 
     with pytest.raises(SystemExit):
         pipelines.main(

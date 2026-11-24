@@ -31,6 +31,7 @@
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
 #include "Mojo/POPDialect/POPOps.h"
 #include "Mojo/POPDialect/POPTypes.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/Matchers.h"
@@ -169,9 +170,8 @@ private:
 
             // Exclude direct uses but not uses within expressions. e.g.
             // foo<x+step, step>
-            for (auto [param, decl] :
-                 llvm::zip(call.getCallee().getParamValues(),
-                           oldFunction.getInputParams())) {
+            for (auto [param, decl] : llvm::zip(call.getParamValues(),
+                                                oldFunction.getInputParams())) {
               auto asRef = dyn_cast<ParamDeclRefAttr>(param);
               // A direct pass through of the same parameter doesn't count.
               if (!asRef || asRef.getName() != decl.getName() ||
@@ -186,11 +186,16 @@ private:
       // Don't scan the input parameters on the function since they obviously
       // will include a hit.
       if (op == oldFunction) {
-        walker.walk(oldFunction.getLLVMMetadataArray());
+        walker.walk(oldFunction.getFnAttrs());
 
         // The linkage name might contain parameter references.
         if (auto linkageName = oldFunction.getLinkageNameAttr())
           walker.walk(linkageName);
+        // So might a deferred `@inline` expression, which is the only use of
+        // its parameter until the elaborator folds it.
+        if (TypedAttr level = oldFunction.getInlineLevelAttr();
+            level && !inlineLevelOf(level))
+          walker.walk(level);
         // Most function attrs will only contain false positives, types on the
         // arguments / results are the real source of truth.
         walker.walk(oldFunction.getDecoratorsAttr());
@@ -234,8 +239,7 @@ private:
     newParams.clear();
     newOperands.clear();
 
-    for (auto [idx, inParam] :
-         llvm::enumerate(oldCall.getCallee().getParamValues())) {
+    for (auto [idx, inParam] : llvm::enumerate(oldCall.getParamValues())) {
       if (!unusedParamsIndex[idx])
         newParams.push_back(inParam);
     }
@@ -246,12 +250,10 @@ private:
         newOperands.push_back(operand);
       }
     }
-    auto symbol = SymbolConstantAttr::get(
-        flatSym,
-        newFunc.getFuncTypeGenerator().getSpecializedGenerator(
-            newParams, &*evaluationContext, oldCall.getLoc()),
-        newParams);
-
+    auto sig = newFunc.getFuncTypeGenerator();
+    auto func = FuncSymbolGenerator::getUnbound(flatSym, sig);
+    auto symbol = BindParamsAttr::get(sig.getContext(), func, newParams,
+                                      &*evaluationContext);
     auto newCall =
         CallOp::create(builder, oldCall.getLoc(), symbol, newOperands);
 
@@ -434,40 +436,50 @@ void RemoveUnusedParams::runOnOperation() {
 
   DenseSet<GeneratorOp> seenCallees;
 
-  // Build call graph.
-  for (auto [idx, generator] : llvm::enumerate(mod.getOps<GeneratorOp>())) {
-    seenCallees.clear();
-    SmallVector<GeneratorOp> callees;
-
-    numCallersFromFunc[generator] = 0;
-
-    // Gen needs explicit capture to make structured bindings capture legal.
-    generator.walk([&, gen = generator](CallOp call) {
+  // Find the calls of each generator in parallel. The loop below builds the
+  // call graph from them on one thread, in module order.
+  SmallVector<GeneratorOp, 0> generators(mod.getOps<GeneratorOp>());
+  using GeneratorCall = std::pair<CallOp, GeneratorOp>;
+  auto generatorCalls = parallelMap(ctx, generators, [&](GeneratorOp gen) {
+    SmallVector<GeneratorCall, 0> calls;
+    gen.walk([&](CallOp call) {
       // We can also call external generators and other things so it's not safe
       // to assume it's a generator op.
       auto calledFunc = dyn_cast_or_null<GeneratorOp>(symTab.lookup(
           cast<FlatSymbolRefAttr>(call.getCalleeSymbol()).getValue()));
       if (!calledFunc || calledFunc.isExternal())
         return;
+      calls.push_back({call, calledFunc});
+    });
+    return calls;
+  });
 
+  // Build call graph.
+  for (auto [idx, generator] : llvm::enumerate(generators)) {
+    seenCallees.clear();
+    SmallVector<GeneratorOp> callees;
+
+    numCallersFromFunc[generator] = 0;
+
+    for (auto [call, calledFunc] : generatorCalls[idx]) {
       // Track the caller of this generator, but only one entry per call.
       if (!seenCallees.contains(calledFunc)) {
         callees.push_back(calledFunc);
         seenCallees.insert(calledFunc);
-        ++numCallersFromFunc[gen];
+        ++numCallersFromFunc[generator];
       }
 
       // Track recursive functions separately.
-      if (calledFunc == gen) {
-        recursiveFuncs.insert(gen);
+      if (calledFunc == generator) {
+        recursiveFuncs.insert(generator);
       } else {
         // Get or allocate.
         CallSites &entry = funcUsers[calledFunc];
         // Then insert without iteration invalidation in case of allocate.
-        entry.callers.insert(gen);
+        entry.callers.insert(generator);
         entry.calls.push_back(call);
       }
-    });
+    }
 
     toSchedule.addToSchedule(generator, idx);
 
@@ -567,16 +579,14 @@ void RemoveUnusedParams::runOnOperation() {
     newFunc.setSymName((Twine(newFunc.getSymName()) + "_REMOVED_ARG").str());
     symTab.insert(newFunc);
 
-    // Update LLVM per-arg metadata.
-    if (ArrayRef<Attribute> oldLLVMArgMetadata =
-            newFunc.getLLVMArgMetadataArray().getValue();
-        !oldLLVMArgMetadata.empty()) {
-      SmallVector<Attribute> llvmArgMetadata;
-      for (unsigned i = 0, e = oldLLVMArgMetadata.size(); i < e; ++i)
+    // Update LLVM per-arg attributes.
+    if (ArrayRef<Attribute> oldFnArgAttrs = newFunc.getFnArgAttrs().getValue();
+        !oldFnArgAttrs.empty()) {
+      SmallVector<Attribute> fnArgAttrs;
+      for (unsigned i = 0, e = oldFnArgAttrs.size(); i < e; ++i)
         if (!unusedArgs[i])
-          llvmArgMetadata.emplace_back(oldLLVMArgMetadata[i]);
-      newFunc.setLLVMArgMetadataArrayAttr(
-          mlir::ArrayAttr::get(ctx, llvmArgMetadata));
+          fnArgAttrs.emplace_back(oldFnArgAttrs[i]);
+      newFunc.setFnArgAttrsAttr(mlir::ArrayAttr::get(ctx, fnArgAttrs));
     }
 
     // The DISubroutineType of the function may reference unused parameters.

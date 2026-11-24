@@ -40,7 +40,7 @@ lit.struct.decl @Foo {
 
 lit.fn @foo() {
   %0 = co.execute {
-    kgen.return loc(#loc5)
+    hlcf.return loc(#loc5)
   // CHECK: foo.mlir:325:11: error: 'co.execute' op must have callsite location
   } loc(#loc5)
   lit.return loc(#loc4)

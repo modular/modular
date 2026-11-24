@@ -84,9 +84,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             @extensibility.register("histogram")
             struct Histogram:
                 @staticmethod
-                fn execute[
-                    target: StaticString
-                ](
+                fn execute(
                     output: OutputTensor[dtype = DType.int64, rank=1],
                     input: InputTensor[dtype = DType.uint8, rank=1],
                     ctx: DeviceContext,

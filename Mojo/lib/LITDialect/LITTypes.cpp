@@ -50,6 +50,19 @@ void LITDialect::registerTypes() {
   dialect->registerMnemonicType<OriginType>();
   dialect->registerMnemonicType<OriginSetType>();
 
+  // LIT compound expressions; see `registerNonTrivialParamAttrs`. The
+  // operand-free origins (any/comptime/static) and implicit origin refs are
+  // leaves and are not registered. Neither is LITStructAttr: it is usually a
+  // small constant such as `DType.int` or `1` in `SIMD[DType.int, 1]`, where a
+  // label costs more than it saves. Any operator nested inside one is still
+  // labeled at its own level. Field references (OriginFieldAttr,
+  // StructExtractAttr) are excluded like other references, and
+  // OriginMutCastAttr is elided by the pretty printer, so a label on it would
+  // mark nothing visible.
+  dialect->registerNonTrivialParamAttrs<
+      UnpackedAttr, OriginUnionAttr, OriginEqAttr, InteriorOriginAttr,
+      OriginSubtreeAttr, OriginSetAttr, OriginSetUnionAttr, RefPackAttr>();
+
   // Register the StructType parser.
   getContext()->getLoadedDialect<KGENDialect>()->setSymbolTypeParser(
       [&](AsmParser &p, SymbolRefAttr symbol) -> FailureOr<Type> {
@@ -57,10 +70,7 @@ void LITDialect::registerTypes() {
         SmallVector<TypedAttr> values;
         if (failed(parseStructTypeParams(p, values)))
           return failure();
-
-        // FIXME: Shouldn't just work with fully bound types.
-        auto typeSig = TypeSignatureType::get(p.getContext());
-        return StructType::get(symbol, values, typeSig);
+        return StructType::get(symbol, values);
       });
 }
 
@@ -125,50 +135,6 @@ StringAttr TypeSignatureType::getParamName(size_t idx) const {
   return getParamListAttrs().getName(idx);
 }
 
-/// Bind parameter values to the signature, returning a new one.
-TypeSignatureType TypeSignatureType::bind(ArrayRef<TypedAttr> values) const {
-  assert(values.size() == getParamTypes().size() &&
-         "expected full value set with UnboundAttrs for missing ones");
-
-  PogListAttr paramListAttr = getParamListAttrs();
-
-  SmallVector<Type> newParamTypes;
-  SmallVector<PogMetadataAttr> newPogs;
-
-  bool hasVarArg = false;
-  ParameterEvaluator evaluator;
-  for (auto [i, val, type, pogAttr] :
-       llvm::enumerate(values, getParamTypes(), paramListAttr.getPogs())) {
-    // If the current value is bound and we have a specified value, use it.
-    if (!::isa<UnboundAttr>(val)) {
-      evaluator.appendIndexBinding(val);
-      continue;
-    }
-
-    // Otherwise it is still unbound, maintain it as such.
-    newParamTypes.push_back(evaluator.getReboundType(type));
-    newPogs.push_back(
-        cast<PogMetadataAttr>(evaluator.getReboundAttribute(pogAttr)));
-    hasVarArg |= pogAttr.isAnyVarArg();
-
-    evaluator.appendIndexBinding(
-        ParamIndexRefAttr::get(newParamTypes.size() - 1, newParamTypes.back()));
-  }
-  ArgConvention origVariadicConvention =
-      hasVarArg ? paramListAttr.getOrigVariadicConvention()
-                : ArgConvention::ByRefError;
-
-  SmallVector<ConstraintAttr> newBodyConstraints;
-  for (ConstraintAttr constraint : paramListAttr.getBodyConstraints()) {
-    newBodyConstraints.push_back(
-        cast<ConstraintAttr>(evaluator.getReboundAttribute(constraint)));
-  }
-
-  auto paramListAttrs = PogListAttr::get(
-      getContext(), newPogs, newBodyConstraints, origVariadicConvention);
-  return TypeSignatureType::get(getContext(), newParamTypes, paramListAttrs);
-}
-
 //===----------------------------------------------------------------------===//
 // ModuleType
 //===----------------------------------------------------------------------===//
@@ -178,7 +144,8 @@ OptionalParseResult ModuleType::parseValue(AsmParser &p,
   return {}; // No custom parsing.
 }
 
-LogicalResult ModuleType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult ModuleType::printValue(AsmPrinter &p, TypedAttr value,
+                                     KGENParamPrinter &printer) const {
   return failure(); // No custom printing.
 }
 
@@ -245,8 +212,8 @@ OptionalParseResult LIT::StructType::parseValue(AsmParser &p,
   return p.parseRBrace();
 }
 
-LogicalResult LIT::StructType::printValue(AsmPrinter &p,
-                                          TypedAttr value) const {
+LogicalResult LIT::StructType::printValue(AsmPrinter &p, TypedAttr value,
+                                          KGENParamPrinter &printer) const {
   auto attr = ::dyn_cast<LITStructAttr>(value);
   if (!attr)
     return failure();
@@ -258,14 +225,14 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
       // the value, because the parser will think that is a field name.
       !::isa<ParamOperatorAttr, SugarAttr, CastFromBuiltinAttr,
              CastToBuiltinAttr>(std::get<1>(values.front()))) {
-    printColonTypeParamValue(p, std::get<1>(values.front()));
+    printer.printColonTypeParamValue(p, std::get<1>(values.front()));
   } else {
     llvm::interleaveComma(values, p, [&](const auto &element) {
       auto [name, value] = element;
       p.printKeywordOrString(name);
-      printColonTypeOrIndex(p, value.getType());
+      printer.printColonTypeOrIndex(p, value.getType());
       p << " = ";
-      printParamValue(p, value);
+      printer.printParamValue(p, value);
     });
   }
   p << '}';
@@ -273,8 +240,7 @@ LogicalResult LIT::StructType::printValue(AsmPrinter &p,
 }
 
 LIT::StructType LIT::StructType::get(SymbolRefAttr name,
-                                     ArrayRef<TypedAttr> paramValues,
-                                     TypeSignatureType signature) {
+                                     ArrayRef<TypedAttr> paramValues) {
   auto nameSym = SymbolAttr::get(name);
 
   // If this struct type has sugar, we compute a canonical version of it to cut
@@ -287,32 +253,25 @@ LIT::StructType LIT::StructType::get(SymbolRefAttr name,
     anyDifferent |= canParams.back() != param;
   }
 
-  // This is canonical if all the parameters and signature are canonical. The
-  // SymbolRefAttr is always canonical.
+  // This is canonical if all the parameters are canonical. The SymbolRefAttr is
+  // always canonical.
   StructType canonical;
   if (anyDifferent) {
-    canonical = Base::get(name.getContext(), nameSym, canParams, signature,
+    canonical = Base::get(name.getContext(), nameSym, canParams,
                           /*canonical*/ StructType());
   }
 
-  return Base::get(name.getContext(), nameSym, paramValues, signature,
-                   canonical);
+  return Base::get(name.getContext(), nameSym, paramValues, canonical);
 }
 
 LIT::StructType LIT::StructType::get(MLIRContext *context, SymbolAttr name,
                                      ArrayRef<TypedAttr> paramValues,
-                                     TypeSignatureType signature,
                                      StructType canonical) {
   // This method gets called by client doing general structural replacements,
   // e.g. a parameter with an arbitrary attribute.  This can turn canonical
   // forms to non-canonical and visa-versa, so always recompute the canonical
   // pointer.
-  return get(name.getValue(), paramValues, signature);
-}
-
-LIT::StructType LIT::StructType::get(SymbolRefAttr name,
-                                     TypeSignatureType signature) {
-  return get(name, {}, signature);
+  return get(name.getValue(), paramValues);
 }
 
 SymbolRefAttr LIT::StructType::getSymbol() const {
@@ -351,9 +310,10 @@ LIT::StructType::verifySymbolUses(SymTabEvaluationContext &evaluationContext,
   ParameterEvaluator evaluator(decl.getInputParams(), getParamValues());
   evaluator.setEvaluationContext(&evaluationContext);
   SmallVector<ParamDeclAttr, 8> specializedDecls;
-  for (ParamDeclAttr decl : decl.getInputParams())
+  for (ParamDeclAttr decl : decl.getInputParams()) {
     specializedDecls.push_back(
         ::cast<ParamDeclAttr>(evaluator.getReboundAttribute(decl)));
+  }
 
   return verifyParamDeclsMatch(
       "input parameter", "!lit.struct symbol use", getParamValues(), loc,
@@ -436,51 +396,6 @@ StringAttr LIT::StructType::getName() {
   return symbol.getNestedReferences().back().getAttr();
 }
 
-LIT::StructType LIT::StructType::bindAll(ArrayRef<TypedAttr> values) const {
-  assert(getParamValues().size() == values.size() && "expected full value set");
-
-  // The AnyStruct will have all of the parameters specified, e.g. something
-  // like:
-  // StructMetaType[Int : AnyType, UnboundAttr : I8, 42 : Int, UnboundAttr: F32]
-  // but the TypeSignatureType will just have [I8, F32].  The input value
-  // bindings must line up where they are already specified, but can further
-  // refine the SignatureType.  See what to pass down to it.
-
-  SmallVector<TypedAttr> newSignatureBindings;
-  bool hadNewBinding = false;
-  for (auto [cur, val] : llvm::zip(getParamValues(), values)) {
-    // If the current value is bound, maintain it.
-    if (!::isa<UnboundAttr>(cur)) {
-      assert(cur == val && "cannot change bound parameter value");
-    } else {
-      hadNewBinding |= !::isa<UnboundAttr>(val);
-      // Otherwise, propagate it into the TypeSignatureType.
-      newSignatureBindings.push_back(val);
-    }
-  }
-
-  // If we're refining our signature because we have new bindings, return an
-  // AnyStruct with the updated signature and values.
-  if (!hadNewBinding)
-    return *this;
-
-  auto newSig = getSignature().bind(newSignatureBindings);
-  return LIT::StructType::get(getSymbol(), values, newSig);
-}
-
-LIT::StructType LIT::StructType::bindUnbound(ArrayRef<TypedAttr> values) const {
-  SmallVector<TypedAttr> bindings;
-  auto it = values.begin();
-  for (TypedAttr value : getParamValues()) {
-    if (::isa<UnboundAttr>(value))
-      bindings.push_back(*it++);
-    else
-      bindings.push_back(value);
-  }
-  assert(it == values.end() && "expected all bindings to be consumed");
-  return bindAll(bindings);
-}
-
 /// We don't sugar always_inline builtin calls to things that produce a literal,
 /// we want things like "x+1" to fold to "5" when x is substituted with 4.
 std::optional<SugarKind>
@@ -546,12 +461,11 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   return {};
 }
 
-Type LIT::StructType::getCachedCanonicalType(Type type) const {
+Type LIT::StructType::getCachedCanonicalType() const {
   // Struct type has a canonical type cache to cut recursive walks.
-  auto structType = cast<LIT::StructType>(type);
-  if (auto can = structType.getCanonical())
+  if (auto can = getCanonical())
     return can;
-  return structType;
+  return *this;
 }
 
 SymbolRefAttr LIT::StructType::getSymbolRef() const {
@@ -564,8 +478,7 @@ SymbolRefAttr LIT::StructType::getSymbolRef() const {
 
 static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
                                           Type metatype) {
-  auto typeParser = [metatype](AsmParser &p,
-                               Type &typeValue) -> OptionalParseResult {
+  auto typeParser = [](AsmParser &p, Type &typeValue) -> OptionalParseResult {
     SymbolRefAttr symbol;
     OptionalParseResult result = p.parseOptionalAttribute(symbol);
     if (result.has_value()) {
@@ -574,12 +487,7 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
       SmallVector<TypedAttr> values;
       if (parseParameterValues(p, values))
         return failure();
-      TypeSignatureType typeSig;
-      if (auto anyStruct = dyn_cast<StructMetaType>(metatype))
-        typeSig = anyStruct.getSignature();
-      else
-        typeSig = TypeSignatureType::get(p.getContext());
-      typeValue = LIT::StructType::get(symbol, values, typeSig);
+      typeValue = LIT::StructType::get(symbol, values);
     } else {
       result = parseOptionalKGENType(p, typeValue);
     }
@@ -588,16 +496,17 @@ static OptionalParseResult parseTypeValue(AsmParser &p, TypedAttr &value,
   return parseSugaredTypeValue(p, value, metatype, typeParser);
 }
 
-static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value) {
-  auto typePrinter = [](AsmPrinter &p, Type type) {
+static LogicalResult printTypeValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) {
+  auto typePrinter = [&printer](AsmPrinter &p, Type type) {
     if (auto ref = ::dyn_cast<LIT::StructType>(type)) {
       // Use the alias printer if suitable.
       if (failed(p.printAlias(ref))) {
         p << ref.getSymbol();
-        printParameterValues(p, ref.getParamValues());
+        printer.printParameterValues(p, ref.getParamValues());
       }
     } else {
-      printKGENType(p, type);
+      printer.printKGENType(p, type);
     }
   };
   return printSugaredTypeValue(p, value, typePrinter);
@@ -742,6 +651,62 @@ void TraitType::print(AsmPrinter &p) const {
   p << '>';
 }
 
+void MetaType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  if (auto param = dyn_cast<ParamType>(getType())) {
+    // The `!kgen.param<...>` wrapper is part of the type here: this type's
+    // parser takes a full type, and the param-aware path omits that wrapper
+    // (`printParamType` prints the bare expression), so emit it by hand.
+    p << '!' << param.getDialect().getNamespace() << '.'
+      << ParamType::getMnemonic() << '<';
+    printer.printTypeParamValue(p, param.getParam());
+    p << '>';
+  } else if (auto *kgens =
+                 getType().getContext()->getLoadedDialect<KGENDialect>();
+             kgens && kgens->getTypeName(getType().getTypeID())) {
+    // An alias is already a complete `!name` reference, prefix included.
+    if (failed(p.printAlias(getType()))) {
+      p << '!' << getType().getDialect().getNamespace() << '.';
+      printer.printKGENType(p, getType());
+    }
+  } else {
+    p << getType();
+  }
+  p << '>';
+}
+
+void TraitType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  ArrayRef<TraitSymbolAttr> symbols = getSymbols();
+  ArrayRef<ConstraintAttr> constraints = getConstraints();
+
+  p << '<';
+  for (size_t i = 0; i < symbols.size(); ++i) {
+    if (i > 0)
+      p << ", ";
+    printer.printTraitSymbol(p, symbols[i]);
+    if (i < constraints.size() && !isTriviallyTrueConstraint(constraints[i])) {
+      p << " where ";
+      auto constraint = constraints[i];
+      // Print the mnemonic with its dialect prefix; the attribute's own printer
+      // would route the proposition through a fresh diagnostic printer.
+      p << '#' << constraint.getDialect().getNamespace() << '.'
+        << ConstraintAttr::getMnemonic() << '<';
+      printer.printParamValue(p, constraint.getProposition());
+      p << ", " << constraint.getLoc();
+      if (auto message = constraint.getMessage())
+        p << ", " << message;
+      p << '>';
+    }
+  }
+  p << '>';
+}
+
+void OriginType::print(AsmPrinter &p, KGENParamPrinter &printer) const {
+  p << '<';
+  printer.printParamValue(p, getIsMutable());
+  p << '>';
+}
+
 LogicalResult TraitType::verify(function_ref<InFlightDiagnostic()> emitError,
                                 ArrayRef<TraitSymbolAttr> symbols,
                                 ArrayRef<ConstraintAttr> constraints) {
@@ -759,8 +724,9 @@ OptionalParseResult TraitType::parseValue(AsmParser &p,
   return parseTypeValue(p, value, *this);
 }
 
-LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
+LogicalResult TraitType::printValue(AsmPrinter &p, TypedAttr value,
+                                    KGENParamPrinter &printer) const {
+  return printTypeValue(p, value, printer);
 }
 
 /// Return the metatype for this this trait as a value.
@@ -831,8 +797,9 @@ OptionalParseResult MetaType::parseValue(AsmParser &p, TypedAttr &value) const {
   return parseTypeValue(p, value, *this);
 }
 
-LogicalResult MetaType::printValue(AsmPrinter &p, TypedAttr value) const {
-  return printTypeValue(p, value);
+LogicalResult MetaType::printValue(AsmPrinter &p, TypedAttr value,
+                                   KGENParamPrinter &printer) const {
+  return printTypeValue(p, value, printer);
 }
 
 mlir::OpAsmAliasResult MetaType::getAlias(raw_ostream &os) const {
@@ -963,7 +930,8 @@ OptionalParseResult OriginType::parseValue(AsmParser &p,
   return processPostFix();
 }
 
-LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value,
+                                     KGENParamPrinter &printer) const {
   if (auto declRef = ::dyn_cast<ParamDeclRefAttr>(value)) {
     printParamName(p, declRef.getName(), /*isRef*/ false);
     return success();
@@ -971,7 +939,7 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   if (auto set = ::dyn_cast<OriginSetUnionAttr>(value)) {
     p << '|';
-    printParamValue(p, set.getValue());
+    printer.printParamValue(p, set.getValue());
     p << '|';
     return success();
   }
@@ -984,10 +952,10 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
   if (auto unionAttr = ::dyn_cast<OriginUnionAttr>(value)) {
     p << '{';
     if (unionAttr.getNumOperands()) {
-      printParamValue(p, unionAttr.getOperand(0));
+      printer.printParamValue(p, unionAttr.getOperand(0));
       for (auto operand : unionAttr.getOperands().drop_front()) {
         p << ", ";
-        printParamValue(p, operand);
+        printer.printParamValue(p, operand);
       }
     }
     p << '}';
@@ -996,14 +964,14 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   if (auto mutcast = ::dyn_cast<OriginMutCastAttr>(value)) {
     p << "(mutcast ";
-    printOriginParamValue(p, mutcast.getOperand());
+    printOriginParamValue(p, mutcast.getOperand(), printer);
     p << ")";
     return success();
   }
 
   // Print field access with dot notation.
   if (auto field = ::dyn_cast<OriginFieldAttr>(value)) {
-    if (failed(printValue(p, field.getBase())))
+    if (failed(printValue(p, field.getBase(), printer)))
       return failure();
     // FIXME: This should use ".field" instead of "->field" but MLIR doesn't
     // make it easy to parse a dot.
@@ -1014,10 +982,10 @@ LogicalResult OriginType::printValue(AsmPrinter &p, TypedAttr value) const {
 
   // Print interior access with x[<string-param>] notation.
   if (auto interior = ::dyn_cast<InteriorOriginAttr>(value)) {
-    if (failed(printValue(p, interior.getBase())))
+    if (failed(printValue(p, interior.getBase(), printer)))
       return failure();
     p << "[";
-    printParamValue(p, interior.getUserName());
+    printer.printParamValue(p, interior.getUserName());
     p << "]";
     return success();
   }
@@ -1071,6 +1039,26 @@ TypedAttr OriginType::stripMutCastAndRebind(TypedAttr origin) {
   return origin;
 }
 
+/// Returns true when `wider` is at least as wide as `narrower`, i.e.
+/// `union(wider, mutcast(narrower, wider's mutability))` collapses to
+/// `wider`; this compares origin sets, not mutability.
+bool OriginType::covers(TypedAttr wider, TypedAttr narrower) {
+  // A member of a union is covered by it. Check this before canonicalizing,
+  // which walks the whole union and is O(N^2) across the N upcasts of a large
+  // variadic call.
+  if (auto widerUnion = dyn_cast<OriginUnionAttr>(wider))
+    if (narrower.getType() == wider.getType() &&
+        llvm::is_contained(widerUnion.getOperands(), narrower))
+      return true;
+
+  auto widerType = sugarDynCast<OriginType>(wider.getType());
+  if (!widerType)
+    return false;
+  auto originUnion = OriginUnionAttr::get(
+      {wider, OriginMutCastAttr::get(narrower, widerType)}, widerType);
+  return isEqualCanon(wider, originUnion);
+}
+
 std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   // Sugar for !lit.origin<true> and !lit.origin<false> can be elided, as these
   // print as MutableOrigin / ImmutableOrigin.  This ends up being a lot nicer
@@ -1091,7 +1079,7 @@ std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   return {};
 }
 
-Type OriginType::getCachedCanonicalType(Type type) const { return {}; }
+Type OriginType::getCachedCanonicalType() const { return {}; }
 
 //===----------------------------------------------------------------------===//
 // OriginSetType
@@ -1110,7 +1098,8 @@ OptionalParseResult OriginSetType::parseValue(AsmParser &p,
   return std::nullopt;
 }
 
-LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult OriginSetType::printValue(AsmPrinter &p, TypedAttr value,
+                                        KGENParamPrinter &printer) const {
   if (auto set = ::dyn_cast<OriginSetAttr>(value)) {
     printOriginSet(p, set.getOperands());
     return success();
@@ -1231,11 +1220,12 @@ OptionalParseResult RefType::parseValue(AsmParser &p, TypedAttr &value) const {
   return {};
 }
 
-LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult RefType::printValue(AsmPrinter &p, TypedAttr value,
+                                  KGENParamPrinter &printer) const {
   // Print a `store_to_mem` directive.
   if (auto memAttr = ::dyn_cast<StoreToMemAttr>(value)) {
     p << "store_to_mem(";
-    printParamValue(p, memAttr.getValue());
+    printer.printParamValue(p, memAttr.getValue());
     p << ')';
     return success();
   }
@@ -1694,42 +1684,16 @@ SymbolRefAttr StructMetaType::getSymbol() const {
   return getType().getValue().getValue();
 }
 
-TypeSignatureType StructMetaType::getSignature() const {
-  return getType().getSignature();
-}
-
 ArrayRef<TypedAttr> StructMetaType::getParamValues() const {
   return getType().getParamValues();
-}
-
-StructMetaType StructMetaType::bindAll(ArrayRef<TypedAttr> values) const {
-  return StructMetaType::get(getType().bindAll(values));
-}
-
-StructMetaType StructMetaType::bindUnbound(ArrayRef<TypedAttr> values) const {
-  return StructMetaType::get(getType().bindUnbound(values));
 }
 
 SymbolRefAttr StructMetaMetaType::getSymbol() const {
   return getType().getSymbol();
 }
 
-TypeSignatureType StructMetaMetaType::getSignature() const {
-  return getType().getSignature();
-}
-
 ArrayRef<TypedAttr> StructMetaMetaType::getParamValues() const {
   return getType().getParamValues();
-}
-
-StructMetaMetaType
-StructMetaMetaType::bindAll(ArrayRef<TypedAttr> values) const {
-  return StructMetaMetaType::get(getType().bindAll(values));
-}
-
-StructMetaMetaType
-StructMetaMetaType::bindUnbound(ArrayRef<TypedAttr> values) const {
-  return StructMetaMetaType::get(getType().bindUnbound(values));
 }
 
 //===----------------------------------------------------------------------===//

@@ -1,0 +1,294 @@
+Reply to a libfabric handshake that re-establishes a known connection.
+
+NIXL 1.5.0's libfabric backend sends a handshake only from the side that
+creates a fresh connection, and a handshake for a connection the receiver
+already holds only marks it received. So when one agent invalidates a live
+peer and loads it again, its new connection sends a handshake that the
+peer, which kept its own connection, never answers. Every post to that
+peer then waits NIXL_LIBFABRIC_HANDSHAKE_TIMEOUT_S (60 s) and fails with
+NIXL_ERR_REMOTE_DISCONNECT. A dKV connector that evicts a peer over its
+table cap and attaches it again hits this (CLIN-2277).
+
+A handshake that carries the sender's connection info (has_conn=1) says
+the sender has not seen our handshake. The receiver now answers it with a
+has_conn=0 handshake, which cannot loop. When the progress thread owns the
+rails, the reply goes through the connection-management thread, so it is
+never posted from the progress thread's completion context. The wire
+format does not change, so a patched agent interoperates with an unpatched
+one. The fix takes effect on the side that kept its connection.
+
+This is a backport of ai-dynamo/nixl#2438, merged upstream as 9426653281
+after v1.5.0; no tagged release carries it through v1.5.2. The diff is
+that commit's src/ changes, with only the trailing space on blank context
+lines stripped by the repo's pre-commit hook. Its unit tests and CI script
+are left out.
+
+TODO(CLIN-2277): drop once the fix ships in a tagged NIXL release.
+
+diff --git a/src/plugins/libfabric/libfabric_backend.cpp b/src/plugins/libfabric/libfabric_backend.cpp
+index e715fe69b5..c31d55dcd1 100644
+--- a/src/plugins/libfabric/libfabric_backend.cpp
++++ b/src/plugins/libfabric/libfabric_backend.cpp
+@@ -655,6 +655,17 @@ nixlLibfabricEngine::~nixlLibfabricEngine() {
+     NIXL_DEBUG
+         << "Destructor starting, stopping all threads FIRST to prevent timing report interruption";
+
++    // Stop the CM thread first: an in-flight reply send may be waiting on the progress
++    // thread to drain its completions, so the progress thread must stop after it.
++    {
++        const std::lock_guard<std::mutex> lock(cm_mutex_);
++        cm_thread_stop_ = true;
++    }
++    cm_cv_.notify_all();
++    if (cm_thread_.joinable()) {
++        cm_thread_.join();
++    }
++
+     post_thread_pool_.reset();
+     if (progress_thread_enabled_) {
+         progress_thread_stop_.store(true);
+@@ -802,6 +813,14 @@ nixlLibfabricEngine::disconnect(const std::string &remote_agent) {
+
+     nixl_status_t status = it->second->disconnect();
+     connections_.erase(it);
++    // Drop queued replies for this peer so teardown never posts toward it from the CM thread.
++    {
++        const std::lock_guard<std::mutex> cm_lock(cm_mutex_);
++        std::erase_if(pending_replies_,
++                      [&remote_agent](const std::shared_ptr<nixlLibfabricConnection> &pending) {
++                          return pending->remoteAgent_ == remote_agent;
++                      });
++    }
+     return status;
+ }
+
+diff --git a/src/plugins/libfabric/libfabric_backend.h b/src/plugins/libfabric/libfabric_backend.h
+index f4b40493a3..4231ba42ca 100644
+--- a/src/plugins/libfabric/libfabric_backend.h
++++ b/src/plugins/libfabric/libfabric_backend.h
+@@ -28,6 +28,7 @@
+ #include <chrono>
+ #include <unordered_map>
+ #include <unordered_set>
++#include <deque>
+
+ #include "nixl.h"
+ #include "backend/backend_engine.h"
+@@ -211,10 +212,13 @@ class nixlLibfabricEngine : public nixlBackendEngine {
+     mutable std::vector<std::string> agent_names_; // List of agent names for easy access
+
+     // Threading infrastructure - remaining members
+-    // Connection Management (CM) thread
++    // Connection Management (CM) thread: sends re-establishment replies queued by the
++    // progress thread (handleHandshake), which must not post from its own completion context
+     std::mutex cm_mutex_;
+     std::thread cm_thread_;
+     std::condition_variable cm_cv_;
++    std::deque<std::shared_ptr<nixlLibfabricConnection>> pending_replies_;
++    std::atomic<bool> cm_thread_stop_{false};
+
+     // Progress thread for rail CQs
+     std::thread progress_thread_;
+@@ -340,10 +344,10 @@ class nixlLibfabricEngine : public nixlBackendEngine {
+     void
+     processNotification(const std::string &serialized_notif, uint32_t sender_peer_idx);
+
+-    // Send the per-peer handshake message to a peer we just created a connection with. It
+-    // tells the peer we hold its endpoints in our AV, so we can attribute its traffic.
+-    // When we decide the peer may not have seen us, i.e. have never sent us a handshake,
+-    // embed our own connection info in the message.
++    // Send the per-peer handshake message to a peer, telling it we hold its endpoints in
++    // our AV, so we can attribute its traffic. Sent when a connection is created, and as
++    // a reply to a peer's fresh (has_conn) handshake. If the peer may not have seen us
++    // (i.e. never sent us a handshake), embed our own connection info in the message.
+     nixl_status_t
+     sendHandshakeTo(const nixlLibfabricConnection &conn) const;
+
+@@ -351,6 +355,12 @@ class nixlLibfabricEngine : public nixlBackendEngine {
+     // Will load the peer's connection info from the handshake payload, if it's a new peer.
+     void
+     handleHandshake(const std::string &raw_payload);
++    // Queues a re-establishment reply for the CM thread; dropped once teardown started.
++    void
++    queueHandshakeReply(std::shared_ptr<nixlLibfabricConnection> conn);
++    // CM thread body: sends queued re-establishment replies off the progress thread.
++    void
++    cmThread();
+     // Marks a peer rejected for its protocol version; establishConnection() then fails fast.
+     void
+     rejectHandshake(const std::string &peer_agent_name, uint16_t peer_proto_ver);
+diff --git a/src/plugins/libfabric/libfabric_handshake.cpp b/src/plugins/libfabric/libfabric_handshake.cpp
+index 38aff8ffb0..94aa4fa9cc 100644
+--- a/src/plugins/libfabric/libfabric_handshake.cpp
++++ b/src/plugins/libfabric/libfabric_handshake.cpp
+@@ -74,6 +74,12 @@ nixlLibfabricEngine::sendHandshakeTo(const nixlLibfabricConnection &conn) const
+     }
+
+     constexpr size_t kRailId = 0;
++    auto rail_it = conn.rail_remote_addr_list_.find(kRailId);
++    if (rail_it == conn.rail_remote_addr_list_.end() || rail_it->second.empty()) {
++        NIXL_WARN << "No remote rail addresses on record for '" << conn.remoteAgent_
++                  << "'; cannot send handshake";
++        return NIXL_ERR_BACKEND;
++    }
+     nixlLibfabricReq *req = rail_manager_.getRail(kRailId).allocateControlRequest(
+         payload.size(), LibfabricUtils::getNextXferId());
+     if (!req) {
+@@ -88,9 +94,8 @@ nixlLibfabricEngine::sendHandshakeTo(const nixlLibfabricConnection &conn) const
+     NIXL_DEBUG << "Sending handshake to '" << conn.remoteAgent_ << "' proto_ver=" << proto_ver
+                << " (my agent_name='" << my_name
+                << "', piggybacked_conn_info_len=" << piggybacked_conn_info.size() << ")";
+-    return rail_manager_.postControlMessage(nixlLibfabricRailManager::ControlMessageType::HANDSHAKE,
+-                                            req,
+-                                            conn.rail_remote_addr_list_.at(kRailId)[0]);
++    return rail_manager_.postControlMessage(
++        nixlLibfabricRailManager::ControlMessageType::HANDSHAKE, req, rail_it->second[0]);
+ }
+
+ void
+@@ -220,5 +225,90 @@ nixlLibfabricEngine::handleHandshake(const std::string &raw_payload) {
+         NIXL_INFO << "Handshake stored: peer='" << peer_agent_name
+                   << "' — it has our endpoints in its address vectors, so it can attribute "
+                      "our transfers and we may start sending";
++
++        if (has_conn) {
++            // The sender has not received our handshake yet (see sendHandshakeTo), so it
++            // is establishing fresh: rebuilt its side, or both sides race first-time
++            // setup. The has_conn=0 reply cannot loop and goes to the addresses on record.
++            if (peer_agent_name == localAgent) {
++                return; // we never handshake ourselves (mirrors loadRemoteConnInfo)
++            }
++            auto rail_it = conn->rail_remote_addr_list_.find(0);
++            if (rail_it == conn->rail_remote_addr_list_.end() || rail_it->second.empty()) {
++                NIXL_WARN << "Cannot reply to re-establishment handshake from '" << peer_agent_name
++                          << "': no remote rail addresses on record";
++                return;
++            }
++            NIXL_INFO << "Peer '" << peer_agent_name
++                      << "' re-established its side; replying so its handshake wait completes";
++            if (progress_thread_enabled_) {
++                // handleHandshake runs on the progress thread here, and postSend()
++                // retries FI_EAGAIN without draining its own completions when the
++                // progress thread owns them — an inline reply could wedge the only
++                // thread that can make progress. Hand the reply to the CM thread.
++                queueHandshakeReply(conn);
++            } else {
++                nixl_status_t status = sendHandshakeTo(*conn);
++                if (status != NIXL_SUCCESS) {
++                    NIXL_WARN << "Replying to re-establishment handshake from '" << peer_agent_name
++                              << "' failed (non-fatal; re-triggers on the peer's next re-add): "
++                                 "status="
++                              << status;
++                }
++            }
++        }
++    }
++}
++
++void
++nixlLibfabricEngine::queueHandshakeReply(std::shared_ptr<nixlLibfabricConnection> conn) {
++    {
++        const std::lock_guard<std::mutex> lock(cm_mutex_);
++        if (cm_thread_stop_) {
++            return; // engine teardown; the peer's next re-add re-triggers the reply
++        }
++        pending_replies_.push_back(std::move(conn));
++        if (!cm_thread_.joinable()) {
++            cm_thread_ = std::thread(&nixlLibfabricEngine::cmThread, this);
++        }
++    }
++    cm_cv_.notify_one();
++}
++
++void
++nixlLibfabricEngine::cmThread() {
++    while (true) {
++        std::shared_ptr<nixlLibfabricConnection> conn;
++        {
++            std::unique_lock<std::mutex> lock(cm_mutex_);
++            cm_cv_.wait(lock, [this]() { return cm_thread_stop_ || !pending_replies_.empty(); });
++            if (cm_thread_stop_) {
++                return; // pending replies are dropped: teardown makes them moot
++            }
++            conn = std::move(pending_replies_.front());
++            pending_replies_.pop_front();
++        }
++        if (cm_thread_stop_) {
++            continue; // teardown started: drop the popped reply
++        }
++        // DISCONNECTED is also the pre-connect state of a live registration, so the
++        // state cannot decide this: only a registration that is gone (disconnect()
++        // removes it) means no reply. An unconnected holder still owes one — nothing
++        // else completes the re-establishing peer's wait.
++        {
++            std::lock_guard<std::mutex> lock(connection_state_mutex_);
++            auto it = connections_.find(conn->remoteAgent_);
++            if (it == connections_.end() || it->second != conn) {
++                NIXL_DEBUG << "Skipping re-establishment reply to '" << conn->remoteAgent_
++                           << "': connection no longer registered";
++                continue;
++            }
++        }
++        nixl_status_t status = sendHandshakeTo(*conn);
++        if (status != NIXL_SUCCESS) {
++            NIXL_WARN << "Replying to re-establishment handshake from '" << conn->remoteAgent_
++                      << "' failed (non-fatal; re-triggers on the peer's next re-add): status="
++                      << status;
++        }
+     }
+ }
+diff --git a/src/plugins/libfabric/meson.build b/src/plugins/libfabric/meson.build
+index 05cc53cfdd..43fc9b3631 100644
+--- a/src/plugins/libfabric/meson.build
++++ b/src/plugins/libfabric/meson.build
+@@ -37,6 +37,7 @@ libfabric_plugin_deps = [
+ ]
+
+ compile_flags = ['-DHAVE_LIBFABRIC']
++libfabric_gpu_abi_deps = []
+
+ # Add GPU support: HIP/ROCm when rocm_path is set, CUDA otherwise. The GPU code
+ # paths are guarded by HAVE_CUDA; on ROCm the hipified sources compile those
+@@ -44,9 +45,11 @@ compile_flags = ['-DHAVE_LIBFABRIC']
+ if rocm_dep.found()
+     libfabric_plugin_deps += [rocm_dep]
+     compile_flags += ['-DHAVE_CUDA']
++    libfabric_gpu_abi_deps += [rocm_dep]
+ elif cuda_dep.found()
+     libfabric_plugin_deps += [cuda_dep]
+     compile_flags += ['-DHAVE_CUDA']
++    libfabric_gpu_abi_deps += [cuda_dep]
+ endif
+
+ # Build as static or shared library based on configuration
+@@ -93,5 +96,11 @@ else
+     endif
+ endif
+
+-# Declare dependency interface
+-libfabric_backend_interface = declare_dependency(link_with: libfabric_backend_lib)
++# Declare dependency interface. The engine class layout depends on these ABI
++# defines and GPU headers (libfabric_backend.h gates its CUDA members on
++# HAVE_CUDA): a consumer that allocates nixlLibfabricEngine without them gets
++# a smaller object and the plugin's constructor writes past the allocation.
++libfabric_backend_interface = declare_dependency(link_with: libfabric_backend_lib,
++    include_directories: include_directories('.'),
++    compile_args: compile_flags,
++    dependencies: libfabric_gpu_abi_deps)
+diff --git a/src/utils/libfabric/libfabric_common.h b/src/utils/libfabric/libfabric_common.h
+index e1521e0911..daac9cc66c 100644
+--- a/src/utils/libfabric/libfabric_common.h
++++ b/src/utils/libfabric/libfabric_common.h
+@@ -97,9 +97,9 @@ constexpr const char *NIXL_HANDSHAKE_TAG_CONN = "conn";
+ #define NIXL_LIBFABRIC_MSG_XFER_ERROR 1
+ #define NIXL_LIBFABRIC_MSG_NOTIFICTION 2
+ #define NIXL_LIBFABRIC_MSG_TRANSFER 4
+-// Peer-id handshake message. Sent once per (peer A, peer B) pair after
+-// connection setup. Carries assigned agent index, sender name, and optionally
+-// connection info. See libfabric_handshake.cpp for wire-format details.
++// Peer-id handshake message. Sent when a connection is set up, and as a reply
++// to a peer's fresh handshake. Carries protocol version, sender name, and
++// optionally connection info. See libfabric_handshake.cpp for wire-format details.
+ #define NIXL_LIBFABRIC_MSG_HANDSHAKE 8
+
+ // Single-operation immediate data extraction (no intermediate shifts)

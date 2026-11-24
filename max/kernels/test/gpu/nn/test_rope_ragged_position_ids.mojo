@@ -29,8 +29,6 @@ from layout import Coord, TileTensor, row_major
 from nn.rope import rope_ragged
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils import IndexList
-
 
 def test_rope_ragged_position_ids[
     dtype: DType
@@ -90,17 +88,16 @@ def test_rope_ragged_position_ids[
     # tensor on the GPU (memory access fault). Same rule the kernel itself
     # follows for its captured tensors; mirrors `test_rope_ragged.mojo`'s
     # `output_fn`.
-    @always_inline
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](idx: IndexList[3], val: SIMD[dtype, width]) {var out_t} -> None:
-        out_t.store[width=width](Coord(idx), val)
+    ](idx: Coord, val: SIMD[dtype, width]) {var out_t} -> None:
+        out_t.store(idx, val)
 
     rope_ragged[
         dtype,
         dtype,
         interleaved=True,
-        target=StaticString("gpu"),
     ](
         x=x_t,
         input_row_offsets=ro_t,
@@ -108,7 +105,7 @@ def test_rope_ragged_position_ids[
         freqs_cis=freqs_t,
         context=ctx,
         output_fn=output_fn,
-        position_ids=pid_t.as_unsafe_any_origin().as_immut(),
+        position_ids=pid_t.as_unsafe_any_origin().as_imm(),
     )
     ctx.synchronize()
 

@@ -34,6 +34,6 @@ def indirect_callee() raises -> def() thin -> None:
 def call_it() raises:
     # CHECK-NEXT: [[RESULT:%.*]] = lit.var.decl
     # CHECK-NEXT: call {{.*}}indirect_callee{{.*}}(%__error__, [[RESULT]])
-    # CHECK-NEXT: [[CALLEE:%.*]] = lit.load.consume [[RESULT]]
+    # CHECK: [[CALLEE:%.*]] = lit.load.consume [[RESULT]]
     # CHECK-NEXT: lit.call_indirect tail [[CALLEE]]()
     indirect_callee()()

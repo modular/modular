@@ -16,7 +16,7 @@ End-to-end correctness sweep for the native 3D implicit-GEMM conv
 path. Each shape runs both:
 
   - `dispatch_amd_4wave_conv3d` (the new path being added by this PR),
-  - `conv_miopen[conv_rank=3, ...]` (the reference, autotuned per
+  - `conv_miopen[filter_is_fcrs=False]` (the reference, autotuned per
     shape via MIOpen's Find mode).
 
 and asserts the two outputs match within the BF16 reduction-order
@@ -114,43 +114,10 @@ def test_4wave_conv3d_vs_miopen[
     comptime K = Q * R * S * C_in
 
     print(
-        "== test_4wave_conv3d_vs_miopen:",
-        " N=",
-        N,
-        " D=",
-        D,
-        " H=",
-        H,
-        " W=",
-        W,
-        " C_in=",
-        C_in,
-        " C_out=",
-        C_out,
-        " Q=",
-        Q,
-        " R=",
-        R,
-        " S=",
-        S,
-        " stride=",
-        stride_d,
-        "x",
-        stride_h,
-        "x",
-        stride_w,
-        " pad=",
-        pad_d,
-        "x",
-        pad_h,
-        "x",
-        pad_w,
-        " D_out=",
-        D_out,
-        " H_out=",
-        H_out,
-        " W_out=",
-        W_out,
+        t"== test_4wave_conv3d_vs_miopen:  N= {N}  D= {D}  H= {H}  W= {W} "
+        t" C_in= {C_in}  C_out= {C_out}  Q= {Q}  R= {R}  S= {S}  stride="
+        t" {stride_d} x {stride_h} x {stride_w}  pad= {pad_d} x {pad_h} x"
+        t" {pad_w}  D_out= {D_out}  H_out= {H_out}  W_out= {W_out}"
     )
 
     # -------- Allocate buffers --------
@@ -249,12 +216,12 @@ def test_4wave_conv3d_vs_miopen[
         ),
     )
 
-    var stride_idx = IndexList[3](stride_d, stride_h, stride_w)
-    var dilation_idx = IndexList[3](1, 1, 1)
-    var pad_idx = IndexList[3](pad_d, pad_h, pad_w)
+    var stride_idx = (stride_d, stride_h, stride_w)
+    var dilation_idx = (1, 1, 1)
+    var pad_idx = (pad_d, pad_h, pad_w)
 
     # -------- MIOpen reference (3D conv, QRSCF filter) --------
-    conv_miopen[conv_rank=3, filter_is_fcrs=False](
+    conv_miopen[filter_is_fcrs=False](
         input_tt,
         filter_qrscf_tt,
         output_miopen_tt,
@@ -352,20 +319,12 @@ def test_4wave_conv3d_vs_miopen[
     var qrscf_pass = (max_diff_qrscf < abs_tolerance) or (rel_q < 0.01)
     var fcqrs_pass = (max_diff_fcqrs < abs_tolerance) or (rel_f < 0.01)
     print(
-        "  QRSCF: max_abs_diff=",
-        max_diff_qrscf,
-        " L1_rel=",
-        rel_q,
-        " pass=",
-        qrscf_pass,
+        t"  QRSCF: max_abs_diff= {max_diff_qrscf}  L1_rel= {rel_q}  pass="
+        t" {qrscf_pass}"
     )
     print(
-        "  FCQRS: max_abs_diff=",
-        max_diff_fcqrs,
-        " L1_rel=",
-        rel_f,
-        " pass=",
-        fcqrs_pass,
+        t"  FCQRS: max_abs_diff= {max_diff_fcqrs}  L1_rel= {rel_f}  pass="
+        t" {fcqrs_pass}"
     )
     if not qrscf_pass:
         raise Error("QRSCF leg failed correctness vs MIOpen")

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Test DP=1, TP=1 basic send/recv using GPU 0 and GPU 1."""
+"""Test DP=1, TP=1 send/recv from GPU 1 to GPU 0 over UCX's CUDA IPC transport."""
 
 from __future__ import annotations
 
@@ -21,8 +21,8 @@ import time
 
 import numpy as np
 import pytest
-from _transfer_engine_helpers import kv_memory
-from max.driver import Accelerator
+from _transfer_engine_helpers import every_leaf, join_peers, kv_memory
+from max.driver import Accelerator, accelerator_api
 from max.driver.buffer import Buffer
 from max.pipelines.kv_cache import KVTransferEngine
 
@@ -66,7 +66,11 @@ def transfer_routine_sender(
     # Perform transfer
     t0 = time.time()
     transfer_req = engine.initiate_send_transfer(
-        remote_md, src_idxs, dst_idxs, src_replica_idx=0, dst_replica_idx=0
+        remote_md,
+        every_leaf(remote_md, src_idxs),
+        every_leaf(remote_md, dst_idxs),
+        src_replica_idx=0,
+        dst_replica_idx=0,
     )
     transfer_queue.put(transfer_req)
     engine.sync_and_release(transfer_req)
@@ -79,12 +83,6 @@ def transfer_routine_sender(
     print(
         f"[Sender] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
     )
-
-    # Check that the transfer speed is at least 1 GB/s.
-    # Note: this alone does not guarantee CUDA IPC is used — d2h→h2d can also
-    # exceed 1 GB/s. The cuMemcpyDtoDAsync_v2 log assertion in the test
-    # is the authoritative check for transport selection.
-    assert bw > 1.0, f"Transfer speed is too low: {bw:.2f} GB/s"
 
     # Verify sender buffer is unchanged
     result = blocks.to_numpy()
@@ -147,6 +145,9 @@ def transfer_routine_receiver(
     engine.cleanup()
 
 
+@pytest.mark.skipif(
+    accelerator_api() == "hip", reason="Checks the CUDA IPC transport"
+)
 def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
@@ -157,13 +158,17 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     receiver_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
 
     # Transfer parameters
+    # The test checks the data and the transport, not the speed, so a small
+    # payload is sufficient. A large host allocation can stall for seconds on
+    # a busy host.
     GB = 1024 * 1024 * 1024
-    total_bytes = int(1 * GB)
+    total_bytes = 64 * 1024 * 1024
     total_num_pages = 2
     src_idxs = [0, 1]
     dst_idxs = [1, 0]
 
     sender_proc = ctx.Process(
+        name="sender",
         target=transfer_routine_sender,
         args=(
             sender_md_queue,
@@ -179,6 +184,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
         ),
     )
     receiver_proc = ctx.Process(
+        name="receiver",
         target=transfer_routine_receiver,
         args=(
             sender_md_queue,
@@ -195,16 +201,7 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     sender_proc.start()
     receiver_proc.start()
-
-    sender_proc.join()
-    receiver_proc.join()
-
-    assert sender_proc.exitcode == 0, (
-        f"Sender process failed with exit code {sender_proc.exitcode}"
-    )
-    assert receiver_proc.exitcode == 0, (
-        f"Receiver process failed with exit code {receiver_proc.exitcode}"
-    )
+    join_peers([sender_proc, receiver_proc])
 
     out, _err = capfd.readouterr()
 
@@ -216,6 +213,6 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
                 print(line)
         print("-" * 80)
 
-    # Verify CUDA IPC transport is selected. The bw > 1 GB/s check alone is
-    # insufficient since d2h->h2d paths can also exceed 1 GB/s.
+    # Check the transport, not the speed. One transfer on a shared host can be
+    # slow, also over CUDA IPC.
     assert "UCX  DEBUG cuMemcpyDtoDAsync_v2" in out

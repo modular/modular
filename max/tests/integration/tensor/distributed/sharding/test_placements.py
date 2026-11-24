@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for Placement types: Replicated, Sharded, Partial, ReduceOp,
+"""Tests for Placement types: Replicated, Sharded, Partial,
 and cross-type comparisons."""
 
 from __future__ import annotations
@@ -18,9 +18,8 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-from max.experimental.sharding import (
+from max.tensor.sharding import (
     Partial,
-    ReduceOp,
     Replicated,
     Sharded,
 )
@@ -70,46 +69,18 @@ class TestSharded:
         }
 
     def test_is_placement_subclass(self) -> None:
-        from max.experimental.sharding import Placement
+        from max.tensor.sharding import Placement
 
         assert isinstance(Sharded(0), Placement)
 
 
 class TestPartial:
     def test_repr(self) -> None:
-        assert repr(Partial()) == "Partial(reduce_op='sum')"
-
-    def test_default_reduce_op(self) -> None:
-        assert Partial().reduce_op == ReduceOp.SUM
-
-    def test_equality(self) -> None:
-        assert Partial() == Partial(reduce_op=ReduceOp.SUM)
-        assert Partial(ReduceOp.SUM) != Partial(ReduceOp.AVG)
+        assert repr(Partial()) == "Partial()"
 
     def test_value_equality(self) -> None:
         assert Partial() == Partial()
-        assert Partial(ReduceOp.AVG) == Partial(ReduceOp.AVG)
         assert hash(Partial()) == hash(Partial())
-
-    def test_reduce_op_readonly(self) -> None:
-        p = Partial()
-        with pytest.raises(AttributeError):
-            p.reduce_op = ReduceOp.SUM  # type: ignore[misc]
-
-    def test_hash(self) -> None:
-        assert hash(Partial()) == hash(Partial(ReduceOp.SUM))
-        assert hash(Partial(ReduceOp.SUM)) != hash(Partial(ReduceOp.AVG))
-
-
-class TestReduceOp:
-    def test_values(self) -> None:
-        assert ReduceOp.SUM.value == "sum"
-        assert ReduceOp.AVG.value == "avg"
-        assert ReduceOp.MIN.value == "min"
-        assert ReduceOp.MAX.value == "max"
-
-    def test_is_string_enum(self) -> None:
-        assert isinstance(ReduceOp.SUM, str)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -135,7 +106,7 @@ class TestPlacementCrossType:
         assert Replicated() != 42
 
     def test_all_are_placement_instances(self) -> None:
-        from max.experimental.sharding import Placement
+        from max.tensor.sharding import Placement
 
         assert isinstance(Replicated(), Placement)
         assert isinstance(Sharded(0), Placement)

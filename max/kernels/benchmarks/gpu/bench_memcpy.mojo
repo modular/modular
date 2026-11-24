@@ -28,7 +28,7 @@ from max.gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse, human_readable_size
 from std.testing import assert_almost_equal, assert_true
 
-from std.utils import IndexList
+from std.utils.coord import Coord
 
 
 @fieldwise_init
@@ -57,26 +57,27 @@ struct Config(ImplicitlyCopyable, Writable):
 
     @staticmethod
     def get(handle: String) -> Self:
-        if handle == "host_to_device":
-            return Self.HOST_TO_DEVICE
-        elif handle == "host_pinned_to_device":
-            return Self.HOST_PINNED_TO_DEVICE
-        elif handle == "device_to_host":
-            return Self.DEVICE_TO_HOST
-        elif handle == "device_to_host_pinned":
-            return Self.DEVICE_TO_HOST_PINNED
-        elif handle == "device_to_device":
-            return Self.DEVICE_TO_DEVICE
-        elif handle == "peer_to_peer":
-            return Self.PEER_TO_PEER
-        else:
-            print("UNDEFINED")
-            print(
-                "options: host_to_device, host_pinned_to_device,"
-                " device_to_host, device_to_host_pinned, device_to_device,"
-                " peer_to_peer"
-            )
-            return Self.UNDEFINED
+        match handle:
+            case "host_to_device":
+                return Self.HOST_TO_DEVICE
+            case "host_pinned_to_device":
+                return Self.HOST_PINNED_TO_DEVICE
+            case "device_to_host":
+                return Self.DEVICE_TO_HOST
+            case "device_to_host_pinned":
+                return Self.DEVICE_TO_HOST_PINNED
+            case "device_to_device":
+                return Self.DEVICE_TO_DEVICE
+            case "peer_to_peer":
+                return Self.PEER_TO_PEER
+            case _:
+                print("UNDEFINED")
+                print(
+                    "options: host_to_device, host_pinned_to_device,"
+                    " device_to_host, device_to_host_pinned, device_to_device,"
+                    " peer_to_peer"
+                )
+                return Self.UNDEFINED
 
     def write_to(self, mut writer: Some[Writer]):
         if self.direction == Self.DToD:
@@ -95,21 +96,19 @@ struct Config(ImplicitlyCopyable, Writable):
             writer.write("_to_device")
 
 
-@no_inline
+@inline(.never)
 def bench_memcpy(
     mut b: Bench,
     length_in_bytes: Int,
     *,
     config: Config,
-    context: DeviceContext,
+    context: DeviceContext[],
 ) raises:
     comptime dtype = DType.float32
     var length_in_elements = length_in_bytes // size_of[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
-    ) if config.pinned_memory else DeviceContext(
-        api="cpu"
-    ).enqueue_create_host_buffer[
+    ) if config.pinned_memory else DeviceContext.cpu().enqueue_create_host_buffer[
         dtype
     ](
         length_in_elements
@@ -125,10 +124,10 @@ def bench_memcpy(
         length_in_elements if config.direction == Config.DToD else 0
     )
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) {imm}:
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             if config.direction == Config.DToH:
                 context.enqueue_copy(mem_host, mem_device)
             elif config.direction == Config.HToD:
@@ -164,13 +163,13 @@ def bench_memcpy(
     _ = mem2_device
 
 
-@no_inline
+@inline(.never)
 def bench_p2p(
     mut b: Bench,
     length_in_bytes: Int,
     *,
-    ctx1: DeviceContext,
-    ctx2: DeviceContext,
+    ctx1: DeviceContext[],
+    ctx2: DeviceContext[],
 ) raises:
     comptime dtype = DType.float32
     var length_in_elements = length_in_bytes // size_of[dtype]()
@@ -189,10 +188,10 @@ def bench_p2p(
     ctx1.enqueue_copy(src_buf, host_ptr)
     ctx1.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_func(mut b: Bencher) {imm}:
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             ctx2.enqueue_copy(dst_buf, src_buf)
 
         bencher_iter_custom(b, kernel_launch, ctx1)
@@ -223,14 +222,11 @@ def bench_p2p(
                 assert_almost_equal(host_ptr[i], Float32(i))
             except e:
                 print("Verification failed at index", i)
-                print("Expected:", i, "Got:", host_ptr[i])
+                print(t"Expected: {i} Got: {host_ptr[i]}")
                 abort(String(e))
 
     # Parallelize verification using sync_parallelize
-    var shape = IndexList[1](
-        length_in_elements,
-    )
-    parallelize_over_rows(verify_chunk, shape, 0, 256)
+    parallelize_over_rows(verify_chunk, Coord(length_in_elements), 0, 256)
 
     # Cleanup
     _ = src_buf

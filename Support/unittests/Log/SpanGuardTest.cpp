@@ -109,7 +109,19 @@ TEST_F(SpanGuardTest, EmitsStartAndEndRecords) {
   }
   auto out = capturedOutput();
   EXPECT_NE(out.find("event=span_start operation=prefill"), std::string::npos);
-  EXPECT_NE(out.find("event=span_end operation=prefill"), std::string::npos);
+  EXPECT_NE(out.find("event=span_end"), std::string::npos);
+}
+
+// `operation` is on the start record only: the end record spends its four
+// pairs on event, span_id, duration_us and the batch id, and the span_id is
+// what carries the operation across.
+TEST_F(SpanGuardTest, OnlyTheStartRecordNamesTheOperation) {
+  {
+    SpanGuard span("prefill");
+  }
+  auto out = capturedOutput();
+  EXPECT_EQ(fieldValues(out, "operation").size(), 1u);
+  EXPECT_EQ(fieldValues(out, "span_id").size(), 2u);
 }
 
 TEST_F(SpanGuardTest, StartAndEndShareASpanId) {
@@ -225,6 +237,24 @@ TEST_F(SpanGuardTest, FilteredLevelEmitsNothing) {
     SpanGuard span("prefill");
   }
   EXPECT_TRUE(capturedOutput().empty());
+}
+
+// Both records go through MLOG_KV_REQ, so a reader filtering on batch_id sees
+// the whole span rather than just its start.
+TEST_F(SpanGuardTest, BothRecordsCarryTheBatchId) {
+  M::Request::BatchScope batch(42);
+  {
+    SpanGuard span("prefill");
+  }
+  auto ids = fieldValues(capturedOutput(), "batch_id");
+  EXPECT_EQ(ids, (std::vector<std::string>{"42", "42"}));
+}
+
+TEST_F(SpanGuardTest, NoBatchIdOutsideARequest) {
+  {
+    SpanGuard span("prefill");
+  }
+  EXPECT_EQ(capturedOutput().find("batch_id"), std::string::npos);
 }
 
 } // namespace

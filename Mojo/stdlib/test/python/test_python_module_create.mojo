@@ -22,7 +22,7 @@ def test_create_module() raises:
     # First though, let's see if we can even import it
     # var imported_module = Python.import_module(module_name)
     #
-    # _ = module_name
+    _ = module
 
 
 def main() raises:

@@ -41,15 +41,19 @@
 // which returns NULL on a major it does not support (the shim then treats
 // the plugin as absent). Bump MAJOR on any breaking layout or semantic
 // change; bump MINOR when appending fields to M_ProfilerPluginAPI. A shim
-// must not read fields beyond the plugin's structSize — the 1.0 shim reads
-// no appended fields, so it carries no such check yet — which is what lets
-// newer shims degrade gracefully against older plugins and vice versa.
+// must not read fields beyond the plugin's structSize (see
+// M_PROFILER_API_HAS), which is what lets newer shims degrade gracefully
+// against older plugins and vice versa.
 #define M_PROFILER_ABI_MAJOR 1
-#define M_PROFILER_ABI_MINOR 0
+#define M_PROFILER_ABI_MINOR 4
 
 // Filename the shim probes when MODULAR_PROFILER_PLUGIN does not name an
 // explicit path: next to the host DSO first, then the default dlopen search.
+#ifdef __APPLE__
+#define M_PROFILER_PLUGIN_SONAME "libMAXProfilerPlugin.dylib"
+#else
 #define M_PROFILER_PLUGIN_SONAME "libMAXProfilerPlugin.so"
+#endif
 #define M_PROFILER_PLUGIN_ENTRY_SYMBOL "M_profilerPluginGetAPI"
 
 #ifdef __cplusplus
@@ -73,6 +77,47 @@ typedef struct M_ProfilerShimGates {
   // Mirrors "a trace of either origin is live and ranges record".
   void *recordingActiveGate;
 } M_ProfilerShimGates;
+
+// ABI 1.4. One activity of a stopped trace: a host range, a runtime call, or
+// device work. Strings borrow from the plugin and are valid only during the
+// visitor call that carries them; `name` and `category` need not be
+// NUL-terminated.
+typedef struct M_ProfilerActivity {
+  const char *name;
+  size_t nameLen;
+  // libkineto's activity type name, as the trace file's `cat` field spells it
+  // ("user_annotation", "kernel", "gpu_memcpy", "cuda_runtime", ...).
+  const char *category;
+  size_t categoryLen;
+  // system_clock nanoseconds since epoch, the trace file's clock.
+  int64_t startNs;
+  int64_t durationNs;
+  // The device and stream for device work; the process and thread track for
+  // host activities.
+  int64_t device;
+  int64_t resource;
+  int32_t threadId;
+  int64_t correlationId;
+  // The range the activity is correlated to, as the trace file's
+  // `External id`; 0 when none.
+  int64_t externalId;
+} M_ProfilerActivity;
+
+// ABI 1.4. A top-level metadata field of a stopped trace. `jsonValue` is raw
+// JSON, as setTraceMetadata takes it.
+typedef struct M_ProfilerMetadataField {
+  const char *key;
+  size_t keyLen;
+  const char *jsonValue;
+  size_t jsonValueLen;
+} M_ProfilerMetadataField;
+
+// ABI 1.4. Receives a stopped trace's activities and metadata in one call.
+typedef void (*M_ProfilerTraceVisitor)(void *context,
+                                       const M_ProfilerActivity *activities,
+                                       size_t activityCount,
+                                       const M_ProfilerMetadataField *metadata,
+                                       size_t metadataCount);
 
 // The plugin's call table. All functions are process-global operations with
 // the exact semantics of the M::Profiling API (Range.h); strings cross the
@@ -111,7 +156,38 @@ typedef struct M_ProfilerPluginAPI {
   void (*rangeEnd)(void);
   // Names the calling thread's track in the trace; must run on that thread.
   void (*registerCurrentThread)(void);
+
+  // ABI 1.1. Asks for an event-triggered step-window burst; `reason` need
+  // not be NUL-terminated. Returns whether a burst opened.
+  bool (*requestBurst)(const char *reason, size_t reasonLen);
+
+  // ABI 1.2.
+  // Attaches a top-level metadata field to the live trace. The first value
+  // set for a key in a trace wins; later calls for it are cheap no-ops. The
+  // value is inserted into the trace JSON verbatim, so it must be valid JSON
+  // needing no escapes. Dropped when no trace is live.
+  void (*setTraceMetadata)(const char *key, size_t keyLen, const char *value,
+                           size_t valueLen);
+
+  // ABI 1.3. As rangeBegin, but the span claims no device work: kernels and
+  // copies launched inside it stay correlated to the enclosing range. Returns
+  // whether the caller must pair it with rangeEnd.
+  bool (*rangeBeginSpanOnly)(const char *name, size_t nameLen, uint32_t color);
+
+  // ABI 1.4. As disable(), but hands the stopped trace to `visitor` on the
+  // calling thread before returning, and writes the trace file only when
+  // `save` is set. The visitor is not called when no trace was live, nor when
+  // the trace could not be read, which lastTraceError() then reports.
+  void (*disableCollecting)(M_ProfilerTraceVisitor visitor, void *context,
+                            bool save);
 } M_ProfilerPluginAPI;
+
+// True iff `api` (a plugin's table) is long enough to carry `field` and sets
+// it: the check a shim makes before calling any field appended after 1.0.
+#define M_PROFILER_API_HAS(api, field)                                         \
+  ((api)->structSize >=                                                        \
+       offsetof(M_ProfilerPluginAPI, field) + sizeof((api)->field) &&          \
+   (api)->field != NULL)
 
 // The single symbol libMAXProfilerPlugin.so exports. Returns NULL when
 // shimABIMajor is unsupported. The first successful call performs the

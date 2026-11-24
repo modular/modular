@@ -34,6 +34,8 @@ def custom_op_example_py_binary(
             # Eager tensor API uses these, but doesn't need the direct dependencies
             "//max/python/max/engine",
             "//max/python/max/graph",
+            # Imported lazily by the eager interpreter.
+            "//max/python/max/_interpreter_ops",
         ],
     )
 

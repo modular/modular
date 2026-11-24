@@ -13,12 +13,16 @@
 """Idefics3 vision-language architecture for multimodal text generation."""
 
 from .arch import idefics3_modulev3_arch
-from .model import Idefics3Inputs, Idefics3Model
+from .inputs import Idefics3Inputs
+from .model import Idefics3Model
 from .model_config import Idefics3Config
+from .modules import Idefics3Decoder, Idefics3Vision
 
 __all__ = [
     "Idefics3Config",
+    "Idefics3Decoder",
     "Idefics3Inputs",
     "Idefics3Model",
+    "Idefics3Vision",
     "idefics3_modulev3_arch",
 ]

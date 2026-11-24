@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.gpu.host import DeviceContext
-from layout import (
-    Coord,
-    Idx,
-    TileTensor,
-    row_major,
-)
+from layout import Coord, TileTensor, row_major
 from layout._fillers import random
 from nn.conv.conv import conv_miopen
 
@@ -191,18 +186,9 @@ def test_conv_miopen[
     num_groups: Int = 1,
 ](ctx: DeviceContext) raises:
     print(
-        "== test_miopen_conv: dtype_in=",
-        input_type,
-        " dtype_filter=",
-        filter_type,
-        " dtype_out=",
-        output_type,
-        " input=",
-        input_dim,
-        " filter=",
-        filter_dim,
-        " num_groups=",
-        num_groups,
+        t"== test_miopen_conv: dtype_in= {input_type}  dtype_filter="
+        t" {filter_type}  dtype_out= {output_type}  input= {input_dim}  filter="
+        t" {filter_dim}  num_groups= {num_groups}"
     )
 
     comptime input_dim_flattened = input_dim.flattened_length()
@@ -290,9 +276,9 @@ def test_conv_miopen[
         input_dev_tensor,
         filter_dev_tensor,
         output_dev_tensor,
-        stride_dim,
-        dilation_dim,
-        pad_dim,
+        Coord(stride_dim),
+        Coord(dilation_dim),
+        Coord(pad_dim),
         num_groups,
         ctx,
     )
@@ -334,7 +320,7 @@ def main() raises:
         comptime dtype_configs = (DType.float32, DType.float16, DType.bfloat16)
 
         comptime for i in range(len(dtype_configs)):
-            comptime dtype = rebind[DType](dtype_configs[i])
+            comptime dtype = dtype_configs[i]
 
             test_conv_miopen[
                 IndexList[4](1, 8, 8, 16),  # input  (NHWC)
@@ -507,7 +493,7 @@ def main() raises:
         ](ctx)
 
         comptime for i in range(len(dtype_configs)):
-            comptime dtype = rebind[DType](dtype_configs[i])
+            comptime dtype = dtype_configs[i]
 
             test_conv_miopen[
                 IndexList[5](1, 4, 10, 8, 16),  # input  (NHWC)

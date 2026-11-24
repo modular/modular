@@ -19,7 +19,7 @@
 # wording fails a test.
 #
 # Page claims, and where each is verified:
-#   1. `Deinitable where False` opts a type out of automatic destruction, and
+#   1. `not Deinitable` opts a type out of automatic destruction, and
 #      its values must be consumed by a named deinitializer or transferred.
 #      -> test_named_deinitializer_consumes, test_transfer_defers_destruction;
 #         the failure to consume is claim C1 below
@@ -35,7 +35,7 @@
 #      raises; implicitly destructible fields are cleaned up during unwinding.
 #      -> test_dispose_before_raise, test_implicit_field_cleaned_on_unwind;
 #         raising with a live linear field is claim C4
-#   6. A custom `where` message improves the diagnostic.
+#   6. A custom `else` message improves the diagnostic.
 #      -> not runtime-testable; claim C1 carries the message text
 #   7. Parameterized code over `AnyType`/`Movable` accepts explicitly destroyed
 #      values but can't destroy them, except by returning them or by receiving
@@ -55,7 +55,7 @@
 # 2026-08-21, Mojo 1.1.0.dev0, and recorded with the diagnostic that fires:
 #   C1. A value left unconsumed: "'tally' abandoned without being explicitly
 #       destroyed: type 'Tally' does not conform to 'Deinitable' and must be
-#       explicitly destroyed". With a `where` message, that message replaces
+#       explicitly destroyed". With an `else` message, that message replaces
 #       the trailing explanation.
 #   C2. `raises` on `__deinit__()`: "destructor must not declare 'raises';
 #       remove the 'raises' keyword"
@@ -115,7 +115,7 @@ def record(into: Recorder, var event: String):
 # --- Opting out of automatic destruction ---
 
 
-struct Example(Deinitable where False):
+struct Example(not Deinitable):
     var events: Recorder
 
     def __init__(out self, events: Recorder):
@@ -158,7 +158,7 @@ def test_transfer_defers_destruction() raises:
 
 
 struct Transaction(
-    Deinitable where (False, "call 'commit()' or 'rollback()'"), Movable
+    not Deinitable else "call 'commit()' or 'rollback()'", Movable
 ):
     var events: Recorder
     var rows: Int
@@ -176,7 +176,7 @@ struct Transaction(
         record(self.events, "rolled back")
 
 
-struct MutexGuard(Deinitable where False, Movable):
+struct MutexGuard(not Deinitable, Movable):
     var events: Recorder
 
     def __init__(out self, events: Recorder):
@@ -240,14 +240,12 @@ def test_raising_deinitializer_consumes() raises:
     assert_equal(caught, "nothing to commit")
 
 
-struct Counters(
-    Deinitable where (False, "call 'flush()' or 'drop()'"), Movable
-):
+struct Counters(not Deinitable else "call 'flush()' or 'drop()'", Movable):
     var counts: Allocation[Int64]
     var events: Recorder
 
     def __init__(out self, buckets: Int, events: Recorder):
-        self.counts = alloc(Layout[Int64](count=buckets))
+        self.counts = alloc(Layout[Int64](length=buckets))
         self.counts.unsafe_span().fill(0)
         self.events = events
 
@@ -292,7 +290,7 @@ def test_dispose_before_raise_success_path() raises:
     assert_equal(events[1], "flushed 1")
 
 
-struct Draft(Deinitable where (False, "call 'save()' or 'discard()'"), Movable):
+struct Draft(not Deinitable else "call 'save()' or 'discard()'", Movable):
     var data: String  # implicitly destructible
 
     def __init__(out self, var data: String):
@@ -347,13 +345,13 @@ struct Basic(Movable):
 
 
 struct Tally(
-    Deinitable where (False, "call 'destroy()' to free the counters"), Movable
+    not Deinitable else "call 'destroy()' to free the counters", Movable
 ):
     var counts: Allocation[Int64]
     var events: Recorder
 
     def __init__(out self, buckets: Int, events: Recorder):
-        self.counts = alloc(Layout[Int64](count=buckets))
+        self.counts = alloc(Layout[Int64](length=buckets))
         self.counts.unsafe_span().fill(0)
         self.events = events
 

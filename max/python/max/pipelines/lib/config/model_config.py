@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from huggingface_hub import constants as hf_hub_constants
 from max.config import ConfigFileModel
-from max.driver import DeviceSpec
+from max.driver import DeviceSpec, is_virtual_device_mode
 from max.graph.weights import (
     WeightsFormat,
     load_weights,
@@ -38,6 +38,7 @@ from max.pipelines.lib.device_specs import (
     _default_device_specs,
     coerce_device_specs_input,
 )
+from max.pipelines.lib.pipeline_stage import PipelineStage
 from max.pipelines.lib.weight_loader import (
     WeightLoader,
     _loader_over_weights,
@@ -53,6 +54,7 @@ from max.pipelines.modeling.config_enums import (
 from max.pipelines.weights.hf_utils import (
     HuggingFaceRepo,
     download_weight_files,
+    header_only_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
@@ -74,11 +76,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("max.pipelines")
 
-# Encodings that can be casted to/from each other.
-# We currently only support float32 <-> bfloat16 weight type casting.
+# Encodings whose weights can be cast to one another at load time.
 _ALLOWED_CAST_ENCODINGS = {
     "float32",
     "bfloat16",
+    "float16",
 }
 
 
@@ -213,7 +215,7 @@ def _resolve_dtype_cast(
     ):
         raise ValueError(
             f"Cannot cast from '{from_encoding}' to '{to_encoding}' on device '{default_device_spec}'. "
-            f"We only support float32 <-> bfloat16 weight type casting."
+            f"We only support weight casts between float32, bfloat16 and float16."
         )
 
     if not supported_encoding_supported_on(to_encoding, default_device_spec):
@@ -319,7 +321,7 @@ def _infer_weight_path(
     Takes *encoding* (and optionally *cast_from*) explicitly rather than
     reading ``config.quantization_encoding`` so this can be called on a
     config those fields were never written to
-    (e.g. a diffusion component resolved on demand at consumption time,
+    (such as a diffusion component resolved on demand at consumption time,
     without going through architecture-level resolution).
 
     Prefers safetensors format as default.
@@ -373,11 +375,11 @@ def _resolve_component_encoding_and_weights(
 
     Read-only: does not mutate *config*. Intended for callers that consume
     a ``MAXModelConfig`` directly without going through architecture-level
-    resolution -- e.g. a diffusion per-component builder -- so they get the
+    resolution -- for example, a diffusion per-component builder -- so they get the
     same best-effort inference diffuser sub-components rely on, without
     depending on mutation having happened first.
 
-    Safe to call even when *config* is already fully resolved (e.g. an LLM
+    Safe to call even when *config* is already fully resolved (such as an LLM
     component whose ``quantization_encoding``/``weight_path`` were set during
     architecture validation): both steps are no-ops once those are set.
 
@@ -423,7 +425,7 @@ def _resolve_given_quantization_encoding(
     Pure counterpart of the old
     ``_validate_and_resolve_with_given_quantization_encoding``: when the
     requested encoding differs from what the weight files actually carry (and
-    both are float32/bfloat16), it records a load-time cast and returns the
+    both are castable floats), it records a load-time cast and returns the
     file's encoding. Read-only -- does not mutate *config*.
 
     Returns:
@@ -458,8 +460,12 @@ def _resolve_given_quantization_encoding(
         return encoding, None, None
 
     # No weight_path: if the repo carries a single castable encoding whose
-    # files exist, record a cast from it to the requested encoding.
-    for from_encoding in config.huggingface_weight_repo.supported_encodings:
+    # files exist, record a cast from it to the requested encoding. Files in
+    # the requested encoding win over a cast.
+    supported_encodings = config.huggingface_weight_repo.supported_encodings
+    if encoding in supported_encodings:
+        return encoding, None, None
+    for from_encoding in supported_encodings:
         if not (
             from_encoding in _ALLOWED_CAST_ENCODINGS
             and encoding in _ALLOWED_CAST_ENCODINGS
@@ -491,7 +497,7 @@ def _select_encoding_and_dtype_cast(
 
     Arch-aware sibling of :func:`_infer_quantization_encoding`: the consumer
     calls this with the architecture's ``default_encoding`` to obtain the
-    effective ``quantization_encoding`` plus any float32<->bfloat16 load-time
+    effective ``quantization_encoding`` plus any float-to-float load-time
     cast. Read-only -- does not mutate *config*.
 
     Prefer :func:`_select_quantization_encoding` (encoding only) or
@@ -535,17 +541,28 @@ def _select_encoding_and_dtype_cast(
     return encoding, cast_from, cast_to
 
 
-def _select_quantization_encoding(
+def select_quantization_encoding(
     config: MAXModelConfig,
     default_encoding: SupportedEncoding,
 ) -> SupportedEncoding:
     """Resolves the encoding a model will run with, against its architecture.
 
-    The consumer (an ``ArchConfig``) calls this with the architecture's
-    ``default_encoding`` to obtain the effective ``quantization_encoding``.
-    Read-only -- does not mutate *config*.
+    An ``ArchConfig`` calls this with its architecture's ``default_encoding``
+    to get the effective ``quantization_encoding``. It doesn't change
+    ``config``.
+
+    Args:
+        config: The model's config.
+        default_encoding: The encoding to use when neither ``config`` nor
+            the checkpoint names one.
+
+    Returns:
+        The encoding the model runs with.
     """
     return _select_encoding_and_dtype_cast(config, default_encoding)[0]
+
+
+_select_quantization_encoding = select_quantization_encoding
 
 
 def _select_dtype_cast(
@@ -554,7 +571,7 @@ def _select_dtype_cast(
 ) -> tuple[SupportedEncoding | None, SupportedEncoding | None]:
     """Resolves the load-time weight dtype cast for a model, if any.
 
-    Returns ``(cast_from, cast_to)`` describing a float32<->bfloat16 cast
+    Returns ``(cast_from, cast_to)`` describing a float-to-float cast
     applied when loading weights against the resolved encoding, or
     ``(None, None)`` when no cast applies. Read-only -- does not mutate
     *config*.
@@ -589,7 +606,7 @@ def _device_specs_for_encoding(
 
     An encoding that cannot run on GPU (GGUF q4) overrides all-GPU
     *device_specs* and runs on CPU: returns ``[DeviceSpec.cpu()]``. Any
-    other combination is returned unchanged (an invalid one, e.g. a
+    other combination is returned unchanged (an invalid one, for example, a
     GPU-only encoding on CPU, is rejected by the caller's compatibility
     check). Read-only.
 
@@ -741,6 +758,60 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """The degree of data parallelism for replicating the model."""
 
+    decode_context_parallel_degree: int = Field(
+        default=1,
+        description=(
+            "Decode context parallelism: the number of attention "
+            "tensor-parallel ranks that split each request's KV cache by "
+            "token position instead of replicating it. Must divide the "
+            "attention tensor-parallel degree; 1 disables it. Only an engine "
+            "serving the model's pipeline artifact honors it: MAX's own KV "
+            "cache manager doesn't split positions yet, so max serve and max "
+            "generate refuse it."
+        ),
+    )
+    """The decode context parallel degree within each attention replica."""
+
+    decode_context_parallel_interleave: int = Field(
+        default=1,
+        description=(
+            "Under decode context parallelism, the number of consecutive "
+            "token positions a rank owns before the next rank's turn: "
+            "position p lives on rank (p // interleave) % degree. 1 stripes "
+            "tokens; the KV page size stripes whole pages, which lets "
+            "disaggregated inference move pages between ranks unchanged. "
+            "Must divide the KV page size and needs a degree above 1. Honored "
+            "where decode_context_parallel_degree is."
+        ),
+    )
+    """Consecutive positions a decode context parallel rank owns in turn."""
+
+    dcp_q_replicate: bool | None = Field(
+        default=None,
+        description=(
+            "Under decode context parallelism, whether every rank computes "
+            "all of its group's query heads from replicated query weights "
+            "(True) or absorbs its own tensor-parallel heads and all-gathers "
+            "them (False). None takes the default, True, for every "
+            "architecture. Set only by the gen-mef export, like "
+            "decode_context_parallel_degree."
+        ),
+    )
+    """Whether decode context parallel ranks replicate the query."""
+
+    prefill_context_parallel: bool | None = Field(
+        default=None,
+        description=(
+            "Under decode context parallelism, whether prefill steps split "
+            "their query rows over each DCP group's ranks (prefill context "
+            "parallelism) instead of running DCP's per-rank attention over "
+            "every row. Needs a replicated query. None takes the default, "
+            "off: PCP is opt-in. Honored where "
+            "decode_context_parallel_degree is."
+        ),
+    )
+    """Whether prefill steps run prefill context parallelism over DCP."""
+
     pool_embeddings: bool = Field(
         default=True, description="Whether to pool embedding outputs."
     )
@@ -764,6 +835,11 @@ class MAXModelConfig(MAXModelConfigBase):
         if v is not None and v < 0:
             raise ValueError("max_length must be non-negative")
         return v
+
+    @property
+    def pipeline_stage(self) -> PipelineStage | None:
+        """The pipeline stage this config builds, or ``None`` if every layer."""
+        return self._pipeline_stage
 
     @property
     def max_length_is_user_provided(self) -> bool:
@@ -879,6 +955,19 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Whether to force download a file even if it's already in the local cache."""
 
+    header_only_weights: bool = Field(
+        default=False,
+        description=(
+            "Stand in header-only, zero-filled sparse copies of the safetensors "
+            "checkpoint, built from the remote files' headers, instead of "
+            "downloading the weights. Compilation only needs tensor names, "
+            "shapes and dtypes, so this makes ``warm-cache --target`` "
+            "independent of checkpoint size. Only valid with ``--target`` "
+            "(compile-only mode); safetensors repos only."
+        ),
+    )
+    """Whether to stand in header-only stubs for the checkpoint (compile-only)."""
+
     vision_config_overrides: dict[str, Any] = Field(
         default_factory=dict,
         description=(
@@ -908,6 +997,24 @@ class MAXModelConfig(MAXModelConfigBase):
     )
     """Override the attention sliding-window size in tokens."""
 
+    max_image_dimension: int = Field(
+        default=8192,
+        gt=0,
+        description=(
+            "Largest width or height, in pixels, accepted for a generated "
+            "image or video request. Larger requests are rejected as invalid."
+        ),
+    )
+
+    max_diffusion_steps: int = Field(
+        default=100,
+        gt=0,
+        description=(
+            "Largest denoising step count accepted for a generated image or "
+            "video request. Larger requests are rejected as invalid."
+        ),
+    )
+
     enable_echo: bool = Field(
         default=False,
         description="Whether the model should be built with echo capabilities.",
@@ -917,10 +1024,9 @@ class MAXModelConfig(MAXModelConfigBase):
     chat_template: Path | None = Field(
         default=None,
         description=(
-            "Optional custom chat template to override the one shipped with the "
-            "Hugging Face model config. If a path is provided, the file is "
-            "read lazily by the registry when building the tokenizer. If "
-            "``None``, the model's default chat template is used."
+            "Path to a custom chat template that overrides the one from "
+            "the Hugging Face model (the default). The file is either a Jinja template "
+            "or a JSON object with a ``chat_template`` key. "
         ),
     )
     """An optional custom chat template to override the one shipped with the model."""
@@ -955,6 +1061,13 @@ class MAXModelConfig(MAXModelConfigBase):
     ``None`` when never resolved, ``(None, None)`` when resolved with no
     cast. Persisted because re-deriving against the populated
     ``weight_path`` gives a different answer for casted checkpoints."""
+
+    _pipeline_stage: PipelineStage | None = PrivateAttr(default=None)
+    """The pipeline stage of the main model this config builds, or ``None``
+    for the whole model. A private attr (not a field) because only
+    :func:`~max.pipelines.lib.pipeline_parallel.stage_pipeline_config` sets
+    it, for an exporter that builds one stage, so it never surfaces as a CLI
+    flag or a config-file key."""
 
     _max_length_user_provided: bool | None = PrivateAttr(default=None)
     """Whether ``max_length`` was explicitly supplied, captured before the
@@ -1012,6 +1125,7 @@ class MAXModelConfig(MAXModelConfigBase):
         private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_generation_config", None)
         private_state.setdefault("_resolved_dtype_cast", None)
+        private_state.setdefault("_pipeline_stage", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
@@ -1043,7 +1157,7 @@ class MAXModelConfig(MAXModelConfigBase):
         Skipped when already seeded (an explicit ``_huggingface_config`` passed
         to the constructor, or one preserved across ``with_override``), for
         placeholder configs with no ``model_path``, and for repos that carry no
-        loadable model config -- e.g. diffusion-manifest components such as the
+        loadable model config -- for example, diffusion-manifest components such as the
         feature extractor or scheduler, which ship only a preprocessor/
         scheduler config. Those keep the lazy getter, which stays a no-op
         unless the config is actually accessed.
@@ -1068,11 +1182,14 @@ class MAXModelConfig(MAXModelConfigBase):
             self._generation_config = self._make_generation_config()
 
     def _has_loadable_hf_config(self) -> bool:
-        """Whether the model repo exposes a loadable HuggingFace config.
+        """Whether the model repo exposes a config this process can load.
 
         Mirrors :func:`load_huggingface_config`'s lookup (``config.json``, then
         the diffusers ``scheduler_config.json`` fallback) so eager loading is
-        skipped -- not raised -- for config-less components.
+        skipped -- not raised -- for config-less components. That lookup also
+        derives a config from a checkpoint's ``params.json``, which this does
+        not wait on: a repo that ships only ``params.json`` is loaded by the
+        lazy getter, on first access, exactly as before.
         """
         repo = self.huggingface_model_repo
         prefix = f"{repo.subfolder}/" if repo.subfolder is not None else ""
@@ -1129,7 +1246,7 @@ class MAXModelConfig(MAXModelConfigBase):
         """Builds a :class:`MAXModelConfig` from a :class:`PipelineArgs`'s flat fields.
 
         Returns a new object on every call -- ``args`` holds no live handle
-        back to it, so mutating the returned object (e.g.
+        back to it, so mutating the returned object (such as
         ``MAXModelConfig.from_pipeline_args(args).foo = x``) has no effect on
         a subsequent call with the same ``args``. Set the corresponding field
         on ``args`` itself instead.
@@ -1145,13 +1262,19 @@ class MAXModelConfig(MAXModelConfigBase):
             subfolder=args.subfolder,
             device_specs=list(args.device_specs),
             force_download=args.force_download,
+            header_only_weights=args.header_only_weights,
             vision_config_overrides=dict(args.vision_config_overrides),
             rope_type=args.rope_type,
             sliding_window=args.sliding_window,
+            max_image_dimension=args.max_image_dimension,
+            max_diffusion_steps=args.max_diffusion_steps,
             enable_echo=args.enable_echo,
             chat_template=args.chat_template,
             use_subgraphs=args.use_subgraphs,
             data_parallel_degree=args.data_parallel_degree,
+            decode_context_parallel_degree=args.decode_context_parallel_degree,
+            decode_context_parallel_interleave=args.decode_context_parallel_interleave,
+            prefill_context_parallel=args.prefill_context_parallel,
             pool_embeddings=args.pool_embeddings,
             max_length=args.max_length,
             kv_cache=args.kv_cache.model_copy(deep=True),
@@ -1201,6 +1324,9 @@ class MAXModelConfig(MAXModelConfigBase):
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
 
+        Under ``header_only_weights`` the stubs are sized like the files they
+        stand in for, so their sizes are read straight off disk instead.
+
         Returns:
             The total size of all weight files in bytes.
 
@@ -1213,6 +1339,13 @@ class MAXModelConfig(MAXModelConfigBase):
                 not available or API error).
             RuntimeError: If the determined ``repo_type`` is unexpected.
         """
+        if self.header_only_weights:
+            # A stub is sized like the file it stands in for, so one stat per
+            # shard replaces one Hugging Face HEAD request per shard.
+            return sum(
+                path.stat().st_size for path in self.resolved_weight_paths()
+            )
+
         total_weights_size = 0
         repo = self.huggingface_weight_repo
 
@@ -1269,7 +1402,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Built once at construction (see :meth:`_populate_repo_handles`) and
         stored in a PrivateAttr; this getter returns it. Falls back to
-        building a fresh handle only for a never-populated config (e.g. a
+        building a fresh handle only for a never-populated config (such as a
         placeholder with no ``model_path``) and never writes back.
         """
         cached = self._cached_weight_repo
@@ -1308,11 +1441,11 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Loaded once at construction (see :meth:`_populate_hf_config`) and
         stored in a PrivateAttr; this getter returns it. Falls back to loading
-        on demand -- without caching -- for a never-populated config (e.g. a
+        on demand -- without caching -- for a never-populated config (such as a
         placeholder with no ``model_path``).
 
         For transformers models this is the ``AutoConfig`` subclass; for
-        non-transformers models (e.g. diffusers components) it is the raw
+        non-transformers models (such as diffusers components) it is the raw
         ``config.json`` wrapped in a ``PretrainedConfig``.
 
         Raises:
@@ -1329,7 +1462,7 @@ class MAXModelConfig(MAXModelConfigBase):
 
         Loaded once at construction (see :meth:`_populate_generation_config`)
         and stored in a PrivateAttr; this getter returns it, falling back to
-        loading on demand for a never-populated config (e.g. a placeholder).
+        loading on demand for a never-populated config (such as a placeholder).
         Loading failures yield a default ``GenerationConfig``.
         """
         if self._generation_config is None:
@@ -1484,19 +1617,59 @@ class MAXModelConfig(MAXModelConfigBase):
             )
             return None
 
+    def _header_only_weight_paths(self, weight_path: list[Path]) -> list[Path]:
+        """Resolve weight paths to header-only stubs, fetching headers if needed.
+
+        Args:
+            weight_path: Weight files to resolve, relative to the repo.
+
+        Returns:
+            Absolute paths to header-only stubs on disk.
+
+        Raises:
+            ValueError: If the run is not compile-only, if the repo is not an
+                online Hugging Face repo, or if the weights are not safetensors.
+        """
+        if not is_virtual_device_mode():
+            raise ValueError(
+                "header_only_weights is only valid in compile-only mode "
+                "(``--target``). Its stub weights are zero-filled, so they "
+                "must never reach a real device."
+            )
+        weight_repo = self.huggingface_weight_repo
+        if weight_repo.repo_type != "online":
+            raise ValueError(
+                "header_only_weights reads the safetensors headers from an "
+                f"online Hugging Face repo, but '{weight_repo.repo_id}' is a "
+                f"{weight_repo.repo_type} repo."
+            )
+        if weights_format(weight_path) != WeightsFormat.safetensors:
+            raise ValueError(
+                "header_only_weights only supports safetensors checkpoints, "
+                f"but '{weight_repo.repo_id}' carries "
+                f"{weights_format(weight_path).value} weights."
+            )
+        return header_only_weight_files(
+            huggingface_model_id=weight_repo.repo_id,
+            filenames=[str(x) for x in weight_path],
+            revision=weight_repo.revision,
+        )
+
     def resolved_weight_paths(
         self, weight_path: list[Path] | None = None
     ) -> list[Path]:
         """Resolve weight paths to absolute local paths, downloading if needed.
 
         For online repos, downloads weight files from HuggingFace Hub.
-        For local repos, constructs absolute paths from the repo root.
+        For local repos, constructs absolute paths from the repo root. Under
+        ``header_only_weights`` the download is replaced by header-only stubs
+        (see :meth:`_header_only_weight_paths`).
 
         Args:
             weight_path: Weight files to resolve, relative to the repo.
                 Defaults to ``self.weight_path``. Pass an explicit,
                 already-resolved list for a config whose ``weight_path``
-                was never populated during resolution (e.g. a diffusion
+                was never populated during resolution (such as a diffusion
                 component resolved on demand at consumption time -- see
                 :func:`_resolve_component_encoding_and_weights`).
 
@@ -1507,6 +1680,9 @@ class MAXModelConfig(MAXModelConfigBase):
             weight_path = self.weight_path
         if not weight_path:
             return []
+
+        if self.header_only_weights:
+            return self._header_only_weight_paths(weight_path)
 
         weight_repo = self.huggingface_weight_repo
         if weight_repo.repo_type == "online":
@@ -1566,12 +1742,13 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         return self.device_specs[0]
 
-    def log_model_info(self, role: str) -> None:
+    def log_model_info(self, role: str, *, uses_kv_cache: bool = True) -> None:
         """Logs model configuration information for this config.
 
         Args:
-            role: The semantic role of this model (e.g. ``"main"``,
+            role: The semantic role of this model (such as ``"main"``,
                 ``"draft"``, ``"vae"``).
+            uses_kv_cache: Whether the pipeline uses a KV cache.
         """
         logger.info("")
         logger.info("  Model: %s", role)
@@ -1610,8 +1787,8 @@ class MAXModelConfig(MAXModelConfigBase):
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)
 
-        # KVCache configuration
-        self._log_kvcache_info()
+        if uses_kv_cache:
+            self._log_kvcache_info()
 
     def _log_kvcache_info(self) -> None:
         """Logs KV cache configuration details for this model config."""
@@ -1722,6 +1899,7 @@ def _parse_model_override(override_str: str) -> tuple[str, str, Any]:
     # For compound types (list, dict) the raw CLI string is JSON, so try
     # json.loads first; fall back to the raw string for plain scalars.
     field_info = MAXModelConfig.model_fields[field_name]
+    assert field_info.annotation is not None
     adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
     try:
         parsed_value = json.loads(raw_value)

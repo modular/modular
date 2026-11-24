@@ -16,7 +16,6 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
-#include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/ErrorHandling.h"
 #include "llvm/Support/YAMLTraits.h"
@@ -200,15 +199,7 @@ ErrorOrSuccess TensorShape::isRefinedBy(const TensorShape &staticShape) const {
 
 void TensorShape::print(raw_ostream &os) const {
   if (hasRank()) {
-    llvm::interleave(
-        *this, os,
-        [&](ssize_t dim) {
-          if (dim < 0)
-            os << "?";
-          else
-            os << dim;
-        },
-        "x");
+    llvm::interleave(*this, os, [&](ssize_t dim) { os << dim; }, "x");
   } else {
     os << "*";
   }
@@ -243,11 +234,7 @@ ErrorOr<TensorShape> TensorShape::parseFromString(StringRef str) {
   shape.reserve(splitStr.size());
   for (auto &it : splitStr) {
     int64_t value;
-    if (it == "?") {
-      // Follow the MLIR convention for representing dynamic dimensions, though
-      // we interpret any negative value to denote dynamic elsewhere.
-      shape.emplace_back(mlir::ShapedType::kDynamic);
-    } else if (it.getAsInteger(10, value)) {
+    if (it.getAsInteger(10, value)) {
       return Error(Twine("could not parse dimension integer from string: ") +
                    str + " because " + it + " cannot be parsed as an integer");
     } else if (value < 0) {

@@ -16,7 +16,6 @@ from std.itertools.itertools import _Product2, _Product3, _Product4
 from std.testing import (
     TestSuite,
     assert_equal,
-    assert_false,
     assert_true,
     assert_raises,
 )
@@ -258,7 +257,7 @@ def test_product_bounds() raises:
     var it = product(range(3), range(2))
     for i in range(6, -1, -1):
         assert_equal(it.bounds()[0], i)
-        assert_equal(it.bounds()[1].value(), i)
+        assert_equal(it.bounds()[1], Optional(i))
         try:
             _ = next(it)
         except:

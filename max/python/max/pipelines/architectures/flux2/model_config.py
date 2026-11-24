@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Flux2 quantization config and model config."""
 
 from __future__ import annotations
 
@@ -120,31 +121,16 @@ def _make_nvfp4_config(num_layers: int, num_single_layers: int) -> QuantConfig:
     Mirrors the modelopt NVFP4 format used by FLUX.2-NVFP4: block size 16
     on the K axis, static per-tensor input scales, FP8 weight scales.
     """
-    input_spec = InputScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        origin=ScaleOrigin.STATIC,
-        dtype=DType.float32,
-        block_size=(1, 16),
-    )
-    weight_spec = WeightScaleSpec(
-        granularity=ScaleGranularity.BLOCK,
-        dtype=DType.float8_e4m3fn,
-        block_size=(1, 16),
-    )
-    all_layers = set(range(num_layers + num_single_layers))
-    return QuantConfig(
-        input_scale=input_spec,
-        weight_scale=weight_spec,
+    # BFL ships scales in 5D TCGEN5 interleaved layout flattened to 2D, but
+    # that storage can't be K-sharded by slicing axis 1 (the 5D dims mix rows
+    # and K-blocks). The weight adapter deinterleaves to true ``[M, K//16]``
+    # at load time, so ``scales_pre_interleaved`` stays off and the runtime
+    # ``block_scales_interleave`` op rebuilds the 5D layout per-shard.
+    all_layers = range(num_layers + num_single_layers)
+    return QuantConfig.nvfp4(
         mlp_quantized_layers=all_layers,
         attn_quantized_layers=all_layers,
         embedding_output_dtype=DType.bfloat16,
-        format=QuantFormat.NVFP4,
-        # BFL ships scales in 5D TCGEN5 interleaved layout flattened to 2D,
-        # but that storage can't be K-sharded by slicing axis 1 (the 5D dims
-        # mix rows and K-blocks). The weight adapter deinterleaves to true
-        # ``[M, K//16]`` at load time and lets the runtime
-        # ``block_scales_interleave`` op rebuild the 5D layout per-shard.
-        scales_pre_interleaved=False,
     )
 
 
@@ -178,24 +164,18 @@ def _make_int8_w8a8_config(
     )
 
 
-def _is_apple_m5(device: Device) -> bool:
-    """Whether ``device`` is an Apple M5-generation (Metal) GPU.
+def _is_apple_m5_or_newer(device: Device) -> bool:
+    """Returns whether ``device`` is an Apple M5-or-newer (Metal) GPU.
 
-    Metal devices report ``architecture_name`` as the M-series compute
-    capability with an optional toolchain suffix (``"5"`` or ``"5-metal4"``
-    for M5). Mirrors the ``_is_sm10x_gpu`` / ``_is_apple_gpu`` helpers in
-    ``max.nn.kernels``; ``architecture_name`` raises on CPU devices and on
-    unrecognized Metal device names, so failures resolve to ``False``.
+    A Metal device's architecture major version is its Apple silicon
+    generation. Returns ``False`` for a non-Metal device and for a Metal chip
+    the driver cannot identify.
     """
-    # NOTE: the Device API exposes no structured chip-series accessor for
-    # Metal (only ``architecture_name``), so parse the series out of the
-    # name here; switch to a driver accessor if one grows.
+    if device.api != "metal":
+        return False
     try:
-        return (
-            device.api == "metal"
-            and device.architecture_name.split("-")[0] == "5"
-        )
-    except Exception:
+        return device.architecture_version.major >= 5
+    except ValueError:
         return False
 
 
@@ -238,7 +218,7 @@ def _int8_w8a8_forced(devices: list[Device]) -> bool | None:
         return None
     if raw.lower() not in ("1", "true", "yes"):
         return False
-    if devices and all(_is_apple_m5(d) for d in devices):
+    if devices and all(_is_apple_m5_or_newer(d) for d in devices):
         return True
     logger.warning(
         "APPLE_FLUX2_INT8_W8A8=%s requests the int8 W8A8 path, which is only"
@@ -274,10 +254,12 @@ def _int8_w8a8_enabled(
     if config_dict.get("guidance_embeds", True):
         # Not a klein/distilled checkpoint (e.g. FLUX.2-dev): stay bf16.
         return False
-    return bool(devices) and all(_is_apple_m5(d) for d in devices)
+    return bool(devices) and all(_is_apple_m5_or_newer(d) for d in devices)
 
 
 class Flux2Config(MAXModelConfigBase):
+    """Flux 2 configuration."""
+
     patch_size: int = 1
     in_channels: int = 128
     out_channels: int | None = None
@@ -320,6 +302,7 @@ class Flux2Config(MAXModelConfigBase):
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> Self:
+        """Builds the config from the checkpoint's ``config.json``."""
         init_dict = {
             key: value
             for key, value in config_dict.items()

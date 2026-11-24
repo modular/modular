@@ -27,9 +27,8 @@ def main():
     # end-optional-pointer
 
     # Optional is initially None; if block is skipped.
-    if ptr:
+    if case .Some(p) = ptr:
         # ptr is not None — safe to unwrap
-        var p = ptr.value()
         print(p[])
 
     # Assign a real value to test the non-None path. The `Optional` holds an
@@ -39,9 +38,8 @@ def main():
     var x_ptr: Pointer[Int, MutUntrackedOrigin] = alloc(layout).unsafe_leak()
     x_ptr.unsafe_write(42)
     ptr = x_ptr
-    if ptr:
+    if case .Some(p) = ptr:
         # ptr is not None — safe to unwrap
-        var p = ptr.value()
         print(p[])
     x_ptr.unsafe_deinit_pointee()
     dealloc(ThinAllocation(unsafe_owned_ptr=x_ptr).unsafe_with_layout(layout))

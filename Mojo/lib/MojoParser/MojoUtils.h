@@ -20,6 +20,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 #include <cstddef>
+#include <string>
 
 namespace M::KGEN {
 enum class ArgConvention : uint32_t;
@@ -36,6 +37,8 @@ class ExprNode;
 class FnTypeGeneratorType;
 class IREmitter;
 class MojoInflightDiag;
+class ParamBindings;
+class StructDeclOp;
 class StructMetaType;
 class ASTType;
 class OriginSetAttr;
@@ -83,6 +86,12 @@ FunctionType
 replaceIndexRefsWithNamedRefs(FunctionType functionType,
                               ArrayRef<ParamDeclAttr> explicitParamDecls);
 
+/// Specialize `structOp` using `bindings`; any parameter the caller left out
+/// is inferred.  `declIfKnown` only points diagnostics at the declaration.
+/// Returns a null type, with the diagnostic already emitted, on failure.
+ASTType specializeStruct(const ParamBindings &bindings, StructDeclOp structOp,
+                         ASTDecl *declIfKnown);
+
 /// The results of calls to async functions are always bound to a `Coroutine`
 /// type, or `RaisingCoroutine` type in the case of a raising function. This
 /// function looks up the corresponding coroutine type and binds its result
@@ -96,12 +105,33 @@ CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
                                        const ExprNode *expr,
                                        FnTypeGeneratorType sig, ExprDest &dest);
 
+/// Return the value through which a function body refers to its argument
+/// `bbArg`, passed with `convention`.
+CValue getFunctionArgumentValue(Value bbArg, ArgConvention convention);
+
 /// Helper to delete code in a region and mark it as unreachable when it's
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
+/// Returns true if an AnyOrigin appears anywhere in `type`.
+bool typeHasAnyOrigin(SharedState &shared, Type type);
+
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
+
+/// Return how diagnostics name `structOp`, a struct declared with `__enum` or
+/// `__union`: "enum" or "union".
+StringRef getEnumOrUnionNoun(StructDeclOp structOp);
+
+/// Return the error for a malformed case of `structOp`, a struct declared with
+/// `__enum` or `__union`, which names the forms a case of it takes.
+StringRef getMalformedCaseMessage(StructDeclOp structOp);
+
+/// Generate the mangled name identifying the thunk that converts a value of
+/// signature `actual` into one of signature `expected`. The AST-level spelling
+/// of both types keeps the name readable, and a hash of the full signatures
+/// disambiguates types that share a spelling but differ in parameters.
+void generateConversionThunkName(llvm::raw_ostream &os, ArrayRef<Type> keys);
 
 } // namespace M::KGEN::LIT
 

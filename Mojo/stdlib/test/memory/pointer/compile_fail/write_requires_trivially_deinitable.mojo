@@ -13,8 +13,6 @@
 
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
-from std.memory import alloc
-
 
 def main() raises:
     var s = "Mojo!"

@@ -21,26 +21,38 @@ never take effect.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from types import UnionType
-from typing import Annotated, Any, Literal, Union, get_args, get_origin
+from typing import (
+    Annotated,
+    Any,
+    Literal,
+    Union,
+    get_args,
+    get_origin,
+)
 
 import click
+import click.testing
 import cyclopts
 import pytest
 import yaml
 from cyclopts import Parameter
 from max._entrypoints.cli.config import pipeline_config_options
-from max.config import ConfigFileModel
-from max.pipelines.lib import PipelineArgs, PipelineConfig
+from max.config import ConfigModel
+from max.experimental.cascade.deployment.context_config import ContextConfig
+from max.pipelines.lib import PipelineArgs, PipelineConfig, ProfilingConfig
 from max.pipelines.lib.config.model_config import MAXModelConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_args import (
     _FLAT_KWARG_SUBTREES,
     _SHARED_CONFIG_FIELDS,
+    _flatten_set_fields,
 )
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
+from max.pipelines.sampling import ToolCallPolicy
 from max.pipelines.speculative.config import SpeculativeConfig
 from pydantic import ValidationError
 
@@ -78,6 +90,18 @@ def test_every_cli_flag_routes_to_a_known_destination() -> None:
     )
 
 
+def test_kernel_trace_limits_have_no_cli_flag() -> None:
+    """They are set only from a config file's ``profiling`` section."""
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None: ...
+
+    limits = {f for f in ProfilingConfig.model_fields if "kernel_trace" in f}
+    assert len(limits) == 4
+    assert not limits & {param.name for param in cli.params}
+
+
 def test_from_args_threads_runtime_flags() -> None:
     args = PipelineArgs(
         runtime=PipelineRuntimeConfig(execute_empty_batches=True)
@@ -95,6 +119,19 @@ def test_runtime_flags_survive_flat_kwargs_path() -> None:
     assert config.runtime.execute_empty_batches is True
 
 
+def test_context_parallel_flags_survive_flat_kwargs_path() -> None:
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(
+            decode_context_parallel_degree=4,
+            decode_context_parallel_interleave=128,
+            prefill_context_parallel=True,
+        )
+    )
+    assert config.model.decode_context_parallel_degree == 4
+    assert config.model.decode_context_parallel_interleave == 128
+    assert config.model.prefill_context_parallel is True
+
+
 def test_sampling_flags_survive_flat_kwargs_path() -> None:
     # gen-mef passes enable_structured_output as a flat kwarg at
     # construction; dropping it on this path would silently export a
@@ -103,6 +140,38 @@ def test_sampling_flags_survive_flat_kwargs_path() -> None:
         PipelineArgs.from_flat_kwargs(enable_structured_output=True)
     )
     assert config.sampling.enable_structured_output is True
+
+
+def test_cascade_field_round_trips_through_flat_kwargs() -> None:
+    # ``--cascade`` is a top-level PipelineArgs bool surfaced by the serve
+    # CLI; it must survive the flat-kwargs path so ``cli_serve`` can branch on
+    # ``pipeline_args.cascade``.
+    assert PipelineArgs.from_flat_kwargs(cascade=False).cascade is False
+    assert PipelineArgs.from_flat_kwargs(cascade=True).cascade is True
+
+
+def test_tokenizer_impl_reaches_the_pipeline_config() -> None:
+    # Standard serving reads it off the config the tokenizer is built from;
+    # dropping it would silently serve the HuggingFace tokenizer.
+    config = PipelineConfig.from_args(
+        PipelineArgs.from_flat_kwargs(tokenizer_impl="pkg.module:Encoder")
+    )
+    assert config.tokenizer_impl == "pkg.module:Encoder"
+    assert PipelineConfig.from_args(PipelineArgs()).tokenizer_impl is None
+
+
+def test_cascade_skips_huggingface_manifest_probe() -> None:
+    # Cascade accepts Cascade-only model paths (e.g. ``echo:``) that the
+    # HuggingFace manifest probe rejects. With ``--cascade`` set, the probe
+    # must be skipped so ``from_flat_kwargs`` does not fail before the serve
+    # entrypoint can forward to Cascade.
+    with pytest.raises(ValueError):
+        PipelineArgs.from_flat_kwargs(model_path="echo:org/some-model")
+    args = PipelineArgs.from_flat_kwargs(
+        cascade=True, model_path="echo:org/some-model"
+    )
+    assert args.cascade is True
+    assert args.model_path == "echo:org/some-model"
 
 
 def test_empty_models_kwarg_is_not_a_manifest_override() -> None:
@@ -163,8 +232,8 @@ _ENABLERS: dict[str, dict[str, Any]] = {
 }
 
 
-def _cases() -> list[tuple[str, type[ConfigFileModel], str, Any, Any]]:
-    cases: list[tuple[str, type[ConfigFileModel], str, Any, Any]] = []
+def _cases() -> list[tuple[str, type[ConfigModel], str, Any, Any]]:
+    cases: list[tuple[str, type[ConfigModel], str, Any, Any]] = []
     for path, config_class in _FLAT_KWARG_SUBTREES:
         for field, info in config_class.model_fields.items():
             if field in _SHARED_CONFIG_FIELDS or field in _MATRIX_SKIP:
@@ -211,7 +280,7 @@ def test_precedence_matrix_covers_every_subtree() -> None:
 def test_config_file_value_survives_and_cli_overrides_it(
     tmp_path: Path,
     path: str,
-    config_class: type[ConfigFileModel],
+    config_class: type[ConfigModel],
     field: str,
     from_file: Any,
     from_cli: Any,
@@ -255,10 +324,14 @@ def test_config_file_value_survives_and_cli_overrides_it(
 
 _FROM_ARGS_REBUILT = ("profiling", "runtime", "sampling")
 
+# Fields ``from_args`` checks against the resolved architecture, which a config
+# with no model doesn't have.
+_FROM_ARGS_SKIP = {"eager"}
+
 _FROM_ARGS_CASES = [
     (path, config_class, field, value)
     for path, config_class, field, value, _ in _CASES
-    if path in _FROM_ARGS_REBUILT
+    if path in _FROM_ARGS_REBUILT and field not in _FROM_ARGS_SKIP
 ]
 
 
@@ -268,16 +341,15 @@ _FROM_ARGS_CASES = [
     ids=[f"{path}.{field}" for path, _c, field, _v in _FROM_ARGS_CASES],
 )
 def test_from_args_preserves_every_explicitly_set_field(
-    path: str, config_class: type[ConfigFileModel], field: str, value: Any
+    path: str, config_class: type[ConfigModel], field: str, value: Any
 ) -> None:
     """Every explicitly-set field must survive ``PipelineConfig.from_args``.
 
     Regression guard for the kadabra-v5 incident (ENABLE-2881): ``from_args``
-    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted
-    ``enable_tool_call_constrained_decode``, so production served with the
-    flag reset to its default and ``tool_choice="required"`` was
-    grammar-forced despite ``--no-enable-tool-call-constrained-decode``.
-    Sweeping ``model_fields`` covers future fields the day they are added.
+    rebuilt ``SamplingConfig`` from a hand-picked field list that omitted the
+    tool-call policy field, so production served with it reset to its default
+    and ``tool_choice="required"`` was grammar-forced. Sweeping ``model_fields``
+    covers future fields the day they are added.
     """
     config = PipelineConfig.from_args(
         PipelineArgs.from_flat_kwargs(**{field: value})
@@ -289,13 +361,17 @@ def test_from_args_preserves_every_explicitly_set_field(
     )
 
 
-def test_tool_call_constrained_decode_flag_reaches_worker_config() -> None:
+def test_tool_call_policy_reaches_worker_config() -> None:
     """The exact field production lost; kept explicit so the incident's
     reproducer survives even if the matrix's value derivation changes."""
     config = PipelineConfig.from_args(
-        PipelineArgs.from_flat_kwargs(enable_tool_call_constrained_decode=False)
+        PipelineArgs.from_flat_kwargs(
+            tool_call_policy=ToolCallPolicy.FORCE_UNCONSTRAINED
+        )
     )
-    assert config.sampling.enable_tool_call_constrained_decode is False
+    assert (
+        config.sampling.tool_call_policy is ToolCallPolicy.FORCE_UNCONSTRAINED
+    )
 
 
 def test_pipeline_args_surface_is_frozen() -> None:
@@ -357,3 +433,325 @@ def test_cyclopts_flat_binding_constructs_a_new_instance() -> None:
     assert args.max_length == 1234
     assert default_args.model_path == ""
     assert default_args.max_length is None
+
+
+@pytest.mark.parametrize(
+    ("flag", "field"),
+    [
+        ("--use-dummy-weights", "header_only_weights"),
+        ("--draft-use-dummy-weights", "draft_header_only_weights"),
+    ],
+)
+def test_use_dummy_weights_flag_routes_to_header_only_weights(
+    flag: str, field: str
+) -> None:
+    """The user-facing flag names the effect; the field names the mechanism."""
+    seen: dict[str, Any] = {}
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None:
+        seen.update(kwargs)
+
+    result = click.testing.CliRunner().invoke(cli, [flag])
+    assert result.exit_code == 0, result.output
+    assert seen[field] is True
+    assert "header_only_weights" not in {
+        opt.lstrip("-").replace("-", "_")
+        for param in cli.params
+        for opt in param.opts
+    }
+
+
+def _cyclopts_probe(argv: list[str]) -> PipelineArgs:
+    """Parses ``argv`` the way the cascade serve CLI binds PipelineArgs."""
+    app = cyclopts.App(name="probe", help_formatter="plain")
+    received: list[PipelineArgs] = []
+
+    @app.default
+    def probe(
+        pipeline_args: Annotated[
+            PipelineArgs, Parameter(name="*")
+        ] = PipelineArgs(),  # noqa: B008
+    ) -> None:
+        received.append(pipeline_args)
+
+    try:
+        app(argv)
+    except SystemExit as e:  # cyclopts may exit(0) after a command
+        if e.code:
+            raise
+    (args,) = received
+    return args
+
+
+@pytest.mark.parametrize(
+    ("argv", "check"),
+    [
+        pytest.param(
+            ["--max-batch-size", "4"],
+            lambda a: a.runtime.max_batch_size == 4,
+            id="runtime",
+        ),
+        pytest.param(
+            ["--kv-cache-page-size", "128"],
+            lambda a: a.kv_cache.kv_cache_page_size == 128,
+            id="kv-cache",
+        ),
+        pytest.param(
+            [
+                "--speculative-method",
+                "eagle",
+                "--num-speculative-tokens",
+                "4",
+            ],
+            lambda a: (
+                a.speculative is not None
+                and a.speculative.num_speculative_tokens == 4
+            ),
+            id="speculative",
+        ),
+        pytest.param(
+            ["--enable-lora"],
+            lambda a: a.lora is not None and a.lora.enable_lora,
+            id="lora",
+        ),
+        pytest.param(
+            ["--draft-model-path", "org/tiny-draft"],
+            lambda a: (
+                a.draft_model is not None
+                and a.draft_model.model_path == "org/tiny-draft"
+            ),
+            id="draft-model",
+        ),
+        pytest.param(
+            ["--draft-devices", "gpu:1"],
+            lambda a: (
+                a.draft_model is not None
+                and [d.id for d in a.draft_model.device_specs] == [1]
+            ),
+            id="draft-devices",
+        ),
+        pytest.param(
+            ["--draft-use-dummy-weights"],
+            lambda a: (
+                a.draft_model is not None and a.draft_model.header_only_weights
+            ),
+            id="draft-use-dummy-weights",
+        ),
+        pytest.param(
+            ["--model", "org/some-model"],
+            lambda a: a.model_path == "org/some-model",
+            id="model-alias",
+        ),
+        pytest.param(
+            ["--use-dummy-weights"],
+            lambda a: a.header_only_weights,
+            id="use-dummy-weights",
+        ),
+        pytest.param(
+            ["--devices", "gpu:0"],
+            lambda a: [d.id for d in a.device_specs] == [0],
+            id="devices-alias",
+        ),
+    ],
+)
+def test_cyclopts_flat_flags_parse(
+    argv: list[str], check: Callable[[PipelineArgs], bool]
+) -> None:
+    """Each flattened flag family parses into the right PipelineArgs field.
+
+    The cascade CLI flattens the nested sub-configs (``runtime``,
+    ``kv_cache``, ``speculative``, ``lora``, ``draft_model``) so their
+    flags match ``max serve``'s flat spellings.
+    """
+    assert check(_cyclopts_probe(argv))
+
+
+def test_cyclopts_probe_needs_no_network() -> None:
+    """The cascade entrypoint rebuilds with cascade=True, so a plain argv
+    with a model path must not probe HuggingFace: the dummy and echo
+    pipelines the entrypoint documents have no repo to probe.
+    """
+
+    args = _cyclopts_probe(["--model-path", "dummy_textgen"])
+    rebuilt = PipelineArgs.from_flat_kwargs(
+        **{**_flatten_set_fields(args), "cascade": True}
+    )
+    assert rebuilt.model_path == "dummy_textgen"
+
+
+def test_flatten_set_fields_round_trips_parsed_flags() -> None:
+    """_flatten_set_fields emits exactly the supplied flags as flat kwargs,
+    so from_flat_kwargs rebuilds the instance with max serve semantics.
+    """
+
+    args = _cyclopts_probe(
+        [
+            "--model-path",
+            "org/some-model",
+            "--max-batch-size",
+            "4",
+            # Skips HuggingFace manifest probing, as the real cascade
+            # entrypoint does: the probe needs network access.
+            "--cascade",
+        ]
+    )
+    flat = _flatten_set_fields(args)
+    assert flat == {
+        "model_path": "org/some-model",
+        "max_batch_size": 4,
+        "cascade": True,
+    }
+
+    rebuilt = PipelineArgs.from_flat_kwargs(**flat)
+    assert rebuilt.model_path == "org/some-model"
+    assert rebuilt.runtime.max_batch_size == 4
+
+
+def test_click_and_cyclopts_paths_agree() -> None:
+    """The same argv must produce equal PipelineArgs through the click
+    ``max serve`` path and the cascade cyclopts path.
+
+    The click path parses flags into flat kwargs and builds via
+    ``from_flat_kwargs``. The cascade path parses with cyclopts, then
+    rebuilds via ``_flatten_set_fields`` + ``from_flat_kwargs``. Flag-name
+    parity without behavioral parity would silently change semantics.
+    """
+
+    argv = [
+        "--model-path",
+        "org/some-model",
+        "--max-batch-size",
+        "4",
+        "--kv-cache-page-size",
+        "128",
+        "--max-length",
+        "4096",
+    ]
+
+    seen: dict[str, Any] = {}
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None:
+        seen.update(kwargs)
+
+    result = click.testing.CliRunner().invoke(cli, argv)
+    assert result.exit_code == 0, result.output
+    # ``--cascade`` is a dedicated click option on ``max serve``, not a
+    # config field, so the click side sets it directly. It skips the
+    # HuggingFace manifest probe, which needs network access.
+    seen["cascade"] = True
+    click_args = PipelineArgs.from_flat_kwargs(**seen)
+
+    cascade_args = PipelineArgs.from_flat_kwargs(
+        **_flatten_set_fields(_cyclopts_probe([*argv, "--cascade"]))
+    )
+
+    assert click_args == cascade_args
+
+
+def test_click_and_cyclopts_paths_agree_with_config_file(
+    tmp_path: Path,
+) -> None:
+    """A PipelineConfig-shaped recipe merges identically through both paths.
+
+    The cascade CLI must not route ``--config-file`` into the PipelineArgs
+    constructor: the ConfigFileModel validator loads the YAML there, and a
+    ``model:`` section fails pydantic as an extra field. The serve
+    entrypoint takes the flag itself and passes it to from_flat_kwargs,
+    which owns the merge. This test reproduces the entrypoint's wiring on
+    both sides.
+    """
+
+    recipe = {
+        "model": {
+            "model_path": "org/config-model",
+            "max_length": 2048,
+        },
+        "runtime": {
+            "max_batch_size": 8,
+        },
+    }
+    config_path = tmp_path / "recipe.yaml"
+    config_path.write_text(yaml.dump(recipe))
+
+    argv = [
+        f"--config-file={config_path}",
+        "--max-batch-size",
+        "4",  # CLI overrides the recipe's runtime value
+    ]
+
+    seen: dict[str, Any] = {}
+
+    @click.command()
+    @pipeline_config_options
+    def cli(**kwargs) -> None:
+        seen.update(kwargs)
+
+    result = click.testing.CliRunner().invoke(cli, argv)
+    assert result.exit_code == 0, result.output
+    seen["cascade"] = True
+    click_args = PipelineArgs.from_flat_kwargs(**seen)
+
+    # The cascade side: --config-file is a serve() parameter, not a
+    # PipelineArgs flag, so the probe sees only the model flags and the
+    # entrypoint passes config_file into the rebuild.
+    cascade_args = PipelineArgs.from_flat_kwargs(
+        **{
+            **_flatten_set_fields(
+                _cyclopts_probe(["--max-batch-size", "4", "--cascade"])
+            ),
+            "config_file": str(config_path),
+            "cascade": True,
+        }
+    )
+
+    assert click_args == cascade_args
+    assert cascade_args.model_path == "org/config-model"
+    assert cascade_args.max_length == 2048
+    assert cascade_args.runtime.max_batch_size == 4
+
+
+def test_cascade_knob_aliases_parse() -> None:
+    """``max serve --cascade``'s prefixed worker-pool spellings parse.
+
+    The knobs are gated behind ``--cascade`` on the click side, which is
+    where the prefix comes from; the cascade entry point accepts both
+    spellings so a ``max serve --cascade`` command line can be copied to
+    ``//mach:cascade`` verbatim.
+    """
+    app = cyclopts.App(name="probe", help_formatter="plain")
+    received: list[ContextConfig] = []
+
+    @app.default
+    def probe(
+        context_config: Annotated[
+            ContextConfig, Parameter(name="*")
+        ] = ContextConfig(),  # noqa: B008
+    ) -> None:
+        received.append(context_config)
+
+    try:
+        app(
+            [
+                "--cascade-transport",
+                "grpc",
+                "--cascade-local-cpu-workers",
+                "0",
+                "--cascade-remote-cpu-workers",
+                "host-a:9001",
+                "--cascade-remote-gpu-workers",
+                "host-b:9001",
+            ]
+        )
+    except SystemExit as e:
+        if e.code:
+            raise
+
+    (config,) = received
+    assert config.transport == "grpc"
+    assert config.local_cpu_workers == 0
+    assert config.remote_cpu_workers == ("host-a:9001",)
+    assert config.remote_gpu_workers == ("host-b:9001",)

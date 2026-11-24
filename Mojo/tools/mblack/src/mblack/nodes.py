@@ -13,6 +13,8 @@
 
 # ===----------------------------------------------------------------------=== #
 #
+# Portions Copyright (c) 2018 Łukasz Langa, licensed under the MIT License.
+#
 # File originates from:
 #   Repo:   git@github.com:psf/black.git
 #   Commit: d4a85643a465f5fae2113d07d22d021d4af4795a
@@ -62,6 +64,7 @@ STATEMENT: Final = {
     syms.funcdef,
     syms.classdef,
     syms.match_stmt,
+    syms.guard_stmt,
     syms.case_block,
     syms.var_stmt,
     syms.comptime_stmt,
@@ -102,6 +105,7 @@ VARARGS_PARENTS: Final = {
     syms.metaparams,
     syms.trailer,  # single argument to call
     syms.typedargslist,
+    syms.typeconv,
     syms.varargslist,  # lambdas
 }
 UNPACKING_PARENTS: Final = {
@@ -305,6 +309,14 @@ def whitespace(
             # `*expr` is always unary unpacking, no space after `*`.
             return NO
 
+        elif (
+            prevp.type == token.EQEQUAL
+            and prevp.parent
+            and prevp.parent.type == syms.factor
+        ):
+            # Explicit value patterns use `== value`.
+            return SPACE
+
         elif prevp.type in VARARGS_SPECIALS:
             if is_vararg(prevp, within=VARARGS_PARENTS | UNPACKING_PARENTS):
                 return NO
@@ -396,6 +408,10 @@ def whitespace(
                 )
             return NO
 
+    elif p.type == syms.typeconv:
+        if prev and prev.type in STARS:
+            return NO
+
     elif p.type in TYPED_NAMES:
         # type names
         if not prev:
@@ -450,7 +466,7 @@ def whitespace(
         if not prevp or prevp.type == token.AT or prevp.type == token.DOT:
             return NO
 
-    elif p.type == syms.classdef:
+    elif p.type in {syms.classdef, syms.enum_case_stmt}:
         if t == token.LPAR:
             return NO
 
@@ -516,6 +532,10 @@ def whitespace(
             ):
                 return NO
 
+        elif prev and prev.type == token.EQEQUAL:
+            # Explicit value patterns use `== value`.
+            return SPACE
+
         elif t in {token.NAME, token.NUMBER, token.STRING}:
             return NO
 
@@ -557,8 +577,9 @@ def whitespace(
         if t in OPENING_BRACKETS:
             return NO
 
-    elif p.type == syms.named_effect:
-        # No space before ( in named effects (e.g., abi("C") not abi ("C"))
+    elif p.type in {syms.named_effect, syms.accesses_clause}:
+        # No space before ( in named effects and access sets
+        # (e.g., abi("C") and __accesses("...")).
         if t == token.LPAR:
             return NO
 
@@ -788,6 +809,7 @@ def is_one_sequence_between(
             commas += 1
             if leaf.parent and leaf.parent.type in {
                 syms.arglist,
+                syms.enum_case_payload,
                 syms.typedargslist,
             }:
                 commas += 1

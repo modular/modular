@@ -316,11 +316,42 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
             exp.value,
             `>> : !pop.int_literal`,
         ]
-    ]:
-        """Return the value raised to the power of the given exponent.
+    ] where (type_of(exp)() >= 0):
+        """Return the value raised to the power of the given positive exponent.
 
         Args:
             exp: The exponent value.
+
+        Constraints:
+            The exp argument is non-negative.
+
+        Returns:
+            The value of `self` raised to the power of `exp`.
+        """
+        return {}
+
+    @always_inline("builtin")
+    def __pow__(
+        self, exp: IntLiteral[_]
+    ) -> type_of(
+        1.0
+        / IntLiteral[
+            __mlir_attr[
+                `#pop<int_literal_bin<pow `,
+                self.value,
+                `,`,
+                type_of(-exp).value,
+                `>> : !pop.int_literal`,
+            ]
+        ]()
+    ) where (type_of(exp)() < 0):
+        """Return the value raised to the power of the given negative exponent.
+
+        Args:
+            exp: The exponent value.
+
+        Constraints:
+            The exp argument is negative.
 
         Returns:
             The value of `self` raised to the power of `exp`.
@@ -530,7 +561,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         return self
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         """Writes the IntLiteral in string form.
 
@@ -539,7 +570,7 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`](
         """
         Int(self).write_to(writer)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the IntLiteral in repr form.
 

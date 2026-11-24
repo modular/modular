@@ -27,6 +27,7 @@
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "mlir/IR/OpImplementation.h"
 #include "llvm/ADT/BitVector.h"
+#include "llvm/ADT/DenseMap.h"
 
 #include <optional>
 #include <utility>
@@ -39,13 +40,127 @@ class SIMDType;
 /// This type is a bit of a mouthful, add a useful alias for it.
 using ExportMap = llvm::MapVector<StringAttr, ExportKind>;
 
+/// Dedup state for printing parameter expressions so that a repeated
+/// subexpression is printed in full once and referred to by a label afterwards.
+class DedupContext {
+public:
+  DedupContext() = default;
+  DedupContext(const DedupContext &) = delete;
+  DedupContext &operator=(const DedupContext &) = delete;
+  DedupContext(DedupContext &&) = default;
+  DedupContext &operator=(DedupContext &&) = default;
+  ~DedupContext() {
+    assert((ids.empty() || finalized) &&
+           "printed with a DedupContext but never called finalize()");
+  }
+
+  /// Returns the placeholder to print at this position for `key`. Sets
+  /// `isRepeat` if `key` was printed before.
+  std::string mark(const void *key, bool &isRepeat);
+
+  /// Rewrites the placeholders in `raw`, which must contain everything printed
+  /// with this context, in print order. `labelPrefix` is prepended to each
+  /// label; it must not appear in the printed text.
+  std::string finalize(StringRef raw, char labelPrefix = '`');
+
+private:
+  DenseMap<const void *, unsigned> ids;
+  SmallVector<bool> referenced;
+  bool finalized = false;
+};
+
+/// Printer for KGEN parameter expressions and types.
+class KGENParamPrinter {
+public:
+  KGENParamPrinter(const KGENParamPrinter &) = delete;
+  KGENParamPrinter &operator=(const KGENParamPrinter &) = delete;
+  KGENParamPrinter(KGENParamPrinter &&) = default;
+  KGENParamPrinter &operator=(KGENParamPrinter &&) = default;
+
+  /// Prints every subexpression in full. Use for round trip printing and
+  /// diagnostics.
+  static KGENParamPrinter createDiagnosticPrinter() {
+    return KGENParamPrinter();
+  }
+
+  /// Prints for a string that is never parsed back and is size sensitive:
+  /// dedups repeated subexpressions and hashes `MemRefAttr` instead of inlining
+  /// them.
+  static KGENParamPrinter createManglePrinter() {
+    KGENParamPrinter printer;
+    printer.dedup.emplace();
+    printer.hashMemRefs = true;
+    return printer;
+  }
+
+  /// Rewrites the dedup placeholders into `raw`.
+  std::string finalize(StringRef raw, char labelPrefix = '`') {
+    return dedup ? dedup->finalize(raw, labelPrefix) : std::string(raw);
+  }
+
+  // Print a complete type or attribute, including mnemonic/prefix.
+  void printKGENType(AsmPrinter &p, Type type);
+  void printParamType(AsmPrinter &p, Type type);
+  void printParamTypes(AsmPrinter &p, ArrayRef<Type> types);
+  void printTypeParamValue(AsmPrinter &p, TypedAttr value);
+  void printTypeParamValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+  void printColonTypeParamValue(AsmPrinter &p, TypedAttr value);
+  void printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType);
+  void printColonTypeOrIndex(AsmPrinter &p, Type type);
+  void printGenerator(AsmPrinter &p, GeneratorType generator);
+  void printParameterValues(AsmPrinter &p, ArrayRef<TypedAttr> values);
+  void printTraitSymbol(AsmPrinter &p, TraitSymbolAttr trait);
+  void printBindParams(AsmPrinter &p, TypedAttr generator,
+                       ParamsBindingArrayAttr params,
+                       DenseBoolArrayAttr discharged = {});
+  void printParamsBindingArray(AsmPrinter &p, GeneratorType genType,
+                               ParamsBindingArrayAttr params);
+
+  /// Print the body after a composite type's mnemonic.
+  void printStructInstanceBody(AsmPrinter &p, StructInstanceType type);
+  void printStructBody(AsmPrinter &p, StructType type);
+  void printPointerBody(AsmPrinter &p, PointerType type);
+  void printParamListBody(AsmPrinter &p, ParamListType type);
+  void printTypeValueBody(AsmPrinter &p, TypeValueType type);
+  void printVariantBody(AsmPrinter &p, VariantType type);
+  void printSIMDBody(AsmPrinter &p, SIMDType type);
+  void printFuncLiteralBody(AsmPrinter &p, FuncLiteralType type);
+
+  void printPointerOptionals(AsmPrinter &p, TypedAttr addressSpace,
+                             bool isNonNull);
+  void printVariantTypes(AsmPrinter &p, TypedAttr variadic);
+  void printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly);
+  void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
+                           ArrayAttr annotations);
+  void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
+
+private:
+  KGENParamPrinter() = default;
+
+  void printColonTypeOrIndexPrefix(AsmPrinter &p, Type type);
+  void printOperatorOperands(AsmPrinter &p, POC opcode,
+                             ArrayRef<TypedAttr> operands);
+  void printParamValueImpl(AsmPrinter &p, TypedAttr value, Type type);
+
+  std::string memRefDigest(Attribute model);
+
+  std::optional<DedupContext> dedup;
+  bool hashMemRefs = false;
+  DenseMap<const void *, std::string> memRefDigests;
+};
+
+/// Returns true if `value` is a compound parameter expression eligible for a
+/// dedup label; see `KGENDialect::registerNonTrivialParamAttrs`.
+bool isNonTrivialParamAttr(Attribute value);
+
 /// Given a module operation, return its exported symbols and aliases.
 ExportMap getExportedSymbols(ModuleOp module);
 
 /// Return the string form for an attribute value that is printed in a <>
 /// context in the .mlir file. In diagnostics contexts, MLIR and KGEN keywords
 /// are not escaped with *"...".
-std::string getParamAsString(Attribute value);
+MODULAR_CXX_EXPORT std::string getParamAsString(Attribute value);
 
 /// Print the value as colon type parameter value into a string.
 StringAttr getParamTypeAsString(TypedAttr value);
@@ -54,14 +169,15 @@ StringAttr getParamTypeAsString(TypedAttr value);
 StringAttr getTypeAsString(Type type);
 
 /// Parse a parameter of type kgen.string.
-ParseResult parseStringParam(AsmParser &p, TypedAttr &value);
+MODULAR_CXX_EXPORT ParseResult parseStringParam(AsmParser &p, TypedAttr &value);
 
 /// Print a parameter of type kgen.string.
-void printStringParam(AsmPrinter &p, Operation *, Attribute value);
+MODULAR_CXX_EXPORT void printStringParam(AsmPrinter &p, Operation *,
+                                         Attribute value);
 
 /// Parse a type in a KGEN context, handling sugar like "dtype" for
 /// "!kgen.dtype" etc.
-ParseResult parseKGENType(AsmParser &parser, Type &type);
+MODULAR_CXX_EXPORT ParseResult parseKGENType(AsmParser &parser, Type &type);
 OptionalParseResult parseOptionalKGENType(AsmParser &parser, Type &type);
 
 /// Try to parse a specific KGEN type.
@@ -77,20 +193,22 @@ ParseResult parseKGENType(AsmParser &parser, T &type) {
 }
 
 /// Print `type` using KGEN specific type sugars.
-void printKGENType(AsmPrinter &p, Type type);
+MODULAR_CXX_EXPORT void printKGENType(AsmPrinter &p, Type type);
 void printKGENType(raw_ostream &os, Type type);
 
 /// Parse a "colon type" production if present or default to `defaultType` type
 /// if not.
-ParseResult parseColonTypeOrDefault(AsmParser &parser, Type &type,
-                                    Type defaultType);
+MODULAR_CXX_EXPORT ParseResult parseColonTypeOrDefault(AsmParser &parser,
+                                                       Type &type,
+                                                       Type defaultType);
 
 /// Parse a "colon type" production if present or default to `index` type if
 /// not.  This is commonly used in our parameter representation.
 ParseResult parseColonTypeOrIndex(AsmParser &parser, Type &type);
 
 /// Print `: <type>` or elide it entirely if type is `defaultType` type.
-void printColonTypeOrDefault(AsmPrinter &p, Type type, Type defaultType);
+MODULAR_CXX_EXPORT void printColonTypeOrDefault(AsmPrinter &p, Type type,
+                                                Type defaultType);
 
 /// Print `: <type>` or elide it entirely if type is an `index` type.
 void printColonTypeOrIndex(AsmPrinter &p, Type type);
@@ -101,10 +219,25 @@ bool isTypeExprType(Type type);
 /// Returns whether the given attribute is a KGEN type expression.
 bool isTypeExpr(TypedAttr attr);
 
-/// If `prop` asserts that its two operands denote the same value -- so that a
-/// consumer may substitute either one for the other -- return the pair.
+/// If `prop` is an `identical` of any arity, return its operands.
+/// Unlike `getIdentityProposition`, this includes classes wider than two.
+std::optional<ArrayRef<TypedAttr>> getIdentityClass(TypedAttr prop);
+
+/// If `prop` is a binary `#kgen.param.identical` -- so that a consumer may
+/// substitute either operand for the other -- return the pair.
+/// n-ary `identical` wider than two is dropped; use `getIdentityClass`.
 std::optional<std::pair<TypedAttr, TypedAttr>>
 getIdentityProposition(TypedAttr prop);
+
+/// Folds the scalar-bool conjunction of `conjuncts`, which must be non-empty,
+/// need not be canonical, and may contain nested ANDs. Returns True, False,
+/// the single surviving clause (e.g. a merged `identical` class), or a sorted
+/// AND of the surviving clauses typed as a plain scalar bool.
+///
+/// Ordinary code builds a conjunction with `ParamOperatorAttr::get(POC::And,
+/// ...)`, which already folds through this; the direct callers are attribute
+/// construction and the proposition fold.
+TypedAttr foldBoolConjunction(ArrayRef<TypedAttr> conjuncts);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given compilation context. This includes things like
@@ -115,12 +248,12 @@ EnvAttr getModularEnvAttr(MLIRContext *ctx, CompilationContext *compileCtx);
 /// known as `-D` defines) for the given module. This includes things like
 /// `BUILD_TYPE`, AsyncRT profiling level, etc. Note that
 /// the existing EnvAttr module values take precedence here.
-void extendWithModularEnvAttr(ModuleOp moduleOp,
-                              CompilationContext *compileCtx);
+MODULAR_CXX_EXPORT void
+extendWithModularEnvAttr(ModuleOp moduleOp, CompilationContext *compileCtx);
 
 /// Gets the common Modular environment attribute (also known as `-D` defines)
 /// for the given module.
-EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
+MODULAR_CXX_EXPORT EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 
 /// Parser & printer for the isMemoryOnly field on struct types. Handles:
 ///   (absent)          -> BoolAttr(false), register-passable
@@ -129,11 +262,12 @@ EnvAttr getModuleEnvAttr(ModuleOp moduleOp);
 void printIsMemoryOnly(AsmPrinter &p, TypedAttr isMemoryOnly);
 ParseResult parseIsMemoryOnly(AsmParser &p, TypedAttr &isMemoryOnly);
 
-/// Parser & printer for explicit minimum alignment (e.g., "align(64)").
-/// Uses TypedAttr to support future parametric alignment.
-void printMinAlignment(AsmPrinter &p, TypedAttr minAlignment);
-ParseResult parseMinAlignment(AsmParser &p, TypedAttr &minAlignment);
-
+/// Parser & printer for a single simplified StructDefFieldAttr, spelled
+/// `name: type` with an optional trailing `[annotations...]`.
+ParseResult parseStructDefField(AsmParser &p, StringAttr &name,
+                                TypedAttr &typeValue, ArrayAttr &annotations);
+void printStructDefField(AsmPrinter &p, StringAttr name, TypedAttr typeValue,
+                         ArrayAttr annotations);
 /// Parser & printer for array of simplified StructDefFieldAttrs.
 ParseResult parseStructDefFields(AsmParser &p,
                                  SmallVector<StructDefFieldAttr> &fields);
@@ -143,12 +277,27 @@ void printStructDefFields(AsmPrinter &p, ArrayRef<StructDefFieldAttr> fields);
 // Parameter Printing and Parsing
 //===----------------------------------------------------------------------===//
 
+/// Parse and print the values of `params` for the inputs of `genType`, each
+/// after a comma. An unbound input is `?`, and inputs missing from the text are
+/// unbound.
+ParseResult parseParamsBindingArray(AsmParser &p, GeneratorType genType,
+                                    ParamsBindingArrayAttr &params);
+void printParamsBindingArray(AsmPrinter &p, GeneratorType genType,
+                             ParamsBindingArrayAttr params);
+
+/// Parse and print the optional ` | "0101"` mask of discharged body
+/// constraints that follows the bound values.
+ParseResult parseDischargedBodyConstraints(AsmParser &p,
+                                           DenseBoolArrayAttr &discharged);
+void printDischargedBodyConstraints(AsmPrinter &p,
+                                    DenseBoolArrayAttr discharged);
+
 ParseResult parseBindParams(AsmParser &p, TypedAttr &generator,
-                            SmallVectorImpl<TypedAttr> &paramValues,
+                            ParamsBindingArrayAttr &params,
                             DenseBoolArrayAttr &discharged,
                             Type preParsedGeneratorType = {});
 void printBindParams(AsmPrinter &p, TypedAttr generator,
-                     ArrayRef<TypedAttr> paramValues,
+                     ParamsBindingArrayAttr params,
                      DenseBoolArrayAttr discharged = {});
 
 /// Convert a bitvector mask to a dense bool array attribute. Empty masks are
@@ -162,7 +311,7 @@ DenseBoolArrayAttr getDenseBoolArrayAttr(MLIRContext *context,
 /// prevent collision with other parameter values, particularly types.
 void printParamName(AsmPrinter &p, StringAttr name, bool isRef = false);
 /// Parse a parameter name as either a keyword or double quoted string.
-ParseResult parseParamName(AsmParser &p, StringAttr &name);
+MODULAR_CXX_EXPORT ParseResult parseParamName(AsmParser &p, StringAttr &name);
 
 /// Print & parse a list of parameter names.
 void printParamNames(AsmPrinter &p, ArrayRef<StringAttr> names,
@@ -172,15 +321,18 @@ ParseResult parseParamNames(AsmParser &p, SmallVector<StringAttr> &names);
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the printed syntax easier to grok. In a
 /// context where printing for diagnostics, we do not use the double quoted
-/// syntax to escape MLIR and KGEN keywords.
-void printParamValue(AsmPrinter &p, TypedAttr value, Type type = {});
+/// syntax to escape MLIR and KGEN keywords. Prints every subexpression in
+/// full; use `KGENParamPrinter` with a `DedupContext` to label repeats.
+MODULAR_CXX_EXPORT void printParamValue(AsmPrinter &p, TypedAttr value,
+                                        Type type = {});
 void printParamValue(AsmPrinter &p, Operation *op, TypedAttr value,
                      Type type = {});
 
 /// When in a context that knows it is dealing with a parameter specifically,
 /// utilize syntactic shortcuts to make the parsed syntax easier to grok.
-ParseResult parseParamValue(AsmParser &p, TypedAttr &value, Type type,
-                            bool disableTypeParser = false);
+MODULAR_CXX_EXPORT ParseResult parseParamValue(AsmParser &p, TypedAttr &value,
+                                               Type type,
+                                               bool disableTypeParser = false);
 
 /// Parse a parameter declaration of the form `name = value`.
 ParseResult parseParamDeclaration(OpAsmParser &p, ParamDeclAttr &paramDecl,
@@ -282,14 +434,6 @@ inline void printColonTypeParamValue(AsmPrinter &p, Operation *,
   printColonTypeParamValue(p, value);
 }
 
-/// Print the operand of a `TypeConformsToTraitAttr`. The operand is stored as
-/// a `param_list<!kgen.type>` value. As a shorthand, when the value is a
-/// 1-element `ParamListAttr` literal, print just its upcast-stripped element.
-void printConformsToParamList(AsmPrinter &p, TypedAttr typeValue);
-/// Parse a `TypeConformsToTraitAttr` operand, accepting either the sugared
-/// scalar form or the canonical `param_list<!kgen.type>` storage form.
-ParseResult parseConformsToParamList(AsmParser &p, TypedAttr &typeValue);
-
 /// Parse and print a witness entry which has syntactic form `name : type =
 /// value`.
 ParseResult parseWitnessEntry(AsmParser &p, StringAttr &name,
@@ -323,15 +467,17 @@ void printParamDeclAttrs(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls);
 /// information. If the element printing hook is provided, it is called by the
 /// given parser for each element in the list, and is responsible for printing
 /// the decl.
-void printParamDecls(AsmPrinter &p, ArrayRef<ParamDeclAttr> decls,
-                     ParamDeclPrintHookTy printElt = {});
+MODULAR_CXX_EXPORT void printParamDecls(AsmPrinter &p,
+                                        ArrayRef<ParamDeclAttr> decls,
+                                        ParamDeclPrintHookTy printElt = {});
 
 /// Parse a ParamDeclArrayAttr as a canonical list of comma separated
 /// information. If the element parsing hook is provided, it is called by the
 /// given parser for each element in the list, and is responsible for parsing
 /// the decl and placing it in the provided array.
-ParseResult parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result,
-                            ParamDeclParseHookTy parseElt = {});
+MODULAR_CXX_EXPORT ParseResult
+parseParamDecls(AsmParser &p, ParamDeclArrayAttr &result,
+                ParamDeclParseHookTy parseElt = {});
 
 /// Parse and print a parameter specification on a generator or region type. The
 /// parameter spec includes input parameter declarations and types and
@@ -384,7 +530,6 @@ OptionalParseResult parseOptionalSignatureValues(
 ParseResult parseSignatureValues(
     AsmParser &p, function_ref<ParseResult(SmallVectorImpl<Type> &)> parseArg,
     FunctionType &values, FnEffects &effects, bool optionalResultList);
-void printSignature(AsmPrinter &p, Operation *op, TypeAttr signature);
 void printSignatureValues(AsmPrinter &p, FunctionType functionType,
                           FuncTypeGeneratorType sigGen);
 void printSignatureValues(AsmPrinter &p, function_ref<void(unsigned)> printElt,
@@ -410,24 +555,47 @@ ParseResult parseKGENFuncTypeGenerator(AsmParser &p, FunctionType &functionType,
 /// the SSA value names are optional in the argument list. If they are present,
 /// they are populated in `args`. The `parseNames` flag control whether the
 /// signature should include the argument names.
-ParseResult parseFunctionFuncTypeGenerator(
+MODULAR_CXX_EXPORT ParseResult parseFunctionFuncTypeGenerator(
     OpAsmParser &p, SmallVectorImpl<OpAsmParser::Argument> &args,
     ParamDeclArrayAttr &inputParams, ParamDeclArrayAttr &resultParams,
     FunctionType &functionType, FuncTypeGeneratorType &signature,
     ParamDeclParseHookTy parseDeclElt = {});
 /// Print a function signature with optional metadata. If `region` is
 /// non-null, then the SSA value names of the region arguments are printed.
-void printFunctionFuncTypeGenerator(OpAsmPrinter &p, Region *region,
-                                    ArrayRef<ParamDeclAttr> inputParams,
-                                    ArrayRef<ParamDeclAttr> resultParams,
-                                    FunctionType functionType,
-                                    FuncTypeGeneratorType signature,
-                                    ParamDeclPrintHookTy printInputElt = {},
-                                    ParamDeclPrintHookTy printResultElt = {});
+MODULAR_CXX_EXPORT void printFunctionFuncTypeGenerator(
+    OpAsmPrinter &p, Region *region, ArrayRef<ParamDeclAttr> inputParams,
+    ArrayRef<ParamDeclAttr> resultParams, FunctionType functionType,
+    FuncTypeGeneratorType signature, ParamDeclPrintHookTy printInputElt = {},
+    ParamDeclPrintHookTy printResultElt = {});
 
 /// Parse the always_inline related keywords if present.
-ParseResult parseOptionalInline(OpAsmParser &parser, InlineLevelAttr &attr);
-void printOptionalInline(AsmPrinter &p, InlineLevel level);
+ParseResult parseOptionalInline(OpAsmParser &parser, Attribute &attr);
+void printOptionalInline(AsmPrinter &p, Attribute attr);
+
+/// Get the value of a scalar index-like parameter value.
+/// This is a temporary helper utility during the Int->SIMD unification project.
+/// After it's done, we should remove the IntegerAttr case.
+ErrorOr<int64_t> getScalarIndexValue(TypedAttr value);
+
+/// Get the value of a scalar parameter value of any integer dtype, including
+/// IntegerAttr. As above, we should drop support for IntegerAttr.
+ErrorOr<int64_t> getScalarIntegerValue(TypedAttr value);
+
+/// The integer `spec` holds, in either the plain or the `InlineLevel` form.
+std::optional<int64_t> inlineLevelValueOf(TypedAttr spec);
+
+/// The level `spec` names, or nullopt while it still depends on a parameter.
+std::optional<InlineLevel> inlineLevelOf(TypedAttr spec);
+
+/// The level `spec` names, or Automatic while it depends on a parameter.
+InlineLevel inlineLevelOrAutomatic(TypedAttr spec);
+
+/// Builds the stored form of `level`; an op's own accessor reads one.
+TypedAttr getInlineLevelAttr(MLIRContext *ctx, InlineLevel level);
+
+/// Diagnose an `inlineLevel` that is not integral, or that folded to a value
+/// naming no level.
+LogicalResult verifyInlineLevel(Operation *op, Attribute spec);
 
 /// Parse and print a decorator list if present.
 ParseResult parseOptionalDecorators(AsmParser &p, DecoratorsAttr &decorators);
@@ -520,7 +688,8 @@ void printRegionWithArgs(OpAsmPrinter &p, Operation *op, Region &region);
 /// special characters supported in Lexer::getStringLiteralValue are taken into
 /// account. It is *not* intended to be a general alternative to
 /// llvm::printEscapedString.
-void printAsMojoStringLiteral(StringRef Name, raw_ostream &Out);
+MODULAR_CXX_EXPORT void printAsMojoStringLiteral(StringRef Name,
+                                                 raw_ostream &Out);
 
 std::string
 printSimpleParamAttrValues(ArrayRef<ParamDeclAttr> params,
@@ -568,8 +737,8 @@ SIMDType getEquivalentSIMDType(Type type);
 
 /// Splat a value of a builtin type to a SIMD type of the given size.
 TypedAttr splatBuiltinToSIMD(TypedAttr builtinScalarVal, TypedAttr simdSize);
-TypedAttr splatFloatLiteralToSIMD(double literal, SIMDType target);
-TypedAttr splatIntLiteralToSIMD(uint64_t literal, SIMDType target);
+MODULAR_CXX_EXPORT TypedAttr splatIntLiteralToSIMD(uint64_t literal,
+                                                   SIMDType target);
 
 // Whether all elements of the SIMD attribute are zero/one.
 inline bool isAllIntLikeZero(SIMDAttr simdAttr) {
@@ -584,6 +753,22 @@ inline bool isAllIntLikeOne(SIMDAttr simdAttr) {
   return llvm::all_of(simdAttr.getValues(),
                       [](const DTypeValue &v) { return v.getData().isOne(); });
 }
+
+/// The value of a constant index: a builtin `index` or a `!kgen.scalar<index>`.
+inline std::optional<int64_t> getConstantIndex(mlir::Attribute attr) {
+  if (auto integer = dyn_cast_if_present<mlir::IntegerAttr>(attr))
+    return integer.getInt();
+  auto simd = dyn_cast_if_present<SIMDAttr>(attr);
+  if (!simd || simd.getValues().size() != 1)
+    return std::nullopt;
+  std::optional<KGENDType> dtype = simd.getType().getResolvedDType();
+  if (!dtype || !dtype->isIndex())
+    return std::nullopt;
+  return simd.getValues().front().getIndexVal();
+}
+
+/// The constant value of an index-typed SSA value, if it is a constant.
+std::optional<int64_t> matchConstantIndex(mlir::Value value);
 
 //===----------------------------------------------------------------------===//
 // Constraint Utilities
@@ -626,5 +811,6 @@ inline ConstraintAttr getUnconditionalConstraint(MLIRContext *ctx) {
 } // namespace M::KGEN
 
 #include "Support/ADT/DenseStringMap.h" // IWYU pragma: keep
+#include "Support/SymbolExport.h"
 
 #endif // KGEN_KGENDIALECT_KGENUTILS_H

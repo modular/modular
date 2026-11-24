@@ -462,3 +462,93 @@ def cond_discharged_via_condition[U: Movable & Deinitable]() ->
 # expected-note @below {{add a trailing 'where' clause that requires 'conforms_to(U, Copyable)'}}
 def cond_undischarged[U: Movable & Deinitable]() -> NeedsCopyable[CondCopyable[U]]:
     pass
+
+
+##===----------------------------------------------------------------------===##
+# Auto-parameterized holes
+##===----------------------------------------------------------------------===##
+# A `_` hole becomes an implicit parameter. The bound struct's own constraints
+# on it become constraints of the signature: callers must prove them, and the
+# body may assume them.
+
+
+def hole_in_arg(x: PositiveOnly[_]):
+    pass
+
+
+def hole_in_param[X: PositiveOnly[_]]():
+    pass
+
+
+struct HoleInStructParam[X: PositiveOnly[_]](Movable where False):
+    pass
+
+
+# A constraint from any other binding still has to be implied by a trailing
+# `where`.
+
+
+struct BigForHole[N: Int]
+    # expected-note @below {{constraint declared here needs evidence for}}
+    (Movable where False) where N > 10:
+    pass
+
+
+# expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
+# expected-note @below {{add a trailing 'where' clause that requires}}
+def undischarged_hole_ret(x: PositiveOnly[_]) -> BigForHole[type_of(x).N]:
+    pass
+
+
+def discharged_hole_ret(
+    x: PositiveOnly[_],
+) -> BigForHole[type_of(x).N] where type_of(x).N > 10:
+    pass
+
+
+# A hole nested inside another binding is still a hole of the argument, so the
+# outer struct's constraints on the inner type become constraints of the
+# signature too.
+
+
+struct WantsCopyable[T: Movable & Deinitable](Movable where False)
+    where conforms_to(T, Copyable):
+    pass
+
+
+def requires_copyable[T: AnyType]() where conforms_to(T, Copyable):
+    pass
+
+
+def nested_hole_arg(x: WantsCopyable[CondCopyable[_]]):
+    requires_copyable[type_of(x).T.T]()
+
+
+def nested_hole_param[X: WantsCopyable[CondCopyable[_]]]():
+    requires_copyable[type_of(X).T.T]()
+
+
+def nested_hole_trait_bound(x: NeedsCopyable[CondCopyable[_]]):
+    requires_copyable[type_of(x).T.T]()
+
+
+# Holes in a variadic element type become implicit parameters too.
+
+
+def hole_in_variadic_arg(*xs: PositiveOnly[_]):
+    pass
+
+
+# expected-note @below {{add a trailing 'where' clause that requires}}
+def undischarged_variadic_hole_ret(
+    *xs: PositiveOnly[_],
+    # expected-error @below {{invalid bindings in signature: lacking evidence to prove correctness}}
+) -> BigForHole[type_of(xs).element_type.N]:
+    pass
+
+
+def discharged_variadic_hole_ret(
+    *xs: PositiveOnly[_],
+) -> BigForHole[type_of(xs).element_type.N]
+    where type_of(xs).element_type.N > 10:
+    pass

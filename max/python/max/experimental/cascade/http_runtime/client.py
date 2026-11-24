@@ -15,6 +15,15 @@
 Pickle-over-HTTP analogue of the gRPC transport. Each
 :py:class:`Runtime` wire primitive maps to one HTTP endpoint.
 
+.. warning::
+
+    The pickle-over-HTTP transport is for local development and testing
+    only. It has no authentication, and the server unpickles request bodies
+    before validating them, so any peer that can reach it can execute
+    arbitrary code with the server process's privileges. Bind only to
+    loopback or a Unix socket, and never expose it to an untrusted network.
+    Do not use it for anything else.
+
 :py:class:`HttpRuntimeProxy` is a :py:class:`Runtime` backed by a remote
 server at a given ``address``. Picklable: ``__getstate__`` returns only
 the address, so :py:class:`Result` / :py:class:`ResultIter` handles
@@ -190,7 +199,7 @@ class HttpRuntimeProxy(Runtime):
 
         Inside an ``async with`` block on this proxy the pooled session
         opened by :py:meth:`__aenter__` is reused. Outside that context
-        -- e.g. after :py:class:`HttpRuntimeProxy` has been unpickled
+        -- for example, after :py:class:`HttpRuntimeProxy` has been unpickled
         from a wire-side handle and is used directly without being
         explicitly entered -- this yields a fresh single-use session and
         tears it down on exit. Concurrent users still see a single
@@ -227,6 +236,7 @@ class HttpRuntimeProxy(Runtime):
                 f"{self._base_url}/worker",
                 data=pickle.dumps(worker),
                 headers={"Content-Type": "application/pickle"},
+                timeout=aiohttp.ClientTimeout(total=None, sock_connect=30),
             ) as response,
         ):
             response.raise_for_status()

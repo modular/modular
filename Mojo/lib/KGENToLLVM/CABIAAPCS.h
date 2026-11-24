@@ -15,6 +15,7 @@
 #define KGEN_LIB_KGENTOLLVM_CABIAAPCS_H
 
 #include "CABILowering.h"
+#include <optional>
 
 namespace M::KGEN {
 
@@ -25,7 +26,8 @@ namespace M::KGEN {
 ///
 /// Key rules:
 /// - Structs ≤8 bytes (all-integer): coerce to i8/i16/i32/i64
-/// - Structs 9-16 bytes: split into two registers (X0-X1)
+/// - Structs 9-16 bytes: split into two registers (X0-X7) when two
+///   remain; otherwise passed entirely in memory (rollback-to-stack)
 /// - Structs >16 bytes: pass by pointer (indirect)
 /// - HFA (Homogeneous Float Aggregate): up to 4 float/vector fields in V0-V3
 /// - **Darwin vs Linux difference for variadic HFA:**
@@ -38,8 +40,8 @@ namespace M::KGEN {
 // https://discourse.llvm.org/t/rfc-an-abi-lowering-library-for-llvm/84495
 class AAPCSABIInfo : public CABIInfo {
 public:
-  AAPCSABIInfo(mlir::MLIRContext *ctx, const LLVMDataLayout &dataLayout,
-               bool isDarwinOS);
+  AAPCSABIInfo(mlir::MLIRContext *ctx,
+               const POPToLLVMTypeConverter &typeConverter, bool isDarwinOS);
 
 protected:
   CoercionInfo classifyArgumentType(mlir::Type type, mlir::Location loc,
@@ -48,7 +50,19 @@ protected:
   CoercionInfo classifyReturnType(mlir::Type type,
                                   mlir::Location loc) const override;
 
+  /// Classify a whole signature, applying the AAPCS64 rule that a composite
+  /// which does not fit in the remaining argument registers is passed
+  /// entirely in memory rather than split across a register and the stack.
+  SignatureClassification classifySignature(mlir::TypeRange argTypes,
+                                            mlir::Type retType,
+                                            mlir::Location loc,
+                                            size_t numFixedArgs) const override;
+
 private:
+  /// Number of GPRs (X0-X7) a classified argument consumes. Identity args
+  /// derive their usage from the LLVM type.
+  unsigned argGPRUsage(const CoercionInfo &info, mlir::Type llvmType) const;
+
   //===--------------------------------------------------------------------===//
   // Phase 2: Two-register classification (9-16 byte structs)
   //===--------------------------------------------------------------------===//
@@ -64,20 +78,18 @@ private:
   CoercionInfo classifyTwoRegisterStruct(int64_t size,
                                          mlir::Location loc) const;
 
+  /// Classify the unconverted `type`, whose LLVM type is `structType`, as a
+  /// homogeneous floating-point or short-vector aggregate (HFA or HVA). An
+  /// aggregate is homogeneous if its members are 1-4 of the same float type,
+  /// or 1-4 vectors of the same 64- or 128-bit size, with no padding, as in
+  /// clang's isHomogeneousAggregate. The members of a union overlap, so they
+  /// count once. Returns a coercion to an array of the base type, or no value
+  /// for any other aggregate.
+  std::optional<CoercionInfo>
+  classifyHomogeneousAggregate(mlir::Type type,
+                               mlir::LLVM::LLVMStructType structType) const;
+
   bool isDarwin; // true = Darwin (macOS/iOS), false = Linux/other
-
-  //===--------------------------------------------------------------------===//
-  // Phase 3: HFA classification (TODO - future work)
-  //===--------------------------------------------------------------------===//
-
-  // HFA (Homogeneous Float Aggregate) detection
-  // - All fields are float32, float64, or float16
-  // - Up to 4 fields total
-  // - Passed in V0-V3 (SIMD registers)
-  //
-  // Phase 3 methods (not yet implemented):
-  // - bool isHFA(StructType type, mlir::Type &baseType, int &count) const;
-  // - CoercionInfo classifyHFA(...);
 };
 
 } // namespace M::KGEN

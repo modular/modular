@@ -23,12 +23,7 @@ from max.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
 from std.builtin.device_passable import DevicePassable
-from std.sys import (
-    CompilationTarget,
-    argv,
-    has_amd_gpu_accelerator,
-    has_nvidia_gpu_accelerator,
-)
+from std.sys import CompilationTarget, argv
 
 from max.gpu.host import (
     ConstantMemoryMapping,
@@ -39,9 +34,10 @@ from max.gpu.host import (
     Dim,
     FuncAttribute,
     LaunchAttribute,
+    default_accelerator,
 )
-from max.gpu.host.device_context import _DumpPath
-from max.gpu.host.launch_attribute import (
+from max.gpu.host import GridBlockLaunchConfig, _DumpPath
+from max.gpu.host import (
     LaunchAttributeID,
     LaunchAttributeValue,
 )
@@ -74,7 +70,11 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         var destination = ctx.enqueue_create_buffer[.int32](1)
 
         ctx.enqueue_function[simple_shift_kernel](
-            destination, grid_dim=1, block_dim=1
+            destination,
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=1,
+                block_dim=1,
+            ),
         )
 
         ctx.barrier_all()
@@ -103,9 +103,9 @@ def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
         If SHMEM initialization or the launched function fails.
     """
 
-    comptime if has_nvidia_gpu_accelerator():
+    comptime if default_accelerator().is_nvidia_gpu():
         _shmem_launch_mpi[func]()
-    elif has_amd_gpu_accelerator():
+    elif default_accelerator().is_amd_gpu():
         _shmem_launch_tcp[func]()
     else:
         CompilationTarget.unsupported_target_error[
@@ -180,11 +180,16 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     from shmem import SHMEMContext
 
     with SHMEMContext() as ctx:
-        ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+        ctx.enqueue_function[kernel](
+            execution_config=GridBlockLaunchConfig(
+                grid_dim=1,
+                block_dim=1,
+            ),
+        )
     ```
     """
 
-    var _ctx: DeviceContext
+    var _ctx: DeviceContext[]
     var _main_stream: DeviceStream
     var _priority_stream: DeviceStream
     var _begin_event: DeviceEvent
@@ -211,10 +216,10 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         # nvshmem and rocshmem behave differently here, nvshmem requires that
         # you set the current context to a device ID corresponding with the
-        # GPU id on the node i.e. if team_my_pe is 3 then DeviceContext.id()
+        # GPU id on the node i.e. if team_my_pe is 3 then `Device.id`
         # should also be 3. rocshmem does this inside the rocshmem_init()
         # call, and each process will launch kernels on the associated pe
-        # from MPI, the DeviceContext.id() will always be 0, but it's
+        # from MPI, the `Device.id` will always be 0, but it's
         # associated with a different GPU in each process.
         var mype = shmem_team_my_pe(team)
         self._ctx = DeviceContext(device_id=Int(mype))
@@ -228,16 +233,14 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
 
         self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
         )
         self._thread_per_gpu = False
 
-    def __init__(out self, ctx: DeviceContext) raises where Self.tcp == False:
+    def __init__(out self, ctx: DeviceContext[]) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support, using one thread
         per GPU.
 
@@ -263,18 +266,16 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
 
         self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+            self._ctx.device().get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
         )
         self._thread_per_gpu = True
 
     def __init__(
         out self,
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
         node_id: Int = -1,
         total_nodes: Int = -1,
         gpus_per_node: Int = -1,
@@ -304,9 +305,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._end_event = self._ctx.create_event()
 
         # Store attributes to avoid retrieving them in each collective launch.
-        self._multiprocessor_count = self._ctx.get_attribute(
-            DeviceAttribute.MULTIPROCESSOR_COUNT
-        )
+        self._multiprocessor_count = self._ctx.device().multiprocessor_count()
         # TODO(MSTDL-1761): add ability to query AMD cooperative launch
         # capability with: hipLaunchAttributeCooperative and create function
         # that works across NVIDIA/AMD. For now assume cooperative capability.
@@ -373,12 +372,11 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         """
         return SHMEMBuffer[dtype](self._ctx, size)
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def enqueue_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -433,7 +431,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             print("hello from the GPU")
 
         with SHMEMContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
             ctx.synchronize()
         ```
         """
@@ -460,12 +463,11 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         shmem_module_finalize(gpu_kernel)
 
-    @always_inline
-    @__parameter
+    @inline(.always)
     def enqueue_function_collective_checked[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) thin -> None,
+        func: def(*args: *declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -520,7 +522,12 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
             ctx.synchronize()
         ```
 
@@ -530,14 +537,24 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         ```mojo
         with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
+            ctx.enqueue_function[kernel](
+                execution_config=GridBlockLaunchConfig(
+                    grid_dim=1,
+                    block_dim=1,
+                ),
+            )
             ctx.synchronize()
         ```
         """
-        comptime assert (
-            has_nvidia_gpu_accelerator()
-        ), "only available on NVIDIA GPUs"
+        comptime assert type_of(
+            self._ctx
+        ).target.is_nvidia_gpu(), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
             dump_asm=dump_asm,
@@ -548,9 +565,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         shmem_module_init(gpu_kernel)
 
         var block_size = block_dim[0] * block_dim[1] * block_dim[2]
-        var shared_mem_bytes_val = (
-            shared_mem_bytes.value() if shared_mem_bytes else 0
-        )
+        var shared_mem_bytes_val = shared_mem_bytes.or_else(0)
         var max_blocks_sm = (
             gpu_kernel.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, shared_mem_bytes_val
@@ -616,7 +631,7 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         self._main_stream.enqueue_wait_for(self._end_event)
         shmem_module_finalize(gpu_kernel)
 
-    @always_inline
+    @inline(.always)
     def synchronize(self) raises:
         """Blocks until all asynchronous calls on the stream associated with
         this device context have completed.
@@ -627,8 +642,8 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         # const char * AsyncRT_DeviceContext_synchronize(const DeviceContext *ctx)
         self._ctx.synchronize()
 
-    @always_inline
-    def get_device_context(self) -> DeviceContext:
+    @inline(.always)
+    def get_device_context(self) -> DeviceContext[]:
         """Returns the device context associated with this SHMEMContext.
 
         Returns:
@@ -637,9 +652,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
         return self._ctx
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def number_of_devices(
-        *, api: String = String(DeviceContext.default_device_info.api)
+        *, api: String = String(DeviceContext[].default_device_info.api)
     ) -> Int:
         """Returns the number of devices available that support the specified API.
 

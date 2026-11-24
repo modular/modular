@@ -30,7 +30,12 @@ from enum import Enum
 import msgspec
 
 LORA_REQUEST_ENDPOINT = "lora_request"
+"""Name of the ZeroMQ endpoint the API server uses to push LoRA load and
+unload requests to workers."""
+
 LORA_RESPONSE_ENDPOINT = "lora_response"
+"""Name of the ZeroMQ endpoint workers use to return LoRA operation
+results to the API server."""
 
 
 class LoRAType(Enum):

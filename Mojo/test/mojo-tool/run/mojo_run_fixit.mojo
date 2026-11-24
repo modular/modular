@@ -50,6 +50,51 @@ def take_bar(b: Bar) -> Int:
     return 1
 
 
+# CHECK-LABEL: def redundant_literal_patterns(
+def redundant_literal_patterns(value: Int, pair: Tuple[Int, String]):
+    match value:
+        # CHECK: case 0:
+        case == 0:
+            pass
+        # CHECK: case -1:
+        case == -1:
+            pass
+        case _:
+            pass
+
+    match pair:
+        # CHECK: case (_, "expected"):
+        case (_, == "expected"):
+            pass
+        case _:
+            pass
+
+
+# CHECK-LABEL: def expression_patterns(
+def expression_patterns(value: Int, expected: Tuple[Int, Int]):
+    match value:
+        # CHECK: case == expected[0]:
+        case expected[0]:
+            pass
+        case _:
+            pass
+
+    match expected:
+        # CHECK: case (_, == (expected[1] + 1)):
+        case (_, expected[1] + 1):
+            pass
+        case _:
+            pass
+
+
+# CHECK-LABEL: def deprecated_dunder_match(
+def deprecated_dunder_match(value: Int):
+    # CHECK: match value:
+    __match value:
+        case _:
+            pass
+
+
 # CHECK-LABEL: def main() raises:
 def main() raises:
     old_origin_of(1)

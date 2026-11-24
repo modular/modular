@@ -21,6 +21,7 @@
 #include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/ToolCommon/PassManagerConfigOptions.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/SmallSet.h"
@@ -39,6 +40,10 @@ class ExecutionSession;
 } // namespace orc
 } // namespace llvm
 
+namespace mlir::LLVM {
+class GlobalOp;
+} // namespace mlir::LLVM
+
 namespace M::KGEN {
 struct SymbolAndMCInfo;
 class TargetBackend;
@@ -49,7 +54,7 @@ class TargetBackend;
 
 /// The purpose of this class is to provide methods to lower concrete KGEN
 /// functions to LLVM, and then to objects.
-class ObjectCompiler {
+class MODULAR_CXX_EXPORT ObjectCompiler {
 public:
   /// Construct an ObjectCompiler that infers the exports from the module.
   static ErrorOr<std::unique_ptr<ObjectCompiler>>
@@ -123,6 +128,11 @@ private:
       const std::string &linker,
       PassManagerConfigOptions pmOptions = PassManagerConfigOptions());
 
+  /// Lower the given module to the LLVM dialect, reporting pass times into
+  /// `timing`.
+  ErrorOrSuccess lowerAllFuncsToLLVMDialect(ModuleOp module,
+                                            mlir::TimingScope &timing);
+
   /// Lower the given LLVM module to an object file (parLLC = false) or
   /// multiple object files per function (parLLC = true).
   AsyncRT::AsyncValueRef<SymbolAndMCInfo> lowerLLVMModuleToObjects(
@@ -134,6 +144,17 @@ private:
   /// but stop before AsmPrint. Return the MC compilation results.
   SmallVector<AsyncRT::AnyAsyncValueRef> emitArchiveParallelCompilation(
       LLVMModuleAndContext llvmModule, Location opLoc,
+      llvm::TargetMachine &targetMachine,
+      llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
+
+  /// Whether `emitArchive` splits `module` per exported function in the LLVM
+  /// dialect and translates each slice to LLVM IR in its own task. Otherwise
+  /// it translates the whole module and splits the LLVM IR.
+  bool splitsInLLVMDialect(ModuleOp module);
+
+  /// Like `emitArchiveParallelCompilation`, for a module in the LLVM dialect.
+  ErrorOr<SmallVector<AsyncRT::AnyAsyncValueRef>> emitArchiveSlices(
+      OwningOpRef<ModuleOp> module, Location opLoc,
       llvm::TargetMachine &targetMachine,
       llvm::StringMap<llvm::GlobalValue::LinkageTypes> &symbolLinkageTypes);
 
@@ -195,6 +216,13 @@ private:
 /// Setup the machine properties from the provided target.
 ErrorOr<std::unique_ptr<llvm::TargetMachine>>
 createTargetMachine(const CompilationOptions &options, bool isJIT);
+
+/// Answers `TargetBackend::isSharedMemoryGlobal` for a global that is still in
+/// the LLVM dialect. The backend takes an LLVM IR global and reads its name,
+/// address space and linkage, which a probe in `probeCtx` carries.
+bool isSharedMemoryGlobal(const TargetBackend &backend,
+                          mlir::LLVM::GlobalOp global,
+                          llvm::LLVMContext &probeCtx);
 
 namespace LLVM {
 /// Write the specified module to the specified raw output stream using

@@ -15,37 +15,41 @@
 from __future__ import annotations
 
 import math
+from collections.abc import Callable
+from typing import ClassVar
 
+from max import functional as F
+from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.nn import Module
-from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
-from max.experimental.nn.common_layers.functional_kernels import local_map
-from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
-from max.experimental.nn.common_layers.linear import ColumnParallelLinear
-from max.experimental.nn.common_layers.mesh_axis import DP
-from max.experimental.nn.module import subgraphable
-from max.experimental.nn.norm import RMSNorm
-from max.experimental.nn.sequential import ModuleList
-from max.experimental.sharding import (
+from max.graph import TensorValue, ops
+from max.nn import Module, as_subgraph
+from max.nn.common_layers.embedding import VocabParallelEmbedding
+from max.nn.common_layers.kv_cache import (
+    PagedCacheValues,
+    cache_tensor,
+    kv_input_values,
+)
+from max.nn.common_layers.linear import ColumnParallelLinear
+from max.nn.common_layers.mesh_axis import DP
+from max.nn.common_layers.quant_moe import (
+    QuantizedMoE,
+)
+from max.nn.ep import EPBuffers
+from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.norm import RMSNorm
+from max.nn.rope_scaling import DeepseekYarnRopeScalingParams
+from max.nn.sequential import ModuleList
+from max.pipelines.lib import ModuleV3Outputs
+from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
+from max.pipelines.lib.utils import split_replicated_batch
+from max.tensor import Tensor, default_dtype
+from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
-    PlacementMapping,
     Replicated,
     Sharded,
-)
-from max.experimental.tensor import Tensor
-from max.graph import DeviceRef, TensorValue, ops
-from max.nn.comm.ep import EPBatchManager, EPCommBuffers
-from max.nn.data_parallelism import split_batch_replicated
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-)
-from max.nn.rotary_embedding import DeepseekYarnRopeScalingParams
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
-    QuantizedMoE,
+    Unknown,
 )
 
 from ..deepseekV2_modulev3.layers.rotary_embedding import (
@@ -60,44 +64,18 @@ def gather_last_tokens(h: Tensor, input_row_offsets: Tensor) -> Tensor:
 
     Under data parallelism ``input_row_offsets`` is rebased into each replica's
     local frame, so its values only address that replica's own rows; the gather
-    runs shard-locally via ``local_map``, never through the auto-sharded
+    runs on each device's own rows, never through the auto-sharded
     ``F.gather``.
     """
 
-    def _body(h: Tensor, offsets: Tensor) -> TensorValue:
-        return ops.gather(TensorValue(h), TensorValue(offsets)[1:] - 1, axis=0)
+    def _body(h: TensorValue, offsets: TensorValue) -> TensorValue:
+        return ops.gather(h, offsets[1:] - 1, axis=0)
 
     if not h.is_distributed:
         return F.gather(h, input_row_offsets[1:] - 1, axis=0)
-    outs = local_map(_body, {"h": h, "offsets": input_row_offsets}, {})
-    # Placements-only mapping: the body changes the sharded extent (token
-    # rows -> request rows), so a dim-carrying mapping would disagree.
-    return Tensor.from_shard_values(
-        outs, mapping=PlacementMapping(h.mesh, h.placements)
-    )
-
-
-def split_replicated_batch(
-    h: Tensor,
-    input_row_offsets: Tensor,
-    input_row_offsets_i64: Tensor,
-    data_parallel_splits: Tensor,
-    mapping: DeviceMapping,
-) -> tuple[Tensor, Tensor]:
-    """Splits a replicated batch into data-parallel shards."""
-    devices = mapping.mesh.devices
-
-    h_shards, input_row_offsets_shards = split_batch_replicated(
-        [DeviceRef.from_device(d) for d in devices],
-        [TensorValue(shard) for shard in h.local_shards],
-        [TensorValue(shard) for shard in input_row_offsets.local_shards],
-        TensorValue(input_row_offsets_i64),
-        TensorValue(data_parallel_splits),
-    )
-    return (
-        Tensor.from_shard_values(h_shards, mapping),
-        Tensor.from_shard_values(input_row_offsets_shards, mapping),
-    )
+    # The rule-less body runs on each device's own rows; its result keeps h's
+    # placements.
+    return F.functional(_body)(h, input_row_offsets).rebind_mapping(h.mapping)
 
 
 class DeepseekV3TextModel(
@@ -110,9 +88,9 @@ class DeepseekV3TextModel(
             Tensor,
             Tensor | None,
             Tensor | None,
-            EPCommBuffers | None,
+            EPBuffers | None,
         ],
-        tuple[Tensor, ...],
+        ModuleV3Outputs,
     ]
 ):
     """The DeepseekV3 language model.
@@ -121,14 +99,8 @@ class DeepseekV3TextModel(
     (using a noaux_tc sigmoid router), and DeepSeek YaRN rotary embeddings.
     """
 
-    def __init__(
-        self,
-        config: DeepseekV3Config,
-        ep_batch_manager: EPBatchManager | None = None,
-    ) -> None:
+    def __init__(self, config: DeepseekV3Config) -> None:
         assert config.rope_scaling is not None
-        self.ep_batch_manager = ep_batch_manager
-
         scaling_params = DeepseekYarnRopeScalingParams(
             scaling_factor=config.rope_scaling["factor"],
             original_max_position_embeddings=config.rope_scaling[
@@ -170,17 +142,13 @@ class DeepseekV3TextModel(
         scale = self.rope.compute_scale(math.sqrt(1.0 / qk_head_dim))
         layers = []
         for i in range(config.num_hidden_layers):
-            layer = DeepseekV3TransformerBlock(
-                config=config,
-                layer_idx=i,
-                attention_scale=scale,
-                ep_batch_manager=ep_batch_manager,
+            layers.append(
+                DeepseekV3TransformerBlock(
+                    config=config,
+                    layer_idx=i,
+                    attention_scale=scale,
+                )
             )
-
-            # Subgraph the blocks with MoE.
-            if isinstance(layer.mlp, QuantizedMoE):
-                layer = subgraphable(layer, name="moe_block")
-            layers.append(layer)
 
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
@@ -198,8 +166,9 @@ class DeepseekV3TextModel(
         batch_context_length: Tensor,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: EPCommBuffers | None = None,
-    ) -> tuple[Tensor, ...]:
+        ep: EPBuffers | None = None,
+    ) -> ModuleV3Outputs:
+        """Runs the embedding and decoder stack over the tokens."""
         if self.mesh is not None:
             tokens = F.distributed_broadcast(tokens, self.mesh)
             input_row_offsets = F.distributed_broadcast(
@@ -242,16 +211,21 @@ class DeepseekV3TextModel(
             # CPU batch_context_length so the graph stays capturable.
             mla_prefill_metadata.buffer_lengths = batch_context_length
 
+        # All MoE blocks share one subgraph, built from the first block. Each
+        # call resolves the weights of its own layer.
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
-            h = layer(
+            call: Callable[..., Tensor] = layer
+            if isinstance(layer.mlp, QuantizedMoE):
+                call = as_subgraph(layer, name="moe_block")
+            h = call(
                 layer_idx_tensor,
                 h,
                 kv_collection,
                 input_row_offsets,
                 freqs_cis,
                 mla_prefill_metadata,
-                comm_buffers,
+                ep,
             )
 
         last_token_h = gather_last_tokens(h, input_row_offsets)
@@ -261,85 +235,86 @@ class DeepseekV3TextModel(
         if self.mesh is not None:
             last_logits = last_logits.to(self.mesh.devices[0])
         last_logits = F.cast(last_logits, DType.float32)
-        return (last_logits,)
+        return ModuleV3Outputs(next_token_logits=last_logits)
 
 
-class DeepseekV3(Module[..., tuple[Tensor, ...]]):
-    """Top-level DeepseekV3 wrapper that unflattens variadic KV cache args."""
+class DeepseekV3Decoder(Module[[DecoderInputs], DecoderOutputs]):
+    """The DeepSeek-V3 MLA decoder, registered for the ``DECODER`` role.
 
-    def __init__(
-        self,
-        config: DeepseekV3Config,
-        kv_params: KVCacheParamInterface,
-        ep_batch_manager: EPBatchManager | None = None,
-    ) -> None:
+    It runs tensor-parallel attention over a ``tp`` mesh, or one attention
+    replica per device over a ``dp`` mesh, with its experts tensor-parallel
+    or, under expert parallelism, spread across the devices.
+    """
+
+    graph_name: ClassVar[str] = "DeepseekV3"
+    supports_data_parallel: ClassVar[bool] = True
+
+    def __init__(self, config: DeepseekV3Config) -> None:
         super().__init__()
-        self.language_model = DeepseekV3TextModel(config, ep_batch_manager)
+        if config.mesh is None:
+            raise ValueError(
+                "DeepSeek-V3 needs a mesh: apply the runtime first"
+            )
+        # Quantized checkpoints keep norms, biases and embeddings in bf16.
+        dtype = (
+            DType.bfloat16 if config.quant_config is not None else config.dtype
+        )
+        with default_dtype(dtype):
+            self.language_model = DeepseekV3TextModel(config)
         self.config = config
-        self.kv_params = kv_params
-        self.ep_batch_manager = ep_batch_manager
+        self.kv_params = config.kv_params
 
-    def forward(
-        self,
-        tokens: Tensor,
-        return_n_logits: Tensor,
-        input_row_offsets: Tensor,
-        *variadic_args: Tensor,
-    ) -> tuple[Tensor, ...]:
+    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
+        """Runs the decoder over the batch."""
         mesh = self.config.mesh
         assert mesh is not None
-
-        # Reconstruct inputs from variadic arguments.
+        assert inputs.batch_context_lengths is not None
 
         data_parallel_splits: Tensor | None = None
         input_row_offsets_i64: Tensor | None = None
         dp_degree = self.config.data_parallel_degree
-        batch_context_lengths = variadic_args[:dp_degree]
-        variadic_args = variadic_args[dp_degree:]
         if dp_degree > 1:
             assert dp_degree == mesh.num_devices
-
+            assert inputs.host_input_row_offsets is not None
             cpu_mesh = DeviceMesh(
                 tuple(CPU() for _ in range(dp_degree)), (dp_degree,), ("dp",)
             )
-            batch_context_lengths_tensor = Tensor.from_shard_values(
-                [TensorValue(shard) for shard in batch_context_lengths],
-                PlacementMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
+            batch_context_length = cache_tensor(
+                inputs.batch_context_lengths,
+                DeviceMapping(cpu_mesh, (Replicated(),) * mesh.ndim),
             )
-
-            data_parallel_splits, input_row_offsets_i64, *rest = variadic_args
-            variadic_args = tuple(rest)
-        else:
-            batch_context_lengths_tensor = batch_context_lengths[0]
-
-        kv_inputs = iter(x._graph_value for x in variadic_args)
-        kv_collections = self.kv_params.unflatten_kv_inputs(kv_inputs)
-        assert isinstance(kv_collections, KVCacheInputs)
-
-        # Combine the per-device upstream KV collections into a single
-        # mesh-distributed PagedCacheValues (one shard per device).
-        if mesh is not None:
-            kv_collection = PagedCacheValues.from_upstream(
-                kv_collections.inputs,
-                PlacementMapping(mesh, (Replicated(),) * mesh.ndim),
+            data_parallel_splits = inputs.data_parallel_splits
+            input_row_offsets_i64 = F.cast(
+                inputs.host_input_row_offsets, DType.int64
             )
         else:
-            raise ValueError("Mesh must be define")
+            batch_context_length = inputs.batch_context_lengths[0]
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            # Any variadic graph values left after the KV cache are the EP
-            # communication buffers. Wrap them as an explicit forward argument
-            # so they thread through each MoE block's subgraph boundary.
-            ep_buffers = list(kv_inputs)
-            comm_buffers = self.ep_batch_manager.comm_buffers(ep_buffers)
+        kv_inputs = iter(kv_input_values(inputs.kv))
+        kv_collections = tree.leaves(
+            self.kv_params.unflatten_kv_inputs(kv_inputs),
+            leaf=KVCacheInputsPerDevice,
+        )
+        # Replicas serve different requests, so their caches vary;
+        # tensor-parallel devices all store the same latent cache.
+        kv_collection = PagedCacheValues.from_upstream(
+            kv_collections,
+            DeviceMapping(
+                mesh,
+                tuple(
+                    Unknown() if name == DP else Replicated()
+                    for name in mesh.axis_names
+                ),
+            ),
+        )
+
         return self.language_model(
-            tokens,
+            inputs.tokens,
             kv_collection,
-            return_n_logits,
-            input_row_offsets,
-            batch_context_lengths_tensor,
+            inputs.return_n_logits,
+            inputs.input_row_offsets,
+            batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            inputs.ep,
         )

@@ -104,7 +104,7 @@ struct _PrecompiledEntries[
 
     var entries: Span[_FormatCurlyEntry[Self.format_origin], Self.entry_origin]
     var size_hint: Int
-    var format: StringSlice[Self.format_origin]
+    var format: StringSpan[Self.format_origin]
 
 
 @fieldwise_init
@@ -125,10 +125,10 @@ struct _PrecompiledEntriesRuntime[format_origin: ImmOrigin, //, *Ts: Writable](
 
     var entries: List[_FormatCurlyEntry[Self.format_origin]]
     var size_hint: Int
-    var format: StringSlice[Self.format_origin]
+    var format: StringSpan[Self.format_origin]
 
 
-@always_inline
+@inline(.always)
 def _comptime_list_to_span[
     T: Deinitable & Copyable, //, list: List[T]
 ]() -> Span[T, ImmStaticOrigin]:
@@ -162,11 +162,11 @@ struct _FormatUtils:
         var ptr = compiled.format.as_bytes().unsafe_ptr()
         var fmt_len = compiled.format.byte_length()
 
-        @always_inline
+        @inline(.always)
         def _build_slice(
             p: ImmPointer[UInt8, _], start: Int, end: Int
-        ) -> StringSlice[p.origin]:
-            return StringSlice(
+        ) -> StringSpan[p.origin]:
+            return StringSpan(
                 unsafe_from_utf8=Span(
                     unsafe_ptr=p.unsafe_offset(start), length=end - start
                 )
@@ -183,7 +183,7 @@ struct _FormatUtils:
         writer.write(_build_slice(ptr, offset, fmt_len))
 
     @staticmethod
-    def format[*Ts: Writable](format: StringSlice, *args: *Ts) raises -> String:
+    def format[*Ts: Writable](format: StringSpan, *args: *Ts) raises -> String:
         """Format the arguments using the given format string.
 
         Parameters:
@@ -201,7 +201,7 @@ struct _FormatUtils:
     @staticmethod
     def format_to_runtime[
         *Ts: Writable,
-    ](mut writer: Some[Writer], format: StringSlice, *args: *Ts,) raises:
+    ](mut writer: Some[Writer], format: StringSpan, *args: *Ts,) raises:
         """Format arguments into a writer using a runtime format string.
 
         This function parses and compiles the format string at runtime, then
@@ -283,7 +283,7 @@ struct _FormatUtils:
     def compile_entries_runtime_no_raises[
         *Ts: Writable
     ](
-        format: StringSlice,
+        format: StringSpan,
     ) -> Variant[
         _PrecompiledEntriesRuntime[format_origin=ImmOrigin(format.origin), *Ts],
         Error,
@@ -303,7 +303,7 @@ struct _FormatUtils:
     def compile_entries_runtime[
         *Ts: Writable
     ](
-        format: StringSlice,
+        format: StringSpan,
     ) raises -> _PrecompiledEntriesRuntime[
         format_origin=ImmOrigin(format.origin), *Ts
     ]:
@@ -335,7 +335,7 @@ struct _FormatUtils:
         var automatic_indexing_count = 0
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
-        var raised_kwarg_field = Optional[StringSlice[FormatOrigin]](None)
+        var raised_kwarg_field = Optional[StringSpan[FormatOrigin]](None)
         comptime n_args = Ts.length
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
@@ -354,17 +354,17 @@ struct _FormatUtils:
                 skip_next = False
                 continue
             if fmt_bytes.unsafe_get(i) == `{`:
-                if not start:
+                if case .Some(start_value) = start:
+                    if i - start_value != 1:
+                        raise Error(l_err)
+                    # python escapes double curlies
+                    entries.append(EntryType(start_value, i, field=False))
+                    start = None
+                else:
                     start = i
-                    continue
-                if i - start.value() != 1:
-                    raise Error(l_err)
-                # python escapes double curlies
-                entries.append(EntryType(start.value(), i, field=False))
-                start = None
                 continue
             elif fmt_bytes.unsafe_get(i) == `}`:
-                if not start:
+                __guard case .Some(start_value) = start else:
                     # python escapes double curlies
                     if (i + 1) < fmt_len and fmt_bytes.unsafe_get(i + 1) == `}`:
                         entries.append(EntryType(i, i + 1, field=True))
@@ -374,7 +374,6 @@ struct _FormatUtils:
                     # if it is not an escaped one, it is an error
                     raise Error(r_err)
 
-                var start_value = start.value()
                 var current_entry = EntryType(start_value, i, field=NoneType())
 
                 if i - start_value != 1:
@@ -402,13 +401,11 @@ struct _FormatUtils:
 
         if raised_automatic_index:
             raise Error("Automatic indexing require more args in *args")
-        elif raised_kwarg_field:
-            var val = raised_kwarg_field.value()
+        elif case .Some(val) = raised_kwarg_field:
             raise Error("Index ", val, " not in kwargs")
         elif manual_indexing_count and automatic_indexing_count:
             raise Error("Cannot both use manual and automatic indexing")
-        elif raised_manual_index:
-            var val = raised_manual_index.value()
+        elif case .Some(val) = raised_manual_index:
             raise Error("Index ", val, " not in *args")
         elif start:
             raise Error(l_err)
@@ -424,7 +421,7 @@ struct _FormatUtils:
 # a trait that all format specifications conform to)
 struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     """The struct that handles string formatting by curly braces entries.
-    This is internal for the types: `StringSlice` compatible types.
+    This is internal for the types: `StringSpan` compatible types.
     """
 
     var first_curly: Int
@@ -440,13 +437,13 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
     )
     """Currently supported conversion flags: `__str__` and `__repr__`."""
     comptime _FieldVariantType = Variant[
-        StringSlice[Self.origin], Int, NoneType, Bool
+        StringSpan[Self.origin], Int, NoneType, Bool
     ]
     """Purpose of the `Variant` `Self.field`:
 
     - `Int` for manual indexing: (value field contains `0`).
     - `NoneType` for automatic indexing: (value field contains `None`).
-    - `StringSlice` for **kwargs indexing: (value field contains `foo`).
+    - `StringSpan` for **kwargs indexing: (value field contains `foo`).
     - `Bool` for escaped curlies: (value field contains False for `{` or True
         for `}`).
     """
@@ -476,7 +473,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         self.field = field
         self.conversion_flag = conversion_flag
 
-    @always_inline
+    @inline(.always)
     def is_escaped_brace(ref self) -> Bool:
         """Whether the field is escaped_brace.
 
@@ -485,7 +482,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         """
         return self.field.isa[Bool]()
 
-    @always_inline
+    @inline(.always)
     def is_kwargs_field(ref self) -> Bool:
         """Whether the field is kwargs_field.
 
@@ -494,7 +491,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         """
         return self.field.isa[String]()
 
-    @always_inline
+    @inline(.always)
     def is_automatic_indexing(ref self) -> Bool:
         """Whether the field is automatic_indexing.
 
@@ -503,7 +500,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         """
         return self.field.isa[NoneType]()
 
-    @always_inline
+    @inline(.always)
     def is_manual_indexing(ref self) -> Bool:
         """Whether the field is manual_indexing.
 
@@ -514,7 +511,7 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
 
     def _handle_field_and_break(
         mut self,
-        fmt_src: StringSlice[Self.origin],
+        fmt_src: StringSpan[Self.origin],
         len_pos_args: Int,
         i: Int,
         start_value: Int,
@@ -522,14 +519,14 @@ struct _FormatCurlyEntry[origin: ImmOrigin](ImplicitlyCopyable):
         mut raised_automatic_index: Optional[Int],
         mut manual_indexing_count: Int,
         mut raised_manual_index: Optional[Int],
-        mut raised_kwarg_field: Optional[StringSlice[Self.origin]],
+        mut raised_kwarg_field: Optional[StringSpan[Self.origin]],
         mut total_estimated_entry_byte_width: Int,
     ) raises -> Bool:
-        @always_inline("nodebug")
+        @inline(.nodebug)
         def _build_slice(
             p: ImmPointer[UInt8, _], start: Int, end: Int
-        ) -> StringSlice[p.origin]:
-            return StringSlice(
+        ) -> StringSpan[p.origin]:
+            return StringSpan(
                 unsafe_from_utf8=Span[UInt8, p.origin](
                     unsafe_ptr=p.unsafe_offset(start), length=end - start
                 )

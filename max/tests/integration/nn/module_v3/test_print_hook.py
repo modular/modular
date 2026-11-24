@@ -10,15 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for PrintHook on v3 (`max.experimental.nn`) modules."""
+"""Tests for PrintHook on v3 (`max.nn`) modules."""
 
 from __future__ import annotations
 
 import pytest
-from max.experimental import random
-from max.experimental.nn.module import Module, module_dataclass
-from max.experimental.tensor import Tensor, TensorType, defaults
-from max.nn.hooks.print_hook import PrintHook
+from max.functional import random
+from max.nn.legacy.hooks.print_hook import PrintHook
+from max.nn.module import Module, module_dataclass
+from max.tensor.tensor import Tensor, TensorType, defaults
 
 
 @module_dataclass
@@ -51,7 +51,8 @@ def test_named_print_hook_v3(
     # module's `forward` so the hook fires during tracing.
     print_hook.name_layers(model)
 
-    dtype, device = defaults()
+    dtype, mesh = defaults()
+    device = mesh.devices[0]
     input_type = TensorType(dtype, [3, 3], device=device)
     compiled = model.compile(input_type)
 

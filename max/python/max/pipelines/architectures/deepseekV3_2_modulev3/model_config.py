@@ -1,0 +1,984 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Config for DeepseekV3.2 models, in the ModuleV3 API."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from typing import Any, ClassVar
+
+from max.dtype import DType
+from max.graph import DeviceRef, TensorType
+from max.nn._graph_ops import HiSparseParams
+from max.nn.common_layers.quant_ops import is_fp8_block_quantized
+from max.nn.ep_config import EPConfig, calculate_ep_max_tokens_per_rank
+from max.nn.kv_cache import (
+    KVCacheContextParallel,
+    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
+    KVCacheParams,
+    KVCacheQuantizationConfig,
+    MLAKVCacheParams,
+    MultiKVCacheParams,
+    spec_decode_cache_slack,
+)
+from max.pipelines.kv_cache import cache_dtype_for_encoding
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.model_config import _select_quantization_encoding
+from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
+from max.pipelines.lib.pipeline_parallel import (
+    PartitionSpec,
+    PipelineStage,
+    stage_layers,
+)
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelDeploymentConfig,
+    ModuleRuntime,
+)
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+)
+from max.pipelines.speculative.config import SpeculativeMethod
+from max.pipelines.weights.quant import parse_quant_config
+from max.tensor import Tensor
+from max.tree import dataclass as tree_dataclass
+from transformers import AutoConfig
+from typing_extensions import Self, override
+
+from ..deepseekV3_2.layers.sparse_mla import sparse_selection_width
+from ..deepseekV3_modulev3.model_config import DeepseekV3Config
+
+
+def resolve_indexer_types(
+    huggingface_config: AutoConfig, num_hidden_layers: int
+) -> list[str]:
+    """Resolve the per-layer indexer schedule for DeepSeek Sparse Attention.
+
+    Each layer is either ``"full"`` (runs its own lightning indexer top-k) or
+    ``"shared"`` (reuses the top-k selection from the most recent full layer).
+
+    If the model doesn't provide an indexer schedule, it will default to all
+    ``"full"`` layers.
+    """
+    types = getattr(huggingface_config, "indexer_types", None)
+    if types is not None:
+        return list(types)
+
+    pattern = getattr(huggingface_config, "index_topk_pattern", None)
+    if pattern is not None:
+        if isinstance(pattern, str):
+            return [{"F": "full", "S": "shared"}[c] for c in pattern]
+        return list(pattern)
+
+    freq = max(getattr(huggingface_config, "index_topk_freq", 1) or 1, 1)
+    offset = getattr(huggingface_config, "index_skip_topk_offset", 2)
+    return [
+        "full" if (max(i - offset + 1, 0) % freq) == 0 else "shared"
+        for i in range(num_hidden_layers)
+    ]
+
+
+def indexer_cache_layer_map(
+    indexer_types: Sequence[str], num_layers: int
+) -> list[int]:
+    """Maps each decoder layer to its slot in the indexer K cache.
+
+    Only ``"full"`` layers run the indexer, so only they get a slot; slots are
+    numbered in layer order. ``"shared"`` layers never touch the indexer cache
+    and map to slot 0. An empty schedule means every layer is full.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The indexer cache slot of each of the first ``num_layers`` layers.
+    """
+    if not indexer_types:
+        return list(range(num_layers))
+    slots: list[int] = []
+    next_slot = 0
+    for layer_type in indexer_types[:num_layers]:
+        if layer_type == "full":
+            slots.append(next_slot)
+            next_slot += 1
+        else:
+            slots.append(0)
+    return slots
+
+
+def hisparse_gather_groups(
+    indexer_types: Sequence[str], num_layers: int
+) -> list[int]:
+    """Counts the layers one HiSparse gather launch fills, per layer.
+
+    A ``full`` layer's selections are also read by the ``shared`` layers that
+    follow it, so its gather copies their rows in the same launch. Every other
+    entry is ``1``: a ``shared`` layer never gathers its own rows, and a
+    ``full`` layer with no followers gathers only itself.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        For each of the first ``num_layers`` layers, the number of consecutive
+        layers starting there that share its selection, ``1`` when the layer
+        does not gather.
+    """
+    counts = [1] * num_layers
+    if not indexer_types:
+        return counts
+    for idx in range(min(num_layers, len(indexer_types))):
+        if indexer_types[idx] != "full":
+            continue
+        end = idx + 1
+        while end < num_layers and indexer_types[end] == "shared":
+            end += 1
+        counts[idx] = end - idx
+    return counts
+
+
+@tree_dataclass(frozen=True)
+class HiSparseInputs:
+    """The HiSparse tables one layer reads, as the graph hands them over.
+
+    A tree dataclass, so the tables cross a shared MoE subgraph's signature
+    as operands rather than as constants captured in its body. The layer's
+    LRU group is not carried here: the resolve reads the indexer's cache-slot
+    argument, which is the same rank among the ``full`` layers, so one
+    subgraph body serves every ``full`` layer.
+    """
+
+    host_table: Tensor
+    """``[batch, pages]`` int32 host mirror page of each logical latent
+    page, ``-1`` where none, one shard per device."""
+
+    hot_table: Tensor
+    """``[batch, hot_pages + 1]`` uint32 hot pages, then the state page,
+    one shard per device."""
+
+    host_mirror: Tensor
+    """``[bytes]`` uint8 host mirror the device reads, on the CPU device."""
+
+    params: HiSparseParams
+    """The static sizes the resolve and gather compile with."""
+
+
+def stage_indexer_types(
+    indexer_types: Sequence[str], layers: range
+) -> list[str]:
+    """Returns the schedule of the layers one pipeline stage builds.
+
+    A stage's caches hold only its own layers, so its indexer slots and
+    HiSparse gather widths count from its first layer. An empty schedule
+    stays empty: every layer is full.
+
+    Args:
+        indexer_types: The whole decoder's schedule from
+            :func:`resolve_indexer_types`, or empty.
+        layers: The decoder layers the stage builds.
+    """
+    if not indexer_types:
+        return []
+    return [indexer_types[i] for i in layers]
+
+
+def stage_selection_groups(indexer_types: Sequence[str], layers: range) -> int:
+    """Returns how many selection groups a pipeline stage's layers touch.
+
+    A group is a ``full`` layer and the ``shared`` layers that reuse its
+    top-k. A stage that starts on a ``shared`` layer also holds the end of
+    the group its previous stage started.
+
+    Args:
+        indexer_types: The whole decoder's schedule from
+            :func:`resolve_indexer_types`, or empty.
+        layers: The decoder layers the stage builds.
+    """
+    schedule = stage_indexer_types(indexer_types, layers)
+    if not schedule:
+        return len(layers)
+    return sum(t == "full" for t in schedule) + (schedule[0] == "shared")
+
+
+def stage_latent_slots(
+    indexer_types: Sequence[str],
+    num_layers: int,
+    stage: PipelineStage | None,
+) -> int:
+    """Returns how many layers a pipeline stage's MLA latent cache holds.
+
+    The stages of a pipeline share one KV pool, which needs the same
+    latent-to-indexer proportion on every stage. Each stage's caches hold the
+    widest selection group's latent slots, and one indexer slot, per group
+    its layers touch (:func:`stage_selection_groups`). That covers its layers;
+    a stage that holds narrower groups gets spare slots past its last layer.
+
+    Args:
+        indexer_types: The whole decoder's schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The whole decoder's layer count.
+        stage: The stage the config builds, or ``None`` for the whole model.
+    """
+    if stage is None or stage.num_stages == 1:
+        return len(stage.layers) if stage is not None else num_layers
+    widest = max(hisparse_gather_groups(indexer_types, num_layers))
+    return widest * stage_selection_groups(indexer_types, stage.layers)
+
+
+def nextn_drafts(pipeline_config: PipelineConfig) -> bool:
+    """Returns whether the checkpoint's NextN layer drafts for the target."""
+    speculative = pipeline_config.speculative
+    return speculative is not None and speculative.is_mtp()
+
+
+def num_indexer_cache_layers(
+    indexer_types: Sequence[str], num_layers: int
+) -> int:
+    """Returns how many layers the indexer K cache needs to hold.
+
+    Args:
+        indexer_types: The per-layer schedule from
+            :func:`resolve_indexer_types`, or empty.
+        num_layers: The number of decoder layers that share the cache.
+
+    Returns:
+        The number of ``"full"`` layers among the first ``num_layers``, or
+        ``num_layers`` when the schedule is empty.
+    """
+    if not indexer_types:
+        return num_layers
+    return sum(t == "full" for t in indexer_types[:num_layers])
+
+
+def check_replica_layout(
+    config: DeepseekV3_2Config, runtime: ModuleRuntime
+) -> None:
+    """Raises unless the deployment's replicas and DCP group fit the decoder.
+
+    Data parallelism runs one attention replica per device or, under
+    peer-to-peer expert parallelism, tensor-parallel replicas on a
+    ``(dp, tp)`` mesh whose experts span every device. A decode context
+    parallel group is ``dcp`` consecutive ranks of one replica's ``tp``
+    axis, ``dcp`` any divisor of it.
+
+    Allreduce EP can't back a ``(dp, tp)`` mesh: each device's MoE output
+    is a partial over its own experts (the shared expert added on device 0
+    only), complete only after a sum over every device, while each replica's
+    collectives reduce over its own ``tp`` group.
+
+    Raises:
+        NotImplementedError: If replicas of several devices run without
+            expert parallelism or with allreduce EP, or the DCP degree does
+            not divide the attention tensor-parallel degree.
+    """
+    n_devices = len(runtime.mesh.devices)
+    dp = max(1, runtime.data_parallel_degree)
+    if 1 < dp < n_devices and runtime.ep is None:
+        raise NotImplementedError(
+            f"data_parallel_degree={dp} over {n_devices} devices runs "
+            "tensor-parallel replicas on a (dp, tp) mesh, which needs expert "
+            "parallelism; without it, use one replica per device."
+        )
+    if 1 < dp < n_devices and (
+        runtime.ep_use_allreduce
+        or (runtime.ep is not None and runtime.ep.use_allreduce)
+    ):
+        raise NotImplementedError(
+            f"data_parallel_degree={dp} over {n_devices} devices runs "
+            "tensor-parallel replicas on a (dp, tp) mesh, which needs "
+            "peer-to-peer expert parallelism: allreduce EP "
+            "(ep_use_allreduce) sums each device's local-expert partials "
+            "over every device, and the replicas reduce within their own "
+            "tp group. Turn off ep_use_allreduce, or use one replica per "
+            "device."
+        )
+    attention_tp = n_devices // dp
+    dcp = config.decode_context_parallel_degree
+    if dcp > 1 and attention_tp % dcp:
+        raise NotImplementedError(
+            f"decode_context_parallel_degree={dcp} must divide the attention "
+            f"tensor-parallel degree ({attention_tp}: {n_devices} devices "
+            f"over {dp} replicas), so that its groups tile each replica."
+        )
+
+
+def resolve_dcp_q_replicate(value: bool | None) -> bool:
+    """Returns whether DCP ranks replicate the query, given the export flag.
+
+    ``None`` (no ``--dcp-q-replicate`` / ``--no-dcp-q-replicate``) means
+    True, a replicated query, for every architecture, as vLLM defaults
+    GLM-5.x. A gathered query is the explicit opt-out.
+    """
+    return True if value is None else value
+
+
+def resolve_prefill_context_parallel(value: bool | None) -> bool:
+    """Returns whether prefill steps run prefill context parallelism.
+
+    ``None`` (no ``--prefill-context-parallel`` /
+    ``--no-prefill-context-parallel``) means off: PCP is opt-in. On a
+    prefill step too short to split, the predicated graph still pays PCP's
+    per-layer host work, so a DCP export only runs it when asked. An explicit
+    True passes through for the config to refuse where PCP cannot run (no
+    DCP, a gathered query, FP8 MLA weights or more than one data-parallel
+    replica).
+    """
+    return bool(value)
+
+
+def hisparse_params_for(
+    *,
+    pipeline_config: PipelineConfig,
+    model_config: MAXModelConfig,
+    huggingface_config: AutoConfig,
+) -> HiSparseParams | None:
+    """The Hybrid HiSparse sizes a ``--hisparse`` export compiles in.
+
+    ``None`` unless the export asked for HiSparse, which leaves the config —
+    and so the graph — exactly what it is today. The hot buffer holds one
+    top-k of rows per query row the step runs, plus one spare top-k of LRU
+    slack, as vLLM sizes it; the query rows are the verify step's ``K + 1``
+    when the export speculates and one otherwise. One LRU group per full
+    indexer layer, because each keeps its own hot-buffer state.
+
+    Args:
+        pipeline_config: The export's config, read for the speculative draft
+            count.
+        model_config: The target's model config, read for the KV page size
+            and the ``sparse_offload`` flag the exporter sets.
+        huggingface_config: The checkpoint's config, read for the top-k and
+            the indexer schedule.
+
+    Returns:
+        The sizes, or ``None`` when the export leaves every page resident.
+    """
+    if not model_config.kv_cache.sparse_offload:
+        return None
+    speculative = pipeline_config.speculative
+    query_rows = 1 + (
+        speculative.num_speculative_tokens or 0 if speculative else 0
+    )
+    indexer_types = resolve_indexer_types(
+        huggingface_config, huggingface_config.num_hidden_layers
+    )
+    return HiSparseParams.for_top_k(
+        top_k=huggingface_config.index_topk,
+        query_rows=query_rows,
+        page_size=model_config.kv_cache.kv_cache_page_size,
+        num_groups=num_indexer_cache_layers(
+            indexer_types, huggingface_config.num_hidden_layers
+        ),
+    )
+
+
+@dataclass(kw_only=True)
+class DeepseekV3_2Config(DeepseekV3Config, ExpertParallelDeploymentConfig):
+    """Configuration for DeepseekV3.2 models (ModuleV3)."""
+
+    takes_batch_context_lengths: ClassVar[bool] = True
+
+    DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"float8_e4m3fn"}
+
+    kv_params: KVCacheParamInterface  # type: ignore[assignment]
+    """A ``MultiKVCacheParams`` tree with an ``mla`` and an ``indexer`` leaf."""
+
+    unpadded_vocab_size: int | None = None
+    """Logical vocab size when the checkpoint pads ``lm_head``.
+
+    The padded tail is masked to ``-inf`` so it cannot be sampled.
+    """
+
+    # Added parameters for the Indexer used in DeepSeek Sparse Attention.
+    index_head_dim: int = 128
+    index_n_heads: int = 64
+    index_topk: int = 2048
+    indexer_types: list[str] = field(default_factory=list)
+    # GLM-5.x sets indexer_rope_interleave=true.
+    indexer_rope_interleave: bool = False
+    decode_context_parallel_degree: int = 1
+    """Attention ranks that split each request's KV positions (1 = off).
+
+    Under decode context parallelism the MLA latent and indexer caches hold
+    only each rank's positions (``kv_cache.context_parallel``), every rank
+    attends all its replica's heads over its share, and the partial results
+    merge by their log-sum-exp. Ranks own positions round-robin, one at a
+    time or in blocks of ``decode_context_parallel_interleave``.
+    """
+
+    decode_context_parallel_interleave: int = 1
+    """Consecutive positions a DCP rank owns before the next rank's turn.
+
+    Position ``p`` lives on rank ``(p // interleave) % dcp``. 1 stripes
+    tokens, which balances every request across ranks. The KV page size
+    (128) stripes whole pages, so disaggregated inference can move pages
+    between ranks without restriping. It must divide the KV page size, or a
+    logical page no longer lands in one physical page per rank, and it needs
+    ``decode_context_parallel_degree > 1``.
+    """
+
+    dcp_q_replicate: bool = True
+    """Whether every DCP rank computes all its group's query heads itself.
+
+    False shards ``q_b_proj`` and ``kv_b_proj`` by head as under tensor
+    parallelism: each rank absorbs its own heads' queries and
+    the group all-gathers them. True keeps ``q_b_proj`` and ``kv_b_proj``
+    replicated so every rank absorbs all heads itself, trading weight
+    memory for the all-gather. Either way each rank applies its own heads'
+    ``w_vc`` after the merge. Named after vLLM's
+    ``ParallelConfig.dcp_q_replicate``; True is the default (see
+    :func:`resolve_dcp_q_replicate`).
+    """
+
+    prefill_context_parallel: bool = False
+    """Whether prefill steps split their rows over each DCP group's ranks.
+
+    Each rank projects its run of the step's rows, the group all-gathers the
+    latent and indexer keys so every rank stores the positions it owns, and
+    each rank attends its own queries over a whole-context scratch copy of
+    the request's context with the non-DCP sparse prefill op; one
+    all-to-all returns every rank its heads of every row. Decode and verify
+    steps stay on DCP. Needs ``decode_context_parallel_degree > 1`` and
+    ``dcp_q_replicate``. See
+    :mod:`.layers.prefill_context_parallel`.
+    """
+
+    hisparse: HiSparseParams | None = None
+    """Hybrid HiSparse sizes, or ``None`` to keep every latent page resident.
+
+    Set by the exporter once the host mirror is sized; the graph it builds
+    takes the three HiSparse input groups after the expert-parallel tail.
+    """
+
+    layer_ids: range | None = None
+    """The decoder layers this config builds: every layer, unless it builds
+    one pipeline stage. Weight names stay global; the KV caches hold only
+    these layers."""
+
+    last_stage_embeds: bool = False
+    """Whether the last of several pipeline stages also builds the token
+    embedding: its fused graph runs the NextN layer, which embeds each
+    position's successor token."""
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        dcp = self.decode_context_parallel_degree
+        if dcp < 1:
+            raise ValueError(
+                f"decode_context_parallel_degree must be positive (got {dcp})."
+            )
+        if self.prefill_context_parallel and dcp == 1:
+            raise ValueError(
+                "prefill_context_parallel splits prefill over decode context "
+                "parallel groups, so it needs decode_context_parallel_degree "
+                "> 1."
+            )
+        if self.prefill_context_parallel and not self.dcp_q_replicate:
+            raise ValueError(
+                "prefill_context_parallel needs a replicated decode context "
+                "parallel query (dcp_q_replicate): each rank projects all of "
+                "its group's heads for its own rows."
+            )
+        quant_config = self.quant_config
+        if (
+            self.prefill_context_parallel
+            and is_fp8_block_quantized(quant_config)
+            and quant_config is not None
+            and quant_config.attn_quantized_layers
+        ):
+            raise ValueError(
+                "prefill_context_parallel attends with BF16 MLA weights, and "
+                "this checkpoint's MLA is FP8 block-quantized; export without "
+                "--prefill-context-parallel."
+            )
+        if self.prefill_context_parallel and self.data_parallel_degree > 1:
+            raise ValueError(
+                "prefill_context_parallel splits one replica's rows, so it "
+                "needs data_parallel_degree 1 (got "
+                f"{self.data_parallel_degree}); export without "
+                "--prefill-context-parallel."
+            )
+        interleave = self.decode_context_parallel_interleave
+        if interleave < 1:
+            raise ValueError(
+                "decode_context_parallel_interleave must be positive (got "
+                f"{interleave})."
+            )
+        if interleave > 1:
+            if dcp == 1:
+                raise ValueError(
+                    "decode_context_parallel_interleave > 1 needs "
+                    "decode_context_parallel_degree > 1."
+                )
+            page_size = self.mla_kv_params.page_size
+            if page_size % interleave:
+                raise ValueError(
+                    f"decode_context_parallel_interleave={interleave} must "
+                    f"divide the KV page size ({page_size}): a logical page "
+                    "then lands in one physical page on every rank."
+                )
+        # MTP runs under DCP too: the NextN layer shards its own caches like
+        # the target's, and each draft step runs its own indexer rather than
+        # reusing a lagged selection, which the DCP attention path refuses
+        # (``QuantizedSparseLatentAttentionWithRope``).
+        # A ``shared`` layer reuses the top-k from the most recent ``full``
+        # layer, so the first layer must be ``full``. An empty schedule means
+        # every layer is full.
+        if self.indexer_types and self.indexer_types[0] != "full":
+            raise ValueError(
+                "indexer_types[0] must be 'full': the first layer cannot be "
+                "'shared' because no preceding full indexer layer exists to "
+                f"reuse a top-k selection from (got {self.indexer_types[0]!r})."
+            )
+        if self.hisparse is not None:
+            self._check_hisparse()
+        if self.layer_ids not in (None, range(self.num_hidden_layers)):
+            self._check_pipeline_stage()
+
+    def _check_pipeline_stage(self) -> None:
+        """Refuses a pipeline stage the decoder does not build.
+
+        A stage hands the next its residual stream as one tensor for one
+        replica, so it runs without data or context parallelism.
+        """
+        if (
+            self.data_parallel_degree > 1
+            or self.decode_context_parallel_degree > 1
+        ):
+            raise ValueError(
+                "a pipeline stage runs one replica without context"
+                " parallelism (got data_parallel_degree"
+                f" {self.data_parallel_degree},"
+                " decode_context_parallel_degree"
+                f" {self.decode_context_parallel_degree})."
+            )
+        if self.hisparse is not None:
+            raise ValueError("hisparse is not supported on a pipeline stage.")
+
+    @classmethod
+    def construct_partition_spec(
+        cls, huggingface_config: AutoConfig
+    ) -> PartitionSpec:
+        """Returns where the decoder may be cut into pipeline stages.
+
+        Any layer may start a stage. A ``shared`` layer reuses the top-k
+        selection of the ``full`` layer before it, and every stage hands the
+        next its last selection beside its hidden states.
+        """
+        return PartitionSpec(
+            num_layers=int(huggingface_config.num_hidden_layers)
+        )
+
+    def _check_hisparse(self) -> None:
+        """Refuses a HiSparse deployment this graph does not build.
+
+        Raises:
+            ValueError: If the latent cache is NVFP4, whose scale rows the hot
+                buffer does not mirror yet, or if prefill context parallelism
+                is on, whose prefill path reads no hot buffer.
+        """
+        assert self.hisparse is not None
+        if self.prefill_context_parallel:
+            raise ValueError(
+                "hisparse is not supported with prefill context parallelism;"
+                " its prefill path reads no hot buffer."
+            )
+        selection_width = sparse_selection_width(
+            self.mla_kv_params, self.index_topk
+        )
+        if selection_width != self.index_topk:
+            raise ValueError(
+                "hisparse needs an FP8 latent cache, but this one is NVFP4 "
+                f"(sparse_selection_width={selection_width} != "
+                f"index_topk={self.index_topk}); mirroring the hot rows' "
+                "scales is a follow-up."
+            )
+
+    def hisparse_input_types(self) -> list[TensorType]:
+        """Returns the HiSparse graph inputs, in the order the graph takes.
+
+        The host and hot tables are per-device device tensors staged each
+        step like the MLA lookup table, whose page-count dim the host table
+        shares; the host mirror is one CPU tensor the runtime binds once at
+        boot.
+
+        Raises:
+            ValueError: If :attr:`hisparse` is unset.
+        """
+        params = self.hisparse
+        if params is None:
+            raise ValueError("hisparse_input_types requires hisparse to be set")
+        kv_inputs = self.kv_params.get_symbolic_inputs()
+        assert isinstance(kv_inputs, dict)
+        mla = kv_inputs["mla"]
+        assert isinstance(mla, tuple)
+        host: list[TensorType] = []
+        hot: list[TensorType] = []
+        for per_device in mla:
+            assert isinstance(per_device, KVCacheInputsPerDevice)
+            lookup_table = per_device.lookup_table
+            assert isinstance(lookup_table, TensorType)
+            host.append(
+                TensorType(DType.int32, lookup_table.shape, lookup_table.device)
+            )
+            hot.append(
+                TensorType(
+                    DType.uint32,
+                    [lookup_table.shape[0], params.hot_pages + 1],
+                    lookup_table.device,
+                )
+            )
+        return [
+            *host,
+            *hot,
+            TensorType(
+                DType.uint8, ["hisparse_mirror_bytes"], device=DeviceRef.CPU()
+            ),
+        ]
+
+    @override
+    def get_kv_params(self) -> KVCacheParamInterface:  # type: ignore[override]
+        return self.kv_params
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Returns the config completed with the checkpoint's quantization.
+
+        The decoder returns only the last token's logits, whatever
+        ``outputs`` asks for.
+
+        Raises:
+            KeyError: If a ``noaux_tc`` router has no correction bias.
+        """
+        del outputs
+        quant_config = None
+        if self.dtype in (
+            DType.float8_e4m3fn,
+            DType.uint8,
+            DType.float4_e2m1fn,
+        ):
+            quant_config = parse_quant_config(
+                huggingface_config, state_dict, self.dtype
+            )
+        correction_bias_dtype = self.correction_bias_dtype
+        if self.topk_method == "noaux_tc":
+            bias = next(
+                (
+                    value
+                    for key, value in state_dict.items()
+                    if key.endswith("e_score_correction_bias")
+                ),
+                None,
+            )
+            if bias is None:
+                raise KeyError("Expected e_score_correction_bias in state_dict")
+            correction_bias_dtype = bias.dtype
+        return replace(
+            self,
+            quant_config=quant_config,
+            correction_bias_dtype=correction_bias_dtype,
+        )
+
+    def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
+        """Sizes the expert-parallel buffers for ``runtime``.
+
+        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
+        quantized, else in bf16. The shared expert fuses with the routed ones
+        only when it has their shape and weight layout.
+        """
+        quant_config = self.quant_config
+        quantized_dispatch = quant_config is not None and (
+            self.dtype.is_float8() or quant_config.is_nvfp4
+        )
+        n_devices = len(runtime.mesh.devices)
+        return EPConfig(
+            dispatch_dtype=self.dtype if quantized_dispatch else DType.bfloat16,
+            dispatch_quant_config=quant_config if quantized_dispatch else None,
+            combine_dtype=DType.bfloat16,
+            hidden_size=self.hidden_size,
+            top_k=self.num_experts_per_tok,
+            n_experts=self.n_routed_experts,
+            max_tokens_per_rank=calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=runtime.max_batch_input_tokens,
+                ep_size=runtime.ep_size,
+                data_parallel_degree=runtime.data_parallel_degree,
+                use_allreduce=runtime.ep_use_allreduce,
+            ),
+            n_gpus_per_node=n_devices,
+            n_nodes=runtime.ep_size // n_devices,
+            fused_shared_expert=self.n_shared_experts == 1
+            and (
+                quant_config is None
+                or quant_config.shared_experts_use_quant(self.dtype)
+            ),
+            use_allreduce=runtime.ep_use_allreduce,
+        )
+
+    def apply_runtime(self, runtime: ModuleRuntime) -> Self:
+        """Returns the config placed on the deployment's mesh.
+
+        Raises:
+            NotImplementedError: If the replicas or the decode context
+                parallel group don't fit the mesh (see
+                :func:`check_replica_layout`).
+        """
+        check_replica_layout(self, runtime)
+        return replace(
+            self,
+            mesh=runtime.mesh,
+            ep_config=runtime.ep,
+            max_batch_context_length=(
+                runtime.max_batch_total_tokens or self.max_batch_context_length
+            ),
+        )
+
+    @property
+    def mla_kv_params(self) -> KVCacheParams:
+        """The MLA leaf of the cache tree."""
+        assert isinstance(self.kv_params, MultiKVCacheParams)
+        mla = self.kv_params.children["mla"]
+        assert isinstance(mla, KVCacheParams)
+        return mla
+
+    @staticmethod
+    def construct_kv_params(  # type: ignore[override]
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+    ) -> KVCacheParamInterface:
+        """Builds the KV cache parameters from the cache config."""
+        mla_kv_params = DeepseekV3Config.construct_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+        assert isinstance(mla_kv_params, MLAKVCacheParams)
+        model_config = pipeline_config.model
+        dcp = model_config.decode_context_parallel_degree
+        # Both caches hold only each DCP rank's positions.
+        context_parallel = (
+            KVCacheContextParallel(
+                degree=dcp,
+                interleave=model_config.decode_context_parallel_interleave,
+            )
+            if dcp > 1
+            else None
+        )
+        num_layers = mla_kv_params.num_layers
+        whole_schedule = resolve_indexer_types(huggingface_config, num_layers)
+        stage = pipeline_config.model.pipeline_stage
+        mla_kv_params = replace(
+            mla_kv_params,
+            num_layers=stage_latent_slots(whole_schedule, num_layers, stage),
+            sparse_indices_stride=sparse_selection_width(
+                mla_kv_params, huggingface_config.index_topk
+            ),
+            sparse_physical_indices=True,
+            context_parallel=context_parallel,
+        )
+        # Always store the indexer's K cache in float8_e4m3fn.
+        indexer_cache_dtype = DType.float8_e4m3fn
+        # Per-token FP8 KV scales use float32 storage; required for
+        # ``KVCacheParams.quantized_kv_cache``, runtime ``kv_scales`` buffers,
+        # and ``store_k_scale_cache`` in the indexer path.
+        #
+        # The granularity is the head dim itself: the indexer quantizes its
+        # keys over the whole head, so it stores one scale per token. A finer
+        # granularity would give the page more slots per token than there are
+        # scales to fill them.
+        indexer_head_dim = huggingface_config.index_head_dim
+        indexer_kvcache_quant_config = KVCacheQuantizationConfig(
+            scale_dtype=DType.float32,
+            quantization_granularity=indexer_head_dim,
+        )
+        assert isinstance(mla_kv_params, KVCacheParams)
+
+        speculative_method: SpeculativeMethod | None = None
+        num_draft_tokens: int = 0
+        if pipeline_config.speculative:
+            speculative_method = pipeline_config.speculative.speculative_method
+            num_draft_tokens = (
+                pipeline_config.speculative.num_speculative_tokens or 0
+            )
+
+        indexer_kv_params = kv_cache_config.to_params(
+            dtype=indexer_cache_dtype,
+            # Similar to MLA, the indexer's k-cache uses a single KV head.
+            n_kv_heads=1,
+            head_dim=indexer_head_dim,
+            # Only ``full`` layers run the indexer, so only they hold a slot
+            # (see :func:`indexer_cache_layer_map`); the graph-API config and
+            # the fused MTP graph size it the same way.
+            num_layers=stage_selection_groups(
+                whole_schedule,
+                stage.layers if stage is not None else range(num_layers),
+            ),
+            devices=devices,
+            data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            # Set to True because there is only a key-cache, and one KV head.
+            is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
+            kvcache_quant_config=indexer_kvcache_quant_config,
+            speculative_method=speculative_method,
+            num_draft_tokens=num_draft_tokens,
+        )
+        assert isinstance(indexer_kv_params, MLAKVCacheParams)
+        indexer_kv_params = replace(
+            indexer_kv_params.joining_sparse_dispatch_of(mla_kv_params),
+            context_parallel=context_parallel,
+        )
+        return MultiKVCacheParams.from_params(
+            {"mla": mla_kv_params, "indexer": indexer_kv_params}
+        )
+
+    @override
+    @classmethod
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
+    ) -> Self:
+        """Initializes a DeepseekV3_2Config instance from pipeline configuration.
+
+        Fields that depend on the state dict (``norm_dtype``, ``quant_config``,
+        ``mesh``, ...) are set by the pipeline model after this returns.
+        """
+        model_config = model_config or pipeline_config.model
+        config = model_config.huggingface_config
+        if config is None:
+            raise ValueError(
+                f"HuggingFace config is required for '{model_config.model_path}', "
+                "but config could not be loaded. "
+                "Please ensure the model repository contains a valid config.json file."
+            )
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = _select_quantization_encoding(
+            model_config, cls.DEFAULT_ENCODING
+        )
+        dtype = supported_encoding_dtype(quantization_encoding)
+        cache_dtype = cache_dtype_for_encoding(
+            quantization_encoding, model_config.kv_cache.kv_cache_format
+        )
+
+        device_refs = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in model_config.device_specs
+        ]
+
+        kv_params = cls.construct_kv_params(
+            huggingface_config=config,
+            pipeline_config=pipeline_config,
+            devices=device_refs,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+
+        if pipeline_config.runtime.pipeline_role == "prefill_only":
+            graph_mode = "prefill"
+        elif pipeline_config.runtime.pipeline_role == "decode_only":
+            graph_mode = "decode"
+        else:
+            graph_mode = "auto"
+
+        # Set only by the exporter's ``--hisparse``; ``None`` otherwise, so
+        # every existing export builds the same config it always did.
+        hisparse = hisparse_params_for(
+            pipeline_config=pipeline_config,
+            model_config=model_config,
+            huggingface_config=config,
+        )
+
+        return cls(
+            dtype=dtype,
+            kv_params=kv_params,
+            devices=device_refs,
+            vocab_size=config.vocab_size,
+            hidden_size=config.hidden_size,
+            intermediate_size=config.intermediate_size,
+            moe_intermediate_size=config.moe_intermediate_size,
+            moe_layer_freq=config.moe_layer_freq,
+            num_hidden_layers=config.num_hidden_layers,
+            num_attention_heads=config.num_attention_heads,
+            num_key_value_heads=config.num_key_value_heads,
+            n_shared_experts=config.n_shared_experts,
+            n_routed_experts=config.n_routed_experts,
+            routed_scaling_factor=config.routed_scaling_factor,
+            kv_lora_rank=config.kv_lora_rank,
+            q_lora_rank=config.q_lora_rank,
+            qk_rope_head_dim=config.qk_rope_head_dim,
+            v_head_dim=config.v_head_dim,
+            qk_nope_head_dim=config.qk_nope_head_dim,
+            topk_method=config.topk_method,
+            n_group=config.n_group,
+            topk_group=config.topk_group,
+            num_experts_per_tok=config.num_experts_per_tok,
+            first_k_dense_replace=config.first_k_dense_replace,
+            norm_topk_prob=config.norm_topk_prob,
+            hidden_act=config.hidden_act,
+            max_position_embeddings=config.max_position_embeddings
+            + spec_decode_cache_slack(kv_params),
+            max_seq_len=max_seq_len,
+            rms_norm_eps=config.rms_norm_eps,
+            tie_word_embeddings=config.tie_word_embeddings,
+            rope_theta=get_rope_theta(config),
+            rope_scaling=config.rope_scaling,
+            rope_interleave=getattr(config, "rope_interleave", True),
+            scoring_func=config.scoring_func,
+            attention_bias=config.attention_bias,
+            attention_dropout=config.attention_dropout,
+            graph_mode=graph_mode,
+            data_parallel_degree=model_config.data_parallel_degree,
+            decode_context_parallel_degree=(
+                model_config.decode_context_parallel_degree
+            ),
+            decode_context_parallel_interleave=(
+                model_config.decode_context_parallel_interleave
+            ),
+            dcp_q_replicate=resolve_dcp_q_replicate(
+                model_config.dcp_q_replicate
+            ),
+            prefill_context_parallel=resolve_prefill_context_parallel(
+                model_config.prefill_context_parallel
+            ),
+            # DeepseekV3.2 specific fields
+            index_head_dim=config.index_head_dim,
+            index_n_heads=config.index_n_heads,
+            index_topk=config.index_topk,
+            indexer_types=resolve_indexer_types(
+                config, config.num_hidden_layers
+            ),
+            indexer_rope_interleave=getattr(
+                config, "indexer_rope_interleave", False
+            ),
+            quantization_encoding=quantization_encoding,
+            hisparse=hisparse,
+            layer_ids=stage_layers(pipeline_config, config.num_hidden_layers),
+            last_stage_embeds=nextn_drafts(pipeline_config),
+        )

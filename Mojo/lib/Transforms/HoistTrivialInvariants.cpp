@@ -74,7 +74,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
     // Traverse again to avoid touching dom info on region variant ops.
     for (Value operand : op.getOperands()) {
       if (Operation *parent = operand.getDefiningOp()) {
-        if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
+        if (auto *op = llvm::dyn_cast_if_present<Operation *>(
+                leastDominatingOperand)) {
           if (domInfo.dominates(op, parent))
             leastDominatingOperand = parent;
         } else if (cast<Region *>(leastDominatingOperand)
@@ -83,7 +84,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
         }
       } else {
         Region *region = operand.getParentRegion();
-        if (auto *op = leastDominatingOperand.dyn_cast<Operation *>()) {
+        if (auto *op = llvm::dyn_cast_if_present<Operation *>(
+                leastDominatingOperand)) {
           if (op->getParentRegion()->isProperAncestor(region))
             leastDominatingOperand = region;
         } else if (cast<Region *>(leastDominatingOperand)
@@ -95,7 +97,8 @@ static void moveInvariants(FunctionLike func, mlir::DominanceInfo &domInfo,
 
     // Hoist to the earliest legal point. If it's a region, most to the
     // beginning of the region. Otherwise, move to just after the operation.
-    if (auto *region = leastDominatingOperand.dyn_cast<Region *>())
+    if (auto *region =
+            llvm::dyn_cast_if_present<Region *>(leastDominatingOperand))
       op.moveBefore(&region->front(), region->front().begin());
     else
       op.moveAfter(cast<Operation *>(leastDominatingOperand));
@@ -120,17 +123,20 @@ static void moveInvariantsIn(FunctionLike func, mlir::DominanceInfo &domInfo,
       moveInvariants(func, domInfo, loop, loop.getBody(), numHoisted);
     }
 
-    // We hoist from both branches of the if regardless of the condition with
-    // the guarantee that these ops have no side effects and LLVM is free to
-    // move them back if that is more optimal.
+    // We hoist from both branches of the elif regardless of the condition
+    // with the guarantee that these ops have no side effects and LLVM is free
+    // to move them back if that is more optimal.
     else if (auto ifOp = dyn_cast<HLCF::IfOp>(op)) {
       moveInvariants(func, domInfo, ifOp, ifOp.getThenRegion(), numHoisted);
       moveInvariants(func, domInfo, ifOp, ifOp.getElseRegion(), numHoisted);
+      for (Region &region : ifOp.getElifRegions())
+        moveInvariants(func, domInfo, ifOp, region, numHoisted);
     }
 
     else if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
       moveInvariants(func, domInfo, tryOp, tryOp.getTryRegion(), numHoisted);
-      moveInvariants(func, domInfo, tryOp, tryOp.getExceptRegion(), numHoisted);
+      for (Region &exceptRegion : tryOp.getExceptRegions())
+        moveInvariants(func, domInfo, tryOp, exceptRegion, numHoisted);
       moveInvariants(func, domInfo, tryOp, tryOp.getElseRegion(), numHoisted);
     }
 

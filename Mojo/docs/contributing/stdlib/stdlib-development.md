@@ -3,7 +3,7 @@
 This document covers the essentials of developing for the standard library.
 
 If this is your first time contributing, first read everything in
-the [Mojo contributor guide](../../../CONTRIBUTING.md).
+the [Mojo contributor guide](../README.md).
 
 ## Set up your environment
 
@@ -18,7 +18,7 @@ To get started, you need to do the following:
    utilities required for GPU programming.
 2. If you're using VS Code,
    [Install the Mojo VS Code extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo).
-3. [Fork the repo and create a branch](../../../../CONTRIBUTING.md#step-2-create-a-pull-request).
+3. [Fork the repo and create a branch](https://github.com/modular/modular/blob/main/CONTRIBUTING.md#step-2-create-a-pull-request).
 
 Now you're ready to start developing.
 
@@ -27,19 +27,11 @@ Now you're ready to start developing.
 The Modular repository uses [Bazel](https://bazel.build/), a fast, scalable
 build and test tool to ensure reproducible builds through dependency tracking
 and caching. For more information on using Bazel in the Modular repo, see
-[Using Bazel](../../../../bazel/docs/usage.md).
+[Using Bazel](https://github.com/modular/modular/blob/main/bazel/docs/usage.md).
 
-To build with Bazel, you'll need to choose one of two modes: either building
-the Mojo compiler locally, or using a prebuilt Mojo compiler. To use the
-prebuilt Mojo compiler, pass the `--config=prebuilt-mojo` option on every
-`bazel` command. Or create a `local.bazelrc` file and add the following:
-
-```text
-build --config=prebuilt-mojo
-```
-
-The `bazel` commands shown in this document assume you have the configuration
-already set in a `local.bazelrc` file.
+The whole tree — including the Mojo compiler — is built from source, so there
+is no build-mode `--config` to choose; the `bazel` commands shown in this
+document work as written.
 
 To build and test your changes to the Mojo standard library, run the following
 `./bazelw` commands from the top-level directory of the repository (where the
@@ -124,10 +116,10 @@ Mojo, Python, and MDX files upon saving.
 ### Raising a PR
 
 If you think you have a worthwhile change to propose, check the guidance in the
-[Mojo contributor guide](../../../CONTRIBUTING.md).
+[Mojo contributor guide](../README.md).
 
 If your changes are ready to go, follow the steps to
-[create a pull request](../../../../CONTRIBUTING.md#step-2-create-a-pull-request).
+[create a pull request](https://github.com/modular/modular/blob/main/CONTRIBUTING.md#step-2-create-a-pull-request).
 
 Congratulations! You've now got an idea on how to contribute to the standard
 library, test your changes, and raise a PR.

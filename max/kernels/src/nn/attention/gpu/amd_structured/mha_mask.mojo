@@ -35,7 +35,6 @@ Per-element row-within-tile mapping comes from the
 """
 
 from std.sys.intrinsics import unlikely
-from std.utils.index import IndexList
 
 from layout import TensorLayout
 from nn.attention.mha_mask import CausalMask, MHAMask, NullMask, TileMaskStatus
@@ -44,7 +43,7 @@ from structured_kernels.amd_tile_io import RegTile
 from .mha_mma_op import ACC_ROW_OFFSETS_32x32
 
 
-@always_inline
+@inline(.always)
 def _apply_causal_mask_fast[
     T_dst: DType,
     layout: TensorLayout,
@@ -98,7 +97,7 @@ def _apply_causal_mask_fast[
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 
 
-@always_inline
+@inline(.always)
 def _apply_kbound_mask_fast[
     T_dst: DType,
     layout: TensorLayout,
@@ -155,7 +154,7 @@ def _apply_kbound_mask_fast[
             dst_vec[i, j, 0] = mask.select(_NEG_INF_VEC, dst_vec[i, j, 0])
 
 
-@always_inline
+@inline(.always)
 def _fill_dst_neg_inf[
     T_dst: DType,
     layout: TensorLayout,
@@ -177,7 +176,7 @@ def _fill_dst_neg_inf[
             dst_vec[i, j, 0] = _NEG_INF_VEC
 
 
-@always_inline
+@inline(.always)
 def _apply_mask_generic[
     mask_t: MHAMask,
     T_dst: DType,
@@ -226,12 +225,7 @@ def _apply_mask_generic[
                 )
                 var score = Float32(frag[k_local].cast[.float32]())
                 var masked = mask_functor.mask(
-                    IndexList[4, element_type=.uint32](
-                        Int(batch_idx),
-                        Int(head_idx),
-                        Int(q_pos),
-                        Int(k_pos),
-                    ),
+                    (Int(batch_idx), Int(head_idx), Int(q_pos), Int(k_pos)),
                     score,
                 )
                 frag[k_local] = masked[0].cast[T_dst]()
@@ -254,7 +248,7 @@ struct MaskApplier[
     Owns the runtime mask functor and exposes a single `apply()` entry
     that comptime-dispatches over `mask_t`. The dispatch consolidates
     what was previously a two-level hop (`MhaPrefillV2._maybe_apply_mask`
-    → `apply_mask_to_att_block`); after `@always_inline` both layers
+    → `apply_mask_to_att_block`); after `@inline(.always)` both layers
     fold into the same set of branches, so the consolidated form is
     codegen-identical while being one level less to follow.
 
@@ -270,7 +264,7 @@ struct MaskApplier[
 
     var mask_functor: Self.mask_t
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, mask_functor: Self.mask_t):
         """Bundle the mask functor. Comptime block sizes come from the
         struct's parameters.
@@ -281,7 +275,7 @@ struct MaskApplier[
         """
         self.mask_functor = mask_functor
 
-    @always_inline
+    @inline(.always)
     def apply[
         T_dst: DType,
         layout: TensorLayout,
@@ -371,13 +365,11 @@ struct MaskApplier[
         else:
             var status = self.mask_functor.status(
                 batch_idx,
-                IndexList[2, element_type=.uint32](
+                (
                     Int(q_tile_idx * Self.Q_BLOCK_SIZE + start_pos),
                     Int(k_tile_idx * Self.KV_BLOCK_SIZE),
                 ),
-                IndexList[2, element_type=.uint32](
-                    Int(Self.Q_BLOCK_SIZE), Int(Self.KV_BLOCK_SIZE)
-                ),
+                (Int(Self.Q_BLOCK_SIZE), Int(Self.KV_BLOCK_SIZE)),
             )
             if status == TileMaskStatus.FULL_MASK:
                 _fill_dst_neg_inf(att_block)

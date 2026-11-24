@@ -23,38 +23,38 @@ from std.testing import (
 
 
 def test_ordering_equality_comparable() raises:
-    var ordering = Ordering.SEQUENTIAL
+    var ordering = Ordering.sequential
 
     assert_not_equal(ordering, Ordering(42))
-    assert_not_equal(ordering, Ordering.NOT_ATOMIC)
-    assert_not_equal(ordering, Ordering.UNORDERED)
-    assert_not_equal(ordering, Ordering.RELAXED)
-    assert_not_equal(ordering, Ordering.ACQUIRE)
-    assert_not_equal(ordering, Ordering.RELEASE)
-    assert_not_equal(ordering, Ordering.ACQUIRE_RELEASE)
-    assert_equal(ordering, Ordering.SEQUENTIAL)
+    assert_not_equal(ordering, Ordering.not_atomic)
+    assert_not_equal(ordering, Ordering.unordered)
+    assert_not_equal(ordering, Ordering.relaxed)
+    assert_not_equal(ordering, Ordering.acquire)
+    assert_not_equal(ordering, Ordering.release)
+    assert_not_equal(ordering, Ordering.acquire_release)
+    assert_equal(ordering, Ordering.sequential)
 
 
 def test_ordering_representable() raises:
-    assert_equal(repr(Ordering(42)), "Ordering.UNKNOWN")
-    assert_equal(repr(Ordering.NOT_ATOMIC), "Ordering.NOT_ATOMIC")
-    assert_equal(repr(Ordering.UNORDERED), "Ordering.UNORDERED")
-    assert_equal(repr(Ordering.RELAXED), "Ordering.RELAXED")
-    assert_equal(repr(Ordering.ACQUIRE), "Ordering.ACQUIRE")
-    assert_equal(repr(Ordering.RELEASE), "Ordering.RELEASE")
-    assert_equal(repr(Ordering.ACQUIRE_RELEASE), "Ordering.ACQUIRE_RELEASE")
-    assert_equal(repr(Ordering.SEQUENTIAL), "Ordering.SEQUENTIAL")
+    assert_equal(repr(Ordering(42)), "Ordering.unknown")
+    assert_equal(repr(Ordering.not_atomic), "Ordering.not_atomic")
+    assert_equal(repr(Ordering.unordered), "Ordering.unordered")
+    assert_equal(repr(Ordering.relaxed), "Ordering.relaxed")
+    assert_equal(repr(Ordering.acquire), "Ordering.acquire")
+    assert_equal(repr(Ordering.release), "Ordering.release")
+    assert_equal(repr(Ordering.acquire_release), "Ordering.acquire_release")
+    assert_equal(repr(Ordering.sequential), "Ordering.sequential")
 
 
 def test_ordering_stringable() raises:
-    assert_equal(String(Ordering(42)), "UNKNOWN")
-    assert_equal(String(Ordering.NOT_ATOMIC), "NOT_ATOMIC")
-    assert_equal(String(Ordering.UNORDERED), "UNORDERED")
-    assert_equal(String(Ordering.RELAXED), "RELAXED")
-    assert_equal(String(Ordering.ACQUIRE), "ACQUIRE")
-    assert_equal(String(Ordering.RELEASE), "RELEASE")
-    assert_equal(String(Ordering.ACQUIRE_RELEASE), "ACQUIRE_RELEASE")
-    assert_equal(String(Ordering.SEQUENTIAL), "SEQUENTIAL")
+    assert_equal(String(Ordering(42)), "unknown")
+    assert_equal(String(Ordering.not_atomic), "not_atomic")
+    assert_equal(String(Ordering.unordered), "unordered")
+    assert_equal(String(Ordering.relaxed), "relaxed")
+    assert_equal(String(Ordering.acquire), "acquire")
+    assert_equal(String(Ordering.release), "release")
+    assert_equal(String(Ordering.acquire_release), "acquire_release")
+    assert_equal(String(Ordering.sequential), "sequential")
 
 
 def _test_atomic[dtype: DType]() raises:

@@ -15,19 +15,20 @@ The Mojo standard library uses the following high-level organization:
 
 - Group related functions within the same file.
 - Group related files within the same directory.
-- Do not add dependencies to the `stdlib` module because, by definition, it is
+- Do not add dependencies to the `std` package because, by definition, it is
 required to be a leaf dependency.
 
 ```text
 > stdlib               # stdlib root directory
-    > doc              # folder containing markdown documentation
-    > scripts          # scripts for compiling and running the tests
-    > src              # stdlib mojo source files
+    > benchmarks       # stdlib benchmarks
+    > scripts          # stdlib developer scripts
+    > std              # stdlib mojo source files
         > builtin      # mojo source for stdlib builtins
         > collections  # mojo source for stdlib collections
         > memory       # mojo source for stdlib memory primitives
         ...
     > test             # stdlib unit tests
+    > tools            # stdlib developer tools
 ```
 
 All Mojo source files must end with the extension `.mojo`.
@@ -46,21 +47,11 @@ All done! ✨ 🍰 ✨
 ```
 
 Unless otherwise noted, Mojo standard library code should follow the formatting
-produced by `mojo format`.
+produced by `mojo format`. To format your changes automatically at each commit,
+set up the `pre-commit` hook described in
+[Formatting changes](stdlib-development.md#formatting-changes).
 
-It is advised, to avoid forgetting, to set-up `pre-commit`, which will format
-your changes automatically at each commit, and will also ensure that you
-always have the latest linting tools applied.
-
-To do so, install pre-commit:
-
-```bash
-pixi x pre-commit install
-```
-
-and that's it!
-
-#### API Doc String Validation
+#### API docstring validation
 
 Mojo provides a command line utility, `mojo doc`, to validate the API doc
 strings in your code. This ensures that your doc strings are correctly
@@ -68,15 +59,7 @@ formatted and consistent with the Mojo style guidelines.
 Note that you should not have any warnings.
 
 ```bash
-mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/src/
-```
-
-Note that this is also included in the pre-commit. So if you have `pre-commit`
-enabled, this will run automatically before committing. If you want to run it
-manually with pre-commit, just run
-
-```bash
-pixi x pre-commit run --all-files
+mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/std/
 ```
 
 #### Whitespace
@@ -119,10 +102,10 @@ struct MyStruct(Sized, Writable):
     """Description goes here."""
 
     # ===-------------------------------------------------------------------===#
-    # Aliases
+    # Comptime members
     # ===-------------------------------------------------------------------===#
 
-    alias factor = 5
+    comptime factor = 5
 
     # ===-------------------------------------------------------------------===#
     # Fields
@@ -173,9 +156,11 @@ struct MyStruct(Sized, Writable):
 
     def __bool__
     def __len__
-    def __str__
 
     def __abs__
+
+    def write_to
+    def write_repr_to
 
     # ===-------------------------------------------------------------------===#
     # Methods
@@ -185,13 +170,6 @@ struct MyStruct(Sized, Writable):
 ```
 
 ## Code conventions
-
-### Python Standard Library
-
-We want to be a good member of the Python family and aim to become a full
-superset, so we inherit naming from the Python standard library, including any
-inconsistencies. These naming inconsistencies are the only exceptions to the
-naming conventions outlined below.
 
 ### Identifier naming conventions
 
@@ -209,47 +187,73 @@ This first table is just a definition of the various "case styles."
 | `kebab-case`           | All lowercase with hyphens                | `project-name`   |
 | `flatcase`             | All lowercase without separators          | `basename`       |
 
-The following table shows our preferred use of different case styles.
+The following table shows our preferred case style for each kind of name. For
+a kind of name that the table doesn't list, follow the style of the surrounding
+code.
 
-| Code kind                          | Example                                           | Case style                            |
-|------------------------------------|---------------------------------------------------|---------------------------------------|
-| `def`                              | `def engage_hyperdrive()`                         | `snake_case`                          |
-| `struct`                           | `struct Point`                                    | `PascalCase`                          |
-| `trait`                            | `trait Copyable`                                  | `PascalCase`                          |
-| `enum`                             | `enum StatusCode`                                 | `PascalCase`                          |
-| `var`                              | `var the_value = 5`                               | `snake_case`                          |
-| `module` / `package`               | `io.mojo` / `os/__init__.mojo`                    | `flatcase` / `snake_case`             |
-| dunder                             | `__init__`                                        | `flatcase`                            |
-| decorator                          | `@no_inline`                                      | `snake_case`                          |
-| **Parameters — type or value**     | &nbsp;                                            | &nbsp;                                |
-| `alias` type                       | `alias Int8 = Scalar[DType.int8]`                 | `PascalCase`                          |
-| `alias` value global / local scope | `alias CHUNK_SIZE = 32` / `alias chunk_size = 32` | `SCREAMING_SNAKE_CASE` / `snake_case` |
-| `struct` type parameter            | `struct List[ElementType: Movable]`               | `PascalCase`                          |
-| `struct` value parameter           | `struct Array[ElementType: Movable, length: Int]` | `snake_case`                          |
-| `def` type parameter               | `def do_it[Action: Actionable](action: Action)`   | `PascalCase`                          |
-| `def` value parameter              | `def repeat[count: Int]()`                        | `snake_case`                          |
+| Code kind                                    | Example                                    | Case style   |
+|----------------------------------------------|--------------------------------------------|--------------|
+| `trait`                                      | `trait Copyable`                           | `PascalCase` |
+| Trait composition                            | `comptime KeyElement = Movable & Hashable` | `PascalCase` |
+| `struct` type                                | `struct Point`                             | `PascalCase` |
+| `__enum` type                                | `__enum IOErrorKind`                       | `PascalCase` |
+| `__union` type                               | `__union IpAddr`                           | `PascalCase` |
+| `__enum` or `__union` case                   | `case not_found`                           | `snake_case` |
+| Module-level `comptime` type alias           | `comptime Int8 = Scalar[DType.int8]`       | `PascalCase` |
+| Type parameter                               | `struct List[T: Movable]`                  | `PascalCase` |
+| Value parameter                              | `def repeat[count: Int]()`                 | `snake_case` |
+| Origin parameter                             | `struct CStringSpan[origin: ImmOrigin]`    | `snake_case` |
+| Function or method                           | `def engage_hyperdrive()`                  | `snake_case` |
+| Field                                        | `var capacity: Int`                        | `snake_case` |
+| Argument                                     | `def engage_hyperdrive(warp_factor: Int)`  | `snake_case` |
 
 Although these are our style conventions, not all code currently adheres to it.
-When preparing a new change, it is important to adhere to the style and naming
-conventions already established in that module. Therefore, if the module you
-are working on uses a different style, continue using that style to maintain
-consistency. We are not currently accepting pull requests that propose
-extensive formatting or renaming changes.
+Any newly added Mojo code, however, should adhere to the style conventions.
+
+#### Exceptions
+
+C FFI binding code can use the exact C spelling of a name instead of the case
+style in the table. Matching the C name keeps the binding easy to compare with
+the C headers and documentation. For example:
+
+- A struct: `struct sockaddr_in`
+- A `typedef`: `comptime sa_family_t = c_ushort`
+- A constant: `comptime SOCK_CLOEXEC: c_int = 0o2000000`
+- An enum value: `comptime PyGILState_LOCKED = c_int(0)`
 
 ### Naming guidelines
 
-#### ℹ️ Prefer descriptive parameter names over single-letter names
+#### ℹ️ Use conventional short type parameter names unless they hurt readability
+
+Type parameter names use `PascalCase`. When the role of a type parameter is
+clear, use a short conventional name:
+
+- `T`, `U`, `V`: general types, such as the element type of a collection.
+- `Ts`: a variadic type parameter pack.
+- `K` and `V`: the key and value types of a key-value collection.
+- `E`: an error type.
 
 ```mojo
-struct LinkedList[T: Movable]           # 🔴 Avoid
-struct LinkedList[ElementType: Movable] # 🟢 Preferred
+struct List[ElementType: Movable]                    # 🔴 Avoid
+struct List[T: Movable]                              # 🟢 Preferred
+
+struct Dict[KeyType: KeyElement, ValueType: Movable] # 🔴 Avoid
+struct Dict[K: KeyElement, V: Movable]               # 🟢 Preferred
+```
+
+When a declaration has several type parameters and short names make their roles
+hard to tell apart, use descriptive names such as `ErrorType` or `Element`.
+
+```mojo
+struct Codec[T: Movable, U: Movable, V: Writer]                # 🔴 Avoid
+struct Codec[Decoded: Movable, Encoded: Movable, Sink: Writer] # 🟢 Preferred
 ```
 
 #### ℹ️ Order type parameters ahead of value parameters
 
 ```mojo
-struct Array[length: Int, ElementType: Movable] # 🔴 Avoid
-struct Array[ElementType: Movable, length: Int] # 🟢 Preferred
+struct Array[length: Int, T: Movable] # 🔴 Avoid
+struct Array[T: Movable, length: Int] # 🟢 Preferred
 ```
 
 #### Use the `Some[]` utility instead of named type parameters when appropriate
@@ -272,102 +276,126 @@ def foo[Str: Writable, //](arg0: Str, arg1: Str): ...     # 🟢 Preferred
 
 ### Container lifecycle semantics
 
-#### ℹ️ Prefer explicit copy constructors; avoid allowing implicit copies
+#### ℹ️ Copy with `copy()`; avoid allowing implicit copies
 
 ```mojo
-var copy = original                 # 🔴 Avoid
-var copy = MyStruct(copy=original)  # 🟢 Preferred
+var copy = MyStruct(copy=original)  # 🔴 Avoid
+var copy = original.copy()          # 🟢 Preferred
 ```
 
-Where you intend to make a copy, favor an explicit copy constructor to make your
-intention clear.
+When you intend to copy a value whose type doesn't conform to
+`ImplicitlyCopyable`, call its `copy()` method. The `Copyable` trait provides
+`copy()`, so the call reads the same for every type and doesn't repeat the type
+name.
 
-Copying types that conform to `RegisterPassable` like `Int`, `Bool`, `Pointer`,
-and `SIMD` is
-safe and inexpensive. However, copying types that dynamically allocate memory
-can be expensive. This includes common types like `List`, `Dict`, `Set`,
-and `String`.
+Types that conform to `TrivialRegisterPassable`, such as `Int`, `Bool`, `SIMD`,
+and `Pointer`, are implicitly copyable and inexpensive to copy. Copying a type
+that owns heap memory, such as `List`, `Dict`, or `Set`, allocates memory and
+copies every element, so these types require an explicit `.copy()`.
 
-Some standard library types allow implicit copies where they shouldn’t. We will
-resolve this shortly as new Mojo language features are shipped to help with this
-very situation.
+When designing a new type, don't allow implicit copies unless the copy is
+trivial (order `O(1)`). In other words, conform to `Copyable` but not
+`ImplicitlyCopyable`. `String` is an example of the exception: a copy only
+increments a reference count, so `String` is `ImplicitlyCopyable`.
 
-When designing a new type, don’t allow implicit copies unless
-the copy is trivial (order `O(1)`). In other words, just conform to `Copyable`
-but not `ImplicitlyCopyable`.
+### String formatting
 
-#### ℹ️ Use `copy` initializer for explicit copying
+#### ℹ️ Use t-strings instead of variadic `Writable` arguments
 
-Copyable types provide a `copy` initializer that creates an explicit copy:
+To build a message from several values, write a t-string (`t"..."`) instead of
+passing the pieces as separate arguments. A t-string reads like the message it
+produces.
 
 ```mojo
-var original = List[Int]()
-var explicit_copy = List[Int](copy=original)  # 🟢 Preferred
+raise Error("expected ", expected, " but got ", actual) # 🔴 Avoid
+raise Error(t"expected {expected} but got {actual}")    # 🟢 Preferred
 ```
 
-This pattern is used throughout the stdlib for types like `Optional`, `String`,
-and collections.
+### Pattern matching
+
+#### ℹ️ Use `match` instead of an `if`/`elif` chain over one value
+
+When several branches test the same value, write a `match`. Each `case` names
+one alternative, and `|` combines alternatives that share a body. For a
+parameter, use `comptime match` to dispatch at compile time. Keep `if`/`elif`
+when the conditions test unrelated expressions.
+
+```mojo
+# 🔴 Avoid
+if dtype == .float32:
+    return 4
+elif dtype == .float16 or dtype == .bfloat16:
+    return 2
+else:
+    return 1
+
+# 🟢 Prefer
+match dtype:
+    case .float32:
+        return 4
+    case .float16 | .bfloat16:
+        return 2
+    case _:
+        return 1
+```
+
+#### ℹ️ Unwrap an `Optional` with a pattern instead of `value()`
+
+Don't test an `Optional` and then call `value()` or `unsafe_value()`. A pattern
+tests and binds in one step, so the payload can't be read when it's absent.
+Choose the form by what the code does when the value is absent:
+
+- It uses a default: `opt.or_else(default)`.
+- It leaves the scope with `return`, `raise`, `continue`, `break`, or
+  `abort()`: `__guard case .Some(x) = opt else:`. The binding `x` stays in
+  scope after the statement, so the main path keeps its indentation.
+- It uses the payload only when it's present: `if case .Some(x) = opt:`.
+- Both cases do work and continue: `match opt:` with `.Some(x)` and `.None`
+  cases.
+
+When the value can't be absent, write
+`__guard case .Some(x) = opt else: abort("<reason>")` so the code states the
+invariant where it relies on it.
+
+```mojo
+# 🔴 Avoid
+if not opt:
+    return -1
+use(opt.value())
+
+# 🟢 Prefer
+__guard case .Some(x) = opt else:
+    return -1
+use(x)
+```
+
+```mojo
+var n = opt.value() if opt else 0 # 🔴 Avoid
+var n = opt.or_else(0)            # 🟢 Preferred
+```
 
 ### Import statements
 
-- Explicitly import entities used (functions, structs, aliases), rather
-  than rely on transitive imports.
+- Explicitly import entities used (functions, structs, `comptime`
+  declarations), rather than rely on transitive imports.
 - Import only what you use; in general, avoid using
   `from some_package import *`.
+- Import standard library modules through the `std` package, for example
+  `from std.collections import Deque`.
 - Import statements should be sorted lexicographically.
 
 ### API docstrings
 
 Every public function and public struct (including data fields) in the standard
 library must have docstrings (code comments that describe the API behavior).
-Mojo includes tooling to ensure that public functions include docstrings.
-
-You can run `./stdlib/scripts/check-docstrings.py` to validate
-docstrings. If the command exits with a `0` exit code, the docstrings are
-compliant; otherwise, an error will be shown. This is also enforced by the LSP
-with warnings for anything that doesn’t conform, you can generate docstrings
-based on the signature using an LSP Quick Fix:
+The LSP warns about missing or malformed docstrings, and you can generate a
+docstring based on the signature using an LSP Quick Fix:
 
 <img src="./images/doc-lint-quick-fix.png" width=350 />
 
-We follow Google's Python convention for
-[docstrings outlined here](https://google.github.io/styleguide/pyguide.html#383-functions-and-methods)
-which looks like this:
-
-```mojo
-def add_param_arg[foo: Int](bar: Int) -> Int:
-    """[summary].
-
-    Parameters:
-        foo: [description].
-
-    Args:
-        bar: [description].
-
-    Returns:
-        [description].
-    """
-    return foo + bar
-```
-
-The additions to the Google style guide for docstrings are `Parameters:` and
-`Constraints:`.
-
-`Constraints:` should be used to document requirements when using the
-`comptime assert` statement:
-
-```mojo
-def add_param_arg[foo: Int](bar: Int) -> Int:
-    """Shortened doc string.
-
-    Constraints:
-        `foo` must be more than 0.
-    """
-    comptime assert foo > 0
-    return foo + bar
-```
-
-For more detailed style guidelines, see the
+To validate docstrings from the command line, see
+[API docstring validation](#api-docstring-validation). For the full set of
+docstring conventions, see the
 [Mojo docstring style guide](docstring-style-guide.md).
 
 ### Assertions
@@ -378,26 +406,28 @@ following code to behave correctly. Assertions may be present even in
 the expected and actual values:
 
 ```mojo
-actual = 41
-expected = 42
+var actual = 41
+var expected = 42
 debug_assert(actual == expected, "expected: ", expected, " but got: ", actual)
 ```
 
 Make sure that you don't allocate anything in the call to `debug_assert` to
 ensure there is no runtime penalty when assertions are disabled. If you must
-have a side-effect in the condition such as allocating a `String`, you can pass
+have a side-effect in the condition such as allocating a `List`, you can pass
 a closure that only runs when assertions are enabled:
 
 ```mojo
-tensor = Tensor[DType.uint8, 1](TensorShape(1), cpu_device())
+def binary_search(items: List[Int], target: Int) -> Int:
+    def is_sorted() {items} -> Bool:
+        var sorted_items = items.copy()
+        sort(sorted_items)
+        return sorted_items == items
 
-def _test_cpu() {tensor} -> Bool:
-    return "cpu" in String(tensor._device)
-
-debug_assert(_test_cpu, "This code is only runnable on CPU")
+    debug_assert(is_sorted, "`binary_search` requires sorted input")
+    ...
 ```
 
-### Target Specific Code
+### Target-specific code
 
 When writing code that uses `comptime if` to tailor logic based on the target
 hardware platform or features, do not use trailing `else` statements that
@@ -433,7 +463,7 @@ In cases where a generic, cross-platform compatible fallback implementation
 is available, it is okay to use an unguarded `else` condition:
 
 ```mojo
-@always_inline("nodebug")
+@inline(.nodebug)
 def prefetch[...](...):
     comptime if is_nvidia_gpu():
         inlined_assembly["prefetch.global.L2 [$0];", ...](...)
@@ -451,11 +481,27 @@ For example `test_sort.mojo`.
 #### Test organization
 
 - Tests should mirror the source structure
-  - e.g., `stdlib/collections/list.mojo` tests are in
+  - e.g., `std/collections/list.mojo` tests are in
   `test/collections/test_list.mojo`
 - Use the `testing` module assertions (`assert_equal`, `assert_true`, etc.) for
   new tests
 - Test files should focus on testing the public API and critical edge cases
+
+Each test file runs its tests from a `main` function that uses `TestSuite`:
+
+```mojo
+from std.testing import assert_equal, TestSuite
+
+
+def test_sort() raises:
+    var items = [3, 1, 2]
+    sort(items)
+    assert_equal(items, [1, 2, 3])
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()
+```
 
 #### Performance tests and benchmarks
 
@@ -465,5 +511,6 @@ For example `test_sort.mojo`.
 
 #### Integration with build system
 
-- See the [bazel usage docs](../../../../bazel/docs/usage.md) for more details
-  on how to run tests.
+- See the
+  [bazel usage docs](https://github.com/modular/modular/blob/main/bazel/docs/usage.md)
+  for more details on how to run tests.

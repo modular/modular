@@ -18,7 +18,6 @@
 #include "Mojo/MojoParser/CallOperands.h"
 
 namespace M::KGEN {
-class ParameterExprArrayAttr;
 class PogListAttr;
 } // namespace M::KGEN
 
@@ -78,15 +77,6 @@ public:
   /// Replace our bindings with another set.
   void operator=(ParamBindings &&other);
 
-  /// Create a (possibly partially unbound) set of bindings for the given type.
-  /// This can be used to initialize the binding set for methods. If the given
-  /// type is not a parametric user defined type, this returns empty bindings.
-  /// If the caller provides a known parent trait type, this will upcast the
-  /// given type to it.
-  static ParamBindings getForDeclaredType(ASTDecl &declScope, ASTType type,
-                                          const ExprNode *expr,
-                                          Type optionalParentTraitType = {});
-
   /// The overall expression this was formed for.
   const ExprNode *getExpr() const { return parameters.callExpr; }
   SMLoc getExprLoc() const;
@@ -97,13 +87,29 @@ public:
   // Provide access to the parameter list this represents.
   const CallOperands &getParameters() const { return parameters; }
 
-  /// Add a bound value for a positional parameter binding.
+  /// Add a bound value for a positional parameter binding. A null `value`
+  /// leaves the parameter explicitly unbound, as `_` does in source.
   void add(const ExprNode *expr, AnyValue value) {
     add(expr, value, StringAttr());
   }
   /// Add a bound value for a keyword parameter binding. The caller is
   /// responsible for ensuring the keyword is not already present.
   void add(const ExprNode *expr, AnyValue value, StringAttr name);
+
+  /// Add a binding that leaves the parameter explicitly unbound, as `_` does
+  /// in source. Pass `name` to bind by keyword.
+  void addUnprovided(const ExprNode *expr, StringAttr name = StringAttr()) {
+    add(expr, AnyValue(), name);
+  }
+
+  /// Append the bindings in `other` after ours and adopt its binding kind.
+  void append(const ParamBindings &other);
+
+  /// Require `constraints` to be satisfied by the bindings, in addition to the
+  /// callee's own.
+  void addConstraints(ArrayRef<ConstraintAttr> constraints) {
+    llvm::append_range(additionalConstraints, constraints);
+  }
 
   /// Ensure the binding kind is at least the given kind.
   void relaxBindingKindTo(BindingKind kind) {
@@ -126,17 +132,6 @@ private:
   /// This contains the values that are bound into this parameter list.
   CallOperands parameters;
 
-  /// FIXME: When parameterization is rebuilt remove this field.
-  /// Store the passing kind of the original parameter so we can search the
-  /// corresponding defaults array.
-  SmallVector<PogMetadataAttr> ctadPogs;
-
-  /// FIXME: When parameterization is rebuilt remove this field.
-  /// The number of parameters declared for a type, if these are bindings for an
-  /// overload set on a method.
-  size_t numPosCtadParams = 0;
-  size_t numKwOnlyCtadParams = 0;
-
   /// This is a list of additional constraints that need to be satisfied by the
   /// bindings, consider:
   /// ```
@@ -148,7 +143,6 @@ private:
 
   friend class ParamInf;
   friend class CallParamInf;
-  friend TypedAttr getBoundConstAttrForFn(ASTDecl &, const ParamBindings &);
 };
 
 /// Emit diagnostics for unprovable constraints from a Fitness result.
@@ -158,17 +152,23 @@ void emitUnprovableConstraintsFromFitness(
 
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
-/// SymbolConstantAttr or produces an error message and returns null.
-TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl,
-                                 const ParamBindings &unverifiedBindings);
+/// function reference or produces an error message and returns null.
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                  const VerifiedParamBindings &verifiedBindings,
                                  ASTDecl &useScope, SMLoc useLoc);
 
-// FIXME: we should create the correct signature upon constructing the trait.
-FnTypeGeneratorType substituteTraitAliasesIntoSignature(
-    DeclResolver &declResolver, TraitSymbolAttr traitSymbol,
-    FnTypeGeneratorType desiredSignature, PValue selfPValue);
+/// Like `getBoundConstAttrForFn`, for a struct method looked up through a
+/// struct type generator such as `S` in `S(...)` or a parametric alias of `S`.
+/// `verifiedBindings` were inferred against
+/// the contextual signature of `ctxGen`, which is parameterized by
+/// the generator's inputs rather than the struct's parameters, so the callee
+/// is first partially bound to `ctxGen` and the bindings are applied
+/// to that.
+TypedAttr
+getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
+                          StructTypeGenerator ctxGen,
+                          const VerifiedParamBindings &verifiedBindings,
+                          ASTDecl &useScope, SMLoc useLoc);
 
 } // namespace M::KGEN::LIT
 

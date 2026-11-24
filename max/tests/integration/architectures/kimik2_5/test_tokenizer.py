@@ -21,10 +21,14 @@ from max.pipelines.architectures.kimik2_5.tokenizer import (
     _sanitize_kimi_schema_node,
     _sanitize_kimi_tool_schemas,
 )
+from max.pipelines.architectures.kimik2_5_modulev3.tokenizer import (
+    KimiK2_5VLTokenizer as KimiK2_5VLTokenizerV3,
+)
 from max.pipelines.context import (
     SamplingParams,
     TextGenerationResponseFormat,
 )
+from max.pipelines.context.exceptions import InputError
 from max.pipelines.modeling.types import (
     RequestID,
     TextGenerationRequest,
@@ -554,3 +558,25 @@ class TestNewContextGrammarState:
         assert context.grammar is None
         assert context.grammar_enforced is False
         assert context.grammar_state.has_json_schema is False
+
+
+@pytest.mark.parametrize(
+    "tokenizer_class",
+    [KimiK2_5VLTokenizer, KimiK2_5VLTokenizerV3],
+    ids=["kimik2_5", "kimik2_5_modulev3"],
+)
+@pytest.mark.asyncio
+async def test_encode_bounds_token_id_prompts(
+    tokenizer_class: type[KimiK2_5VLTokenizer] | type[KimiK2_5VLTokenizerV3],
+) -> None:
+    """Every id in a token-id prompt must name a row of the embedding."""
+    vocab_size = 163840
+    tokenizer = tokenizer_class.__new__(tokenizer_class)
+    tokenizer._token_id_bound = vocab_size
+
+    encoded = await tokenizer.encode([0, vocab_size - 1])
+    assert encoded.tolist() == [0, vocab_size - 1]
+
+    for bad_id in (-1, vocab_size):
+        with pytest.raises(InputError, match="out of range"):
+            await tokenizer.encode([0, bad_id])

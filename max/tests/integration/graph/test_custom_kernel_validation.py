@@ -190,6 +190,9 @@ class TestCustomKernelValidation:
                 for word in ["output", "signature", "result", "type"]
             )
 
+    @pytest.mark.compile_on_gpu(
+        "asserts on the error its compile raises, which only compiling reproduces"
+    )
     def test_custom__error__data_dependent_dim_without_shape_function(
         self, kernel_verification_ops_path: Path, session: InferenceSession
     ) -> None:

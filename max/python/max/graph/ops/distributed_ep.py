@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sized
 from typing import Any
 
 from max._core.dialects import mo
@@ -49,6 +50,15 @@ def _ep_common_attrs(
         IntegerAttr(i64, n_nodes),
         BoolAttr(fused_shared_expert),
     ]
+
+
+def _check_per_device_counts(num_devices: int, **per_device: Sized) -> None:
+    for name, values in per_device.items():
+        if len(values) != num_devices:
+            raise ValueError(
+                f"{name} count ({len(values)}) must match input_tokens count"
+                f" ({num_devices})"
+            )
 
 
 def _unpack_results(
@@ -96,6 +106,12 @@ def dispatch_bf16(
     num_devices = len(input_tokens)
     if num_devices == 0:
         raise ValueError("input_tokens must be non-empty")
+    _check_per_device_counts(
+        num_devices,
+        topk_ids=topk_ids,
+        atomic_counters=atomic_counters,
+        output_types_per_device=output_types_per_device,
+    )
 
     output_tokens_types = [t[0] for t in output_types_per_device]
     row_offsets_types = [t[1] for t in output_types_per_device]
@@ -173,6 +189,12 @@ def dispatch_fp8(
     num_devices = len(input_tokens)
     if num_devices == 0:
         raise ValueError("input_tokens must be non-empty")
+    _check_per_device_counts(
+        num_devices,
+        topk_ids=topk_ids,
+        atomic_counters=atomic_counters,
+        output_types_per_device=output_types_per_device,
+    )
 
     output_tokens_types = [t[0] for t in output_types_per_device]
     output_scales_types = [t[1] for t in output_types_per_device]
@@ -254,6 +276,13 @@ def dispatch_block_scaled_nv(
     num_devices = len(input_tokens)
     if num_devices == 0:
         raise ValueError("input_tokens must be non-empty")
+    _check_per_device_counts(
+        num_devices,
+        topk_ids=topk_ids,
+        input_scales=input_scales,
+        atomic_counters=atomic_counters,
+        output_types_per_device=output_types_per_device,
+    )
 
     output_tokens_types = [t[0] for t in output_types_per_device]
     output_scales_types = [t[1] for t in output_types_per_device]
@@ -303,6 +332,97 @@ def dispatch_block_scaled_nv(
     return _unpack_results(results, num_devices, _BLOCK_SCALED_NV_OUTPUT_GROUPS)
 
 
+_BLOCK_SCALED_NV_DYN_GLOBAL_SCALES_OUTPUT_GROUPS = 7
+
+
+def dispatch_block_scaled_nv_dyn_global_scales(
+    input_tokens: list[TensorValue],
+    topk_ids: list[TensorValue],
+    send_ptrs: TensorValue,
+    recv_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    atomic_counters: list[BufferValue],
+    output_types_per_device: list[list[TensorType]],
+    *,
+    hidden_size: int,
+    top_k: int,
+    n_experts: int,
+    max_token_per_rank: int,
+    n_gpus_per_node: int,
+    n_nodes: int,
+    fused_shared_expert: bool,
+) -> list[tuple[TensorValue, ...]]:
+    """Multi-device EP NVFP4 dispatch with a dynamic global scale per token.
+
+    Each token is quantized against its own global scale, ``2688 / rowmax``,
+    so no input scale is taken. The receivers store the scales' BF16 inverses
+    in ``output_rowwise_scales``, one per row of ``output_tokens``.
+
+    Returns per-device tuples of 7 tensors:
+    (output_tokens, output_scales, output_rowwise_scales, row_offsets,
+    scales_offsets, expert_ids, src_info).
+    """
+    num_devices = len(input_tokens)
+    if num_devices == 0:
+        raise ValueError("input_tokens must be non-empty")
+    _check_per_device_counts(
+        num_devices,
+        topk_ids=topk_ids,
+        atomic_counters=atomic_counters,
+        output_types_per_device=output_types_per_device,
+    )
+
+    output_tokens_types = [t[0] for t in output_types_per_device]
+    output_scales_types = [t[1] for t in output_types_per_device]
+    output_rowwise_scales_types = [t[2] for t in output_types_per_device]
+    row_offsets_types = [t[3] for t in output_types_per_device]
+    scales_offsets_types = [t[4] for t in output_types_per_device]
+    expert_ids_types = [t[5] for t in output_types_per_device]
+    src_info_types = [t[6] for t in output_types_per_device]
+
+    counters = [BufferValue(c) for c in atomic_counters]
+
+    graph = Graph.current
+    devices = [t.device for t in input_tokens]
+    in_chain = graph.device_chains.merge_for(devices)
+
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedEpDispatchBlockScaledNvDynGlobalScalesOp,
+        output_tokens_types,
+        output_scales_types,
+        output_rowwise_scales_types,
+        row_offsets_types,
+        scales_offsets_types,
+        expert_ids_types,
+        src_info_types,
+        _ChainType(),
+        input_tokens,
+        topk_ids,
+        [send_ptrs] * num_devices,
+        [recv_ptrs] * num_devices,
+        [recv_count_ptrs] * num_devices,
+        counters,
+        in_chain,
+        *_ep_common_attrs(
+            hidden_size,
+            top_k,
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            fused_shared_expert,
+        ),
+    )
+
+    graph._update_chain(out_chain)
+    for device in devices:
+        graph.device_chains[device] = out_chain
+
+    return _unpack_results(
+        results, num_devices, _BLOCK_SCALED_NV_DYN_GLOBAL_SCALES_OUTPUT_GROUPS
+    )
+
+
 # ---------------------------------------------------------------------------
 # MXFP4 Dispatch
 # ---------------------------------------------------------------------------
@@ -326,8 +446,6 @@ def dispatch_mxfp4(
     n_gpus_per_node: int,
     n_nodes: int,
     fused_shared_expert: bool,
-    fuse_a_scale_preshuffle: bool,
-    max_padded_m: int,
     mx_format: str = "auto",
 ) -> list[tuple[TensorValue, ...]]:
     """Multi-device EP MXFP4 dispatch.
@@ -338,6 +456,12 @@ def dispatch_mxfp4(
     num_devices = len(input_tokens)
     if num_devices == 0:
         raise ValueError("input_tokens must be non-empty")
+    _check_per_device_counts(
+        num_devices,
+        topk_ids=topk_ids,
+        atomic_counters=atomic_counters,
+        output_types_per_device=output_types_per_device,
+    )
 
     output_tokens_types = [t[0] for t in output_types_per_device]
     output_scales_types = [t[1] for t in output_types_per_device]
@@ -375,8 +499,6 @@ def dispatch_mxfp4(
             n_nodes,
             fused_shared_expert,
         ),
-        BoolAttr(fuse_a_scale_preshuffle),
-        IntegerAttr(IntegerType(64), max_padded_m),
         StringAttr(mx_format),
     )
 
@@ -435,6 +557,13 @@ def combine(
     num_devices = len(input_tokens)
     if num_devices == 0:
         raise ValueError("input_tokens must be non-empty")
+    _check_per_device_counts(
+        num_devices,
+        src_info=src_info,
+        router_weights=router_weights,
+        atomic_counters=atomic_counters,
+        output_types=output_types,
+    )
 
     counters = [BufferValue(c) for c in atomic_counters]
 

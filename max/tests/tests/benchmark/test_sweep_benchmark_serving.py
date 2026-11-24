@@ -20,9 +20,11 @@ derivation is covered by ``test_model_csv.py``.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import tempfile
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -30,10 +32,18 @@ import pytest
 import pytest_mock
 import yaml
 from max.benchmark import sweep_benchmark_serving
+from max.benchmark.benchmark_serving import BenchmarkRunResult
+from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
     TextGenAggregates,
 )
+from max.benchmark.benchmark_shared.serving_result_output import (
+    BenchmarkRunResultLabels,
+    save_result_json,
+)
+from max.benchmark.benchmark_shared.workload import _apply_workload_to_config
+from pydantic import ValidationError
 
 pytestmark = pytest.mark.usefixtures("offline_dryrun_mocks")
 
@@ -367,6 +377,139 @@ max-benchmark-duration-s: 1500
     assert "max_benchmark_duration_s=1500" not in stdout, stdout
 
 
+def _multiplier_cmd(
+    tmp_path: Path,
+    workload_config: Path,
+    *extra: str,
+    cli_multiplier: bool = True,
+) -> list[str]:
+    multiplier = ["--num-prompts-multiplier", "3"] if cli_multiplier else []
+    return [
+        "--model",
+        "HuggingFaceTB/SmolLM2-135M",
+        "--workload-config",
+        str(workload_config),
+        "--max-concurrency",
+        "2,4",
+        *multiplier,
+        "--log-dir",
+        str(tmp_path),
+        "--dry-run",
+        *extra,
+    ]
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected_duration_s"),
+    [((), 300), (("--max-benchmark-duration-s", "60"), 60)],
+)
+def test_num_prompts_multiplier_scales_per_concurrency_level(
+    tmp_path: Path,
+    workload_config: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra: tuple[str, ...],
+    expected_duration_s: int,
+) -> None:
+    """Each level gets multiplier * mc prompts, with or without a duration."""
+    sweep_benchmark_serving.main(
+        _multiplier_cmd(tmp_path, workload_config, *extra)
+    )
+    stdout, _stderr = capsys.readouterr()
+
+    assert "max_concurrency=2 request_rate=inf num_prompts=6" in stdout, stdout
+    assert "max_concurrency=4 request_rate=inf num_prompts=12" in stdout, stdout
+    assert f"max_benchmark_duration_s={expected_duration_s}" in stdout, stdout
+
+
+def test_num_prompts_multiplier_conflicts_with_num_prompts(
+    tmp_path: Path, workload_config: Path
+) -> None:
+    with pytest.raises(ValueError, match="pass only one"):
+        sweep_benchmark_serving.main(
+            _multiplier_cmd(tmp_path, workload_config, "--num-prompts", "50")
+        )
+
+
+def test_num_prompts_multiplier_rejects_unbounded_concurrency(
+    tmp_path: Path, workload_config: Path
+) -> None:
+    cmd = _multiplier_cmd(tmp_path, workload_config)
+    cmd[cmd.index("2,4")] = "2,none"
+    with pytest.raises(ValueError, match="must be bounded"):
+        sweep_benchmark_serving.main(cmd)
+
+
+def test_cli_num_prompts_multiplier_overrides_workload_num_prompts(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """A CLI multiplier replaces the YAML's num-prompts instead of conflicting."""
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(
+        yaml.safe_dump(
+            {
+                "dataset-name": "random",
+                "random-input-len": 100,
+                "random-output-len": 50,
+                "num-prompts": 500,
+            }
+        )
+    )
+
+    sweep_benchmark_serving.main(_multiplier_cmd(tmp_path, workload_config))
+    stdout, _stderr = capsys.readouterr()
+
+    assert "num_prompts=6" in stdout, stdout
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected"),
+    [
+        ((), ("num_prompts=4", "num_prompts=8")),
+        (("--num-prompts", "7"), ("num_prompts=7",)),
+    ],
+)
+def test_workload_num_prompts_multiplier(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    extra: tuple[str, ...],
+    expected: tuple[str, ...],
+) -> None:
+    """A YAML multiplier applies per level unless the CLI sets the count."""
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(
+        yaml.safe_dump(
+            {
+                "dataset-name": "random",
+                "random-input-len": 100,
+                "random-output-len": 50,
+                "num-prompts-multiplier": 2,
+            }
+        )
+    )
+    sweep_benchmark_serving.main(
+        _multiplier_cmd(tmp_path, workload_config, *extra, cli_multiplier=False)
+    )
+    stdout, _stderr = capsys.readouterr()
+
+    for line in expected:
+        assert line in stdout, stdout
+
+
+def test_workload_num_prompts_multiplier_rejects_fractional(
+    tmp_path: Path,
+) -> None:
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(
+        yaml.safe_dump(
+            {"dataset-name": "random", "num-prompts-multiplier": 3.5}
+        )
+    )
+    with pytest.raises(ValidationError, match="fractional part"):
+        sweep_benchmark_serving.main(
+            _multiplier_cmd(tmp_path, workload_config, cli_multiplier=False)
+        )
+
+
 def test_cli_max_concurrency_overrides_workload_config(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -547,17 +690,22 @@ def test_flush_prefix_cache_no_base_url_uses_host_port_without_auth() -> None:
 # ===========================================================================
 
 
+@pytest.mark.parametrize(
+    "passes_result_filename", [True, False], ids=["given", "not_provided"]
+)
 def test_result_filename_reaches_main_with_parsed_args(
     tmp_path: Path,
     workload_config: Path,
     mocker: pytest_mock.MockerFixture,
+    passes_result_filename: bool,
 ) -> None:
     """config.result_filename must not be cleared before main_with_parsed_args is called.
 
     Regression guard: if run_sweep reintroduces ``config.result_filename = None``
     before calling main_with_parsed_args, the result JSON for non-sweep CI runs
     will silently never be written and the "submit results" step will fail with
-    ``ls: cannot access 'results': No such file or directory``.
+    ``ls: cannot access 'results': No such file or directory``. Without
+    ``--result-filename``, config.result_filename must be None.
     """
     result_path = str(tmp_path / "result.json")
     received: dict[str, str | None] = {}
@@ -582,53 +730,21 @@ def test_result_filename_reaches_main_with_parsed_args(
             "1",
             "--num-prompts",
             "10",
-            "--result-filename",
-            result_path,
+            *(
+                ["--result-filename", result_path]
+                if passes_result_filename
+                else []
+            ),
             "--log-dir",
             str(tmp_path),
         ]
     )
 
-    assert received.get("result_filename") == result_path, (
+    expected = result_path if passes_result_filename else None
+    assert received.get("result_filename") == expected, (
         f"config.result_filename was cleared before main_with_parsed_args. "
-        f"Expected {result_path!r}, got {received.get('result_filename')!r}."
+        f"Expected {expected!r}, got {received.get('result_filename')!r}."
     )
-
-
-def test_result_filename_none_when_not_provided(
-    tmp_path: Path,
-    workload_config: Path,
-    mocker: pytest_mock.MockerFixture,
-) -> None:
-    """When --result-filename is not passed, config.result_filename must be None."""
-    received: dict[str, str | None] = {}
-
-    def capture_config(config: object, **kwargs: object) -> list[object]:
-        received["result_filename"] = getattr(
-            config, "result_filename", "NOT_SET"
-        )
-        return []
-
-    mocker.patch(
-        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
-        side_effect=capture_config,
-    )
-    sweep_benchmark_serving.main(
-        [
-            "--model",
-            "HuggingFaceTB/SmolLM2-135M",
-            "--workload-config",
-            str(workload_config),
-            "--max-concurrency",
-            "1",
-            "--num-prompts",
-            "10",
-            "--log-dir",
-            str(tmp_path),
-        ]
-    )
-
-    assert received.get("result_filename") is None
 
 
 # ===========================================================================
@@ -660,12 +776,19 @@ def _real_text_result(
     )
 
 
+def _labels(model: str = "myorg/mymodel") -> BenchmarkRunResultLabels:
+    return BenchmarkRunResultLabels.from_config(
+        ServingBenchmarkConfig(model=model),
+        benchmark_task="text-generation",
+        model_id=model,
+        tokenizer_id=model,
+    )
+
+
 def test_save_result_json_writes_valid_json(
     tmp_path: Path, workload_config: Path
 ) -> None:
     """save_result_json must write a file containing the expected top-level keys."""
-    from max.benchmark.benchmark_serving import save_result_json
-
     result_path = str(tmp_path / "result.json")
     config = sweep_benchmark_serving.parse_args(
         [
@@ -682,11 +805,13 @@ def test_save_result_json_writes_valid_json(
 
     save_result_json(
         config.result_filename,
-        config,
+        BenchmarkRunResultLabels.from_config(
+            config,
+            benchmark_task="text-generation",
+            model_id="myorg/mymodel",
+            tokenizer_id="myorg/mymodel",
+        ),
         _real_text_result(completed=5),
-        benchmark_task="text-generation",
-        model_id="myorg/mymodel",
-        tokenizer_id="myorg/mymodel",
         request_rate=10.0,
         record_max_concurrency=config.max_concurrency[0],
     )
@@ -711,26 +836,25 @@ def test_result_json_written_at_specified_path(
     workload_config: Path,
     mocker: pytest_mock.MockerFixture,
 ) -> None:
-    """Exactly one JSON file must be written at the path passed via --result-filename.
-
-    The mock simulates what main_with_parsed_args does: write the JSON when
-    config.result_filename is set, then return an empty result list (no sweep).
-    """
+    """``persist_sweep`` writes one JSON file at --result-filename per iteration."""
     result_path = tmp_path / "output" / "result.json"
+    result_path.parent.mkdir()
 
-    def fake_benchmark(config: object, **kwargs: object) -> list[object]:
-        filename = getattr(config, "result_filename", None)
-        if filename:
-            Path(filename).parent.mkdir(parents=True, exist_ok=True)
-            with open(filename, "w") as f:
-                json.dump(
-                    {
-                        "model_id": getattr(config, "model", None),
-                        "backend": getattr(config, "backend", None),
-                    },
-                    f,
-                )
-        return []
+    def fake_benchmark(
+        config: ServingBenchmarkConfig, **kwargs: object
+    ) -> Iterator[BenchmarkRunResult]:
+        yield BenchmarkRunResult(
+            max_concurrency=1,
+            request_rate=float("inf"),
+            num_prompts=10,
+            result=_real_text_result(completed=10),
+            labels=BenchmarkRunResultLabels.from_config(
+                config,
+                benchmark_task="text-generation",
+                model_id=config.model or "",
+                tokenizer_id=config.model or "",
+            ),
+        )
 
     mocker.patch(
         "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
@@ -765,6 +889,7 @@ def test_result_json_written_at_specified_path(
         data = json.load(f)
     assert data["model_id"] == "myorg/mymodel"
     assert data["backend"] == "modular"
+    assert data["result_groups"]["summary"]["completed"] == 10
 
 
 # ===========================================================================
@@ -774,9 +899,6 @@ def test_result_json_written_at_specified_path(
 
 def test_apply_workload_skips_explicitly_set_fields() -> None:
     """Fields in model_fields_set must not be overwritten by workload YAML."""
-    from max.benchmark.benchmark_serving import _apply_workload_to_config
-    from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
-
     config = ServingBenchmarkConfig(
         model="myorg/mymodel",
         request_rate=[5.0],
@@ -810,9 +932,6 @@ def test_apply_workload_skips_explicitly_set_fields() -> None:
 
 def test_apply_workload_sets_unset_fields() -> None:
     """Fields absent from model_fields_set must be filled from workload YAML."""
-    from max.benchmark.benchmark_serving import _apply_workload_to_config
-    from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
-
     config = ServingBenchmarkConfig(model="myorg/mymodel")
     assert "random_input_len" not in config.model_fields_set
 
@@ -933,20 +1052,20 @@ def test_upload_path_writes_one_json_per_concurrency(
     mocker: pytest_mock.MockerFixture,
 ) -> None:
     """Upload mode must call save_result_json once per concurrency level."""
-    from max.benchmark.benchmark_serving import BenchmarkRunResult
-
     fake_results = [
         BenchmarkRunResult(
             max_concurrency=1,
             request_rate=float("inf"),
             num_prompts=10,
             result=MagicMock(),
+            labels=_labels(),
         ),
         BenchmarkRunResult(
             max_concurrency=2,
             request_rate=float("inf"),
             num_prompts=10,
             result=MagicMock(),
+            labels=_labels(),
         ),
     ]
 
@@ -955,7 +1074,9 @@ def test_upload_path_writes_one_json_per_concurrency(
     def capture_save(
         result_filename: str | None, *args: object, **kwargs: object
     ) -> None:
-        saved_filenames.append(result_filename or "")
+        # No --result-filename, so only the median JSONs are written.
+        if result_filename:
+            saved_filenames.append(result_filename)
 
     mocker.patch(
         "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
@@ -1002,22 +1123,12 @@ def test_upload_writes_correct_data_to_correct_files(
 ) -> None:
     """Each concurrency level's JSON file must contain that level's results.
 
-    Regression test: a config-mutation bug caused the generator to resume
-    with a stale result_filename on the second iteration, writing mc2 data
-    into mc1's file and burying mc1's data in a .orig backup.
-
-    The fake generator here mimics the real generator's behavior: it reads
-    config.result_filename lazily on each resume.  If run_sweep mutates
-    config between yields (the bug), the second resume picks up the first
-    iteration's stale path and the file-content assertions fail.
+    Regression test: a config-mutation bug caused a stale result_filename on
+    the second iteration, writing mc2 data into mc1's file and burying mc1's
+    data in a .orig backup. ``persist_sweep`` reads
+    ``config.result_filename`` on each iteration, so mutating it between
+    iterations would fail the file-content assertions.
     """
-    from collections.abc import Iterator
-
-    from max.benchmark.benchmark_serving import (
-        BenchmarkRunResult,
-        save_result_json,
-    )
-    from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 
     def fake_benchmark_serving_main(
         config: ServingBenchmarkConfig,
@@ -1027,22 +1138,12 @@ def test_upload_writes_correct_data_to_correct_files(
         for mc in [1, 2]:
             # ``duration == float(mc)`` is the per-iteration sentinel: stale
             # mc1 data in mc2's file (or vice versa) shows as the wrong value.
-            result = _real_text_result(completed=5, duration=float(mc))
-            save_result_json(
-                config.result_filename,
-                config,
-                result,
-                benchmark_task="text-generation",
-                model_id=config.model,
-                tokenizer_id=config.model,
-                request_rate=float(mc),
-                record_max_concurrency=mc,
-            )
             yield BenchmarkRunResult(
                 max_concurrency=mc,
                 request_rate=float(mc),
                 num_prompts=10,
-                result=result,
+                result=_real_text_result(completed=5, duration=float(mc)),
+                labels=_labels(config.model),
             )
 
     mocker.patch(
@@ -1101,14 +1202,13 @@ def test_upload_path_single_run_no_max_concurrency(
     still write a JSON — the result_dict/metrics guard must not silently skip
     the upload for single-run jobs migrated from the old out-of-process path.
     """
-    from max.benchmark.benchmark_serving import BenchmarkRunResult
-
     fake_results = [
         BenchmarkRunResult(
             max_concurrency=None,
             request_rate=float("inf"),
             num_prompts=10,
             result=MagicMock(),
+            labels=_labels(),
         )
     ]
 
@@ -1117,7 +1217,9 @@ def test_upload_path_single_run_no_max_concurrency(
     def capture_save(
         result_filename: str | None, *args: object, **kwargs: object
     ) -> None:
-        saved_filenames.append(result_filename or "")
+        # No --result-filename, so only the median JSON is written.
+        if result_filename:
+            saved_filenames.append(result_filename)
 
     mocker.patch(
         "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
@@ -1152,3 +1254,326 @@ def test_upload_path_single_run_no_max_concurrency(
         f"Expected results-None-median.json in filename, "
         f"got {saved_filenames[0]!r}."
     )
+
+
+def test_persist_sweep_writes_outputs_per_iteration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each iteration gets a CSV row, a median JSON, and a report as it is produced."""
+    monkeypatch.chdir(tmp_path)
+    config = ServingBenchmarkConfig(model="myorg/mymodel")
+    reported: list[BenchmarkRunResult] = []
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        assert config.log_dir is not None
+        assert Path(config.log_dir).is_dir()
+        for mc in [1, 2]:
+            yield BenchmarkRunResult(
+                max_concurrency=mc,
+                request_rate=float("inf"),
+                num_prompts=5,
+                result=_real_text_result(completed=5, duration=float(mc)),
+                labels=_labels(),
+            )
+            # Reported before the next iteration is drawn.
+            assert len(reported) == mc
+
+    results = sweep_benchmark_serving.persist_sweep(
+        config, iterations(), report_result=reported.append
+    )
+
+    assert [r.max_concurrency for r in results] == [1, 2]
+    assert reported == results
+    assert config.log_dir is not None
+    assert Path(config.log_dir).name.startswith("sweep-serving-")
+    log_dir = tmp_path / config.log_dir
+    for mc in [1, 2]:
+        data = json.loads((log_dir / f"results-{mc}-median.json").read_text())
+        assert data["duration"] == float(mc)
+    csv_lines = (log_dir / "results.csv").read_text().splitlines()
+    assert len(csv_lines) == 3  # header + one row per iteration
+
+
+def test_persist_sweep_writes_iteration_files_and_exits_after_failure(
+    tmp_path: Path,
+) -> None:
+    """A failed iteration is persisted and reported before the sweep exits 1."""
+    result_path = tmp_path / "result.json"
+    lengths_path = tmp_path / "output_lengths.yaml"
+    log_dir = tmp_path / "logs"
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel",
+        result_filename=str(result_path),
+        record_output_lengths=str(lengths_path),
+        log_dir=str(log_dir),
+    )
+    labels = BenchmarkRunResultLabels.from_config(
+        config,
+        benchmark_task="text-generation",
+        model_id="myorg/mymodel",
+        tokenizer_id="myorg/tokenizer",
+    )
+    reported: list[BenchmarkRunResult] = []
+    drawn: list[int] = []
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        for mc in [4, 8]:
+            drawn.append(mc)
+            result = _real_text_result(completed=5, duration=float(mc))
+            assert result.text_data is not None
+            result.text_data.output_lens = [3, mc]
+            yield BenchmarkRunResult(
+                max_concurrency=mc,
+                request_rate=2.5,
+                num_prompts=5,
+                result=result,
+                labels=labels,
+                status="fail",
+            )
+
+    with pytest.raises(SystemExit) as excinfo:
+        sweep_benchmark_serving.persist_sweep(
+            config, iterations(), report_result=reported.append
+        )
+
+    assert excinfo.value.code == 1
+    assert drawn == [4]
+    assert [r.max_concurrency for r in reported] == [4]
+    saved = json.loads(result_path.read_text())
+    assert saved["tokenizer_id"] == "myorg/tokenizer"
+    assert saved["client_args"]["max_concurrency"] == 4
+    assert saved["request_rate"] == 2.5
+    assert saved["duration"] == 4.0
+    lengths = yaml.safe_load(lengths_path.read_text())
+    assert lengths["output_lengths"] == [3, 4]
+    assert lengths["args"]["max_concurrency"] == 4
+    assert lengths["args"]["request_rate"] == 2.5
+    median = json.loads((log_dir / "results-4-median.json").read_text())
+    assert median == {**saved, "date": median["date"]}
+    csv_lines = (log_dir / "results.csv").read_text().splitlines()
+    assert len(csv_lines) == 2  # header + the failed iteration's row
+
+
+def test_persist_sweep_without_log_dir_writes_result_filename(
+    tmp_path: Path,
+) -> None:
+    """A dry run without ``--log-dir`` still writes ``--result-filename``."""
+    result_path = tmp_path / "result.json"
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel", result_filename=str(result_path), dry_run=True
+    )
+
+    sweep_benchmark_serving.persist_sweep(
+        config,
+        [
+            BenchmarkRunResult(
+                max_concurrency=1,
+                request_rate=float("inf"),
+                num_prompts=5,
+                result=_real_text_result(completed=5),
+                labels=_labels(),
+            )
+        ],
+    )
+
+    assert json.loads(result_path.read_text())["num_prompts"] == 5
+    assert config.log_dir is None
+
+
+def test_persist_sweep_closes_generator_before_exit(tmp_path: Path) -> None:
+    """A failed iteration's exit closes the generator, unwinding its ``with`` blocks."""
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel", log_dir=str(tmp_path / "logs")
+    )
+    events: list[str] = []
+
+    @contextlib.contextmanager
+    def server() -> Iterator[None]:
+        try:
+            yield
+        finally:
+            events.append("server closed")
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        with server():
+            yield BenchmarkRunResult(
+                max_concurrency=1,
+                request_rate=float("inf"),
+                num_prompts=5,
+                labels=_labels(),
+                status="fail",
+            )
+            events.append("drew past the failure")
+
+    with pytest.raises(SystemExit) as excinfo:
+        try:
+            sweep_benchmark_serving.persist_sweep(config, iterations())
+        finally:
+            events.append("persist_sweep returned")
+
+    assert excinfo.value.code == 1
+    assert events == ["server closed", "persist_sweep returned"]
+
+
+def test_persist_sweep_closes_generator_when_upload_raises(
+    tmp_path: Path,
+) -> None:
+    """An uploader exception closes the generator before it propagates."""
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel",
+        log_dir=str(tmp_path / "logs"),
+        upload_results=True,
+    )
+    uploader = MagicMock()
+    uploader.upload.side_effect = RuntimeError("callback failed")
+    events: list[str] = []
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        try:
+            yield BenchmarkRunResult(
+                max_concurrency=1,
+                request_rate=float("inf"),
+                num_prompts=5,
+                result=_real_text_result(completed=5),
+                labels=_labels(),
+            )
+            events.append("drew past the failure")
+        finally:
+            events.append("generator closed")
+
+    with pytest.raises(RuntimeError, match="callback failed"):
+        try:
+            sweep_benchmark_serving.persist_sweep(
+                config,
+                iterations(),
+                uploader=uploader,
+            )
+        finally:
+            events.append("persist_sweep returned")
+
+    assert events == ["generator closed", "persist_sweep returned"]
+
+
+def test_persist_sweep_closes_generator_when_report_result_raises_base_exception(
+    tmp_path: Path,
+) -> None:
+    """A ``BaseException`` from ``report_result`` is not swallowed: it
+    closes the generator before it propagates."""
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel", log_dir=str(tmp_path / "logs")
+    )
+    events: list[str] = []
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        try:
+            yield BenchmarkRunResult(
+                max_concurrency=1,
+                request_rate=float("inf"),
+                num_prompts=5,
+                result=_real_text_result(completed=5),
+                labels=_labels(),
+            )
+            events.append("drew past the failure")
+        finally:
+            events.append("generator closed")
+
+    def report_result(run: BenchmarkRunResult) -> None:
+        raise KeyboardInterrupt()
+
+    with pytest.raises(KeyboardInterrupt):
+        try:
+            sweep_benchmark_serving.persist_sweep(
+                config, iterations(), report_result=report_result
+            )
+        finally:
+            events.append("persist_sweep returned")
+
+    assert events == ["generator closed", "persist_sweep returned"]
+
+
+def test_persist_sweep_publication_failure_continues_then_exits(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A ``report_result`` exception is logged with the level and the sweep
+    continues to the next level; the sweep exits 1 at the end so the
+    publication loss is never silent."""
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel", log_dir=str(tmp_path / "logs")
+    )
+    reported: list[BenchmarkRunResult] = []
+    drawn: list[int] = []
+
+    def iterations() -> Iterator[BenchmarkRunResult]:
+        for mc in [1, 2]:
+            drawn.append(mc)
+            yield BenchmarkRunResult(
+                max_concurrency=mc,
+                request_rate=float("inf"),
+                num_prompts=5,
+                result=_real_text_result(completed=5, duration=float(mc)),
+                labels=_labels(),
+            )
+
+    def report_result(run: BenchmarkRunResult) -> None:
+        reported.append(run)
+        if run.max_concurrency == 1:
+            raise RuntimeError("insert failed")
+
+    with caplog.at_level(logging.ERROR, logger="sweep-benchmark-serving"):
+        with pytest.raises(SystemExit) as excinfo:
+            sweep_benchmark_serving.persist_sweep(
+                config, iterations(), report_result=report_result
+            )
+
+    assert excinfo.value.code == 1
+    # Level 2 still ran and was reported after level 1 failed to publish.
+    assert drawn == [1, 2]
+    assert [r.max_concurrency for r in reported] == [1, 2]
+    errors = [
+        r.getMessage()
+        for r in caplog.records
+        if "Result publication failed" in r.getMessage()
+    ]
+    assert len(errors) == 1
+    assert "max_concurrency=1" in errors[0]
+    assert any(
+        r.exc_info and isinstance(r.exc_info[1], RuntimeError)
+        for r in caplog.records
+    )
+
+
+def test_persist_sweep_failed_iteration_without_result_writes_nothing(
+    tmp_path: Path,
+) -> None:
+    """A failed iteration without a result exits 1 without writing any output."""
+    result_path = tmp_path / "result.json"
+    lengths_path = tmp_path / "output_lengths.yaml"
+    log_dir = tmp_path / "logs"
+    config = ServingBenchmarkConfig(
+        model="myorg/mymodel",
+        result_filename=str(result_path),
+        record_output_lengths=str(lengths_path),
+        log_dir=str(log_dir),
+    )
+    reported: list[BenchmarkRunResult] = []
+    run = BenchmarkRunResult(
+        max_concurrency=4,
+        request_rate=2.5,
+        num_prompts=5,
+        labels=_labels(),
+        status="fail",
+    )
+
+    with pytest.raises(SystemExit) as excinfo:
+        sweep_benchmark_serving.persist_sweep(
+            config, [run], report_result=reported.append
+        )
+
+    assert excinfo.value.code == 1
+    assert reported == [run]
+    assert not result_path.exists()
+    assert not lengths_path.exists()
+    assert list(log_dir.glob("*.json")) == []
+    csv_lines = (log_dir / "results.csv").read_text().splitlines()
+    assert len(csv_lines) <= 1  # at most a header

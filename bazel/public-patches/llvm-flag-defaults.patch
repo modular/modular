@@ -1,0 +1,45 @@
+diff -ru a/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel b/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
+--- a/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/lldb/BUILD.bazel
+@@ -30,7 +30,7 @@
+ 
+ bool_flag(
+     name = "enable_curses",
+-    build_setting_default = False,
++    build_setting_default = True,
+ )
+ 
+ config_setting(
+@@ -48,7 +48,7 @@
+ 
+ bool_flag(
+     name = "enable_libedit",
+-    build_setting_default = False,
++    build_setting_default = True,
+ )
+ 
+ config_setting(
+diff -ru a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+--- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+@@ -4986,7 +4986,7 @@
+ # Flag documentation: https://bazel.build/extending/config
+ string_flag(
+     name = "pfm",
+-    build_setting_default = "external",
++    build_setting_default = "disable",
+     values = [
+         "disable",  # Don't include pfm at all
+         "external",  # Build pfm from source
+diff -ru a/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel b/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
+--- a/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/mlir/BUILD.bazel
+@@ -43,7 +43,7 @@
+ 
+ bool_flag(
+     name = "enable_cuda",
+-    build_setting_default = False,
++    build_setting_default = True,
+ )
+ 
+ config_setting(

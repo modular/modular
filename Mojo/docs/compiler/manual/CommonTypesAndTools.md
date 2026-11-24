@@ -240,8 +240,8 @@ and we define that `getDirectCallee` in our own `LITOps.cpp`:
 
 ```c++
 SymbolRefAttr LIT::CallOp::getDirectCallee() {
-  if (auto symbolCst = dyn_cast<SymbolConstantAttr>(getCallee()))
-    return symbolCst.getSymbol();
+  if (auto symbol = FuncSymbolGenerator::dynCast(getCallee()))
+    return symbol.getSymbol();
   return {};
 }
 ```
@@ -446,8 +446,8 @@ first filling in the particular witness table (a.k.a. vtable a.k.a.
 `ConformanceOp`) for the struct+trait pair (or trait+trait pair), see CALROC.
 
 Major players involved: `doesNominalTypeConformTo` calls
-`DeclResolver::resolveBody(ConformanceOp, ASTDecl &)` which calls
-`verifyConformance`.
+`DeclResolver::resolveBody(ConformanceOp, ASTDecl &)`, which registers one
+member decl per requirement; `verifyConformanceMember` checks each one.
 
 See [Conformance.md](../arcana/Conformance.md) for more on how this
 all works.

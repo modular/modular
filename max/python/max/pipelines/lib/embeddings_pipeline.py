@@ -28,7 +28,7 @@ from max.graph.weights import (
     load_weights,
     weights_format,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.outputs import ReturnLogits
 from max.pipelines.context import BaseContextType
 from max.pipelines.modeling.types import (
     EmbeddingsContext,
@@ -47,13 +47,16 @@ if TYPE_CHECKING:
 from max.support.algorithm import flatten2d
 
 from .interfaces import PipelineModel
-from .memory_estimation import MemoryPlan
+from .memory_plan import MemoryPlan
 
 logger = logging.getLogger("max.pipelines")
 
 EmbeddingsPipelineType = Pipeline[
     EmbeddingsGenerationInputs, EmbeddingsGenerationOutput
 ]
+"""Base type of :class:`EmbeddingsPipeline`, a :class:`Pipeline` mapping
+embeddings inputs to embeddings outputs.
+"""
 
 
 @final

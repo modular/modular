@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Obfuscated conversations dataset."""
+
 from __future__ import annotations
 
 import random
@@ -25,12 +27,16 @@ from .types import RequestSamples, SampledRequest
 
 
 class ObfuscatedConversationsLine(msgspec.Struct):
+    """One row of the obfuscated conversations file."""
+
     timestamp: str
     conversation_id: str
     messages: str
 
 
 class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
+    """Obfuscated conversations dataset."""
+
     def sample_requests(
         self,
         num_requests: int,
@@ -39,6 +45,7 @@ class ObfuscatedConversationsBenchmarkDataset(LocalBenchmarkDataset):
         shuffle: bool = True,
         **kwargs,
     ) -> RequestSamples:
+        """Samples requests from the obfuscated conversations."""
         # Extract required parameters from kwargs
         seed = kwargs.get("seed")
         if seed is None:

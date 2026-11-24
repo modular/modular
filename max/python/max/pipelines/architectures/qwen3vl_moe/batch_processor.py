@@ -10,329 +10,148 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input batching for Qwen3VL MoE pipeline models."""
+"""Batching for the registered Qwen3-VL decoder and its vision tower.
+
+The framework batches the text and the cache. This adds each token's 3-axis
+M-RoPE position and encodes the batch's new images and video frames on the
+first device, copying the rows to the others.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import TYPE_CHECKING
+from typing import Any
 
 import numpy as np
-from max.driver import Buffer
-from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType
-from max.nn.kv_cache import KVCacheInputsInterface
-from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.pipelines.lib.config.model_config import _select_quantization_encoding
-from max.pipelines.lib.interfaces.arch_config import ArchConfig
-from max.pipelines.lib.interfaces.batch_processor import (
-    BatchProcessor,
-    BatchProcessorRuntime,
-    process_ragged_kv_outputs,
-    ragged_kv_symbolic_inputs,
-)
-from max.pipelines.lib.interfaces.pipeline_model import ModelOutputs
-from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
-from max.pipelines.modeling.config_enums import supported_encoding_dtype
-from max.profiler import Tracer
+import numpy.typing as npt
+from max.driver import Buffer, Device
+from max.engine import InferenceSession
+from max.graph import TensorType
+from max.pipelines.context import ImageMetadata, TextContext
+from max.pipelines.lib.module_registration import DecoderBatchProcessor
+from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
+from max.tensor.compilation import CompiledCallable
 
-from .context import Qwen3VLTextAndVisionContext, VisionEncodingData
+from .context import Qwen3VLTextAndVisionContext
 from .model_config import Qwen3VLConfig
+from .vision_packing import Qwen3VLVisionInputs, pack_uncached_images
 
-if TYPE_CHECKING:
-    from .model import Qwen3VLInputs
+__all__ = ["Qwen3VLBatchProcessor", "context_position_rows"]
+
+_MROPE_AXES = 3
+"""Temporal, height and width, the three axes M-RoPE positions carry."""
 
 
-class Qwen3VLMoeBatchProcessor(
-    BatchProcessor[Qwen3VLTextAndVisionContext, "Qwen3VLInputs"]
-):
-    """Ragged batching with optional vision inputs for Qwen3VL MoE models."""
+def context_position_rows(ctx: TextContext) -> npt.NDArray[np.int64]:
+    """Returns one request's ``[3, active_length]`` M-RoPE positions.
 
-    _cached_empty_embeddings: tuple[list[Buffer], list[Buffer]] | None
-    _cached_empty_indices: list[Buffer] | None
+    They start at the processed length. A prompt whose images are still to
+    be encoded takes its slice of the positions the tokenizer precomputed.
+    Otherwise positions count on from the processed length, offset by the
+    request's rope delta. The two agree past the last image.
+    """
+    start = ctx.tokens.processed_length
+    length = ctx.tokens.active_length
+    rope_delta = 0
+    if isinstance(ctx, Qwen3VLTextAndVisionContext):
+        precomputed = ctx.decoder_position_ids
+        if ctx.needs_vision_encoding and precomputed.shape[1] == len(
+            ctx.tokens
+        ):
+            return precomputed[:, start : start + length]
+        rope_delta = ctx.rope_delta
+    flat = np.arange(start, start + length, dtype=np.int64) + rope_delta
+    return np.tile(flat, (_MROPE_AXES, 1))
 
-    def __init__(
-        self,
-        config: ArchConfig,
-        runtime: BatchProcessorRuntime,
-    ) -> None:
-        super().__init__(config, runtime)
-        self._cached_empty_embeddings = None
-        self._cached_empty_indices = None
 
-    def empty_image_embeddings(self) -> tuple[list[Buffer], list[Buffer]]:
-        """Returns empty image and deepstack embedding buffers for text-only decode."""
-        if self._cached_empty_embeddings is None:
-            hf_config = self.runtime.pipeline_config.model.huggingface_config
-            quantization_encoding = _select_quantization_encoding(
-                self.runtime.pipeline_config.model,
-                Qwen3VLConfig.DEFAULT_ENCODING,
-            )
-            dtype = supported_encoding_dtype(quantization_encoding)
-            hidden_size = hf_config.text_config.hidden_size
-            n_deepstack_layers = len(
-                hf_config.vision_config.deepstack_visual_indexes
-            )
-            image_embeddings = Buffer.zeros(
-                shape=[0, hidden_size],
-                dtype=dtype,
-            ).to(self.runtime.devices)
-            deepstack_image_embeddings = [
-                tensor
-                for _ in range(n_deepstack_layers)
-                for tensor in Buffer.zeros(
-                    shape=[0, hidden_size],
-                    dtype=dtype,
-                ).to(self.runtime.devices)
-            ]
-            self._cached_empty_embeddings = (
-                image_embeddings,
-                deepstack_image_embeddings,
-            )
-        return self._cached_empty_embeddings
+class Qwen3VLBatchProcessor(DecoderBatchProcessor):
+    """Batches Qwen3-VL's tokens and encodes their images and clips."""
 
-    def empty_image_token_indices(self) -> list[Buffer]:
-        """Returns per-device zero-length scatter indices for text-only decode."""
-        if self._cached_empty_indices is None:
-            self._cached_empty_indices = Buffer.zeros(
-                shape=[0],
-                dtype=DType.int32,
-            ).to(self.runtime.devices)
-        return self._cached_empty_indices
+    _vision_model: CompiledCallable[Any, Any] | None = None
+    _empty_vision_embeddings: list[Buffer] | None = None
 
-    def _mrope_section_length(self) -> int:
-        hf_config = self.runtime.pipeline_config.model.huggingface_config
-        rope_scaling = (
-            getattr(hf_config.text_config, "rope_scaling", None) or {}
-        )
-        mrope_section = rope_scaling.get("mrope_section")
-        if mrope_section is None:
-            return 3
-        return len(mrope_section)
+    @property
+    def _qwen_config(self) -> Qwen3VLConfig:
+        assert isinstance(self.config, Qwen3VLConfig)
+        return self.config
 
-    def _batch_image_token_indices(
-        self, context_batch: Sequence[Qwen3VLTextAndVisionContext]
-    ) -> list[Buffer]:
-        """Batch image token indices across contexts into a per-device buffer list.
+    def token_positions(
+        self, context_batch: Sequence[TextContext], position_type: TensorType
+    ) -> npt.NDArray[np.integer[Any]]:
+        """Returns this step's ``[3, total_seq_len]`` M-RoPE positions."""
+        if not context_batch:
+            return np.empty((_MROPE_AXES, 0), dtype=np.int64)
+        return np.concatenate(
+            [context_position_rows(ctx) for ctx in context_batch], axis=1
+        ).astype(np.int64)
 
-        Args:
-            context_batch: Contexts that may contain image token indices.
-
-        Returns:
-            Per-device buffers containing multimodal merge indices.
-        """
-        np_image_token_indices = compute_multimodal_merge_indices(context_batch)
-        return Buffer.from_numpy(np_image_token_indices).to(
-            self.runtime.devices
-        )
-
-    def get_symbolic_inputs(
+    def bind_vision_encoder(
         self,
         *,
-        kv_params: KVCacheParamInterface,
-        device_refs: list[DeviceRef],
-    ) -> list[TensorType | BufferType]:
-        return ragged_kv_symbolic_inputs(
-            kv_params=kv_params,
-            device_refs=device_refs,
-            include_signal_buffers=True,
-        )
+        vision_model: CompiledCallable[Any, Any],
+        session: InferenceSession,
+    ) -> None:
+        """Binds the compiled vision tower."""
+        del session
+        self._vision_model = vision_model
 
-    def prepare_initial_token_inputs(
+    def pack_vision_inputs(
         self,
-        replica_batches: Sequence[Sequence[Qwen3VLTextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputsInterface[Buffer, Buffer] | None = None,
-        return_n_logits: int = 1,
-    ) -> Qwen3VLInputs:
-        """Prepares the initial inputs for the first execution pass of the Qwen3VL model."""
-        from .model import Qwen3VLInputs
+        selection: Sequence[
+            tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+    ) -> Qwen3VLVisionInputs | None:
+        """Packs the cache-miss images to the first device.
 
-        if len(replica_batches) > 1:
-            raise ValueError("Model does not support DP>1")
+        Runs in the pipeline's prep-ahead window, so the host-to-device copy
+        overlaps the prior batch.
+        """
+        return pack_uncached_images(selection, devices)
 
-        context_batch = replica_batches[0]
+    def vision_execute(
+        self,
+        selection: Sequence[
+            tuple[Qwen3VLTextAndVisionContext, Sequence[ImageMetadata]]
+        ],
+        devices: list[Device],
+        packed: Qwen3VLVisionInputs | None,
+    ) -> VisionEncodeResult:
+        """Encodes the packed media and copies its rows to every device.
 
-        if kv_cache_inputs is None:
-            raise ValueError("KV Cache Inputs must be provided")
-
-        devices = self.runtime.devices
-        n_rope_sections = self._mrope_section_length()
-
-        # Gather all vision data from contexts that need vision encoding
-        vision_datas: list[VisionEncodingData] = []
-        for ctx in context_batch:
-            assert isinstance(ctx, Qwen3VLTextAndVisionContext), (
-                f"Expected Qwen3VLTextAndVisionContext, got {type(ctx).__name__}"
+        Returns each item's row count: a clip's placeholder span also holds
+        the timestamp text between its frames, so it is wider than the rows
+        the tower emits.
+        """
+        if packed is None:
+            return VisionEncodeResult(
+                embeddings=self.empty_vision_embeddings(devices)
             )
-            if ctx.needs_vision_encoding:
-                assert ctx.vision_data is not None, (
-                    "vision_data must be present when needs_vision_encoding is True"
-                )
-                vision_datas.append(ctx.vision_data)
-        any_needs_vision_encoding = len(vision_datas) > 0
+        assert self._vision_model is not None
+        (rows,) = self._vision_model.execute_raw(*packed.graph_inputs())
+        assert isinstance(rows, Buffer)
+        return VisionEncodeResult(
+            embeddings=[rows.to(device) for device in devices],
+            per_image_token_counts=[
+                img.embedding_rows
+                for _ctx, miss_images in selection
+                for img in miss_images
+            ],
+        )
 
-        # Prepare Inputs Needed Regardless of Images
-        with Tracer("prepare_input_ids"):
-            input_ids = Buffer.from_numpy(
-                np.concatenate([ctx.tokens.active for ctx in context_batch])
-            ).to(devices[0])
+    def empty_vision_embeddings(self, devices: list[Device]) -> list[Buffer]:
+        """Per-device ``[0, hidden]`` rows for a step that encodes nothing.
 
-        with Tracer("prepare_input_row_offsets"):
-            input_row_offsets_host = Buffer.from_numpy(
-                np.cumsum(
-                    [0] + [ctx.tokens.active_length for ctx in context_batch],
-                    dtype=np.uint32,
-                ),
-            )
-            input_row_offsets = [
-                input_row_offsets_host.to(dev) for dev in devices
+        Cached: every decode step asks for them, and a captured device
+        graph replays only an identical buffer object without a refresh.
+        """
+        if self._empty_vision_embeddings is None:
+            config = self._qwen_config
+            self._empty_vision_embeddings = [
+                Buffer.zeros(
+                    shape=[0, config.vision_config.embedding_width],
+                    dtype=config.declared_dtype,
+                ).to(device)
+                for device in devices
             ]
-
-        with Tracer("prepare_decoder_position_ids"):
-            decoder_position_ids_list = []
-            for ctx in context_batch:
-                ctx_decoder_position_ids = ctx.decoder_position_ids
-                if ctx.needs_vision_encoding and ctx_decoder_position_ids.shape[
-                    1
-                ] == len(ctx.tokens):
-                    decoder_position_ids_list.append(
-                        ctx_decoder_position_ids[
-                            :,
-                            ctx.tokens.processed_length : ctx.tokens.current_position,
-                        ]
-                    )
-                else:
-                    context_seq_length = ctx.tokens.active_length
-                    temp_pos_ids = np.tile(
-                        np.arange(context_seq_length).reshape(1, 1, -1),
-                        (n_rope_sections, 1, 1),
-                    )
-                    delta = ctx.tokens.processed_length + ctx.rope_delta
-                    temp_position_ids = (temp_pos_ids + delta).squeeze(1)
-                    decoder_position_ids_list.append(temp_position_ids)
-
-            decoder_position_ids = Buffer.from_numpy(
-                np.concatenate(decoder_position_ids_list, axis=1).astype(
-                    np.int64
-                )
-            )
-
-        # Batch image token indices
-        with Tracer("prepare_image_token_indices"):
-            image_token_indices = self._batch_image_token_indices(context_batch)
-
-        if not any_needs_vision_encoding:
-            return Qwen3VLInputs(
-                tokens=input_ids,
-                input_row_offsets=input_row_offsets,
-                signal_buffers=list(self.runtime.signal_buffers),
-                decoder_position_ids=decoder_position_ids,
-                return_n_logits=Buffer.from_numpy(
-                    np.array([return_n_logits], dtype=np.int64)
-                ),
-                kv_cache_inputs=kv_cache_inputs,
-                image_token_indices=image_token_indices,
-                pixel_values=None,
-                vision_position_ids=None,
-                weights=None,
-                indices=None,
-                max_grid_size=None,
-                cu_seqlens=None,
-                max_seqlen=None,
-                grid_thw=None,
-            )
-
-        # Prepare vision inputs
-        pixel_values_list = [
-            vision_data.concatenated_pixel_values
-            for vision_data in vision_datas
-        ]
-        pixel_values = Buffer.from_numpy(
-            np.concatenate(pixel_values_list).astype(np.float32)
-        ).to(devices)
-
-        weights = Buffer.from_numpy(
-            np.concatenate(
-                [vision_data.weights for vision_data in vision_datas], axis=1
-            ).astype(np.float32)
-        ).to(devices)
-
-        indices = Buffer.from_numpy(
-            np.concatenate(
-                [vision_data.indices for vision_data in vision_datas], axis=1
-            )
-        ).to(devices)
-
-        vision_position_ids_list = [
-            vision_data.vision_position_ids for vision_data in vision_datas
-        ]
-        vision_position_ids = Buffer.from_numpy(
-            np.concatenate(vision_position_ids_list).astype(np.int32)
-        ).to(devices)
-
-        grid_thw_list = [
-            vision_data.image_grid_thw for vision_data in vision_datas
-        ]
-        grid_thw = Buffer.from_numpy(
-            np.concatenate(grid_thw_list).astype(np.int64)
-        ).to(devices)
-
-        max_grid_size_value = max(
-            vision_data.max_grid_size.item() for vision_data in vision_datas
-        )
-        max_grid_size = [
-            Buffer.from_numpy(np.array(max_grid_size_value, dtype=np.int32))
-            for _ in devices
-        ]
-
-        cu_seqlens_list = []
-        offset = 0
-        for vision_data in vision_datas:
-            seqlens = vision_data.cu_seqlens
-            adjusted = seqlens.copy()
-            adjusted[1:] += offset
-            cu_seqlens_list.append(adjusted[1:])
-            offset = adjusted[-1]
-
-        cu_seqlens = Buffer.from_numpy(
-            np.concatenate(
-                [np.array([0], dtype=np.uint32), *cu_seqlens_list]
-            ).astype(np.uint32)
-        ).to(devices)
-
-        max_seqlen_value = max(
-            vision_data.max_seqlen.item() for vision_data in vision_datas
-        )
-        max_seqlen = [
-            Buffer.from_numpy(np.array([max_seqlen_value], dtype=np.uint32))
-            for _ in devices
-        ]
-
-        return Qwen3VLInputs(
-            tokens=input_ids,
-            input_row_offsets=input_row_offsets,
-            signal_buffers=list(self.runtime.signal_buffers),
-            decoder_position_ids=decoder_position_ids,
-            return_n_logits=Buffer.from_numpy(
-                np.array([return_n_logits], dtype=np.int64)
-            ),
-            kv_cache_inputs=kv_cache_inputs,
-            image_token_indices=image_token_indices,
-            pixel_values=pixel_values,
-            vision_position_ids=vision_position_ids,
-            weights=weights,
-            indices=indices,
-            max_grid_size=max_grid_size,
-            cu_seqlens=cu_seqlens,
-            max_seqlen=max_seqlen,
-            grid_thw=grid_thw,
-        )
-
-    def process_outputs(
-        self, outputs: Sequence[Buffer | object]
-    ) -> ModelOutputs:
-        return process_ragged_kv_outputs(
-            outputs,
-            return_logits=self.runtime.return_logits,
-            return_hidden_states=self.runtime.return_hidden_states,
-        )
+        return self._empty_vision_embeddings

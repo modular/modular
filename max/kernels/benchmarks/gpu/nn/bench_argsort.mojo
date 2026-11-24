@@ -24,13 +24,13 @@ from std.benchmark import (
     ThroughputMeasure,
 )
 from max.gpu.host import DeviceContext
-from layout import Idx, TileTensor, row_major
+from layout import TileTensor, row_major
 from nn.argsort import argsort
 
 
 def bench_argsort[
     dtype: DType
-](ctx: DeviceContext, mut m: Bench, N: Int) raises:
+](ctx: DeviceContext[], mut m: Bench, N: Int) raises:
     # Allocate and fill host data with random values.
     var input_host_ptr = List(length=N, fill=Scalar[dtype](0))
     for i in range(N):
@@ -53,20 +53,18 @@ def bench_argsort[
     )
 
     # Warm up and verify.
-    argsort[ascending=True, target="gpu"](
-        device_indices_tensor, device_input_tensor, ctx
-    )
+    argsort[ascending=True](device_indices_tensor, device_input_tensor, ctx)
     # Re-copy input since argsort modifies it in-place.
     ctx.enqueue_copy(device_input, input_host_ptr)
     ctx.synchronize()
 
-    @always_inline
+    @inline(.always)
     def bench_ascending(
         mut b: Bencher,
     ) raises {var device_input_tensor, var device_indices_tensor, imm}:
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
-            argsort[ascending=True, target="gpu"](
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
+            argsort[ascending=True](
                 device_indices_tensor, device_input_tensor, ctx
             )
 

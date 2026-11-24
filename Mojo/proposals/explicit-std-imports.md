@@ -106,7 +106,7 @@ inevitably want to use them:
 - `math` - Mathematical operations
 - `testing` - Test frameworks
 - `pathlib` - Path manipulation
-- `hashlib` - Hashing utilities
+- `hash` - Hashing utilities
 
 There is also an argument to be made about additional (perhaps
 common in name) future modules added to `std` over time.

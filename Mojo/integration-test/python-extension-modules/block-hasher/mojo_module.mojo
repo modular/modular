@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.hashlib import default_comp_time_hasher
+from std.hash import default_comp_time_hasher
 from std.os import abort
 from std.sys import size_of
 
@@ -65,7 +65,7 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
         return num_elts
 
 
-@always_inline
+@inline(.always)
 def _mojo_block_hasher[
     dtype: DType,
     //,
@@ -93,8 +93,8 @@ def _mojo_block_hasher[
     for block_idx in range(num_hashes):
         var hash_ptr_ints = hash_ptr_base.unsafe_offset(block_idx * block_size)
         var hash_ptr_bytes = hash_ptr_ints.unsafe_bitcast[Byte]()
-        var token_hash = hash[default_comp_time_hasher](
-            hash_ptr_bytes, num_bytes
+        var token_hash = hash_bytes[default_comp_time_hasher](
+            Span[Byte, _](unsafe_ptr=hash_ptr_bytes, length=num_bytes)
         )
         var pair_to_hash = SIMD[.uint64, 2](prev_hash, token_hash)
         var curr_hash = hash[default_comp_time_hasher](pair_to_hash)

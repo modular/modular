@@ -19,16 +19,15 @@ from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 from max.gpu.host import DeviceContext
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, Idx, TileTensor, row_major
-from nn.normalization import rms_norm_rope
-
-from std.utils.index import Index, IndexList
+from builtin_kernels.rowwise_normalization import rms_norm_rope
 
 
 def bench_rms_norm_rope_gpu[
-    rank: Int, //, dtype: DType, shape: IndexList[rank]
-](ctx: DeviceContext, mut b: Bench, fn_name: String) raises:
-    comptime cols = shape[rank - 1]
-    comptime rows = shape.flattened_length() // cols
+    dtype: DType, shape: Coord
+](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
+    comptime rank = shape.rank
+    comptime cols = Int(shape[rank - 1])
+    comptime rows = Int(shape.product()) // cols
 
     var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
     var gamma_h = List(length=cols, fill=Scalar[dtype](0))
@@ -49,13 +48,11 @@ def bench_rms_norm_rope_gpu[
     var sin_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var output_d = ctx.enqueue_create_buffer[dtype](rows * cols)
 
-    var param_shape = Index(cols)
-
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var output_buf = TileTensor(output_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var cos_vals = TileTensor(cos_d, row_major(Coord(shape)))
-    var sin_vals = TileTensor(sin_d, row_major(Coord(shape)))
+    var data_buf = TileTensor(data_d, row_major(shape))
+    var output_buf = TileTensor(output_d, row_major(shape))
+    var gamma = TileTensor(gamma_d, row_major(Coord(cols)))
+    var cos_vals = TileTensor(cos_d, row_major(shape))
+    var sin_vals = TileTensor(sin_d, row_major(shape))
     var epsilon = Scalar[dtype](0.001)
     var weight_offset = Scalar[dtype](0.0)
 
@@ -64,35 +61,31 @@ def bench_rms_norm_rope_gpu[
     ctx.enqueue_copy(cos_d, cos_h)
     ctx.enqueue_copy(sin_d, sin_h)
 
-    @always_inline
+    @inline(.always)
     def input_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width, alignment=alignment](idx)
+        return data_buf.load[width=width, alignment=alignment](coords)
 
-    @always_inline
+    @inline(.always)
     def cos_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var cos_vals} -> SIMD[dtype, width]:
-        var idx = cos_vals.layout(coords)
-        return cos_vals.raw_load[width=width, alignment=alignment](idx)
+        return cos_vals.load[width=width, alignment=alignment](coords)
 
-    @always_inline
+    @inline(.always)
     def sin_fn[
         width: Int, alignment: Int
     ](coords: Coord) {var sin_vals} -> SIMD[dtype, width]:
-        var idx = sin_vals.layout(coords)
-        return sin_vals.raw_load[width=width, alignment=alignment](idx)
+        return sin_vals.load[width=width, alignment=alignment](coords)
 
-    @always_inline
+    @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var output_buf} -> None:
-        var idx = output_buf.layout(coords)
-        output_buf.raw_store[width=width, alignment=alignment](idx, val)
+        output_buf.store[alignment=alignment](coords, val)
 
-    @always_inline
+    @inline(.always)
     def bench_fn(
         mut b: Bencher,
     ) raises {
@@ -105,21 +98,20 @@ def bench_rms_norm_rope_gpu[
         var output_fn,
         imm,
     }:
-        @always_inline
-        def kernel_launch(ctx: DeviceContext) raises {imm}:
+        @inline(.always)
+        def kernel_launch(ctx: DeviceContext[]) raises {imm}:
             rms_norm_rope[
                 dtype,
                 dtype,
                 dtype,
                 rank,
-                target="gpu",
                 multiply_before_cast=False,
             ](
                 input_fn,
                 cos_fn,
                 sin_fn,
                 output_fn,
-                Coord(shape),
+                shape,
                 Int(cols),
                 gamma,
                 epsilon,

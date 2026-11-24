@@ -13,9 +13,8 @@
 """Cascade worker that delegates decode work to a MAX Serve model worker.
 
 This worker does **not** load the model in its own process. Instead it spawns a
-``max.serve`` model-worker subprocess (the same one used by
-``max.serve.api_server`` and ``max.entrypoints.LLM``) and communicates with it
-over ZMQ (via :class:`ZmqModelWorkerInterface`). As in ``max.serve``, a single
+``max.serve`` model-worker subprocess (the same one ``max.serve.api_server``
+uses) and communicates with it over ZMQ (via :class:`ZmqModelWorkerInterface`). As in ``max.serve``, a single
 fan-out task on the proxy side pulls ``SchedulerResult`` batches off the response
 socket and routes individual outputs to per-request ``asyncio.Queue`` instances.
 """
@@ -23,14 +22,17 @@ socket and routes individual outputs to per-request ``asyncio.Queue`` instances.
 from __future__ import annotations
 
 import contextlib
+import importlib
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
+from typing import cast
 
 import numpy as np
 import numpy.typing as npt
-from max.experimental.cascade.core import Worker, worker_method
+from max.experimental.cascade.core import worker_method
 from max.experimental.cascade.interfaces.gen_ai import TextGenOptions
+from max.experimental.cascade.workers.model_worker import ModelWorker
 from max.pipelines.architectures import register_all_models
 from max.pipelines.context import (
     EOSTracker,
@@ -70,20 +72,18 @@ def _sampling_params_input(req: TextGenOptions) -> SamplingParamsInput:
         frequency_penalty=req.frequency_penalty,
         presence_penalty=req.presence_penalty,
         repetition_penalty=req.repetition_penalty,
-        stop=req.stop,
         stop_token_ids=req.stop_token_ids,
     )
 
 
-class MAXModelWorker(Worker):
+class MAXModelWorker(ModelWorker):
     """Cascade worker backed by a MAX Serve model-worker subprocess.
 
     The worker is constructed with a :py:class:`PipelineConfig` (typically built
     once by the entrypoint/CLI and shared across the cascade pipeline's
     workers). It does **not** load the model in its own process; instead it
-    spawns a ``max.serve`` model-worker subprocess (the same one used by
-    ``max.serve.api_server`` and ``max.entrypoints.LLM``) and communicates with
-    it over ZMQ. Per-request streaming is handled by the proxy's single
+    spawns a ``max.serve`` model-worker subprocess (the same one
+    ``max.serve.api_server`` uses) and communicates with it over ZMQ. Per-request streaming is handled by the proxy's single
     response-fan-out task.
     """
 
@@ -99,11 +99,14 @@ class MAXModelWorker(Worker):
         self._memory_plan = retrieved.memory_plan
         self._eos_token_ids: set[int] = set(retrieved.tokenizer.eos_token_ids)
         self._model_factory = retrieved.factory
+        self._context_type: type[TextContext] = TextContext
 
         # lazy import to avoid circular imports when defining
         # CascadePipelines in model arch.py layers
+        from max.serve.config import Settings
         from max.serve.worker_interface import ModelWorkerProxy
 
+        self.deploy_timeout = Settings().mw_timeout_s
         self._proxy: (
             ModelWorkerProxy[
                 TextAndVisionContext | TextContext, TextGenerationOutput
@@ -123,8 +126,7 @@ class MAXModelWorker(Worker):
         registry lookups (no config mutation, no network). The telemetry
         consumer, model-worker subprocess and proxy (with its single response
         fan-out task) stay alive for the worker's lifetime -- the same async
-        context managers used by ``max.entrypoints.LLM`` and
-        ``max.serve.api_server``.
+        context managers ``max.serve.api_server`` uses.
         """
         # lazy import to avoid circular imports when defining
         # CascadePipelines in model arch.py layers
@@ -156,6 +158,8 @@ class MAXModelWorker(Worker):
         context_type = PIPELINE_REGISTRY.retrieve_context_type(
             self.pipeline_config
         )
+        assert issubclass(context_type, TextContext)
+        self._context_type = context_type
 
         settings = Settings(
             offline_inference=True,
@@ -185,6 +189,11 @@ class MAXModelWorker(Worker):
                     memory_plan=self._memory_plan,
                 )
             )
+            # The worker sized its KV cache once loaded and may serve a
+            # shorter max_length than the plan made here.
+            served = self._proxy.memory_plan
+            if served is not None and served.planned_max_length is not None:
+                self.max_length = served.planned_max_length
             logger.info("MAXModelWorker ready in %.1fs", time.monotonic() - t0)
             try:
                 yield self
@@ -226,12 +235,13 @@ class MAXModelWorker(Worker):
         ctx_eos_token_ids: set[int] = (
             set() if req.ignore_eos else set(self._eos_token_ids)
         )
-        ctx = TextContext(
+        ctx = self._context_type(
             request_id=request_id,
             max_length=request_max_length,
             tokens=TokenBuffer(prompt_tokens),
             eos_tracker=EOSTracker(eos_token_ids=ctx_eos_token_ids),
             sampling_params=sampling_params,
+            **self._context_type._padding_context_required_fields(),
         )
 
         response_stream = await self._proxy.stream(request_id, ctx)
@@ -249,3 +259,27 @@ class MAXModelWorker(Worker):
         """Echo the tokens back to the caller, for debugging."""
         for token in tokens:
             yield np.int32(token)
+
+
+def make_model_worker(
+    config: PipelineConfig, model_worker_impl: str | None = None
+) -> ModelWorker:
+    """Builds the model worker for *config*.
+
+    *model_worker_impl* is a ``"module.path:ClassName"`` ModelWorker subclass;
+    unset, builds :class:`MAXModelWorker`.
+    """
+    if model_worker_impl is None:
+        return MAXModelWorker(config)
+    module_path, sep, class_name = model_worker_impl.partition(":")
+    if not sep:
+        raise ValueError(
+            f"model_worker_impl {model_worker_impl!r} must be in "
+            "'module.path:ClassName' form."
+        )
+    cls = getattr(importlib.import_module(module_path), class_name)
+    if not (isinstance(cls, type) and issubclass(cls, ModelWorker)):
+        raise TypeError(
+            f"{model_worker_impl} is {cls!r}, expected a ModelWorker subclass"
+        )
+    return cast(Callable[[PipelineConfig], ModelWorker], cls)(config)

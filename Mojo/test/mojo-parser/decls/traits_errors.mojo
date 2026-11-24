@@ -43,8 +43,27 @@ struct ParamType[x: Int](FooTrait, Movable where False):
         pass
 
 
+# A parametric function type in a conformance list is a trait-ness error, not
+# a runtime-materialization error: the list is resolved entirely at compile
+# time, so "cannot use parametric function as a runtime closure" would be
+# misleading. The generic "may only contain traits" diagnostic is the right one.
+struct ConformsFnTypeInConformanceList(def(ParamType) thin -> None):
+    # expected-error @above {{refinement and conformance lists may only contain traits}}
+    pass
+
+
+comptime UnboundTraitAlias[n: Int] = FooTrait
+
+
+# expected-error @below {{'UnboundTraitAlias' is not a concrete type, use '[]' to bind missing parameters}}
+# expected-note @below {{'UnboundTraitAlias' is aka 'comptime[n: Int] FooTrait'}}
+struct ConformsUnboundAliasInConformanceList(UnboundTraitAlias):
+    pass
+
+
 def invalid_trait_bind():
-    # expected-error @below {{'ParamType[_]' is not concrete, use '[]' to bind missing parameters}}
+    # FIXME: this error message can be improved.
+    # expected-error @below {{cannot implicitly convert 'AnyStruct[ParamType[_]]' value to 'FooTrait' in comptime initializer}}
     comptime Bound: FooTrait = ParamType
 
 
@@ -264,6 +283,26 @@ struct NeverCopyableInner(Copyable where False):
 
 struct NeverCopyableOuter(Copyable where False):
     var m: NeverCopyableInner
+
+
+# The `not` spelling of the same two shapes. Field conformance is checked
+# through a different route than synthesis gating (`ASTType::isMovable` rather
+# than `getConformanceCondition`), so the composed cases are worth pinning for
+# both spellings.
+struct NotDeletableInner(not Deinitable, not Movable):
+    pass
+
+
+struct NotDeletableOuter(not Deinitable, not Movable):
+    var m: NotDeletableInner
+
+
+struct NotMovableInner(not Movable):
+    pass
+
+
+struct NotMovableOuter(not Movable):
+    var m: NotMovableInner
 
 
 # Field-movability is irrelevant once the outer struct opts out: because a

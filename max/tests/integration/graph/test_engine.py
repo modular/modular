@@ -36,14 +36,6 @@ from max.graph import (
 )
 from max.mlir.dialects import mo
 
-# This path is used in skipif clauses rather than tests, so we can neither mark
-
-# it as a fixture nor can we call other fixtures
-
-
-def modular_lib_path() -> Path:
-    return Path(os.environ["MODULAR_PATH"]) / ".derived/build/lib"
-
 
 @pytest.fixture
 def custom_ops_package_path(request: pytest.FixtureRequest) -> Path:

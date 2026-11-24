@@ -4,6 +4,7 @@ load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo")
 load("@cfg_workaround.bzl", "CFG_WORKAROUND")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_cc//cc/common:cc_shared_library_hint_info.bzl", "CcSharedLibraryHintInfo")
 load("@rules_mojo//mojo:providers.bzl", "MojoInfo")
 
 def _sanitizer_args(ctx):
@@ -119,6 +120,9 @@ def _kgen_kernel_impl(ctx):
             ],
             cc_infos = [ctx.attr._compiler_rt[CcInfo]],
         ),
+        # Only CompilerRT is linked; the compiler that produced the archive
+        # must not count as part of the link.
+        CcSharedLibraryHintInfo(attributes = ["_compiler_rt"]),
     ]
 
 kgen_kernel = rule(
@@ -128,7 +132,7 @@ kgen_kernel = rule(
         "data": attr.label_list(allow_files = True),
         "deps": attr.label_list(providers = [MojoInfo]),
         "_compiler_rt": attr.label(
-            default = Label("//Mojo:CompilerRT"),
+            default = Label("//Mojo:CompilerRT.import"),
             cfg = "target",
             providers = [CcInfo],
         ),
@@ -141,6 +145,9 @@ kgen_kernel = rule(
             default = Label("//:modular_config"),
         ),
     },
+    # Declared so cc_shared_library's graph aspect visits this target; without
+    # it, binaries with dynamic_deps silently drop the archive from the link.
+    provides = [CcInfo],
     toolchains = [
         "@rules_mojo//:toolchain_type",
     ],

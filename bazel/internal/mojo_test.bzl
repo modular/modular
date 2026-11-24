@@ -31,14 +31,14 @@ def mojo_test(
     validate_gpu_tags(tags, target_compatible_with)
 
     default_exec_properties = get_default_exec_properties(tags, target_compatible_with)
-    resources_exec_properties = get_resources_exec_properties(name, test = True)
+    resources_exec_properties = get_resources_exec_properties(name)
     _upstream_mojo_test(
         name = name,
         tags = ["mojo-fixits"] + tags + get_resources_tags(name),
         data = data + RUNTIME_SANITIZER_DATA,
         target_compatible_with = target_compatible_with,
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
-        env = GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(exec_properties) | env,
+        env = GPU_TEST_ENV | runtime_sanitizer_env() | get_default_test_env(default_exec_properties | exec_properties) | env,
         size = size,
         exec_properties = default_exec_properties | resources_exec_properties | exec_properties,
         **kwargs
@@ -56,5 +56,12 @@ def mojo_test(
         toolchains = toolchains + ["//bazel/internal:current_gpu_toolchain"],
         env = env,
         testonly = True,
+        # Compile the same way as the test; only the test rule has a `test`
+        # exec group.
+        exec_properties = {
+            k: v
+            for k, v in exec_properties.items()
+            if not k.startswith("test.")
+        },
         **kwargs
     )

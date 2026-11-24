@@ -13,10 +13,11 @@
 
 include "BuildDescription.td"
 
-include "Common/CompilationOptions.td"
+include "Common/BackendOptions.td"
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
-include "Common/TargetOptions.td"
+include "Common/FixItOptions.td"
+include "Common/TargetQueryOptions.td"
 include "Support/Driver/CommonOptions.td"
 
 //===----------------------------------------------------------------------===//
@@ -25,25 +26,20 @@ include "Support/Driver/CommonOptions.td"
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+defm o : CommandOption<["-"], "o", OutputOptionGroup,
   MetaVarName<"PATH">, HelpText<
     "Sets the path and filename for the executable output. By default, it "
     "outputs the executable to the current directory, with the same name "
     "and no extension."
   >>;
 
-defm emitted_file_type: CommandOptionWithValues<
-  ["--"], "emit", OutputOptionGroup, Index<1>,
+// No Values list: the accepted kinds come from the registered TargetTraits,
+// which also render the per-kind table below this option in --help.
+defm emitted_file_type: CommandOption<
+  ["--"], "emit", OutputOptionGroup,
   MetaVarName<"FILE_TYPE">,
-  HelpText<"The type of output file to generate."
-            "\n\n"
-            "* `exe` (default): emit an executable binary file.\n"
-            "* `shared-lib`: emit a shared (dynamic) library.\n"
-            "* `object`: (EXPERIMENTAL) emit a single object file.\n"
-            "* `llvm`: emit unoptimized LLVM IR.\n"
-            "* `llvm-bitcode`: emit bitcode of unoptimized LLVM IR.\n"
-            "* `asm`: emit target assembly. For GPU targets, also emits a\n"
-            "  sidecar file per kernel alongside the host assembly: `.ptx`\n"
-            "  for NVIDIA, `.amdgcn` for AMD, `.ll` for Metal.">,
-  Values<"exe,shared-lib,object,llvm,llvm-bitcode,asm">
+  HelpText<"The kind of output to produce instead of an executable\n"
+           "(default: `exe`). Each compilation target declares the kinds\n"
+           "it accepts; they are listed below with the targets that\n"
+           "support them.">
 >;

@@ -13,7 +13,7 @@
 """Runs evaluations for the Massive Text Embedding Benchmark.
 
 ./bazelw run max/tests/integration:pipelines_mteb --\
-    --model-path=sentence-transformers/all-mpnet-base-v2 \
+    --model-path=Qwen/Qwen3-Embedding-0.6B \
     --max-batch-size=1000 \
     --eval-task="STSBenchmark" \
     --eval-output-folder=$PWD/mteb-output

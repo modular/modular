@@ -35,25 +35,32 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
                                          bool /*acceptAsync*/) {
   // Parser doesn't support async concretization, so acceptAsync is ignored -
   // we always return the generator.
-  auto typeParam = sugarDynCast<TypeParamAttr>(typeValue);
+  auto typeParam =
+      sugarDynCast<TypeParamAttr>(KGEN::stripIdentityWrappers(typeValue));
   if (!typeParam)
     return failure();
 
   // Typically, this is a LIT struct type.
   if (auto resolvedType =
           sugarDynCast<LIT::StructType>(typeParam.getTypeValue())) {
-    ASTDecl &astDecl =
-        shared.declResolver->getDeclForTypeSymbol(resolvedType.getSymbol());
-    auto structDeclOp = cast<StructDeclOp>(astDecl.getIfOperation());
+    // Decls from a bytecode package are registered lazily, so the struct may
+    // not have been seen yet: resolve it on demand rather than assuming that
+    // whoever produced this type already forced it.
+    ASTDecl *decl = shared.resolveAndGetTypeDecl(
+        resolvedType.getSymbol(), shared.getTopLevelDecl().getLoc());
+    assert(decl);
+    auto *structDecl = cast<StructASTDecl>(decl);
+    StructDeclOp structDeclOp = structDecl->getOp();
 
-    if (failed(shared.declResolver->resolveBody(astDecl, astDecl.getLoc())))
+    if (failed(shared.declResolver->resolveBody(*structDecl,
+                                                structDecl->getLoc())))
       return failure();
 
     // Return the decl. instance is null since this is not an IREvaluator
     // context.
     return ResolvedStructHandle{
         cast<StructDeclInterface>(structDeclOp.getOperation()),
-        resolvedType.getParamValues(), &astDecl,
+        resolvedType.getParamValues(), structDecl,
         /*instance=*/nullptr};
   }
   return failure();
@@ -62,33 +69,25 @@ ParserEvaluationContext::resolveStructOp(TypedAttr typeValue,
 FuncInterface
 ParserEvaluationContext::resolveFunctionDecl(SymbolRefAttr symbol) {
   ASTDecl *decl = shared.declResolver->getDeclForFuncSymbol(symbol);
-  if (!decl)
-    return nullptr;
-  return dyn_cast_or_null<FuncInterface>(decl->getIfOperation());
+  if (auto *defDecl = dyn_cast_or_null<DefASTDecl>(decl))
+    return defDecl->getOp();
+  return nullptr;
 }
 
 Operation *ParserEvaluationContext::resolveConformanceForStruct(
-    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol) {
+    ResolvedStructHandle resolved, TraitSymbolAttr traitSymbol,
+    StringAttr witnessName) {
   auto *astDecl = static_cast<ASTDecl *>(resolved.handle);
 
   // Typically, this is a StructDeclOp created by the parser.
-  if (isa<StructDeclOp>(astDecl->getIfOperation())) {
-    auto conformanceDecls =
-        astDecl->lookupInCurrentScope(traitSymbol.getFlattenedName());
-    if (conformanceDecls.empty())
-      return nullptr;
-    // TODO: we might need to allow multiple conformance ops for parametric
-    // traits, and we need to filter it here.
-    assert(conformanceDecls.size() == 1 && "expected exactly one conformance");
-    ASTDecl &conformDecl = *conformanceDecls.front();
-    if (failed(shared.declResolver->resolveBody(conformDecl,
-                                                conformDecl.getLoc())))
-      return nullptr;
-
-    return conformDecl.getIfOperation();
-  }
-
-  return nullptr;
+  auto *structDecl = dyn_cast<StructASTDecl>(astDecl);
+  if (!structDecl)
+    return nullptr;
+  ConformanceASTDecl *conformDecl = structDecl->lookupConformance(traitSymbol);
+  if (!conformDecl ||
+      failed(resolveConformanceMember(*conformDecl, witnessName)))
+    return nullptr;
+  return conformDecl->getOp();
 }
 
 void ParserEvaluationContext::withEvaluator(
@@ -108,7 +107,7 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
           sugarDynCastIfPresent<TypeConformsToTraitAttr>(typedAttr)) {
     auto traitDeclResolver = [&](SymbolRefAttr symbol) -> TraitDeclOp {
       ASTDecl &decl = shared.declResolver->getDeclForTypeSymbol(symbol);
-      return cast<TraitDeclOp>(decl.getIfOperation());
+      return cast<TraitASTDecl>(decl).getOp();
     };
 
     // Try LIT-specific trait type folding first, then fall back to the attr
@@ -129,8 +128,8 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
     auto sourceType = ASTType(isRefinedTrait.getSourceType());
     if (auto targetTrait =
             sugarDynCast<TraitType>(ASTType(isRefinedTrait.getTargetType()))) {
-      TriBool foldResult = sourceType.doesConformTo(targetTrait, shared,
-                                                    /*callerAssumptions=*/{});
+      TriBool foldResult =
+          sourceType.doesConformTo(targetTrait, shared, shared.noAssumptions);
       if (foldResult.isUnknown())
         return failure(); // un-foldable
 
@@ -147,7 +146,9 @@ FailureOr<TypedAttr> ParserEvaluationContext::evaluateContextSpecific(
     // the more refined trait.
     if (TraitType toTrait = sugarDynCast<TraitType>(downcast.getType())) {
       auto fromType = ASTType(downcast.getInputTypeValue());
-      bool fromImpliesTo = fromType.doesConformTo(toTrait, shared, {}).isTrue();
+      bool fromImpliesTo =
+          fromType.doesConformTo(toTrait, shared, shared.noAssumptions)
+              .isTrue();
       if (fromImpliesTo)
         return UpcastAttr::get(downcast.getType(),
                                downcast.getInputTypeValue());

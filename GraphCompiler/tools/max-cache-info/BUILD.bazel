@@ -1,0 +1,29 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//GraphCompiler:__subpackages__",
+])
+
+modular_cc_binary(
+    name = "max-cache-info",
+    srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Mojo:CompilerRT",
+        "//MLRT:Driver/Compilation",
+        "//MLRT:Driver/Runtime",
+        "//Support:Globals",
+        "//bazel/internal:MLIR",
+    ],
+    deps = [
+        "//GraphCompiler",
+        "//GraphCompiler:CompileDriver",
+        "//Mojo:CompilerRT.static",
+        "//Support:Base",
+        "//Support:Globals.static",
+        "@llvm-project//mlir:BytecodeReader",
+        "@llvm-project//mlir:Pass",
+    ],
+)

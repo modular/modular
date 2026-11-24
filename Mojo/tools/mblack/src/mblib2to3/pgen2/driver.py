@@ -38,6 +38,7 @@ __author__ = "Guido van Rossum <guido@python.org>"
 __all__ = ["Driver", "load_grammar"]
 
 # Python imports
+import hashlib
 import io
 import logging
 import os
@@ -223,6 +224,21 @@ def _join_dot_continuation(
     return None
 
 
+def _join_conditional_clause_continuation(
+    prev: str, line: str, head_indent: int
+) -> str | None:
+    """Join a semicolon-separated conditional clause onto its header.
+
+    Conditional clauses use a two-space continuation indent, but the
+    lib2to3-based grammar treats a newline as the end of the header.
+    """
+    if not prev.rstrip().endswith(";"):
+        return None
+    if len(line) - len(line.lstrip()) <= head_indent:
+        return None
+    return prev + " " + line.lstrip()
+
+
 # Normalizers are applied in order; the *first* one that returns a
 # non-None replacement wins and the rest are skipped.  Each receives the
 # previous result line (with any trailing comment already stripped), the
@@ -235,6 +251,7 @@ _MOJO_LINE_NORMALIZERS = [
     _join_trailing_operator,
     _join_string_continuation,
     _join_dot_continuation,
+    _join_conditional_clause_continuation,
 ]
 
 
@@ -669,11 +686,20 @@ class Driver:
         return "".join(lines), current_line
 
 
-def _generate_pickle_name(gt: Path, cache_dir: Path | None = None) -> str:
+def _generate_pickle_name(
+    gt: Path, cache_dir: Path | None = None, content_hash: str | None = None
+) -> str:
     head, tail = os.path.splitext(gt)
     if tail == ".txt":
         tail = ""
-    name = head + tail + ".".join(map(str, sys.version_info)) + ".pickle"
+    hash_part = f".{content_hash}" if content_hash else ""
+    name = (
+        head
+        + tail
+        + ".".join(map(str, sys.version_info))
+        + hash_part
+        + ".pickle"
+    )
     if cache_dir:
         return os.path.join(cache_dir, os.path.basename(name))
     else:
@@ -735,25 +761,16 @@ def load_packaged_grammar(
 
     """
     if os.path.isfile(grammar_source):
+        # Hash the grammar content so different Mojo versions with different
+        # grammars never collide on the same cached pickle file.
+        with open(grammar_source, "rb") as f:
+            content_hash = hashlib.sha256(f.read()).hexdigest()[:12]
         gp = (
-            _generate_pickle_name(grammar_source, cache_dir)
+            _generate_pickle_name(grammar_source, cache_dir, content_hash)
             if cache_dir
             else None
         )
-        # Fix MOTO-1264: Force grammar regeneration to prevent stale cache issues
-        # Always force regeneration when no cache directory is specified (development mode)
-        force_regen = gp is None
-
-        # Clean up any existing pickle files in source directory to force regeneration
-        if gp is None:
-            default_pickle = _generate_pickle_name(grammar_source)
-            if os.path.exists(default_pickle):
-                try:
-                    os.remove(default_pickle)
-                except OSError:
-                    pass  # Ignore errors if we can't remove it
-
-        return load_grammar(grammar_source, gp=gp, force=force_regen)
+        return load_grammar(grammar_source, gp=gp)
     pickled_name = _generate_pickle_name(
         os.path.basename(grammar_source), cache_dir
     )

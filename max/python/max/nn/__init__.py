@@ -10,153 +10,86 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Neural network modules for MAX.
+"""Module framework for models built on :mod:`max.tensor`.
 
-Graph-based API:
+Provides the :class:`Module` base class, the :func:`module_dataclass`
+decorator, and :meth:`Module.compile`, which traces ``forward`` against
+symbolic inputs and returns an ahead-of-time-compiled ``CompiledCallable``. The
+same ``forward`` body runs eagerly, traces to a :class:`~max.graph.Graph`, or
+compiles, depending on the active realization context.
+
+Example:
 
 .. code-block:: python
 
-    from max.nn import Linear, AttentionWithRope
-    from max.nn.kv_cache import KVCacheParams
+    from max.driver import CPU
+    from max.dtype import DType
+    from max.tensor import Tensor, default_device
+    from max.nn import Module, module_dataclass
+    from max.graph import TensorType
 
-Eager tensor API:
+    @module_dataclass
+    class MyLayer(Module):
+        weight: Tensor
+        bias: Tensor
 
-.. code-block:: python
+        def forward(self, x: Tensor) -> Tensor:
+            return x @ self.weight.T + self.bias
 
-    from max.experimental.nn import Module, Linear, Embedding
+    with default_device(CPU()):
+        model = MyLayer(weight=Tensor.zeros([10, 5]), bias=Tensor.zeros([10]))
+        y = model(Tensor.ones([3, 5]))
+
+        input_type = TensorType(DType.float32, ["batch", 5], device=model.device)
+        compiled = model.compile(input_type)
+        result = compiled(Tensor.ones([3, 5]))
+
+.. invisible-code-block: python
+
+    import numpy as np
+
+    assert tuple(int(d) for d in y.shape) == (3, 10)
+    assert tuple(int(d) for d in result.shape) == (3, 10)
+    assert np.allclose(y.to_numpy(), result.to_numpy())
+    assert np.allclose(result.to_numpy(), np.zeros((3, 10)))
 """
 
-from .attention import (
-    AttentionWithRope,
-    DistributedAttentionImpl,
-    GGUFQAttentionWithRope,
-    GPTQAttentionWithRope,
-    LatentAttentionWithRope,
-    MultiheadAttention,
-    RaggedAttention,
-    TensorParallelAttentionWithRope,
-    TensorParallelLatentAttentionWithRope,
+from max.tensor.compilation import as_subgraph
+
+from .common_layers.lora_wrapper import LoRA, lora_layers, lora_parameters
+from .conv import Conv2d
+from .embedding import Embedding
+from .hyper_connection import HyperConnection
+from .linear import Linear
+from .module import (
+    Module,
+    PinnedDeviceTensor,
+    module_dataclass,
 )
-from .clamp import clamp
-from .comm import Allreduce, Signals
-from .conv import Conv1D, Conv2d, Conv3D
-from .conv_transpose import ConvTranspose1d, WeightNormConvTranspose1d
-from .data_parallelism import split_batch, split_batch_replicated
-from .embedding import Embedding, VocabParallelEmbedding
-from .identity import Identity
-from .kv_cache import (
-    KVCacheInputs,
-    KVCacheMetrics,
-    KVCacheParams,
-    build_max_lengths_tensors,
-)
-from .layer import Layer, LayerList, Module, Shardable
-from .linear import MLP, ColumnParallelLinear, FusedMLP, GPTQLinear, Linear
-from .moe import MoE, MoEGate, MoEQuantized, forward_moe_sharded_layers
-from .norm import ConstantLayerNorm, GroupNorm, LayerNorm, RMSNorm
-from .quant_config import (
-    InputScaleSpec,
-    QuantConfig,
-    QuantFormat,
-    ScaleGranularity,
-    ScaleOrigin,
-    WeightScaleSpec,
-)
-from .rotary_embedding import (
-    DynamicRotaryEmbedding,
-    LinearScalingParams,
-    Llama3RopeScalingParams,
-    Llama3RotaryEmbedding,
-    LongRoPERotaryEmbedding,
-    LongRoPEScalingParams,
-    RotaryEmbedding,
-    YarnRotaryEmbedding,
-    YarnScalingParams,
-)
-from .sampling import (
-    MinPSampler,
-    RejectionSampler,
-    RejectionSamplerWithResiduals,
-)
-from .sequential import Sequential
-from .stacked_linear import StackedLinear
-from .transformer import (
-    DistributedTransformer,
-    DistributedTransformerBlock,
-    ReturnHiddenStates,
-    ReturnLogits,
-    Transformer,
-    TransformerBlock,
-)
+from .norm import GemmaRMSNorm, GroupNorm, LayerNorm, RMSNorm
+from .rope import RotaryEmbedding, TransposedRotaryEmbedding
+from .sequential import ModuleList, Sequential
+from .transparent_module import TransparentModule
 
 __all__ = [
-    "MLP",
-    "Allreduce",
-    "AttentionWithRope",
-    "ColumnParallelLinear",
-    "ConstantLayerNorm",
-    "Conv1D",
     "Conv2d",
-    "Conv3D",
-    "ConvTranspose1d",
-    "DistributedAttentionImpl",
-    "DistributedTransformer",
-    "DistributedTransformerBlock",
-    "DynamicRotaryEmbedding",
     "Embedding",
-    "FusedMLP",
-    "GGUFQAttentionWithRope",
-    "GPTQAttentionWithRope",
-    "GPTQLinear",
+    "GemmaRMSNorm",
     "GroupNorm",
-    "Identity",
-    "InputScaleSpec",
-    "KVCacheInputs",
-    "KVCacheMetrics",
-    "KVCacheParams",
-    "LatentAttentionWithRope",
-    "Layer",
-    "LayerList",
+    "HyperConnection",
     "LayerNorm",
     "Linear",
-    "LinearScalingParams",
-    "Llama3RopeScalingParams",
-    "Llama3RotaryEmbedding",
-    "LongRoPERotaryEmbedding",
-    "LongRoPEScalingParams",
-    "MinPSampler",
-    "MoE",
-    "MoEGate",
-    "MoEQuantized",
+    "LoRA",
     "Module",
-    "MultiheadAttention",
-    "QuantConfig",
-    "QuantFormat",
+    "ModuleList",
+    "PinnedDeviceTensor",
     "RMSNorm",
-    "RaggedAttention",
-    "RejectionSampler",
-    "RejectionSamplerWithResiduals",
-    "ReturnHiddenStates",
-    "ReturnLogits",
     "RotaryEmbedding",
-    "ScaleGranularity",
-    "ScaleOrigin",
     "Sequential",
-    "Shardable",
-    "Signals",
-    "StackedLinear",
-    "TensorParallelAttentionWithRope",
-    "TensorParallelLatentAttentionWithRope",
-    "Transformer",
-    "TransformerBlock",
-    "VocabParallelEmbedding",
-    "WeightNormConvTranspose1d",
-    "WeightScaleSpec",
-    "YarnRotaryEmbedding",
-    "YarnScalingParams",
-    "build_max_lengths_tensors",
-    "clamp",
-    "forward_moe_sharded_layers",
-    "split_batch",
-    "split_batch_replicated",
+    "TransparentModule",
+    "TransposedRotaryEmbedding",
+    "as_subgraph",
+    "lora_layers",
+    "lora_parameters",
+    "module_dataclass",
 ]

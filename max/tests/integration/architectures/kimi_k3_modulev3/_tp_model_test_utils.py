@@ -1,0 +1,336 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""A tiny, kernel-valid ``KimiK3Model`` and its cache, for the full-model TP
+parity tests."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import numpy as np
+from _paged_cache_test_utils import build_kda_state, build_paged_cache
+from max import tree
+from max.driver import Accelerator
+from max.dtype import DType
+from max.graph import DeviceRef
+from max.nn.kv_cache import (
+    MHAKVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+)
+from max.pipelines.architectures.kimi_k3_modulev3.model import (
+    KimiK3ModelConfig,
+)
+from max.pipelines.architectures.kimi_k3_modulev3.state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    kda_state_regions,
+)
+from max.pipelines.context import SpecDecodingState, TextContext, TokenBuffer
+from max.tensor import Tensor
+
+_RNG = np.random.default_rng(20261012)
+
+
+def rel_error(got: np.ndarray, want: np.ndarray) -> float:
+    return float(np.max(np.abs(got - want)) / max(np.max(np.abs(want)), 1e-12))
+
+
+def spec_decode_context(
+    cached: int, active: int, drafts: int, maybe_accepted: int = 0
+) -> TextContext:
+    """A request in the state a spec batch's fetch sees.
+
+    ``cached`` tokens are committed, ``maybe_accepted`` more may still be
+    committed by the step in flight, and this step schedules ``active``
+    new rows plus ``drafts`` drafts to verify -- the terms the cache
+    manager and the plan kernel both read.
+    """
+    context = TextContext(
+        max_length=cached + active + drafts + 100,
+        tokens=TokenBuffer(np.full(cached + active - 1, 3, dtype=np.int64)),
+        _spec_decoding_state=SpecDecodingState(
+            draft_tokens_to_verify=[0] * drafts,
+            maybe_accepted_draft_tokens=[0] * maybe_accepted,
+        ),
+    )
+    # ``update`` commits every token before it and appends one active row;
+    # rewinding re-exposes the rows this step is to schedule.
+    context.update(5)
+    context.tokens.rewind_processing(active - 1)
+    assert context.tokens.processed_length == cached
+    assert context.tokens.active_length == active
+    return context
+
+
+def tiny_model_config(hidden: int, vocab: int) -> KimiK3ModelConfig:
+    return KimiK3ModelConfig(
+        hidden_size=hidden,
+        vocab_size=vocab,
+        num_hidden_layers=2,
+        # Layer 0: KDA + dense. Layer 1: MLA + MoE. These are the two
+        # dispatch combos.
+        kda_layer_indices=[0],
+        full_attn_layer_indices=[1],
+        # kda_decode only supports compiled head_dim shapes 32 or 128.
+        kda_num_heads=2,
+        kda_head_dim=32,
+        kda_conv_kernel_size=4,
+        kda_gate_lower_bound=None,
+        num_attention_heads=4,
+        qk_nope_head_dim=8,
+        qk_rope_head_dim=4,
+        v_head_dim=8,
+        q_lora_rank=16,
+        kv_lora_rank=12,
+        attn_res_block_size=2,
+        first_k_dense_replace=1,
+        intermediate_size=48,
+        routed_expert_hidden_size=24,
+        moe_intermediate_size=16,
+        # Kernel-valid: the MoE router kernel needs num_threads ==
+        # num_experts to be a whole number of warps.
+        num_experts=64,
+        num_experts_per_token=4,
+        num_shared_experts=1,
+        rms_norm_eps=1e-5,
+        situ_beta=1.5,
+        situ_linear_beta=1.5,
+    )
+
+
+def random_weights(config: KimiK3ModelConfig) -> dict[str, np.ndarray]:
+    """Random weights in the checkpoint's shapes, named as the checkpoint
+    names them past ``language_model.model.`` (``language_model.`` for
+    ``lm_head``)."""
+
+    def arr(*shape: int) -> np.ndarray:
+        return (_RNG.standard_normal(shape) * 0.02).astype(np.float32)
+
+    def ones(*shape: int) -> np.ndarray:
+        return np.ones(shape, dtype=np.float32)
+
+    hidden = config.hidden_size
+    w: dict[str, np.ndarray] = {
+        "embed_tokens.weight": arr(config.vocab_size, hidden),
+        "lm_head.weight": arr(config.vocab_size, hidden),
+        "norm.weight": ones(hidden),
+        "output_attn_res_proj.weight": arr(1, hidden),
+        "output_attn_res_norm.weight": ones(hidden),
+    }
+    kda_inner = config.kda_num_heads * config.kda_head_dim
+    mla_q_head_dim = config.qk_nope_head_dim + config.qk_rope_head_dim
+    mla_inner = config.num_attention_heads * config.v_head_dim
+
+    for i in range(config.num_hidden_layers):
+        layer_prefix = f"layers.{i}"
+        w[f"{layer_prefix}.input_layernorm.weight"] = ones(hidden)
+        w[f"{layer_prefix}.post_attention_layernorm.weight"] = ones(hidden)
+        w[f"{layer_prefix}.self_attention_res_proj.weight"] = arr(1, hidden)
+        w[f"{layer_prefix}.self_attention_res_norm.weight"] = ones(hidden)
+        w[f"{layer_prefix}.mlp_res_proj.weight"] = arr(1, hidden)
+        w[f"{layer_prefix}.mlp_res_norm.weight"] = ones(hidden)
+
+        attn_prefix = f"{layer_prefix}.self_attn"
+        if i in config.kda_layer_indices:
+            w[f"{attn_prefix}.q_proj.weight"] = arr(kda_inner, hidden)
+            w[f"{attn_prefix}.k_proj.weight"] = arr(kda_inner, hidden)
+            w[f"{attn_prefix}.v_proj.weight"] = arr(kda_inner, hidden)
+            w[f"{attn_prefix}.f_a_proj.weight"] = arr(
+                config.kda_head_dim, hidden
+            )
+            w[f"{attn_prefix}.f_b_proj.weight"] = arr(
+                kda_inner, config.kda_head_dim
+            )
+            w[f"{attn_prefix}.b_proj.weight"] = arr(
+                config.kda_num_heads, hidden
+            )
+            w[f"{attn_prefix}.g_proj.weight"] = arr(kda_inner, hidden)
+            w[f"{attn_prefix}.o_proj.weight"] = arr(hidden, kda_inner)
+            w[f"{attn_prefix}.o_norm.weight"] = ones(config.kda_head_dim)
+            conv = arr(3 * kda_inner, config.kda_conv_kernel_size)
+            for axis, part in zip("qkv", np.split(conv, 3), strict=True):
+                w[f"{attn_prefix}.{axis}_conv1d.weight"] = part.reshape(
+                    kda_inner, 1, config.kda_conv_kernel_size
+                )
+            # One coefficient per head.
+            w[f"{attn_prefix}.A_log"] = np.ascontiguousarray(
+                np.linspace(-1.0, 0.5, kda_inner, dtype=np.float32)[
+                    :: config.kda_head_dim
+                ]
+            )
+            w[f"{attn_prefix}.dt_bias"] = arr(kda_inner)
+        else:
+            w[f"{attn_prefix}.q_a_proj.weight"] = arr(
+                config.q_lora_rank, hidden
+            )
+            w[f"{attn_prefix}.q_a_layernorm.weight"] = ones(config.q_lora_rank)
+            w[f"{attn_prefix}.q_b_proj.weight"] = arr(
+                config.num_attention_heads * mla_q_head_dim,
+                config.q_lora_rank,
+            )
+            w[f"{attn_prefix}.kv_a_proj_with_mqa.weight"] = arr(
+                config.kv_lora_rank + config.qk_rope_head_dim, hidden
+            )
+            w[f"{attn_prefix}.kv_a_layernorm.weight"] = ones(
+                config.kv_lora_rank
+            )
+            w[f"{attn_prefix}.kv_b_proj.weight"] = arr(
+                config.num_attention_heads
+                * (config.qk_nope_head_dim + config.v_head_dim),
+                config.kv_lora_rank,
+            )
+            w[f"{attn_prefix}.g_proj.weight"] = arr(mla_inner, hidden)
+            w[f"{attn_prefix}.o_proj.weight"] = arr(hidden, mla_inner)
+
+        if i < config.first_k_dense_replace:
+            w[f"{layer_prefix}.mlp.gate_proj.weight"] = arr(
+                config.intermediate_size, hidden
+            )
+            w[f"{layer_prefix}.mlp.up_proj.weight"] = arr(
+                config.intermediate_size, hidden
+            )
+            w[f"{layer_prefix}.mlp.down_proj.weight"] = arr(
+                hidden, config.intermediate_size
+            )
+        else:
+            moe_prefix = f"{layer_prefix}.block_sparse_moe"
+            w[f"{moe_prefix}.gate.weight"] = arr(config.num_experts, hidden)
+            w[f"{moe_prefix}.gate.e_score_correction_bias"] = np.zeros(
+                config.num_experts, dtype=np.float32
+            )
+            w[f"{moe_prefix}.routed_expert_down_proj.weight"] = arr(
+                config.routed_expert_hidden_size, hidden
+            )
+            w[f"{moe_prefix}.routed_expert_up_proj.weight"] = arr(
+                hidden, config.routed_expert_hidden_size
+            )
+            w[f"{moe_prefix}.routed_expert_norm.weight"] = ones(
+                config.routed_expert_hidden_size
+            )
+            for e in range(config.num_experts):
+                w[f"{moe_prefix}.experts.{e}.w1.weight"] = arr(
+                    config.moe_intermediate_size,
+                    config.routed_expert_hidden_size,
+                )
+                w[f"{moe_prefix}.experts.{e}.w2.weight"] = arr(
+                    config.routed_expert_hidden_size,
+                    config.moe_intermediate_size,
+                )
+                w[f"{moe_prefix}.experts.{e}.w3.weight"] = arr(
+                    config.moe_intermediate_size,
+                    config.routed_expert_hidden_size,
+                )
+            shared_inter = (
+                config.moe_intermediate_size * config.num_shared_experts
+            )
+            w[f"{moe_prefix}.shared_experts.gate_proj.weight"] = arr(
+                shared_inter, hidden
+            )
+            w[f"{moe_prefix}.shared_experts.up_proj.weight"] = arr(
+                shared_inter, hidden
+            )
+            w[f"{moe_prefix}.shared_experts.down_proj.weight"] = arr(
+                hidden, shared_inter
+            )
+    return w
+
+
+def kv_params_only(
+    config: KimiK3ModelConfig,
+    devices: Sequence[Accelerator],
+) -> MultiKVCacheParams:
+    """Builds the per-device cache tree metadata, allocating nothing.
+
+    The params alone describe every symbolic input the model's graphs take,
+    so a graph can be traced and compiled against them before any cache
+    buffer exists.
+    """
+    tp = len(devices)
+    device_refs = [DeviceRef.from_device(d) for d in devices]
+    num_kda = len(config.kda_layer_indices)
+    kda_inner = config.kda_num_heads * config.kda_head_dim
+
+    attn_params = MHAKVCacheParams(
+        dtype=DType.float32,
+        n_kv_heads=config.num_attention_heads,
+        head_dim=config.qk_nope_head_dim + config.qk_rope_head_dim,
+        num_layers=len(config.full_attn_layer_indices),
+        devices=device_refs,
+        page_size=128,
+    )
+    state_params = RecurrentStateParams(
+        regions=kda_state_regions(
+            num_kda_layers=num_kda,
+            conv_dim=3 * kda_inner,
+            conv_kernel_size=config.kda_conv_kernel_size,
+            num_heads=config.kda_num_heads,
+            head_dim=config.kda_head_dim,
+            conv_dtype=DType.float32,
+            recurrent_dtype=DType.float32,
+            num_devices=tp,
+        ),
+        devices=device_refs,
+    )
+    return MultiKVCacheParams.from_params(
+        {ATTN_CACHE_KEY: attn_params, STATE_CACHE_KEY: state_params}
+    )
+
+
+def kv_cache_inputs(
+    config: KimiK3ModelConfig,
+    kv_params: MultiKVCacheParams,
+    devices: Sequence[Accelerator],
+    prompt_lens: list[int],
+) -> list[Tensor]:
+    """Allocates the real, per-device cache buffers for exactly this batch.
+
+    The buffers match the tree ``kv_params`` describes, so they bind to the
+    graph inputs compiled against those params.
+    """
+    tp = len(devices)
+    num_kda = len(config.kda_layer_indices)
+    kda_inner = config.kda_num_heads * config.kda_head_dim
+    attn_params = kv_params.child(ATTN_CACHE_KEY, MHAKVCacheParams)
+
+    attn_per_device = [
+        build_paged_cache(attn_params, prompt_lens, d) for d in devices
+    ]
+    state_per_device = [
+        build_kda_state(
+            num_kda_layers=num_kda,
+            num_requests=len(prompt_lens),
+            conv_dim=3 * kda_inner // tp,
+            conv_kernel_size=config.kda_conv_kernel_size,
+            num_heads=config.kda_num_heads // tp,
+            head_dim=config.kda_head_dim,
+            conv_dtype=DType.float32,
+            recurrent_dtype=DType.float32,
+            device=d,
+        )
+        for d in devices
+    ]
+    return tree.leaves(
+        {ATTN_CACHE_KEY: attn_per_device, STATE_CACHE_KEY: state_per_device}
+    )
+
+
+def kv_params_and_inputs(
+    config: KimiK3ModelConfig,
+    devices: Sequence[Accelerator],
+    prompt_lens: list[int],
+) -> tuple[MultiKVCacheParams, list[Tensor]]:
+    """Builds a real, per-device cache tree (MLA leaf + KDA state) and its
+    flattened inputs, for exactly this batch at this device count."""
+    kv_params = kv_params_only(config, devices)
+    return kv_params, kv_cache_inputs(config, kv_params, devices, prompt_lens)

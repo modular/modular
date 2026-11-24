@@ -12,6 +12,7 @@ modular_py_library(
         requirement("av"),
         requirement("msgspec"),
         requirement("numpy"),
+        requirement("pillow"),
         requirement("pydantic"),
         requirement("typing-extensions"),
     ],

@@ -14,11 +14,9 @@
 
 from std.builtin.variadics import TypeList
 from std.testing import assert_true, assert_false
-from std.testing import TestSuite
-from test_utils import ExplicitDelOnly
 
 
-struct NoConformances(Movable where False):
+struct NoConformances(not Movable):
     pass
 
 

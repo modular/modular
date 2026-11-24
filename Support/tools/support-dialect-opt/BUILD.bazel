@@ -11,12 +11,16 @@ package(
 modular_cc_binary(
     name = "support-dialect-opt",
     srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//Support:Globals",
+    ],
     deps = [
         "//Support:Base",
         "//Support:DebugInfoDialect",
         "//Support:DebugInfoToLLVM",
         "//Support:DebugInfoTransforms",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MDialect",
         "@llvm-project//mlir:FuncDialect",
         "@llvm-project//mlir:IndexDialect",

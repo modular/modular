@@ -130,6 +130,8 @@ static StringRef stringifyExprKind(ExprNode::Kind kind) {
     return "VarPat";
   case ExprNode::kRefPat:
     return "RefPat";
+  case ExprNode::kPrefixEQ:
+    return "PrefixEQ";
   case ExprNode::kComptime:
     return "Comptime";
   case ExprNode::kAdd:
@@ -398,7 +400,10 @@ void TupleNode::print(raw_indented_ostream &os) const {
 
 void ListLiteralNode::print(raw_indented_ostream &os) const {
   os << "List {\n";
-  os.indent() << "exprs: [\n";
+  os.indent();
+  if (starIndex)
+    os << "starIndex: " << *starIndex << "\n";
+  os << "exprs: [\n";
   for (const ExprNode *expr : exprs)
     expr->print(os);
   os.unindent() << "]\n";
@@ -627,6 +632,7 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
   os.unindent() << "]\n";
 
   os << "effects: " << stringifyFnEffects(effects.getImpl()) << "\n";
+  os << "nested origins read only: " << isNestedOriginsReadOnly << "\n";
   os << "originExpr: ";
   if (originExpr)
     originExpr->print(os);

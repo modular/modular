@@ -14,7 +14,7 @@ has.
 
 - WitnessOp: A witness entry. It provides a parameter value for a trait
 requirement (identified by a name and a type). For example, for methods, it
-might provide a GeneratorOp/FuncOp reference (as SymbolConstantAttr).
+might provide a GeneratorOp/FuncOp reference (as a `FuncSymbolGenerator`).
 
 - StructInstanceOp: A concrete struct declaration containing the make up of the
 type. At this moment it does not yet contain conformance tables since we have no
@@ -31,8 +31,8 @@ during elaboration.
 - GetWitnessAttr: A parameter operator that fetches a particular witness entry
 from a struct type. It has three operands:
   - A type reference (parameter value).
-  - A trait name (constant string).
-  - A witness name (constant string).
+  - A trait (a TraitSymbolAttr, not a plain string).
+  - A witness name (a StringAttr).
 
 ## IREvaluator GetWitness Evaluation
 

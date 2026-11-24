@@ -67,6 +67,8 @@ def POP_ArrayType : POPType<"Array", "array", [
   let extraClassDeclaration = [{
     /// Try to narrow the size expression to an integer.
     std::optional<int64_t> getResolvedSize() const;
+
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
   }];
 }
 
@@ -75,7 +77,8 @@ def POP_ArrayType : POPType<"Array", "array", [
 
 class ArrayElementType<string lhs, string rhs> : TypesMatchWith<
     "value type matches array element type", lhs, rhs,
-    "llvm::cast<POP::ArrayType>($_self).getElementType()",
+    "llvm::isa<POP::ArrayType>($_self) ? "
+    "llvm::cast<POP::ArrayType>($_self).getElementType() : Type()",
     "typeRangeMatches">;
 
 def ArrayKnownSize : ConfinedType<POP_ArrayType,
@@ -132,6 +135,8 @@ def POP_UnionType : POPType<"Union", "union", [
   ];
 
   let extraClassDeclaration = [{
+    void print(AsmPrinter &p, KGENParamPrinter &printer) const;
+
     /// Returns whether this union type is resolved (element types are concrete).
     /// An unresolved union has a parameterized variadic that hasn't been
     /// specialized yet.

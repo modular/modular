@@ -13,26 +13,17 @@
 
 include "Precompile/PrecompileDescription.td"
 
+include "Common/IncrParsingOptions.td"
+include "Common/BitcodeOptions.td"
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"
+include "Common/FixItOptions.td"
+include "Common/IncludeOptions.td"
+include "Common/ParserStatsOptions.td"
+include "Common/MLIRTimingOptions.td"
+include "Common/TimingReportOptions.td"
+include "Common/RunParameterVerifierOptions.td"
 include "Support/Driver/CommonOptions.td"
-
-//===----------------------------------------------------------------------===//
-// Compilation Options
-//===----------------------------------------------------------------------===//
-
-def CompilationOptionGroup : OptionGroup<"Compilation options">, Index<5>;
-
-def I : JoinedOrSeparate<["-"], "I">, Group<CompilationOptionGroup>, Index<1>,
-  MetaVarName<"PATH">,
-  HelpText<"Appends the given path to the list of directories to search for "
-           "imported Mojo files.">;
-
-defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
-  CompilationOptionGroup, Index<3>, MetaVarName<"LIBS">,
-  HelpText<
-    "External bitcode libraries to package into the generated package."
-  >>;
 
 //===----------------------------------------------------------------------===//
 // Output Options
@@ -40,7 +31,7 @@ defm bitcode_libs : CommandOptionHidden<["--", "-"], "bitcode-libs",
 
 def OutputOptionGroup : OptionGroup<"Output options">, Index<0>;
 
-defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
+defm o : CommandOption<["-"], "o", OutputOptionGroup,
   MetaVarName<"PATH">, HelpText<
     "Sets the path and filename for the output package. The filename must end "
     "with `.mojoc` or `.mojopkg`. The filename given here defines the "
@@ -49,3 +40,5 @@ defm o : CommandOption<["-"], "o", OutputOptionGroup, Index<0>,
     "generated in the current working directory, with a name based on the name "
     "of the input directory."
   >>;
+
+include "Common/NamespaceOptions.td"

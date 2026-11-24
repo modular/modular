@@ -1,4 +1,4 @@
-// RUN: kgen-opt -split-input-file -lower-global-pop-to-llvm %s | FileCheck %s
+// RUN: kgen-opt -lower-kgen-to-llvm -lower-global-pop-to-llvm -split-input-file %s | FileCheck %s
 
 // Unit tests for C ABI lowering on x86-64 (System V AMD64 ABI).
 //
@@ -19,13 +19,13 @@
 //                               multi-value return, identity pass-through
 //   extern-c-abi-aarch64.mlir — ARM64 AAPCS tests
 //
-// INPUT FORMAT NOTE: Each test uses llvm.func (not kgen.func) as the enclosing
-// function.
-// The -lower-global-pop-to-llvm pass processes pop.external_call ops
-// after kgen.func has already been lowered to llvm.func by an earlier pass.
-// For coercion to work, createEntryBlockAlloca requires the enclosing
-// function to be an LLVM::LLVMFuncOp. These tests exercise that final
-// lowering step in isolation.
+// INPUT FORMAT NOTE: Each test uses kgen.func as the enclosing function. The
+// aggregate operands are KGEN types (!kgen.struct, !pop.array), as the Mojo
+// compiler emits them. The classifier reads the KGEN type, which gives the
+// field offsets, the alignment and the signedness. -lower-kgen-to-llvm
+// changes kgen.func to llvm.func before -lower-global-pop-to-llvm lowers
+// pop.external_call, because createEntryBlockAlloca requires an
+// LLVM::LLVMFuncOp as the enclosing function.
 //
 // TEST TABLE:
 // Group A — Small struct args (1–8 bytes): Integer coercion
@@ -33,7 +33,7 @@
 //   A2  arg_2byte_int_struct      {i8,i8}     → i16
 //   A3  arg_3byte_int_struct      {i8,i8,i8}  → i32  (rounds up)
 //   A4  arg_8byte_int_struct      {i32,i32}   → i64
-//   A5  arg_padded_struct         {i32,i8}    → i64  (LLVM pads to 8 bytes)
+//   A5  arg_padded_struct         {i32,i8}    → i64  (padded to 8 bytes)
 //
 // Group E — Small all-float struct args (1–8 bytes): SSE coercion
 //   E1  arg_float_struct          {f32}       → f32
@@ -67,19 +67,37 @@
 //
 // Group H — Attribute remapping
 //   H1  func_attrs_passthrough    funcAttrs = ["noinline"]    → passthrough on llvm.func
-//   H2  arg_attrs_two_reg         argAttrs on two-reg struct  → attr on first register
+//   H2  arg_attrs_two_reg         argAttrs on two-reg struct  -> no noundef on the struct
 //   H3  arg_attrs_sret            argAttrs with sret return   → attr shifted past sret ptr
+//   H4  res_attrs_struct          resAttrs on a struct result -> no noundef on the result
 //
-// Group F — Vector type fields: SSE classification (regression guards)
+// Group I - Narrow integer extension (MOCO-5051)
+//   I1  arg_narrow_ints           ui8, si16, bool, si32 args  -> zeroext, signext, zeroext, none
+//                                 on the call and the declaration; si8 result unmarked
+//   I2  arg_single_field_structs  {si8}, {ui16}, {bool} args  -> i8, i16, i8, unmarked
+//                                 {si8} result                -> i8, unmarked
+//
+// Group F — Vector type fields: classified by vector size
 //   F1  arg_vec2xf32_struct       {vector<2xf32>}       correct: f64 (SSE)
 //   F2  arg_vec2xf32_and_f64      {vector<2xf32>,f64}   correct: SSEPair(f64,f64)
+//   F3  arg_vec4xf32_struct       {vector<4xf32>}       correct: vector<2xf64> (SSE+SSEUP)
+//   F4  arg_vec2xi32_struct       {vector<2xi32>}       correct: f64 (SSE)
 //
-// Group N — Nested struct fields (LLVMStructType)
+// Group N — Nested struct and array fields
 //   N1  arg_nested_float_4        {struct<(f32)>}          correct: f32  (SSE)
 //   N2  arg_nested_float_8        {struct<(f32,f32)>}      correct: f64  (SSE)
 //   N3  arg_nested_float_and_f64  {struct<(f32,f32)>,f64}  correct: SSEPair(f64,f64)
 //   N4  arg_nested_int_8          {struct<(i32,i32)>}      correct: i64  (regression guard)
 //   N5  arg_nested_int_and_i64    {struct<(i32,i32)>,i64}  correct: IntegerPair(i64,i64)
+//   N6  arg_array_member          {[3 x f32]}              correct: SSEPair(f64,f32)
+//   N7  arg_empty_member          {f32,{},f32}             correct: f64  (SSE)
+//   N8  arg_zero_array_member     {f32,{[0 x f32]},f32}    correct: f64  (SSE)
+//
+// Group Z - Types without size (MOCO-5490)
+//   Z1  arg_empty_between         si32, {}, si32            -> (i32, i32)
+//   Z2  ret_empty                 returns {}, resAttrs      -> void, no resAttrs
+//   Z3  variadic_empty_fixed      si32, {}, ... si32        -> (i32, ...)
+//   Z4  arg_attrs_empty           argAttrs around a {} arg  -> stay with their args
 //
 // MODULE HEADER NOTE: Each test uses the standard x86-64 Linux data layout
 // string to drive struct size and alignment computation in getStructSize(),
@@ -103,10 +121,10 @@
 // A1: 1-byte struct {i8} → passes in a single byte register (i8).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_1byte_int_struct
-llvm.func @arg_1byte_int_struct(%arg0: !llvm.struct<(i8)>) {
+kgen.func @arg_1byte_int_struct(%arg0: !kgen.struct<(scalar<si8>)>) {
   // CHECK: llvm.call @c_a1(%{{.*}}) : (i8) -> ()
-  pop.external_call @c_a1(%arg0) : (!llvm.struct<(i8)>) -> ()
-  llvm.return
+  pop.external_call @c_a1(%arg0) : (!kgen.struct<(scalar<si8>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a1(i8)
 }
@@ -116,10 +134,10 @@ llvm.func @arg_1byte_int_struct(%arg0: !llvm.struct<(i8)>) {
 // A2: 2-byte struct {i8, i8} → coerces to i16.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_2byte_int_struct
-llvm.func @arg_2byte_int_struct(%arg0: !llvm.struct<(i8, i8)>) {
+kgen.func @arg_2byte_int_struct(%arg0: !kgen.struct<(scalar<si8>, scalar<si8>)>) {
   // CHECK: llvm.call @c_a2(%{{.*}}) : (i16) -> ()
-  pop.external_call @c_a2(%arg0) : (!llvm.struct<(i8, i8)>) -> ()
-  llvm.return
+  pop.external_call @c_a2(%arg0) : (!kgen.struct<(scalar<si8>, scalar<si8>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a2(i16)
 }
@@ -130,10 +148,10 @@ llvm.func @arg_2byte_int_struct(%arg0: !llvm.struct<(i8, i8)>) {
 // The alloca is sized to i32 (4 bytes) to ensure the load reads valid memory.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_3byte_int_struct
-llvm.func @arg_3byte_int_struct(%arg0: !llvm.struct<(i8, i8, i8)>) {
+kgen.func @arg_3byte_int_struct(%arg0: !kgen.struct<(scalar<si8>, scalar<si8>, scalar<si8>)>) {
   // CHECK: llvm.call @c_a3(%{{.*}}) : (i32) -> ()
-  pop.external_call @c_a3(%arg0) : (!llvm.struct<(i8, i8, i8)>) -> ()
-  llvm.return
+  pop.external_call @c_a3(%arg0) : (!kgen.struct<(scalar<si8>, scalar<si8>, scalar<si8>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a3(i32)
 }
@@ -143,24 +161,24 @@ llvm.func @arg_3byte_int_struct(%arg0: !llvm.struct<(i8, i8, i8)>) {
 // A4: 8-byte struct {i32, i32} → coerces to i64 (fits in one register).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_8byte_int_struct
-llvm.func @arg_8byte_int_struct(%arg0: !llvm.struct<(i32, i32)>) {
+kgen.func @arg_8byte_int_struct(%arg0: !kgen.struct<(scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_a4(%{{.*}}) : (i64) -> ()
-  pop.external_call @c_a4(%arg0) : (!llvm.struct<(i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_a4(%arg0) : (!kgen.struct<(scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a4(i64)
 }
 
 // -----
 
-// A5: struct {i32, i8} — LLVM pads to 8 bytes (i32 align=4, i8 at offset 4,
-// 3 bytes padding). getStructSize returns 8, so coercion yields i64.
+// A5: struct {i32, i8} — the layout pads it to 8 bytes (i32 align=4, i8 at
+// offset 4, 3 bytes padding). getStructSize returns 8, so coercion yields i64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_padded_struct
-llvm.func @arg_padded_struct(%arg0: !llvm.struct<(i32, i8)>) {
+kgen.func @arg_padded_struct(%arg0: !kgen.struct<(scalar<si32>, scalar<si8>)>) {
   // CHECK: llvm.call @c_a5(%{{.*}}) : (i64) -> ()
-  pop.external_call @c_a5(%arg0) : (!llvm.struct<(i32, i8)>) -> ()
-  llvm.return
+  pop.external_call @c_a5(%arg0) : (!kgen.struct<(scalar<si32>, scalar<si8>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_a5(i64)
 }
@@ -179,10 +197,10 @@ llvm.func @arg_padded_struct(%arg0: !llvm.struct<(i32, i8)>) {
 // E1: {f32} (4 bytes, all-float) → SSE → f32.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_float_struct
-llvm.func @arg_float_struct(%arg0: !llvm.struct<(f32)>) {
+kgen.func @arg_float_struct(%arg0: !kgen.struct<(scalar<f32>)>) {
   // CHECK: llvm.call @c_e1(%{{.*}}) : (f32) -> ()
-  pop.external_call @c_e1(%arg0) : (!llvm.struct<(f32)>) -> ()
-  llvm.return
+  pop.external_call @c_e1(%arg0) : (!kgen.struct<(scalar<f32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_e1(f32)
 }
@@ -192,10 +210,10 @@ llvm.func @arg_float_struct(%arg0: !llvm.struct<(f32)>) {
 // E2: {f64} (8 bytes, all-float) → SSE → f64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_double_struct
-llvm.func @arg_double_struct(%arg0: !llvm.struct<(f64)>) {
+kgen.func @arg_double_struct(%arg0: !kgen.struct<(scalar<f64>)>) {
   // CHECK: llvm.call @c_e2(%{{.*}}) : (f64) -> ()
-  pop.external_call @c_e2(%arg0) : (!llvm.struct<(f64)>) -> ()
-  llvm.return
+  pop.external_call @c_e2(%arg0) : (!kgen.struct<(scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_e2(f64)
 }
@@ -208,10 +226,10 @@ llvm.func @arg_double_struct(%arg0: !llvm.struct<(f64)>) {
 // The store/load bitcast pattern reinterprets the two f32 bits as one f64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_two_floats
-llvm.func @arg_two_floats(%arg0: !llvm.struct<(f32, f32)>) {
+kgen.func @arg_two_floats(%arg0: !kgen.struct<(scalar<f32>, scalar<f32>)>) {
   // CHECK: llvm.call @c_e3(%{{.*}}) : (f64) -> ()
-  pop.external_call @c_e3(%arg0) : (!llvm.struct<(f32, f32)>) -> ()
-  llvm.return
+  pop.external_call @c_e3(%arg0) : (!kgen.struct<(scalar<f32>, scalar<f32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_e3(f64)
 }
@@ -224,11 +242,11 @@ llvm.func @arg_two_floats(%arg0: !llvm.struct<(f32, f32)>) {
 // though f32 would be SSE. Key test: must NOT coerce to f64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_int_wins_float
-llvm.func @arg_int_wins_float(%arg0: !llvm.struct<(i32, f32)>) {
+kgen.func @arg_int_wins_float(%arg0: !kgen.struct<(scalar<si32>, scalar<f32>)>) {
   // CHECK: llvm.call @c_e4(%{{.*}}) : (i64) -> ()
   // CHECK-NOT: llvm.call @c_e4(%{{.*}}) : (f64) -> ()
-  pop.external_call @c_e4(%arg0) : (!llvm.struct<(i32, f32)>) -> ()
-  llvm.return
+  pop.external_call @c_e4(%arg0) : (!kgen.struct<(scalar<si32>, scalar<f32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_e4(i64)
 }
@@ -251,10 +269,10 @@ llvm.func @arg_int_wins_float(%arg0: !llvm.struct<(i32, f32)>) {
 // Both INTEGER → IntegerPair. Types: i64 for the 8-byte half, i32 for the 4-byte half.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_int_pair_12
-llvm.func @arg_int_pair_12(%arg0: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_int_pair_12(%arg0: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_b1(%{{.*}}, %{{.*}}) : (i64, i32) -> ()
-  pop.external_call @c_b1(%arg0) : (!llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_b1(%arg0) : (!kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b1(i64, i32)
 }
@@ -265,10 +283,10 @@ llvm.func @arg_int_pair_12(%arg0: !llvm.struct<(i32, i32, i32)>) {
 // Each eightbyte holds exactly one i64 → INTEGER.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_int_pair_16
-llvm.func @arg_int_pair_16(%arg0: !llvm.struct<(i64, i64)>) {
+kgen.func @arg_int_pair_16(%arg0: !kgen.struct<(scalar<si64>, scalar<si64>)>) {
   // CHECK: llvm.call @c_b2(%{{.*}}, %{{.*}}) : (i64, i64) -> ()
-  pop.external_call @c_b2(%arg0) : (!llvm.struct<(i64, i64)>) -> ()
-  llvm.return
+  pop.external_call @c_b2(%arg0) : (!kgen.struct<(scalar<si64>, scalar<si64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b2(i64, i64)
 }
@@ -281,10 +299,10 @@ llvm.func @arg_int_pair_16(%arg0: !llvm.struct<(i64, i64)>) {
 // Both SSE → SSEPair.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sse_pair_12
-llvm.func @arg_sse_pair_12(%arg0: !llvm.struct<(f32, f32, f32)>) {
+kgen.func @arg_sse_pair_12(%arg0: !kgen.struct<(scalar<f32>, scalar<f32>, scalar<f32>)>) {
   // CHECK: llvm.call @c_b3(%{{.*}}, %{{.*}}) : (f64, f32) -> ()
-  pop.external_call @c_b3(%arg0) : (!llvm.struct<(f32, f32, f32)>) -> ()
-  llvm.return
+  pop.external_call @c_b3(%arg0) : (!kgen.struct<(scalar<f32>, scalar<f32>, scalar<f32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b3(f64, f32)
 }
@@ -295,10 +313,10 @@ llvm.func @arg_sse_pair_12(%arg0: !llvm.struct<(f32, f32, f32)>) {
 // Each eightbyte holds exactly one f64 → SSE.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sse_pair_16
-llvm.func @arg_sse_pair_16(%arg0: !llvm.struct<(f64, f64)>) {
+kgen.func @arg_sse_pair_16(%arg0: !kgen.struct<(scalar<f64>, scalar<f64>)>) {
   // CHECK: llvm.call @c_b4(%{{.*}}, %{{.*}}) : (f64, f64) -> ()
-  pop.external_call @c_b4(%arg0) : (!llvm.struct<(f64, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_b4(%arg0) : (!kgen.struct<(scalar<f64>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b4(f64, f64)
 }
@@ -311,10 +329,10 @@ llvm.func @arg_sse_pair_16(%arg0: !llvm.struct<(f64, f64)>) {
 // INTEGER + SSE → Mixed.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_mixed_16
-llvm.func @arg_mixed_16(%arg0: !llvm.struct<(i32, i32, f64)>) {
+kgen.func @arg_mixed_16(%arg0: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<f64>)>) {
   // CHECK: llvm.call @c_b5(%{{.*}}, %{{.*}}) : (i64, f64) -> ()
-  pop.external_call @c_b5(%arg0) : (!llvm.struct<(i32, i32, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_b5(%arg0) : (!kgen.struct<(scalar<si32>, scalar<si32>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b5(i64, f64)
 }
@@ -335,10 +353,10 @@ llvm.func @arg_mixed_16(%arg0: !llvm.struct<(i32, i32, f64)>) {
 // done by prepareCoercedArgument. addByvalAttrsToFunc sets the byval attr.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_large_indirect
-llvm.func @arg_large_indirect(%arg0: !llvm.struct<(i64, i64, i64)>) {
+kgen.func @arg_large_indirect(%arg0: !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>) {
   // CHECK: llvm.call @c_c1(%{{.*}}) : (!llvm.ptr {llvm.byval = !llvm.struct<(i64, i64, i64)>}) -> ()
-  pop.external_call @c_c1(%arg0) : (!llvm.struct<(i64, i64, i64)>) -> ()
-  llvm.return
+  pop.external_call @c_c1(%arg0) : (!kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_c1(!llvm.ptr {llvm.byval = !llvm.struct<(i64, i64, i64)>})
 }
@@ -348,8 +366,8 @@ llvm.func @arg_large_indirect(%arg0: !llvm.struct<(i64, i64, i64)>) {
 //
 // Same classification rules as arguments, but applied to the return value.
 // The LLVM call returns the coerced type; the transform reconstructs the
-// original struct via a store/load bitcast pair (single-register) or via
-// extractvalue + store + load (two-register). For >16 bytes, sret convention
+// original struct with a store and a load through a stack slot. For two
+// registers, the stored value is the struct of both. For >16 bytes, sret convention
 // is used: a hidden first pointer parameter is allocated by the caller;
 // the callee writes the result there; the caller loads it afterward.
 //===----------------------------------------------------------------------===//
@@ -359,12 +377,12 @@ llvm.func @arg_large_indirect(%arg0: !llvm.struct<(i64, i64, i64)>) {
 // D1: return {i32} (4 bytes) → call returns i32, bitcast back to struct.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_small_int_struct
-llvm.func @ret_small_int_struct() {
+kgen.func @ret_small_int_struct() {
   // CHECK: [[R:%.*]] = llvm.call @c_d1() : () -> i32
   // CHECK: llvm.store [[R]], %{{.*}} : i32, !llvm.ptr
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i32)>
-  %r = pop.external_call @c_d1() : () -> !llvm.struct<(i32)>
-  llvm.return
+  %r = pop.external_call @c_d1() : () -> !kgen.struct<(scalar<si32>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_d1() -> i32
 }
@@ -372,17 +390,16 @@ llvm.func @ret_small_int_struct() {
 // -----
 
 // D2: return {i32, i32, i32} (12 bytes) → IntegerPair → call returns
-// !llvm.struct<(i64, i32)>. Two-register reconstruction: extract both values,
-// store at the correct offsets into a typed alloca, load as original struct.
+// !llvm.struct<(i64, i32)>. Two-register reconstruction: store the pair to a
+// stack slot, load as the original struct.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_int_pair
-llvm.func @ret_int_pair() {
+kgen.func @ret_int_pair() {
   // CHECK: [[R:%.*]] = llvm.call @c_d2() : () -> !llvm.struct<(i64, i32)>
-  // CHECK: llvm.extractvalue [[R]][0]
-  // CHECK: llvm.extractvalue [[R]][1]
-  // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
-  %r = pop.external_call @c_d2() : () -> !llvm.struct<(i32, i32, i32)>
-  llvm.return
+  // CHECK: llvm.store [[R]], [[SLOT:%.*]] : !llvm.struct<(i64, i32)>, !llvm.ptr
+  // CHECK: llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(i32, i32, i32)>
+  %r = pop.external_call @c_d2() : () -> !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_d2() -> !llvm.struct<(i64, i32)>
 }
@@ -390,16 +407,15 @@ llvm.func @ret_int_pair() {
 // -----
 
 // D3: return {f64, f64} (16 bytes) → SSEPair → call returns
-// !llvm.struct<(f64, f64)>. extractvalue + reconstruct.
+// !llvm.struct<(f64, f64)>. Store the pair and reload it as the struct.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_sse_pair
-llvm.func @ret_sse_pair() {
+kgen.func @ret_sse_pair() {
   // CHECK: [[R:%.*]] = llvm.call @c_d3() : () -> !llvm.struct<(f64, f64)>
-  // CHECK: llvm.extractvalue [[R]][0]
-  // CHECK: llvm.extractvalue [[R]][1]
-  // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(f64, f64)>
-  %r = pop.external_call @c_d3() : () -> !llvm.struct<(f64, f64)>
-  llvm.return
+  // CHECK: llvm.store [[R]], [[SLOT:%.*]] : !llvm.struct<(f64, f64)>, !llvm.ptr
+  // CHECK: llvm.load [[SLOT]] : !llvm.ptr -> !llvm.struct<(f64, f64)>
+  %r = pop.external_call @c_d3() : () -> !kgen.struct<(scalar<f64>, scalar<f64>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_d3() -> !llvm.struct<(f64, f64)>
 }
@@ -411,11 +427,11 @@ llvm.func @ret_sse_pair() {
 // The LLVM call is void. The caller loads the result from the sret pointer.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @ret_sret
-llvm.func @ret_sret() {
-  // CHECK: llvm.call @c_d4(%{{.*}}) : (!llvm.ptr) -> ()
+kgen.func @ret_sret() {
+  // CHECK: llvm.call @c_d4(%{{.*}}) : (!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}) -> ()
   // CHECK: llvm.load %{{.*}} : !llvm.ptr -> !llvm.struct<(i64, i64, i64)>
-  %r = pop.external_call @c_d4() : () -> !llvm.struct<(i64, i64, i64)>
-  llvm.return
+  %r = pop.external_call @c_d4() : () -> !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_d4(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>})
 }
@@ -437,11 +453,11 @@ llvm.func @ret_sret() {
 // observable is that the LLVM function type is variadic.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_scalars
-llvm.func @variadic_scalars(%fixed: i32, %extra: i32) {
+kgen.func @variadic_scalars(%fixed: !kgen.scalar<si32>, %extra: !kgen.scalar<si32>) {
   // CHECK: llvm.call @c_g1(%{{.*}}, %{{.*}}) : (i32, i32) -> ()
-  pop.external_call @c_g1(%fixed, %extra) attributes {numFixedArgs = 1 : index}
-    : (i32, i32) -> ()
-  llvm.return
+  pop.external_call @c_g1(%fixed, %extra)
+    : (!kgen.scalar<si32>, !kgen.scalar<si32>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // CHECK: llvm.func @c_g1(i32, ...)
 }
@@ -456,13 +472,13 @@ llvm.func @variadic_scalars(%fixed: i32, %extra: i32) {
 // instruction itself.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @variadic_large_struct
-llvm.func @variadic_large_struct(%fixed: i32,
-                                  %s: !llvm.struct<(i64, i64, i64)>) {
+kgen.func @variadic_large_struct(%fixed: !kgen.scalar<si32>,
+                                  %s: !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>) {
   // CHECK: llvm.call @c_g2
   // CHECK-SAME: llvm.byval = !llvm.struct<(i64, i64, i64)>
-  pop.external_call @c_g2(%fixed, %s) attributes {numFixedArgs = 1 : index}
-    : (i32, !llvm.struct<(i64, i64, i64)>) -> ()
-  llvm.return
+  pop.external_call @c_g2(%fixed, %s)
+    : (!kgen.scalar<si32>, !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
 }
 // The function declaration does NOT have byval — only the call does.
 // CHECK: llvm.func @c_g2(i32, ...)
@@ -483,10 +499,10 @@ llvm.func @variadic_large_struct(%fixed: i32,
 // integer widths; they should all classify as INTEGER and coerce to i64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_dense_int_16
-llvm.func @arg_dense_int_16(%arg0: !llvm.struct<(i8, i8, i16, i32, i64)>) {
+kgen.func @arg_dense_int_16(%arg0: !kgen.struct<(scalar<si8>, scalar<si8>, scalar<si16>, scalar<si32>, scalar<si64>)>) {
   // CHECK: llvm.call @c_b6(%{{.*}}, %{{.*}}) : (i64, i64) -> ()
-  pop.external_call @c_b6(%arg0) : (!llvm.struct<(i8, i8, i16, i32, i64)>) -> ()
-  llvm.return
+  pop.external_call @c_b6(%arg0) : (!kgen.struct<(scalar<si8>, scalar<si8>, scalar<si16>, scalar<si32>, scalar<si64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_b6(i64, i64)
 }
@@ -498,16 +514,16 @@ llvm.func @arg_dense_int_16(%arg0: !llvm.struct<(i8, i8, i16, i32, i64)>) {
 // -----
 
 // C2: {i8, f32, i8, f64} → indirect via pointer, byval on func param.
-// LLVM layout (x86-64): i8@0, pad@1-3, f32@4, i8@8, pad@9-15, f64@16.
+// Layout (x86-64): i8@0, pad@1-3, f32@4, i8@8, pad@9-15, f64@16.
 // Total size = 24 bytes (> 16) → MEMORY class → indirect pass with byval.
 // This tests that structs whose logical field sizes sum to ≤16 bytes can still
 // exceed 16 bytes due to alignment padding, triggering the MEMORY path.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_padded_indirect
-llvm.func @arg_padded_indirect(%arg0: !llvm.struct<(i8, f32, i8, f64)>) {
+kgen.func @arg_padded_indirect(%arg0: !kgen.struct<(scalar<si8>, scalar<f32>, scalar<si8>, scalar<f64>)>) {
   // CHECK: llvm.call @c_c2(%{{.*}}) : (!llvm.ptr {llvm.byval = !llvm.struct<(i8, f32, i8, f64)>}) -> ()
-  pop.external_call @c_c2(%arg0) : (!llvm.struct<(i8, f32, i8, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_c2(%arg0) : (!kgen.struct<(scalar<si8>, scalar<f32>, scalar<si8>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_c2(!llvm.ptr {llvm.byval = !llvm.struct<(i8, f32, i8, f64)>})
 }
@@ -528,10 +544,10 @@ llvm.func @arg_padded_indirect(%arg0: !llvm.struct<(i8, f32, i8, f64)>) {
 // the LLVM function declaration as passthrough = ["noinline"].
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @func_attrs_passthrough
-llvm.func @func_attrs_passthrough(%arg0: i32) {
+kgen.func @func_attrs_passthrough(%arg0: !kgen.scalar<si32>) {
   // CHECK: llvm.call @c_h1
-  pop.external_call @c_h1(%arg0) attributes {funcAttrs = ["noinline"]} : (i32) -> ()
-  llvm.return
+  pop.external_call @c_h1(%arg0) : (!kgen.scalar<si32>) -> () <funcAttrs = ["noinline"]>
+  hlcf.return
 }
 // CHECK: llvm.func @c_h1
 // CHECK-SAME: passthrough = {{.*}}"noinline"
@@ -540,19 +556,21 @@ llvm.func @func_attrs_passthrough(%arg0: i32) {
 // -----
 
 // H2: argAttrs remapped through two-register coercion.
-// The POP call has one struct arg with {llvm.noundef}. After IntegerPair
-// coercion (12-byte struct → (i64, i32)), the argAttr is placed on the first
-// LLVM parameter (i64) and the second (i32) gets empty attrs.
+// The POP call has a struct arg and an i32 arg. Both have {llvm.noundef}.
+// IntegerPair coercion changes the 12-byte struct to (i64, i32). The struct
+// does not keep noundef, because its registers can contain bytes that are
+// not defined. The attributes of the i32 arg move to param 2.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_attrs_two_reg
-llvm.func @arg_attrs_two_reg(%arg0: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_attrs_two_reg(%arg0: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>, %arg1: !kgen.scalar<si32>) {
   // CHECK: llvm.call @c_h2
-  pop.external_call @c_h2(%arg0) attributes {argAttrs = [{llvm.noundef}]}
-    : (!llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_h2(%arg0, %arg1)
+    : (!kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>, !kgen.scalar<si32>) -> () <argAttrs = [{llvm.noundef}, {llvm.noundef}]>
+  hlcf.return
 }
-// POP arg 0 → LLVM params 0 (i64) and 1 (i32).  argAttr goes to param 0.
-// CHECK: llvm.func @c_h2(i64 {llvm.noundef}, i32)
+// POP arg 0 becomes LLVM params 0 (i64) and 1 (i32). POP arg 1 becomes
+// LLVM param 2.
+// CHECK: llvm.func @c_h2(i64, i32, i32 {llvm.noundef})
 }
 
 // -----
@@ -564,36 +582,56 @@ llvm.func @arg_attrs_two_reg(%arg0: !llvm.struct<(i32, i32, i32)>) {
 // sret attribute set by the lowering.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_attrs_sret
-llvm.func @arg_attrs_sret(%arg0: i32) {
+kgen.func @arg_attrs_sret(%arg0: !kgen.scalar<si32>) {
   // CHECK: llvm.call @c_h3
-  %r = pop.external_call @c_h3(%arg0) attributes {argAttrs = [{llvm.noundef}]}
-    : (i32) -> !llvm.struct<(i64, i64, i64)>
-  llvm.return
+  %r = pop.external_call @c_h3(%arg0)
+    : (!kgen.scalar<si32>) -> !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)> <argAttrs = [{llvm.noundef}]>
+  hlcf.return
 }
 // sret ptr at param 0, original arg with user attr at param 1.
 // CHECK: llvm.func @c_h3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32 {llvm.noundef})
 }
 
+// -----
+
+// H4: resAttrs on a struct result.
+// Both POP calls have resAttrs {llvm.noundef}. The struct result is coerced
+// to i64, and bytes 5-7 of the struct are padding, so the declaration does
+// not keep noundef. The scalar result keeps it.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @res_attrs_struct
+kgen.func @res_attrs_struct() {
+  // CHECK: llvm.call @c_h4_struct
+  %s = pop.external_call @c_h4_struct()
+    : () -> !kgen.struct<(scalar<si32>, scalar<si8>)> <resAttrs = {llvm.noundef}>
+  // CHECK: llvm.call @c_h4_scalar
+  %i = pop.external_call @c_h4_scalar()
+    : () -> !kgen.scalar<si32> <resAttrs = {llvm.noundef}>
+  hlcf.return
+}
+// CHECK: llvm.func @c_h4_struct() -> i64
+// CHECK-NOT: noundef
+// CHECK: llvm.func @c_h4_scalar() -> (i32 {llvm.noundef})
+}
+
 //===----------------------------------------------------------------------===//
-// Group F: Vector type fields — SSE classification (regression guards)
+// Group F: Vector type fields
 //
-// In the MLIR assembly context, vector<N x f32> inside !llvm.struct<(...)> is
-// parsed as mlir::VectorType (MLIR built-in), which IS handled by the existing
-// dyn_cast<mlir::VectorType> check in isAllFloatStruct and classifyEightbyte.
-// These tests verify that vector fields remain correctly classified as SSE.
+// As in clang, a vector member is classified by its size: up to 32 bits is
+// INTEGER, 64 bits is SSE whatever the element type, and 128 bits fills one
+// SSE register (SSE, then SSEUP).
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// F1: {vector<2 x f32>} (8 bytes, all-float via VectorType) → SSE → f64.
-// The vector field is recognized by isAllFloatStruct (VectorType with float
-// elements); 8-byte all-float struct → f64 (SSE). Regression guard.
+// F1: {vector<2 x f32>} (8 bytes) → 64-bit vector → SSE → f64. Regression
+// guard.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_vec2xf32_struct
-llvm.func @arg_vec2xf32_struct(%arg0: !llvm.struct<(vector<2 x f32>)>) {
+kgen.func @arg_vec2xf32_struct(%arg0: !kgen.struct<(simd<2, f32>)>) {
   // CHECK: llvm.call @c_f1(%{{.*}}) : (f64) -> ()
-  pop.external_call @c_f1(%arg0) : (!llvm.struct<(vector<2 x f32>)>) -> ()
-  llvm.return
+  pop.external_call @c_f1(%arg0) : (!kgen.struct<(simd<2, f32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_f1(f64)
 }
@@ -606,80 +644,106 @@ llvm.func @arg_vec2xf32_struct(%arg0: !llvm.struct<(vector<2 x f32>)>) {
 // Both SSE → SSEPair. Regression guard.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_vec2xf32_and_f64
-llvm.func @arg_vec2xf32_and_f64(%arg0: !llvm.struct<(vector<2 x f32>, f64)>) {
+kgen.func @arg_vec2xf32_and_f64(%arg0: !kgen.struct<(simd<2, f32>, scalar<f64>)>) {
   // CHECK: llvm.call @c_f2(%{{.*}}, %{{.*}}) : (f64, f64) -> ()
-  pop.external_call @c_f2(%arg0) : (!llvm.struct<(vector<2 x f32>, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_f2(%arg0) : (!kgen.struct<(simd<2, f32>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_f2(f64, f64)
 }
 
+// -----
+
+// F3: {vector<4 x f32>} (16 bytes) → SSE, then SSEUP → one SSE register,
+// passed and returned as <2 x double>, as clang does for such a struct.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_vec4xf32_struct
+kgen.func @arg_vec4xf32_struct(%arg0: !kgen.struct<(simd<4, f32>)>) {
+  // CHECK: llvm.call @c_f3(%{{.*}}) : (vector<2xf64>) -> vector<2xf64>
+  %r = pop.external_call @c_f3(%arg0) : (!kgen.struct<(simd<4, f32>)>) -> !kgen.struct<(simd<4, f32>)>
+  hlcf.return
+}
+// CHECK: llvm.func @c_f3(vector<2xf64>) -> vector<2xf64>
+}
+
+// -----
+
+// F4: {vector<2 x i32>} (8 bytes) → 64-bit vector → SSE → f64. As in clang,
+// a 64-bit vector is SSE whatever its element type.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_vec2xi32_struct
+kgen.func @arg_vec2xi32_struct(%arg0: !kgen.struct<(simd<2, si32>)>) {
+  // CHECK: llvm.call @c_f4(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_f4(%arg0) : (!kgen.struct<(simd<2, si32>)>) -> ()
+  hlcf.return
+}
+// CHECK: llvm.func @c_f4(f64)
+}
+
 //===----------------------------------------------------------------------===//
-// Group N: Nested struct fields (LLVMStructType)
+// Group N: Nested struct and array fields
 //
-// isAllFloatStruct and classifyEightbyte now recurse into nested LLVMStructType
-// fields, so float nested structs receive correct SSE classification.
+// As in clang's X86_64ABIInfo::classify, each member of a struct without
+// vector members is classified at its offset, looking inside nested structs
+// and arrays, and the classes are merged per eightbyte.
 // N1-N3: nested float structs → SSE. N4-N5: integer regression guards.
+// N6-N8: array, empty struct and zero-length array members.
 //===----------------------------------------------------------------------===//
 
 // -----
 
-// N1: {struct<(f32)>} (4 bytes) — CORRECT: isAllFloatStruct now recurses into
-// nested LLVMStructType fields. Inner struct<(f32)> is all-float → outer is
-// all-float → 4-byte SSE struct → f32.
+// N1: {struct<(f32)>} (4 bytes) — CORRECT: the f32 inside the nested struct
+// is SSE → 4-byte SSE struct → f32.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_float_4
-llvm.func @arg_nested_float_4(%arg0: !llvm.struct<(!llvm.struct<(f32)>)>) {
+kgen.func @arg_nested_float_4(%arg0: !kgen.struct<(struct<(scalar<f32>)>)>) {
   // CHECK: llvm.call @c_n1(%{{.*}}) : (f32) -> ()
-  pop.external_call @c_n1(%arg0) : (!llvm.struct<(!llvm.struct<(f32)>)>) -> ()
-  llvm.return
+  pop.external_call @c_n1(%arg0) : (!kgen.struct<(struct<(scalar<f32>)>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_n1(f32)
 }
 
 // -----
 
-// N2: {struct<(f32,f32)>} (8 bytes) — CORRECT: isAllFloatStruct recurses into
-// nested struct<(f32,f32)> → all-float → 8-byte SSE struct → f64.
+// N2: {struct<(f32,f32)>} (8 bytes) — CORRECT: both f32 inside the nested
+// struct are SSE → 8-byte SSE struct → f64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_float_8
-llvm.func @arg_nested_float_8(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)>)>) {
+kgen.func @arg_nested_float_8(%arg0: !kgen.struct<(struct<(scalar<f32>, scalar<f32>)>)>) {
   // CHECK: llvm.call @c_n2(%{{.*}}) : (f64) -> ()
-  pop.external_call @c_n2(%arg0) : (!llvm.struct<(!llvm.struct<(f32, f32)>)>) -> ()
-  llvm.return
+  pop.external_call @c_n2(%arg0) : (!kgen.struct<(struct<(scalar<f32>, scalar<f32>)>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_n2(f64)
 }
 
 // -----
 
-// N3: {struct<(f32,f32)>, f64} (16 bytes) — CORRECT: classifyEightbyte now
-// recurses into nested LLVMStructType fields.
-// Eightbyte 0 (bytes 0-7): struct<(f32,f32)> → recursive classify → SSE → f64.
+// N3: {struct<(f32,f32)>, f64} (16 bytes) — CORRECT.
+// Eightbyte 0 (bytes 0-7): the two f32 of struct<(f32,f32)> → SSE → f64.
 // Eightbyte 1 (bytes 8-15): f64 → SSE → f64.
 // Both SSE → SSEPair (f64, f64).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_float_and_f64
-llvm.func @arg_nested_float_and_f64(%arg0: !llvm.struct<(!llvm.struct<(f32, f32)>, f64)>) {
+kgen.func @arg_nested_float_and_f64(%arg0: !kgen.struct<(struct<(scalar<f32>, scalar<f32>)>, scalar<f64>)>) {
   // CHECK: llvm.call @c_n3(%{{.*}}, %{{.*}}) : (f64, f64) -> ()
-  pop.external_call @c_n3(%arg0) : (!llvm.struct<(!llvm.struct<(f32, f32)>, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_n3(%arg0) : (!kgen.struct<(struct<(scalar<f32>, scalar<f32>)>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_n3(f64, f64)
 }
 
 // -----
 
-// N4: {struct<(i32,i32)>} (8 bytes) — CORRECT: nested struct with integer fields.
-// isAllFloatStruct correctly returns false (not all float). classifyEightbyte:
-// the LLVMStructType field defaults to INTEGER, which is correct here.
-// Regression guard: integer nested structs must remain i64.
+// N4: {struct<(i32,i32)>} (8 bytes) — CORRECT: nested struct with integer
+// fields → INTEGER. Regression guard: integer nested structs must remain i64.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_int_8
-llvm.func @arg_nested_int_8(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>)>) {
+kgen.func @arg_nested_int_8(%arg0: !kgen.struct<(struct<(scalar<si32>, scalar<si32>)>)>) {
   // CHECK: llvm.call @c_n4(%{{.*}}) : (i64) -> ()
-  pop.external_call @c_n4(%arg0) : (!llvm.struct<(!llvm.struct<(i32, i32)>)>) -> ()
-  llvm.return
+  pop.external_call @c_n4(%arg0) : (!kgen.struct<(struct<(scalar<si32>, scalar<si32>)>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_n4(i64)
 }
@@ -691,12 +755,56 @@ llvm.func @arg_nested_int_8(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>)>) {
 // IntegerPair (i64, i64). Regression guard.
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_nested_int_and_i64
-llvm.func @arg_nested_int_and_i64(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>, i64)>) {
+kgen.func @arg_nested_int_and_i64(%arg0: !kgen.struct<(struct<(scalar<si32>, scalar<si32>)>, scalar<si64>)>) {
   // CHECK: llvm.call @c_n5(%{{.*}}, %{{.*}}) : (i64, i64) -> ()
-  pop.external_call @c_n5(%arg0) : (!llvm.struct<(!llvm.struct<(i32, i32)>, i64)>) -> ()
-  llvm.return
+  pop.external_call @c_n5(%arg0) : (!kgen.struct<(struct<(scalar<si32>, scalar<si32>)>, scalar<si64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_n5(i64, i64)
+}
+
+// -----
+
+// N6: {[3 x f32]} (12 bytes) — the array is classified element by element:
+// eightbyte 0 holds two f32 → SSE, eightbyte 1 holds one f32 → SSE.
+// SSEPair (f64, f32), the same registers as clang's (<2 x float>, float).
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_array_member
+kgen.func @arg_array_member(%arg0: !kgen.struct<(array<3, scalar<f32>>)>) {
+  // CHECK: llvm.call @c_n6(%{{.*}}, %{{.*}}) : (f64, f32) -> ()
+  pop.external_call @c_n6(%arg0) : (!kgen.struct<(array<3, scalar<f32>>)>) -> ()
+  hlcf.return
+}
+// CHECK: llvm.func @c_n6(f64, f32)
+}
+
+// -----
+
+// N7: {f32, {}, f32} (8 bytes) — as in clang, the empty struct adds no class,
+// so the eightbyte is SSE → f64, the same register as clang's <2 x float>.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_empty_member
+kgen.func @arg_empty_member(%arg0: !kgen.struct<(scalar<f32>, struct<()>, scalar<f32>)>) {
+  // CHECK: llvm.call @c_n7(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_n7(%arg0) : (!kgen.struct<(scalar<f32>, struct<()>, scalar<f32>)>) -> ()
+  hlcf.return
+}
+// CHECK: llvm.func @c_n7(f64)
+}
+
+// -----
+
+// N8: {f32, {[0 x f32]}, f32} (8 bytes) — as in clang, the zero-length array
+// adds no class, so the eightbyte is SSE → f64. The middle member is how
+// InlineArray[Float32, 0] lowers. (On arm64 the same struct is not an HFA.)
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_zero_array_member
+kgen.func @arg_zero_array_member(%arg0: !kgen.struct<(scalar<f32>, struct<(array<0, scalar<f32>>)>, scalar<f32>)>) {
+  // CHECK: llvm.call @c_n8(%{{.*}}) : (f64) -> ()
+  pop.external_call @c_n8(%arg0) : (!kgen.struct<(scalar<f32>, struct<(array<0, scalar<f32>>)>, scalar<f32>)>) -> ()
+  hlcf.return
+}
+// CHECK: llvm.func @c_n8(f64)
 }
 
 //===----------------------------------------------------------------------===//
@@ -713,10 +821,10 @@ llvm.func @arg_nested_int_and_i64(%arg0: !llvm.struct<(!llvm.struct<(i32, i32)>,
 // trailing {i32,i32,i32} (would be IntegerPair) rolls back to memory (byval).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_rollback_after_five
-llvm.func @arg_rollback_after_five(%p0: !llvm.ptr, %p1: !llvm.ptr, %a: i32, %b: i32, %c: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_rollback_after_five(%p0: !kgen.pointer<scalar<ui8>>, %p1: !kgen.pointer<scalar<ui8>>, %a: !kgen.scalar<si32>, %b: !kgen.scalar<si32>, %c: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_r1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (!llvm.ptr, !llvm.ptr, i32, i32, i32, !llvm.ptr {llvm.byval = !llvm.struct<(i32, i32, i32)>}) -> ()
-  pop.external_call @c_r1(%p0, %p1, %a, %b, %c, %s) : (!llvm.ptr, !llvm.ptr, i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_r1(%p0, %p1, %a, %b, %c, %s) : (!kgen.pointer<scalar<ui8>>, !kgen.pointer<scalar<ui8>>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_r1(!llvm.ptr, !llvm.ptr, i32, i32, i32, !llvm.ptr {llvm.byval = !llvm.struct<(i32, i32, i32)>})
 }
@@ -727,10 +835,10 @@ llvm.func @arg_rollback_after_five(%p0: !llvm.ptr, %p1: !llvm.ptr, %a: i32, %b: 
 // same struct fits and stays a two-register IntegerPair (i64, i32).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_no_rollback_after_four
-llvm.func @arg_no_rollback_after_four(%p0: !llvm.ptr, %a: i32, %b: i32, %c: i32, %s: !llvm.struct<(i32, i32, i32)>) {
+kgen.func @arg_no_rollback_after_four(%p0: !kgen.pointer<scalar<ui8>>, %a: !kgen.scalar<si32>, %b: !kgen.scalar<si32>, %c: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
   // CHECK: llvm.call @c_r2(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (!llvm.ptr, i32, i32, i32, i64, i32) -> ()
-  pop.external_call @c_r2(%p0, %a, %b, %c, %s) : (!llvm.ptr, i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> ()
-  llvm.return
+  pop.external_call @c_r2(%p0, %a, %b, %c, %s) : (!kgen.pointer<scalar<ui8>>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_r2(!llvm.ptr, i32, i32, i32, i64, i32)
 }
@@ -741,9 +849,9 @@ llvm.func @arg_no_rollback_after_four(%p0: !llvm.ptr, %a: i32, %b: i32, %c: i32,
 // three i32 leave two free, so the struct still fits as IntegerPair (i64, i32).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sret_no_rollback
-llvm.func @arg_sret_no_rollback(%a: i32, %b: i32, %c: i32, %s: !llvm.struct<(i32, i32, i32)>) {
-  %r = pop.external_call @c_r3(%a, %b, %c, %s) : (i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
-  llvm.return
+kgen.func @arg_sret_no_rollback(%a: !kgen.scalar<si32>, %b: !kgen.scalar<si32>, %c: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
+  %r = pop.external_call @c_r3(%a, %b, %c, %s) : (!kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_r3(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32, i32, i32, i64, i32)
 }
@@ -754,9 +862,9 @@ llvm.func @arg_sret_no_rollback(%a: i32, %b: i32, %c: i32, %s: !llvm.struct<(i32
 // one integer register, so the struct rolls back to memory (byval).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sret_rollback
-llvm.func @arg_sret_rollback(%a: i32, %b: i32, %c: i32, %d: i32, %s: !llvm.struct<(i32, i32, i32)>) {
-  %r = pop.external_call @c_r4(%a, %b, %c, %d, %s) : (i32, i32, i32, i32, !llvm.struct<(i32, i32, i32)>) -> !llvm.struct<(i64, i64, i64)>
-  llvm.return
+kgen.func @arg_sret_rollback(%a: !kgen.scalar<si32>, %b: !kgen.scalar<si32>, %c: !kgen.scalar<si32>, %d: !kgen.scalar<si32>, %s: !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) {
+  %r = pop.external_call @c_r4(%a, %b, %c, %d, %s) : (!kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.scalar<si32>, !kgen.struct<(scalar<si32>, scalar<si32>, scalar<si32>)>) -> !kgen.struct<(scalar<si64>, scalar<si64>, scalar<si64>)>
+  hlcf.return
 }
 // CHECK: llvm.func @c_r4(!llvm.ptr {llvm.sret = !llvm.struct<(i64, i64, i64)>}, i32, i32, i32, i32, !llvm.ptr {llvm.byval = !llvm.struct<(i32, i32, i32)>})
 }
@@ -767,10 +875,10 @@ llvm.func @arg_sret_rollback(%a: i32, %b: i32, %c: i32, %d: i32, %s: !llvm.struc
 // struct still fits and stays a two-register SSEPair (f64, f64).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sse_no_rollback
-llvm.func @arg_sse_no_rollback(%a: f64, %b: f64, %c: f64, %d: f64, %e: f64, %f: f64, %s: !llvm.struct<(f64, f64)>) {
+kgen.func @arg_sse_no_rollback(%a: !kgen.scalar<f64>, %b: !kgen.scalar<f64>, %c: !kgen.scalar<f64>, %d: !kgen.scalar<f64>, %e: !kgen.scalar<f64>, %f: !kgen.scalar<f64>, %s: !kgen.struct<(scalar<f64>, scalar<f64>)>) {
   // CHECK: llvm.call @c_r5(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (f64, f64, f64, f64, f64, f64, f64, f64) -> ()
-  pop.external_call @c_r5(%a, %b, %c, %d, %e, %f, %s) : (f64, f64, f64, f64, f64, f64, !llvm.struct<(f64, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_r5(%a, %b, %c, %d, %e, %f, %s) : (!kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.struct<(scalar<f64>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_r5(f64, f64, f64, f64, f64, f64, f64, f64)
 }
@@ -781,10 +889,144 @@ llvm.func @arg_sse_no_rollback(%a: f64, %b: f64, %c: f64, %d: f64, %e: f64, %f: 
 // one, so the {f64,f64} struct rolls back to memory (byval).
 module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
 // CHECK-LABEL: @arg_sse_rollback
-llvm.func @arg_sse_rollback(%a: f64, %b: f64, %c: f64, %d: f64, %e: f64, %f: f64, %g: f64, %s: !llvm.struct<(f64, f64)>) {
+kgen.func @arg_sse_rollback(%a: !kgen.scalar<f64>, %b: !kgen.scalar<f64>, %c: !kgen.scalar<f64>, %d: !kgen.scalar<f64>, %e: !kgen.scalar<f64>, %f: !kgen.scalar<f64>, %g: !kgen.scalar<f64>, %s: !kgen.struct<(scalar<f64>, scalar<f64>)>) {
   // CHECK: llvm.call @c_r6(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (f64, f64, f64, f64, f64, f64, f64, !llvm.ptr {llvm.byval = !llvm.struct<(f64, f64)>}) -> ()
-  pop.external_call @c_r6(%a, %b, %c, %d, %e, %f, %g, %s) : (f64, f64, f64, f64, f64, f64, f64, !llvm.struct<(f64, f64)>) -> ()
-  llvm.return
+  pop.external_call @c_r6(%a, %b, %c, %d, %e, %f, %g, %s) : (!kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.scalar<f64>, !kgen.struct<(scalar<f64>, scalar<f64>)>) -> ()
+  hlcf.return
 }
 // CHECK: llvm.func @c_r6(f64, f64, f64, f64, f64, f64, f64, !llvm.ptr {llvm.byval = !llvm.struct<(f64, f64)>})
+}
+
+// -----
+
+// R7: variadic args use the same registers as fixed args. One fixed and four
+// variadic i64 leave one integer register, so the variadic {i64,i64} rolls
+// back to memory (byval), as in clang.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_rollback
+kgen.func @variadic_rollback(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %e: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si64>, scalar<si64>)>) {
+  // CHECK: llvm.call @c_r7(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) vararg(!llvm.func<void (i64, ...)>) : (i64, i64, i64, i64, i64, !llvm.ptr {llvm.byval = !llvm.struct<(i64, i64)>}) -> ()
+  pop.external_call @c_r7(%a, %b, %c, %d, %e, %s)
+    : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si64>, scalar<si64>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
+}
+// CHECK: llvm.func @c_r7(i64, ...)
+}
+
+// -----
+
+// R8: control - one fixed and three variadic i64 leave two integer registers,
+// so the variadic {i64,i64} stays in registers.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_no_rollback
+kgen.func @variadic_no_rollback(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>, %c: !kgen.scalar<si64>, %d: !kgen.scalar<si64>, %s: !kgen.struct<(scalar<si64>, scalar<si64>)>) {
+  // CHECK: llvm.call @c_r8(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) vararg(!llvm.func<void (i64, ...)>) : (i64, i64, i64, i64, i64, i64) -> ()
+  pop.external_call @c_r8(%a, %b, %c, %d, %s)
+    : (!kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.scalar<si64>, !kgen.struct<(scalar<si64>, scalar<si64>)>) -> () <numFixedArgs = 1 : index>
+  hlcf.return
+}
+// CHECK: llvm.func @c_r8(i64, ...)
+}
+
+//===----------------------------------------------------------------------===//
+// Group I: Narrow integer extension
+//
+// Rule: clang extends a narrow integer at the producer and
+// relies on it at the consumer. The sign comes from the POP dtype. Only the
+// arguments are marked: a mark on the result would let LLVM assume the callee
+// extended it, but a C struct flattened to a bare Mojo integer comes back with
+// unspecified upper bits.
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// I1: ui8, si16, bool and si32 arguments, si8 result.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_narrow_ints
+kgen.func @arg_narrow_ints(%u8: !kgen.scalar<ui8>, %s16: !kgen.scalar<si16>, %bool: !kgen.scalar<bool>, %s32: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_i1(%{{.*}}, %{{.*}}, %{{.*}}, %{{.*}}) : (i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
+  %r = pop.external_call @c_i1(%u8, %s16, %bool, %s32) : (!kgen.scalar<ui8>, !kgen.scalar<si16>, !kgen.scalar<bool>, !kgen.scalar<si32>) -> !kgen.scalar<si8>
+  hlcf.return
+}
+// CHECK: llvm.func @c_i1(i8 {llvm.zeroext}, i16 {llvm.signext}, i1 {llvm.zeroext}, i32) -> i8
+}
+
+// -----
+
+// I2: {si8}, {ui16} and {bool} arguments, {si8} result. clang coerces a struct
+// of one narrow integer to an integer of its size and does not extend it, so
+// the coerced integers get no mark, whatever the sign of the field.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_single_field_structs
+kgen.func @arg_single_field_structs(%s8: !kgen.struct<(scalar<si8>)>, %u16: !kgen.struct<(scalar<ui16>)>, %bool: !kgen.struct<(scalar<bool>)>) {
+  // CHECK: llvm.call @c_i2(%{{.*}}, %{{.*}}, %{{.*}}) : (i8, i16, i8) -> i8
+  %r = pop.external_call @c_i2(%s8, %u16, %bool) : (!kgen.struct<(scalar<si8>)>, !kgen.struct<(scalar<ui16>)>, !kgen.struct<(scalar<bool>)>) -> !kgen.struct<(scalar<si8>)>
+  hlcf.return
+}
+// CHECK: llvm.func @c_i2(i8, i16, i8) -> i8
+}
+
+//===----------------------------------------------------------------------===//
+// Group Z: Types without size
+//
+// Rule: as in clang, C passes no data for a type without size. An argument
+// takes no register and no stack slot, and a result is void (MOCO-5490).
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// Z1: {} between two i32 args. The i32 after it stays in the second integer
+// register.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_empty_between
+kgen.func @arg_empty_between(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %b: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z1(%{{[^,]*}}, %{{[^,]*}}) : (i32, i32) -> ()
+  pop.external_call @c_z1(%a, %e, %b) : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> ()
+  hlcf.return
+}
+// CHECK: llvm.func @c_z1(i32, i32)
+}
+
+// -----
+
+// Z2: a {} result is void, so the declaration drops its resAttrs.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @ret_empty
+kgen.func @ret_empty(%a: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z2(%{{[^)]*}}) : (i32) -> (){{$}}
+  %r = pop.external_call @c_z2(%a) : (!kgen.scalar<si32>) -> !kgen.struct<()> <resAttrs = {llvm.noalias}>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z2(i32) attributes
+// CHECK-NOT: res_attrs
+}
+
+// -----
+
+// Z3: {} among the fixed args of a variadic call. numFixedArgs counts it, but
+// the declaration has one fixed parameter.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_empty_fixed
+kgen.func @variadic_empty_fixed(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %b: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z3(%{{[^,]*}}, %{{[^,]*}}) vararg(!llvm.func<void (i32, ...)>) : (i32, i32) -> ()
+  pop.external_call @c_z3(%a, %e, %b)
+    : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> () <numFixedArgs = 2 : index>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z3(i32, ...)
+}
+
+// -----
+
+// Z4: the argAttrs of a {} arg are dropped, and the argAttrs of the args
+// around it stay on their parameters.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_attrs_empty
+kgen.func @arg_attrs_empty(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %p: !kgen.pointer<scalar<ui8>>) {
+  // CHECK: llvm.call @c_z4(%{{[^,]*}}, %{{[^,]*}}) : (i32, !llvm.ptr) -> ()
+  pop.external_call @c_z4(%a, %e, %p)
+    : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.pointer<scalar<ui8>>) -> () <argAttrs = [{llvm.noundef}, {llvm.noundef}, {llvm.nonnull}]>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z4(i32 {llvm.noundef}, !llvm.ptr {llvm.nonnull})
 }

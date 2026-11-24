@@ -14,19 +14,38 @@
 
 from .config import (
     MAGIC_DRAFT_TOKEN_ID,
-    RejectionSamplingStrategy,
     SpeculativeConfig,
     SpeculativeMethod,
     VerifyWidthRange,
 )
+from .draft_weights import (
+    NO_ALIASES,
+    DraftAliases,
+    validate_draft_state_dict,
+)
+from .drafter_export import DrafterExport, sampleable_vocab_size
 from .ragged_token_merger import RaggedTokenMerger, ragged_token_merger
+from .spec_input_types import (
+    SpecDecodeGraphInputs,
+    SpecDecodeInputTypeSpec,
+    build_spec_decode_input_types,
+    decode_spec_decode_input_values,
+)
 
 __all__ = [
     "MAGIC_DRAFT_TOKEN_ID",
+    "NO_ALIASES",
+    "DraftAliases",
+    "DrafterExport",
     "RaggedTokenMerger",
-    "RejectionSamplingStrategy",
+    "SpecDecodeGraphInputs",
+    "SpecDecodeInputTypeSpec",
     "SpeculativeConfig",
     "SpeculativeMethod",
     "VerifyWidthRange",
+    "build_spec_decode_input_types",
+    "decode_spec_decode_input_values",
     "ragged_token_merger",
+    "sampleable_vocab_size",
+    "validate_draft_state_dict",
 ]

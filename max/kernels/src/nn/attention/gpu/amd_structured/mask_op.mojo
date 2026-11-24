@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Named TileOp struct for QK score masking on gfx950.
 
-Uses TileLayout / `Coord` Layout Algebra (not hand-rolled integer formulas)
+Uses Layout / `Coord` Layout Algebra (not hand-rolled integer formulas)
 to map lanes and registers into the MMA fragment space:
 
 - `WarpLayoutT.idx2crd(lane)` decomposes the lane into (lane_row, lane_col).
@@ -33,10 +33,9 @@ from std.math.uutils import umod
 from std.sys import _RegisterPackType
 from std.sys._assembly import inlined_assembly
 from max.gpu import block_idx, lane_id
-from std.utils import IndexList
 
 from layout import TileTensor
-from layout.tile_layout import Layout, col_major
+from layout.layout import Layout, col_major
 from layout.coord import Coord, ComptimeInt, Idx
 from nn.attention.mha_mask import CausalMask, MHAMask
 from nn.attention.mha_utils import _kernel_mask
@@ -45,7 +44,7 @@ from nn.attention.mha_utils import _kernel_mask
 struct MaskTileOp[
     accum_type: DType,
     token_gen: Bool,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     num_m_mmas: Int,
     num_n_mmas: Int,
     mask_t: MHAMask,
@@ -105,7 +104,7 @@ struct MaskTileOp[
     """
 
     # Warp lane layout (col-major (warp_rows, warp_cols)) as a proper
-    # TileLayout. idx2crd decomposes a lane into (lane_row, lane_col).
+    # Layout. idx2crd decomposes a lane into (lane_row, lane_col).
     comptime _warp_rows = 32 if Self.mma_m == 32 else 16
     comptime _warp_cols = 2 if Self.mma_m == 32 else 4
     comptime WarpLayoutT = type_of(
@@ -142,7 +141,7 @@ struct MaskTileOp[
     comptime _lane_col_stride = 4
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def apply(
         masked: Bool,
         kv_tile_start_row: UInt32,
@@ -167,8 +166,8 @@ struct MaskTileOp[
         # Decompose lane via the warp layout: WarpLayout is col-major
         # (warp_rows, warp_cols), so idx2crd(lane) = (lane_row, lane_col).
         var lane_coord = Self.WarpLayoutT().idx2crd(Int(lane_id()))
-        var lane_row = Int(lane_coord[0].value())
-        var lane_col = Int(lane_coord[1].value())
+        var lane_row = Int(lane_coord[0])
+        var lane_col = Int(lane_coord[1])
         var lane_col_off = lane_col * Self._lane_col_stride
 
         # Token fold: S = valid_rows / H (= 1 off the fold path, byte-identical).
@@ -311,7 +310,7 @@ struct MaskTileOp[
                         # at its KV head's first. S==1 is split out
                         # (byte-identical). Only head-keyed masks consume this;
                         # Causal/Null ignore it.
-                        var q_head_idx = Int(block_idx.x)
+                        var q_head_idx = block_idx.x
                         comptime if Self.token_gen:
                             comptime if fold_seq_len == 1:
                                 q_head_idx = block_idx.y * Self.group + umod(
@@ -327,7 +326,7 @@ struct MaskTileOp[
                                     % Self.num_heads_per_token
                                 )
                                 q_head_idx = (
-                                    Int(block_idx.y) * Self.head_base_stride
+                                    block_idx.y * Self.head_base_stride
                                     + head_in_token
                                 )
                         comptime for j in range(0, output_frag_size, 1):
@@ -335,9 +334,9 @@ struct MaskTileOp[
                                 Self.FragmentLayoutT()(Idx[j])
                             )
                             frag[j] = mask.mask(
-                                IndexList[4, element_type=.uint32](
+                                (
                                     block_idx.z,
-                                    q_head_idx,
+                                    Int(q_head_idx),
                                     Int(score_row_with_start_pos),
                                     Int(
                                         score_col_with_cache_start_pos
@@ -366,13 +365,11 @@ struct MaskTileOp[
                         var bound_x = num_keys if Self.token_gen else seq_len
 
                         frag[j] = _kernel_mask(
-                            IndexList[2, element_type=.uint32](
+                            (
                                 Int(score_row),
                                 Int(score_col + UInt32(fragment_col)),
                             ),
-                            IndexList[2, element_type=.uint32](
-                                Int(bound_x), Int(bound_y)
-                            ),
+                            (Int(bound_x), Int(bound_y)),
                             frag[j],
                         )
 

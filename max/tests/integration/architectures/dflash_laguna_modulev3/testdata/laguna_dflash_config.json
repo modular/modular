@@ -1,0 +1,61 @@
+{
+  "attention_bias": false,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 3072,
+  "intermediate_size": 12288,
+  "max_position_embeddings": 1048576,
+  "model_type": "laguna",
+  "num_attention_heads": 72,
+  "num_hidden_layers": 6,
+  "num_key_value_heads": 8,
+  "rms_norm_eps": 1e-06,
+  "sliding_window": 512,
+  "vocab_size": 100352,
+  "layer_types": [
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention",
+    "sliding_attention"
+  ],
+  "rope_theta": 500000.0,
+  "gating": "per-head",
+  "architectures": [
+    "DFlashLagunaForCausalLM"
+  ],
+  "num_experts": 0,
+  "sliding_windows": [
+    512,
+    512,
+    512,
+    512,
+    512,
+    512
+  ],
+  "draft_vocab_size": 100352,
+  "torch_dtype": "bfloat16",
+  "eagle_aux_hidden_state_layer_ids": [
+    2,
+    11,
+    20,
+    30,
+    39,
+    48
+  ],
+  "dflash_config": {
+    "block_size": 16,
+    "mask_token_id": 12,
+    "num_target_layers": 48,
+    "target_layer_ids": [
+      1,
+      10,
+      19,
+      29,
+      38,
+      47
+    ],
+    "causal": true
+  }
+}

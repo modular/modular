@@ -10,15 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Gemma 3 transformer architecture for text generation."""
+"""Gemma 3 transformer architectures for text and vision-language generation."""
 
-from .arch import gemma3_modulev3_arch
-from .model import Gemma3Inputs, Gemma3Model
+from .arch import gemma3_modulev3_arch, gemma3_multimodal_modulev3_arch
+from .gemma3 import Gemma3
+from .inputs import Gemma3MultiModalModelInputs
 from .model_config import Gemma3Config
+from .multimodal_config import (
+    Gemma3ForConditionalGenerationConfig,
+    Gemma3VisionConfig,
+)
 
 __all__ = [
+    "Gemma3",
     "Gemma3Config",
-    "Gemma3Inputs",
-    "Gemma3Model",
+    "Gemma3ForConditionalGenerationConfig",
+    "Gemma3MultiModalModelInputs",
+    "Gemma3VisionConfig",
     "gemma3_modulev3_arch",
+    "gemma3_multimodal_modulev3_arch",
 ]

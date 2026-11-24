@@ -18,7 +18,7 @@
 #        "no runtime cost" and "resolves at compile time" (codegen claims),
 #        "name-based lookup requires a concrete type" (needs a
 #        compile-failure test, not a runtime one),
-#        the claim that a non-`@always_inline` caller reports its own line
+#        the claim that a non-`@inline(.always)` caller reports its own line
 #        (does not reproduce: a plain `def` also reports the call site, so
 #        the behavior is optimizer-dependent and not safe to pin),
 #        "print cleanly, without extra code" (compiling `Sensor` with a
@@ -89,8 +89,8 @@ def test_name_is_qualified_where_base_name_is_not() raises:
     comptime full = reflect[Optional[Float64]].name()
     comptime base = reflect[Optional[Float64]].base_name()
     assert_true(full != base)
-    assert_true(full.find(base) >= 0)
-    assert_true(full.find(".") >= 0)
+    assert_true(base in full)
+    assert_true("." in full)
 
 
 def test_name_applies_parameters() raises:
@@ -115,7 +115,7 @@ struct Config(Equatable):
 def test_type_name() raises:
     """Check `name()` returns the compiler-resolved name."""
     comptime name = reflect[Config].name()
-    assert_true(name.find("Config") >= 0)
+    assert_true("Config" in name)
 
 
 def test_field_count() raises:
@@ -299,7 +299,7 @@ def test_multitype_write_to() raises:
     var rendered = String(MultiType("Hello", 1, True, 2.5))
     assert_true(rendered.startswith("["))
     assert_true(rendered.endswith("]"))
-    assert_true(rendered.find("Hello") >= 0)
+    assert_true("Hello" in rendered)
 
 
 @fieldwise_init
@@ -427,7 +427,9 @@ def test_source_location_prefix() raises:
     var loc = source_location()
     var msg = loc.prefix("test message")
     # A position past 0 means location context precedes the message.
-    assert_true(msg.find("test message") > 0)
+    __guard case .Some(index) = msg.find("test message") else:
+        raise Error("expected to find the message")
+    assert_true(index > 0)
 
 
 def helper_source_line() -> Int:
@@ -441,7 +443,7 @@ def test_source_location_ignores_call_site() raises:
     assert_equal(first, second)
 
 
-@always_inline
+@inline(.always)
 def get_caller_line() -> Int:
     return call_location().line()
 
@@ -467,22 +469,22 @@ def test_call_location_tracks_each_call_site() raises:
     assert_equal(second, first + 1)
 
 
-@always_inline
+@inline(.always)
 def one_level_caller_line() -> Int:
     return call_location().line()
 
 
-@always_inline
+@inline(.always)
 def wrap_one_level() -> Int:
     return one_level_caller_line()
 
 
-@always_inline
+@inline(.always)
 def two_level_caller_line() -> Int:
     return call_location[inline_count=2]().line()
 
 
-@always_inline
+@inline(.always)
 def wrap_two_levels() -> Int:
     return two_level_caller_line()
 
@@ -502,7 +504,7 @@ def test_inline_count_two_skips_a_level() raises:
     assert_equal(line, here + 1)
 
 
-@always_inline
+@inline(.always)
 def require(cond: Bool, msg: String = "requirement failed") raises:
     if not cond:
         raise Error(call_location().prefix(msg))
@@ -520,7 +522,7 @@ def test_require_carries_the_caller_message() raises:
         require(False, "x must be > 10")
     except e:
         caught = String(e)
-    assert_true(caught.find("x must be > 10") >= 0)
+    assert_true("x must be > 10" in caught)
 
 
 # --- Function names ---

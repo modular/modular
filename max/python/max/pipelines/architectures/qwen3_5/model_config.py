@@ -10,6 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+# Folds in what Qwen3.5 used of Llama3Config, from
+# max/python/max/pipelines/architectures/llama3/model_config.py at main
+# 4df8111afba. VisionConfig is copied from
+# max/python/max/pipelines/architectures/qwen3vl_moe/model_config.py
+# at main 4df8111afba.
 """Config for Qwen3.5 models (hybrid linear/full attention)."""
 
 from __future__ import annotations
@@ -17,26 +22,57 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Any, ClassVar
+from typing import Any, ClassVar, Literal
 
-from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.graph.quantization import QuantizationEncoding
 from max.graph.weights import WeightData
-from max.nn.kv_cache import KVCacheParams
+from max.nn.kv_cache import (
+    KVCacheParamInterface,
+    KVCacheParams,
+    MultiKVCacheParams,
+    RecurrentStateParams,
+    RecurrentStateRegion,
+)
+from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.nn.quant_config import QuantConfig
+from max.nn.rope_scaling import Llama3RopeScalingParams
 from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from max.pipelines.lib.interfaces.arch_config import ArchConfigWithVisionCache
-from max.pipelines.modeling.config_enums import SupportedEncoding
+from max.pipelines.lib.config.model_config import (
+    _select_quantization_encoding,
+)
+from max.pipelines.lib.interfaces.arch_config import (
+    ArchConfigWithKVCache,
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithVisionCache,
+)
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
+from max.pipelines.modeling.config_enums import (
+    SupportedEncoding,
+    supported_encoding_dtype,
+    supported_encoding_quantization,
+)
 from max.pipelines.weights import resolve_hf_quant_config
 from transformers.models.auto.configuration_auto import AutoConfig
 from typing_extensions import Self, override
 
-from ..llama3.model_config import Llama3Config
-from ..qwen3vl_moe.model_config import VisionConfig
-from ..qwen3vl_moe.nn.data_processing import QWEN3VL_MAX_PIXELS
+from .data_processing import QWEN3_5_MAX_PIXELS
 from .quantization import Qwen3_5QuantScheme, parse_quant_scheme
+from .state_cache import (
+    ATTN_CACHE_KEY,
+    STATE_CACHE_KEY,
+    attn_cache,
+    linear_state_regions,
+    ring_len_for_window,
+)
+
+_POOL_DTYPE_MAP = {
+    "bfloat16": DType.bfloat16,
+    "float32": DType.float32,
+}
+"""Storage dtypes a state pool may be declared at."""
 
 __all__ = ["Qwen3_5Config", "VisionConfig"]
 
@@ -54,16 +90,125 @@ def _declared_dtype(text_config: AutoConfig) -> DType | None:
     alone -- norms, embeddings, the GDN conv, the state pools. Returns None
     when the field is absent or names a dtype outside the set above, leaving
     the caller on its existing fallback.
+
+    ``PretrainedConfig`` normalizes the JSON string into a ``torch.dtype``
+    object, so a string match alone reads ``None`` off a config that does
+    declare a dtype -- and the caller then falls back to the *storage* dtype,
+    which is ``uint8`` on a packed-FP4 encoding. Take the name off either
+    form rather than importing torch into the pipeline.
     """
     for attr in ("dtype", "torch_dtype"):
         declared = getattr(text_config, attr, None)
-        if isinstance(declared, str) and declared in _DECLARED_DTYPES:
-            return _DECLARED_DTYPES[declared]
+        if declared is None:
+            continue
+        name = (
+            declared
+            if isinstance(declared, str)
+            else str(declared).removeprefix("torch.")
+        )
+        if name in _DECLARED_DTYPES:
+            return _DECLARED_DTYPES[name]
     return None
 
 
+@dataclass
+class VisionConfig:
+    """Base configuration for Qwen3VL models with required fields."""
+
+    dtype: DType
+    """DType of the Qwen3VL vision model weights."""
+
+    llm_dtype: DType
+    """DType of the Qwen3VL language model weights."""
+
+    devices: list[DeviceRef]
+    """Devices that the Qwen3VL vision encoder model is parallelized over."""
+
+    patch_size: int
+    """Vision transformer patch size."""
+
+    temporal_patch_size: int
+    """Vision transformer temporal patch size."""
+
+    in_channels: int
+    """Vision transformer number of input channels."""
+
+    hidden_size: int
+    """Hidden size of the vision encoder."""
+
+    num_attention_heads: int
+    """Number of attention heads in the vision encoder."""
+
+    depth: int
+    """Number of vision transformer layers."""
+
+    intermediate_size: int
+    """Intermediate size in the vision encoder's feed-forward layers."""
+
+    out_hidden_size: int
+    """Output hidden size of the vision encoder. Also the hidden size of the language model."""
+
+    deepstack_visual_indexes: list[int]
+    """Indexes of the full attention blocks in the vision encoder."""
+
+    rms_norm_eps: float
+    """Epsilon for layer normalization."""
+
+    spatial_merge_size: int
+    """Spatial merge size for the vision encoder."""
+
+    num_position_embeddings: int
+    """Number of position embeddings for the vision encoder."""
+
+    @classmethod
+    def initialize_from_config(
+        cls,
+        pipeline_config: PipelineConfig,
+        hf_vision_config: AutoConfig,
+    ) -> VisionConfig:
+        """Initialize VisionConfig from HuggingFace vision config.
+
+        Note: dtype fields will be set to defaults and should be updated
+        via finalize() once state_dict is available.
+        """
+        return cls(
+            # Defaults that will be overridden in finalize
+            dtype=DType.bfloat16,
+            llm_dtype=DType.bfloat16,
+            devices=[
+                DeviceRef(spec.device_type, spec.id)
+                for spec in pipeline_config.model.device_specs
+            ],
+            patch_size=hf_vision_config.patch_size,
+            temporal_patch_size=hf_vision_config.temporal_patch_size,
+            in_channels=hf_vision_config.in_channels,
+            hidden_size=hf_vision_config.hidden_size,
+            num_attention_heads=hf_vision_config.num_heads,
+            depth=hf_vision_config.depth,
+            intermediate_size=hf_vision_config.intermediate_size,
+            out_hidden_size=hf_vision_config.out_hidden_size,
+            deepstack_visual_indexes=hf_vision_config.deepstack_visual_indexes,
+            rms_norm_eps=1e-06,
+            spatial_merge_size=hf_vision_config.spatial_merge_size,
+            num_position_embeddings=hf_vision_config.num_position_embeddings,
+        )
+
+    def finalize(
+        self,
+        vision_dtype: DType,
+        llm_dtype: DType,
+    ) -> None:
+        """Finalize VisionConfig with state_dict dependent fields."""
+        self.dtype = vision_dtype
+        self.llm_dtype = llm_dtype
+
+
 @dataclass(kw_only=True)
-class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
+class Qwen3_5Config(
+    ArchConfigWithStoredKVParams,
+    ArchConfigWithKVCache,
+    ArchConfigWithVisionCache,
+):
     """Configuration for Qwen3.5 hybrid attention models.
 
     Qwen3.5 uses a hybrid architecture with both full (standard) attention
@@ -78,6 +223,39 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         "float8_e4m3fn",
         "float4_e2m1fnx2",
     }
+
+    hidden_size: int
+    num_attention_heads: int
+    num_key_value_heads: int
+    num_hidden_layers: int
+    rope_theta: float
+    rope_scaling_params: Llama3RopeScalingParams | None
+    max_seq_len: int
+    intermediate_size: int
+    interleaved_rope_weights: bool
+    vocab_size: int
+    dtype: DType
+    model_quantization_encoding: QuantizationEncoding | None
+
+    kv_params: KVCacheParamInterface
+    """The cache tree: an attention child beside a recurrent-state one.
+
+    :attr:`attn_kv_params` is the leaf the attention layers take.
+    """
+
+    return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
+    norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm"
+    norm_dtype: DType | None = None
+    attention_bias: bool = False
+    rms_norm_eps: float | None = None
+    tie_word_embeddings: bool = False
+    attention_multiplier: float
+    devices: list[DeviceRef]
+    quant_config: QuantConfig | None = None
+    return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
+    target_layer_ids: list[int] | None = None
+    use_subgraphs: bool = True
+    quantization_encoding: SupportedEncoding | None = None
 
     # Hybrid attention parameters
     layer_types: list[str] = field(default_factory=list)
@@ -116,18 +294,27 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
     """Storage dtype override for the linear-attention state pools.
 
     ``None`` (the default) stores both pools at :attr:`compute_dtype`
-    (bfloat16), the configuration every exported artifact and the Mach
-    registry declare. ``float32`` makes a speculated generation follow the
-    exact state trajectory of an unspeculated one — the recurrence rounds to
-    the pool dtype only at a call boundary, so a lossy pool makes the
-    trajectory depend on speculation's chunking — at roughly double the
-    per-request state memory (74.8 to 149.6 MiB for Qwen3.8-27B). Set via the
-    ``state_pool_dtype`` KV-cache config knob; read through
-    :attr:`state_dtype`."""
+    (bfloat16), the configuration every exported artifact declares.
+    ``float32`` makes a speculated generation follow the exact state
+    trajectory of an unspeculated one — the recurrence rounds to the pool
+    dtype only at a call boundary, so a lossy pool makes the trajectory depend
+    on speculation's chunking — at roughly double the per-request state memory
+    (74.8 to 149.6 MiB for Qwen3.8-27B). Set via the ``state_pool_dtype``
+    KV-cache config knob; read through :attr:`state_dtype`."""
 
     # Vision encoder (optional - text-only models leave these None)
     vision_config: VisionConfig | None = None
     """Vision encoder configuration; None for text-only models."""
+
+    mrope_without_encoder: bool = False
+    """Keep M-RoPE on a graph that compiles no vision encoder.
+
+    ``vision_config`` normally carries two facts at once: that an encoder must
+    be built, and that images can appear in a request's context. The fused
+    speculative graph separates them — it compiles no encoder and takes the
+    encoder's output as inputs instead, but a request whose context holds an
+    image still needs 3-axis positions for every token after it. Setting this
+    keeps :attr:`mrope_enabled` true with ``vision_config`` cleared."""
 
     image_token_id: int | None = None
     """Token ID used for image placeholders in the input sequence."""
@@ -149,6 +336,10 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
 
     quant_scheme: Qwen3_5QuantScheme | None = None
     """Which modules are quantized and how; set by :meth:`_parse_quant_config`."""
+
+    linear_attn_scalar_dtypes: dict[str, DType] = field(default_factory=dict)
+    """The dtype the checkpoint stores each gated-DeltaNet scalar weight in,
+    keyed ``A_log``, ``dt_bias`` and ``norm.weight``; set by :meth:`finalize`."""
 
     declared_dtype: DType | None = None
     """The dtype the checkpoint declares for its unquantized tensors.
@@ -176,19 +367,110 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         return self.dtype
 
     @property
+    def mrope_enabled(self) -> bool:
+        """Whether the model takes 3-axis M-RoPE positions.
+
+        ``vision_config`` stands in for "an image can appear in context",
+        and :attr:`mrope_without_encoder` keeps them without the tower.
+        """
+        return self.mrope_section is not None and (
+            self.vision_config is not None or self.mrope_without_encoder
+        )
+
+    @property
     def state_dtype(self) -> DType:
         """Storage dtype of the linear-attention state pools.
 
-        Every declarer of a pool buffer — the base graph, the fused
-        speculative graph, and the serving-side state cache — must read this
-        one property: the two graphs share one pool allocation at serve time,
-        so a disagreement is an unserveable artifact pair.
+        Every declarer of a pool buffer reads this one property, since the
+        base and fused speculative graphs share one allocation at serve time.
+        Never the KV cache's dtype.
         """
         if self.state_pool_dtype is not None:
             return self.state_pool_dtype
         return self.compute_dtype
 
-    @override
+    @staticmethod
+    def declared_state_dtype(
+        text_config: AutoConfig, kv_cache_config: KVCacheConfig
+    ) -> DType:
+        """Returns :attr:`state_dtype` as far as it is knowable pre-``finalize``.
+
+        The state leaves are declared before a quantization scheme resolves.
+        ``cache_dtype`` is not a stand-in: ``--kv-cache-format`` may put the
+        KV in fp8 while the state stays bf16.
+        """
+        override = kv_cache_config.state_pool_dtype
+        if override is not None:
+            return _POOL_DTYPE_MAP[override]
+        return _declared_dtype(text_config) or DType.bfloat16
+
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: dict[str, WeightData],
+        return_logits: ReturnLogits,
+        return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,
+        norm_method: Literal["rms_norm", "layer_norm"] = "rms_norm",
+        attention_bias: bool = False,
+    ) -> None:
+        """Sets the fields that need the checkpoint's weights.
+
+        These are the quantization scheme, the norm dtype and epsilon, the
+        tied embeddings and the gated-DeltaNet scalars' dtypes.
+        """
+        # Strip the "language_model." or "model." prefix, so the checks below
+        # see the decoder's own names.
+        if any(k.startswith("language_model.") for k in state_dict):
+            normalized_state_dict: dict[str, WeightData] = {
+                k.removeprefix("language_model."): v
+                for k, v in state_dict.items()
+                if k.startswith("language_model.")
+            }
+        elif any(k.startswith("model.") for k in state_dict):
+            normalized_state_dict = {
+                k.removeprefix("model."): v
+                for k, v in state_dict.items()
+                if k.startswith("model.")
+            }
+        else:
+            normalized_state_dict = dict(state_dict)
+
+        quant_config = self._parse_quant_config(
+            huggingface_config, normalized_state_dict
+        )
+
+        norm_dtype = None
+        if "layers.0.input_layernorm.weight" in normalized_state_dict:
+            norm_dtype = normalized_state_dict[
+                "layers.0.input_layernorm.weight"
+            ].dtype
+
+        if "tie_word_embeddings" in huggingface_config:
+            tie_word_embeddings = huggingface_config.tie_word_embeddings
+        else:
+            tie_word_embeddings = (
+                getattr(huggingface_config, "tie_word_embeddings", False)
+                or "lm_head.weight" not in normalized_state_dict
+            )
+
+        rms_norm_eps = None
+        if norm_method == "rms_norm":
+            rms_norm_eps = huggingface_config.rms_norm_eps
+
+        self.norm_method = norm_method
+        self.norm_dtype = norm_dtype
+        self.rms_norm_eps = rms_norm_eps
+        self.tie_word_embeddings = tie_word_embeddings
+        self.quant_config = quant_config
+        self.attention_bias = attention_bias
+        self.return_logits = return_logits
+        self.return_hidden_states = return_hidden_states
+
+        for name, weight in state_dict.items():
+            _, linear_attn, scalar = name.partition(".linear_attn.")
+            if linear_attn and scalar in ("A_log", "dt_bias", "norm.weight"):
+                self.linear_attn_scalar_dtypes.setdefault(scalar, weight.dtype)
+
     def _parse_quant_config(
         self,
         huggingface_config: AutoConfig,
@@ -197,11 +479,9 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         """Parses the mixed NVFP4/FP8 scheme from the top-level config.
 
         ``huggingface_config`` here is ``text_config``, which carries no
-        ``quantization_config``; the base implementation would fall back to
-        sniffing ``weight_scale_2`` out of the state dict and describe the
-        whole model as uniform NVFP4. The captured top-level config is used
-        instead, and the returned :class:`QuantConfig` -- the NVFP4 one -- is
-        only the MLP half. Consumers must go through :attr:`quant_scheme`.
+        ``quantization_config``, so the captured top-level config is read
+        instead. The returned :class:`QuantConfig` -- the NVFP4 one -- is only
+        the MLP half. Consumers must go through :attr:`quant_scheme`.
         """
         self.quant_scheme = parse_quant_scheme(
             self.hf_quantization_config, state_dict, self.num_hidden_layers
@@ -249,7 +529,7 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             return 0
         patch_area = vision_config.patch_size**2
         merge = getattr(vision_config, "spatial_merge_size", 2)
-        max_tokens = QWEN3VL_MAX_PIXELS // (patch_area * merge**2)
+        max_tokens = QWEN3_5_MAX_PIXELS // (patch_area * merge**2)
         spec = cls.get_vision_cache_row_spec(huggingface_config)
         assert spec is not None
         hidden, dtype = spec
@@ -304,8 +584,13 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             for i in range(num_layers)
         ]
 
+    @property
+    def attn_kv_params(self) -> KVCacheParams:
+        """The attention child of :attr:`kv_params`."""
+        return attn_cache(self.kv_params)
+
     @staticmethod
-    def construct_kv_params(
+    def _attn_kv_params(
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -314,10 +599,8 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         *,
         allow_kv_head_replication: bool = False,
     ) -> KVCacheParams:
-        """Construct KV cache parameters for full attention layers only.
+        """Returns one leaf over the full-attention layers.
 
-        Only allocates KV cache entries for full-attention layers; linear
-        attention layers use separate conv/recurrent state buffers instead.
         The forward pass maps each full-attention layer to a sequential KV
         cache index (0, 1, 2, ...) independent of the absolute layer index.
         """
@@ -336,7 +619,8 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         page_size = kv_cache_config.kv_cache_page_size
         if text_config.head_dim > 128:
             page_size = max(page_size, text_config.head_dim)
-        return kv_cache_config.to_params(
+        speculative = pipeline_config.speculative
+        params = kv_cache_config.to_params(
             allow_kv_head_replication=allow_kv_head_replication,
             dtype=cache_dtype,
             n_kv_heads=text_config.num_key_value_heads,
@@ -345,6 +629,102 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             devices=devices,
             data_parallel_degree=data_parallel_degree,
             page_size=page_size,
+            # A speculative step writes its whole verify window, and the cache
+            # reserves a request's pages for it from this. Without it a window
+            # that crosses a page writes past them, and the next step loses an
+            # accepted token's K/V. The method stays unset, since it adds a
+            # draft attention input this graph does not take.
+            num_draft_tokens=(
+                speculative.num_speculative_tokens or 0 if speculative else 0
+            ),
+        )
+        return params
+
+    @staticmethod
+    def _state_regions(
+        text_config: AutoConfig,
+        *,
+        num_linear_layers: int,
+        dtype: DType,
+        num_devices: int,
+        ring_len: int = 0,
+    ) -> tuple[RecurrentStateRegion, ...]:
+        """Returns the state leaves this checkpoint's linear layers keep.
+
+        The fallbacks are the published Qwen3.5 geometry, left implicit by a
+        config predating these fields. A nonzero ``ring_len`` adds the
+        speculative verify's ring leaf.
+        """
+        return linear_state_regions(
+            num_linear_layers=num_linear_layers,
+            key_head_dim=getattr(text_config, "linear_key_head_dim", 128),
+            num_key_heads=getattr(text_config, "linear_num_key_heads", 16),
+            value_head_dim=getattr(text_config, "linear_value_head_dim", 128),
+            num_value_heads=getattr(text_config, "linear_num_value_heads", 48),
+            conv_kernel_dim=getattr(text_config, "linear_conv_kernel_dim", 4),
+            dtype=dtype,
+            num_devices=num_devices,
+            ring_len=ring_len,
+        )
+
+    @classmethod
+    def _verify_ring_len(cls, pipeline_config: PipelineConfig) -> int:
+        """Returns the verify ring length the state cache must hold, or zero.
+
+        A speculative verify records one window of ``K + 1`` tokens in it.
+        """
+        speculative = pipeline_config.speculative
+        if speculative is None:
+            return 0
+        return ring_len_for_window(1 + speculative.draft_width)
+
+    @classmethod
+    def construct_kv_params(
+        cls,
+        huggingface_config: AutoConfig,
+        pipeline_config: PipelineConfig,
+        devices: list[DeviceRef],
+        kv_cache_config: KVCacheConfig,
+        cache_dtype: DType,
+        *,
+        allow_kv_head_replication: bool = False,
+    ) -> KVCacheParamInterface:
+        """Returns the attention leaf beside the recurrent state.
+
+        The graph's input types are built from these params, so a state
+        derived any later cannot appear among them. A model with no
+        linear-attention layers gets the attention leaf alone.
+        """
+        attn = Qwen3_5Config._attn_kv_params(
+            huggingface_config=huggingface_config,
+            pipeline_config=pipeline_config,
+            devices=devices,
+            kv_cache_config=kv_cache_config,
+            cache_dtype=cache_dtype,
+        )
+        text_config = Qwen3_5Config._get_text_config(huggingface_config)
+        layer_types = Qwen3_5Config._get_layer_types(text_config)
+        num_linear_layers = sum(
+            1 for lt in layer_types if lt == "linear_attention"
+        )
+        if num_linear_layers == 0:
+            # A leaf of zero bytes would be a page the pool cannot tile.
+            return attn
+        state = RecurrentStateParams(
+            regions=Qwen3_5Config._state_regions(
+                text_config,
+                num_linear_layers=num_linear_layers,
+                dtype=Qwen3_5Config.declared_state_dtype(
+                    text_config, kv_cache_config
+                ),
+                num_devices=len(devices),
+                ring_len=cls._verify_ring_len(pipeline_config),
+            ),
+            devices=attn.devices,
+            data_parallel_degree=attn.data_parallel_degree,
+        )
+        return MultiKVCacheParams.from_params(
+            {ATTN_CACHE_KEY: attn, STATE_CACHE_KEY: state}
         )
 
     @staticmethod
@@ -361,82 +741,53 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
 
     @staticmethod
     def get_num_layers(huggingface_config: AutoConfig) -> int:
+        """How many layers the text tower has."""
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
         return text_config.num_hidden_layers
 
-    def _per_request_state_bytes(self) -> int:
-        """Return GPU bytes for one request's linear-attention state (all linear layers).
+    def _linear_regions(
+        self, ring_len: int = 0
+    ) -> tuple[RecurrentStateRegion, ...]:
+        """Returns this config's state regions at full width, unsharded.
 
-        Each linear-attention layer stores two state arrays per active request:
-        - Conv state:       `(1, conv_dim, kernel-1)` :attr:`state_dtype`
-        - Recurrent state:  `(1, nv, kd, vd)`         :attr:`state_dtype`
-
-        Computation is promoted to float32 inside GatedDeltaNet.__call__().
-        These buffers are NOT included in the KV-cache budget.
+        Byte counts summed over these are totals across devices.
         """
         num_linear = sum(
             1 for lt in self.layer_types if lt == "linear_attention"
         )
         if num_linear == 0:
-            return 0
-        conv_dim = (
-            2 * self.linear_key_head_dim * self.linear_num_key_heads
-            + self.linear_value_head_dim * self.linear_num_value_heads
+            return ()
+        return linear_state_regions(
+            num_linear_layers=num_linear,
+            key_head_dim=self.linear_key_head_dim,
+            num_key_heads=self.linear_num_key_heads,
+            value_head_dim=self.linear_value_head_dim,
+            num_value_heads=self.linear_num_value_heads,
+            conv_kernel_dim=self.linear_conv_kernel_dim,
+            dtype=self.state_dtype,
+            num_devices=1,
+            ring_len=ring_len,
         )
-        # `state_dtype` is the one property every pool declarer reads, so the
-        # cost this feeds to `infer_optimal_batch_size` tracks the override
-        # too -- a float32 pool is 2x a bf16 one, and 4x what the encoding's
-        # `uint8` storage dtype would have implied.
-        dtype_bytes = self.state_dtype.size_in_bytes
-        bytes_per_layer = (
-            # conv state: (conv_dim * (kernel-1)) elements
-            conv_dim * (self.linear_conv_kernel_dim - 1) * dtype_bytes
-            # recurrent state: (nv * kd * vd) elements
-            + self.linear_num_value_heads
-            * self.linear_key_head_dim
-            * self.linear_value_head_dim
-            * dtype_bytes
-        )
-        return num_linear * bytes_per_layer
 
-    def infer_optimal_batch_size(
-        self,
-        devices: list[Device],
-        *,
-        weights_size: int,
-        device_memory_utilization: float,
-    ) -> int:
-        """Return a memory-safe default `max_batch_size` for this architecture.
+    def _per_request_state_bytes(self) -> int:
+        """Returns GPU bytes one request's linear-attention state occupies.
 
-        Qwen3.5 stores GatedDeltaNet conv and recurrent state in a single
-        ``max_batch x per_req`` pool that the slot-indexed SSM kernels
-        mutate in place. There are no working copies, so peak footprint is
-        ``max_batch x per_req`` bytes.
-
-        We split the post-weights utilization budget evenly: the state pool
-        gets up to half, the KV cache absorbs the rest. This uses the same
-        ``device_memory_utilization`` headroom factor as the rest of the
-        pipeline, and matches the ``estimate_activation_memory()`` reservation.
-
-        Falls back to 32—safe for the 27B model on H100/A100 (80 GB)—when
-        the device query fails.
+        Summed over every device, and derived from the same geometry the cache
+        declares its leaves from, so a shape cannot be right in one and wrong
+        in the other.
         """
-        per_req = self._per_request_state_bytes()
-        try:
-            free_bytes = int(
-                sum(d.stats.get("free_memory", 0) for d in devices)
-            )
-        except Exception:
-            free_bytes = 0
-        if free_bytes <= 0:
-            # Conservative fallback: safe for Qwen3.5-27B on H100/A100 (80 GB).
-            return 32
-        budget = int(free_bytes * device_memory_utilization) - weights_size
-        if budget <= 0:
-            return 1
-        # Single in-place pool: divide half the budget by per_req.
-        max_batch = max(1, (budget // 2) // per_req)
-        return min(512, max_batch)
+        return sum(region.bytes_per_page for region in self._linear_regions())
+
+    def _per_request_ring_bytes(self, ring_len: int) -> int:
+        """Returns the per-request bytes of a verify's ring, padding included.
+
+        The ring is a scratch leaf of the state cache, drawn per request.
+        """
+        return sum(
+            region.bytes_per_page
+            for region in self._linear_regions(ring_len)
+            if region.scratch
+        )
 
     @override
     @classmethod
@@ -462,7 +813,6 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             max_seq_len=max_seq_len,
         )
 
-    @override
     @classmethod
     def initialize_from_config(
         cls,
@@ -480,14 +830,19 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         model_config = model_config or pipeline_config.model
         text_config = Qwen3_5Config._get_text_config(huggingface_config)
 
-        # Get base Llama3Config from the text config
-        base_config = Llama3Config.initialize_from_config(
-            pipeline_config, text_config, max_seq_len=max_seq_len
+        # The encoding and the weights' devices follow the pipeline's model;
+        # the cache follows ``model_config``.
+        quantization_encoding = _select_quantization_encoding(
+            pipeline_config.model, cls.DEFAULT_ENCODING
         )
+        weight_devices = [
+            DeviceRef(spec.device_type, spec.id)
+            for spec in pipeline_config.model.device_specs
+        ]
 
         kv_cache_config = model_config.kv_cache
         cache_dtype = cache_dtype_for_encoding(
-            base_config.quantization_encoding,
+            quantization_encoding,
             model_config.kv_cache.kv_cache_format,
         )
         n_devices = len(model_config.device_specs)
@@ -496,8 +851,9 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
             for spec in model_config.device_specs[:n_devices]
         ]
 
-        # Override KV params and attention multiplier
-        kv_params = Qwen3_5Config.construct_kv_params(
+        # Through ``cls`` so a speculative subclass's verify ring reaches
+        # memory planning, not only the cache the pipeline model allocates.
+        kv_params = cls.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
             devices=device_refs,
@@ -510,9 +866,9 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
 
         # Extract rope_theta and partial_rotary_factor.
         # Priority: top-level text_config.rope_theta > rope_parameters.rope_theta
-        # > base config default.  Qwen3.5 stores these inside rope_parameters;
+        # > get_rope_theta.  Qwen3.5 stores these inside rope_parameters;
         # some fine-tuned variants may promote rope_theta to the top level.
-        rope_theta = base_config.rope_theta
+        rope_theta = get_rope_theta(text_config)
         partial_rotary_factor = 0.25
         rope_params = getattr(text_config, "rope_parameters", None)
         if rope_params is not None:
@@ -564,16 +920,12 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
         state_pool_dtype: DType | None = None
         state_pool_dtype_str = model_config.kv_cache.state_pool_dtype
         if state_pool_dtype_str is not None:
-            _pool_dtype_map = {
-                "bfloat16": DType.bfloat16,
-                "float32": DType.float32,
-            }
-            if state_pool_dtype_str not in _pool_dtype_map:
+            if state_pool_dtype_str not in _POOL_DTYPE_MAP:
                 raise ValueError(
                     "state_pool_dtype must be 'bfloat16' or 'float32', got"
                     f" {state_pool_dtype_str!r}"
                 )
-            state_pool_dtype = _pool_dtype_map[state_pool_dtype_str]
+            state_pool_dtype = _POOL_DTYPE_MAP[state_pool_dtype_str]
 
         # Handle tie_word_embeddings from top-level config
         tie_word_embeddings = getattr(
@@ -608,30 +960,28 @@ class Qwen3_5Config(Llama3Config, ArchConfigWithVisionCache):
                 mrope_section = list(raw_section)
 
         config_instance = cls(
-            hidden_size=base_config.hidden_size,
-            num_attention_heads=base_config.num_attention_heads,
-            num_key_value_heads=base_config.num_key_value_heads,
-            num_hidden_layers=base_config.num_hidden_layers,
+            hidden_size=text_config.hidden_size,
+            num_attention_heads=text_config.num_attention_heads,
+            num_key_value_heads=text_config.num_key_value_heads,
+            num_hidden_layers=text_config.num_hidden_layers,
             rope_theta=rope_theta,
-            rope_scaling_params=base_config.rope_scaling_params,
-            rms_norm_eps=base_config.rms_norm_eps,
-            intermediate_size=base_config.intermediate_size,
+            # M-RoPE takes no Llama 3 frequency scaling.
+            rope_scaling_params=None,
+            intermediate_size=text_config.intermediate_size,
             # Partial RoPE requires interleaved pattern in the kernel
             interleaved_rope_weights=True,
-            vocab_size=base_config.vocab_size,
-            dtype=base_config.dtype,
-            model_quantization_encoding=base_config.model_quantization_encoding,
-            quantization_config=base_config.quantization_config,
-            max_seq_len=base_config.max_seq_len,
+            vocab_size=text_config.vocab_size,
+            dtype=supported_encoding_dtype(quantization_encoding),
+            model_quantization_encoding=supported_encoding_quantization(
+                quantization_encoding
+            ),
+            max_seq_len=max_seq_len,
             kv_params=kv_params,
             attention_multiplier=attention_multiplier,
-            embedding_multiplier=base_config.embedding_multiplier,
-            residual_multiplier=base_config.residual_multiplier,
-            devices=base_config.devices,
-            clip_qkv=base_config.clip_qkv,
-            use_subgraphs=base_config.use_subgraphs,
+            devices=weight_devices,
+            use_subgraphs=pipeline_config.model.use_subgraphs,
             tie_word_embeddings=tie_word_embeddings,
-            quantization_encoding=base_config.quantization_encoding,
+            quantization_encoding=quantization_encoding,
             # Hybrid attention parameters
             layer_types=layer_types,
             full_attention_interval=getattr(

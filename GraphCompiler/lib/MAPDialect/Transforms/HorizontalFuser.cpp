@@ -1,0 +1,699 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026, Modular Inc. All rights reserved.
+//
+// Licensed under the MAX License:
+// https://modular.com/legal/max-license
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
+//
+// Merges two sibling foreaches over the same index space that share an input
+// into one multi-output kernel, so the shared operand is loaded once. Unlike
+// the other fusers this pairs siblings rather than a producer with a consumer.
+// It also merges an elementwise producer whose result has other readers with
+// its consumer, keeping its store and handing the consumer the value it
+// computed; a consumer that reads a strided window of the result runs under a
+// `map.index.slice.select`. Opaque kernels take no part in either merge.
+//
+//===----------------------------------------------------------------------===//
+
+#include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
+#include "GraphCompiler/MAPDialect/Support/OutputFusion.h"
+#include "GraphCompiler/MAPDialect/Transforms/MAPTransforms.h"
+#include "GraphCompiler/MODialect/MODevices.h"
+#include "GraphCompiler/MODialect/MOOps.h"
+#include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
+#include "GraphCompiler/Support/DataflowUtils.h"
+#include "Support/AssertStream.h"
+
+#include "mlir/IR/IRMapping.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
+
+#include <optional>
+#include <tuple>
+
+using namespace M;
+
+namespace M::MAP {
+
+#define GEN_PASS_DEF_FUSEHORIZONTAL
+#include "GraphCompiler/MAPDialect/Transforms/MAPTransforms.h.inc"
+
+namespace {
+
+// The pair is rebuilt at `b`, so anything between the two that reads `a`'s
+// results would end up ahead of its definition. A graph region allows that and
+// the dependency walks already rule out a cycle, so this only keeps kernels in
+// def-before-use order, conservatively. A reader inside a region (an `mo.if`
+// branch) counts against the op that encloses it here, which is what actually
+// moves relative to `b`.
+bool resultsUnusedBefore(IterElementwiseOp a, IterElementwiseOp b) {
+  Block *block = b->getBlock();
+  return llvm::none_of(a->getUsers(), [&](Operation *user) {
+    Operation *inBlock = block->findAncestorOpInBlock(*user);
+    return inBlock && inBlock->isBeforeInBlock(b);
+  });
+}
+
+// `a`'s readers between `a` and `b` that can move past `b`, in block order,
+// or none when one of them can't: each has no region, no memory effect and no
+// parameter declaration, and nothing at or before `b` reads it. Such readers
+// are metadata, typically a `mo.rebind` of the result for the graph's output:
+//
+//   %x = add(%a, %b)                      // a
+//   %full = mo.rebind(%x)                 // moves past b
+//   %stops = mo.shape.to_tensor(...)
+//   %w = slice(%x, %starts, %stops, ...)  // b
+//   mo.output %full, %w
+std::optional<SmallVector<Operation *>>
+readersMovablePast(IterElementwiseOp a, IterElementwiseOp b) {
+  Block *block = b->getBlock();
+  SmallVector<Operation *> readers;
+  for (Operation *user : a->getUsers()) {
+    Operation *reader = block->findAncestorOpInBlock(*user);
+    if (!reader || !reader->isBeforeInBlock(b) ||
+        llvm::is_contained(readers, reader))
+      continue;
+    bool movable = reader->getNumRegions() == 0 && isMemoryEffectFree(reader);
+    if (!movable || llvm::any_of(reader->getUsers(), [&](Operation *later) {
+          Operation *inBlock = block->findAncestorOpInBlock(*later);
+          return inBlock && !b->isBeforeInBlock(inBlock);
+        }))
+      return std::nullopt;
+    readers.push_back(reader);
+  }
+  llvm::sort(readers,
+             [](Operation *x, Operation *y) { return x->isBeforeInBlock(y); });
+  return readers;
+}
+
+// Whether `op`'s body loads from its input `in`.
+bool loadsInput(IterElementwiseOp op, Value in) {
+  Block &body = op.getBody().front();
+  for (auto [i, operand] : llvm::enumerate(op.getInputs()))
+    if (operand == in &&
+        llvm::any_of(body.getArgument(i).getUsers(),
+                     [](Operation *user) { return isa<LoadOp>(user); }))
+      return true;
+  return false;
+}
+
+// The kernels `fusible` can pair: same shape and device, both loading
+// `loadedOperand`.
+struct FusionCandidateGroup {
+  Attribute shape;
+  Attribute device;
+  Value loadedOperand;
+
+  std::tuple<Attribute, Attribute, Value> key() const {
+    return {shape, device, loadedOperand};
+  }
+  bool operator==(const FusionCandidateGroup &other) const {
+    return key() == other.key();
+  }
+};
+
+// A kernel belongs to one group per operand it loads.
+SmallVector<FusionCandidateGroup>
+fusionCandidateGroupsOf(IterElementwiseOp op) {
+  SmallVector<FusionCandidateGroup> groups;
+  for (Value in : op.getInputs()) {
+    FusionCandidateGroup group{op.getShapeAttr(), MO::getDeviceOrDefault(op),
+                               in};
+    if (loadsInput(op, in) && !llvm::is_contained(groups, group))
+      groups.push_back(group);
+  }
+  return groups;
+}
+
+bool fusible(IterElementwiseOp a, IterElementwiseOp b) {
+  // 1) Check that both kernels have the same shape and device.
+  if (a.getShapeAttr() != b.getShapeAttr())
+    return false;
+  if (MO::getDeviceOrDefault(a) != MO::getDeviceOrDefault(b))
+    return false;
+
+  // 2) Skip kernels with side effects (not supported for now).
+  // A chain or a memory effect carries an ordering this pass doesn't model.
+  if (a.getChain() || b.getChain() || a.getHasReadEffect() ||
+      a.getHasWriteEffect() || b.getHasReadEffect() || b.getHasWriteEffect())
+    return false;
+
+  // A view chain becomes a zero-copy view after fusion, which a multi-result
+  // kernel can't, so merging it would turn a free view into a copy.
+  if (isRaisableViewChain(a) || isRaisableViewChain(b))
+    return false;
+
+  // 3) Only pair kernels that both load a shared operand.
+  // Loading it once is the whole gain. An operand only read as slice bounds
+  // (starts/stops/steps, shared by every window slice) saves nothing and would
+  // steal the slice from the producer it could fuse into. Most pairs fail here,
+  // so this runs before the dependency walks.
+  if (!llvm::any_of(a.getInputs(), [&](Value in) {
+        return llvm::is_contained(b.getInputs(), in) && loadsInput(a, in) &&
+               loadsInput(b, in);
+      }))
+    return false;
+
+  // 4) Check that no dependency between the 2 kernels makes the fused kernel
+  // invalid.
+  // The merged kernel takes `b`'s place, so nothing in between may read `a`'s
+  // results, and neither kernel may depend on the other, even indirectly, or it
+  // would consume its own result.
+  if (!resultsUnusedBefore(a, b))
+    return false;
+  return !dataflowGraphDependsOn(b, a) && !dataflowGraphDependsOn(a, b);
+}
+
+// Whether a slice leaves a strided window of its input that no view can
+// express -- the only kind worth a select in the producer's kernel. A
+// contiguous slice (every step 1, and at most one sliced dim ahead of the
+// first non-unit one) is an offset view, better left to view fusion than paid
+// for with a second store.
+bool isStridedWindow(SliceSpecAttr spec) {
+  MOSH::ShapeAttr in = spec.getSignature().getIn();
+  MOSH::ShapeAttr out = spec.getSignature().getOut();
+  ArrayRef<int64_t> steps = spec.getSteps().asArrayRef();
+  if (llvm::any_of(steps, [](int64_t step) { return step != 1; }))
+    return true;
+  bool nonUnitDimSeen = false;
+  for (unsigned d = 0, e = in.getRank(); d < e; ++d) {
+    if (in.getValues()[d] != out.getValues()[d] && nonUnitDimSeen)
+      return true;
+    if (in.getIntDims()[d] != 1)
+      nonUnitDimSeen = true;
+  }
+  return false;
+}
+
+// The slice through which a consumer reads the fused operand, when a select
+// at `selectIdx` can invert it: one load, through one `map.index.slice` of the
+// loop index, in a body with one store at the loop index; a strided window no
+// view expresses; and within the select's rules at that index. The body then
+// moves into the select, where the loop index is the slice's output index --
+// the consumer's own -- so elementwise work between the load and the store
+// keeps its meaning there. Null otherwise.
+// TODO(slariau): also take loads of the consumer's other inputs at the loop
+// index, which the select keeps in bounds; today they decline the merge.
+SliceIndexOp matchSelectableSlice(BlockArgument fusionArg,
+                                  BlockArgument loopIdx,
+                                  ArrayRef<StoreOp> stores, Value selectIdx) {
+  if (stores.size() != 1 || !fusionArg.hasOneUse())
+    return nullptr;
+  StoreOp store = stores.front();
+  auto load = dyn_cast<LoadOp>(*fusionArg.getUsers().begin());
+  if (!load)
+    return nullptr;
+  auto slice = load.getIndex().getDefiningOp<SliceIndexOp>();
+  if (!slice || slice.getIndex() != loopIdx || !slice->hasOneUse())
+    return nullptr;
+  if (store.getIndex() != loopIdx)
+    return nullptr;
+  if (llvm::any_of(loopIdx.getUsers(), [&](Operation *user) {
+        return user != slice.getOperation() && user != store.getOperation() &&
+               !isa<CallElementwiseOp>(user);
+      }))
+    return nullptr;
+  if (!isStridedWindow(slice.getSpec()) ||
+      failed(SliceSelectOp::verifySpecAt(slice.getSpec(), selectIdx)))
+    return nullptr;
+  return slice;
+}
+
+// The block argument `op`'s body reads its input `in` through. Body args are
+// [inputs..., outputs..., index], as MOToMAP builds them.
+BlockArgument inputArgFor(IterElementwiseOp op, Value in) {
+  return op.getBody().front().getArgument(llvm::find(op.getInputs(), in) -
+                                          op.getInputs().begin());
+}
+
+// `forwarded`, when set, is one of `a`'s results that `b` reads:
+//
+//   %x = mo.add(%p, %q)    // a
+//   %y = mo.relu(%x)       // b, forwarded = %x
+//   mo.output %x, %y       // %x is also read elsewhere
+//
+// The merged kernel takes no input for `%x`: `b`'s loads of it become the
+// value `a` stores to it, and `a`'s store stays for the other readers.
+//
+// `slice`, when set, is how `b` reads `%x`, `%y = mo.relu(%x[:, 1::2])`: `b`'s
+// body then runs in a `map.index.slice.select` at `a`'s index, where the slice
+// selects the element, and stores at the slice's index.
+//
+// Returns the merged kernel, created where `b` was, or where `a` was with
+// `atA`.
+IterElementwiseOp fuse(IterElementwiseOp a, IterElementwiseOp b,
+                       Value forwarded = {}, SliceIndexOp slice = {},
+                       bool atA = false) {
+  ASSERT_STREAM(!slice || forwarded, "a slice is how `b` reads `forwarded`");
+  // Merged inputs: `a`'s, then the ones only `b` carries. A shared operand
+  // keeps `a`'s slot, which is what collapses the duplicate load.
+  SmallVector<Value> inputs(a.getInputs());
+  SmallVector<unsigned> slotForBInput;
+  for (auto [i, in] : llvm::enumerate(b.getInputs())) {
+    // No slot for the forwarded result, whose loads are replaced below, nor
+    // for the slice's bounds, which the select carries statically.
+    BlockArgument arg = b.getBody().front().getArgument(i);
+    if (in == forwarded || (slice && !arg.use_empty() &&
+                            llvm::all_of(arg.getUsers(), [&](Operation *user) {
+                              return user == slice.getOperation();
+                            }))) {
+      slotForBInput.push_back(0);
+      continue;
+    }
+    auto *it = llvm::find(inputs, in);
+    slotForBInput.push_back(std::distance(inputs.begin(), it));
+    if (it == inputs.end())
+      inputs.push_back(in);
+  }
+
+  SmallVector<Type> resultTypes(a->getResultTypes());
+  llvm::append_range(resultTypes, b->getResultTypes());
+
+  MLIRContext *ctx = a.getContext();
+  Location loc = mlir::FusedLoc::get(ctx, {a.getLoc(), b.getLoc()});
+  OpBuilder builder(atA ? a : b);
+  // Deferred if either member is, as input fusion combines the launch policy.
+  auto fused = IterElementwiseOp::create(
+      builder, loc, resultTypes, a.getShapeAttr(), inputs,
+      /*chain=*/Value(),
+      /*fusionInfo=*/
+      MOGG::createFusionInfo<MOGG::FusionHorizontalAttr>(
+          ctx, {a.getOperation(), b.getOperation()}),
+      /*hasReadEffect=*/false, /*hasWriteEffect=*/false,
+      /*dispatch=*/
+      a.getDispatch() == MOGG::DispatchKind::Deferred ||
+              b.getDispatch() == MOGG::DispatchKind::Deferred
+          ? MOGG::DispatchKind::Deferred
+          : MOGG::DispatchKind::Immediate);
+
+  // `device` and friends are discardable, so `create` does not carry them.
+  // The pair shares its device; on any other clash `a`'s attribute wins.
+  NamedAttrList attrs(b->getDiscardableAttrDictionary());
+  for (NamedAttribute attr : a->getDiscardableAttrs())
+    attrs.set(attr.getName(), attr.getValue());
+  fused->setDiscardableAttrs(attrs.getDictionary(ctx));
+
+  Block &aBody = a.getBody().front();
+  Block *body = &fused.getBody().emplaceBlock();
+  for (Value in : inputs)
+    body->addArgument(in.getType(), loc);
+  for (Type ty : resultTypes)
+    body->addArgument(ty, loc);
+  body->addArgument(aBody.getArguments().back().getType(), loc);
+
+  OpBuilder bodyBuilder = OpBuilder::atBlockEnd(body);
+  BlockArgument index = body->getArguments().back();
+  unsigned outputBase = inputs.size();
+
+  IRMapping map;
+  BlockArgument forwardedArg = forwarded ? inputArgFor(b, forwarded) : nullptr;
+  Value forwardedValue;
+  auto cloneBody = [&](IterElementwiseOp src, ArrayRef<unsigned> inputSlots,
+                       unsigned firstOutput, OpBuilder &builder,
+                       Value srcIndex) {
+    // Body args are [inputs..., outputs..., index], as MOToMAP builds them.
+    Block &srcBody = src.getBody().front();
+    unsigned numInputs = src.getInputs().size();
+    for (unsigned i = 0; i < numInputs; ++i)
+      map.map(srcBody.getArgument(i), body->getArgument(inputSlots[i]));
+    for (unsigned i = 0, e = src->getNumResults(); i < e; ++i)
+      map.map(srcBody.getArgument(numInputs + i),
+              body->getArgument(outputBase + firstOutput + i));
+    map.map(srcBody.getArguments().back(), srcIndex);
+    for (Operation &op : srcBody) {
+      // A load of the forwarded result is the value `a` just stored.
+      auto load = dyn_cast<LoadOp>(op);
+      if (load && forwardedArg && load.getTensor() == forwardedArg) {
+        map.map(load.getResult(), forwardedValue);
+        continue;
+      }
+      if (slice && &op == slice.getOperation())
+        continue;
+      builder.clone(op, map);
+    }
+  };
+
+  SmallVector<unsigned> aSlots(
+      llvm::to_vector(llvm::seq<unsigned>(0, a.getInputs().size())));
+  cloneBody(a, aSlots, 0, bodyBuilder, index);
+  if (forwarded) {
+    // `a` stores the result once, at its loop index (see
+    // `fuseEscapingConsumer`); `b` loads it only at its own.
+    unsigned resultIdx = cast<OpResult>(forwarded).getResultNumber();
+    auto store =
+        cast<StoreOp>(*aBody.getArgument(a.getInputs().size() + resultIdx)
+                           .getUsers()
+                           .begin());
+    forwardedValue = map.lookup(store.getValue());
+  }
+  if (slice) {
+    auto select =
+        SliceSelectOp::create(bodyBuilder, loc, slice.getSpec(), index);
+    Block *selectBody = bodyBuilder.createBlock(
+        &select.getBody(), select.getBody().end(), {index.getType()}, {loc});
+    OpBuilder selectBuilder = OpBuilder::atBlockEnd(selectBody);
+    cloneBody(b, slotForBInput, a->getNumResults(), selectBuilder,
+              selectBody->getArgument(0));
+  } else {
+    cloneBody(b, slotForBInput, a->getNumResults(), bodyBuilder, index);
+  }
+
+  unsigned split = a->getNumResults();
+  a.replaceAllUsesWith(fused.getResults().take_front(split));
+  b.replaceAllUsesWith(fused.getResults().drop_front(split));
+  b.erase();
+  a.erase();
+  return fused;
+}
+
+// Whether `opaque` reads `value` only through prologues, where prologue
+// fusion can recompute its producer instead of loading it.
+bool readsOnlyThroughPrologue(IterOpaqueOp opaque, Value value) {
+  for (auto [in, arg] :
+       llvm::zip(opaque.getInputs(), opaque.getInputBlockArgs()))
+    if (in == value &&
+        !(arg.hasOneUse() && isa<IterPrologueOp>(*arg.getUsers().begin())))
+      return false;
+  return true;
+}
+
+// `dstKernel`'s result has one foreach consumer, `srcKernel`, and other
+// readers too, so input fusion leaves the pair alone. They merge into one
+// kernel that stores the result for the other readers and hands `srcKernel`
+// the value just computed instead of a reload:
+//
+//   %x = add(%a, %b)                   %x, %y = one kernel: add, then relu
+//   %k = cumsum(%x)           ->       %k = cumsum(%x)
+//   %y = relu(%x)
+//   mo.output %k, %x, %y               mo.output %k, %x, %y
+bool fuseEscapingConsumer(IterElementwiseOp dstKernel) {
+  if (dstKernel.getChain() || dstKernel.getHasReadEffect() ||
+      dstKernel.getHasWriteEffect() || isRaisableViewChain(dstKernel))
+    return false;
+  Block &dstBody = dstKernel.getBody().front();
+  for (auto [k, result] : llvm::enumerate(dstKernel->getResults())) {
+    // Returns the one foreach that reads `result`, or null. The merge pays
+    // only if `result` stays in memory anyway, because something else reads
+    // it:
+    //
+    //   %x = mo.add(%p, %q)
+    //   %y = mo.relu(%x)          // the consumer
+    //   mo.output %x, %y          // %x stays stored: merge, relu stops
+    //                             // reloading it
+    //
+    // Not when the other reader is an opaque kernel's prologue:
+    //
+    //   %b = mo.static.broadcast_to(%p)
+    //   %x = mo.add(%b, %q)
+    //   %y = mo.relu(%x)
+    //   %g = mo.gather(%x, %i)    // later fusion recomputes the add in the
+    //                             // relu and in the gather's prologue, so
+    //                             // %x is never stored
+    //
+    // Merging there would store %x where main doesn't, so we skip it, even
+    // though for some producers (a plain add) that recompute never happens.
+    // Several foreach readers return null too: they merge with each other
+    // first.
+    // TODO: this guesses whether later fusion would leave `dstKernel`'s
+    // result materialized, which is brittle. Fusion should choose between
+    // this merge and prologue fusion by comparing what each costs, rather
+    // than by predicting what the other pass will do.
+    auto getAndCheckConsumerKernel = [&]() -> IterElementwiseOp {
+      IterElementwiseOp consumerKernel;
+      bool needsStore = false;
+      for (OpOperand &use : result.getUses()) {
+        Operation *user = use.getOwner();
+        bool sameBlock = user->getBlock() == dstKernel->getBlock();
+        if (auto consumer = dyn_cast<IterElementwiseOp>(user);
+            consumer && sameBlock) {
+          if (consumerKernel)
+            return nullptr;
+          consumerKernel = consumer;
+        } else if (auto opaque = dyn_cast<IterOpaqueOp>(user);
+                   opaque && sameBlock) {
+          needsStore |= !readsOnlyThroughPrologue(opaque, result);
+        } else {
+          needsStore = true;
+        }
+      }
+      return needsStore ? consumerKernel : nullptr;
+    };
+    IterElementwiseOp srcKernel = getAndCheckConsumerKernel();
+    if (!srcKernel)
+      continue;
+
+    // Both kernels run on the same device, and `srcKernel` has no chain or
+    // memory effect and isn't a view chain.
+    if (MO::getDeviceOrDefault(dstKernel) !=
+            MO::getDeviceOrDefault(srcKernel) ||
+        srcKernel.getChain() || srcKernel.getHasReadEffect() ||
+        srcKernel.getHasWriteEffect() || isRaisableViewChain(srcKernel))
+      continue;
+    // `srcKernel` takes exactly one input from `dstKernel`, this result, so
+    // there is one value to forward.
+    if (llvm::count_if(srcKernel.getInputs(), [&](Value in) {
+          return in.getDefiningOp() == dstKernel.getOperation();
+        }) != 1)
+      continue;
+    // It reads that input only as `x[i]` at its own loop index, over the same
+    // indices: the element iteration i of the merged kernel holds. Or through
+    // one strided slice, `x[slice(i)]`, which a select inverts at
+    // `dstKernel`'s index.
+    Block &srcBody = srcKernel.getBody().front();
+    BlockArgument srcIdx = srcBody.getArguments().back();
+    BlockArgument fusionArg = inputArgFor(srcKernel, result);
+    bool readsAtOwnIndex =
+        llvm::all_of(fusionArg.getUsers(), [&](Operation *user) {
+          auto load = dyn_cast<LoadOp>(user);
+          return load && load->getBlock() == &srcBody &&
+                 load.getIndex() == srcIdx;
+        });
+    SliceIndexOp slice;
+    if (!readsAtOwnIndex) {
+      slice = matchSelectableSlice(fusionArg, srcIdx, getOutputStores(srcBody),
+                                   dstBody.getArguments().back());
+      if (!slice)
+        continue;
+    } else if (dstKernel.getShapeAttr() != srcKernel.getShapeAttr()) {
+      continue;
+    }
+    // `dstKernel` writes the result once, `x[i] = v` at its own loop index;
+    // `v` is the value forwarded.
+    BlockArgument out = dstBody.getArgument(dstKernel.getInputs().size() + k);
+    auto store = out.hasOneUse() ? dyn_cast<StoreOp>(*out.getUsers().begin())
+                                 : StoreOp();
+    if (!store || store->getBlock() != &dstBody ||
+        store.getIndex() != dstBody.getArguments().back())
+      continue;
+
+    // Where the merged kernel goes, with `dstKernel` = %x and `srcKernel` =
+    // %y, both returned:
+    //
+    //   nothing in between reads %x                  -> at %y
+    //   something does (an opaque kernel taking %x), and %y's other operands
+    //   are all defined before %x                    -> at %x
+    //     %x = add(%a, %b); %k = cumsum(%x); %y = relu(%x)
+    //   the readers in between are only metadata     -> they move past %y,
+    //                                                   then at %y
+    //     %x = add(%a, %b); %full = mo.rebind(%x); %y = slice(%x, .., %stops)
+    //   neither                                      -> no merge
+    //     %x = add(%a, %b); %k = cumsum(%x); %y = mul(%x, %k)
+    //
+    // At %y, as a sibling merge's, no other operand of %y may depend on %x.
+    bool atDst = false;
+    SmallVector<Operation *> readersToMove;
+    if (!resultsUnusedBefore(dstKernel, srcKernel)) {
+      atDst = llvm::all_of(srcKernel->getOperands(), [&](Value other) {
+        if (other == result)
+          return true;
+        Operation *def = other.getDefiningOp();
+        Operation *inBlock =
+            def ? dstKernel->getBlock()->findAncestorOpInBlock(*def) : nullptr;
+        return !inBlock || inBlock->isBeforeInBlock(dstKernel);
+      });
+      if (!atDst) {
+        std::optional<SmallVector<Operation *>> movable =
+            readersMovablePast(dstKernel, srcKernel);
+        if (!movable)
+          continue;
+        readersToMove = std::move(*movable);
+      }
+    }
+    if (!atDst && llvm::any_of(srcKernel->getOperands(), [&](Value other) {
+          return other != result && dataflowGraphDependsOn(other, dstKernel);
+        }))
+      continue;
+    Operation *anchor = srcKernel;
+    for (Operation *reader : readersToMove) {
+      reader->moveAfter(anchor);
+      anchor = reader;
+    }
+    fuse(dstKernel, srcKernel, result, slice, atDst);
+    return true;
+  }
+  return false;
+}
+
+struct FuseHorizontalPass
+    : public MAP::impl::FuseHorizontalBase<FuseHorizontalPass> {
+  using Base::Base;
+  FuseHorizontalPass(const FuseHorizontalPass &other) : Base(other) {}
+
+  void runOnOperation() override {
+    // Fusion stays within a block, so each block runs to its own fixpoint, as
+    // in `fuseOutput`. Blocks are not fully independent: a select merge in a
+    // branch drops the slice's bounds operands, which can remove the capture
+    // an outer pair's cycle check went through, so what fuses can depend on
+    // the order blocks are visited in. Every order gives valid IR. Unlike in
+    // `fuseOutput`, a block is not sorted first: the greedy choices follow
+    // block order.
+    getOperation().getBody().walk([&](Block *block) { fuseBlock(*block); });
+  }
+
+  void fuseBlock(Block &block) {
+    // Pairing can leave a producer one consumer for the merge, and a merge can
+    // expose a new pair, so alternate until none of them fuses anything.
+    while (true) {
+      bool pairedSiblings = fuseSiblings(block);
+      bool mergedConsumers = fuseEscapingConsumers(block);
+      if (!pairedSiblings && !mergedConsumers)
+        break;
+    }
+  }
+
+  // Returns whether any pair was fused.
+  bool fuseSiblings(Block &block) {
+    // Kernels with the same shape and device that load the same operand form
+    // a candidate group, and a kernel joins one group per operand it loads.
+    // The groups are built once. One sweep then visits the kernels in block
+    // order and fuses each with the first fusible later member of its groups.
+    // A fused pair empties `a`'s slot and puts the merged kernel in `b`'s,
+    // where `fuse` creates it, so slots stay in block order and the sweep
+    // reaches the merged kernel again, to try it against the members after
+    // it. Only the pair and the users of its results need new groups;
+    // rebuilding every kernel's groups after each pair would rescan the whole
+    // block once per fusion.
+    //
+    // For example, K0..K3 all load %x, so group %x = {K0, K1, K2, K3}, and
+    // every pair is fusible:
+    //
+    //   slot     0     1      2       3
+    //   start    K0    K1     K2      K3
+    //   i = 0    -     K01    K2      K3       fuse(K0, K1) into slot 1
+    //   i = 1    -     -      K012    K3       fuse(K01, K2) into slot 2
+    //   i = 2    -     -      -       K0123    fuse(K012, K3) into slot 3
+    //
+    // The sweep goes kernel by kernel, not group by group: kernels of other
+    // groups between these slots are visited as the sweep reaches them, and
+    // groups are patched after every fusion, not rebuilt once a group is
+    // done. The sweep never revisits earlier kernels: a merged kernel reads
+    // everything both members read, so every pair rejected before it is still
+    // rejected.
+    SmallVector<IterElementwiseOp> kernels =
+        llvm::to_vector(block.getOps<IterElementwiseOp>());
+    DenseMap<Operation *, unsigned> slotOf;
+
+    // A pair that shares no group fails `fusible`, so a kernel is tried only
+    // against the later kernels of its own groups. They are still visited in
+    // block order, which the greedy choice depends on.
+    SmallVector<SmallVector<FusionCandidateGroup>> groupsOf(kernels.size());
+    DenseMap<std::tuple<Attribute, Attribute, Value>, SmallVector<unsigned>>
+        members;
+    auto addGroups = [&](unsigned slot) {
+      groupsOf[slot] = fusionCandidateGroupsOf(kernels[slot]);
+      for (const FusionCandidateGroup &group : groupsOf[slot])
+        members[group.key()].push_back(slot);
+    };
+    auto dropGroups = [&](unsigned slot) {
+      for (const FusionCandidateGroup &group : groupsOf[slot])
+        llvm::erase(members[group.key()], slot);
+      groupsOf[slot].clear();
+    };
+    for (auto [slot, kernel] : llvm::enumerate(kernels)) {
+      slotOf[kernel] = slot;
+      addGroups(slot);
+    }
+
+    bool fusedAny = false;
+    for (unsigned i = 0, e = kernels.size(); i < e; ++i) {
+      if (!kernels[i])
+        continue;
+      SmallVector<unsigned> candidates;
+      for (const FusionCandidateGroup &group : groupsOf[i])
+        for (unsigned j : members.at(group.key()))
+          if (j > i)
+            candidates.push_back(j);
+      llvm::sort(candidates);
+      candidates.erase(llvm::unique(candidates), candidates.end());
+      for (unsigned j : candidates) {
+        IterElementwiseOp a = kernels[i];
+        IterElementwiseOp b = kernels[j];
+        if (!fusible(a, b))
+          continue;
+        // Users of the pair's results load the merged kernel's results after
+        // the fusion, which changes their groups.
+        llvm::SetVector<unsigned> users;
+        for (IterElementwiseOp member : {a, b})
+          for (Operation *user : member->getUsers())
+            if (auto it = slotOf.find(user); it != slotOf.end())
+              users.insert(it->second);
+        users.remove(i);
+        users.remove(j);
+        for (unsigned slot : users)
+          dropGroups(slot);
+        dropGroups(i);
+        dropGroups(j);
+        slotOf.erase(a);
+        slotOf.erase(b);
+
+        IterElementwiseOp merged = fuse(a, b);
+        kernels[i] = nullptr;
+        kernels[j] = merged;
+        slotOf[merged] = j;
+        addGroups(j);
+        for (unsigned slot : users)
+          addGroups(slot);
+        ++numKernelsFused;
+        fusedAny = true;
+        break;
+      }
+    }
+    return fusedAny;
+  }
+
+  // Returns whether any consumer was merged.
+  bool fuseEscapingConsumers(Block &block) {
+    bool mergedAny = false;
+    // A merge replaces both kernels, so the scan restarts after each one.
+    bool merged = true;
+    while (merged) {
+      merged = false;
+      for (IterElementwiseOp dst :
+           llvm::to_vector(block.getOps<IterElementwiseOp>())) {
+        if (fuseEscapingConsumer(dst)) {
+          ++numKernelsFused;
+          merged = true;
+          mergedAny = true;
+          break;
+        }
+      }
+    }
+    return mergedAny;
+  }
+
+  Statistic numKernelsFused{this, "num-kernels-fused",
+                            "Number of kernels fused"};
+};
+
+} // namespace
+
+} // namespace M::MAP

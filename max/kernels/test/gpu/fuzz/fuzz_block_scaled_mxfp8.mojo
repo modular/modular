@@ -37,8 +37,7 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
 from max.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from std.utils.index import Index
-from std.utils.static_tuple import StaticTuple
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
@@ -69,8 +68,8 @@ comptime K = get_defined_int["K", 1024 + 16]()  # K-tail (not a 32 multiple)
 comptime mma_n = get_defined_int["mma_n", 128]()
 comptime cta_group = get_defined_int["cta_group", 1]()
 
-comptime block_tile_shape = Index(bm, mma_n // cta_group, BK)
-comptime umma_shape = Index(cta_group * bm, mma_n, MMA_K)
+comptime block_tile_shape = (bm, mma_n // cta_group, BK)
+comptime umma_shape = (cta_group * bm, mma_n, MMA_K)
 
 comptime fuzz_seed = get_defined_int["fuzz_seed", 12345]()
 comptime budget = get_defined_int["budget", 16]()
@@ -108,9 +107,9 @@ def run_one_case(
     var m = spec.m
     comptime transpose_b = True
 
-    var a_shape = row_major(Coord(m, Idx[K]))
-    var b_shape = row_major(Coord(Idx[N], Idx[K]))
-    var c_shape = row_major(Coord(m, Idx[N]))
+    var a_shape = row_major(m, Idx[K])
+    var b_shape = row_major(Idx[N], Idx[K])
+    var c_shape = row_major(m, Idx[N])
 
     var a_size = m * K
     var b_size = N * K
@@ -121,7 +120,6 @@ def run_one_case(
     var b_host_ptr = ctx.enqueue_create_host_buffer[a_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_ptr = ctx.enqueue_create_host_buffer[out_dtype](c_size)
-    var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref_ptr = ctx.enqueue_create_host_buffer[out_dtype](c_size)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -134,22 +132,18 @@ def run_one_case(
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
-        Coord(
-            ceildiv(m, SF_MN_GROUP_SIZE),
-            Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        ceildiv(m, SF_MN_GROUP_SIZE),
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
     var b_scales_shape = row_major(
-        Coord(
-            Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
-            Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
-            Idx[SF_ATOM_M[0]],
-            Idx[SF_ATOM_M[1]],
-            Idx[SF_ATOM_K],
-        )
+        Idx[ceildiv(N, SF_MN_GROUP_SIZE)],
+        Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)],
+        Idx[SF_ATOM_M[0]],
+        Idx[SF_ATOM_M[1]],
+        Idx[SF_ATOM_K],
     )
 
     var a_scales_total = a_scales_shape.product()
@@ -175,8 +169,8 @@ def run_one_case(
 
     # Operands: uniform [0,1) fp8, matching the unit test (keeps cuBLAS ref in
     # the validated tolerance band).
-    rand(a_host._storage, a_host.num_elements())
-    rand(b_host._storage, b_host.num_elements())
+    rand(a_host.as_span())
+    rand(b_host.as_span())
 
     # E8M0 block scales: random powers of two in-range, 0.0 for padding.
     # NOTE: unused (padding) scales MUST be 0.0 or accuracy breaks (see the
@@ -226,7 +220,7 @@ def run_one_case(
         a_type, a_type, out_dtype, scales_dtype, scales_dtype, transpose_b
     ](
         scaling_kind=UMMAKind.KIND_MXF8F6F4,
-        cluster_shape=Index(cta_group, 1, 1),
+        cluster_shape=(Int(cta_group), Int(1), Int(1)),
         mma_shape=umma_shape,
         block_swizzle_size=8,
         cta_group=cta_group,
@@ -240,18 +234,13 @@ def run_one_case(
 
     if check:
         # Higher-precision reference: cuBLAS with the same E8M0 scales.
-        var a_lt = a_tensor.to_layout_tensor()
-        var b_lt = b_tensor.to_layout_tensor()
-        var a_scales_lt = a_scales_tensor.to_layout_tensor()
-        var b_scales_lt = b_scales_tensor.to_layout_tensor()
-        var c_ref_lt = c_ref_tensor.to_layout_tensor()
         vendor_blas.matmul(
             ctx,
-            c_ref_lt.as_unsafe_any_origin(),
-            a_lt,
-            b_lt,
-            a_scales=a_scales_lt.as_imm().as_unsafe_any_origin(),
-            b_scales=b_scales_lt.as_imm().as_unsafe_any_origin(),
+            c_ref_tensor,
+            a_tensor,
+            b_tensor,
+            a_scales=a_scales_tensor,
+            b_scales=b_scales_tensor,
             transpose_b=transpose_b,
             c_row_major=True,
         )
@@ -291,26 +280,15 @@ def main() raises:
 
     if mode == "single":
         var m = flag_int(args, "--m", 1000)
-        print("FUZZ_SINGLE m=", m, "N=", N, "K=", K, "mma_n=", mma_n)
+        print(t"FUZZ_SINGLE m= {m} N= {N} K= {K} mma_n= {mma_n}")
         with DeviceContext() as ctx:
             run_one_case(ctx, CaseSpec(m), check)
         print("FUZZ_RESULT verdict=PASS")
         return
 
     print(
-        "=== fuzz_block_scaled_mxfp8 seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "N=",
-        N,
-        "K=",
-        K,
-        "mma_n=",
-        mma_n,
-        "cta_group=",
-        cta_group,
-        "===",
+        t"=== fuzz_block_scaled_mxfp8 seed= {the_seed} budget= {the_budget} N="
+        t" {N} K= {K} mma_n= {mma_n} cta_group= {cta_group} ==="
     )
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:

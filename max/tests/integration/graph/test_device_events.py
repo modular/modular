@@ -16,7 +16,10 @@ from typing import Any
 
 import pytest
 from max import driver
-from max.driver import DevicePinnedBuffer
+from max.driver import (
+    Buffer,
+    Usage,
+)
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
@@ -61,9 +64,9 @@ class TestEventRecording:
     ) -> None:
         """Test recording events and synchronization."""
         width = 1024 * 1024
-        a_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        a_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         a_buf.to_numpy().fill(1)
-        b_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        b_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         b_buf.to_numpy().fill(2)
 
         a_dev = a_buf.to(device)
@@ -86,9 +89,9 @@ class TestEventRecording:
     ) -> None:
         """Test elapsed_time around actual GPU compute returns positive time."""
         width = 1024 * 1024
-        a_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        a_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         a_buf.to_numpy().fill(1)
-        b_buf = DevicePinnedBuffer(DType.int32, [width], device=device)
+        b_buf = Buffer(DType.int32, [width], device=device, usage=Usage.STAGING)
         b_buf.to_numpy().fill(2)
 
         a_dev = a_buf.to(device)

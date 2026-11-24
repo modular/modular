@@ -52,7 +52,7 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn import Module, Signals
+from max.nn.legacy import Module, Signals
 
 
 def _bf16_tolerances(K: int) -> tuple[float, float]:

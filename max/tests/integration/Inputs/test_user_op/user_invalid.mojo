@@ -12,13 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 import extensibility
-from extensibility import OutputTensor
+from extensibility import Output, Tensor
 
 
 @extensibility.register("fails_to_elaborate")
 struct FailsToElaborate:
     @staticmethod
-    def execute(
-        output: OutputTensor[dtype=.int32, rank=1, ...],
-    ):
+    def execute(output: Some[Output & Tensor]):
         comptime assert False, "oops"

@@ -19,7 +19,7 @@ import math
 import numpy as np
 import pytest
 import torch
-from conftest import (  # type: ignore[import-not-found]
+from conftest import (
     VISION_DEFAULT_OUTPUT_LENGTH,
     VISION_HIDDEN_SIZE,
     VISION_POOLING_KERNEL_SIZE,

@@ -4,9 +4,8 @@ sidebar_label: Constraints
 description: How to use Mojo's constraint system to express program guarantees.
 ---
 
-<!-- markdownlint-disable MD033 MD045 MD024-->
+<!-- markdownlint-disable MD033 MD045 -->
 <!-- FIXME: Add alt text to images -->
-<!-- FIXME: Summary is used twice as a heading -->
 
 Mojo's constraint system lets you express program guarantees that go beyond
 what the type system provides. This page explains how to use this system
@@ -15,64 +14,100 @@ effectively.
 A constraint, defined with the `where` keyword, represents a precondition for
 calling a function or instantiating a struct:
 
-```mojo
+```mojo no-test
 def pow2[n: Int]() -> Int where n >= 0:
     ...
 ```
 
 Here the `pow2()` function requires its `n` parameter to be greater than or
-equal to 0. The expression `n >= 0` is called a *proposition*. With the
-exception of very simple expressions, Mojo doesn't evaluate these propositions
-literally. Instead, it analyzes them symbolically, tracking a list of
-propositions that are known to be true in the current scope. Understanding this
-system of symbolic propositions is key to using constraints effectively.
+equal to 0. The expression `n >= 0` is a *proposition*. With the exception of
+very simple expressions, Mojo doesn't evaluate these propositions literally.
+Instead, it analyzes them symbolically, tracking a list of propositions that it
+knows to be true in the current scope. Understanding this system of symbolic
+propositions is key to using constraints effectively.
 
 Mojo also supports *compile-time assertions*, which test a proposition at
 compile time—if the assertion evaluates to false, compilation fails:
 
-```mojo
+```mojo no-test
 comptime assert x >= 0, "x must be greater than or equal to 0."
 ```
 
 ## Defining constraints
 
-You can use constraints in the following contexts:
+You can use constraints at the end of a function, method, or struct declaration,
+to constrain the values that you can bind to one or more parameters:
 
-- At the end of a function, method, or in the parameters of struct
-  declaration, to constrain the values that you can bind to one or more
-  parameters.
+```mojo no-test
+def pow2[n: Int]() -> Int where n >= 0:
 
-  `def pow2[n: Int]() -> Int where n >= 0:`
+struct Matrix[rank: Int] where rank > 0:
+```
 
-  A single `where` clause can constrain multiple parameters:
+A single `where` clause can constrain multiple parameters:
 
-  `def subspan[start: Int, end: Int](self) -> Self where end > start:`
+```mojo no-test
+def subspan[start: Int, end: Int](self) -> Self where end > start:
+```
 
-  Methods can gate their availability on parameters of the parent struct:
+Methods can gate their availability on parameters of the parent struct:
 
-  `def sort() where conforms_to(Self.T, Comparable):`
+```mojo no-test
+def sort(mut self) where conforms_to(Self.T, Comparable):
+```
 
-- In the trait conformance list for a struct, to declare that a struct conforms
-  to a trait only when certain conditions are met.
+You can also use `where` constraints in the trait conformance list for a struct,
+to declare that a struct conforms to a trait only when certain conditions are
+met:
 
-  `struct MyContainer[T: AnyType](Copyable where conforms_to(T, Copyable)):`
+```mojo no-test
+struct MyContainer[T: AnyType](Copyable where conforms_to(T, Copyable)):
+```
 
-  You'll use this form, called *conditional trait conformance*, when defining
-  parameterized types. For details, see the section on
-  [conditional trait conformances](/docs/manual/generics/#conditional-trait-conformance).
+Use this form, called *conditional trait conformance*, when defining
+parameterized types. For details, see the section on
+[conditional trait conformances](/docs/manual/generics/#conditional-trait-conformance).
+
+### Custom error messages
+
+By default, Mojo logs a generic error when it encounters a violated constraint.
+
+To provide a custom error message, use the `else` keyword:
+
+<code><strong>where </strong><var>condition</var>
+<strong> else </strong><var>error-message</var><strong></strong></code>
+
+For example:
+
+```mojo
+def pow2[n: Int]() -> Int where n >= 0 else "n must be nonnegative":
+    return 2**n
+
+
+def main():
+    print(pow2[-1]())
+```
+
+Calling `pow2[-1]()` violates the constraint, so compilation fails. The custom
+message appears on the note that points back at the constraint:
+
+```output
+error: invalid call to 'pow2': violated constraint
+note: constraint declared here evaluated to False, expected '(n >= Int(0))': n must be nonnegative
+```
 
 ## Symbolic propositions
 
 The constraint system works with *symbolic* propositions.
 
-```mojo
+```mojo no-test
 def first[size: Int](array: Array[_, size]) -> array.T where size > 0:
   ...
 ```
 
 In this case, `size > 0` is a proposition that the constraint system tracks.
 
-By analogy, when you annotate a type on an argument you ask the compiler to
+By analogy, when you annotate a type on an argument, you ask the compiler to
 ensure callers only pass that type. When you annotate a constraint on a
 function, you ask the compiler to ensure that the proposition is true at the
 call site.
@@ -84,61 +119,65 @@ constraint system.
 
 ### Introducing knowledge
 
-The compiler tracks knowledge by scopes: each scope contains a set of known
-true propositions, also known as "knowledge," and nested scopes accumulate
+The compiler tracks knowledge by scopes: each scope contains a set of
+known-true propositions, also known as "knowledge," and nested scopes accumulate
 knowledge from outer scopes.
 
 There are four ways to introduce knowledge to the system:
 
-- Inside a struct declaration, all constraints declared on the struct are
-  known, because concrete instances of the struct type can only be
-  created when the proposition is true:
+- Inside a struct declaration, the compiler knows all constraints declared on
+  the struct, because you can only create concrete instances of the struct
+  type when the proposition is true:
 
-    ```mojo
-    struct List[size: Int] where size >= 0:
+  ```mojo
+  struct SizedList[size: Int] where size >= 0:
       # Knowledge base:
       # - `size >= 0`
-    ```
+      var data: List[Int]
 
-- Inside a function, all constraints declared on the function are known,
-  because callers can only call the function if they guarantee the constraint
-  holds:
+      def __init__(out self):
+          self.data = List[Int](capacity=Self.size)
+  ```
 
-    ```mojo
-    def create_list[size: Int]() -> List[size] where size >= 0:
+- Inside a function, the compiler knows all constraints declared on the
+  function, because callers can only call the function if they guarantee the
+  constraint holds:
+
+  ```mojo
+  def create_sized_list[size: Int]() -> SizedList[size] where size >= 0:
       # Knowledge base:
       # - `size >= 0`
-    ```
+      return SizedList[size]()
+  ```
 
-- Inside a `comptime if`, the `if` condition is known, because the code within
-  the body is only instantiated if the condition is true:
+- Inside a `comptime if`, the compiler knows the `if` condition, because it
+  only instantiates the code within the body if the condition is true:
 
-    ```mojo
-    comptime if size >= 0:
+  ```mojo
+  comptime if size >= 0:
       # Knowledge base:
       # - `size >= 0`
 
-      comptime if size.is_even():
-        # Knowledge base:
-        # - `size >= 0`
-        # - `size.is_even()`
-    ```
+      comptime if size % 2 == 0:
+          # Knowledge base:
+          # - `size >= 0`
+          # - `size % 2 == 0`
+          print("nonnegative and even")
+      else:
+          print("nonnegative and odd")
+  ```
 
-- After a `comptime assert`, the asserted condition is known, because the
-  compiler won't instantiate a function if a `comptime assert` condition is
-  false. So any code after it is only instantiated if the assertion didn't
-  fire:
+- After a `comptime assert`, the compiler knows the asserted condition, because
+  it won't instantiate a function if a `comptime assert` condition is false. So
+  it only instantiates any code that follows if the assertion didn't fire:
 
-    ```mojo
-    comptime assert size >= 0
-    # Knowledge base:
-    # - `size >= 0`
+  ```mojo
+  comptime assert size >= 0
+  # Knowledge base:
+  # - `size >= 0`
 
-    comptime assert size.is_even()
-    # Knowledge base:
-    # - `size >= 0`
-    # - `size.is_even()`
-    ```
+  var l = create_sized_list[size]()
+  ```
 
 ### Satisfying constraints with knowledge
 
@@ -154,23 +193,26 @@ your behalf. Instead, it treats these propositions as opaque and only uses
 knowledge you've explicitly introduced in the calling scope.
 
 ```mojo
+from std.collections.array import Array
+
+
 # A function that wants a non-empty list.
 def print_first[size: Int](l: Array[Int, size]) where size >= 1:
-    ...
+    print(l[0])
 
 
 # A wrapper that wants a size >= 2 list.
 def print_first_two[size: Int](l: Array[Int, size]) where size >= 2:
-     # Error: invalid call to 'print_first': lacking evidence to prove
-     # correctness
+    # Error: invalid call to 'print_first': lacking evidence to prove
+    # correctness
     print_first[size](l)
-    # ...
+    print(l[1])
 ```
 
 Mojo checks constraints without knowing all the call sites, and these
-expressions can reference symbolic parameter values-for example `is_prime(x)`
+expressions can reference symbolic parameter values—for example `is_prime(x)`
 where `x` is unknown. Because of this, Mojo can't interpret `is_prime()` for all
-possible values of `x`, nor can it make logical deductions. For example if
+possible values of `x`, nor can it make logical deductions. For example, if
 `is_prime(x)` and `x > 2` are true, it can't deduce that `is_odd(x)` must also
 be true.
 
@@ -179,13 +221,9 @@ be true.
 Use `comptime assert` to introduce a known-true proposition at a specific
 point in the code:
 
-```mojo
+```mojo no-test
 comptime assert x > 0, "x must be greater than 0."
 ```
-
-The message is optional. If the condition evaluates to false at compile time,
-compilation fails and the compiler shows the message (or a default message if
-none is specified).
 
 Mojo adds the asserted condition to the list of "known true" propositions for
 any code following the assertion.
@@ -194,16 +232,25 @@ Constraints and assertions serve complementary roles: a `where` clause exposes
 a *requirement* that callers must prove, and `comptime assert` is one way to
 satisfy that requirement.
 
+Although Mojo treats `comptime` assertions as true when evaluating constraints,
+it tests them later in the compilation process, during elaboration, when it
+knows the actual parameter values. If the condition evaluates to false during
+elaboration, compilation fails and the compiler shows an error message.
+
+As shown above, you can supply a custom error message following the condition.
+This helps with debugging; the errors the compiler generates during elaboration
+are often less helpful than a hand-written message.
+
 ## Limited evaluation of propositions
 
 In general, it's safe to assume that the constraint system doesn't evaluate
-propositions directly, and that all knowledge needs to be provided explicitly.
-However, the constraint system does apply a *very
-limited* amount of "smartness" for very common cases. These are provided as a
-convenience and should not be treated as the norm.
+propositions directly, and that you need to provide all knowledge explicitly.
+However, the constraint system does apply a *very limited* amount of
+"smartness" for very common cases. These exist as a convenience, so don't treat
+them as the norm.
 
-The goal is to provide a consistent, predictable experience so users can
-recognize these patterns as they become more familiar with the system.
+The goal is to provide a consistent, predictable experience so you can
+recognize these patterns as you become more familiar with the system.
 
 ### Simple implication
 
@@ -213,21 +260,33 @@ propositions.
 
 ```mojo
 def create_list[T: Copyable, size: Int]() -> List[T] where size >= 0:
-    return List[T](capacity = size)
+    return List[T](capacity=size)
 
-def create_even_list[T: Copyable, size: Int]() -> List[T] where (
-    size >= 0 and (size / 2) * 2 == size
-):
+
+def create_even_list[
+    T: Copyable, size: Int
+]() -> List[T] where size >= 0 and (size / 2) * 2 == size:
     # No need to individually prove `size >= 0` — it's part of the
     # `and` above, so the call to `create_list` type-checks.
     return create_list[T, size=size]()
+
 
 def main():
     var l1 = create_even_list[Int, 4]()
     print(len(l1) % 2)
     # Prints 0, since the list has an even number of elements.
+```
 
-    # var l2 = create_even_list[Int, 5]()  # Won't compile: 5 isn't even.
+An odd size fails the second half of the `and`, so the call is rejected:
+
+```mojo
+# Won't compile: 5 isn't even.
+var l2 = create_even_list[Int, 5]()
+```
+
+```output
+error: invalid call to 'create_even_list': violated constraint
+note: constraint declared here evaluated to False
 ```
 
 Similarly, `A` implies `A or B` for any `B`.
@@ -235,53 +294,72 @@ Similarly, `A` implies `A or B` for any `B`.
 ### Canonicalization
 
 Sometimes there is more than one way to write the same expression. The system
-always simplifies expressions into a normal form internally, so expressions
-that aren't identical on the surface may be seen as identical by the system.
+always simplifies expressions into a normal form internally, so the system may
+treat expressions that aren't identical on the surface as identical.
 
 The following are self-explanatory (assume `x: Int`):
 
 - `x > 0` == `x >= 1`
-- `x >= 2` == `not (x < 2)`
+- `x >= 2` == `x > 1`
 - `x + x` == `2 * x`
 
+Negation is not part of this: the system treats `not (x < 2)` as its own
+proposition, so it satisfies neither `x >= 2` nor `x > 1`.
+
 There's a special case for function calls. When invoking functions as part of
-a proposition, the system treats the entire function call as opaque. Only two
-identical function calls are the same.
+a proposition, the system treats the entire function call as opaque. Two
+function calls match only if they're identical.
 
 ```mojo
 def is_even(x: Int) -> Bool:
-  return x % 2 == 0
+    return x % 2 == 0
+
 
 def needs_even[x: Int]() where is_even(x):
-  pass
-
-def forward_even_bad[x: Int]() where x % 2 == 0:
-  # ERROR: Needs evidence for `is_even(x)`.
-  needs_even[x]()
-
-def forward_even_good[x: Int]() where is_even(x):
-  # SUCCESS
-  needs_even[x]()
+    pass
 ```
+
+Forwarding the requirement under a different spelling fails, even though the
+two propositions mean the same thing:
+
+```mojo
+def forward_even_bad[x: Int]() where x % 2 == 0:
+    # ERROR: Needs evidence for `is_even(x)`.
+    needs_even[x]()
+```
+
+Declaring the constraint as the identical call makes it match:
+
+```mojo
+def forward_even_good[x: Int]() where is_even(x):
+    # SUCCESS: the constraint is the identical call, so it matches.
+    needs_even[x]()
+```
+
+<a id="builtin-functions"></a>
 
 :::note Builtin functions
 
-Some functions in the standard library can be evaluated in `where` clauses.
-These functions implement simple operations on core types (for example, `Int`
-numerics), which are known to the compiler. These functions and can be inlined
-into the calling expression when called in a parameter context.
+The compiler can evaluate some standard library functions in `where` clauses.
+These functions implement simple operations on core types that the compiler
+knows about (for example, `Int` numerics), and it can inline them into the
+calling expression when you call them in a parameter context.
 
 However, there's no way to identify these builtin functions without looking at
 the source code, and whether a given function is builtin may change without
 notice.
 
 If you need a predicate that works transparently rather than opaquely, consider
-implementing it as a parametric comptime value instead, which is always
-inlined.
+implementing it as a parametric comptime value instead, which the compiler
+always inlines.
 
-```mojo
+```mojo no-test
 comptime is_even[x: Int]: Bool = x % 2 == 0
 ```
+
+Inlining only removes the opacity, though. The inlined expression still has to
+be one the compiler can evaluate, and `%` on `Int` isn't — see
+[Folding stops at operations the compiler can't evaluate](#folding-stops-at-operations-the-compiler-cant-evaluate).
 
 :::
 
@@ -290,8 +368,8 @@ comptime is_even[x: Int]: Bool = x % 2 == 0
 This is more of an extreme case of canonicalization than a separate category,
 but may catch people by surprise.
 
-Certain primitive operations on constants can be canonicalized into a new
-constant. For example:
+The system can canonicalize certain primitive operations on constants into a
+new constant. For example:
 
 - `1 + 1` == `2`
 - `4 % 2` == `0`
@@ -304,11 +382,39 @@ This extends to expressions with a mix of constants and non-constants:
 Concretely, this means you may omit explicitly providing knowledge for
 propositions that are simple operations on constants:
 
-```mojo
+```mojo no-test
 def create_my_list() -> List[2]:
   # No need to provide evidence for `2 >= 0`.
   return create_list[2]()
 ```
+
+#### Folding stops at operations the compiler can't evaluate
+
+Folding is limited to operations the compiler knows natively. On `Int`,
+comparisons and `+`, `-`, `*`, and `&` all fold, but `%` and `//` don't —
+they dispatch to methods the constraint evaluator can't call.
+
+Passing a literal parameter value doesn't rescue them. This call fails even
+though `4` is plainly even:
+
+```mojo
+def needs_even_size[n: Int]() where n % 2 == 0:
+    pass
+
+
+def main():
+    # Error: constraint declared here needs evidence for
+    # '((Int(4) % Int(2)) == Int(0))'
+    needs_even_size[4]()
+```
+
+Substituting `4` for `n` leaves `(Int(4) % Int(2)) == Int(0)`, which still
+contains the call the evaluator can't make. Note that writing the same
+arithmetic as literals in the constraint itself — `where 4 % 2 == 0` — does
+type-check, because then there's no `Int` method call left to evaluate.
+
+This is the same limit the [Builtin functions](#builtin-functions) note
+describes, reached from the other direction.
 
 ## Best practices
 
@@ -332,35 +438,21 @@ for you?
 
 #### Q1: Does your function handle the entire domain of its input types?
 
-If you can write your function so that it returns a result or throws an error
-on all inputs, you don't need to care about constraints at all. Just write
-your function as usual.
+If you can write your function so that it returns a result for all compile-time
+known inputs, you don't need to care about constraints.
 
-For example, the following functions do *not* need constraints since they're
-guaranteed to return or throw:
-
-```mojo
-def create_list_opt[size: Int]() -> Optional[List[size]]:
-  comptime if size < 0:
-    return None
-  return ...
-
-def create_list_raise[size: Int]() raises -> List[size]:
-  comptime if size < 0:
-    raise Error("negative size!")
-  return ...
-```
-
-Constraints are only for cases where you don't want to check for exceptional
-cases at execution time.
+Constraints don't help for error conditions that are only detectable
+at runtime, like being unable to open a file, or an argument value that's
+out of bounds. These are runtime issues that you can handle by raising
+an error or aborting.
 
 - Constraints ask the type checker to rule out exceptional cases so that a
   type-checked program guarantees you (as the function author) don't need to
-  handle these cases in your function body using run-time resources.
+  handle these cases in your function body using runtime resources.
 - As always, enforcing static guarantees isn't free. You're trading off
-  run-time error checking logic for compile-time proof writing. In the
-  absence of hard limits that prevent you from error checking at run
-  time, it comes down to your preference for user experience.
+  runtime error checking logic for compile-time proof writing. In the
+  absence of hard limits that prevent you from error checking at runtime,
+  it comes down to your preference for user experience.
 
 #### Q2: Is this limitation a central concept of your code?
 
@@ -376,9 +468,9 @@ Examples:
 - A network library that needs to represent port numbers, which must be in
   the valid range.
 
-This is a good approach because the constraint is proven once (at construction)
-and the refined value can be passed around unconstrained until it needs to be
-disassembled. Your APIs stay simpler: fewer `where` clauses, fewer repeated
+This is a good approach because you prove the constraint once (at construction)
+and can then pass the refined value around unconstrained until you need to
+disassemble it. Your APIs stay simpler: fewer `where` clauses, fewer repeated
 asserts.
 
 A new type doesn't come for free though, as it's no longer freely
@@ -404,7 +496,7 @@ This tends to be the right choice when:
 
 Example:
 
-```mojo
+```mojo no-test
 def take_prefix[n: Int, len: Int](...) -> ... where 0 <= n <= len:
   ...
 ```
@@ -414,7 +506,7 @@ immediately understand *what they did wrong* when the constraint fails,
 `where` is likely the right tool.
 
 If the constraint is *not* understandable or *not* provable by the
-user, use `assert` or `abort`.
+user, use `comptime assert` or [`abort()`](/docs/std/os/os/abort/).
 
 If the "bad case" isn't something users would understand, adding a `where`
 constraint only causes more confusion, as users can't reasonably prove it
@@ -423,22 +515,22 @@ themselves.
 - This typically happens when your library returns a value that has some
   internal constraints on it and expects users to pass it back with those
   constraints. For example, a communication library passes a device handle to
-  the user as an `Int`, which has properties that are only known internally (for
-  example, non-negative, special bits). Library APIs accepting this handle can't
-  expect the user to prove these.
+  the user as an [`Int`](/docs/std/simd/#int), which has properties that only
+  the library knows (for example, non-negative, special bits). Library APIs
+  accepting this handle can't expect the user to prove these.
 - There are usually more type-safe ways to achieve the same thing, so only do
   this if you don't care about type safety. For example, a more type-safe
   approach is to introduce a new type for the device handle so users are less
   likely to accidentally pass another `Int` or modify the returned value
   unexpectedly.
 
-#### Summary
+#### Writing functions summary
 
-- Use a dedicated type when the condition is a common refinement that should
-  be proven once and reused everywhere.
+- Use a dedicated type when the condition is a common refinement that you
+  should prove once and reuse everywhere.
 - Use `where` when the condition is a user-understandable precondition.
-- Use `comptime assert` or `abort` for internal inconsistencies in your library
-  where a user can't do anything with the failure.
+- Use `comptime assert` or `abort()` for internal inconsistencies in your
+  library where a user can't do anything with the failure.
 
 ### Calling functions
 
@@ -473,7 +565,7 @@ function.
 
 For example, to propagate the constraint to your callers:
 
-```mojo
+```mojo no-test
 def create_list[T: Copyable, size: Int]() -> List[T] where size >= 0:
   return List[T](capacity = size)
 
@@ -489,7 +581,7 @@ to **handle both cases** explicitly using a `comptime if`.
 
 For example, narrow the domain by checking before the call:
 
-```mojo
+```mojo no-test
 def create_list_and_fill[size: Int]() -> Optional[List[size]]:
   comptime if size >= 0:
     return needs_nonneg[size]()
@@ -499,8 +591,8 @@ def create_list_and_fill[size: Int]() -> Optional[List[size]]:
 
 #### Q3: Do you know that the parameter already satisfies this condition?
 
-If the parameter didn't come from a parent parameter list, it must
-have been computed in the body.
+If the parameter didn't come from a parent parameter list, you must have
+computed it in the body.
 
 Decide whether the desired constraint **holds by construction**.
 
@@ -508,14 +600,14 @@ If it does, indicate this to the constraint system via a `comptime assert`.
 Note that this is you explicitly taking over the burden of proof.
 
 Don't be afraid to write these asserts. The symbolic nature of the constraint
-system means that it is conservative—logical deductions that are obvious to
-you aren't always "obvious" to it. Adding `comptime assert` is not a
+system means that it's conservative—logical deductions that are obvious to
+you aren't always "obvious" to it. Adding `comptime assert` isn't a
 code smell, but rather an inseparable part of working within the constraint
 system.
 
 For example, given a computed parameter that is always valid:
 
-```mojo
+```mojo no-test
 # The constraint on hi & lo guarantees a valid size.
 # Introduce this piece of knowledge explicitly.
 
@@ -529,7 +621,7 @@ handle both cases explicitly.
 
 For example, a computed parameter that may be invalid:
 
-```mojo
+```mojo no-test
 # This version does NOT have a constraint on its inputs.
 # Branch on the computation to handle both cases.
 def create_list_from_span[lo: Int, hi: Int]() -> Optional[List[hi - lo]]:
@@ -540,17 +632,17 @@ def create_list_from_span[lo: Int, hi: Int]() -> Optional[List[hi - lo]]:
     return None
 ```
 
-## Summary
+#### Calling functions summary
 
 - Constraints are part of the API contract.
   - A `where` clause is a precondition that the **API author** requires the
     **caller** to prove.
 - The compiler doesn't automatically derive evidence for callers.
-  - The caller must explicitly provide evidence that the precondition is always
-    satisfied.
-- If a caller gets a "lacking evidence" error, they can:
-  1. Add a constraint to push the requirement onto their own callers.
-  2. Branch on the condition (`comptime if`).
-  3. Assert an invariant (`comptime assert`).
+  - The caller must explicitly provide evidence that the precondition always
+    holds.
+- If you get a "lacking evidence" error, you can:
+  - Add a constraint to push the requirement onto your own callers.
+  - Branch on the condition (`comptime if`).
+  - Assert an invariant (`comptime assert`).
 
-<!-- markdownlint-enable MD033 MD045 MD024 -->
+<!-- markdownlint-enable MD033 MD045 -->

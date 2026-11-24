@@ -37,7 +37,7 @@ bound on the pure kernel delta.
 from max.gpu.host import DeviceContext
 from std.time import perf_counter
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 
 from linalg.grouped_matmul import naive_grouped_matmul
 from linalg.matmul.gpu.apple.matmul2d_fp8 import enqueue_grouped_matmul2d_fp8
@@ -99,23 +99,19 @@ def _bench_grouped[
     ctx.enqueue_copy(off_dev_buf, off_host)
     ctx.enqueue_copy(eid_dev_buf, eid_host)
 
-    var a_tt = TileTensor(
-        act_dev.unsafe_ptr(), row_major(Coord(total_M, Idx[K]))
-    )
+    var a_tt = TileTensor(act_dev.unsafe_ptr(), row_major(total_M, Idx[K]))
     var b_fp8_tt = TileTensor(
         b_fp8_dev.unsafe_ptr(), row_major[num_experts, N, K]()
     )
     var b_bf16_tt = TileTensor(
         b_bf16_dev.unsafe_ptr(), row_major[num_experts, N, K]()
     )
-    var out_tt = TileTensor(
-        out_dev.unsafe_ptr(), row_major(Coord(total_M, Idx[N]))
-    )
+    var out_tt = TileTensor(out_dev.unsafe_ptr(), row_major(total_M, Idx[N]))
     var off_tt = TileTensor(
-        off_dev_buf.unsafe_ptr(), row_major(Coord(num_experts + 1))
+        off_dev_buf.unsafe_ptr(), row_major(num_experts + 1)
     )
     var eid_tt = TileTensor(
-        eid_dev_buf.unsafe_ptr(), row_major(Coord(Idx[num_experts]))
+        eid_dev_buf.unsafe_ptr(), row_major(Idx[num_experts])
     )
     ctx.synchronize()
 
@@ -205,33 +201,13 @@ def _bench_grouped[
 
     var wbytes = Float64(num_active) * Float64(N) * Float64(K)  # fp8: 1 B/wt
     print(
-        "  ",
-        name,
-        " N=",
-        N,
-        " K=",
-        K,
-        " active=",
-        num_active,
-        " tok/exp=",
-        tokens_per_expert,
-        ":\n     naive-bf16 ",
-        nb_sec * 1e6,
-        "us (",
-        (2.0 * wbytes) / (nb_sec * 1e9),
-        "GB/s) | naive-fp8 ",
-        nf_sec * 1e6,
-        "us (",
-        wbytes / (nf_sec * 1e9),
-        "GB/s) | tiled-fp8 ",
-        tf_sec * 1e6,
-        "us (",
-        wbytes / (tf_sec * 1e9),
-        "GB/s)\n     tiled-fp8 vs naive-bf16: ",
-        nb_sec / tf_sec,
-        "x | tiled-fp8 vs naive-fp8: ",
-        nf_sec / tf_sec,
-        "x",
+        t"   {name}  N= {N}  K= {K}  active= {num_active}  tok/exp="
+        t" {tokens_per_expert} :\n     naive-bf16  {nb_sec * 1e6} us ("
+        t" {(2.0 * wbytes) / (nb_sec * 1e9)} GB/s) | naive-fp8 "
+        t" {nf_sec * 1e6} us ( {wbytes / (nf_sec * 1e9)} GB/s) | tiled-fp8 "
+        t" {tf_sec * 1e6} us ( {wbytes / (tf_sec * 1e9)} GB/s)\n     tiled-fp8"
+        t" vs naive-bf16:  {nb_sec / tf_sec} x | tiled-fp8 vs naive-fp8: "
+        t" {nf_sec / tf_sec} x"
     )
 
     _ = act_dev^
@@ -244,8 +220,11 @@ def _bench_grouped[
 
 def main() raises:
     with DeviceContext() as ctx:
-        if ctx.compute_capability() != 5:
-            print("skip: grouped W8A16 tiled matmul bench requires Apple M5")
+        if ctx.compute_capability() < 5:
+            print(
+                "skip: grouped W8A16 tiled matmul bench requires Apple M5 or"
+                " newer"
+            )
             return
 
         # Nemotron-3-Nano-30B-A3B MoE: 128 experts, top-6, hidden=2688,

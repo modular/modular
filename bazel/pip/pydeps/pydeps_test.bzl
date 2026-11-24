@@ -125,11 +125,14 @@ def _split_third_party_deps(name, **kwargs):
                 new_select[key] = new_select_deps
             new_deps += select(new_select)
         else:
+            # new_deps may already be a select() by now, which has no append().
+            plain_deps = []
             for dep in elements:
                 if "pycross" in dep.repo_name:
                     pycross_deps.append(str(dep))
                 else:
-                    new_deps.append(dep)
+                    plain_deps.append(dep)
+            new_deps += plain_deps
 
     return kwargs | {
         "deps": new_deps,

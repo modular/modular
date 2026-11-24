@@ -81,13 +81,15 @@ OptionalParseResult POP::ArrayType::parseValue(AsmParser &p,
   return p.parseRSquare();
 }
 
-LogicalResult POP::ArrayType::printValue(AsmPrinter &p, TypedAttr value) const {
+LogicalResult POP::ArrayType::printValue(AsmPrinter &p, TypedAttr value,
+                                         KGENParamPrinter &printer) const {
   auto array = ::dyn_cast<POP::ArrayAttr>(value);
   if (!array)
     return failure();
   p << '[';
-  llvm::interleaveComma(array.getValues(), p,
-                        [&](TypedAttr value) { printParamValue(p, value); });
+  llvm::interleaveComma(array.getValues(), p, [&](TypedAttr value) {
+    printer.printParamValue(p, value);
+  });
   p << ']';
   return mlir::success();
 }
@@ -280,10 +282,16 @@ TypedAttr IntLiteralConvertAttr::get(MLIRContext *ctx, Type type,
 
 bool IntLiteralConvertAttr::isConstant() const { return false; }
 
-ErrorOrSuccess IntLiteralConvertAttr::validateForElaborator() const {
+FailureOr<TypedAttr> IntLiteralConvertAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  if (!ParameterAttr::isSimpleConstant(getInput()))
+    return failure();
   auto result = foldIntLiteralConvert(getInput(), getType());
-  assert(result.isError() && "Should be folded if present");
-  return result.takeError();
+  if (!result.isError())
+    return result.get();
+  context.emitMaterializationError(result.takeError().get(),
+                                   MaterializationErrorKind::Unfolded);
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//
@@ -706,10 +714,16 @@ TypedAttr FloatLiteralConvertAttr::get(MLIRContext *ctx, Type type,
 
 bool FloatLiteralConvertAttr::isConstant() const { return false; }
 
-ErrorOrSuccess FloatLiteralConvertAttr::validateForElaborator() const {
+FailureOr<TypedAttr> FloatLiteralConvertAttr::evaluateWithContext(
+    ParameterEvaluationContext &context) const {
+  if (!ParameterAttr::isSimpleConstant(getInput()))
+    return failure();
   auto result = foldFloatLiteralConvert(getInput(), getType());
-  assert(result.isError() && "Should be folded if present");
-  return result.takeError();
+  if (!result.isError())
+    return result.get();
+  context.emitMaterializationError(result.takeError().get(),
+                                   MaterializationErrorKind::Unfolded);
+  return failure();
 }
 
 //===----------------------------------------------------------------------===//

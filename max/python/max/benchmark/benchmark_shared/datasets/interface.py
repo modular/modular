@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""The interface every benchmark dataset implements."""
+
 from __future__ import annotations
 
 import os
@@ -148,7 +150,6 @@ class BenchmarkDataset(ABC):
         Raises:
             ValueError: If dataset_name is not recognized
         """
-
         if dataset_name not in DATASET_REGISTRY:
             available_datasets = ", ".join(DATASET_REGISTRY.keys())
             raise ValueError(
@@ -232,7 +233,7 @@ class BenchmarkDataset(ABC):
                 If provided, must have length equal to num_requests.
             shuffle: Whether to shuffle the dataset before sampling. Default is True.
             pool: Optional tokenizer process pool. Required by datasets that
-                fan tokenize work out to workers (e.g. Random/Synthetic).
+                fan tokenize work out to workers (such as Random/Synthetic).
                 Datasets that don't tokenize via the pool ignore it.
             **kwargs: Additional dataset-specific parameters
 

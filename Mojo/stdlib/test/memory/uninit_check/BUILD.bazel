@@ -59,6 +59,28 @@ mojo_test(
     ],
 )
 
+# Report mode: compiled with -D MOJO_STDLIB_SIMD_UNINIT_CHECK=report, which
+# reports a match and keeps running, so one run enumerates every offending
+# site. Not a crash test — the point is that it survives to the end.
+mojo_filecheck_test(
+    name = "test_uninit_check_report_mode.mojo.test",
+    srcs = ["test_uninit_check_report_mode.mojo"],
+    copts = [
+        "--debug-level",
+        "full",
+        "-D",
+        "MOJO_STDLIB_SIMD_UNINIT_CHECK=report",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 # Disabled-by-default test: compiled WITHOUT -D MOJO_STDLIB_SIMD_UNINIT_CHECK=true.
 # Loading poison values should NOT crash when the check is disabled.
 mojo_test(

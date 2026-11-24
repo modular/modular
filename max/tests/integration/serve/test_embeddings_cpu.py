@@ -15,7 +15,7 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.pipelines import PipelineArgs
+from max.pipelines import PipelineArgs, PipelineRuntimeConfig
 from max.serve.schemas.openai import CreateEmbeddingResponse
 
 MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
@@ -29,6 +29,7 @@ MPNET_REPO_ID = "sentence-transformers/all-mpnet-base-v2"
             model_path=MPNET_REPO_ID,
             device_specs=[DeviceSpec.cpu()],
             max_length=256,
+            runtime=PipelineRuntimeConfig(prefer_module_v3=False),
         )
     ],
     indirect=True,

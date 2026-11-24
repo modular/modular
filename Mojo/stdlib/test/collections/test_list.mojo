@@ -12,18 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import size_of
-from std.memory import forget_deinit
 
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
+    DelRecorder,
     ExplicitDestroy,
     MoveCounter,
     MoveOnly,
     NonMovable,
     Observable,
     TriviallyCopyableMoveCounter,
+    check_niches,
     check_write_to,
 )
 from std.testing import (
@@ -80,6 +81,33 @@ def test_list() raises:
     assert_equal(3, list[len(list) - 2])
     list[len(list) - 1] = 7
     assert_equal(7, list[len(list) - 1])
+
+
+def test_list_pattern_starred_element() raises:
+    var values: List[Int] = [1, 2, 3, 4, 5, 6]
+
+    var [a, b, *middle, e, f] = values
+    assert_equal(a, 1)
+    assert_equal(b, 2)
+    assert_equal(len(middle), 2)
+    assert_equal(middle[0], 3)
+    assert_equal(middle[1], 4)
+    assert_equal(e, 5)
+    assert_equal(f, 6)
+
+    var [first, *tail] = values
+    assert_equal(first, 1)
+    assert_equal(len(tail), 5)
+    assert_equal(tail[4], 6)
+
+    var [*head, last] = values
+    assert_equal(len(head), 5)
+    assert_equal(head[0], 1)
+    assert_equal(last, 6)
+
+    var [*all_values] = values
+    assert_equal(len(all_values), 6)
+    assert_equal(all_values[5], 6)
 
 
 struct WeirdList[T: AnyType]:
@@ -241,7 +269,7 @@ def test_list_reverse_property_test() raises:
         for a, b in zip(forward, reversed(rev)):
             assert_equal(a, b)
 
-    PropTest().test[properties](List[Int].strategy(Int.strategy()))
+    PropTest().test(List[Int].strategy(Int.strategy()), properties)
 
 
 def test_list_reverse() raises:
@@ -504,6 +532,30 @@ def test_list_append() raises:
     items.append(2)
     items.append(3)
     assert_equal(items, [UInt32(1), 2, 3])
+
+
+def insert_at_front[T: Copyable](var list: List[T], value: T) -> List[T]:
+    list.insert(0, value.copy())
+    return list^
+
+
+def pop_front[T: Copyable & Deinitable](var list: List[T]) -> List[T]:
+    _ = list.pop(0)
+    return list^
+
+
+def test_list_insert_and_pop_at_compile_time() raises:
+    comptime ints = insert_at_front[Int]([1, 2, 3, 4, 5], 9)
+    assert_equal(materialize[ints](), [9, 1, 2, 3, 4, 5])
+
+    comptime strings = insert_at_front[String](["a", "b", "c"], "z")
+    assert_equal(materialize[strings](), ["z", "a", "b", "c"])
+
+    comptime popped_ints = pop_front[Int]([1, 2, 3])
+    assert_equal(materialize[popped_ints](), [2, 3])
+
+    comptime popped_strings = pop_front[String](["a", "b", "c"])
+    assert_equal(materialize[popped_strings](), ["b", "c"])
 
 
 def test_list_insert_move_count() raises:
@@ -877,12 +929,12 @@ def _test_list_iter_bounds[
     for i in range(list_len):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
-        assert_equal(list_len - i, upper.value())
+        assert_equal(Optional(list_len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_list_iter_bounds() raises:
@@ -1247,6 +1299,50 @@ def test_list_fill_with_non_movable() raises:
     assert_equal(l[2].value, 20)
 
 
+def test_list_fill_with_non_raising_closure_constructs_in_place() raises:
+    var squares = List(
+        length=3,
+        fill_with=lambda (i: Int) -> MoveCounter[Int]: MoveCounter(i * i),
+    )
+    for i in range(3):
+        assert_equal(squares[i].move_count, 0)
+
+
+def test_list_fill_with_raising_closure() raises:
+    var squares = List(length=3, fill_with=lambda (i: Int) raises -> Int: i * i)
+    assert_equal(len(squares), 3)
+    for i in range(3):
+        assert_equal(squares[i], i * i)
+
+
+@fieldwise_init
+struct FillError(Movable):
+    var index: Int
+
+
+def destroyed_by_fill_with(fail_at: Int) raises -> List[Int]:
+    var destructor_recorder = List[Int]()
+    var ptr = Pointer(to=destructor_recorder).as_imm()
+
+    def fill(i: Int) raises FillError {imm} -> DelRecorder[ptr.origin]:
+        if i == fail_at:
+            raise FillError(i)
+        return DelRecorder(i, ptr)
+
+    try:
+        _ = List(length=4, fill_with=fill)
+    except e:
+        assert_equal(e.index, fail_at)
+    return destructor_recorder^
+
+
+def test_list_fill_with_raises_destroys_written_elements() raises:
+    assert_equal(destroyed_by_fill_with(fail_at=0), List[Int]())
+    assert_equal(destroyed_by_fill_with(fail_at=2), [0, 1])
+    assert_equal(destroyed_by_fill_with(fail_at=3), [0, 1, 2])
+    assert_equal(destroyed_by_fill_with(fail_at=4), [0, 1, 2, 3])
+
+
 def test_uninit_ctor() raises:
     var list = List[String](unsafe_uninit_length=2)
 
@@ -1265,12 +1361,11 @@ def test_uninit_ctor() raises:
 
 
 def _test_copyinit_trivial_types[dt: DType]() raises:
-    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+    var sizes: List[Int] = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512]
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    comptime for sizes_index in range(len(sizes)):
-        comptime current_size = rebind[Int](sizes[sizes_index])
+    for current_size in sizes:
         var x = List[Scalar[dt]]()
         for i in range(current_size):
             x.append(Scalar[dt](i))
@@ -1297,7 +1392,7 @@ def test_copyinit_trivial_types_dtypes() raises:
     )
 
     comptime for index_dtype in range(len(dtypes)):
-        _test_copyinit_trivial_types[rebind[DType](dtypes[index_dtype])]()
+        _test_copyinit_trivial_types[dtypes[index_dtype]]()
 
 
 def test_list_comprehension() raises:
@@ -1424,7 +1519,7 @@ def test_overaligned_struct_realloc() raises:
         assert_equal(l[i].x, Float32(i))
 
 
-struct Pinned(Movable where False):
+struct Pinned(not Movable):
     pass
 
 
@@ -1433,8 +1528,35 @@ def test_list_non_movable() raises:
     assert_equal(len(empty), 0)
 
 
+def test_list_niche() raises:
+    comptime ListType = List[String]
+    assert_equal(ListType.niche_count(), Int.MAX)
+    assert_equal(size_of[Optional[ListType]](), size_of[ListType]())
+    check_niches[ListType]()
+
+    var some = Optional[ListType](["a", "b"])
+    assert_true(some)
+    assert_equal(some.value(), ["a", "b"])
+
+    var empty = Optional(ListType())
+    assert_true(empty)
+    assert_equal(len(empty.value()), 0)
+
+    var none = Optional[ListType](None)
+    assert_false(none)
+
+
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
+def test_insert_pointer_with_mutable_origin() raises:
+    var o = 1
+    var l = List[Pointer[Int, origin_of(o)]]()
+    l.append(Pointer(to=o))
+    l.insert(0, Pointer(to=o))
+    assert_equal(len(l), 2)
+    assert_equal(l[0][], 1)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

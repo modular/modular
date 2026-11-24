@@ -17,30 +17,31 @@ from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 
 comptime BLOCK_SIZE = 256
 comptime WARP_SIZE = 32
 
 
-@always_inline
+@inline(.always)
 def max_op(a: Float32, b: Float32) -> Float32:
     if a > b:
         return a
     return b
 
 
-@always_inline
+@inline(.always)
 def sum_op(a: Float32, b: Float32) -> Float32:
     return a + b
 
 
 # Robust Block Reduce using Shared Memory (No Shuffle)
-@always_inline
+@inline(.always)
 def block_reduce[
     op: def(Float32, Float32) thin -> Float32
 ](
     val: Float32,
-    shared_mem: UnsafePointer[Float32, MutAnyOrigin, address_space=.SHARED],
+    shared_mem: MutPointer[Float32, _, address_space=.SHARED],
 ) -> Float32:
     var tid = thread_idx.x
     var smem = shared_mem
@@ -63,9 +64,9 @@ def block_reduce[
 
 
 def softmax_kernel(
-    S: UnsafePointer[Float32, MutAnyOrigin],
-    D: UnsafePointer[Float32, MutAnyOrigin],
-    P: UnsafePointer[Float32, MutAnyOrigin],
+    S: ImmPointer[Float32, ImmUntrackedOrigin],
+    D: MutPointer[Float32, MutUntrackedOrigin],
+    P: MutPointer[Float32, MutUntrackedOrigin],
     N_dev: Int32,
 ):
     # Int is not device-passable; widen the fixed-width arg.
@@ -87,10 +88,10 @@ def softmax_kernel(
     var row = block_idx.x
     var tid = thread_idx.x
 
-    var S_row = S + (row * N)
-    var P_row = P_ptr + (row * N)
+    var S_row = S.unsafe_offset(row * N)
+    var P_row = P_ptr.unsafe_offset(row * N)
 
-    var neg_inf = Float32(-3.40282e38)
+    comptime neg_inf = Float32(-3.40282e38)
     var max_val_thread = neg_inf
 
     var col = tid
@@ -103,9 +104,7 @@ def softmax_kernel(
 
     barrier()
 
-    var max_val_row = block_reduce[max_op](
-        max_val_thread, temp_store.as_unsafe_any_origin()
-    )
+    var max_val_row = block_reduce[max_op](max_val_thread, temp_store)
 
     if tid == 0:
         broadcast_slot[0] = max_val_row
@@ -121,9 +120,7 @@ def softmax_kernel(
 
     barrier()
 
-    var sum_row = block_reduce[sum_op](
-        sum_thread, temp_store.as_unsafe_any_origin()
-    )
+    var sum_row = block_reduce[sum_op](sum_thread, temp_store)
 
     if tid == 0:
         broadcast_slot[0] = sum_row
@@ -143,12 +140,12 @@ def softmax_kernel(
 
 
 def cpu_softmax(
-    h_S: UnsafePointer[mut=False, Float32, _],
-    h_P: UnsafePointer[mut=True, Float32, _],
+    h_S: ImmPointer[Float32, _],
+    h_P: MutPointer[Float32, _],
     N: Int,
 ):
     var P_ptr = h_P
-    var neg_inf = Float32(-3.40282e38)
+    comptime neg_inf = Float32(-3.40282e38)
     for i in range(N):
         var max_val = neg_inf
         for j in range(N):
@@ -182,10 +179,10 @@ def main() raises:
         var size_D = N
         var size_P = N * N
 
-        var h_S = alloc[Float32](size_S)
-        var h_D = alloc[Float32](size_D)
-        var h_P = alloc[Float32](size_P)
-        var h_P_ref = alloc[Float32](size_P)
+        var h_S = unsafe_alloc[Float32](size_S)
+        var h_D = unsafe_alloc[Float32](size_D)
+        var h_P = unsafe_alloc[Float32](size_P)
+        var h_P_ref = unsafe_alloc[Float32](size_P)
 
         rand(h_S, size_S)
         for k in range(size_S):
@@ -229,7 +226,7 @@ def main() raises:
         else:
             print("FAILED")
 
-        h_S.free()
-        h_D.free()
-        h_P.free()
-        h_P_ref.free()
+        h_S.unsafe_free()
+        h_D.unsafe_free()
+        h_P.unsafe_free()
+        h_P_ref.unsafe_free()

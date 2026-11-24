@@ -15,6 +15,7 @@
 #define SUPPORT_COMPILER_PASSTIMINGUTILS_H
 
 #include "Support/ErrorOr.h"
+#include "Support/SymbolExport.h"
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/StringRef.h"
 
@@ -22,7 +23,7 @@ namespace M {
 /// Enables pass timing on the `PassManger` object and dumps the tree structured
 /// JSON to a temp file in `outDir`. The ostream object is initialized in the
 /// function
-ErrorOrSuccess
+MODULAR_CXX_EXPORT ErrorOrSuccess
 configureMLIRPassTimingJSONOutput(mlir::PassManager &pm, llvm::StringRef outDir,
                                   llvm::StringRef passPipelineName);
 } // namespace M

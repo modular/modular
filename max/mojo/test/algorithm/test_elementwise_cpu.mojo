@@ -13,13 +13,14 @@
 
 from max.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
+    _start_indices_of_nth_element,
     elementwise,
 )
 from max.gpu.host import DeviceContext
-from std.testing import assert_equal, assert_true
+from std.testing import assert_equal
 from std.testing import TestSuite
 
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import ComptimeInt, Coord, coord_to_index_list
 from std.utils.index import IndexList, Index
 
 
@@ -37,13 +38,13 @@ def _linear_index[
 
 
 def test_elementwise() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
 
     def run_elementwise[
         numelems: Int,
         outer_rank: Int,
         shape: IndexList[outer_rank],
-    ](ctx: DeviceContext) raises:
+    ](ctx: DeviceContext.CPU) raises:
         var memory1 = Array[Float32, numelems](fill={})
         var buffer1 = Span(memory1)
 
@@ -60,10 +61,10 @@ def test_elementwise() raises:
             out_buffer.unsafe_ptr()[unsafe_offset=i] = 0.0
             x += 1.0
 
-        @always_inline
-        @__copy_capture(buffer1, buffer2, out_buffer, shape)
-        @__parameter
-        def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+        @inline(.always)
+        def func[
+            simd_width: Int, alignment: Int = 1
+        ](idx: Coord) {var buffer1, var buffer2, var out_buffer}:
             var index = rebind[IndexList[outer_rank]](coord_to_index_list(idx))
             var linear_idx = _linear_index(index, shape)
             var in1 = buffer1.unsafe_ptr().unsafe_load[width=simd_width](
@@ -76,7 +77,8 @@ def test_elementwise() raises:
                 linear_idx, in1 * in2
             )
 
-        elementwise[func, simd_width=1](
+        elementwise[simd_width=1](
+            func,
             Coord(shape),
             ctx,
         )
@@ -96,47 +98,78 @@ def test_elementwise() raises:
 
 
 def test_elementwise_implicit_runtime() raises:
-    var ctx = DeviceContext(api="cpu")
+    var ctx = DeviceContext.cpu()
     var vector_stack = Array[Int, 20](fill={})
     var vector = Span(vector_stack)
 
     for i in range(len(vector)):
         vector.unsafe_ptr()[unsafe_offset=i] = Int(i)
 
-    @always_inline
-    @__copy_capture(vector)
-    @__parameter
-    def func[simd_width: Int, alignment: Int = 1](idx: Coord):
+    @inline(.always)
+    def func[simd_width: Int, alignment: Int = 1](idx: Coord) {var vector}:
         vector.unsafe_ptr()[unsafe_offset=idx[0].value()] = 42
 
-    elementwise[func, simd_width=1](20, ctx)
+    elementwise[simd_width=1](func, Coord(20), ctx)
 
     for i in range(len(vector)):
         assert_equal(vector.unsafe_ptr()[unsafe_offset=i], 42)
 
 
+def _assert_coord_equal(got: Coord, want: Coord) raises:
+    comptime assert got.rank == want.rank
+    comptime for i in range(got.rank):
+        assert_equal(Int(got[i]), Int(want[i]), msg=String(got))
+
+
 def test_indices_conversion() raises:
-    var shape = IndexList[4](3, 4, 5, 6)
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[0](10, shape),
-        IndexList[4](0, 0, 1, 4),
+    var shape = Coord(3, 4, 5, 6)
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[0](10, shape), Coord(0, 0, 1, 4)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[1](10, shape),
-        IndexList[4](0, 2, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[1](10, shape), Coord(0, 2, 0, 0)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[2](10, shape),
-        IndexList[4](2, 2, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[2](10, shape), Coord(2, 2, 0, 0)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[3](2, shape),
-        IndexList[4](2, 0, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[3](2, shape), Coord(2, 0, 0, 0)
     )
-    assert_equal(
-        _get_start_indices_of_nth_subvolume[4](0, shape),
-        IndexList[4](0, 0, 0, 0),
+    _assert_coord_equal(
+        _get_start_indices_of_nth_subvolume[4](0, shape), Coord(0, 0, 0, 0)
     )
+
+
+def _assert_start_indices_match[
+    rank: Int, use_32bit: Bool
+](coord_shape: Coord, ref_shape: Coord, n_max: Int) raises:
+    """Compares `_start_indices_of_nth_element` against
+    `_get_start_indices_of_nth_subvolume`.
+    """
+    for n in range(n_max):
+        var got_0 = _start_indices_of_nth_element[
+            rank, type_of(coord_shape).ParamListType, use_32bit, 0
+        ](n, coord_shape)
+        var want_0 = _get_start_indices_of_nth_subvolume[0](n, ref_shape)
+        var got_1 = _start_indices_of_nth_element[
+            rank, type_of(coord_shape).ParamListType, use_32bit, 1
+        ](n, coord_shape)
+        var want_1 = _get_start_indices_of_nth_subvolume[1](n, ref_shape)
+        comptime for i in range(rank):
+            assert_equal(got_0[i], Int(want_0[i]))
+            assert_equal(got_1[i], Int(want_1[i]))
+
+
+def test_start_indices_equivalence() raises:
+    # All-dynamic extents take the runtime `divmod` path in both widths.
+    var dynamic_shape = Coord(3, 4, 5, 6)
+    _assert_start_indices_match[4, True](dynamic_shape, dynamic_shape, 60)
+    _assert_start_indices_match[4, False](dynamic_shape, dynamic_shape, 60)
+
+    # Mixed static/dynamic extents take the compile-time divisor fold.
+    var mixed_shape = Coord(ComptimeInt[3](), 4, ComptimeInt[5](), 6)
+    _assert_start_indices_match[4, True](mixed_shape, dynamic_shape, 60)
+    _assert_start_indices_match[4, False](mixed_shape, dynamic_shape, 60)
 
 
 def main() raises:

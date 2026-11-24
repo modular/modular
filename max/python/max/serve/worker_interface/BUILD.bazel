@@ -7,13 +7,14 @@ modular_py_library(
     srcs = glob(["*.py"]),
     deps = [
         "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/lora",
         "//max/python/max/pipelines/modeling",
         "//max/python/max/pipelines/request",
         "//max/python/max/serve:queue",
         "//max/python/max/serve:scheduler_result",
         "//max/python/max/serve/telemetry",
-        requirement("psutil"),
+        "//max/python/max/support",
         requirement("pyzmq"),
     ],
 )

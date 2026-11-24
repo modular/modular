@@ -22,14 +22,13 @@
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S8 < %t.mlir
 # RUN: FileCheck %s --enable-var-scope --check-prefixes=S9 < %t.mlir
 # COM: "U" cannot be called "T" until MOCO-4028 is fixed
-# COM: The captured parameter becomes an alias on the trait
-# S0: lit.trait.decl @"def{{.*}} -> U{1}"
-# S0-NEXT: lit.alias.decl U: !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable
-# COM: The captured parameter becomes a parameter of the storage struct
-# S0: lit.struct.decl @"makeIt{{.*}}::parametric::__storage"<U: !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable, {{.*}}>
-# S0: kgen.witness "U" : !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable = U
-# COM: No parametric wrapper around storage.
-# S0-NOT: lit.struct.decl @"def{{.*}} -> U{1}_{{.*}}"<impl:
+# COM: The captured parameter becomes a parameter of the storage struct, and
+# COM: the trait instance refers to it directly instead of through an alias on
+# COM: a per-signature trait.
+# S0: lit.struct.decl @"closure$makeIt{{.*}}::parametric::__storage"<U: !AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable, {{.*}}>
+# S0: kgen.conformance @"##__mojo_closure__##"{{.*}}:type #kgen.quote<!kgen.param<:!AnyType_Copyable_Deinitable_ImplicitlyCopyable_Movable_RegisterPassable_TrivialRegisterPassable U>>
+# COM: No bridging wrapper around storage.
+# S0-NOT: lit.struct.decl @"extension$
 
 
 def makeIt[U: TrivialRegisterPassable](a: U):
@@ -42,10 +41,11 @@ def conditionallyDevicePassable(x: Int):
         return x
 
 
-# COM: Ensure external parameter references are pulled into alias decls
-# S2-DAG: lit.trait.decl @"def{{.*}} -> None"
-# S2-DAG: lit.alias.decl T: !AnyType_DoIt
-# S2-DAG: lit.alias.decl TT: !AnyType_DoIt
+# COM: Ensure external parameter references are carried inside the closure
+# COM: trait instance's quoted signature (they used to become alias decls on a
+# COM: per-signature trait).
+# S2-DAG: impl: !lit.ref<:trait<@"##__mojo_closure__##"{{.*}}#kgen.quote<!lit.ref<:!AnyType_DoIt T, imm *[0,1]>>
+# S2-DAG: impl: !lit.ref<:trait<@"##__mojo_closure__##"{{.*}}#kgen.quote<!lit.ref<:!AnyType_DoIt TT, imm *[0,1]>>
 
 
 trait DoIt:
@@ -78,10 +78,9 @@ def addTrivialRegisterPassable(x: Int):
 
 # COM: Verify top-level function symbols get conformance for count's closure
 # COM: trait.
-# S4-DAG: lit.struct.decl @"def[w: Int](vec: s4_ToySIMD[Int(1), w]) thin -> s4_ToyMask[Int(1), w]_{{.*}}"
-# S4-DAG: kgen.conformance @"def[{{.*}}w: Int](vec: s4_ToySIMD[dtype_tag, w]) -> s4_ToyMask[dtype_tag, w]{1}" {
-# S4-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
-# S4-DAG: kgen.witness "dtype_tag" : !Int = {:scalar<index> 1}
+# S4: lit.struct.decl @"inflated$def[::SIMD[DType.int, 1]](vec: unified_closure_rebind::s4_ToySIMD{{.*}}|{{[0-9a-f]+}}"
+# S4: kgen.conformance @"##__mojo_closure__##"{{.*}}ToySIMD{{.*}}{:scalar<index> 1}{{.*}}ToyMask{{.*}}{:scalar<index> 1}
+# S4-NEXT: kgen.witness "__call__" : !lit.generator
 
 
 @fieldwise_init
@@ -126,10 +125,9 @@ def repro_top_level():
 
 # COM: Verify nested captured closures get conformance for count's
 # COM: closure trait on the storage struct (no parametric wrapper).
-# S5-DAG: lit.struct.decl @"{{.*}}is_vec_a_capturing::__storage"
-# S5-DAG: kgen.conformance @"def[{{.*}}u: Int](vec: s5_ToySIMD[dtype_tag, u]) -> s5_ToyMask[dtype_tag, u]{1}" {
-# S5-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
-# S5-DAG: kgen.witness "dtype_tag" : !Int = {:scalar<index> 1}
+# S5: lit.struct.decl @"{{.*}}is_vec_a_capturing::__storage"
+# S5: kgen.conformance @"##__mojo_closure__##"{{.*}}ToySIMD{{.*}}{:scalar<index> 1}{{.*}}ToyMask{{.*}}{:scalar<index> 1}
+# S5-NEXT: kgen.witness "__call__" : !lit.generator
 
 
 @fieldwise_init
@@ -178,10 +176,9 @@ def repro_capturing(mem: String):
 
 # COM: Verify nested type parameters constrained by a trait (not just Int
 # COM: parameters) get conformance resolved from nested struct type arguments.
-# S6-DAG: lit.struct.decl @"{{.*}}apply_concrete::__storage"
-# S6-DAG: kgen.conformance @"def[{{.*}}n: Int](item: Box[E, n]) -> Box[E, n]{1}" {
-# S6-DAG: kgen.witness "__call__{{.*}}" : !lit.generator
-# S6-DAG: kgen.witness "E" : !AnyType_ElemLike = !ConcreteElem
+# S6: lit.struct.decl @"{{.*}}apply_concrete::__storage"
+# S6: kgen.conformance @"##__mojo_closure__##"{{.*}}#Box <:!AnyType_ElemLike !ConcreteElem
+# S6-NEXT: kgen.witness "__call__" : !lit.generator
 
 
 trait ElemLike:
@@ -224,9 +221,9 @@ def repro_nested_type_param(mem: String):
 
 
 # COM: Verify that custom types (the result type !kgen.none in this case) are compared using equality
-# S7-DAG: lit.struct.decl @"{{.*}}my_func::__storage"
-# S7-DAG: kgen.conformance @"def[width: Int, rank: Int, alignment: Int = Int(1)]() -> None" {
-# S7-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
+# S7: lit.struct.decl @"{{.*}}my_func::__storage"
+# S7: kgen.conformance @"##__mojo_closure__##"<:param_list<type> [#kgen.quote<!Int>, #kgen.quote<!Int>, #kgen.quote<!Int>], :param_list<type> [], :type #kgen.quote<none>
+# S7-NEXT:   kgen.witness "__call__" : !lit.generator
 
 
 def print(x: Int):
@@ -256,13 +253,14 @@ def main() raises:
 
 # COM: Verify the result is properly rebound in the struct wrapper when a closure
 # COM: lazily conforms to a trait whose return type contains an alias parameter.
-# S8: lit.struct.decl @"def[width: Int]() thin -> V[Int(42), width]_PtrWrapper"
-# S8: lit.fn @"__call__$def{{.*}} -> V{{.*}}"
-# S8: kgen.rebind %{{.*}} : {{.*}}{:scalar<index> 42}{{.*}} to {{.*}}*"Closure_Syn#0"{{.*}}
-# S8-NEXT: lit.return
-# S8: kgen.conformance @"def[dtype: Int, //, width: Int]() -> V[dtype, width]{1}" {
-# S8-NEXT: kgen.witness "__call__{{.*}}" : !lit.generator
-# S8-NEXT: kgen.witness "dtype" :{{.*}} = {:scalar<index> 42}
+# S8: lit.struct.decl @"inflated$def[::SIMD[DType.int, 1]]() thin -> unified_closure_rebind::V[::SIMD[DType.int, 1](42), $0]|{{[0-9a-f]+}}"
+# S8: lit.fn @"__call__[::SIMD[DType.int, 1]](inflated$def{{.*}} -> unified_closure_rebind::V{{.*}})"
+# COM: `bind_params` is what re-binds the trait's `width` onto the promoted
+# COM: function's own parameter, so the result needs no separate rebind.
+# S8: lit.call tail[!lit.generator<() -> !lit.struct<#V <:!Int {:scalar<index> 42}, :!Int *"Closure_Syn#0">>>: bind_params(
+# S8-NEXT: lit.return %{{.*}} : !lit.struct<#V <:!Int {:scalar<index> 42}, :!Int *"Closure_Syn#0">>
+# S8: kgen.conformance @"##__mojo_closure__##"{{.*}}:type #kgen.quote<!lit.struct<#V <:!Int {:scalar<index> 42}, :!Int *(0,1)>>>
+# S8-NEXT: kgen.witness "__call__" : !lit.generator
 
 
 @fieldwise_init
@@ -286,10 +284,9 @@ def rebindResult():
 
 # COM: Verify ParamListAttr matching: closure returning Tuple with parameterized
 # COM: elements requires recursive matching through #kgen.param_list param values.
-# S9-DAG: lit.struct.decl @"{{.*}}my_map_fn::__storage"
-# S9-DAG: @"def[rank: Int, //](ToyIndex[rank]) -> Tuple[ToyIndex[rank], ToyIndex[rank]]{1}" {
-# S9-DAG:   kgen.witness "__call__{{.*}}" : !lit.generator
-# S9-DAG:   kgen.witness "rank" : !Int = {:scalar<index> 2}
+# S9: lit.struct.decl @"{{.*}}my_map_fn::__storage"
+# S9: kgen.conformance @"##__mojo_closure__##"{{.*}}#ToyIndex <:!Int {:scalar<index> 2}
+# S9-NEXT:   kgen.witness "__call__" : !lit.generator
 
 
 struct ToyIndex[size: Int](RegisterPassable):

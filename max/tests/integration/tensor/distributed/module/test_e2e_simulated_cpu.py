@@ -13,7 +13,7 @@
 """E2E tests on simulated CPU mesh -- inherits logic from _e2e."""
 
 from max.driver import CPU
-from max.experimental.sharding import DeviceMesh
+from max.tensor.sharding import DeviceMesh
 
 from module._e2e import E2ETests, IRTests
 

@@ -44,7 +44,7 @@ class SweepUploader(Protocol):
             result_filename: Path to a per-iteration result JSON file
                 previously written by ``save_result_json``.  The
                 implementation decides whether to read it, transform it,
-                forward it to a service, or drop it entirely (e.g.
+                forward it to a service, or drop it entirely (such as
                 dry-run mode).
         """
         ...

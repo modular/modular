@@ -21,6 +21,7 @@
 #include "Support/ForwardDecls.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LLVMYAMLForwardDecls.h"
+#include "Support/SymbolExport.h"
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -53,7 +54,7 @@ static_assert(kMaxRank < kDynamicRank);
 /// 16-byte format that is suitable for long term storage on the heap.  It is
 /// carefully laid out to hold common tensor sizes inline without losing
 /// support for the full generality of tensor shapes.
-class TensorShapeStorage {
+class MODULAR_CXX_EXPORT TensorShapeStorage {
   /// This supports two inline representations and an out-of-line one:
   ///  1) k16 can hold up to 6 dimensions when they fit into 16-bits.
   ///  2) k32 can hold up to 4 dimension where the first three fits in
@@ -350,7 +351,7 @@ inline void assign<size_t>(TensorShapeStorage &storage, ArrayRef<size_t> dims,
 /// shapes should be fully known (ie actual.isStatic() is true), and should
 /// refine their corresponding expected shape (ie expected.isRefinedBy(actual)
 /// is true).
-class TensorShape {
+class MODULAR_CXX_EXPORT TensorShape {
 public:
   /// Constructs a tensor shape which is either dynamically ranked or has a
   /// static rank of zero.

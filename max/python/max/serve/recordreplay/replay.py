@@ -487,6 +487,7 @@ async def replay_recording(
     """Replay a whole recording.
 
     Args:
+        recording: The recording to replay.
         concurrency: Number of requests to keep in flight at a time.
         client:
             HTTPX client used to send requests.  You will need to set a

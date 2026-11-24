@@ -15,6 +15,8 @@
 #include "Support/CommandLine.h"
 #include "Support/CrashReporting/CrashReporting.h"
 
+#include "llvm/Support/ErrorHandling.h"
+
 using namespace M;
 
 namespace {
@@ -22,6 +24,9 @@ namespace {
 struct CLOptions {
   cl::opt<bool> simulate{
       "simulate", M::cl::desc("Simulate crash rather than actually crashing")};
+  cl::opt<bool> llvmFatalError{
+      "llvm-fatal-error",
+      M::cl::desc("Crash through llvm::report_fatal_error")};
 };
 
 } // namespace
@@ -41,6 +46,8 @@ int main(int argc, char **argv) {
 
   if (clOptions.simulate)
     generateNonFatalDump();
+  else if (clOptions.llvmFatalError)
+    llvm::report_fatal_error("Cannot select: synthetic-test");
   else
     std::abort();
 

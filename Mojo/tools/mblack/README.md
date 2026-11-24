@@ -1,18 +1,4 @@
 <!-- markdownlint-disable -->
-[comment]: # (===----------------------------------------------------------------------===)
-[comment]: # ()
-[comment]: # (This file is Modular Inc proprietary.)
-[comment]: # ()
-[comment]: # (===----------------------------------------------------------------------===)
-[comment]: # (===----------------------------------------------------------------------===)
-[comment]: # ()
-[comment]: # (File originates from:)
-[comment]: # (  Repo:   git@github.com:psf/black.git)
-[comment]: # (  Commit: d4a85643a465f5fae2113d07d22d021d4af4795a)
-[comment]: # (  Path:   src/black/__init__.py)
-[comment]: # ()
-[comment]: # (===----------------------------------------------------------------------===)
-
 # This is a Modular fork of Black
 
 [![Black Logo](https://raw.githubusercontent.com/psf/black/main/docs/_static/logo2-readme.png)](https://black.readthedocs.io/en/stable/)

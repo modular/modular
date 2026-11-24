@@ -16,9 +16,11 @@
 //===----------------------------------------------------------------------===//
 
 #include "max/c/tensor.h"
+#include "MLRT/Driver/CAPI/DriverCAPI.h"
 #include "Utils.h"
 #include "max/c/common.h"
 #include "max/c/context.h"
+#include "max/max_license/API/c/TensorDriverBuffer.h"
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 
@@ -101,6 +103,59 @@ TEST_F(APITest, GetTensorByName) {
 TEST_F(APITest, QueryingInvalidTensorError) {
   EXPECT_EQ(nullptr, M_getTensorData(nullptr));
   EXPECT_EQ(nullptr, M_getTensorSpec(nullptr));
+  EXPECT_EQ(nullptr, M_getTensorDriverBuffer(nullptr));
+}
+
+// The handle is a second reference to memory MAX allocated for the tensor, so
+// destroying it must leave the tensor's bytes allocated and intact.
+TEST_F(APITest, TensorDriverBufferSharesTheTensorsMemory) {
+  std::vector<float> values(10);
+  for (size_t i = 0; i < values.size(); ++i)
+    values[i] = static_cast<float>(i) * 1.5f + 3.0f;
+  int64_t shape[] = {1, 10};
+  M_TensorSpec *spec =
+      M_newTensorSpec(shape, std::size(shape), M_FLOAT32, "values", host);
+  M_AsyncTensorMap *tensorMap = M_newAsyncTensorMap(context);
+  M_borrowTensorInto(tensorMap, values.data(), spec, status);
+  ASSERT_FALSE(M_isError(status))
+      << "failed to borrow the tensor" << ": " << M_getError(status);
+  M_AsyncTensor *borrowed = M_getTensorByNameFrom(tensorMap, "values", status);
+  ASSERT_FALSE(M_isError(status))
+      << "failed to get the tensor" << ": " << M_getError(status);
+  const auto *data = static_cast<const float *>(M_getTensorData(borrowed));
+  ASSERT_EQ(static_cast<const void *>(data),
+            static_cast<const void *>(values.data()));
+
+  M_DriverBuffer *buffer = M_getTensorDriverBuffer(borrowed);
+  ASSERT_NE(buffer, nullptr);
+  void *address = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(buffer, &address), M_DRIVER_OK);
+  EXPECT_EQ(address, static_cast<const void *>(data));
+  uint64_t byteSize = 0;
+  ASSERT_EQ(M_DriverBufferByteSize(buffer, &byteSize), M_DRIVER_OK);
+  EXPECT_EQ(byteSize, values.size() * sizeof(float));
+
+  // The handle serves the driver's view copies.
+  M_DriverDevice *cpu = nullptr;
+  ASSERT_EQ(M_DriverCPUDeviceCreate(0, &cpu), M_DRIVER_OK);
+  M_DriverStream *stream = nullptr;
+  ASSERT_EQ(M_DriverStreamCreate(cpu, &stream), M_DRIVER_OK);
+  std::vector<float> slice(4, 0.0f);
+  ASSERT_EQ(M_DriverCopyBufferToHost(
+                stream, slice.data(),
+                M_DriverBufferView{buffer, 3 * sizeof(float),
+                                   slice.size() * sizeof(float)}),
+            M_DRIVER_OK);
+  ASSERT_EQ(M_DriverStreamSynchronize(stream), M_DRIVER_OK);
+  for (size_t i = 0; i < slice.size(); ++i)
+    EXPECT_EQ(slice[i], values[3 + i]) << "at " << i;
+
+  ASSERT_EQ(M_DriverBufferDestroy(buffer), M_DRIVER_OK);
+  M_DriverStreamDestroy(stream);
+  M_DriverDeviceDestroy(cpu);
+  M_freeTensor(borrowed);
+  M_freeAsyncTensorMap(tensorMap);
+  M_freeTensorSpec(spec);
 }
 
 TEST_F(APITest, GetTensorByNameWithInvalidTensorMap) {

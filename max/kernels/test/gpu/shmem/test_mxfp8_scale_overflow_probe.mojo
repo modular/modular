@@ -28,7 +28,7 @@ Three probes, in increasing order of realism:
    positive finite BF16 magnitude as the block max (all 32640 of them), and
    reports the worst observed `|value * out_scale|` against 448.
 3. `test_fused_silu_adversarial` drives the real `fused_silu_mx_kernel` (both
-   `clamp_activation` variants) over adversarial-but-finite BF16 gate/up pairs,
+   activations) over adversarial-but-finite BF16 gate/up pairs,
    including pairs whose fp32 SwiGLU product overflows.
 
 Usage (plain `mojo` is shadowed by the installed shmem package — use bazel):
@@ -38,13 +38,15 @@ Usage (plain `mojo` is shadowed by the installed shmem package — use bazel):
 from max.gpu.host import DeviceContext, HostBuffer
 from max.gpu import global_idx
 from max.gpu.host.info import MI355X
-from std.math import exp, isfinite, recip
+from std.math import align_up, exp, isfinite, recip
 from std.memory import bitcast
 from std.testing import assert_true
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Idx, TileTensor, row_major
 from linalg.block_scaled_quantization import quantize_mx_amd
 from linalg.fp4_utils import MXFP8_SF_VECTOR_SIZE
+from linalg.swiglu_activation import get_swiglu_activation
+from linalg.matmul.gpu.amd import Shuffler
 from shmem.ep_comm import fused_silu_mx_kernel
 
 comptime E4M3_MAXABS = Float32(448.0)
@@ -76,12 +78,22 @@ comptime NPROBE = 32
 comptime probe_layout = row_major[NPROBE]()
 
 
-def _cast_probe_kernel(
-    vals: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
-    e8m0_out: TileTensor[.float8_e8m0fnu, type_of(probe_layout), MutAnyOrigin],
-    e8m0_back: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
-    e4m3_out: TileTensor[.float8_e4m3fn, type_of(probe_layout), MutAnyOrigin],
-    recip_out: TileTensor[.float32, type_of(probe_layout), MutAnyOrigin],
+def _cast_probe_kernel[
+    vals_origin: MutOrigin,
+    e8m0_out_origin: MutOrigin,
+    e8m0_back_origin: MutOrigin,
+    e4m3_out_origin: MutOrigin,
+    recip_out_origin: MutOrigin,
+](
+    vals: TileTensor[.float32, type_of(probe_layout), vals_origin],
+    e8m0_out: TileTensor[
+        .float8_e8m0fnu, type_of(probe_layout), e8m0_out_origin
+    ],
+    e8m0_back: TileTensor[.float32, type_of(probe_layout), e8m0_back_origin],
+    e4m3_out: TileTensor[
+        .float8_e4m3fn, type_of(probe_layout), e4m3_out_origin
+    ],
+    recip_out: TileTensor[.float32, type_of(probe_layout), recip_out_origin],
     n: Int32,
 ):
     var i = global_idx.x
@@ -170,12 +182,20 @@ def test_cast_behavior(ctx: DeviceContext) raises:
     var e4m3_d = ctx.enqueue_create_buffer[.float8_e4m3fn](NPROBE)
     var recip_d = ctx.enqueue_create_buffer[.float32](NPROBE)
 
-    ctx.enqueue_function[_cast_probe_kernel](
-        TileTensor[origin=MutAnyOrigin](vals_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](e8m0_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](back_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](e4m3_d, probe_layout),
-        TileTensor[origin=MutAnyOrigin](recip_d, probe_layout),
+    ctx.enqueue_function[
+        _cast_probe_kernel[
+            origin_of(vals_d),
+            origin_of(e8m0_d),
+            origin_of(back_d),
+            origin_of(e4m3_d),
+            origin_of(recip_d),
+        ]
+    ](
+        TileTensor(vals_d, probe_layout),
+        TileTensor(e8m0_d, probe_layout),
+        TileTensor(back_d, probe_layout),
+        TileTensor(e4m3_d, probe_layout),
+        TileTensor(recip_d, probe_layout),
         Int32(NPROBE),
         grid_dim=1,
         block_dim=NPROBE,
@@ -200,21 +220,9 @@ def test_cast_behavior(ctx: DeviceContext) raises:
         var sb = bitcast[.uint8](e8m0_h[i])
         var qb = bitcast[.uint8](e4m3_h[i])
         print(
-            "    ",
-            names[i],
-            " x=",
-            vals_h[i],
-            " | e8m0=",
-            Int(sb),
-            " (",
-            back_h[i],
-            ") | recip=",
-            recip_h[i],
-            " | e4m3=",
-            Int(qb),
-            " (",
-            e4m3_h[i].cast[.float32](),
-            ")",
+            t"     {names[i]}  x= {vals_h[i]}  | e8m0= {Int(sb)}  ("
+            t" {back_h[i]} ) | recip= {recip_h[i]}  | e4m3= {Int(qb)}  ("
+            t" {e4m3_h[i].cast[.float32]()} )"
         )
 
     # The bound `|value * recip(scale)| <= 448` holds only if the E8M0 cast
@@ -270,9 +278,7 @@ def test_quantize_bf16_exhaustive[
         for g in range(NUM_BF16_MAGS):
             var v = bitcast[.bfloat16](UInt16(g))
             var neg = bitcast[.bfloat16](UInt16(g) | UInt16(0x8000))
-            var tiny = (v.cast[.float32]() * Float32(1.0e-9)).cast[
-                DType.bfloat16
-            ]()
+            var tiny = (v.cast[.float32]() * Float32(1.0e-9)).cast[.bfloat16]()
             for j in range(MXFP8_SF_VECTOR_SIZE):
                 var idx = g * MXFP8_SF_VECTOR_SIZE + j
                 comptime if ragged:
@@ -351,22 +357,10 @@ def test_quantize_bf16_exhaustive[
                 nan_outputs += 1
                 if nan_outputs <= 4:
                     print(
-                        "      NaN E4M3 at bf16-block ",
-                        g,
-                        " lane ",
-                        j,
-                        ": input=",
-                        orig,
-                        " block_max=",
-                        group_max,
-                        " e8m0=",
-                        Int(scale_bits),
-                        " (scale=",
-                        scale,
-                        ") out_scale=",
-                        out_scale,
-                        " out_byte=",
-                        Int(ob),
+                        t"      NaN E4M3 at bf16-block  {g}  lane  {j} : input="
+                        t" {orig}  block_max= {group_max}  e8m0="
+                        t" {Int(scale_bits)}  (scale= {scale} ) out_scale="
+                        t" {out_scale}  out_byte= {Int(ob)}"
                     )
                 continue
             var dequant = out_h[idx].cast[.float32]() * scale
@@ -392,28 +386,14 @@ def test_quantize_bf16_exhaustive[
                     max_rel_err_group = g
 
     print(
-        "    blocks=",
-        NUM_BF16_MAGS,
-        " ragged=",
-        ragged,
-        "\n     worst |value * out_scale| = ",
-        worst_product,
-        " (vs E4M3 maxabs 448) at bf16 bit pattern ",
-        worst_product_group,
-        "\n     NaN scales=",
-        nan_scales,
-        " NaN outputs=",
-        nan_outputs,
-        "\n     fp32-reconstruction overflows=",
-        dequant_overflow,
-        " (smallest input magnitude involved: ",
-        min_overflow_orig,
-        ")\n     E8M0-floor-clamped blocks=",
-        underflow_clamped,
-        " max rel err at block max=",
-        max_rel_err,
-        " at bf16 bit pattern ",
-        max_rel_err_group,
+        t"    blocks= {NUM_BF16_MAGS}  ragged= {ragged} \n     worst |value *"
+        t" out_scale| =  {worst_product}  (vs E4M3 maxabs 448) at bf16 bit"
+        t" pattern  {worst_product_group} \n     NaN scales= {nan_scales}  NaN"
+        t" outputs= {nan_outputs} \n     fp32-reconstruction overflows="
+        t" {dequant_overflow}  (smallest input magnitude involved: "
+        t" {min_overflow_orig} )\n     E8M0-floor-clamped blocks="
+        t" {underflow_clamped}  max rel err at block max= {max_rel_err}  at"
+        t" bf16 bit pattern  {max_rel_err_group}"
     )
 
     assert_true(nan_scales == 0, "quantize_mx_amd emitted a NaN E8M0 scale")
@@ -486,50 +466,55 @@ def _fill_pattern(
         var ui = token * input_dim + SILU_HIDDEN + k
         var gv = Float32(0.0)
         var uv = Float32(0.0)
-        if p == 1:
-            gv = Float32(1.0e-38)
-            uv = Float32(1.0e-38)
-        elif p == 2:
-            gv = BF16_MAX
-            uv = BF16_MAX
-        elif p == 3:
-            gv = Float32(1.0e20)
-            uv = Float32(1.0e20)
-        elif p == 4:
-            gv = Float32(1.0e20)
-            uv = Float32(1.0e-20)
-        elif p == 5:
-            gv = -BF16_MAX
-            uv = BF16_MAX
-        elif p == 6:
-            gv = BF16_MAX if j == 0 else Float32(1.0e-3)
-            uv = Float32(1.0) if j == 0 else Float32(1.0e-3)
-        elif p == 7:
-            # sigmoid(64) rounds to 1.0 in fp32, so silu(64) == 64 exactly.
-            gv = Float32(64.0)
-            uv = Float32(7.03125)  # 64 * 7.03125 = 450 > 448
-        elif p == 8:
-            gv = Float32(64.0)
-            uv = Float32(6.96875)  # 64 * 6.96875 = 446 < 448
-        elif p == 9:
-            if j == 0:
-                h[gi] = bf16_denorm
-                h[ui] = bf16_denorm
-            else:
-                h[gi] = BFloat16(0)
-                h[ui] = BFloat16(0)
-            continue
+        match p:
+            case 1:
+                gv = Float32(1.0e-38)
+                uv = Float32(1.0e-38)
+            case 2:
+                gv = BF16_MAX
+                uv = BF16_MAX
+            case 3:
+                gv = Float32(1.0e20)
+                uv = Float32(1.0e20)
+            case 4:
+                gv = Float32(1.0e20)
+                uv = Float32(1.0e-20)
+            case 5:
+                gv = -BF16_MAX
+                uv = BF16_MAX
+            case 6:
+                gv = BF16_MAX if j == 0 else Float32(1.0e-3)
+                uv = Float32(1.0) if j == 0 else Float32(1.0e-3)
+            case 7:
+                # sigmoid(64) rounds to 1.0 in fp32, so silu(64) == 64 exactly.
+                gv = Float32(64.0)
+                uv = Float32(7.03125)  # 64 * 7.03125 = 450 > 448
+            case 8:
+                gv = Float32(64.0)
+                uv = Float32(6.96875)  # 64 * 6.96875 = 446 < 448
+            case 9:
+                if j == 0:
+                    h[gi] = bf16_denorm
+                    h[ui] = bf16_denorm
+                else:
+                    h[gi] = BFloat16(0)
+                    h[ui] = BFloat16(0)
+                continue
+            case _:
+                pass
         h[gi] = gv.cast[.bfloat16]()
         h[ui] = uv.cast[.bfloat16]()
 
 
 def test_fused_silu_adversarial[
-    clamp_activation: Bool
-](ctx: DeviceContext, alpha: Float32 = 0.0, limit: Float32 = 0.0) raises -> Int:
+    clamp_activation: Bool, alpha: Float32 = 0.0, limit: Float32 = 0.0
+](ctx: DeviceContext) raises -> Int:
     comptime input_dim = SILU_HIDDEN * 2
     comptime output_dim = SILU_HIDDEN
     comptime scale_K = SILU_HIDDEN // MXFP8_SF_VECTOR_SIZE
     comptime n_off = 2
+    # The kernel writes scales into one expert's grouped-matmul `scale_4d` slot.
+    comptime max_padded_M = align_up(SILU_TOKENS, 32)
     comptime hw = ctx.default_device_info
 
     var input_h = ctx.enqueue_create_host_buffer[.bfloat16](
@@ -548,20 +533,16 @@ def test_fused_silu_adversarial[
     ctx.enqueue_copy(input_d, input_h)
     ctx.enqueue_copy(off_d, off_h)
 
-    var input_tt = TileTensor[origin=ImmutAnyOrigin](
-        input_d, row_major(Coord(SILU_TOKENS, Idx[input_dim]))
-    )
-    var off_tt = TileTensor[origin=ImmutAnyOrigin](off_d, row_major[n_off]())
+    var input_tt = TileTensor(
+        input_d, row_major(SILU_TOKENS, Idx[input_dim])
+    ).as_imm()
+    var off_tt = TileTensor(off_d, row_major[n_off]()).as_imm()
 
     comptime out_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(SILU_TOKENS, Idx[output_dim]))
-        )
+        TileTensor(input_d, row_major(SILU_TOKENS, Idx[output_dim]))
     ).LayoutType
     comptime scales_layout = type_of(
-        TileTensor[origin=MutAnyOrigin](
-            input_d, row_major(Coord(SILU_TOKENS, Idx[scale_K]))
-        )
+        TileTensor(input_d, row_major(max_padded_M, Idx[scale_K]))
     ).LayoutType
 
     comptime kernel = fused_silu_mx_kernel[
@@ -574,31 +555,28 @@ def test_fused_silu_adversarial[
         off_tt.LayoutType,
         hw.max_thread_block_size,
         hw.sm_count,
-        fuse_a_scale_preshuffle=False,
-        clamp_activation=clamp_activation,
+        activation=get_swiglu_activation[
+            "swigluoai" if clamp_activation else "silu",
+            alpha,
+            limit if clamp_activation else 0.0,
+        ],
     ]
 
     var out_d = ctx.enqueue_create_buffer[.float8_e4m3fn](
         SILU_TOKENS * output_dim
     )
     var scales_d = ctx.enqueue_create_buffer[.float8_e8m0fnu](
-        SILU_TOKENS * scale_K
+        max_padded_M * scale_K
     )
     out_d.enqueue_fill(Float8_e4m3fn(0))
     scales_d.enqueue_fill(Float8_e8m0fnu(0))
 
     ctx.enqueue_function[kernel](
-        TileTensor[origin=MutAnyOrigin](
-            out_d, row_major(Coord(SILU_TOKENS, Idx[output_dim]))
-        ),
-        TileTensor[origin=MutAnyOrigin](
-            scales_d, row_major(Coord(SILU_TOKENS, Idx[scale_K]))
-        ),
+        TileTensor(out_d, row_major(SILU_TOKENS, Idx[output_dim])),
+        TileTensor(scales_d, row_major(max_padded_M, Idx[scale_K])),
         input_tt,
         off_tt,
-        Int32(0),
-        alpha,
-        limit,
+        Int32(max_padded_M),
         grid_dim=hw.sm_count,
         block_dim=hw.max_thread_block_size,
     )
@@ -607,7 +585,7 @@ def test_fused_silu_adversarial[
         SILU_TOKENS * output_dim
     )
     var scales_host = ctx.enqueue_create_host_buffer[.float8_e8m0fnu](
-        SILU_TOKENS * scale_K
+        max_padded_M * scale_K
     )
     ctx.enqueue_copy(out_h, out_d)
     ctx.enqueue_copy(scales_host, scales_d)
@@ -618,7 +596,10 @@ def test_fused_silu_adversarial[
     for t in range(SILU_TOKENS):
         for g in range(scale_K):
             var p = (t * scale_K + g) % NUM_PATTERNS
-            var scale_bits = bitcast[.uint8](scales_host[t * scale_K + g])
+            var scale_off = Shuffler[1].scale_4d_slot_byte_off[
+                K_SCALES=scale_K
+            ](0, t, g, max_padded_M)
+            var scale_bits = bitcast[.uint8](scales_host[scale_off])
             var scale = _e8m0_to_f32(scale_bits)
 
             # Host reference for the same activation the kernel computes.
@@ -628,7 +609,7 @@ def test_fused_silu_adversarial[
                 var k = g * MXFP8_SF_VECTOR_SIZE + j
                 var gp = input_h[t * input_dim + k].cast[.float32]()
                 var up = input_h[t * input_dim + SILU_HIDDEN + k].cast[
-                    DType.float32
+                    .float32
                 ]()
                 var z: Float32
                 comptime if clamp_activation:
@@ -669,50 +650,26 @@ def test_fused_silu_adversarial[
                     var ob2 = bitcast[.uint8](out_h[t * output_dim + k])
                     if ob2 != E4M3_NAN_LO and ob2 != E4M3_NAN_HI:
                         continue
+                    var gate = input_h[t * input_dim + k].cast[.float32]()
+                    var up = input_h[t * input_dim + SILU_HIDDEN + k].cast[
+                        .float32
+                    ]()
                     print(
-                        "        nan lane ",
-                        j,
-                        " gate=",
-                        input_h[t * input_dim + k].cast[.float32](),
-                        " up=",
-                        input_h[t * input_dim + SILU_HIDDEN + k].cast[
-                            DType.float32
-                        ](),
-                        " out_byte=",
-                        Int(ob2),
+                        t"        nan lane  {j}  gate= {gate}  up= {up} "
+                        t" out_byte= {Int(ob2)}"
                     )
                 print(
-                    "      VIOLATION token=",
-                    t,
-                    " block=",
-                    g,
-                    " pattern='",
-                    _pattern_name(p),
-                    "' e8m0=",
-                    Int(scale_bits),
-                    " nan_lanes=",
-                    bad_out,
-                    " fp32_recon_overflow_lanes=",
-                    recon_overflow,
-                    " host_ref_nonfinite=",
-                    ref_nonfinite,
-                    " host_ref_max=",
-                    ref_max,
+                    t"      VIOLATION token= {t}  block= {g}  pattern='"
+                    t" {_pattern_name(p)} ' e8m0= {Int(scale_bits)}  nan_lanes="
+                    t" {bad_out}  fp32_recon_overflow_lanes= {recon_overflow} "
+                    t" host_ref_nonfinite= {ref_nonfinite}  host_ref_max="
+                    t" {ref_max}"
                 )
             elif t == 0:
                 print(
-                    "      ok block=",
-                    g,
-                    " pattern='",
-                    _pattern_name(p),
-                    "' e8m0=",
-                    Int(scale_bits),
-                    " ref_max=",
-                    ref_max,
-                    " ref_nonfinite=",
-                    ref_nonfinite,
-                    " max|dequant|=",
-                    worst_dequant,
+                    t"      ok block= {g}  pattern=' {_pattern_name(p)} ' e8m0="
+                    t" {Int(scale_bits)}  ref_max= {ref_max}  ref_nonfinite="
+                    t" {ref_nonfinite}  max|dequant|= {worst_dequant}"
                 )
     return violations
 
@@ -732,9 +689,9 @@ def main() raises:
 
     print("===> probe 3: fused_silu_mx_kernel, adversarial finite BF16")
     var v_plain = test_fused_silu_adversarial[clamp_activation=False](ctx)
-    var v_clamped = test_fused_silu_adversarial[clamp_activation=True](
-        ctx, Float32(1.702), Float32(7.0)
-    )
+    var v_clamped = test_fused_silu_adversarial[
+        clamp_activation=True, alpha=1.702, limit=7.0
+    ](ctx)
     print(
         "    non-finite blocks: plain SiLU=",
         v_plain,

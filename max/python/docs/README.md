@@ -34,7 +34,8 @@ after the dotted Python path:
 
 - [`engine.rst`](engine.rst) documents `max.engine`.
 - [`nn.rst`](nn.rst) documents `max.nn`.
-- [`nn.attention.rst`](nn.attention.rst) documents `max.nn.attention`.
+- [`nn.legacy.attention.rst`](nn.legacy.attention.rst) documents
+  `max.nn.legacy.attention`.
 
 ## CI coverage check
 
@@ -54,5 +55,5 @@ CLAUDE.md file for instructions on updating the corresponding RST file.
   pipeline, monkey-patches, and the full list of common pitfalls.
 - [`docs/internal/PythonDocstringStyleGuide.md`](../../../docs/internal/PythonDocstringStyleGuide.md)
   — Python docstring style (RST, Google sections, Sphinx directives).
-- `.claude/skills/docstrings/SKILL.md` — the `docstrings` skill, for bulk
+- `.agents/skills/docstrings/SKILL.md` — the `docstrings` skill, for bulk
   docstring editing across many files. Invoke with `/docstrings`.

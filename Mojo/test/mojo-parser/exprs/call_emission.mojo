@@ -253,7 +253,7 @@ def test_variadic_and_kw_only_params_indirect[x: Int,
 
 # CHECK-LABEL: lit.fn @"initialize_in_addrspace
 def initialize_in_addrspace(
-    ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)]
+    ptr: Pointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)]
 ):
 
     # Get !lit.ref in addr space #1
@@ -281,7 +281,7 @@ def test_param_refitem[a: SomeRefItemStruct]():
 # CHECK-LABEL: lit.fn @"mutate_in_addrspace
 def mutate_in_addrspace(
     a: ExampleRegPassable,
-    ptr: UnsafePointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
+    ptr: Pointer[ExampleRegPassable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
 ):
     # Get !lit.ref in addr space #1
     # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
@@ -306,6 +306,38 @@ struct ExampleRegPassable(TrivialRegisterPassable):
         pass
 
 
+# Pass a trivially copyable value that is not register passable from a
+# non-default address space. A memcpy copies it into a temporary.
+# CHECK-LABEL: lit.fn @"copy_memory_only_from_addrspace
+def copy_memory_only_from_addrspace(
+    ptr: Pointer[ExampleMemTriviallyCopyable, AnyOrigin[mut=True], address_space=AddressSpace(1)],
+):
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
+    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.memcpy [[PTRREF]], [[TMP]] : <!ExampleMemTriviallyCopyable, mut #lit.any.origin, 1>
+    # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[TMP]]
+    # CHECK-NEXT: lit.call {{.*}}@"take_mem_trivially_copyable{{.*}}([[IMM]])
+    take_mem_trivially_copyable(ptr[])
+
+    # CHECK-NEXT: [[PTRREF:%.*]] = lit.call {{.*}}@Pointer::@"__getitem__{{.*}}(%ptr)
+    # CHECK-NEXT: [[TMP:%.*]] = lit.var.decl "anonymous
+    # CHECK-NEXT: lit.memcpy [[PTRREF]], [[TMP]] : <!ExampleMemTriviallyCopyable, mut #lit.any.origin, 1>
+    # CHECK-NEXT: [[IMM:%.*]] = lit.ref.immut [[TMP]]
+    # CHECK-NEXT: lit.ref.pack.create([[IMM]])
+    _ = pack_it(ptr[])
+
+
+struct ExampleMemTriviallyCopyable(ImplicitlyCopyable):
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+
+def take_mem_trivially_copyable(value: ExampleMemTriviallyCopyable):
+    pass
+
+
 ## Partial Binding of Function Symbols With Implicit Parameters
 
 
@@ -328,10 +360,11 @@ def test_matrix_equal[
 # CHECK-LABEL: lit.fn @"partialBind
 def partialBind(mut C: Matrix[1, 2]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
-    # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
+    # CHECK-NEXT: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"__call_result_tmp__`{{.*}}"]
     # CHECK-SAME: <:!lit.generator<<?, ".rows`2x": !Int, ".cols`2x1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
     # CHECK-SAME: rebind(:!lit.generator<<?, "C.rows`": !Int, "C.cols`1": !Int>[1]("C": !lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut) -> !kgen.none>
-    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {:scalar<index> 0}, :!Int ?, :!Int ?>), :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>(%C, %__error__, %exp)
+    # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {:scalar<index> 0}, :!Int *(0,0), :!Int *(0,1)>), :!Int {:scalar<index> 1}, :!Int {:scalar<index> 2}>(%C, %__error__, %__call_result_tmp__)
     var exp = test_matrix_equal[matmul_unrolled[0]](C)
 
 
@@ -398,13 +431,11 @@ def test_byref_slot_with_references():
 
 # CHECK-LABEL: lit.fn @"test_byref_slot_closure_capture
 def test_byref_slot_closure_capture(var x: String):
-    # CHECK: lit.fn *"capture
-    @__parameter
-    def capture() -> String:
+    def capture() {imm} -> String:
         return x
 
-    # CHECK: %__call_result_tmp__
-    # CHECK-NEXT: lit.call[{{.*}}: *"capture{{.*}}(%__call_result_tmp__)
+    # CHECK: %__call_result_tmp__ = lit.var.decl
+    # CHECK-NEXT: lit.call {{.*}}capture::__storage"::@"__call__{{.*}}(%{{.*}}, %__call_result_tmp__)
     x = capture()
     # CHECK-NEXT: lit.call {{.*}}@String::@"__init__{{.*}}"{{.*}}(%__call_result_tmp__, %x){{.*}}*, "move"
 
@@ -450,7 +481,7 @@ struct ThingWithParam[X: Int](Movable where False):
 
 def test_cond_conformance(exclude: Bool):
     comptime local_alias = 42
-    var ptr : UnsafePointer[ThingWithParam[local_alias], AnyOrigin[mut=True]]
+    var ptr : Pointer[ThingWithParam[local_alias], AnyOrigin[mut=True]]
     ptr[] = exclude
 
 
@@ -534,7 +565,7 @@ struct Value(ImplicitlyCopyable):
 # CHECK-LABEL: lit.fn @"entry
 def entry(mut value: MyDict[String, Value], name: String) raises:
     # CHECK: lit.call {{.*}}::@MyDict::@"__getitem__
-    # CHECK-NEXT: [[V1:%.*]] = lit.load.consume
+    # CHECK: [[V1:%.*]] = lit.load.consume
     # CHECK-NEXT: [[V2:%.*]] = lit.ref.struct.ger [[V1]]
     # CHECK-NEXT: [[V3:%.*]] = kgen.param.constant: !alias_Int1 = <rebind(:!Int {:scalar<index> 12})>
     # CHECK-NEXT: lit.ref.store [[V3]], [[V2]]
@@ -609,6 +640,45 @@ def check_tail_call(str_arg: String, var var_str_arg: String):
     use_string(str_arg)
 
 
+def use_string_varargs(*args: String): pass
+
+def use_string_pack[*Ts: AnyType](*args: *Ts): pass
+
+# Forwarding a variadic passes the container it was given, which lives outside
+# this frame.
+# CHECK-LABEL: lit.fn @"check_tail_call_forwarded_varargs
+# CHECK: lit.call tail @{{.*}}@"use_string_varargs{{.*}}(%args)
+def check_tail_call_forwarded_varargs(*args: String):
+    use_string_varargs(*args)
+
+# CHECK-LABEL: lit.fn @"check_tail_call_local_varargs
+def check_tail_call_local_varargs(var var_str_arg: String):
+    # CHECK: lit.call @{{.*}}@"use_string_varargs
+    use_string_varargs(var_str_arg)
+    # CHECK: lit.call @{{.*}}@"use_string_pack
+    use_string_pack(var_str_arg)
+
+
+struct TailCallIndex(Movable):
+    var value: Int
+
+    def __init__(out self):
+        self.value = 0
+
+
+struct TailCallContainer(Movable):
+    def __getitem__(self, *args: TailCallIndex) -> Int:
+        return args[0].value
+
+
+# CHECK-LABEL: lit.fn @"check_tail_call_subscript
+def check_tail_call_subscript(
+    container: TailCallContainer, key: TailCallIndex
+) -> Int:
+    # CHECK: lit.call @{{.*}}@"__getitem__
+    return container[key]
+
+
 # These take values that have to be in memory.  Verify that we're forming the
 # temp boxes correctly even though we're inferring parameters with them.
 def test_mem_temp_1(ref x: Int, *, y: Int) -> ref[x] Int:
@@ -677,3 +747,26 @@ def test():
     # CHECK-NEXT: [[X2:%.*]] = lit.ref.immut %x
     # CHECK-NEXT: lit.call {{.*}}@"no_exclusivity_violation{{.*}}[muttoimm *"x`"]<:!Bool {:scalar<bool> false}{{.*}}([[X1]], [[X2]])
     no_exclusivity_violation[mut = False](x, x)
+
+
+@fieldwise_init
+struct Color(ImplicitlyCopyable):
+    var r: Int
+
+    @staticmethod
+    def gray(level: Int) -> Self:
+        return Self(level)
+
+
+def paint(c: Color):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"test_inferred_member_runtime_arg
+def test_inferred_member_runtime_arg(level: Int):
+    # `.gray` resolves against `paint`'s parameter type even when its argument
+    # is a runtime value rather than a literal.
+    # CHECK: lit.call @call_emission::@Color::@"gray({{.*}})"{{.*}}(%level, %[[TMP:[a-z_]+]])
+    # CHECK: %[[C:[0-9]+]] = lit.ref.immut %[[TMP]]
+    # CHECK: lit.call @call_emission::@"paint(call_emission::Color)"{{.*}}(%[[C]])
+    paint(.gray(level))

@@ -25,6 +25,7 @@
 #include "Support/LogicalResult.h"
 #include "Support/Profiling/TimeProfiler.h"
 #include "Support/RCRef.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/OpDefinition.h" // IWYU pragma: keep (incomplete type)
 #include "llvm/ADT/FunctionExtras.h"
 #include "llvm/ADT/STLForwardCompat.h"
@@ -50,7 +51,7 @@ namespace M::Cache {
 /// struct defines the cache key as a BufferRef; the contents of which are
 /// hashed; this is to disambiguate it from StringRef keys, which generally
 /// have no hashing applied.
-struct TransformCacheKey {
+struct MODULAR_CXX_EXPORT TransformCacheKey {
   using KeyTy = BufferRef;
   static std::string hashKey(KeyTy key);
 };
@@ -293,15 +294,9 @@ using CacheProfilerEntry =
 // Operation Transformations
 //===----------------------------------------------------------------------===//
 
-/// Transformation and cache functions that operate on a given operation.
-using OpTransformFn = llvm::unique_function<AsyncRT::AnyAsyncValueRef(
-    Operation *, WriteableBufferRef, AsyncRT::AnyAsyncValueRef)>;
-using OpCacheHitFn =
-    llvm::unique_function<AsyncRT::AnyAsyncValueRef(Operation *, BufferRef)>;
-
 /// Helper method to write the given operation to the provided cache key.
-LogicalResult writeOperationToCacheKey(Operation *op,
-                                       const WriteableBufferRef &key);
+MODULAR_CXX_EXPORT LogicalResult
+writeOperationToCacheKey(Operation *op, const WriteableBufferRef &key);
 
 /// Run the specified transform on the target operation. The transform must have
 /// a key of some kind that can be associated with the operation. The semantics
@@ -337,13 +332,12 @@ cachedTransform(Operation *target, RCRef<TransformCache> transformCache,
 }
 
 /// Run the specified passes over the target operation (i.e. ModulePasses over a
-/// ModuleOp). If the target operation and pass pipeline result in a cache hit,
-/// that cache hit will simply replace the operation's region hash attribute
-/// with the updated region hash attribute. The granularity of the result is a
-/// region on the operation `target`. This function manifests its result as an
-/// update to the RegionHashArrayAttr on `target` - it will update the region
-/// hashes from the old versions (pre-transform) to the new versions (transform
-/// applied).
+/// ModuleOp) as a cached transform. The cache key is the target operation and
+/// the textual form of the pass pipeline. On a miss, the passes run and the
+/// resulting operation is stored as bytecode together with any diagnostics
+/// emitted while running them. On a hit, the cached bytecode replaces the
+/// regions and attributes of `target` and the cached diagnostics are
+/// re-emitted.
 /// moreOnMiss and moreOnHit are two callbacks for extra functionality to
 /// perform for cache miss and hit accordingly if needed.
 AsyncRT::AnyAsyncValueRef cachedTransform(

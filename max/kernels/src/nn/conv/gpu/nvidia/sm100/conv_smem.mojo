@@ -27,8 +27,6 @@ SMEM Organization:
 """
 
 
-from layout import Layout
-from std.utils.index import IndexList
 from layout.tensor_core_async import tile_layout_k_major_typed
 
 # Import pipeline storage from matmul structured kernels
@@ -113,7 +111,6 @@ struct Conv2dSmem[
     ].static_product
 
     # Output tiles use row-major layout
-    comptime out_smem_layout = Layout.row_major(Self.OutputM, Self.OutputN)
 
     # ========== Tile Storage ==========
     # Reuse StandardTileStorage from matmul (same structure)
@@ -121,9 +118,9 @@ struct Conv2dSmem[
         Self.act_type,
         Self.filter_type,
         # Activation tile dimensions (BM x BK)
-        IndexList[2](Self.BM, Self.BK),
+        (Self.BM, Self.BK),
         # Filter tile dimensions (BN x BK)
-        IndexList[2](Self.BN, Self.BK),
+        (Self.BN, Self.BK),
         Self.num_pipeline_stages,
     ]
 
@@ -150,7 +147,7 @@ struct Conv2dSmem[
     )
     comptime SourceTiles = SourceTileStorage[
         Self.out_type,  # Source C has same type as output D
-        IndexList[2](Self.OutputM, Self.OutputN),
+        (Self.OutputM, Self.OutputN),
         Self.num_epi_load_stages,
     ]
 
@@ -166,22 +163,22 @@ struct Conv2dSmem[
     var source_tiles: Self.SourceTiles
 
     # ========== Tile Accessors ==========
-    @always_inline
+    @inline(.always)
     def act_tiles(ref[AddressSpace.SHARED] self) -> Self.ActTileArray:
         """Get activation tiles (im2col'd)."""
         return self.input_tiles.a_tiles()
 
-    @always_inline
+    @inline(.always)
     def filter_tiles(ref[AddressSpace.SHARED] self) -> Self.FilterTileArray:
         """Get filter tiles."""
         return self.input_tiles.b_tiles()
 
-    @always_inline
+    @inline(.always)
     def out_tiles(ref[AddressSpace.SHARED] self) -> Self.OutTileArray:
         """Get output tiles."""
         return self.output_tiles.c_tiles()
 
-    @always_inline
+    @inline(.always)
     def src_tiles(ref[AddressSpace.SHARED] self) -> Self.SrcTileArray:
         """Get source C tiles (for residual operations)."""
         return self.source_tiles.src_tiles()
@@ -194,8 +191,8 @@ struct Conv2dSmem[
         StandardTilePayload[
             Self.act_type,
             Self.filter_type,
-            IndexList[2](Self.BM, Self.BK),
-            IndexList[2](Self.BN, Self.BK),
+            (Self.BM, Self.BK),
+            (Self.BN, Self.BK),
             Self.num_pipeline_stages,
         ],
     ]
@@ -218,7 +215,7 @@ struct Conv2dSmem[
     comptime LoadOrderBarriers = Self.LoadOrderBarrier.BarrierArray
 
     # ========== Conv2D-specific Barrier Accessors ==========
-    @always_inline
+    @inline(.always)
     def epi_load_barriers(
         ref[AddressSpace.SHARED] self,
     ) -> Self.EpiLoadBarriers:
@@ -229,7 +226,7 @@ struct Conv2dSmem[
         """
         return self.epi_load_pipeline.barriers.barriers()
 
-    @always_inline
+    @inline(.always)
     def get_load_order_barrier(
         ref[AddressSpace.SHARED] self,
     ) -> Self.LoadOrderBarriers:

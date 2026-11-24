@@ -21,8 +21,19 @@ encoding without any shape or dtype check catching it.
 
 from __future__ import annotations
 
+from typing import Any
+from unittest import mock
+
 import pytest
-from max.nn.kernels import _fp6_format_code
+from max.dtype import DType
+from max.graph import DeviceRef, Graph, TensorType, ops
+from max.nn._graph_ops import (
+    _fp6_format_code,
+    _moe_sigmoid_gemv_group_limited_router_unsupported,
+    block_scaled_preshuffle_grouped_scale_4d,
+    grouped_dynamic_block_scaled_matmul_amd,
+    learnable_2d_interp_pos_emb,
+)
 
 
 @pytest.mark.parametrize(
@@ -41,3 +52,382 @@ def test_fp6_format_code_matches_op_parameter(
 def test_fp6_format_code_rejects_unknown_names() -> None:
     with pytest.raises(ValueError, match="fp6_format must be one of"):
         _fp6_format_code("e1m4")
+
+
+# The AMD preb path's per-step A-scale buffer holds one fixed-stride slot per
+# expert. Sizing it by the batch's POST-expansion row count instead of one
+# expert's is correct but roughly `top_k`-fold too large per slot, which is
+# invisible at decode and fatal at a 6610-token Kimi K3 prefill: 896 x 105,760
+# x 112 B is 10.6 GB on a model already at 305 of 309 GB. These pin that the
+# bound is opt-in and that the region the kernel addresses fits inside what
+# either sizing allocates. Every slot strides by a multiple of 32 rows, so an
+# unpadded default overruns any step of fewer than 32 rows.
+_K3_EXPERTS, _K3_TOP_K, _K3_ROW_BOUND, _K3_K_SCALES = 896, 16, 8192, 112
+_M3_EXPERTS, _M3_TOP_K, _M3_ROW_BOUND, _M3_K_SCALES = 128, 4, 8192, 192
+
+
+def _preshuffled_scale_rows(
+    tokens: int,
+    top_k: int,
+    num_experts: int,
+    k_scales: int,
+    max_rows_per_expert: int | None,
+) -> int:
+    """Rows `block_scaled_preshuffle_grouped_scale_4d` allocates for a step."""
+    with Graph(
+        "preshuffle_scale_rows",
+        input_types=[
+            TensorType(
+                DType.float8_e8m0fnu,
+                (tokens * top_k, k_scales),
+                device=DeviceRef.GPU(0),
+            ),
+            TensorType(
+                DType.uint32, (num_experts + 1,), device=DeviceRef.GPU(0)
+            ),
+            TensorType(DType.uint32, (2,), device=DeviceRef.CPU()),
+        ],
+    ) as graph:
+        a_scales, expert_start_indices, stats = graph.inputs
+        out = block_scaled_preshuffle_grouped_scale_4d(
+            a_scales.tensor,
+            expert_start_indices.tensor,
+            stats.tensor[0],
+            stats.tensor[1],
+            num_experts=num_experts,
+            max_rows_per_expert=max_rows_per_expert,
+        )
+        return int(out.shape[0])
+
+
+@pytest.mark.parametrize(
+    "tokens, top_k, num_experts, k_scales",
+    [
+        (6610, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES),
+        (6610, _M3_TOP_K, _M3_EXPERTS, _M3_K_SCALES),
+        # Decode: one token's 4 rows, while each slot strides by 32.
+        (1, _M3_TOP_K, _M3_EXPERTS, _M3_K_SCALES),
+    ],
+    ids=["kimi_k3", "minimax_m3", "minimax_m3_decode"],
+)
+def test_preshuffled_scale_buffer_defaults_to_the_padded_post_expansion_count(
+    tokens: int, top_k: int, num_experts: int, k_scales: int
+) -> None:
+    """Without a bound, each slot holds the step's rows padded to 32."""
+    rows = _preshuffled_scale_rows(tokens, top_k, num_experts, k_scales, None)
+    assert rows == num_experts * ((tokens * top_k + 31) // 32) * 32
+    max_padded_m = ((tokens + 31) // 32) * 32
+    assert rows >= num_experts * max_padded_m
+
+
+@pytest.mark.parametrize(
+    "tokens, top_k, num_experts, k_scales, row_bound",
+    [
+        (6610, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES, _K3_ROW_BOUND),
+        (6610, _M3_TOP_K, _M3_EXPERTS, _M3_K_SCALES, _M3_ROW_BOUND),
+        # Decode: the static budget over-bounds a 32-token step by design, and
+        # must still allocate rather than round to nothing.
+        (32, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES, _K3_ROW_BOUND),
+        # A bound that is exactly the token count but not a multiple of 32:
+        # without the padding, the buffer is 14 rows short per slot.
+        (6610, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES, 6610),
+    ],
+    ids=[
+        "kimi_k3_prefill",
+        "minimax_m3_prefill",
+        "kimi_k3_decode",
+        "kimi_k3_unaligned_bound",
+    ],
+)
+def test_preshuffled_scale_buffer_contains_the_addressed_region(
+    tokens: int, top_k: int, num_experts: int, k_scales: int, row_bound: int
+) -> None:
+    """The allocation is one padded bound per expert and covers every read.
+
+    The matmul reads slot `e` at `e * align_up(max_num_tokens_per_expert, 32)`,
+    and `max_num_tokens_per_expert` is `min(tokens, row_bound)` -- one expert
+    cannot hold more rows than the batch has tokens, since a token's `top_k`
+    picks are distinct. The allocation has to cover the last slot's last row.
+    """
+    rows = _preshuffled_scale_rows(
+        tokens, top_k, num_experts, k_scales, row_bound
+    )
+    assert rows == num_experts * ((row_bound + 31) // 32) * 32
+    max_padded_m = ((min(tokens, row_bound) + 31) // 32) * 32
+    assert rows >= num_experts * max_padded_m
+
+
+@pytest.mark.parametrize("row_bound", [0, -64])
+def test_preshuffled_scale_buffer_rejects_a_non_positive_bound(
+    row_bound: int,
+) -> None:
+    """A bound that sizes slots to nothing must not reach the kernel."""
+    with pytest.raises(ValueError, match="max_rows_per_expert must be > 0"):
+        _preshuffled_scale_rows(
+            32, _K3_TOP_K, _K3_EXPERTS, _K3_K_SCALES, row_bound
+        )
+
+
+# The AMD grouped matmul takes MXFP8 activations against packed MXFP4 weights
+# (W4A8), whose byte widths differ for the same logical K. The kernel runs only
+# on MI355, so these pin what the graph builder decides on a CPU: which operand
+# pairs reach the custom op, and which it rejects before compilation.
+_W4A8_EXPERTS, _W4A8_N, _W4A8_K = 3, 128, 384
+
+
+def _grouped_amd_matmul_custom_call(
+    hidden: tuple[DType, int],
+    weight: tuple[DType, int],
+    **kwargs: Any,
+) -> mock.MagicMock:
+    """Builds the grouped AMD matmul and returns its ``ops.custom`` call."""
+    hidden_dtype, hidden_k_bytes = hidden
+    weight_dtype, weight_k_bytes = weight
+    k_scales = _W4A8_K // 32
+    gpu = DeviceRef.GPU(0)
+    with (
+        mock.patch.object(ops, "custom", wraps=ops.custom) as custom,
+        Graph(
+            "grouped_amd_matmul",
+            input_types=[
+                TensorType(
+                    hidden_dtype, ("tokens", hidden_k_bytes), device=gpu
+                ),
+                TensorType(
+                    weight_dtype,
+                    (_W4A8_EXPERTS, _W4A8_N, weight_k_bytes),
+                    device=gpu,
+                ),
+                TensorType(
+                    DType.float8_e8m0fnu, ("tokens", k_scales), device=gpu
+                ),
+                TensorType(
+                    DType.float8_e8m0fnu,
+                    (_W4A8_EXPERTS, _W4A8_N, k_scales),
+                    device=gpu,
+                ),
+                TensorType(DType.uint32, (_W4A8_EXPERTS + 1,), device=gpu),
+                TensorType(DType.int32, (_W4A8_EXPERTS,), device=gpu),
+                TensorType(DType.uint32, (2,), device=DeviceRef.CPU()),
+            ],
+        ) as graph,
+    ):
+        hidden_states, weights, a_scales, b_scales, starts, ids, stats = (
+            value.tensor for value in graph.inputs
+        )
+        out = grouped_dynamic_block_scaled_matmul_amd(
+            hidden_states,
+            weights,
+            a_scales,
+            b_scales,
+            starts,
+            ids,
+            stats,
+            **kwargs,
+        )
+        graph.output(out)
+    return custom
+
+
+def test_grouped_amd_matmul_dispatches_mixed_w4a8() -> None:
+    """E4M3 activations and packed E2M1 weights reach the dense custom op."""
+    custom = _grouped_amd_matmul_custom_call(
+        (DType.float8_e4m3fn, _W4A8_K), (DType.uint8, _W4A8_K // 2)
+    )
+    custom.assert_called_once()
+    (name,) = custom.call_args.args
+    values = custom.call_args.kwargs["values"]
+    (out_type,) = custom.call_args.kwargs["out_types"]
+    assert name == "matmul.grouped.block.scaled.amd"
+    assert values[0].dtype == DType.float8_e4m3fn
+    assert values[1].dtype == DType.uint8
+    assert custom.call_args.kwargs["parameters"]["preshuffled_b"] is False
+    assert out_type.dtype == DType.bfloat16
+    assert out_type.shape == ["tokens", _W4A8_N]
+
+
+@pytest.mark.parametrize(
+    "hidden, weight, kwargs, error, match",
+    [
+        (
+            (DType.uint8, _W4A8_K // 2),
+            (DType.float8_e4m3fn, _W4A8_K),
+            {},
+            TypeError,
+            "operands must share an MX dtype",
+        ),
+        (
+            (DType.float8_e4m3fn, _W4A8_K),
+            (DType.uint8, _W4A8_K // 2),
+            {"preshuffled_b": True},
+            ValueError,
+            "requires row-major operands",
+        ),
+        (
+            (DType.float8_e4m3fn, _W4A8_K),
+            (DType.uint8, _W4A8_K),
+            {},
+            ValueError,
+            "logical K mismatch",
+        ),
+    ],
+    ids=["fp4_activations_fp8_weights", "preshuffled_b", "unpacked_weights"],
+)
+def test_grouped_amd_matmul_rejects_unsupported_w4a8(
+    hidden: tuple[DType, int],
+    weight: tuple[DType, int],
+    kwargs: dict[str, Any],
+    error: type[Exception],
+    match: str,
+) -> None:
+    """Operand pairs the dense W4A8 kernel cannot read never reach it."""
+    with pytest.raises(error, match=match):
+        _grouped_amd_matmul_custom_call(hidden, weight, **kwargs)
+
+
+_MXFP4_OPERANDS = (DType.uint8, _W4A8_K // 2)
+
+
+def test_grouped_amd_matmul_preshuffles_with_a_scale_row_bound() -> None:
+    """The bound reaches the preshuffle on the one path that sizes slots."""
+    custom = _grouped_amd_matmul_custom_call(
+        _MXFP4_OPERANDS,
+        _MXFP4_OPERANDS,
+        preshuffled_b=True,
+        a_scales_max_rows_per_expert=64,
+    )
+    names = [call.args[0] for call in custom.call_args_list]
+    assert names[-1] == "matmul.grouped.block.scaled.amd"
+    assert len(names) == 2
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {},
+        {
+            "preshuffled_b": True,
+            "a_scales_max_padded_m": 64,
+        },
+    ],
+    ids=["row_major_b", "fused_preshuffled_a_scales"],
+)
+def test_grouped_amd_matmul_rejects_an_ignored_a_scale_row_bound(
+    kwargs: dict[str, Any],
+) -> None:
+    """A row bound that would size nothing fails at build, not at allocation."""
+    with pytest.raises(ValueError, match="a_scales_max_rows_per_expert"):
+        _grouped_amd_matmul_custom_call(
+            _MXFP4_OPERANDS,
+            _MXFP4_OPERANDS,
+            a_scales_max_rows_per_expert=64,
+            **kwargs,
+        )
+
+
+# Beam-1.0's router.
+_GROUP_LIMITED_ROUTER: dict[str, Any] = {
+    "n_routed_experts": 256,
+    "n_experts_per_tok": 8,
+    "n_groups": 8,
+    "topk_group": 4,
+    "hidden_size": 5120,
+    "warp_size": 32,
+    "weight_dtype": DType.float32,
+}
+
+
+def test_group_limited_router_takes_beam_routing() -> None:
+    assert (
+        _moe_sigmoid_gemv_group_limited_router_unsupported(
+            **_GROUP_LIMITED_ROUTER
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides, reason",
+    [
+        ({"weight_dtype": DType.bfloat16}, "float32"),
+        ({"n_groups": 0}, "split evenly"),
+        ({"n_groups": 1}, "divide the warp"),
+        ({"n_groups": 128}, "n_experts_per_tok must be in"),
+        ({"topk_group": 9}, "topk_group must be in"),
+        (
+            {"n_routed_experts": 96, "n_groups": 3, "topk_group": 2},
+            "n_groups must be a power of two",
+        ),
+        ({"topk_group": 3}, "candidates must be a power of two"),
+        # Two scores per group overrun the candidates' shared memory.
+        (
+            {"n_groups": 16, "topk_group": 4, "n_experts_per_tok": 4},
+            "shared memory",
+        ),
+        ({"topk_group": 1}, "shared memory"),
+    ],
+    ids=[
+        "bf16_ids",
+        "no_groups",
+        "group_wider_than_warp",
+        "top_k_wider_than_group",
+        "more_kept_than_groups",
+        "groups_not_power_of_two",
+        "candidates_not_power_of_two",
+        "group_scores_overrun_16",
+        "group_scores_overrun_8",
+    ],
+)
+def test_group_limited_router_rejects_unsupported_routing(
+    overrides: dict[str, Any], reason: str
+) -> None:
+    """Configs the kernel can't run fail at build, not as bad routing."""
+    result = _moe_sigmoid_gemv_group_limited_router_unsupported(
+        **{**_GROUP_LIMITED_ROUTER, **overrides}
+    )
+    assert result is not None and reason in result
+
+
+def _pos_emb_custom_call(**kwargs: Any) -> tuple[mock.MagicMock, TensorType]:
+    """Builds the position-embedding op and returns its ``ops.custom`` call."""
+    gpu = DeviceRef.GPU(0)
+    with (
+        mock.patch.object(ops, "custom", wraps=ops.custom) as custom,
+        Graph(
+            "learnable_2d_interp_pos_emb",
+            input_types=[
+                TensorType(DType.bfloat16, ("tokens", 16), device=gpu),
+                TensorType(DType.bfloat16, (4, 6, 16), device=gpu),
+                TensorType(DType.int64, ("videos", 3), device=gpu),
+                TensorType(DType.float32, (2, 16), device=gpu),
+            ],
+        ) as graph,
+    ):
+        x, weight, grid_thws, time_weight = (v.tensor for v in graph.inputs)
+        out = learnable_2d_interp_pos_emb(
+            x, weight, grid_thws, time_weight, **kwargs
+        )
+        return custom, out.type
+
+
+@pytest.mark.parametrize(
+    "kwargs, bilinear",
+    [
+        ({}, False),
+        ({"interpolation_mode": "bicubic"}, False),
+        ({"interpolation_mode": "bilinear"}, True),
+    ],
+    ids=["default", "bicubic", "bilinear"],
+)
+def test_pos_emb_maps_the_mode_to_the_bilinear_parameter(
+    kwargs: dict[str, str], bilinear: bool
+) -> None:
+    custom, out_type = _pos_emb_custom_call(**kwargs)
+    assert custom.call_args.kwargs["parameters"] == {"bilinear": bilinear}
+    assert out_type.dtype == DType.bfloat16
+    assert [str(dim) for dim in out_type.shape] == ["tokens", "16"]
+
+
+def test_pos_emb_rejects_an_unknown_mode() -> None:
+    with pytest.raises(ValueError, match="'bicubic' or 'bilinear'"):
+        _pos_emb_custom_call(interpolation_mode="nearest")

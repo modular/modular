@@ -1,0 +1,35 @@
+load("//bazel:api.bzl", "modular_cc_binary")
+
+package(
+    default_visibility = ["//MLRT:__subpackages__"],
+    features = [
+        "layering_check",
+        "parse_headers",
+    ],
+)
+
+modular_cc_binary(
+    name = "mef-executor",
+    srcs = glob(["*.cpp"]),
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//Support:Globals",
+        "//bazel/internal:MLIR",
+    ],
+    deps = [
+        "//AsyncRT:CompilerSupport",
+        "//AsyncRT:Runtime",
+        "//AsyncRT:RuntimeGlobals.static",
+        "//Init",
+        "//MLRT:GraphRT/GRTRuntime",
+        "//MLRT:GraphRT/MEFExecutor",
+        "//MLRT:GraphRT/Primitives",
+        "//Support:Base",
+        "//Support:Buffer",
+        "//Support:CommonCLOptions",
+        "//Support:Globals.static",
+        "//Support:ML",
+        "@llvm-project//llvm:Support",
+    ],
+)

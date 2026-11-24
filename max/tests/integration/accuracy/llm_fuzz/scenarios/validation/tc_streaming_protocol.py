@@ -68,6 +68,7 @@ _COMPARE_TOOL = make_tool(
         "additionalProperties": False,
     },
     description="Search for results by query with a count limit",
+    strict=True,
 )
 
 _LOOKUP_A = make_tool(
@@ -594,7 +595,7 @@ class TCStreamingProtocol(BaseScenario):
                     "role": "user",
                     "content": (
                         "Look up 'alpha' with lookup_a AND 'beta' with lookup_b. "
-                        "You must call both tools."
+                        "Call both tools in parallel, in this one response."
                     ),
                 }
             ],

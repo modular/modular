@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -152,6 +153,21 @@ def test_registry__retrieve_pipeline_task_defaults_to_text_generation_on_ambiguo
     PIPELINE_REGISTRY.register(embedding_arch)
     task = PIPELINE_REGISTRY.retrieve_pipeline_task("LlamaForCausalLM")
     assert task == PipelineTask.TEXT_GENERATION
+
+
+@prepare_registry
+def test_registry__retrieve_pipeline_task_falls_back_to_module_v3() -> None:
+    """An arch registered only as ``X_ModuleV3`` resolves its task for ``X``,
+    the name a checkpoint's ``config.json`` carries."""
+    PIPELINE_REGISTRY.register(
+        dataclasses.replace(
+            DUMMY_LLAMA_ARCH, name="OnlyModuleV3ForCausalLM_ModuleV3"
+        )
+    )
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task("OnlyModuleV3ForCausalLM")
+    assert task == PipelineTask.TEXT_GENERATION
+    with pytest.raises(ValueError, match="not found in registry"):
+        PIPELINE_REGISTRY.retrieve_pipeline_task("UnknownForCausalLM")
 
 
 @prepare_registry

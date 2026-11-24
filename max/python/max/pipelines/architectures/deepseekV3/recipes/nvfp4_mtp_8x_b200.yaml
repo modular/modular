@@ -19,9 +19,10 @@ model:
     device_memory_utilization: 0.8
 
 speculative:
-  speculative_method: eagle
+  speculative_method: mtp
   num_speculative_tokens: 3
 
 runtime:
+  prefer_module_v3: false
   ep_size: 8
   max_batch_input_tokens: 1024

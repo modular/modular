@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s -verify-diagnostics | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s --check-prefix=CLOSURE
 
 
 struct MemExample(Movable where False):
@@ -48,7 +49,7 @@ def var_decls():
 # CHECK-LABEL: lit.fn @"test_var_let_scopes
 def test_var_let_scopes(cond: Bool):
     # CHECK: lit.var.decl "c"
-    # CHECK: hlcf.elif
+    # CHECK: hlcf.if
     var c = 10
     if cond:
         # CHECK: lit.var.decl "c"
@@ -61,7 +62,7 @@ def test_var_let_scopes(cond: Bool):
 
 # CHECK-LABEL: lit.fn @"test_var_origin_mangling
 def test_var_origin_mangling[x: Int](c: Bool):
-    # CHECK: hlcf.elif
+    # CHECK: hlcf.if
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`">
         var y = x
@@ -73,14 +74,14 @@ def test_var_origin_mangling[x: Int](c: Bool):
 
 # CHECK-LABEL: lit.fn @"test_nested_var_origin_mangling
 def test_nested_var_origin_mangling[x: Int](c: Bool):
-    # CHECK: hlcf.elif
+    # CHECK: hlcf.if
     if c:
         # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`">
         var y = x
 
-    # CHECK: lit.fn *"nested()"
-    def nested() capturing:
-        # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`2x">
+    # CLOSURE: lit.fn @"nested()`"
+    def nested() {imm}:
+        # CLOSURE: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`2x">
         var y = x
 
 

@@ -28,7 +28,7 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
 
     Use this function to invoke a subgraph built with
     :meth:`~max.graph.Graph.add_subgraph` or
-    :meth:`~max.nn.Module.build_subgraph`. The primary benefit is that the
+    :meth:`~max.nn.legacy.Module.build_subgraph`. The primary benefit is that the
     compiler processes the subgraph definition once, which reduces compile
     time significantly for models with repeated blocks.
 
@@ -67,7 +67,7 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
             from max.dtype import DType
             from max.engine import InferenceSession
             from max.graph import DeviceRef, Graph, TensorType, ops
-            from max.nn import LayerList, Linear, Module
+            from max.nn.legacy import LayerList, Linear, Module
 
             class Model(Module):
                 def __init__(self):
@@ -144,18 +144,22 @@ def call(graph: Graph, *args: Value[Any], prefix: str = "") -> list[Value[Any]]:
     # Get the current graph context
     current_graph = Graph.current
     call_args = list(args)  # mutable so we can add a chain
-    # Be careful, input_types are type[Value], output_types are Type
-    input_types = [type(input) for input in graph.inputs]
+    param_types = [input.type for input in graph.inputs]
     output_types = list(graph.output_types)
 
-    # Mostly leave type checking up to the op builder.
-    # We can do some basic type checking to improve error messages,
-    # but for instance can't check forward shape propagation correctness.
-    if len(call_args) != len(input_types):
+    if len(call_args) != len(param_types):
         raise ValueError(
-            f"Expected {len(input_types)} args to call to {graph.name}, got {len(call_args)}. "
-            f"\n    {graph.name}{tuple(input_types)}"
+            f"Expected {len(param_types)} args to call to {graph.name}, got {len(call_args)}. "
+            f"\n    {graph.name}{tuple(param_types)}"
         )
+    for i, (arg, param_type) in enumerate(
+        zip(call_args, param_types, strict=True)
+    ):
+        if arg.type != param_type:
+            raise ValueError(
+                f"Subgraph {graph.name} has wrong type for argument {i}:"
+                f" expected {param_type}, got {arg.type}"
+            )
 
     # Plumb chains through the call: the callee declared a specific set of
     # device chains in its signature, so we pull the corresponding chain

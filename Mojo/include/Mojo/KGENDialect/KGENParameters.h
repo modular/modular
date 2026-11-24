@@ -22,8 +22,12 @@
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENInterfaces.h"
 #include "Mojo/KGENDialect/ParameterReplacer.h"
+#include "Support/Compiler/Threading.h"
+#include "Support/SymbolExport.h"
 #include "mlir/Pass/AnalysisManager.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 
@@ -130,7 +134,21 @@ public:
                               bool onlyAdjustIndexRef = false)
       : adjustDepth(adjustDepth), onlyAdjustIndexRef(onlyAdjustIndexRef) {}
 
+  using IndexParameterReplacer<IndexDepthAdjuster>::replace;
+
+  /// Cached: the result depends only on the value and the adjuster's
+  /// settings.
+  template <typename T>
+  T replace(T value) {
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
+    return llvm::cast_if_present<T>(replaceCached(Base(value)));
+  }
+
 private:
+  template <typename BaseT>
+  BaseT replaceCached(BaseT value);
+
   // CRTP methods.
   Attribute tryReplace(Attribute attr, size_t depth);
   Type tryReplace(Type, size_t) { return {}; }
@@ -201,11 +219,79 @@ public:
       size_t requiredSignatureDepth = 0;
     };
 
+    /// Returns an empty cache that reads through to `base` and records new
+    /// entries only in itself. Worker threads use it to share one cache
+    /// without each holding a full copy; `ThreadLocalCache` calls it to create
+    /// each thread's cache. `base` must outlive the result and must not change
+    /// while the result is in use.
+    static Analysis makeThreadCache(const Analysis &base);
+
+    /// Returns the cached facts for `key`, or null if neither this cache nor
+    /// its base holds `key`.
+    const ParameterlessInfo *lookup(const void *key) const {
+      if (base)
+        if (auto it = base->parameterLess.find(key);
+            it != base->parameterLess.end())
+          return &it->second;
+      auto it = parameterLess.find(key);
+      return it == parameterLess.end() ? nullptr : &it->second;
+    }
+
+    /// Inserts into this cache. The base cache is read-only and does not
+    /// change.
+    void try_emplace(const void *key, ParameterlessInfo info) {
+      parameterLess.try_emplace(key, info);
+    }
+
+    /// Adds the entries this cache holds itself, not those of its base, to
+    /// `target`.
+    void mergeInto(Analysis &target) const {
+      target.parameterLess.insert_range(parameterLess);
+    }
+
+    /// Calls `func(cache, element)` for each element of `range` and stops at
+    /// the first failure. The elements run in parallel if `ctx` has threading
+    /// enabled, and in order on the calling thread otherwise. Each worker's
+    /// `cache` reads through to this cache and records new entries only in
+    /// itself, because this cache must not change while other workers read it.
+    /// Afterwards, this cache also holds the entries of all workers.
+    template <typename RangeT, typename FuncT>
+    LogicalResult failableParallelForEach(MLIRContext *ctx, RangeT &&range,
+                                          FuncT &&func) {
+      Analysis layer = makeThreadCache(*this);
+      LogicalResult result = M::failableParallelForEach(
+          ctx, std::forward<RangeT>(range), std::forward<FuncT>(func), layer,
+          [this](Analysis &, ArrayRef<Analysis> workerLayers) {
+            for (const Analysis &workerLayer : workerLayers)
+              workerLayer.mergeInto(*this);
+          });
+      // `M::failableParallelForEach` passes `layer` itself to one worker and
+      // gives only the copies to the merge function above.
+      layer.mergeInto(*this);
+      return result;
+    }
+
+    /// Same as `failableParallelForEach`, for a `func` that cannot fail.
+    template <typename RangeT, typename FuncT>
+    void parallelForEach(MLIRContext *ctx, RangeT &&range, FuncT &&func) {
+      (void)failableParallelForEach(
+          ctx, std::forward<RangeT>(range),
+          [&](Analysis &cache, auto &&element) {
+            func(cache, std::forward<decltype(element)>(element));
+            return llvm::success();
+          });
+    }
+
+  private:
     /// Types and attributes contained in this map are known to have no
     /// parameter uses as sub-elements. They are mapped to whether there is an
     /// unresolved parameter operator and the intrinsic required signature depth
-    /// for the sub-elements to be valid.
+    /// for the sub-elements to be valid. A layered cache holds only the
+    /// entries that are not in `base`.
     DenseMap<const void *, ParameterlessInfo> parameterLess;
+
+    /// The shared cache this cache reads through to, or null.
+    const Analysis *base = nullptr;
   };
 
   /// Create a parameter collector with a collection cache.
@@ -239,6 +325,61 @@ private:
                                 SmallVectorImpl<ParamDeclRefAttr> &uses,
                                 bool &hasCtxEvalExpr,
                                 size_t &requiredSignatureDepth);
+  /// Scan `attr` or `type`. These functions skip the `cache` and `visited`
+  /// lookups for the argument. The children of the argument still go through
+  /// both caches. Only `verifyAndCollect` calls these functions.
+  void collectUsesFromAttrUncached(Attribute attr,
+                                   SmallVectorImpl<ParamDeclRefAttr> &uses,
+                                   bool &hasCtxEvalExpr,
+                                   size_t &requiredSignatureDepth);
+  void collectUsesFromTypesUncached(Type type,
+                                    SmallVectorImpl<ParamDeclRefAttr> &uses,
+                                    bool &hasCtxEvalExpr,
+                                    size_t &requiredSignatureDepth);
+
+  using AttrOrType = llvm::PointerUnion<Attribute, Type>;
+
+  using Signature =
+      SmartVariant<ParameterScopeAttrInterface, ParameterScopeTypeInterface>;
+
+  /// What the collector knows about one attribute or type.
+  struct VisitedInfo {
+    /// Each distinct parameter use, once.
+    SmallVector<ParamDeclRefAttr, 2> uses;
+    bool hasCtxEvalExpr = false;
+    size_t requiredSignatureDepth = 0;
+    /// The signature contexts in which the sub-expression was verified.
+    /// `collectMemoized` reuses this entry only in these contexts. The three
+    /// fields above are the same in every context.
+    llvm::SmallDenseSet<unsigned, 1> verifiedContextIds;
+  };
+
+  /// Scans `expr` and returns its facts. The scan also verifies `expr`
+  /// against the current signatures, through `maybeVerify`. The scan does not
+  /// look up `expr` itself in `visited`.
+  VisitedInfo verifyAndCollect(AttrOrType expr);
+
+  /// Collects the facts about `expr` and merges them into the out-parameters:
+  /// - appends each parameter use in `expr` to `uses`,
+  /// - sets `hasCtxEvalExpr` if `expr` has an unresolved parameter expression,
+  /// - raises `requiredSignatureDepth` to the depth that `expr` requires.
+  /// Calls `verifyAndCollect` unless `visited` already holds `expr` and
+  /// `expr` was verified in the current signature context. An error found
+  /// while verifying `expr` is reported once per signature context, not once
+  /// per operation.
+  void collectMemoized(AttrOrType expr, SmallVectorImpl<ParamDeclRefAttr> &uses,
+                       bool &hasCtxEvalExpr, size_t &requiredSignatureDepth);
+
+  /// Returns an id for the innermost `depth` signatures on the stack, and
+  /// creates the id on first use. Equal sequences get equal ids. See
+  /// `signatureContextIds`.
+  unsigned getOrCreateSignatureContextId(size_t depth);
+
+  /// Returns the attribute or type that `signature` wraps.
+  static AttrOrType fromSignature(const Signature &signature);
+
+  /// Returns whether `cache` or its base holds `expr`.
+  bool isInParameterLessCache(AttrOrType expr) const;
 
   /// The first time we encounter an attribute with a reference to an
   /// out-of-line declaration, verify it.
@@ -263,9 +404,36 @@ private:
 
   /// An internal stack of scoped parameter types representing the input param
   /// types of the current nested signatures.
-  SmallVector<
-      SmartVariant<ParameterScopeAttrInterface, ParameterScopeTypeInterface>>
-      signatures;
+  SmallVector<Signature> signatures;
+
+  /// Facts about the sub-expressions that `cache` does not hold, kept for the
+  /// lifetime of the collector. A sub-expression shared by many parents is
+  /// scanned once.
+  DenseMap<AttrOrType, VisitedInfo> visited;
+
+  /// Gives each sequence of signatures a small integer id, so that a sequence
+  /// can be stored in `VisitedInfo::verifiedContextIds`.
+  ///
+  /// Why: a `visited` entry can be reused only where the index references of
+  /// the sub-expression resolve to the same signatures. Those signatures are
+  /// the innermost `requiredSignatureDepth` entries of `signatures`. A key
+  /// that holds the sequence itself would copy and hash a vector on every
+  /// lookup. An integer id avoids both.
+  ///
+  /// How: the map is a prefix tree. Id 0 is the empty sequence. An entry
+  /// `(idOfS, sig) -> id` gives the id of the sequence S followed by `sig`.
+  /// `getOrCreateSignatureContextId` starts at id 0 and takes one step per
+  /// signature, innermost first. Each step looks up `(currentId, sig)`, or adds
+  /// it with the next free id. Equal sequences get equal ids, and different
+  /// sequences get different ids.
+  ///
+  /// Example: the stack is `[F, G, H]`, with `H` innermost, and the depth is 2.
+  /// The first step adds `(0, H) -> 1`, the id of `[H]`. The second step adds
+  /// `(1, G) -> 2`, the id of `[H, G]`. A later visit with the stack
+  /// `[X, G, H]` and depth 2 finds ids 1 and 2 again, so the entry is reused.
+  /// A visit with the stack `[G, K]` starts with `(0, K)`, which gets a new id,
+  /// so the sub-expression is verified again.
+  DenseMap<std::pair<unsigned, AttrOrType>, unsigned> signatureContextIds;
 };
 
 //===----------------------------------------------------------------------===//
@@ -276,15 +444,17 @@ private:
 // value.
 class ParamIndexRefAttrFinder {
 public:
-  bool hasReferences(TypedAttr value) {
-    return findOneReference(value).has_value();
+  bool hasReferences(TypedAttr value, size_t depth = 0) {
+    return findOneReference(value, depth).has_value();
   }
-  bool hasReferences(Type type) { return findOneReference(type).has_value(); }
+  bool hasReferences(Type type, size_t depth = 0) {
+    return findOneReference(type, depth).has_value();
+  }
 
   /// This scans the specified value or type for parameter references.  It runs
   /// nullopt if there are none, or the index of the first that it encounters.
-  std::optional<size_t> findOneReference(TypedAttr value);
-  std::optional<size_t> findOneReference(Type type);
+  std::optional<size_t> findOneReference(TypedAttr value, size_t depth = 0);
+  std::optional<size_t> findOneReference(Type type, size_t depth = 0);
 
 private:
   // Depth aware cache to avoid visiting the same attr twice.
@@ -336,7 +506,7 @@ struct ParamDeclaration {
 /// expressions to a simple constant value. Then, all operations that use
 /// parameters (in an attribute, type, or location) can be concretized in any
 /// order.
-struct ParameterUseDefGraph {
+struct MODULAR_CXX_EXPORT ParameterUseDefGraph {
   ParameterUseDefGraph(Region &scope) : scope(&scope) {}
   ParameterUseDefGraph(Region *scope) : scope(scope) {}
   virtual ~ParameterUseDefGraph() = default;

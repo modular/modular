@@ -15,7 +15,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 
 def test_scatter_basic() -> None:

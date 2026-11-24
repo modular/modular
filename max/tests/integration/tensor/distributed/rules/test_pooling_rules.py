@@ -16,9 +16,9 @@
 from __future__ import annotations
 
 from max.dtype import DType
-from max.experimental.sharding import DeviceMapping, TensorLayout
-from max.experimental.sharding.rules import pool_rule
 from max.graph import Shape
+from max.tensor.sharding import DeviceMapping, TensorLayout
+from max.tensor.sharding.rules import pool_rule
 
 from rules._fixtures import MESH_1D, M, R, S, pick
 
@@ -35,26 +35,26 @@ class TestPoolRule:
     def test_replicated(self) -> None:
         layout = _layout(M(MESH_1D, R), (1, 8, 8, 3))
         _, (out,) = pick(pool_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_batch_sharded(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8, 8, 3))
         _, (out,) = pick(pool_rule, layout)
-        assert out.to_placements() == (S(0),)
+        assert out.placements == (S(0),)
 
     def test_channel_sharded(self) -> None:
         layout = _layout(M(MESH_1D, S(3)), (1, 8, 8, 16))
         _, (out,) = pick(pool_rule, layout)
-        assert out.to_placements() == (S(3),)
+        assert out.placements == (S(3),)
 
     def test_spatial_h_sharded_falls_back(self) -> None:
         """Spatial H-sharded input: spatial axes excluded from catalogue, falls back to R."""
         layout = _layout(M(MESH_1D, S(1)), (1, 8, 8, 3))
         _, (out,) = pick(pool_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)
 
     def test_spatial_w_sharded_falls_back(self) -> None:
         """Spatial W-sharded input: spatial axes excluded from catalogue, falls back to R."""
         layout = _layout(M(MESH_1D, S(2)), (1, 8, 8, 3))
         _, (out,) = pick(pool_rule, layout)
-        assert out.to_placements() == (R,)
+        assert out.placements == (R,)

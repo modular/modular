@@ -1,0 +1,17 @@
+{
+  "target": "topk_topp_sampling_dist",
+  "spec": {
+    "rows": 1,
+    "d": 3,
+    "k": 0,
+    "top_p_milli": 1000,
+    "temp_milli": 0,
+    "min_p_milli": 0,
+    "dist": 5,
+    "seed": 0
+  },
+  "verdict": "PASS",
+  "oracle": "ref",
+  "detail": "degenerate row carrying a NaN logit the NaN-aware row max ignores: the NaN costs one weight, not the row, so the loop still accepts (k == d, p >= 1) and the row's total mass is NaN. Normalizing by it emitted NaN; the emitted row must be all-zero, the value spec decode reads as 'no distribution for this row'.",
+  "findings": []
+}

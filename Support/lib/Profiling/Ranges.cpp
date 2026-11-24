@@ -129,6 +129,24 @@ void rangeBeginWithId(uint64_t correlationId, StringRef name, uint32_t color) {
     sink->rangeBeginWithId(correlationId, name, color);
 }
 
+bool rangeBeginSpanOnly(StringRef name, uint32_t color) {
+  if (!isRangeRecordingActive())
+    return false;
+  const Detail::RangeSink *sink =
+      Detail::getCachedSink().load(std::memory_order_acquire);
+  return sink && sink->rangeBeginSpanOnly &&
+         sink->rangeBeginSpanOnly(name, color);
+}
+
+void setTraceMetadata(StringRef key, StringRef value) {
+  if (!isRangeRecordingActive())
+    return;
+  const Detail::RangeSink *sink =
+      Detail::getCachedSink().load(std::memory_order_acquire);
+  if (sink && sink->setTraceMetadata)
+    sink->setTraceMetadata(key, value);
+}
+
 void rangeEnd() {
   // Deliberately NOT gated on the recording flag: the profiler tracks
   // begin/end balance on a per-thread stack that must see every end, even
@@ -170,6 +188,12 @@ void disable() {
   Detail::getEnabledGate().store(false, std::memory_order_release);
 }
 
+bool disableCollecting(TraceVisitor visitor, bool save) {
+  const Detail::RangeSink *sink = Detail::acquire(Detail::SinkRequest::Observe);
+  return sink && sink->disableCollecting &&
+         sink->disableCollecting(visitor, save);
+}
+
 void activatePendingTrace() {
   if (const Detail::RangeSink *sink =
           Detail::acquire(Detail::SinkRequest::DeviceInit))
@@ -191,6 +215,15 @@ std::string lastTraceError() {
 
 bool haveProfiler() noexcept {
   return Detail::acquire(Detail::SinkRequest::Attach) != nullptr;
+}
+
+bool requestBurst(StringRef reason) {
+  if (!isEnabled())
+    return false;
+  if (const Detail::RangeSink *sink =
+          Detail::acquire(Detail::SinkRequest::Observe))
+    return sink->requestBurst(reason);
+  return false;
 }
 
 bool canRecord() {
@@ -231,6 +264,14 @@ RangeScope::RangeScope(StringRef name, uint32_t color)
 }
 
 RangeScope::~RangeScope() {
+  if (enabled_)
+    rangeEnd();
+}
+
+SpanScope::SpanScope(StringRef name, uint32_t color)
+    : enabled_(isRangeRecordingActive() && rangeBeginSpanOnly(name, color)) {}
+
+SpanScope::~SpanScope() {
   if (enabled_)
     rangeEnd();
 }

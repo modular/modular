@@ -18,9 +18,11 @@ from std.testing import assert_equal, assert_true
 
 
 # Simple kernel for testing stream execution
-def simple_kernel(
-    input: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutAnyOrigin],
+def simple_kernel[
+    in_origin: ImmOrigin, out_origin: MutOrigin
+](
+    input: ImmPointer[Float32, in_origin],
+    output: MutPointer[Float32, out_origin],
     len_dev: Int32,
     multiplier: Float32,
 ):
@@ -79,7 +81,9 @@ def test_create_stream_with_priority(ctx: DeviceContext) raises:
 
     # Test with lowest priority stream
     var low_priority_stream = ctx.create_stream(priority=priority_range.least)
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function[
+        simple_kernel[ImmUntrackedOrigin, MutUntrackedOrigin]
+    ]()
     low_priority_stream.enqueue_function(
         func,
         input_device,
@@ -181,7 +185,9 @@ def test_multiple_priority_streams(ctx: DeviceContext) raises:
             current_priority += step
             multiplier_val += Float32(0.5)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function[
+        simple_kernel[ImmUntrackedOrigin, MutUntrackedOrigin]
+    ]()
 
     # Launch kernels concurrently on all streams
     for i in range(len(streams)):
@@ -243,7 +249,9 @@ def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     var high_output_device = ctx.enqueue_create_buffer[.float32](length)
     var low_output_device = ctx.enqueue_create_buffer[.float32](length)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function[
+        simple_kernel[ImmUntrackedOrigin, MutUntrackedOrigin]
+    ]()
     # Launch multiple kernels on both streams to test priority behavior
     for i in range(iterations):
         # Launch on low priority stream first

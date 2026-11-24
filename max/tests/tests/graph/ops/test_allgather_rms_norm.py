@@ -20,7 +20,7 @@ rather than a Mojo comptime assert.
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 H = 128
 
@@ -233,6 +233,23 @@ def test_allgather_rms_norm_differing_shapes_across_groups_ok() -> None:
     for dev_idx in range(num_gpus):
         for out in (normed[dev_idx], residual[dev_idx]):
             assert out.shape == [expected_rows[dev_idx], H]
+
+
+def test_allgather_rms_norm_column_mismatch_across_groups_rejected() -> None:
+    """Rows may differ per group, columns may not.
+
+    The handler packs every device into one dynamic world-view array, so the
+    kernel would otherwise size the second group's windows from device 0's
+    columns and read the wrong rows.
+    """
+    num_gpus = 4
+    devices = [DeviceRef.GPU(id=i) for i in range(num_gpus)]
+    shapes = [[8, H], [8, H], [8, 2 * H], [8, 2 * H]]
+    with pytest.raises(
+        ValueError,
+        match=r"same shape in all dimensions except axis 0.*across groups",
+    ):
+        _build(shapes, devices, group_size=2)
 
 
 def test_allgather_rms_norm_rank_mismatch_rejected() -> None:

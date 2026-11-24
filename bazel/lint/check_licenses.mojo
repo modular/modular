@@ -40,7 +40,7 @@ comptime LICENSE_TO_ADD = """# ===----------------------------------------------
 """
 
 
-def is_ignored_file(filename: StringSlice) -> Bool:
+def is_ignored_file(filename: StringSpan) -> Bool:
     if not (filename.endswith(".py") or filename.endswith(".mojo")):
         return True
 
@@ -97,7 +97,7 @@ def main() raises:
     var workspace = os.getenv("BUILD_WORKSPACE_DIRECTORY")
     if workspace:
         # TODO: this should be in stdlib
-        _ = external_call["chdir", Int32](workspace.as_c_string_slice())
+        _ = external_call["chdir", Int32](workspace.as_c_string_span())
 
     var target_paths = std.sys.argv()
 

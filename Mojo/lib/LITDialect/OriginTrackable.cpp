@@ -98,10 +98,14 @@ OriginTrackable::OriginTrackable(Value v) {
   // uninit on exit, CheckLifetimes will ensure the value gets consumed or
   // destroyed.
   if (auto refFromPtr = v.getDefiningOp<RefFromPointerOp>()) {
-    name = StringAttr::get(v.getContext(), "(reference value)");
+    name = refFromPtr.getNameAttr();
     isIndirect = true;
-    startsUninit = refFromPtr.getEndUninit();
-    endInitState = startsUninit ? EndsUninit : EndsInit;
+    // The operation's start state describes the path where it executes. At
+    // function boundaries this reference must have its end state, since some
+    // paths may skip the operation entirely.
+    bool isUninitAtFunctionBoundary = refFromPtr.getEndUninit();
+    startsUninit = isUninitAtFunctionBoundary;
+    endInitState = isUninitAtFunctionBoundary ? EndsUninit : EndsInit;
     return;
   }
 
@@ -143,8 +147,8 @@ OriginTrackable::OriginTrackable(Value v) {
       return;
     }
 
-    // The results of an if operation can be owned.
-    if (isa<HLCF::IfOp, HLCF::ElifOp, ParamIfOp>(res.getOwner())) {
+    // The results of an if/elif operation can be owned.
+    if (isa<HLCF::IfOp, HLCF::ComptimeIfOp>(res.getOwner())) {
       name = StringAttr::get(v.getContext(), "(if result)");
       isIndirect = false;
       startsUninit = true;
@@ -179,6 +183,8 @@ OriginTrackable::OriginTrackable(Value v) {
   case ArgConvention::Mut:
   case ArgConvention::MutRef:
   case ArgConvention::Ref:
+  case ArgConvention::PackImmMem:
+  case ArgConvention::PackMut:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsInit;
@@ -191,6 +197,7 @@ OriginTrackable::OriginTrackable(Value v) {
     break;
   case ArgConvention::OwnedMem:
   case ArgConvention::DeinitMem:
+  case ArgConvention::PackOwnedMem:
     isIndirect = true;
     startsUninit = false;
     endInitState = EndsUninit;
@@ -230,6 +237,9 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
     if (auto structGER = value.getDefiningOp<RefStructGEROp>()) {
       hadGEP = true;
       value = structGER.getContainer();
+    } else if (auto unionCast = value.getDefiningOp<RefUnionCastOp>()) {
+      // The cast aliases the whole union, so it is not a field projection.
+      value = unionCast.getContainer();
     } else if (auto rebindOp = value.getDefiningOp<RebindOp>()) {
       value = rebindOp.getOperand();
     } else if (auto immut = value.getDefiningOp<RefImmutOp>()) {
@@ -269,9 +279,9 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     conventions = signature.getArgConventions().drop_back(
         signature.getNumAsyncReturnSlots());
 
-    // CreateClosureOp has a subset of the operands of a call.
-    if (isa<CreateClosureOp>(op))
-      conventions = conventions.take_front(op.getNumOperands());
+    // CreateFuncPtrOp only references the callee and binds no arguments.
+    if (isa<CreateFuncPtrOp>(op))
+      conventions = {};
 
     assert(conventions.size() == op.getNumOperands());
   } else {
@@ -301,10 +311,13 @@ void OperationEffects::analyzeCallOp(Operation &op) {
       return OperandEffect::regConsume;
     case ArgConvention::OwnedMem:
     case ArgConvention::DeinitMem:
+    case ArgConvention::PackOwnedMem:
       return OperandEffect::memConsume;
     case ArgConvention::ImmReg:
       return OperandEffect::regUse;
     case ArgConvention::ImmMem:
+    case ArgConvention::PackImmMem:
+    case ArgConvention::PackMut:
       return OperandEffect::memLoad;
     case ArgConvention::Mut:
     case ArgConvention::MutRef:
@@ -396,9 +409,25 @@ void OperationEffects::analyzeCallOp(Operation &op) {
       // Find all the references getting passed into the list/pack so we can
       // process them individually.
       TypedAttr extraOrigin;
-      for (auto elt :
-           OriginTrackable::decodeIndividualVariadicArguments(arg, extraOrigin))
-        addArgument(elt, argConvention);
+      for (auto elt : OriginTrackable::decodeIndividualVariadicArguments(
+               arg, extraOrigin)) {
+        // Check for a plain reference first: canonicalizing its type walks
+        // the origin union of every element, which is O(N^2) for N elements.
+        auto refPackType = sugarDynCast<RefPackType>(elt.getType());
+        if (!refPackType) {
+          addArgument(elt, argConvention);
+          continue;
+        }
+        // An unpacked pack is a register value. Its accesses are the origins
+        // in its type. The element convention of the callee decides if they
+        // are mutated. A `mut` pack of the caller can go into a `read` pack.
+        operands.push_back({elt, OperandEffect::regUse});
+        for (TypedAttr origin : originFinder.findOriginsIn({refPackType})) {
+          if (originsAccessesAreReadOnly || argConvention != ArgConvention::Mut)
+            origin = OriginMutCastAttr::get(origin, false);
+          origins.push_back({origin, elt});
+        }
+      }
 
       // This hack makes sure we extend the lifetime of the VarDecl containing
       // the variadic list. VariadicList itself should capture the origin.
@@ -448,7 +477,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
-  if (isa<RefStructGEROp, RebindOp, RefImmutOp>(op) ||
+  if (isa<RefStructGEROp, RefUnionCastOp, RebindOp, RefImmutOp>(op) ||
       llvm::isa_and_nonnull<DebugInfo::DebugInfoDialect>(op.getDialect())) {
     if (op.getNumResults() == 1)
       results.push_back(ResultEffect::ignore);
@@ -544,7 +573,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return {};
   }
   // A return consumes all the live-out values from the function.
-  if (isa<KGEN::ReturnOp, LIT::ErrorReturnOp, KGEN::UnreachableOp,
+  if (isa<HLCF::ReturnOp, LIT::ErrorReturnOp, HLCF::UnreachableOp,
           HLCF::YieldOp>(op)) {
     // We always consume the result register - even if it is often trivial.
     for (auto o : op.getOperands())
@@ -588,12 +617,21 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   }
 
   // Local control flow ops.
-  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp, ParamForBreakOp,
-          ParamForContinueOp>(op))
+  if (isa<HLCF::BreakOp, HLCF::ContinueOp, LIT::TryRaiseOp,
+          HLCF::ComptimeForBreakOp, HLCF::ComptimeForContinueOp,
+          HLCF::MatchNextOp>(op))
     return OverallOpValueEffect::localControlFlowOp;
 
-  // If-like operations.
-  if (isa<ParamIfOp, HLCF::IfOp>(op)) {
+  // Match complete exits the enclosing match (like yield) and may produce
+  // match results via its operands.
+  if (isa<HLCF::MatchCompleteOp>(op)) {
+    for (Value o : op.getOperands())
+      operands.push_back({o, OperandEffect::regConsume});
+    return OverallOpValueEffect::localControlFlowOp;
+  }
+
+  // If-like operations (comptime if). Runtime if/else is HLCF::IfOp below.
+  if (isa<HLCF::ComptimeIfOp>(op)) {
     // If-like ops can return owned results.
     for (auto opResult : op.getResults()) {
       auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
@@ -604,7 +642,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
     return OverallOpValueEffect::ifLikeOp;
   }
 
-  if (isa<HLCF::ElifOp>(op)) {
+  if (isa<HLCF::IfOp>(op)) {
     // If-like ops can return owned results.
     for (auto opResult : op.getResults()) {
       auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
@@ -612,11 +650,21 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
                               : ResultEffect::regDefine;
       results.push_back(resultEffect);
     }
-    return OverallOpValueEffect::elifOp;
+    return OverallOpValueEffect::ifOp;
+  }
+
+  if (isa<HLCF::MatchOp>(op)) {
+    for (auto opResult : op.getResults()) {
+      auto resultEffect = isTypeObviouslyTrivial(opResult.getType())
+                              ? ResultEffect::ignore
+                              : ResultEffect::regDefine;
+      results.push_back(resultEffect);
+    }
+    return OverallOpValueEffect::matchOp;
   }
 
   /// This is HLCF::LoopOp.
-  if (isa<HLCF::LoopOp, ParamForOp>(op))
+  if (isa<HLCF::LoopOp, HLCF::ComptimeForOp>(op))
     return OverallOpValueEffect::loopOp;
 
   if (isa<LIT::TryOp>(op))
@@ -630,19 +678,21 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
 // Helpers
 //===----------------------------------------------------------------------===//
 
-/// Find the single !lit.ref.store that stores to the specified var decl.
+/// Return the value that the single !lit.ref.store writes to the var decl.
+/// Return null if the var decl does not have exactly one store. A temporary
+/// variable that the parser makes has one store. A user variable can have
+/// more stores, or it can get its value through an `out` argument.
 static Value findSingleStoreToVarDecl(VarDeclOp varDecl) {
   Value foundValue;
   for (Operation *user : varDecl.getResult().getUsers()) {
     if (auto refStore = ::dyn_cast<RefStoreOp>(user)) {
       if (refStore.getDest() == varDecl.getResult()) {
-        assert(!foundValue && "expected to find a single store to a var decl");
+        if (foundValue)
+          return {};
         foundValue = refStore.getValue();
       }
     }
   }
-
-  assert(foundValue && "expected to find a single store to a var decl");
   return foundValue;
 }
 
@@ -669,7 +719,7 @@ static Value findArgPassedToVariadicConstructor(Value val) {
   // available.  However, it gets passed by-ref to function calls.
   // If the operand is already a reference to a pack, then use it.  Otherwise
   // we must have a register pack.  Figure out how it is formed.
-  if (::isa<RefType>(getCanonicalType(val.getType()))) {
+  if (sugarIsa<RefType>(val.getType())) {
     loadOperand = RefImmutOp::stripRebinds(val);
   } else {
     if (auto load = val.getDefiningOp<RefLoadOp>())
@@ -686,6 +736,8 @@ static Value findArgPassedToVariadicConstructor(Value val) {
     return {};
 
   auto storedValue = findSingleStoreToVarDecl(varDecl);
+  if (!storedValue)
+    return {};
 
   // Look through VariadicList/VariadicPack::__init__ so we can check the
   // individual arguments for exclusivity. Without this, `mutate_pack(x, x)`
@@ -705,9 +757,9 @@ static Value findArgPassedToVariadicConstructor(Value val) {
 
 /// Return the immutable origin parameter of a VariadicPack or VariadicList.
 static TypedAttr getVariadicContainerOrigin(Value value) {
-  Type type = getCanonicalType(value.getType());
-  if (auto refType = dyn_cast<RefType>(type))
-    type = getCanonicalType(refType.getElementType());
+  Type type = value.getType();
+  if (auto refType = sugarDynCast<RefType>(type))
+    type = refType.getElementType();
 
   auto structType = sugarDynCast<LIT::StructType>(type);
   if (!structType)
@@ -744,14 +796,34 @@ OriginTrackable::decodeIndividualVariadicArguments(Value callArgVal,
     return result;
   }
 
+  if (auto concat =
+          ctorArg ? ctorArg.getDefiningOp<RefPackConcatOp>() : nullptr) {
+    // A call such as `f(a, *p, b)`. Each plain operand (`a`, `b`) is one
+    // entry. An unpacked pack (`*p`) has no separate element values here, so
+    // the `!lit.ref.pack` value is one entry. The checker treats it as an
+    // access to the origin of `p`. The access is mutable if the callee takes a
+    // `mut` pack. Thus, `f(*p, *p)` and `f(p[0], *p)` into a `mut` pack are
+    // aliasing errors.
+    for (Value segment : concat.getPacks()) {
+      if (auto run = segment.getDefiningOp<RefPackCreateOp>()) {
+        for (auto elt : run.getOperands())
+          result.push_back(RefImmutOp::stripRebinds(elt));
+      } else {
+        result.push_back(RefImmutOp::stripRebinds(segment));
+      }
+    }
+    return result;
+  }
+
   Value listStorage = ctorArg;
   if (auto refLoad = ctorArg ? ctorArg.getDefiningOp<RefLoadOp>() : nullptr)
     listStorage = RefImmutOp::stripRebinds(refLoad.getOperand());
 
   if (auto varDecl =
           listStorage ? listStorage.getDefiningOp<VarDeclOp>() : nullptr) {
-    if (auto arrayCreate = findSingleStoreToVarDecl(varDecl)
-                               .getDefiningOp<POP::ArrayCreateOp>()) {
+    Value stored = findSingleStoreToVarDecl(varDecl);
+    if (auto arrayCreate =
+            stored ? stored.getDefiningOp<POP::ArrayCreateOp>() : nullptr) {
       // Locally constructed VariadicList. The parser emits:
       //   %__passed_varargs__ = lit.var.decl: !lit.ref<array<4, eltref>>
       //   %arr = pop.array.create [%1, %2, %3]
@@ -851,6 +923,11 @@ static bool scanForOrigins(TypeOrAttr typeOrAttr,
         handled = true;
       }
     }
+
+    // Ignore origin on a trait symbol (this can only happen for parametric
+    // closures trait).
+    if (isa<TraitSymbolAttr>(typeOrAttr))
+      handled = true;
   }
 
   // Values of function types should only consider any origins in the capture

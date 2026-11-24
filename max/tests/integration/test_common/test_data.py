@@ -272,55 +272,6 @@ MULTIMODAL_PROMPT = (
 
 MULTIMODAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/multimodal_image.jpg"
 
-PIXTRAL_PROMPT = "<s>[INST]Describe the images.\n[IMG][/INST]"
-PIXTRAL_MESSAGES = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "text", "text": "Describe the images."},
-            {"type": "image"},
-        ],
-    }
-]
-PIXTRAL_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/pixtral_image.jpg"
-
-INTERNVL_INSTRUCT_PROMPT = "<|im_start|>system\nYou are Qwen, created by Alibaba Cloud. You are a helpful assistant.<|im_end|>\n<|im_start|>user\n<|image|> Describe the image; where are these people and what are they doing?<|im_end|>\n<|im_start|>assistant\n"
-INTERNVL_INSTRUCT_MESSAGES = [
-    {
-        "role": "system",
-        "content": [
-            {
-                "type": "text",
-                "text": "You are Qwen, created by Alibaba Cloud. You are a helpful assistant.",
-            }
-        ],
-    },
-    {
-        "role": "user",
-        "content": [
-            {"type": "image"},
-            {
-                "type": "text",
-                "text": "Describe the image; where are these people and what are they doing?",
-            },
-        ],
-    },
-]
-INTERNVL_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/internvl_instruct_image.jpg"
-
-IDEFICS3_INSTRUCT_PROMPT = "<|begin_of_text|>User:<image>Describe the image:<end_of_utterance>\nAssistant:"
-IDEFICS3_INSTRUCT_MESSAGES = [
-    {
-        "role": "user",
-        "content": [
-            {"type": "image"},
-            {"type": "text", "text": "Describe the image:"},
-        ],
-    }
-]
-IDEFICS3_INSTRUCT_IMAGE = "s3://modular-bazel-artifacts-public/artifacts/model_testdata/idefics3_instruct_image.jpg"
-
-
 DEFAULT_PROMPTS = [LONG_TEXT_PROMPT, *SHORT_TEXT_PROMPTS]
 DEFAULT_TEXT_ONLY = [
     MockTextGenerationRequest.text_only(prompt=prompt)
@@ -332,35 +283,6 @@ DEFAULT_MULTIMODAL = [
         prompt=MULTIMODAL_PROMPT,
         images=[MULTIMODAL_IMAGE],
     )
-]
-
-PIXTRAL_REQUESTS = [
-    MockTextGenerationRequest.with_images(
-        prompt=PIXTRAL_PROMPT,
-        images=[PIXTRAL_IMAGE],
-        messages=PIXTRAL_MESSAGES,
-    )
-]
-
-INTERNVL_INSTRUCT_REQUESTS = [
-    MockTextGenerationRequest.with_images(
-        prompt=INTERNVL_INSTRUCT_PROMPT,
-        images=[INTERNVL_INSTRUCT_IMAGE],
-        messages=INTERNVL_INSTRUCT_MESSAGES,
-    )
-]
-
-IDEFICS3_INSTRUCT_REQUESTS = [
-    MockTextGenerationRequest.with_images(
-        IDEFICS3_INSTRUCT_PROMPT,
-        [MULTIMODAL_IMAGE],
-        messages=IDEFICS3_INSTRUCT_MESSAGES,
-    ),
-    MockTextGenerationRequest.with_images(
-        IDEFICS3_INSTRUCT_PROMPT,
-        [IDEFICS3_INSTRUCT_IMAGE],
-        messages=IDEFICS3_INSTRUCT_MESSAGES,
-    ),
 ]
 
 # Default pixel generation prompts

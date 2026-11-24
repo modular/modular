@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The Wan pipeline model."""
 
 from __future__ import annotations
 
@@ -43,9 +44,12 @@ def _remap_state_dict(
     weights: Weights,
     target_dtype: DType = DType.bfloat16,
 ) -> dict[str, Any]:
-    """Remap diffusers weight keys to MAX module naming, permute Conv3d,
-    and cast weights to target dtype.
+    """Remaps diffusers weight keys onto the MAX module names.
 
+    The diffusers keys become the MAX module names, the Conv3d kernels are
+    permuted, and the weights are cast to ``target_dtype``. Some checkpoints
+    store weights as float32 (A14B) and others as bfloat16 (5B), so the cast is
+    what matches the modules' parameter declarations.
     Some WAN checkpoints store weights as float32 (A14B), others as
     bfloat16 (5B). We cast all to target_dtype to match the module
     parameter declarations.
@@ -214,6 +218,7 @@ class BlockLevelModel:
         spatial_shape: Buffer,
         i2v_condition: Buffer | None = None,
     ) -> Buffer:
+        """Runs the block graphs over the diffusion inputs."""
         pre_args = [hidden_states, timestep, encoder_hidden_states]
         if i2v_condition is not None:
             pre_args.append(i2v_condition)

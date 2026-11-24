@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
+from click.testing import CliRunner
 from max._entrypoints import pipelines
 
 
@@ -20,3 +21,41 @@ def test_pipelines_list(capsys: pytest.CaptureFixture[str]) -> None:
         pipelines.main(["list"])
     captured = capsys.readouterr()
     assert "DeepseekV2ForCausalLM" in captured.out
+
+
+@pytest.mark.parametrize(
+    ("command", "refusal"),
+    [
+        (["serve"], "not max serve"),
+        (["warm-cache"], "no decoder to warm"),
+        (["export", "--output", "unused"], "nothing to export"),
+    ],
+)
+def test_commands_that_compile_refuse_eager(
+    command: list[str], refusal: str
+) -> None:
+    result = CliRunner().invoke(
+        pipelines.main,
+        [*command, "--model-path", "HuggingFaceTB/SmolLM2-135M", "--eager"],
+    )
+    assert result.exit_code == 2, result.output
+    assert refusal in result.output
+
+
+@pytest.mark.parametrize("command", ["serve", "generate"])
+@pytest.mark.parametrize(
+    "flag",
+    [
+        ["--decode-context-parallel-degree", "4"],
+        ["--prefill-context-parallel"],
+    ],
+)
+def test_commands_on_max_kv_cache_refuse_context_parallelism(
+    command: str, flag: list[str]
+) -> None:
+    result = CliRunner().invoke(
+        pipelines.main,
+        [command, "--model-path", "HuggingFaceTB/SmolLM2-135M", *flag],
+    )
+    assert result.exit_code == 2, result.output
+    assert "serve the artifact on Mach" in result.output

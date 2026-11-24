@@ -110,3 +110,32 @@ benchmark_config:
 On the CLI, `--extra-body` also accepts an inline JSON object or a path to a
 YAML/JSON file. Fields are merged after the dedicated flags (last-writer-wins);
 see the `extra_body` field description for the full merge semantics.
+
+## Reporting goodput against latency targets
+
+`goodput` gives per-request latency targets in milliseconds, with the keys
+`ttft`, `tpot`, and `e2el` (end-to-end latency), as vLLM's
+`benchmark_serving.py --goodput` does. When it is set, the result reports
+`request_goodput`, the requests per second that met every target, and
+`goodput_attainment`, the fraction of requests that met them, next to the
+targets used (`goodput_ttft_ms`, `goodput_tpot_ms`, `goodput_e2el_ms`). Both
+rates use the same measured successful requests and duration as
+`request_throughput`, so the two compare directly. A request with no value for
+a target, such as the TPOT of a one-token reply or the TTFT of an endpoint that
+reports none, does not meet it. Goodput applies to text generation only; an
+empty value is an error.
+
+On the CLI, pass space-separated `key:value` pairs:
+
+```bash
+--goodput ttft:500 tpot:50
+```
+
+In a config or workload file, use a string, a list, or a mapping:
+
+```yaml
+benchmark_config:
+  goodput:
+    ttft: 500
+    tpot: 50
+```

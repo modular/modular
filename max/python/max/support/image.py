@@ -48,7 +48,6 @@ def find_contiguous_ranges(
     Raises:
         ValueError: If ``arr`` is not 1D.
     """
-
     if arr.ndim != 1:
         raise ValueError(f"Array must be 1D, found {arr.shape}")
 
@@ -94,7 +93,7 @@ def hash_image(
 
     - Decoded pixels (legacy): pass a numpy pixel array as ``image`` and omit
       ``size_tier``. Supports any dtype (float32, uint16 for bfloat16 bits,
-      etc.) and ensures a C-contiguous layout before hashing. The digest
+      and so on) and ensures a C-contiguous layout before hashing. The digest
       depends on the post-resize float pixels, so it is not reproducible across
       torch/BLAS/device; prefer the raw-bytes mode where the encoded bytes are
       available.

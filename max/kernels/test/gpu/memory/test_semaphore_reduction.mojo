@@ -17,6 +17,7 @@ from max.gpu import block_dim, block_idx, grid_dim, thread_idx
 from max.gpu.host import DeviceContext
 from max.gpu.sync.semaphore import Semaphore
 from std.memory import unsafe_memset_zero
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
 
@@ -24,10 +25,13 @@ def semaphore_vector_reduce[
     dtype: DType,
     N: Int,
     num_parts: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    locks_origin: MutOrigin,
 ](
-    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: MutPointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], c_origin],
+    a_ptr: ImmPointer[Scalar[dtype], a_origin],
+    locks: MutPointer[Int32, locks_origin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -60,9 +64,9 @@ def run_vector_reduction[
     )
 
     comptime PN = N * num_parts
-    var a_host = alloc[Scalar[dtype]](PN)
-    var c_host = alloc[Scalar[dtype]](N)
-    var c_host_ref = alloc[Scalar[dtype]](N)
+    var a_host = unsafe_alloc[Scalar[dtype]](PN)
+    var c_host = unsafe_alloc[Scalar[dtype]](N)
+    var c_host_ref = unsafe_alloc[Scalar[dtype]](N)
 
     rand[dtype](a_host, PN)
     unsafe_memset_zero(c_host, N)
@@ -76,7 +80,14 @@ def run_vector_reduction[
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    comptime kernel = semaphore_vector_reduce[dtype, N, num_parts]
+    comptime kernel = semaphore_vector_reduce[
+        dtype,
+        N,
+        num_parts,
+        origin_of(c_device),
+        ImmOrigin(origin_of(a_device)),
+        origin_of(lock_dev),
+    ]
     ctx.enqueue_function[kernel](
         c_device,
         a_device,
@@ -99,17 +110,23 @@ def run_vector_reduction[
     _ = c_device
     _ = lock_dev
 
-    a_host.free()
-    c_host.free()
-    c_host_ref.free()
+    a_host.unsafe_free()
+    c_host.unsafe_free()
+    c_host_ref.unsafe_free()
 
 
 def semaphore_matrix_reduce[
-    dtype: DType, M: Int, N: Int, num_parts: Int
+    dtype: DType,
+    M: Int,
+    N: Int,
+    num_parts: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    locks_origin: MutOrigin,
 ](
-    c_ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
-    a_ptr: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    locks: MutPointer[Int32, MutAnyOrigin],
+    c_ptr: MutPointer[Scalar[dtype], c_origin],
+    a_ptr: ImmPointer[Scalar[dtype], a_origin],
+    locks: MutPointer[Int32, locks_origin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
@@ -119,8 +136,7 @@ def semaphore_matrix_reduce[
 
     sema.wait(block_idx)
     for x in range(tid, M * N, block_dim.x):
-        var row = x // N
-        var col = x % N
+        var row, col = divmod(x, N)
         c_ptr[row * N + col] += a_ptr[
             row * (N * num_parts) + (block_idx * num_parts + col)
         ]
@@ -148,9 +164,9 @@ def run_matrix_reduction[
     )
 
     comptime PX = M * N * num_parts
-    var a_host = alloc[Scalar[dtype]](PX)
-    var c_host = alloc[Scalar[dtype]](M * N)
-    var c_host_ref = alloc[Scalar[dtype]](M * N)
+    var a_host = unsafe_alloc[Scalar[dtype]](PX)
+    var c_host = unsafe_alloc[Scalar[dtype]](M * N)
+    var c_host_ref = unsafe_alloc[Scalar[dtype]](M * N)
 
     rand[dtype](a_host, PX)
     unsafe_memset_zero(c_host, M * N)
@@ -166,7 +182,15 @@ def run_matrix_reduction[
 
     var block_size = 1024
 
-    comptime kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
+    comptime kernel = semaphore_matrix_reduce[
+        dtype,
+        M,
+        N,
+        num_parts,
+        origin_of(c_device),
+        ImmOrigin(origin_of(a_device)),
+        origin_of(lock_dev),
+    ]
     ctx.enqueue_function[kernel](
         c_device,
         a_device,
@@ -192,9 +216,9 @@ def run_matrix_reduction[
     _ = c_device
     _ = lock_dev
 
-    a_host.free()
-    c_host.free()
-    c_host_ref.free()
+    a_host.unsafe_free()
+    c_host.unsafe_free()
+    c_host_ref.unsafe_free()
 
 
 def main() raises:

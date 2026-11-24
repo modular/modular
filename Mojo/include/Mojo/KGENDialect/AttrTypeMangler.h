@@ -16,6 +16,7 @@
 
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Support/LLVMCompilerForwardDecls.h"
+#include "Support/SymbolExport.h"
 
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Types.h"
@@ -25,7 +26,7 @@ namespace M::KGEN {
 /// This uniquing scheme involves splitting each decl name into a key string
 /// and a substring of trailing digits. We track the max of such digits of the
 /// same key string and use that to generate the next unique ID.
-class NameUniquer {
+class MODULAR_CXX_EXPORT NameUniquer {
 public:
   NameUniquer(const ParameterUseDefGraph &scope,
               const ParameterUseDefGraph &topLevelGraph);
@@ -57,11 +58,17 @@ private:
 /// expression. Manually walk and mangle parameter references in attributes and
 /// types in an expression tree while accounting for name shadowing in a
 /// signature type.
-class AttrTypeMangler {
+class MODULAR_CXX_EXPORT AttrTypeMangler {
 public:
   using Cache = llvm::DenseSet<const void *>;
 
-  explicit AttrTypeMangler(Cache &manglerCache) : manglerCache(manglerCache) {}
+  /// Create a mangler for the decls in two potentially conflicting scopes.
+  AttrTypeMangler(Cache &manglerCache, Builder &b, NameUniquer &uniquer,
+                  const llvm::SetVector<StringAttr> &calleeDecls,
+                  const ParameterUseDefGraph &topLevelGraph);
+
+  /// Returns true if any declaration needs mangling.
+  bool needsMangling() const { return !mangledDecls.empty(); }
 
   /// Mangle references within a type.
   Type mangleRefsIn(Type type, bool &hasRefs) {
@@ -79,12 +86,6 @@ public:
     return mangleRefsIn(type, unused);
   }
 
-  /// Populate the mangler using the decls in two potentially conflicting
-  /// scopes. Returns false if there is nothing to mangle.
-  bool populate(Builder &b, NameUniquer &uniquer,
-                const llvm::SetVector<StringAttr> &calleeDecls,
-                const ParameterUseDefGraph &topLevelGraph);
-
   /// Optionally mangle a declaration.
   ParamDeclAttr mangleDecl(ParamDeclAttr decl, bool needsMangling);
 
@@ -98,8 +99,13 @@ private:
   template <typename T, typename U = std::conditional_t<
                             std::is_base_of_v<Type, T>, Type, Attribute>>
   U mangleRefsInImpl(T value, bool &hasRefs) {
-    if (manglerCache.contains(value.getAsOpaquePointer()))
+    const void *key = value.getAsOpaquePointer();
+    if (manglerCache.contains(key))
       return value;
+    if (const void *mangled = mangledRefs.lookup(key)) {
+      hasRefs = true;
+      return U::getFromOpaquePointer(mangled);
+    }
 
     SmallVector<Attribute, 16> replAttrs;
     SmallVector<Type, 16> replTypes;
@@ -118,16 +124,25 @@ private:
         });
 
     hasRefs |= hasNestedRefs;
-    if (!hasNestedRefs)
-      manglerCache.insert(value.getAsOpaquePointer());
-    return changed ? value.replaceImmediateSubElements(replAttrs, replTypes)
-                   : value;
+    if (!hasNestedRefs) {
+      manglerCache.insert(key);
+      return value;
+    }
+    U result = changed ? value.replaceImmediateSubElements(replAttrs, replTypes)
+                       : value;
+    mangledRefs.try_emplace(key, result.getAsOpaquePointer());
+    return result;
   }
 
   /// The map of mangled declarations.
   DenseMap<StringAttr, StringAttr> mangledDecls;
   /// A cache of attributes and types known to have no parameter references.
   Cache &manglerCache;
+  /// The mangled form of each attribute and type that has a parameter
+  /// reference. Uniqued attributes share subexpressions, so this map lets a
+  /// walk visit each shared node once. Each mangler owns its map because the
+  /// result depends on `mangledDecls`.
+  DenseMap<const void *, const void *> mangledRefs;
 };
 
 } // namespace M::KGEN

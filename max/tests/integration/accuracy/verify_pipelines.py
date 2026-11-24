@@ -68,20 +68,6 @@ EX_TEMPFAIL = 75
 TORCH_INCOMPATIBLE_ENCODINGS = frozenset({"float8_e4m3fn", "float4_e2m1fnx2"})
 
 
-def validate_hf_token() -> None:
-    """
-    It's a regular occurrence that people are asked to run logit verification
-    locally, and not everyone has an HF_TOKEN set. Let's help them out
-    """
-    if os.getenv("HF_HUB_OFFLINE", "").lower() in ("1", "t", "true"):
-        return
-    if os.getenv("HF_TOKEN") is None:
-        raise ValueError(
-            "Environment variable `HF_TOKEN` must be set. "
-            "See https://www.notion.so/modularai/HuggingFace-Access-Token-29d1044d37bb809fbe70e37428faf9da"
-        )
-
-
 class VerificationStatus(str, enum.Enum):
     OK = "ok"
     INVALID = "invalid"
@@ -120,17 +106,6 @@ class V2V3ComparisonResult:
 
     v2_verdict: VerificationVerdict
     v3_verdict: VerificationVerdict
-
-
-def resolve_rlocation(rloc: str) -> Path:
-    from python.runfiles import runfiles
-
-    r = runfiles.Create()
-    assert r
-    resolved = r.Rlocation(rloc)
-    if resolved is None:
-        raise FileNotFoundError(f"Rlocation {rloc!r} could not be resolved")
-    return Path(resolved)
 
 
 def verdict_sorting_key(
@@ -870,10 +845,16 @@ def run_v2_v3_comparison(
     cos_dist_threshold: float | None = None,
     kl_div_threshold: float | None = None,
     timeout: int | None = None,
+    config_params_override: Mapping[str, object] | None = None,
 ) -> V2V3ComparisonResult:
-    """Run both V2 and V3, verify each against torch, and compare them directly."""
+    """Run both V2 and V3, verify each against torch, and compare them directly.
+
+    Both arms take the pipeline's ``config_params_override``, each with its
+    own ``prefer_module_v3``.
+    """
 
     fssafe_pipeline = pipeline.replace("/", "_")
+    overrides = dict(config_params_override or {})
 
     # 1. Get torch baseline (shared between V2 and V3).
     if pregenerated_torch_goldens is not None:
@@ -927,7 +908,7 @@ def run_v2_v3_comparison(
         output_path=v2_golden_path,
         reference=torch_results,
         timeout=timeout,
-        config_params_override={"prefer_module_v3": False},
+        config_params_override={**overrides, "prefer_module_v3": False},
     )
 
     print("\n--- Verifying V2 vs Torch ---", flush=True)
@@ -960,7 +941,7 @@ def run_v2_v3_comparison(
     v3_golden_path = Path(
         f"/tmp/goldens_max_v3_{device_type.value}_{fssafe_pipeline}_{encoding}.json"
     )
-    print("\n--- Generating V3 (Eager API) outputs ---", flush=True)
+    print("\n--- Generating V3 (ModuleV3 API) outputs ---", flush=True)
     generate_llm_logits_with_optional_retry(
         framework="max",
         device=devices,
@@ -969,7 +950,7 @@ def run_v2_v3_comparison(
         output_path=v3_golden_path,
         reference=torch_results,
         timeout=timeout,
-        config_params_override={"prefer_module_v3": True},
+        config_params_override={**overrides, "prefer_module_v3": True},
     )
 
     print("\n--- Verifying V3 vs Torch ---", flush=True)
@@ -1178,6 +1159,7 @@ def run_compare_v2_v3(
         cos_dist_threshold=config.cos_dist_threshold,
         kl_div_threshold=config.kl_div_threshold,
         timeout=config.timeout,
+        config_params_override=config.config_params_override,
     )
 
 
@@ -1300,7 +1282,7 @@ def _is_pixel_generation(config: LogitVerificationPipelineConfig) -> bool:
     is_flag=True,
     default=False,
     help=(
-        "Run both V2 (graph API) and V3 (eager API) and compare their outputs"
+        "Run both V2 (graph API) and V3 (ModuleV3 API) and compare their outputs"
         " against the torch baseline."
     ),
 )
@@ -1341,7 +1323,7 @@ def main(
         if ":" not in override_pipeline_golden_location:
             raise click.BadParameter(
                 f"Expected format PIPELINE_NAME:/path, got: {override_pipeline_golden_location!r}",
-                param_hint="'try --override-pipeline-golden-location allenai/OLMo-1B-hf-float32:/path/to/golden.tar.gz'",
+                param_hint="'try --override-pipeline-golden-location PIPELINE_NAME:/path/to/golden.tar.gz'",
             )
         override_pipeline_name, golden_path_replacement = (
             override_pipeline_golden_location.split(":", 1)
@@ -1492,8 +1474,6 @@ def main(
 
 
 if __name__ == "__main__":
-    validate_hf_token()
-
     if directory := os.getenv("BUILD_WORKSPACE_DIRECTORY"):
         os.chdir(directory)
 

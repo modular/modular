@@ -1,0 +1,56 @@
+load("//bazel:api.bzl", "lit_tests", "modular_cc_binary", "modular_run_binary_test", "mojo_binary")
+
+package(default_visibility = ["//visibility:private"])
+
+# Shared libraries that a C host loads. They have no main(), so they're
+# built and run by lit, not by mojo_binary.
+C_HOST_SRCS = glob(["*_c_host.mojo"])
+
+MOJO_SRCS = glob(
+    ["*.mojo"],
+    exclude = C_HOST_SRCS,
+)
+
+[
+    mojo_binary(
+        name = src.split(".")[0],
+        srcs = [src],
+        deps = [
+            "@mojo//:std",
+        ],
+    )
+    for src in MOJO_SRCS
+]
+
+[
+    modular_run_binary_test(
+        name = src.split(".")[0] + "_test",
+        size = "small",
+        binary = src.split(".")[0],
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    )
+    for src in MOJO_SRCS
+]
+
+modular_cc_binary(
+    name = "c_host",
+    testonly = True,
+    srcs = ["c_host.c"],
+)
+
+lit_tests(
+    name = "lit_tests",
+    srcs = C_HOST_SRCS,
+    data = [":c_host"],
+    mojo_deps = [
+        "@mojo//:std",
+    ],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tools = ["//Mojo/tools/mojo"],
+)

@@ -13,7 +13,7 @@
 
 import std.time
 from std.collections import Optional
-from std.math import ceildiv, floor
+from std.math import ceildiv, floor, gcd
 from std.os import getenv
 from std.sys import argv, get_defined_bool, get_defined_string
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -28,35 +28,70 @@ from std.benchmark import (
 )
 from std.compile import compile_info
 from max.gpu import block_dim, global_idx, grid_dim
-from max.gpu.host import DeviceBuffer, DeviceContext, DeviceFunction
+from max.gpu.host import (
+    DeviceBuffer,
+    DeviceContext,
+    DeviceFunction,
+    GridBlockLaunchConfig,
+)
 from std.random import Random
-from std.utils import IndexList
+from std.utils.coord import Coord, DynamicCoord
 
 
-struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
-    var _value: Int
+struct InitializationType(
+    DevicePassable, EnumLike, Equatable, TrivialRegisterPassable
+):
+    var _value: Int64
     comptime zero = InitializationType(0)
     comptime one = InitializationType(1)
     comptime uniform_distribution = InitializationType(2)
     comptime arange = InitializationType(3)
     comptime fill = InitializationType(4)
 
+    # The public `__init__(value: Int)` accepts raw backing values the named
+    # cases do not cover, so the enum is not exhaustive.
+    comptime _enum_is_exhaustive = False
+
+    comptime _enum_case_names = ParameterList.of[
+        "zero".value,
+        "one".value,
+        "uniform_distribution".value,
+        "arange".value,
+        "fill".value,
+    ].values
+
+    comptime _enum_case_types = TypeList.splat[
+        ParameterList[Self._enum_case_names].length, Tuple[]
+    ].values
+
+    @inline(.always)
+    def _get_enum_discriminant(self) -> Int:
+        return Int(self._value)
+
+    @inline(.always)
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "InitializationType has no payload"
+
     comptime device_type: AnyType = Self
 
     def _to_device_type(
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
-        encoder.encode(self, target)
+        encoder.encode_fields[Self](self, target)
 
     @staticmethod
     def get_type_name() -> String:
         return "InitializationType"
 
     def __init__(out self, value: Int):
-        self._value = value
+        self._value = Int64(value)
 
     def __init__(out self, value: Float64):
-        self._value = Int(value)
+        self._value = Int64(Int(value))
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -66,45 +101,50 @@ struct InitializationType(DevicePassable, Equatable, TrivialRegisterPassable):
 
     @staticmethod
     def from_str(str: String) raises -> Self:
-        if str == "zero":
-            return InitializationType.zero
-        elif str == "one":
-            return InitializationType.one
-        elif str == "uniform_distribution":
-            return InitializationType.uniform_distribution
-        elif str == "arange":
-            return InitializationType.arange
-        elif str == "fill":
-            return InitializationType.fill
-        else:
-            raise Error("Invalid initialization type")
+        match str:
+            case "zero":
+                return InitializationType.zero
+            case "one":
+                return InitializationType.one
+            case "uniform_distribution":
+                return InitializationType.uniform_distribution
+            case "arange":
+                return InitializationType.arange
+            case "fill":
+                return InitializationType.fill
+            case _:
+                raise Error("Invalid initialization type")
 
 
 # TODO: refactor the following to run exactly once.
 def bench_compile_time[
-    func_type: TrivialRegisterPassable,
+    ret_type: AnyType,
+    declared_arg_types: TypeList[Trait=AnyType, ...],
     //,
-    func: func_type,
+    func: def(*args: *declared_arg_types) thin -> ret_type,
     emission_kind: StaticString = "asm",
 ](mut m: Bench, name: String) raises:
-    comptime assert emission_kind in ("asm", "llvm", "ptx")
+    comptime assert emission_kind in ["asm", "llvm", "ptx"]
 
     # TODO: add docstring, this function should be used on its own or at the end of measured benchmarks.
-    @always_inline
+    @inline(.always)
     def bench_call(mut b: Bencher) raises {}:
-        @always_inline
+        @inline(.always)
         def bench_iter() raises {}:
-            comptime if emission_kind == "asm" or emission_kind == "llvm":
-                var s = compile_info[func, emission_kind=emission_kind]().asm
-                keep(s)
-            elif emission_kind == "ptx":
-                with DeviceContext() as ctx:
-                    var func = DeviceFunction[
-                        func, TypeList.of[Trait=AnyType]()
-                    ](ctx)
-                    # Ensure that the compilation step is not optimized away.
-                    keep(UnsafePointer(to=func))
-                    clobber_memory()
+            comptime match emission_kind:
+                case "asm" | "llvm":
+                    var s = compile_info[
+                        func, emission_kind=emission_kind
+                    ]().asm
+                    keep(s)
+                case "ptx":
+                    with DeviceContext() as ctx:
+                        var func = DeviceFunction[func](ctx)
+                        # Ensure that the compilation step is not optimized away.
+                        keep(Pointer(to=func))
+                        clobber_memory()
+                case _:
+                    pass
 
         b.iter(bench_iter)
 
@@ -181,13 +221,13 @@ def get_defined_shape[name: StaticString, default: StaticString]() -> List[Int]:
     return materialize[shape]()
 
 
-def int_list_to_tuple[x: List[Int]]() -> IndexList[len(x)]:
-    var t = IndexList[len(x)]()
+def int_list_to_tuple[x: List[Int]]() -> DynamicCoord[DType.int, len(x)]:
+    var t = Array[Int, len(x)](fill=0)
 
     comptime for i in range(len(x)):
         comptime xi = x[i]
         t[i] = xi
-    return t
+    return Coord(t)
 
 
 def _get_arg(handle: String) -> Optional[String]:
@@ -214,32 +254,35 @@ def _get_arg(handle: String) -> Optional[String]:
 
 def arg_parse(handle: String, default: Int) raises -> Int:
     var val = _get_arg(handle)
-    if val:
-        return Int(val.value())
+    if case .Some(val) = val:
+        return Int(val)
     return default
 
 
 def arg_parse(handle: String, default: Bool) raises -> Bool:
     var val = _get_arg(handle)
-    if val:
-        if val.value() == "True":
-            return True
-        elif val.value() == "False":
-            return False
+    if case .Some(value) = val:
+        match value:
+            case "True":
+                return True
+            case "False":
+                return False
+            case _:
+                pass
     return default
 
 
 def arg_parse(handle: String, default: String) raises -> String:
     var val = _get_arg(handle)
-    if val:
-        return val.value()
+    if case .Some(val) = val:
+        return val
     return default
 
 
 def arg_parse(handle: String, default: Float64) raises -> Float64:
     var val = _get_arg(handle)
-    if val:
-        return atof(val.value())
+    if case .Some(val) = val:
+        return atof(val)
     return default
 
 
@@ -257,12 +300,15 @@ struct Mode(TrivialRegisterPassable, Writable):
         var handle_lower = handle.lower().split(Self.SEP)
         self = Self.NONE
         for h in handle_lower:
-            if String(Self.RUN.handle) == h:
-                self.append(Self.RUN)
-            elif String(Self.BENCHMARK.handle) == h:
-                self.append(Self.BENCHMARK)
-            elif String(Self.VERIFY.handle) == h:
-                self.append(Self.VERIFY)
+            match h:
+                case == (String(Self.RUN.handle)):
+                    self.append(Self.RUN)
+                case == (String(Self.BENCHMARK.handle)):
+                    self.append(Self.BENCHMARK)
+                case == (String(Self.VERIFY.handle)):
+                    self.append(Self.VERIFY)
+                case _:
+                    pass
 
     def append(mut self, other: Self):
         self._value |= other._value
@@ -332,16 +378,12 @@ struct Timer:
         var current = Float64(std.time.perf_counter_ns())
         var elapsed = current - self.current
         self.current = current
-        self.report.append("[" + msg + "] " + String(elapsed / 1e6) + " (ms)")
+        self.report.append(String(t"[{msg}] {elapsed / 1e6} (ms)"))
 
     def print(self) raises:
         for i in range(len(self.report)):
             print(self.report[i])
-        print(
-            "[total-elapsed] "
-            + String((self.current - self.start) / 1e6)
-            + " (ms)"
-        )
+        print(t"[total-elapsed] {(self.current - self.start) / 1e6} (ms)")
         print(
             "-----------------------------------------------------------------------"
         )
@@ -351,7 +393,7 @@ struct Timer:
 def init_vector_gpu[
     dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    x: MutPointer[Scalar[dtype], MutAnyOrigin],
     len: Int32,
     mode: InitializationType,
     value: Scalar[dtype],
@@ -360,44 +402,49 @@ def init_vector_gpu[
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @__parameter
-    def apply(values: SIMD[dtype, 4]):
+    @__allow_legacy_any_origin_fields
+    def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Every store is guarded, not just the last: the launch rounds the
+            # thread count up to a whole block, so a buffer shorter than four
+            # strides has threads whose first stores already land past the end.
+            if tid >= _len:
+                return
             x[tid] = values[i]
             tid += stride
 
     var values = SIMD[dtype, 4]()
-    if mode == InitializationType.zero:
-        values = SIMD[dtype, 4](0)
-    elif mode == InitializationType.one:
-        values = SIMD[dtype, 4](1)
-    elif mode == InitializationType.fill:
-        values = SIMD[dtype, 4](value)
-    elif mode == InitializationType.uniform_distribution:
-        var rng = Random(offset=UInt64(tid))
+    match mode:
+        case .zero:
+            values = SIMD[dtype, 4](0)
+        case .one:
+            values = SIMD[dtype, 4](1)
+        case .fill:
+            values = SIMD[dtype, 4](value)
+        case .uniform_distribution:
+            var rng = Random(offset=UInt64(tid))
 
-        comptime if dtype.is_floating_point():
-            values = SIMD[dtype, 4](rng.step_uniform())
+            comptime if dtype.is_floating_point():
+                values = SIMD[dtype, 4](rng.step_uniform())
 
-        elif dtype.is_unsigned():
-            values = (rng.step() & Scalar[dtype].MAX.cast[.uint32]()).cast[
-                dtype
-            ]()
-        else:
-            comptime assert (
-                False
-            ), "unsupported dtype for uniform distribution initialization"
+            elif dtype.is_unsigned():
+                values = (rng.step() & Scalar[dtype].MAX.cast[.uint32]()).cast[
+                    dtype
+                ]()
+            else:
+                comptime assert (
+                    False
+                ), "unsupported dtype for uniform distribution initialization"
 
-    elif mode == InitializationType.arange:
-        values = SIMD[dtype, 4](
-            UInt64(tid).cast[dtype](),
-            UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + 2 * stride).cast[dtype](),
-            UInt64(tid + 3 * stride).cast[dtype](),
-        )
+        case .arange:
+            values = SIMD[dtype, 4](
+                UInt64(tid).cast[dtype](),
+                UInt64(tid + stride).cast[dtype](),
+                UInt64(tid + 2 * stride).cast[dtype](),
+                UInt64(tid + 3 * stride).cast[dtype](),
+            )
+        case _:
+            pass
     apply(values)
 
 
@@ -419,8 +466,10 @@ def init_vector_launch[
         Int32(length),
         init_type,
         value.or_else(0),
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks),
+            block_dim=(block_dim),
+        ),
     )
 
 
@@ -430,17 +479,18 @@ def init_vector_launch[
 # Each thread processes 4 elements for better memory throughput.
 def _init_block_scaled_scales_gpu[
     dtype: DType
-](x: UnsafePointer[Scalar[dtype], MutAnyOrigin], len: Int32):
+](x: MutPointer[Scalar[dtype], MutAnyOrigin], len: Int32):
     var _len = Int(len)
     var tid = global_idx.x
     var stride = grid_dim.x * block_dim.x
 
-    @__parameter
-    def apply(values: SIMD[dtype, 4]):
+    @__allow_legacy_any_origin_fields
+    def apply(values: SIMD[dtype, 4]) {mut tid, imm}:
         comptime for i in range(4):
-            comptime if i == 3:
-                if tid >= _len:
-                    return
+            # Same short-buffer guard as `init_vector_gpu`: the last store's
+            # check does not protect the first three.
+            if tid >= _len:
+                return
             x[tid] = Scalar[dtype](values[i])
             tid += stride
 
@@ -470,8 +520,10 @@ def _init_block_scaled_scales_launch[
     context.enqueue_function[kernel](
         out_device,
         Int32(length),
-        grid_dim=(num_blocks),
-        block_dim=(block_dim),
+        execution_config=GridBlockLaunchConfig(
+            grid_dim=(num_blocks),
+            block_dim=(block_dim),
+        ),
     )
 
 
@@ -501,9 +553,27 @@ def human_readable_size(size: Int) -> String:
     comptime GB = MB * KB
 
     if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GB"
+        return String(t"{_pretty_print_float(Float64(size) / GB)}GB")
     if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MB"
+        return String(t"{_pretty_print_float(Float64(size) / MB)}MB")
     if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KB"
-    return String(size) + "B"
+        return String(t"{_pretty_print_float(Float64(size) / KB)}KB")
+    return String(t"{size}B")
+
+
+def coprime_multiplier(n: Int) -> Int:
+    """Returns a stride that visits every position of a length-`n` ring.
+
+    A stride that shares a factor with `n` revisits a subset of the ring, so
+    synthetic top-k indices built from it would touch too few distinct keys.
+
+    Args:
+        n: Ring length to be coprime with.
+
+    Returns:
+        The first of 3, 5, 7, 11 and 13 coprime with `n`, else 1.
+    """
+    for m in [3, 5, 7, 11, 13]:
+        if gcd(m, n) == 1:
+            return m
+    return 1

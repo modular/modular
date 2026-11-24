@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import TileTensor, row_major
-from nn.pad import pad_constant, pad_reflect, pad_repeat
+from layout import TileTensor, coord_to_index_list, row_major
+from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from std.testing import assert_equal
 
 
@@ -646,6 +646,36 @@ def test_pad_repeat_3d() raises:
     assert_equal(output[4, 3, 2], 4)
 
 
+# CHECK-LABEL: test_pad_shape
+def test_pad_shape() raises:
+    print("== test_pad_shape")
+
+    # 1D: input [1, 2, 3] padded by (1, 2) gives an output extent of 6.
+    var input_1d_stack: Array[Int, 3] = [1, 2, 3]
+    var input_1d = TileTensor(input_1d_stack, row_major[3]())
+    var paddings_1d_stack: Array[Int, 2] = [1, 2]
+    var paddings_1d = TileTensor(paddings_1d_stack, row_major[2]())
+
+    var shape_1d = pad_shape(input_1d, paddings_1d)
+    assert_equal(Int(shape_1d[0]), 6)
+
+    # 2D: input 2x3 padded by (1, 0) on the rows and (2, 1) on the columns.
+    var input_2d_stack: Array[Int, 6] = [1, 2, 3, 4, 5, 6]
+    var input_2d = TileTensor(input_2d_stack, row_major[2, 3]())
+    var paddings_2d_stack: Array[Int, 4] = [1, 0, 2, 1]
+    var paddings_2d = TileTensor(paddings_2d_stack, row_major[4]())
+
+    var shape_2d = pad_shape(input_2d, paddings_2d)
+    assert_equal(Int(shape_2d[0]), 3)
+    assert_equal(Int(shape_2d[1]), 6)
+
+    # The graph-op shape functions republish `pad_shape`'s result as an
+    # `IndexList`, so that conversion must round-trip.
+    var shape_2d_list = coord_to_index_list(shape_2d)
+    assert_equal(shape_2d_list[0], 3)
+    assert_equal(shape_2d_list[1], 6)
+
+
 def main() raises:
     test_pad_1d()
     test_pad_reflect_1d()
@@ -658,3 +688,4 @@ def main() raises:
     test_pad_reflect_3d_singleton()
     test_pad_reflect_4d_big_input()
     test_pad_repeat_3d()
+    test_pad_shape()

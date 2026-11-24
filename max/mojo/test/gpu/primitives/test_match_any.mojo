@@ -20,7 +20,6 @@ emulation.
 """
 
 from max.gpu import lane_id
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from max.gpu.primitives.warp import match_any
 from std.testing import assert_equal, TestSuite
@@ -29,7 +28,7 @@ from std.testing import assert_equal, TestSuite
 def _match_any_probe[
     dtype: DType,
 ](
-    values: Pointer[Scalar[dtype], MutAnyOrigin],
+    values: Pointer[Scalar[dtype], ImmutAnyOrigin],
     out_masks: Pointer[UInt64, MutAnyOrigin],
 ):
     var lane = Int(lane_id())
@@ -72,14 +71,14 @@ def _check[
 def test_match_any_all_same() raises:
     # One group spanning the whole warp.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         _check(ctx, "all_same", List[Int32](length=w, fill=Int32(7)))
 
 
 def test_match_any_all_distinct() raises:
     # Every lane its own singleton group.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         var vals = List[Int32](length=w, fill=Int32(0))
         for i in range(w):
             vals[i] = Int32(i)
@@ -89,7 +88,7 @@ def test_match_any_all_distinct() raises:
 def test_match_any_interleaved_groups() raises:
     # Three interleaved groups.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         var vals = List[Int32](length=w, fill=Int32(0))
         for i in range(w):
             vals[i] = Int32(i % 3)
@@ -99,7 +98,7 @@ def test_match_any_interleaved_groups() raises:
 def test_match_any_with_sentinel() raises:
     # Five groups plus a `-1` sentinel group folding into itself.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         var vals = List[Int32](length=w, fill=Int32(0))
         for i in range(w):
             vals[i] = Int32(-1) if (i % 4 == 0) else Int32(i % 5)
@@ -110,7 +109,7 @@ def test_match_any_64bit() raises:
     # 64-bit values that differ in the high 32 bits exercise the
     # `match.any.sync.b64` / 64-bit fold path.
     with DeviceContext() as ctx:
-        comptime w = WARP_SIZE
+        comptime w = ctx.default_device_info.warp_size
         var vals = List[Int64](length=w, fill=Int64(0))
         for i in range(w):
             vals[i] = Int64(0x1_0000_0000) * Int64(i % 3)

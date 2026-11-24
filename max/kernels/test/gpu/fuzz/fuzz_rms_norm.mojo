@@ -82,7 +82,7 @@ def run_one_case(
 ) raises:
     var rows = spec.rows
     var cols = spec.cols
-    var shape = Index(rows, cols)
+    var shape = (rows, cols)
 
     var data_h = ctx.enqueue_create_host_buffer[rn_type](rows * cols)
     var gamma_h = ctx.enqueue_create_host_buffer[rn_type](cols)
@@ -95,29 +95,28 @@ def run_one_case(
     ctx.enqueue_copy(gamma_d, gamma_h)
 
     var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
-    var epsilon = Float32(0.001)
-    var weight_offset = Scalar[rn_type](0.0)
+    var gamma = TileTensor(gamma_d, row_major(cols))
+    comptime epsilon = Float32(0.001)
+    comptime weight_offset = Float32(0.0)
 
-    @always_inline
-    @__copy_capture(data_buf)
-    @__parameter
-    def input_fn[width: Int](coords: Coord) -> SIMD[rn_type, width]:
-        var idx = data_buf.layout(coords)
-        return data_buf.raw_load[width=width](idx)
+    @inline(.always)
+    def input_fn[
+        width: Int
+    ](coords: Coord) {var data_buf} -> SIMD[rn_type, width]:
+        return data_buf.load[width=width](coords)
 
-    @always_inline
-    @__copy_capture(data_buf)
-    @__parameter
+    @inline(.always)
     def identity_output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[rn_type, width]) -> None:
-        var idx = data_buf.layout(coords)
-        data_buf.raw_store[width=width, alignment=alignment](idx, val)
+    ](coords: Coord, val: SIMD[rn_type, width]) {var data_buf} -> None:
+        data_buf.store[alignment=alignment](coords, val)
 
     rms_norm_gpu[
-        rn_rank, input_fn, identity_output_fn, multiply_before_cast=True
-    ](Coord(shape), gamma, epsilon, weight_offset, ctx)
+        rn_rank,
+        epsilon=epsilon,
+        weight_offset=weight_offset,
+        multiply_before_cast=True,
+    ](input_fn, identity_output_fn, Coord(shape), gamma, ctx)
     ctx.synchronize()
 
     if check:
@@ -154,12 +153,8 @@ def main() raises:
         var specs = gen_specs(the_budget)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "rows=",
-                specs[i].rows,
-                "cols=",
-                specs[i].cols,
+                t"FUZZ_SPEC idx= {i} rows= {specs[i].rows} cols="
+                t" {specs[i].cols}"
             )
         return
 
@@ -172,7 +167,7 @@ def main() raises:
         print("FUZZ_RESULT verdict=PASS")
         return
 
-    print("=== fuzz_rms_norm seed=", the_seed, "budget=", the_budget, "===")
+    print(t"=== fuzz_rms_norm seed= {the_seed} budget= {the_budget} ===")
     var specs = gen_specs(the_budget)
     with DeviceContext() as ctx:
         for i in range(len(specs)):

@@ -31,8 +31,10 @@ def control_dep_grids_kernel():
 
 # CHECK-LABEL: test_grid_control_primitives
 # CHECK: griddepcontrol.wait
+# CHECK: call.uni max_gpu_primitives_grid_contr
 # CHECK: griddepcontrol.launch_dependents
 # CHECK: griddepcontrol.wait
+# CHECK: call.uni max_gpu_primitives_grid_contr
 # CHECK: griddepcontrol.launch_dependents
 def test_grid_control_primitives() raises:
     print("== test_grid_control_primitives")
@@ -60,6 +62,7 @@ def control_dep_grids_kernel_context():
 
 # CHECK-LABEL: test_grid_control_primitives_context
 # CHECK: griddepcontrol.wait
+# CHECK: call.uni max_gpu_primitives_grid_contr
 # CHECK: griddepcontrol.launch_dependents
 def test_grid_control_primitives_context() raises:
     print("== test_grid_control_primitives_context")

@@ -29,7 +29,7 @@ from std.memory import alloc
 # after them are variadic.
 # CHECK-DAG: declare i32 @snprintf(ptr, i64, ptr, ...)
 def format_into(buf: Pointer[c_char, _], size: Int) -> c_int:
-    var fmt = "%d/%d".as_c_string_slice()
+    var fmt = "%d/%d".as_c_string_span()
     return external_call["snprintf", c_int, num_fixed_args=3](
         buf, size, fmt.ptr(), c_int(6), c_int(7)
     )
@@ -49,7 +49,7 @@ def all_variadic(value: c_int):
 
 
 def main():
-    var allocation = alloc[c_char]({count = 16}).into_managed()
+    var allocation = alloc[c_char]({length = 16}).into_managed()
     var buf = allocation.unsafe_ptr()
     print(Int(format_into(buf, 16)), length_of(buf))
     # This test stops at LLVM IR, so `mojo_test_all_variadic` needs no

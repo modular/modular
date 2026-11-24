@@ -332,6 +332,18 @@ def test_impl_appendleft_with_maxlen() raises:
     _ = q^
 
 
+def test_extend_empty_list() raises:
+    var q: Deque[Int] = [1, 2, 3]
+    q.extend(List[Int]())
+    q.extendleft(List[Int]())
+    assert_equal(len(q), 3)
+    assert_equal(q[0], 1)
+    assert_equal(q[2], 3)
+
+    var empty = Deque[Int](elements=List[Int]())
+    assert_equal(len(empty), 0)
+
+
 def test_impl_extend() raises:
     var q = Deque[Int](maxlen=4)
     var lst: List = [0, 1, 2]
@@ -1102,12 +1114,12 @@ def _test_deque_iter_bounds[
     for i in range(deque_len):
         var lower, upper = iter.bounds()
         assert_equal(deque_len - i, lower)
-        assert_equal(deque_len - i, upper.value())
+        assert_equal(Optional(deque_len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_deque_iter_bounds() raises:
@@ -1173,7 +1185,7 @@ struct NonEquatable(Copyable):
     pass
 
 
-struct CopyableExplicitDestroy(Copyable, Deinitable where False):
+struct CopyableExplicitDestroy(Copyable, not Deinitable):
     """Test type that is `Copyable` but must be explicitly destroyed."""
 
     var value: Int
@@ -1381,12 +1393,12 @@ def test_deque_iter_owned_bounds() raises:
     for i in range(3, 0, -1):
         var lower, upper = iter.bounds()
         assert_equal(i, lower)
-        assert_equal(i, upper.value())
+        assert_equal(Optional(i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_deque_move_only() raises:
@@ -1421,6 +1433,16 @@ def test_deque_move_only() raises:
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
+
+
+def test_insert_pointer_with_mutable_origin() raises:
+    var o = 1
+    var q = Deque[Pointer[Int, origin_of(o)]]()
+    q.append(Pointer(to=o))
+    q.appendleft(Pointer(to=o))
+    q.insert(1, Pointer(to=o))
+    assert_equal(len(q), 3)
+    assert_equal(q[1][], 1)
 
 
 def main() raises:

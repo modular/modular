@@ -33,13 +33,13 @@
 // We need to update location for both of them.
 kgen.func export @inline_me0(%arg0: index) -> index {
   debuginfo.value #local_variable0 = %arg0 : index loc(fused<#callee0Sp>[#locArg0])
-  kgen.return %arg0: index loc(#locCallee0)
+  hlcf.return %arg0: index loc(#locCallee0)
 } loc(#locCallee0)
 
 kgen.func export @inline_me1(%arg0: index) -> index {
   debuginfo.value #local_variable1 = %arg0 : index loc(fused<#callee1Sp>[#locArg1])
   %1 = kgen.call @inline_me0(%arg0) : (index) -> index loc(#locCallee1)
-  kgen.return %1: index loc(#locCallee1)
+  hlcf.return %1: index loc(#locCallee1)
 } loc(#locCallee1)
 
 // CHECK-LABEL: kgen.func @call_inline_me
@@ -48,7 +48,7 @@ kgen.func @call_inline_me() -> index {
   // CHECK: %idx3 = index.constant 3
   // CHECK-NEXT: debuginfo.value #local_variable1 = %idx3 : index loc(#[[LOC_VALUE_INLINED:.*]])
   %1 = kgen.call @inline_me1(%0) : (index) -> index loc(#locCaller)
-  kgen.return %1 : index loc(#locCaller)
+  hlcf.return %1 : index loc(#locCaller)
 } loc(#locCaller)
 
 // Test location for inlining async call with a nodebug function that inlines
@@ -57,7 +57,7 @@ kgen.func @call_inline_me() -> index {
 kgen.func @nodebug_inline_me(%arg0: index) -> index {
   %0 = index.add %arg0, %arg0
   %1 = kgen.call @inline_me0(%0) : (index) -> index
-  kgen.return %1 : index
+  hlcf.return %1 : index
 }
 
 // CHECK-LABEL: kgen.func @call_async
@@ -67,11 +67,11 @@ kgen.func @call_async() -> !co.routine {
   // CHECK-NEXT: [[V0:%.*]]co.execute : index {
   // CHECK-NEXT:   [[V1:%.*]] = index.add [[IDX2]], [[IDX2]] loc(#[[LOC_ADD:.*]])
   // CHECK-NEXT:   debuginfo.value #[[INLINED_VAR_FOO]] = [[V1]]
-  // CHECK-NEXT:   kgen.return [[V1]] : index loc(#[[LOC_INLINED_RETURN:.*]])
+  // CHECK-NEXT:   hlcf.return [[V1]] : index loc(#[[LOC_INLINED_RETURN:.*]])
   // CHECK-NEXT: } loc(#[[LOC_ASYNC_EXECUTE:.*]])
   %0 = co.invoke[(index) async -> index: @nodebug_inline_me](%idx2) loc(#locAsyncCaller)
-  // CHECK-NEXT: kgen.return
-  kgen.return %0: !co.routine loc(#locAsyncCaller)
+  // CHECK-NEXT: hlcf.return
+  hlcf.return %0: !co.routine loc(#locAsyncCaller)
 // CHECK-NEXT: } loc(#[[LOC_SCOPED_CALLER]])
 } loc(#locAsyncCaller)
 
@@ -92,14 +92,14 @@ kgen.func @call_async() -> !co.routine {
 
 kgen.func @no_debuginfo() -> index {
   %idx0 = index.constant 0
-  kgen.return %idx0 : index
+  hlcf.return %idx0 : index
 }
 
 // CHECK-LABEL: kgen.func @has_debuginfo
 kgen.func @has_debuginfo() {
   // CHECK: index.constant 0 loc(#[[LOC:.*]])
   kgen.call @no_debuginfo() : () -> index loc(#loc)
-  kgen.return loc(#loc)
+  hlcf.return loc(#loc)
 } loc(#loc)
 
 // CHECK-DAG: #[[LOC:.+]] = loc("foo.mlir":0:0)

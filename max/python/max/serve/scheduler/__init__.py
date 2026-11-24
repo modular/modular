@@ -10,12 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Request scheduling and batching for the serving loop."""
+
 from __future__ import annotations
 
 import contextlib
 import logging
 from collections.abc import AsyncGenerator
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -61,6 +64,10 @@ from .one_shot_scheduler import OneShotScheduler
 from .prefill_scheduler import load_prefill_scheduler
 from .text_generation_scheduler import load_text_generation_scheduler
 
+# Annotation only: the model worker imports the module lazily.
+if TYPE_CHECKING:
+    from max.serve.telemetry._kernel_capture import KernelCapture
+
 __all__ = [
     "CancelRequest",
     "EmbeddingsScheduler",
@@ -79,7 +86,9 @@ def load_scheduler(
     settings: Settings,
     worker_queues: WorkerQueues[BaseContextType, PipelineOutputType],
     memory_plan: MemoryPlan | None,
+    kernel_capture: KernelCapture | None = None,
 ) -> Scheduler:
+    """Returns the scheduler that matches the kind of pipeline it is given."""
     request_queue = worker_queues.request_queue
     response_queue = worker_queues.response_queue
     cancel_queue = worker_queues.cancel_queue
@@ -172,6 +181,7 @@ def load_scheduler(
             cancel_queue=cancel_queue,
             memory_plan=memory_plan,
             max_pending_requests=settings.max_pending_requests,
+            kernel_capture=kernel_capture,
         )
     elif pipeline_config.runtime.pipeline_role == "decode_only":
         text_pipeline = cast(TextGenerationPipeline[TextContext], pipeline)

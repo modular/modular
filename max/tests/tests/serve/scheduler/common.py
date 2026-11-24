@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import math
 import queue
 from dataclasses import dataclass
 
@@ -24,9 +25,11 @@ from max.graph import DeviceRef
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
+    KVCacheQuantizationConfig,
     MHAKVCacheParams,
     MLAKVCacheParams,
     MultiKVCacheParams,
+    NullKVConnectorConfig,
 )
 from max.pipelines.context import (
     GenerationStatus,
@@ -35,6 +38,7 @@ from max.pipelines.context import (
     TokenBuffer,
 )
 from max.pipelines.kv_cache import (
+    JengaKVCacheManager,
     PagedKVCacheManager,
     PagedKVCacheManagerInterface,
 )
@@ -77,10 +81,7 @@ def create_text_context(
     )
 
 
-def create_kv_cache(
-    num_blocks: int,
-    max_batch_size: int,
-    max_seq_len: int,
+def _make_kv_params(
     page_size: int,
     enable_prefix_caching: bool = False,
     kv_connector_config: KVConnectorConfig | None = None,
@@ -90,8 +91,8 @@ def create_kv_cache(
     is_mla: bool = False,
     tp_per_replica: int = 1,
     multi_kv: bool = False,
-) -> PagedKVCacheManager:
-    """Builds a ``PagedKVCacheManager`` for scheduler tests.
+) -> tuple[KVCacheParamInterface, list[Device]]:
+    """Builds the KV params and session devices shared by both managers.
 
     Args:
         multi_kv: Build a ``MultiKVCacheParams`` tree with ``target`` and
@@ -171,6 +172,33 @@ def create_kv_cache(
     else:
         kv_params = make_leaf_params(num_layers=1, head_dim=1)
 
+    return kv_params, session_devices
+
+
+def create_kv_cache(
+    num_blocks: int,
+    max_batch_size: int,
+    max_seq_len: int,
+    page_size: int,
+    enable_prefix_caching: bool = False,
+    dp: int = 1,
+    device: Device = CPU(),  # noqa: B008
+    num_speculative_tokens: int = 0,
+    is_mla: bool = False,
+    tp_per_replica: int = 1,
+    multi_kv: bool = False,
+) -> PagedKVCacheManager:
+    """Builds a legacy ``PagedKVCacheManager`` for scheduler tests."""
+    kv_params, session_devices = _make_kv_params(
+        page_size=page_size,
+        enable_prefix_caching=enable_prefix_caching,
+        dp=dp,
+        device=device,
+        num_speculative_tokens=num_speculative_tokens,
+        is_mla=is_mla,
+        tp_per_replica=tp_per_replica,
+        multi_kv=multi_kv,
+    )
     session = InferenceSession(devices=session_devices)
 
     kv_manager = PagedKVCacheManager(
@@ -188,6 +216,83 @@ def create_kv_cache(
     return kv_manager
 
 
+def create_jenga_kv_cache(
+    num_blocks: int,
+    max_batch_size: int,
+    max_seq_len: int,
+    page_size: int,
+    enable_prefix_caching: bool = False,
+    kv_connector_config: KVConnectorConfig | None = None,
+    dp: int = 1,
+    device: Device = CPU(),  # noqa: B008
+    num_speculative_tokens: int = 0,
+    is_mla: bool = False,
+    tp_per_replica: int = 1,
+    multi_kv: bool = False,
+) -> JengaKVCacheManager:
+    """Builds a ``JengaKVCacheManager`` holding ``num_blocks`` huge blocks.
+
+    Huge block 0 is the null block, so one more is carved than requested.
+    """
+    kv_params, _ = _make_kv_params(
+        page_size=page_size,
+        enable_prefix_caching=enable_prefix_caching,
+        kv_connector_config=kv_connector_config,
+        dp=dp,
+        device=device,
+        num_speculative_tokens=num_speculative_tokens,
+        is_mla=is_mla,
+        tp_per_replica=tp_per_replica,
+        multi_kv=multi_kv,
+    )
+    page_bytes = [leaf.bytes_per_page for leaf in kv_params.leaves().values()]
+    return JengaKVCacheManager.create(
+        params=kv_params,
+        available_bytes=(num_blocks + 1)
+        * math.lcm(*page_bytes)
+        * len(kv_params.devices),
+        max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
+    )
+
+
+def create_jenga_fp8_kv_cache(
+    num_huge_blocks: int,
+    max_batch_size: int,
+    max_seq_len: int,
+    page_size: int,
+    enable_prefix_caching: bool = False,
+    kv_connector_config: KVConnectorConfig | None = None,
+) -> JengaKVCacheManager:
+    """Builds a Jenga manager for an fp8 cache on CPU.
+
+    Values and scales are separate leaves that Jenga tiles at different
+    ratios, so a request holds different block ids in each.
+    """
+    params = MHAKVCacheParams(
+        dtype=DType.float8_e4m3fn,
+        num_layers=1,
+        n_kv_heads=1,
+        head_dim=128,
+        page_size=page_size,
+        enable_prefix_caching=enable_prefix_caching,
+        kv_connector_config=kv_connector_config or NullKVConnectorConfig(),
+        devices=[DeviceRef.CPU()],
+        kvcache_quant_config=KVCacheQuantizationConfig(
+            scale_dtype=DType.float32
+        ),
+    )
+    huge_page_bytes = max(
+        leaf.bytes_per_page for leaf in params.leaves().values()
+    )
+    return JengaKVCacheManager.create(
+        params=params,
+        available_bytes=num_huge_blocks * huge_page_bytes,
+        max_batch_size=max_batch_size,
+        max_seq_len=max_seq_len,
+    )
+
+
 def create_paged_scheduler(
     max_seq_len: int = 2048,
     num_blocks: int = 9999,
@@ -197,28 +302,28 @@ def create_paged_scheduler(
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
     enable_chunked_prefill: bool = True,
-    kv_connector_config: KVConnectorConfig | None = None,
     max_batch_total_tokens: int | None = None,
     dp: int = 1,
     device: Device = CPU(),  # noqa: B008
     num_speculative_tokens: int = 0,
     max_pending_requests: int | None = None,
+    kv_cache: PagedKVCacheManagerInterface | None = None,
 ) -> tuple[
     TokenGenerationScheduler,
     MAXPushQueue[TextContext],
 ]:
-    # Create a paged manager that has one slot
-    kv_cache = create_kv_cache(
-        num_blocks=num_blocks,
-        max_batch_size=max_batch_size,
-        max_seq_len=max_seq_len,
-        page_size=page_size,
-        enable_prefix_caching=enable_prefix_caching,
-        kv_connector_config=kv_connector_config,
-        dp=dp,
-        device=device,
-        num_speculative_tokens=num_speculative_tokens,
-    )
+    # Create a paged manager that has one slot, unless the caller brings its own.
+    if kv_cache is None:
+        kv_cache = create_kv_cache(
+            num_blocks=num_blocks,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+            page_size=page_size,
+            enable_prefix_caching=enable_prefix_caching,
+            dp=dp,
+            device=device,
+            num_speculative_tokens=num_speculative_tokens,
+        )
 
     # Create a scheduler with a paged manager
     scheduler_config = TokenGenerationSchedulerConfig(
@@ -571,7 +676,7 @@ def create_batch_and_execute(scheduler: TokenGenerationScheduler) -> BatchInfo:
     if batch_size == 0:
         return BatchInfo.empty()
 
-    num_terminated_reqs = scheduler._schedule(inputs)
+    num_terminated_reqs = scheduler._schedule(inputs).terminated_reqs
     assert isinstance(scheduler.pipeline, FakeTokenGeneratorPipeline)
 
     return BatchInfo(
@@ -604,12 +709,10 @@ def run_until_completion(
         #  - A candidate request is cordoned in the batch constructor's own
         #    ``_onloading_reqs`` until its onload's ``is_complete()`` flips
         #    (``construct_batch`` re-admits it automatically once it does).
-        #  - A pending offload (or a completed-but-not-yet-drained transfer)
-        #    keeps a device block pinned in the block manager's
-        #    ``_pending_transfers``, starving a new allocation with
-        #    ``InsufficientBlocksError`` even with no cordoned request in
-        #    sight. Neither condition alone catches both cases, so check
-        #    both.
+        #  - A pending offload keeps a device block pinned, starving a new
+        #    allocation with ``InsufficientBlocksError`` even with no cordoned
+        #    request in sight. Neither condition alone catches both cases, so
+        #    check both.
         #
         # Rather than spin-polling a bounded tick count, block on the actual
         # transfer handles: under real GPU contention (several GPU tests
@@ -630,12 +733,8 @@ def run_until_completion(
         ):
             for onloading in list(batch_constructor._onloading_reqs.values()):
                 onloading.event.synchronize()
-            # KVConnector pending-transfer bookkeeping is legacy-manager-only
-            # (Jenga doesn't support KVConnector), so narrow before reaching
-            # into internals this helper's synchronization actually needs.
-            assert isinstance(kv_cache, PagedKVCacheManager)
-            for pending_list in kv_cache._block_manager._pending_transfers:
-                for pending in list(pending_list):
+            if isinstance(kv_cache, JengaKVCacheManager):
+                for pending in kv_cache._pending_transfers[0]:
                     pending.event.synchronize()
             kv_cache.poll_transfers()
             batch_info = create_batch_and_execute(scheduler)

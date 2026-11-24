@@ -113,13 +113,11 @@ value or a copy of that value to the new variable:
 ```mojo
 var source = String("Hello")
 var copied = source   # A copy
-var moved = source^   # A transfer
+var transferred = source^   # A transfer
 ```
 
-The right-hand side variables must be `Copyable` or `Movable` to be
-assigned in this way. After the assignment the new variable owns a value,
-whether copied or transferred. A transfer leaves `source` uninitialized, and
-you can't use it again until you assign it a new value.
+After a transfer, the source variable is uninitialized, and you can't use it
+again until you assign it a new value.
 
 The value on the right-hand side of the assignment statement must be
 transferable to the new variable. Here's an example where that doesn't
@@ -166,9 +164,9 @@ Each outcome depends on type features for the values involved in assignment.
   var second = first^
   ```
 
-  This moves the value to `second`, and leaves `first` uninitialized.
+  This transfers the value to `second`, and leaves `first` uninitialized.
 
-  This ownership may move the value from one memory location to another.
+  This transfer may move the value from one memory location to another.
   This requires the value to be `Movable`.
 
 ## Reference bindings

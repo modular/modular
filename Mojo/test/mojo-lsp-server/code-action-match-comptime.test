@@ -1,0 +1,58 @@
+// RUN: mojo-lsp-server -mojo-test < %s | FileCheck -strict-whitespace %s
+{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"processId":123,"rootPath":"lit","capabilities":{},"trace":"off"}}
+// -----
+// A comptime match still being typed has no block after the colon, so the
+// document is in an invalid state. The refactoring still offers every arm
+// of the parameter subject, right after the colon.
+{"jsonrpc":"2.0","method":"textDocument/didOpen","params":{"textDocument":{
+  "uri":"test:///comptime.mojo",
+  "languageId":"mojo",
+  "version":1,
+  "text":"def foo[flag: Bool]():\n    comptime match flag:\n"
+}}}
+// CHECK: "method": "textDocument/publishDiagnostics",
+// CHECK: "message": "'match' statement must have at least one 'case' block",
+// -----
+{"jsonrpc":"2.0","id":1,"method":"textDocument/codeAction","params":{
+  "textDocument":{
+    "uri":"test:///comptime.mojo"
+  },
+  "range":{
+    "start":{"line":1,"character":16}, "end":{"line":1,"character":16}
+  },
+  "context":{
+    "diagnostics":[],
+    "triggerKind":1
+  }
+}}
+// CHECK-LABEL: "id": 1
+// CHECK-NEXT:  "jsonrpc": "2.0",
+// CHECK-NEXT:  "result": [
+// CHECK-NEXT:    {
+// CHECK-NEXT:      "edit": {
+// CHECK-NEXT:        "changes": {
+// CHECK-NEXT:          "test:///comptime.mojo": [
+// CHECK-NEXT:            {
+// CHECK-NEXT:              "newText": "\n    case False:\n        pass\n    case True:\n        pass",
+// CHECK-NEXT:              "range": {
+// CHECK-NEXT:                "end": {
+// CHECK-NEXT:                  "character": 24,
+// CHECK-NEXT:                  "line": 1
+// CHECK-NEXT:                },
+// CHECK-NEXT:                "start": {
+// CHECK-NEXT:                  "character": 24,
+// CHECK-NEXT:                  "line": 1
+// CHECK-NEXT:                }
+// CHECK-NEXT:              }
+// CHECK-NEXT:            }
+// CHECK-NEXT:          ]
+// CHECK-NEXT:        }
+// CHECK-NEXT:      },
+// CHECK-NEXT:      "kind": "refactor",
+// CHECK-NEXT:      "title": "Add missing cases"
+// CHECK-NEXT:    }
+// CHECK-NEXT:  ]
+// -----
+{"jsonrpc":"2.0","id":10,"method":"shutdown"}
+// -----
+{"jsonrpc":"2.0","method":"exit"}

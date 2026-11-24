@@ -14,16 +14,10 @@
 # RUN: not %mojo -Dtest=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
 
 from std.memory.alloc import alloc, dealloc, Layout, ThinAllocation
-from std.sys import align_of, size_of
+from std.sys import size_of
 from std.sys.defines import get_defined_int
 
-from std.testing import (
-    assert_equal,
-    assert_not_equal,
-    assert_false,
-    assert_true,
-    TestSuite,
-)
+from std.testing import assert_equal
 
 
 def test_alloc_zst_count_negative_fails() raises:
@@ -32,8 +26,8 @@ def test_alloc_zst_count_negative_fails() raises:
         size_of[ZST]() == 0
     ), "Please find a ZST to use for this test."
 
-    # CHECK_1: alloc: `Layout.count()` must be > 0
-    var layout = Layout[ZST](count=-1)
+    # CHECK_1: Layout: `length` must be >= 0
+    var layout = Layout[ZST](length=-1)
     var ptr = alloc(layout).unsafe_leak()
 
     # CHECK_1-NOT: is never reached

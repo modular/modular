@@ -87,6 +87,7 @@ class TCAdvanced(BaseScenario):
                     "required": ["name", "count"],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             result = await loop.run_in_executor(
                 None,

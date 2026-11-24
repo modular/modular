@@ -43,8 +43,8 @@ def main():
     except e:
         print("stack trace of", e)
         var stack_trace = e.get_stack_trace()
-        if stack_trace:
-            print(stack_trace.value())
+        if case .Some(stack_trace) = stack_trace:
+            print(stack_trace)
         else:
             print(
                 "stack trace was not collected. Enable stack trace collection"
@@ -57,8 +57,8 @@ def main():
     except e:
         print("stack trace of", e)
         var stack_trace = e.get_stack_trace()
-        if stack_trace:
-            print(stack_trace.value())
+        if case .Some(stack_trace) = stack_trace:
+            print(stack_trace)
         else:
             print(
                 "stack trace was not collected. Enable stack trace collection"

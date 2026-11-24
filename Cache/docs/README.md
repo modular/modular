@@ -28,6 +28,10 @@ implement the `llvm::MemoryBuffer` and `llvm::raw_pwrite_stream` APIs. The
 usual with the AsyncRT ref-counting infrastructure, `BufferRef` is a
 `RCRef` of the `Buffer` class, same for the `WriteableBuffer` class.
 
+Both classes are general enough to be useful outside the cache, so they live in
+`Support/include/Support/Buffer.h` in the `M::` namespace rather than in
+`Cache/`.
+
 `Buffer` interns any data passed to it on construction - it's important to
 ensure that any references to it actually extend the lifetime of the underlying
 memory, which means that the class itself should own the memory. If a string
@@ -46,15 +50,16 @@ operation. The user should instead use the `pwrite` API to write data to a
 particular offset.
 
 ```c++
-using namespace Cache;
+using namespace M;
 ...
 
 BufferRef buffer = Buffer::get("hello");
 llvm::outs() << buffer->getBuffer() << "\n"; // prints "hello"
 ...
 
-BufferRef fileBuf = Buffer::getFile("foo.txt");
-llvm::outs() << buffer->getBuffer() << "\n"; // prints the contents of foo.txt
+ErrorOr<BufferRef> fileBufOr = Buffer::getFile("foo.txt");
+BufferRef fileBuf = std::move(*fileBufOr);
+llvm::outs() << fileBuf->getBuffer() << "\n"; // prints the contents of foo.txt
 ...
 
 WriteableBufferRef writeableBuf = WriteableBuffer::get();
@@ -84,25 +89,26 @@ as a linked-list, where the next node in the list is known as the delegate. The
 base BlobCacheBackend class handles asynchrony so that the individual backends
 can implement synchronous operations for the API functions. Backends should
 generally be simple to construct and should generally not require data to be
-copied. For an example, look at the [FileSystemBackend](../lib/BlobCache.cpp).
+copied. For an example, look at the [FilesystemBackend](../lib/BlobCache.cpp).
 It simply reads from and writes to a particular directory - this means that
-multiple `FileSystemBackend` instances can share the same cache directory.
+multiple `FilesystemBackend` instances can share the same cache directory.
 This is a property we should strive to maintain.
 
 `BlobCacheBackend` is a virtual base class, and implementations need to provide
 the following:
 
 ```c++
-/// Subclasses should use this to provide the implementation of actually
-/// storing an item.
-virtual ErrorOrSuccess insertImpl(StringRef keyHash, BufferRef obj) = 0;
-/// Subclasses should use this to provide the implementation of checking if an
-/// item exists.
-virtual bool containsImpl(StringRef keyHash) const = 0;
-/// Subclasses should use this to provide the implementation of getting an
-/// item from storage.
-virtual CacheFindResult findImpl(StringRef keyHash) const = 0;
+/// Must be overwritten to provide synchronous insert.
+virtual ErrorOrSuccess insertSyncImpl(StringRef keyHash, BufferRef obj) = 0;
+/// Must be overwritten to provide synchronous contains.
+virtual ErrorOr<bool> containsSyncImpl(StringRef keyHash) = 0;
+/// Must be overwritten to provide a synchronous find.
+virtual ErrorOr<std::optional<BufferRef>> findSyncImpl(StringRef keyHash) = 0;
 ```
+
+A backend that can do better than the base class's synchrony wrapper may also
+override the async `insertImpl`, `containsImpl`, and `findImpl` overloads
+declared alongside these.
 
 ### KeyInfo
 
@@ -128,8 +134,60 @@ its result. This is important because in the future this may kick off a network
 request, which we should not synchronously wait on.
 
 The `BlobCache` assumes overwrite semantics on `insert`, so it is incumbent on
-the user to provide a strong hash function - the region and transform caches
-use SHA-256 as a hash function currently.
+the user to provide a strong hash function - the transform cache uses a
+128-bit xxhash currently.
+
+### Filesystem version directories
+
+The filesystem backend keeps each compiler version's blobs in a directory named
+by the version string that `getFilesystemBackend()` receives. The Mojo
+compiler's version string joins the Mojo version, the build ID of the compiler
+binary and the build type. A cache with two versions looks like this.
+
+```text
+<cacheDir>/
+  1.3.0<buildID>-production/          version, build ID, build type
+    .owners                           <buildID>\t/env/bin/mojo
+    M2VmYTJjNmZmY2QwYTk3MWM4...       cached blobs, named by key
+  1.2.0<otherBuildID>-production/
+    .owners                           <otherBuildID>\t/other-env/bin/mojo
+    ...
+```
+
+Opening a backend prunes sibling directories of the same build type to keep
+disk use down. Without an owner, the backend deletes every such sibling.
+
+The Mojo compiler instead passes a `CacheOwner`, which holds the canonical path
+and build ID of the binary that opens the cache. The backend appends that owner
+to the `.owners` file in its own directory. The file holds one
+`<buildID>\t<path>` line per binary that uses the directory. Pruning keeps a
+sibling while any binary listed in its `.owners` may still use it.
+
+- A binary with the opener's path and build ID still uses it. That binary is
+  the opener under another version string, such as when
+  `MODULAR_NVPTX_COMPILER_PATH` is set.
+- A binary with the opener's path and another build ID stopped using it when
+  the opener replaced it.
+- A binary whose path is gone stopped using it when its install was deleted.
+- A binary at any other existing path may still use it.
+
+A directory without `.owners` came from an older compiler, and pruning
+deletes it as before.
+
+Identical installs in two environments produce the same version string, so
+they share one directory. Each install adds its own line to `.owners`, and the
+directory stays while either install exists.
+
+The backend records its owner and prunes while holding one lock file next to
+the cache directory. A concurrent pruner therefore either sees the new owner or
+has already finished deleting the directory.
+
+> [!CAUTION]
+> A process loses its cache if its binary is replaced while it runs. The new
+> binary has the same path but a different build ID, so it deletes the old
+> directory. Writes the old process still has in flight then fail. This happens
+> when you upgrade a Mojo install under a running process. It also happens when
+> you rebuild `mojo` with Bazel while an earlier build is still compiling.
 
 ## Transform Caching
 
@@ -151,7 +209,8 @@ auto xform = cachedTransform(*module1, transformCache, std::move(readyChain),
                              pm);
 ```
 
-This example runs a set of provided passes, caches the result, and at the end,
+This example runs a set of provided passes and caches the result, keyed on the
+input IR and the pass pipeline.
 
 The most complex part of caching a transform is understanding what the cache
 key needs to include. In the case of the MLIR pass pipeline, the cache key

@@ -33,10 +33,11 @@ from std.utils.fast_div import FastDiv
 
 from linalg.structuring import SMemPtr, SMemArray
 from structured_kernels.pipeline import ProducerConsumerPipeline
-from std.utils.index import Index, IndexList
+from std.utils.index import Index
 from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import RasterOrder
+from std.utils.coord import Coord
 
 
 @fieldwise_init
@@ -56,16 +57,16 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
     # Whether work tile is completely OOB.
     var is_valid_tile: Bool
 
-    @always_inline
+    @inline(.always)
     def is_valid(self) -> Bool:
         return self.is_valid_tile
 
-    @always_inline
+    @inline(.always)
     def coord(self) -> Tuple[Int, Int]:
         """Get (m, n) tile coordinates as a tuple."""
         return (Int(self.m), Int(self.n))
 
-    @no_inline
+    @inline(.never)
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
@@ -104,7 +105,7 @@ struct WaitAndAdvanceContext[
     var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
     var next_work: WorkInfo
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         work_info_ptr: Pointer[WorkInfo, Self.work_origin],
@@ -113,11 +114,11 @@ struct WaitAndAdvanceContext[
         self.work_info_ptr = work_info_ptr
         self.next_work = next_work
 
-    @always_inline
+    @inline(.always)
     def __enter__(self) -> WorkInfo:
         return self.work_info_ptr[]
 
-    @always_inline
+    @inline(.always)
     def __exit__(mut self):
         self.work_info_ptr[] = self.next_work
 
@@ -146,7 +147,7 @@ struct WaitAndAdvanceHandle[
     var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
     var next_work: WorkInfo
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         work_info_ptr: Pointer[WorkInfo, Self.work_origin],
@@ -156,7 +157,7 @@ struct WaitAndAdvanceHandle[
         self.work_info_ptr = work_info_ptr
         self.next_work = next_work
 
-    @always_inline
+    @inline(.always)
     def release(deinit self):
         """Release the handle and advance to next work."""
         self.work_info_ptr[] = self.next_work
@@ -164,7 +165,7 @@ struct WaitAndAdvanceHandle[
 
 struct WorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](Copyable, Iterable, Iterator, RegisterPassable):
@@ -207,7 +208,7 @@ struct WorkIterator[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
         """Create work iterator with initial work_info.
 
@@ -220,11 +221,11 @@ struct WorkIterator[
         self.consumer_state = PipelineState[Self.num_stages]()
         self.needs_fetch = False
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> WorkInfo:
         """Return current work item, deferring fetch to next call.
 
@@ -255,7 +256,7 @@ struct WorkIterator[
 
 struct SchedulerWorkIterator[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32],
+    cluster_shape: Coord[Int, Int, Int],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
 ](Copyable, Iterable, Iterator, RegisterPassable):
@@ -301,7 +302,7 @@ struct SchedulerWorkIterator[
         iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
     ]: Iterator = Self
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
         """Create scheduler iterator. Throttle pipeline from scheduler.
 
@@ -316,11 +317,11 @@ struct SchedulerWorkIterator[
         self.throttle_pipeline = scheduler.throttle_pipeline
         self.needs_fetch = False
 
-    @always_inline
+    @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @always_inline
+    @inline(.always)
     def __next__(mut self) raises StopIteration -> WorkInfo:
         """Return current work item, deferring fetch to next call.
 
@@ -339,7 +340,7 @@ struct SchedulerWorkIterator[
 
     # ========== CLC Throttle + Work Request ==========
 
-    @always_inline
+    @inline(.always)
     def signal_and_advance(mut self):
         """Signal CLC throttle consumer and advance to next work request.
 
@@ -354,7 +355,7 @@ struct SchedulerWorkIterator[
 
     # ========== Cleanup ==========
 
-    @always_inline
+    @inline(.always)
     def drain(mut self):
         """Drain all pending CLC requests before kernel exit.
 
@@ -371,9 +372,7 @@ struct SchedulerWorkIterator[
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type=.uint32] = Index[
-        dtype=DType.uint32
-    ](1, 1, 1),
+    cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
 ](TrivialRegisterPassable):
@@ -437,7 +436,7 @@ struct TileScheduler[
         var pipeline = Self.ThrottlePipeline(storage_ptr)
         pipeline.init_mbars(producer_arv_count, consumer_arv_count)
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
@@ -474,7 +473,7 @@ struct TileScheduler[
         self.empty_mbar = clc_empty.ptr
         self.throttle_pipeline = Self.ThrottlePipeline(clc_throttle.ptr)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def work_info_from_clc_response(result: SMemPtr[UInt128]) -> WorkInfo:
         comptime asm = """{
@@ -501,7 +500,7 @@ struct TileScheduler[
             is_valid_tile=(ret_val[3] == 1),
         )
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def work_info_from_cluster(
         work_info: WorkInfo,
@@ -580,7 +579,7 @@ struct TileScheduler[
             is_valid_tile=work_info.is_valid_tile,
         )
 
-    @always_inline
+    @inline(.always)
     def initial_work_info(self) -> WorkInfo:
         return self.work_info_from_cluster(
             WorkInfo(
@@ -594,7 +593,7 @@ struct TileScheduler[
             self.log_cluster_dim_n,
         )
 
-    @always_inline
+    @inline(.always)
     def fetch_next_work(
         self,
         work_info: WorkInfo,
@@ -607,7 +606,7 @@ struct TileScheduler[
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
         var work_tile = self.work_info_from_clc_response(
-            self.clc_response + consumer_state.index()
+            self.clc_response.unsafe_offset(consumer_state.index())
         )
         # Only cta 0 in a cluster is used for scheduling.
         self.empty_mbar[consumer_state.index()].arrive_cluster(0)
@@ -622,7 +621,7 @@ struct TileScheduler[
     # CLC Throttle (Producer Side)
     # =========================================================================
 
-    @always_inline
+    @inline(.always)
     def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
         """Signal CLC throttle if this is the first CTA in cluster.
 
@@ -640,7 +639,7 @@ struct TileScheduler[
     # Work Iteration Context Managers
     # =========================================================================
 
-    @always_inline
+    @inline(.always)
     def wait_and_advance_work[
         work_origin: MutOrigin, //
     ](
@@ -671,7 +670,7 @@ struct TileScheduler[
         consumer_state.step()
         return WaitAndAdvanceContext(Pointer(to=work_info), next)
 
-    @always_inline
+    @inline(.always)
     def work_iterator(
         self,
     ) -> WorkIterator[
@@ -693,7 +692,7 @@ struct TileScheduler[
         """
         return WorkIterator(self, self.initial_work_info())
 
-    @always_inline
+    @inline(.always)
     def scheduler_iterator(
         self,
     ) -> SchedulerWorkIterator[
@@ -715,7 +714,7 @@ struct TileScheduler[
         """
         return SchedulerWorkIterator(self, self.initial_work_info())
 
-    @always_inline
+    @inline(.always)
     def advance_to_next_work(
         self,
         mut clc_state: PipelineState[Self.num_stages],
@@ -734,8 +733,10 @@ struct TileScheduler[
 
         if elect_one_sync():
             clusterlaunchcontrol_try_cancel[multicast=multicast](
-                self.clc_response + clc_state.index(),
-                (self.full_mbar + clc_state.index()).bitcast[Int64](),
+                self.clc_response.unsafe_offset(clc_state.index()),
+                self.full_mbar.unsafe_offset(clc_state.index()).unsafe_bitcast[
+                    Int64
+                ](),
             )
 
         return clc_state.next()

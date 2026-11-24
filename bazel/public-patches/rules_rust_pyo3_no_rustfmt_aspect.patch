@@ -1,0 +1,17 @@
+--- a/extensions/pyo3/private/pyo3.bzl
++++ b/extensions/pyo3/private/pyo3.bzl
+@@ -8,6 +8,5 @@
+     "rust_clippy_aspect",
+     "rust_common",
+     "rust_shared_library",
+-    "rustfmt_aspect",
+ )
+ load(":pyo3_toolchain.bzl", "PYO3_TOOLCHAIN")
+@@ -213,7 +212,6 @@
+             aspects = [
+                 rust_analyzer_aspect,
+                 rust_clippy_aspect,
+-                rustfmt_aspect,
+             ],
+             mandatory = True,
+         ),

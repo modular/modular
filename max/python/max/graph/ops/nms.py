@@ -12,13 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """Op implementation for non-maximum suppression."""
 
-from max._core.dialects import kgen, rmo
+from max._core.dialects import kgen, mo
 from max.dtype import DType
 
 from ..dim import Dim
 from ..graph import Graph
 from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
+from .validation import assert_on_host, assert_same_device
 
 
 def non_maximum_suppression(
@@ -95,6 +96,12 @@ def non_maximum_suppression(
     max_output_boxes_per_class = TensorValue(max_output_boxes_per_class)
     iou_threshold = TensorValue(iou_threshold)
     score_threshold = TensorValue(score_threshold)
+    assert_same_device(boxes=boxes, scores=scores)
+    assert_on_host(
+        max_output_boxes_per_class=max_output_boxes_per_class,
+        iou_threshold=iou_threshold,
+        score_threshold=score_threshold,
+    )
 
     result_type = TensorType(
         dtype=DType.int64,
@@ -103,7 +110,7 @@ def non_maximum_suppression(
     )
 
     return Graph.current._add_op_generated(
-        rmo.MoNonMaximumSuppressionOp,
+        mo.NonMaximumSuppressionOp,
         result_type.to_mlir(),
         boxes,
         scores,

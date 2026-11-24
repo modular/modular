@@ -97,7 +97,7 @@ Init documentation.
       {
         contents: {
           kind: "markdown",
-          value: `\`\`\`mojo\n(function) async def async_function(mut self)\n\`\`\``,
+          value: `\`\`\`mojo\n(function) __async def async_function(mut self)\n\`\`\``,
         },
         range: doc.findFirstRange("async_function"),
       }
@@ -646,8 +646,8 @@ def function[type: TrivialRegisterPassable](arg: type):
       "test:///test.mojo",
       `
 def function[
-    func: def (Int) capturing -> Int
-]() -> def (Int) capturing -> Int:
+    func: def (Int) thin -> Int
+]() -> def (Int) thin -> Int:
     pass
 `
     );
@@ -658,7 +658,7 @@ def function[
       {
         kind: "markdown",
         value:
-          "```mojo\n(function) def function[func: def(Int) capturing thin -> Int]() -> def(Int) capturing thin -> Int\n```",
+          "```mojo\n(function) def function[func: def(Int) thin -> Int]() -> def(Int) thin -> Int\n```",
       }
     );
   });
@@ -737,13 +737,20 @@ def foo():
       server,
       "test:///test.mojo",
       `
-from layout import IntTuple
+struct Container:
+    var x: Int
+
+    def __init__(out self):
+        self.x = 0
+
+    def __getitem__(self, idx: IntLiteral) -> Int:
+        return self.x + Int(idx)
 
 struct Foo:
-    var t: IntTuple
+    var t: Container
 
     def __init__(out self: Foo):
-        self.t = IntTuple()
+        self.t = Container()
 
 def baz():
     comptime f = Foo()

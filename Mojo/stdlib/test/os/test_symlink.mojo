@@ -13,7 +13,6 @@
 
 import std.os
 from std.os import remove
-from std.os.path import exists
 from std.pathlib import Path
 from std.tempfile import gettempdir
 from std.testing import TestSuite, assert_equal

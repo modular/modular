@@ -12,46 +12,16 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/Compiler/SaveAsmOutput.h"
+#include "Mojo/Support/NameMangling.h"
+#include "Target/TargetTraits.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/Support/FileUtilities.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/ToolOutputFile.h"
-#include "llvm/Support/xxhash.h"
+#include "llvm/TargetParser/Triple.h"
 #include <cassert>
 
 namespace M::KGEN {
-
-//===----------------------------------------------------------------------===//
-// Save-temps helpers
-//===----------------------------------------------------------------------===//
-
-mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                                             const std::string &postfix,
-                                             llvm::StringRef buf) {
-  if (saveTempsPrefix.empty())
-    return mlir::success();
-
-  // Include unique hash as part of name.
-  assert(sizeof(uint8_t) == sizeof(char) && "Assume char is 8 bits");
-  llvm::XXH128_hash_t hash =
-      llvm::xxh3_128bits(llvm::arrayRefFromStringRef(buf));
-  std::string outPath =
-      saveTempsPrefix + "." + llvm::utohexstr(hash.high64, /*LowerCase=*/true) +
-      llvm::utohexstr(hash.low64, /*LowerCase=*/true) + postfix;
-
-  auto outFile = mlir::openOutputFile(outPath);
-  if (!outFile)
-    return mlir::failure();
-  outFile->os() << buf;
-  outFile->keep();
-  return mlir::success();
-}
-
-mlir::LogicalResult writeBytesToTempWithHash(const std::string &saveTempsPrefix,
-                                             const std::string &postfix,
-                                             llvm::MemoryBufferRef buf) {
-  return writeBytesToTempWithHash(saveTempsPrefix, postfix, buf.getBuffer());
-}
 
 //===----------------------------------------------------------------------===//
 // Offload output naming helpers
@@ -82,6 +52,27 @@ std::string offloadOutputPath(llvm::StringRef prefix,
 //===----------------------------------------------------------------------===//
 // Pending offload writes
 //===----------------------------------------------------------------------===//
+
+ErrorOrSuccess
+queueOffloadWrite(TargetInfoAttr target, EmitAs kind, mlir::StringAttr rawName,
+                  llvm::StringRef content, llvm::StringMap<int> &nameCountMap,
+                  llvm::SmallVectorImpl<mlir::NamedAttribute> &pendingWrites) {
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(llvm::Triple(target.getTripleStr()));
+  if (traitsOr.isError())
+    return Error(traitsOr.getError());
+  llvm::StringRef ext = (*traitsOr)->extensionFor(kind);
+  constexpr size_t kFileNameMaxChars = 64;
+  std::string fileName =
+      reserveOffloadOutputBaseName(
+          sanitizeSymbolToUnderscores(rawName, kFileNameMaxChars), ext,
+          nameCountMap) +
+      ext.str();
+  mlir::MLIRContext *ctx = target.getContext();
+  pendingWrites.push_back({mlir::StringAttr::get(ctx, fileName),
+                           mlir::StringAttr::get(ctx, content)});
+  return success();
+}
 
 ErrorOrSuccess flushOffloadWrites(mlir::ModuleOp module,
                                   llvm::StringRef outputPrefix) {

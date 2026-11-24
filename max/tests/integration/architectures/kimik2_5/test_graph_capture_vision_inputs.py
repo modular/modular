@@ -24,14 +24,11 @@ with ``ValueError: Number of inputs (99) does not match expected number
 The vision-merge inputs are set by the pipeline's vision seam
 (``VisionEncoderCache.finalize_vision_inputs``) on every prepared batch --
 including the warmup path, which passes ``vision_result=None``. These
-CPU-only structural tests pin the two sides of that ABI without weights or
+CPU-only structural tests pin that ABI without weights or
 GPUs:
 
 * prepared-then-finalized inputs carry the per-device vision-merge buffers,
-  so ``.buffers`` arity matches the language graph's ``input_types`` arity;
-  and
-* the Eagle spec-decode subclasses expose the same finalized fields through
-  their own ``*Inputs`` packing.
+  so ``.buffers`` arity matches the language graph's ``input_types`` arity.
 """
 
 from __future__ import annotations
@@ -41,7 +38,6 @@ from typing import Any, cast
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
@@ -54,12 +50,6 @@ from max.pipelines.architectures.kimik2_5.layers.language_model import (
 from max.pipelines.architectures.kimik2_5.model import (
     KimiK2_5Model,
     KimiK2_5ModelInputs,
-)
-from max.pipelines.architectures.kimik2_5.unified_eagle_mha_pipeline_model import (
-    Eagle3MHAKimiK25Model,
-)
-from max.pipelines.architectures.kimik2_5.unified_eagle_pipeline_model import (
-    Eagle3KimiK25Model,
 )
 from max.pipelines.context import ImageMetadata
 from max.pipelines.lib.vision_encoder_cache import VisionEncoderCache
@@ -103,8 +93,6 @@ def _fake_pipeline_model(cls: type[KimiK2_5Model], n_devices: int) -> Any:
 
     model._eplb_stats_accumulator = None
     model.ep_comm_initializer = None
-    model._eplb_log2phy_buffers = []
-    model._eplb_logcnt_buffers = []
 
     batch_processor = MagicMock()
     batch_processor.prepare_initial_token_inputs.return_value = (
@@ -123,11 +111,11 @@ def _language_graph_input_types(n_devices: int) -> tuple[Any, ...]:
         devices=[DeviceRef("gpu", i) for i in range(n_devices)],
         hidden_size=_HIDDEN_SIZE,
         data_parallel_degree=n_devices,
+        ep_config=None,
         eplb_profile_enabled=False,
     )
-    decoder.ep_manager = None
     kv_params = MagicMock()
-    kv_params.flattened_kv_inputs.return_value = []
+    kv_params.get_symbolic_inputs.return_value = []
     return decoder.input_types(kv_params)
 
 
@@ -180,53 +168,6 @@ def test_finalized_warmup_inputs_match_language_graph_arity() -> None:
     for index in indices:
         assert tuple(index.shape) == (0,)
         assert index.dtype == DType.int32
-
-
-@pytest.mark.parametrize(
-    "cls", [Eagle3KimiK25Model, Eagle3MHAKimiK25Model], ids=["mla", "mha"]
-)
-def test_eagle_inputs_pack_finalized_vision_merge_buffers(
-    cls: type[KimiK2_5Model],
-) -> None:
-    """The Eagle subclasses' ``*Inputs`` must splat the seam-set vision-merge
-    fields for the unified spec-decode graph, right after ``tokens``."""
-    model = _fake_pipeline_model(cls, _N_DEVICES)
-    inputs = model.prepare_initial_token_inputs([[]])
-    encoder_cache: VisionEncoderCache[Any] = VisionEncoderCache(
-        devices=model.devices
-    )
-    encoder_cache.finalize_vision_inputs(model, inputs, model.devices, None)
-    assert len(inputs.vision_embeddings) == _N_DEVICES
-    assert len(inputs.vision_scatter_indices) == _N_DEVICES
-
-    # Fill the mandatory spec-decode tail so ``.buffers`` can be packed, then
-    # check the vision-merge buffers land right after ``tokens``.
-    dummy = Buffer.zeros((1,), dtype=DType.int64)
-    inputs.draft_tokens = dummy
-    inputs.seed = dummy
-    inputs.temperature = dummy
-    inputs.top_k = dummy
-    inputs.max_k = dummy
-    inputs.top_p = dummy
-    inputs.min_top_p = dummy
-    inputs.in_thinking_phase = dummy
-    buffers = inputs.buffers
-    assert all(
-        packed is expected
-        for packed, expected in zip(
-            buffers[1 : 1 + _N_DEVICES],
-            inputs.vision_embeddings,
-            strict=True,
-        )
-    )
-    assert all(
-        packed is expected
-        for packed, expected in zip(
-            buffers[1 + _N_DEVICES : 1 + 2 * _N_DEVICES],
-            inputs.vision_scatter_indices,
-            strict=True,
-        )
-    )
 
 
 def test_collect_uncached_image_inputs_matches_by_span() -> None:

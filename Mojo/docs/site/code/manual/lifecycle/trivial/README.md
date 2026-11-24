@@ -1,7 +1,7 @@
 # Code examples and tests for trivial lifecycle operations
 
 This directory contains code examples and tests for the
-[Trivial lifecycle operations](../../../../manual/lifecycle/trivial.mdx)
+[Register and trivial types in the lifecycle](../../../../manual/lifecycle/trivial.mdx)
 section of the Mojo Manual.
 
 Contents:

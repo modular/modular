@@ -54,16 +54,20 @@ class Qwen25VLTextEncoderConfigBase(MAXModelConfigBase):
 
     @property
     def attention_multiplier(self) -> float:
+        """The scale applied to the attention logits."""
         return math.sqrt(1.0 / self.head_dim)
 
 
 class Qwen25VLTextEncoderConfig(Qwen25VLTextEncoderConfigBase):
+    """The Qwen2.5-VL text encoder configuration."""
+
     @staticmethod
     def generate(
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
     ) -> Qwen25VLTextEncoderConfigBase:
+        """Builds the config from one pipeline model section."""
         text_config = config_dict.get("text_config", config_dict)
 
         init_dict = {}

@@ -1,0 +1,148 @@
+---
+title: Decisions
+description: Answer questions about an input with a probability for every option, without generating text
+---
+
+The [`/v1/decisions`](/rest-api/create-decisions/) endpoint returns
+probabilities for predefined answers instead of generating text. This reduces
+generation overhead, making it useful for applications that need fast,
+machine-readable decisions.
+
+Use the decisions API when you need to classify input, evaluate a condition, or
+assign a score. For other tasks, choose an approach based on the output you
+need: use [structured output](/serve/structured-output/) when you need the
+model to return an object with specific fields, or use [tool
+calling](/serve/function-calling/) when the model needs to request a tool
+invocation with arguments.
+
+## Choose a question type
+
+Use the decisions API for the following question types.
+
+| Type     | Use it to                                                                                 | Main result                                                                                                        |
+|----------|-------------------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------|
+| `choice` | Select one option from a fixed set, such as a support team or issue category.             | `choice`: the selected option, and `probabilities`: a probability for each option.                                 |
+| `score`  | Rate input against ordered levels, such as issue severity.                                | `score`: the probability-weighted average of the level indices, and `probabilities`: a probability for each level. |
+| `yes_no` | Evaluate a condition with a binary answer, such as whether a customer requested a refund. | `probabilities`: probabilities for `yes` and `no`.                                                                 |
+
+## Send a request to `/v1/decisions`
+
+Start a server with a supported text generation model. The decisions API is
+available by default.
+
+```sh
+max serve --model Qwen/Qwen3.5-2B
+```
+
+Send a request to `/v1/decisions` with an input and one or more questions. This
+example routes a support ticket to a team and checks whether the customer
+requested a refund.
+
+```sh
+curl -X POST http://localhost:8000/v1/decisions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": "I was charged twice for order A-104. Please refund one.",
+    "questions": [
+      {
+        "id": "team",
+        "type": "choice",
+        "question": "Which team should handle this?",
+        "options": [
+          {"name": "billing", "description": "Charges and refunds"},
+          {"name": "technical", "description": "Bugs and outages"},
+          {"name": "other"}
+        ]
+      },
+      {"id": "refund", "type": "yes_no", "question": "Is a refund requested?"}
+    ]
+  }'
+```
+
+The first request can take several seconds longer
+than later ones, because MAX compiles a small label-gather graph.
+
+## Understand the response
+
+The response includes an `answers` object with one entry for each question ID:
+
+```json
+{
+  "object": "decisions",
+  "model": "Qwen/Qwen3.5-2B",
+  "prompt_format_version": 1,
+  "answers": {
+    "team": {
+      "type": "choice",
+      "probabilities": {"billing": 0.98, "technical": 0.01, "other": 0.01},
+      "label_mass": 1.0,
+      "choice": "billing"
+    },
+    "refund": {
+      "type": "yes_no",
+      "probabilities": {"yes": 0.98, "no": 0.02},
+      "label_mass": 0.02
+    }
+  },
+  "usage": {
+    "completion_tokens": 0,
+    "prompt_tokens": 115,
+    "total_tokens": 115,
+    "prompt_tokens_details": {"cached_tokens": 0}
+  }
+}
+```
+
+In this example, `billing` scored highest for the team that should handle the
+request, and `yes` scored highest for whether the customer requested a refund.
+
+Each answer also includes `label_mass`, the share of the model's next-token
+probability that went to the answer labels. A value near 1 means the model
+answered with one of the labels. A low value, like `0.02` for `refund`, means
+the model wanted to respond with something else, so treat that answer's
+probabilities with caution.
+
+The `usage` object reports token counts for the request. `prompt_tokens` totals
+the prompt tokens across all questions because MAX scores each question as its
+own prompt. `completion_tokens` is always `0` because the endpoint doesn't
+generate text. For comprehensive information about the response body, see the
+[decisions API reference](/rest-api/create-decisions/).
+
+## Serve a decider model
+
+MAX supports using chat models and decider models with the decisions API. Use a
+chat model to get started without additional configuration. Use a decider model
+when you want a model trained for decision tasks and its matching prompt
+format.
+
+For example, MAX supports the decider model `Mapika/decider-2b`:
+
+```sh
+max serve --model Mapika/decider-2b
+```
+
+At startup, MAX checks for `decider_config.json`. If the file is present, MAX
+uses the decider format; otherwise, it uses the model's chat template.
+
+## Check compatibility and limitations
+
+The `/v1/decisions` request and response format follows SGLang's
+`/v1/decisions` endpoint. The OpenAI SDKs don't include a method for it, so
+send requests over HTTP.
+
+The decisions API works with text generation models. It doesn't work on servers
+that enable speculative decoding, LoRA adapters, or variable logits.
+
+## Next steps
+
+Now that you can answer typed questions with the decisions API, explore these
+related docs:
+
+- [Create decisions](/rest-api/create-decisions/): See every request and
+  response field of the `/v1/decisions` endpoint.
+- [Create System One answers](/rest-api/create-system-one/): Send System One
+  `noul`, `choice`, and `score` questions to a MAX server through the
+  `/v1/systemone` endpoint.
+- [Structured output](/serve/structured-output/): Constrain the model's output
+  to a JSON schema when you need specific fields instead of option
+  probabilities.

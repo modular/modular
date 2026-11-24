@@ -54,12 +54,12 @@ def _test_range_iter_bounds[
     for i in range(len):
         var lower, upper = iter.bounds()
         assert_equal(len - i, lower)
-        assert_equal(len - i, upper.value())
+        assert_equal(Optional(len - i), upper)
         _ = iter.__next__()
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
-    assert_equal(0, upper.value())
+    assert_equal(Optional(0), upper)
 
 
 def test_range_int_bounds() raises:
@@ -383,9 +383,9 @@ def test_range_forward_scalar_properties() raises:
     # The seed is pinned: a property test that picks its own seed reports a
     # failure no one else can reproduce.
     comptime for dtype in DTYPES:
-        PropTest(config=PropTestConfig(runs=100, seed=0)).test[
-            _prop_forward_terminates[dtype]
-        ](SIMD[dtype, 4].strategy())
+        PropTest(config=PropTestConfig(runs=100, seed=0)).test(
+            SIMD[dtype, 4].strategy(), _prop_forward_terminates[dtype]
+        )
 
 
 def test_range_forward_step_past_int_limit() raises:
@@ -508,9 +508,9 @@ def test_range_reversed_scalar_properties() raises:
     # The seed is pinned: a property test that picks its own seed reports a
     # failure no one else can reproduce.
     comptime for dtype in DTYPES:
-        PropTest(config=PropTestConfig(runs=100, seed=0)).test[
-            _prop_reversed_matches[dtype]
-        ](SIMD[dtype, 4].strategy())
+        PropTest(config=PropTestConfig(runs=100, seed=0)).test(
+            SIMD[dtype, 4].strategy(), _prop_reversed_matches[dtype]
+        )
 
 
 def test_range_reversed_scalar_sequential() raises:
@@ -691,7 +691,7 @@ def _test_range_int_zero_step[dtype: DType]() raises:
     assert_equal(range(scalar(0), scalar(3), scalar(0)).__len__(), 0)
     var lower, upper = range(scalar(3), scalar(0), scalar(0)).bounds()
     assert_equal(lower, 0)
-    assert_equal(upper.value(), 0)
+    assert_equal(upper, Optional(0))
 
 
 def test_range_int_zero_step() raises:

@@ -14,11 +14,31 @@ def _root_directory(file):
     # the path-mapped inputs were never materialized.
     return file.dirname
 
+def _namespace(ctx):
+    """Returns the `--namespace` for the package, as `mojo_library` derives it.
+
+    `import_path` is `.` or one or more `..`. `.` means no namespace, the
+    default behavior. Otherwise, each `..` names a trailing component of
+    the Bazel package path as a namespace component, so a package \
+    `max/mojo/max` with `import_path = ".."` is built under `max`.
+    """
+    if ctx.attr.import_path == ".":
+        return ""
+    up_dirs = 0
+    for segment in ctx.attr.import_path.split("/"):
+        if segment == "..":
+            up_dirs += 1
+        elif segment != "":
+            fail("invalid import path: {}".format(ctx.attr.import_path))
+    package_parts = ctx.label.package.split("/")
+    return ".".join(package_parts[len(package_parts) - up_dirs:])
+
 def _mojo_doc_implementation(ctx):
     mojo_toolchain = ctx.toolchains["@rules_mojo//:toolchain_type"].mojo_toolchain_info
 
     import_paths, transitive_mojodeps, _ = collect_mojoinfo(ctx.attr.deps + mojo_toolchain.implicit_deps)
     root_directory = ctx.files.srcs[0].dirname
+    namespace = _namespace(ctx)
 
     file_args = ctx.actions.args()
     for file in ctx.files.srcs:
@@ -43,6 +63,7 @@ def _mojo_doc_implementation(ctx):
                         file_args,
                     ] + (["--docs-base-path", ctx.attr.docs_base_path] if ctx.attr.docs_base_path else []) +
                     (["--diagnose-missing-doc-strings"] if ctx.attr.validate_missing_docs else []) +
+                    (["-namespace", namespace] if namespace else []) +
                     ctx.attr.copts,
         progress_message = "%{label} generating mojodoc.json",
         env = {
@@ -74,6 +95,7 @@ def _mojo_doc_implementation(ctx):
 
     return [
         DefaultInfo(files = depset([doc_output])),
+        OutputGroupInfo(mojodoc_json = depset([mojodoc_output])),
     ]
 
 mojo_doc = rule(
@@ -90,7 +112,10 @@ mojo_doc = rule(
         ),
         "validate_missing_docs": attr.bool(
             default = False,
-            doc = "Fail for missing docstrings",
+            doc = (
+                "Fail if public APIs are missing docstrings. " +
+                "Passes `--diagnose-missing-doc-strings` to `mojo doc`."
+            ),
         ),
         "docs_base_path": attr.string(
             default = "",
@@ -116,6 +141,14 @@ mojo_doc = rule(
         "stability_doc_url": attr.string(
             default = "",
             doc = "URL that stability markers link to. Markers are plain text when unset.",
+        ),
+        "import_path": attr.string(
+            default = ".",
+            doc = (
+                "Path relative to this package where it is imported from, as " +
+                "in `mojo_library`. Anything other than `.` documents the " +
+                "package under a namespace and passes `-namespace` to `mojo doc`."
+            ),
         ),
         "copts": attr.string_list(
             default = [],

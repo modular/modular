@@ -13,6 +13,7 @@
 
 #include "TargetAdapter.h"
 #include "AMDGPUAdapter.h"
+#include "MetalAdapter.h"
 #include "NVPTXAdapter.h"
 
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
@@ -51,6 +52,8 @@ TargetAdapter DebugInfo::getTargetAdapter(M::TargetInfoAttr target,
     return getNVPTXAdapter(tradeoffPerfForVariableDI);
   if (target && target.getTriple().isAMDGCN())
     return getAMDGPUAdapter(tradeoffPerfForVariableDI);
+  if (target && target.isMetal())
+    return getMetalAdapter();
   return getFallbackAdapter(tradeoffPerfForVariableDI);
 }
 
@@ -76,6 +79,7 @@ struct ConvertLineTableLocOp : public OpRewritePattern<LineTableLocOp> {
         rewriter, replacer.replace<LocationAttr>(op.getLoc()), TypeRange{},
         ValueRange{}, "nop", "", /*has_side_effects=*/true,
         /*is_align_stack=*/false, LLVM::TailCallKind::None,
+        /*convergent=*/false,
         LLVM::AsmDialectAttr::get(op.getContext(), LLVM::AsmDialect::AD_ATT),
         ArrayAttr());
     rewriter.eraseOp(op);

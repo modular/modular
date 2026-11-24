@@ -1053,12 +1053,16 @@ class GlmBattle(BaseScenario):
                 "properties": {
                     "title": {"type": "string"},
                     "date": {"type": "string"},
-                    "attendees": {"type": "array", "items": {"type": "string"}},
+                    "attendees": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": ["title", "date", "attendees"],
                 "additionalProperties": False,
             },
             description="Create a calendar event",
+            strict=True,
         )
 
         result = v.tc_chat_stream(

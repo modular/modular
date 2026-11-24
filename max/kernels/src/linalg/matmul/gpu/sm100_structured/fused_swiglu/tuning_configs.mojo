@@ -31,10 +31,10 @@ SMEM and TMA bulk bandwidth dominates).
 from ...tile_scheduler import RasterOrder
 from internal_utils import TuningConfig
 
-from std.utils.index import Index, IndexList
+from std.utils.coord import Coord, DynamicCoord
 
 
-struct TuningConfigSwiGLU(TrivialRegisterPassable, TuningConfig):
+struct TuningConfigSwiGLU(RegisterPassable, TuningConfig):
     """Per-M-range tuning config for fused GEMM+SwiGLU on SM100.
 
     N is the full output width before SwiGLU halving.
@@ -44,8 +44,8 @@ struct TuningConfigSwiGLU(TrivialRegisterPassable, TuningConfig):
     var M_end: Int
     var N: Int
     var K: Int
-    var mma_shape: IndexList[3]
-    var cluster_shape: IndexList[3]
+    var mma_shape: Tuple[Int, Int, Int]
+    var cluster_shape: Tuple[Int, Int, Int]
     var block_swizzle_size: Int
     var rasterize_order: RasterOrder
     var cta_group: Int
@@ -61,8 +61,8 @@ struct TuningConfigSwiGLU(TrivialRegisterPassable, TuningConfig):
         M_end: Int,
         N: Int,
         K: Int,
-        mma_shape: IndexList[3],
-        cluster_shape: IndexList[3],
+        mma_shape: Tuple[Int, Int, Int],
+        cluster_shape: Tuple[Int, Int, Int],
         block_swizzle_size: Int,
         rasterize_order: RasterOrder,
         cta_group: Int = 2,
@@ -121,8 +121,8 @@ def _get_tuning_list_swiglu_bf16() -> List[TuningConfigSwiGLU]:
             M_end=33,
             N=8192,
             K=1536,
-            mma_shape=Index(256, 32, 16),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(256, 32, 16),
+            cluster_shape=(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             cta_group=2,
@@ -138,8 +138,8 @@ def _get_tuning_list_swiglu_bf16() -> List[TuningConfigSwiGLU]:
             M_end=65,
             N=8192,
             K=1536,
-            mma_shape=Index(256, 64, 16),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(256, 64, 16),
+            cluster_shape=(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             cta_group=2,
@@ -154,8 +154,8 @@ def _get_tuning_list_swiglu_bf16() -> List[TuningConfigSwiGLU]:
             M_end=129,
             N=8192,
             K=1536,
-            mma_shape=Index(256, 128, 16),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(256, 128, 16),
+            cluster_shape=(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             cta_group=2,
@@ -171,8 +171,8 @@ def _get_tuning_list_swiglu_bf16() -> List[TuningConfigSwiGLU]:
             M_end=513,
             N=8192,
             K=1536,
-            mma_shape=Index(256, 128, 16),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(256, 128, 16),
+            cluster_shape=(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             cta_group=2,
@@ -189,8 +189,8 @@ def _get_tuning_list_swiglu_bf16() -> List[TuningConfigSwiGLU]:
             M_end=1025,
             N=8192,
             K=1536,
-            mma_shape=Index(256, 128, 16),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(256, 128, 16),
+            cluster_shape=(2, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             cta_group=2,
@@ -207,8 +207,8 @@ def _get_tuning_list_swiglu_bf16() -> List[TuningConfigSwiGLU]:
             M_end=2049,
             N=8192,
             K=1536,
-            mma_shape=Index(256, 224, 16),
-            cluster_shape=Index(4, 1, 1),
+            mma_shape=(256, 224, 16),
+            cluster_shape=(4, 1, 1),
             block_swizzle_size=0,
             rasterize_order=RasterOrder(1),
             cta_group=2,
@@ -225,8 +225,8 @@ def _get_tuning_list_swiglu_bf16() -> List[TuningConfigSwiGLU]:
             M_end=131072,
             N=8192,
             K=1536,
-            mma_shape=Index(256, 256, 16),
-            cluster_shape=Index(2, 1, 1),
+            mma_shape=(256, 256, 16),
+            cluster_shape=(2, 1, 1),
             block_swizzle_size=2,
             rasterize_order=RasterOrder(1),
             cta_group=2,

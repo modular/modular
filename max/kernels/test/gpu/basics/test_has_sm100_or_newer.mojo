@@ -14,14 +14,9 @@
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm90 %s | FileCheck --check-prefix=CHECK-NV90 %s
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm100 %s | FileCheck --check-prefix=CHECK-NV100 %s
 # RUN: %mojo-no-debug --target-accelerator=nvidia:sm120 %s | FileCheck --check-prefix=CHECK-NV120 %s
-# RUN: %mojo-no-debug --target-accelerator=some_amd:300 %s | FileCheck --check-prefix=CHECK-A300 %s
+# RUN: %mojo-no-debug --target-accelerator=amd:mi355x %s | FileCheck --check-prefix=CHECK-A300 %s
 
-from std.sys.info import (
-    _has_sm_8x_or_newer,
-    _has_sm_9x_or_newer,
-    _has_sm_100x_or_newer,
-    _has_sm_120x_or_newer,
-)
+from max.gpu.host import get_gpu_target
 
 
 def main() raises:
@@ -30,25 +25,25 @@ def main() raises:
     # CHECK-NV100: True
     # CHECK-NV120: True
     # CHECK-A300: False
-    print(_has_sm_8x_or_newer())
+    print(get_gpu_target()._is_sm_8x_or_newer())
 
     # CHECK-NV80: False
     # CHECK-NV90: True
     # CHECK-NV100: True
     # CHECK-NV120: True
     # CHECK-A300: False
-    print(_has_sm_9x_or_newer())
+    print(get_gpu_target()._is_sm_9x_or_newer())
 
     # CHECK-NV80: False
     # CHECK-NV90: False
     # CHECK-NV100: True
     # CHECK-NV120: True
     # CHECK-A300: False
-    print(_has_sm_100x_or_newer())
+    print(get_gpu_target()._is_sm_100x_or_newer())
 
     # CHECK-NV80: False
     # CHECK-NV90: False
     # CHECK-NV100: False
     # CHECK-NV120: True
     # CHECK-A300: False
-    print(_has_sm_120x_or_newer())
+    print(get_gpu_target()._is_sm_120x_or_newer())

@@ -47,7 +47,6 @@ logger = logging.getLogger(__name__)
 SKIP_MODELS: set[str] = {
     "black-forest-labs/flux.2-dev",
     "black-forest-labs/flux.2-klein-4b",
-    "liquidai/lfm2.5-1.2b-instruct",
     "qwen/qwen3-embedding-0.6b",
     "amd/minimax-m2.7-mxfp4",
     "wan-ai/wan2.1-t2v-14b-diffusers",
@@ -55,12 +54,10 @@ SKIP_MODELS: set[str] = {
     "austinpowers/kimi-k2.5-nvfp4-deepseekv3",
     "minimaxai/minimax-m2.7",
     "lukealonso/minimax-m2.7-nvfp4",
-    "deepseek-ai/deepseek-v3.2-exp",
     "modularai/llama-3.1-405b-instruct-autofp8",
     "deepseek-ai/deepseek-r1",
     "deepseek-ai/deepseek-v3.1-terminus",
     "amd/kimi-k2.5-mxfp4",
-    "nvidia/kimi-k2.7-code-nvfp4",
 }
 
 

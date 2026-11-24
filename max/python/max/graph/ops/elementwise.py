@@ -15,7 +15,7 @@
 from collections.abc import Callable
 
 from max._core import Operation
-from max._core.dialects import builtin, kgen, rmo
+from max._core.dialects import builtin, mo, rmo
 from max.dtype import DType
 
 from .. import dtype_promotion
@@ -166,14 +166,20 @@ def div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     ].tensor
 
 
+# Unlike `div`, keeps integer operands in the integer domain, truncating toward
+# zero.
+_trunc_div = _elementwise_binary(rmo.DivOp, "trunc_div")
+
+
 def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     """Divides two tensors element-wise using floor division (Python ``//``).
 
     The result is rounded toward negative infinity for all operands, matching
     Python's ``//``. Integer operands stay in the integer domain: the divide
     truncates toward zero, then a floor correction is applied for signed
-    integers (a no-op for unsigned or non-negative operands). Floating-point
-    operands compute ``floor(lhs / rhs)``.
+    integers (a no-op for unsigned or non-negative operands). As with the
+    hardware divide, integer division by zero and ``INT_MIN // -1`` are
+    undefined. Floating-point operands compute ``floor(lhs / rhs)``.
 
     Unlike :obj:`div`, integer operands are never promoted to ``float64``. This
     matters on backends without native 64-bit floating-point support (for
@@ -216,19 +222,15 @@ def floor_div(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     lhs, rhs = dtype_promotion._promote_weak_dtypes(lhs, rhs)
     assert_same_device(lhs, rhs)
     if lhs.dtype.is_integral() and rhs.dtype.is_integral():
-        # Integer division stays in the integer domain, mirroring `mod`
-        # (`rmo.ModOp`), so there is no `float64` promotion like `div` does.
-        # `rmo.DivOp` truncates toward zero.
-        quotient = Graph.current._add_op_generated(
-            rmo.DivOp, input_x=lhs, input_y=rhs
-        )[0].tensor
-        if lhs.dtype.is_signed_integral():
-            # Truncation toward zero and floor division differ by one when the
-            # exact quotient is negative (operand signs differ) and the divide
-            # leaves a nonzero remainder. Correct so the result matches `//`.
-            remainder = mod(lhs, rhs)
+        quotient = _trunc_div(lhs, rhs)
+        # Mixed operands divide in the promoted dtype (`uint8 // int16` is
+        # signed), so test the quotient's dtype rather than the operands'.
+        if quotient.dtype.is_signed_integral():
+            # Truncation and floor differ by one when the remainder is nonzero
+            # and its sign (that of `lhs`) differs from the divisor's.
+            remainder = lhs - quotient * rhs
             quotient = quotient - (
-                (remainder != 0) & ((lhs < 0) ^ (rhs < 0))
+                (remainder != 0) & ((remainder < 0) ^ (rhs < 0))
             ).cast(quotient.dtype)
         return quotient
     return floor(div(lhs, rhs))
@@ -744,11 +746,38 @@ def _elementwise_unary(op_type: type[Operation], name: str):  # noqa: ANN202
             op_type,
             result=x.type,
             input=x,
-            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
     elementwise_op.__name__ = name
     return elementwise_op
+
+
+def _elementwise_unary_of(  # noqa: ANN202
+    op_type: type[Operation],
+    name: str,
+    accepts: Callable[[DType], bool],
+    kind: str,
+):
+    """Like `_elementwise_unary`, for an op whose input dtype is restricted."""
+
+    def elementwise_op(x: TensorValueLike) -> TensorValue:
+        x = dtype_promotion._restrict_to_strong_dtypes(x)
+        if not accepts(x.dtype):
+            raise ValueError(f"{name} requires {kind} input, but got {x.dtype}")
+        return Graph.current._add_op_generated(
+            op_type,
+            result=x.type,
+            input=x,
+        )[0].tensor
+
+    elementwise_op.__name__ = name
+    return elementwise_op
+
+
+def _elementwise_unary_float(op_type: type[Operation], name: str):  # noqa: ANN202
+    return _elementwise_unary_of(
+        op_type, name, DType.is_float, "a floating-point"
+    )
 
 
 def _elementwise_unary_predicate(
@@ -760,7 +789,6 @@ def _elementwise_unary_predicate(
             op_type,
             result=TensorType(dtype=DType.bool, shape=x.shape, device=x.device),
             input_x=x,
-            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
     elementwise_op.__name__ = name
@@ -773,18 +801,17 @@ def _activation(x: TensorValueLike, op_type: type[Operation]) -> TensorValue:
     Each elementwise activation function (``relu``, ``gelu`` and its
     approximations, ``sigmoid``, ``silu``) has its own dedicated op, backed by a
     hardware-optimized fused Mojo kernel, rather than a Python-level composition
-    of ``exp``/``erf``/etc.
+    of ``exp``, ``erf``, and so on.
     """
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     return Graph.current._add_op_generated(
         op_type,
         result=x.type,
         input=x,
-        output_param_decls=kgen.ParamDeclArrayAttr([]),
     )[0].tensor
 
 
-abs = _elementwise_unary(rmo.MoAbsOp, "abs")
+abs = _elementwise_unary(mo.AbsOp, "abs")
 abs.__doc__ = """Computes the absolute value of a tensor element-wise.
 
 .. code-block:: python
@@ -818,7 +845,7 @@ Raises:
     Error: If the input doesn't represent a tensor.
 """
 
-exp = _elementwise_unary(rmo.MoExpOp, "exp")
+exp = _elementwise_unary(mo.ExpOp, "exp")
 exp.__doc__ = """Computes the exponential of a tensor element-wise.
 
 This applies ``exp(x) = e^x``, where ``e`` is Euler's number.
@@ -855,7 +882,7 @@ Raises:
     Error: If the input does not represent a tensor or has a non-floating-point dtype.
 """
 
-erf = _elementwise_unary(rmo.MoErfOp, "erf")
+erf = _elementwise_unary(mo.ErfOp, "erf")
 erf.__doc__ = """Computes the error function of a tensor element-wise.
 
 The error function ``erf`` is the probability that a randomly sampled
@@ -925,16 +952,16 @@ def gelu(x: TensorValue, approximate: str = "none"):  # noqa: ANN201
         ValueError: If the approximation method is invalid.
     """
     if approximate == "none":
-        return _activation(x, rmo.MoGeluOp)
+        return _activation(x, mo.GeluOp)
     if approximate == "tanh":
-        return _activation(x, rmo.MoGeluTanhOp)
+        return _activation(x, mo.GeluTanhOp)
     if approximate == "quick":
-        return _activation(x, rmo.MoGeluQuickOp)
+        return _activation(x, mo.GeluQuickOp)
 
     raise ValueError(f"Invalid approximation method: {approximate}")
 
 
-log = _elementwise_unary(rmo.MoLogOp, "log")
+log = _elementwise_unary(mo.LogOp, "log")
 log.__doc__ = """
 Computes the natural logarithm of a tensor element-wise.
 
@@ -978,7 +1005,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-log1p = _elementwise_unary(rmo.MoLog1pOp, "log1p")
+log1p = _elementwise_unary(mo.Log1pOp, "log1p")
 log1p.__doc__ = """Computes ``log(1 + x)`` element-wise.
 
 Note that ``log(1 + x)`` is undefined for ``x <= -1`` and complex
@@ -1028,53 +1055,13 @@ def _softmax_like(op_type: type[Operation], name: str):  # noqa: ANN202
             result=value.type,
             input=value,
             axis=builtin.IntegerAttr(builtin.IndexType(), axis),
-            output_param_decls=kgen.ParamDeclArrayAttr([]),
         )[0].tensor
 
     softmax_like_op.__name__ = name
     return softmax_like_op
 
 
-logsoftmax = _softmax_like(rmo.MoReduceLogsoftmaxOp, "logsoftmax")
-logsoftmax.__doc__ = """Computes the log-softmax of a tensor along an axis.
-
-.. code-block:: python
-
-    from max.dtype import DType
-    from max.engine import InferenceSession
-    from max.graph import DeviceRef, Graph, ops
-
-    device = DeviceRef.CPU()
-    with Graph("logsoftmax_example") as graph:
-        x = ops.constant([1.0, 2.0, 3.0], DType.float32, device=device)
-        graph.output(ops.logsoftmax(x))
-
-    model = InferenceSession().load(graph)
-    result = model.execute()[0]
-
-.. invisible-code-block: python
-
-    import numpy as np
-
-    assert np.allclose(
-        result.to_numpy(), [-2.407, -1.407, -0.407], atol=1e-3
-    )
-
-Args:
-    value: The input to the log-softmax computation. Must have a
-        floating-point dtype.
-    axis: The axis along which to compute the log-softmax. Defaults to the
-        final axis (``-1``).
-
-Returns:
-    A ``TensorValue`` of the same shape and dtype as ``value`` representing the
-    log-softmax of ``value`` computed along ``axis``.
-
-Raises:
-    Error: If the input is not a tensor or has a non-floating-point dtype.
-"""
-
-relu = _elementwise_unary(rmo.MoReluOp, "relu")
+relu = _elementwise_unary(mo.ReluOp, "relu")
 relu.__doc__ = """Applies the ReLU (Rectified Linear Unit) activation element-wise.
 
 ReLU is defined as ``relu(x) = max(0, x)``, meaning negative values are set to zero
@@ -1163,7 +1150,7 @@ def sigmoid(x: TensorValue) -> TensorValue:
     Raises:
         Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
     """
-    return _activation(x, rmo.MoSigmoidOp)
+    return _activation(x, mo.SigmoidOp)
 
 
 def silu(x: TensorValue):  # noqa: ANN201
@@ -1206,10 +1193,10 @@ def silu(x: TensorValue):  # noqa: ANN201
     Raises:
         Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
     """
-    return _activation(x, rmo.MoSiluOp)
+    return _activation(x, mo.SiluOp)
 
 
-softmax = _softmax_like(rmo.MoReduceSoftmaxOp, "softmax")
+softmax = _softmax_like(mo.CompositeReduceSoftmaxOp, "softmax")
 softmax.__doc__ = """Computes the softmax of a tensor along an axis.
 
 Normalizes the values along ``axis`` so that they sum to ``1``, with each
@@ -1250,7 +1237,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-cos = _elementwise_unary(rmo.MoCosOp, "cos")
+cos = _elementwise_unary_float(mo.CosOp, "cos")
 cos.__doc__ = """Computes the cosine of a tensor element-wise.
 
 .. code-block:: python
@@ -1285,7 +1272,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-ceil = _elementwise_unary(rmo.MoCeilOp, "ceil")
+ceil = _elementwise_unary_float(mo.CeilOp, "ceil")
 ceil.__doc__ = """Computes the ceiling of a tensor element-wise.
 
 .. code-block:: python
@@ -1319,7 +1306,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-floor = _elementwise_unary(rmo.MoFloorOp, "floor")
+floor = _elementwise_unary_float(mo.FloorOp, "floor")
 floor.__doc__ = """Computes the floor of a tensor element-wise.
 
 .. code-block:: python
@@ -1353,7 +1340,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-round = _elementwise_unary(rmo.MoRoundOp, "round")
+round = _elementwise_unary_float(mo.RoundOp, "round")
 round.__doc__ = """Rounds a tensor to the nearest integer element-wise.
 
 Values exactly halfway between two integers round to the nearest even integer
@@ -1391,7 +1378,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-rsqrt = _elementwise_unary(rmo.MoRsqrtOp, "rsqrt")
+rsqrt = _elementwise_unary_float(mo.RsqrtOp, "rsqrt")
 rsqrt.__doc__ = """Computes the reciprocal square root of a tensor element-wise.
 
 .. code-block:: python
@@ -1425,7 +1412,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-sqrt = _elementwise_unary(rmo.MoSqrtOp, "sqrt")
+sqrt = _elementwise_unary_float(mo.SqrtOp, "sqrt")
 sqrt.__doc__ = """Computes the square root of a tensor element-wise.
 
 .. code-block:: python
@@ -1460,7 +1447,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-sin = _elementwise_unary(rmo.MoSinOp, "sin")
+sin = _elementwise_unary_float(mo.SinOp, "sin")
 sin.__doc__ = """Computes the sine of a tensor element-wise.
 
 .. code-block:: python
@@ -1495,7 +1482,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-tanh = _elementwise_unary(rmo.MoTanhOp, "tanh")
+tanh = _elementwise_unary_float(mo.TanhOp, "tanh")
 tanh.__doc__ = """Computes the hyperbolic tangent of a tensor element-wise.
 
 This applies ``tanh(x) = (exp(x) - exp(-x)) / (exp(x) + exp(-x))``, which maps
@@ -1540,7 +1527,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-atanh = _elementwise_unary(rmo.MoAtanhOp, "atanh")
+atanh = _elementwise_unary_float(mo.AtanhOp, "atanh")
 atanh.__doc__ = """Computes the inverse hyperbolic tangent of a tensor element-wise.
 
 .. code-block:: python
@@ -1575,7 +1562,7 @@ Raises:
     Error: If the input doesn't represent a tensor or has a non-floating-point dtype.
 """
 
-trunc = _elementwise_unary(rmo.MoTruncOp, "trunc")
+trunc = _elementwise_unary_float(mo.TruncOp, "trunc")
 trunc.__doc__ = """Truncates a tensor toward zero element-wise.
 
 .. code-block:: python
@@ -1609,7 +1596,7 @@ Raises:
     Error: If the input doesn't represent tensor or has a non-floating-point dtype.
 """
 
-is_nan = _elementwise_unary_predicate(rmo.MoIsNanOp, "is_nan")
+is_nan = _elementwise_unary_predicate(mo.IsNanOp, "is_nan")
 is_nan.__doc__ = """Tests element-wise whether a tensor contains NaN values.
 
 .. code-block:: python
@@ -1647,7 +1634,7 @@ Raises:
 """
 
 
-is_inf = _elementwise_unary_predicate(rmo.MoIsInfOp, "is_inf")
+is_inf = _elementwise_unary_predicate(mo.IsInfOp, "is_inf")
 is_inf.__doc__ = """Tests element-wise whether a tensor contains infinite values.
 
 .. code-block:: python
@@ -1684,7 +1671,9 @@ Raises:
     Error: If the input doesn't represent a tensor.
 """
 
-logical_not = _elementwise_unary(rmo.MoNotOp, "logical_not")
+logical_not = _elementwise_unary_of(
+    mo.NotOp, "logical_not", lambda dtype: dtype == DType.bool, "a bool"
+)
 logical_not.__doc__ = """Computes the element-wise logical NOT of a boolean tensor.
 
 .. code-block:: python
@@ -1718,7 +1707,7 @@ Raises:
     Error: If the symbol doesn't represent a tensor.
 """
 
-negate = _elementwise_unary(rmo.MoNegativeOp, "negate")
+negate = _elementwise_unary(mo.NegativeOp, "negate")
 negate.__doc__ = """Negates a tensor element-wise.
 
 .. code-block:: python
@@ -1796,7 +1785,7 @@ def acos(x: TensorValue) -> TensorValue:
     x = dtype_promotion._restrict_to_strong_dtypes(x)
     device = x.device
     return custom(
-        "mo.acos",
+        "elementwise.acos",
         x.device,
         [x],
         out_types=[

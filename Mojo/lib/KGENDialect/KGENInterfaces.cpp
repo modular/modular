@@ -32,8 +32,9 @@ LogicalResult impl::verifyGeneratorUser(GeneratorUserOpInterface op) {
   // Disallow calls from within a concrete function from calling anything with
   // input or output parameters.
   if (auto func = op->getParentOfType<FuncOp>()) {
-    auto symbolCst = dyn_cast<SymbolConstantAttr>(op.getCallee());
-    if (!symbolCst || !symbolCst.getParamValues().empty()) {
+    auto generator = FuncSymbolGenerator::dynCast(op.getCallee());
+    if (!generator || !generator.isFullyBound() ||
+        !generator.getParamValues().empty()) {
       return op.emitOpError("cannot reference generator with input parameters "
                             "from within a concrete 'kgen.func'")
                  .attachNote(func.getLoc())

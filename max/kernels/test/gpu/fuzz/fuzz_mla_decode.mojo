@@ -42,19 +42,15 @@
 #       Generate + run a batch in-process (standalone convenience).
 
 from std.math import align_up, ceildiv, max, min
-from std.random import rand, randn, random_ui64, seed
+from std.random import randn, random_ui64, seed
 from std.sys.defines import get_defined_int
 
 from max.gpu.host import DeviceBuffer, DeviceContext, HostBuffer
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from layout import (
+    Coord,
     Idx,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
     TileTensor,
-    UNKNOWN_VALUE,
-    lt_to_tt,
     row_major,
 )
 from std.utils.index import IndexList
@@ -63,6 +59,7 @@ from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
 )
+from nn.attention.gpu.mla import SM100MLA
 from nn.kv_cache_ragged import generic_flare_mla_decode_kv_cache_ragged
 
 from _fuzz import (
@@ -296,7 +293,7 @@ def run_one_case(
     )
     comptime kv_dim2 = 1  # MLA: is_mla=True => dim[1] == 1
 
-    var block_shape = IndexList[6](
+    var block_shape = (
         total_pages,
         kv_dim2,
         NUM_LAYERS,
@@ -401,45 +398,44 @@ def run_one_case(
     ctx.synchronize()
 
     # --- PagedKVCacheCollection ---------------------------------------------
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
     )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
     )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     )
-
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = Collection(
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
@@ -457,12 +453,12 @@ def run_one_case(
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads](
         batch_size, max_cache_len, q_max_seq_len, ctx
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
 
     # === Kernel under test ==================================================
     generic_flare_mla_decode_kv_cache_ragged[
-        target="gpu",
         mask_str=MASK,
+        kernels=SM100MLA,
     ](
         q_tt,
         row_offsets_tt,
@@ -470,7 +466,7 @@ def run_one_case(
         UInt32(0),  # layer_idx
         SCALE,
         out_tt,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_tt,
         ctx,
     )
     ctx.synchronize()
@@ -582,11 +578,11 @@ def _verify_ref(
         # causal == null; for seq_len>1, causal is the production decode rule.
         comptime if MASK == "null":
             mha_gpu_naive(
-                q_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
+                q_b_tt,
+                k_b_tt,
+                k_b_tt,
                 NullMask(),
-                ref_b_tt.to_layout_tensor(),
+                ref_b_tt,
                 SCALE,
                 1,
                 b_seq_len,
@@ -598,11 +594,11 @@ def _verify_ref(
             )
         else:
             mha_gpu_naive(
-                q_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
-                k_b_tt.to_layout_tensor(),
+                q_b_tt,
+                k_b_tt,
+                k_b_tt,
                 CausalMask(),
-                ref_b_tt.to_layout_tensor(),
+                ref_b_tt,
                 SCALE,
                 1,
                 b_seq_len,
@@ -726,47 +722,52 @@ def run_schedule_case(
     var out_device = ctx.enqueue_create_buffer[q_type](out_size)
     ctx.synchronize()
 
-    var block_shape = IndexList[6](
-        total_pages, 1, NUM_LAYERS, PAGE_SIZE, KV_NUM_HEADS, DEPTH
+    var block_shape = (
+        total_pages,
+        1,
+        NUM_LAYERS,
+        PAGE_SIZE,
+        KV_NUM_HEADS,
+        DEPTH,
     )
-    var blocks_lt = LayoutTensor[kv_type, Layout.row_major[6]()](
-        blocks_device.unsafe_ptr(),
-        RuntimeLayout[Layout.row_major[6]()].row_major(block_shape),
+    comptime Collection = PagedKVCacheCollection[
+        kv_type,
+        kv_params,
+        PAGE_SIZE,
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(block_shape[0])
+    blocks_shape[2] = Int64(block_shape[2])
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[0] = Int64(
+        block_shape[1]
+        * block_shape[2]
+        * block_shape[3]
+        * block_shape[4]
+        * block_shape[5]
     )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cache_lengths_lt = LayoutTensor[.uint32, cl_layout](
-        cache_lengths_device.unsafe_ptr(),
-        RuntimeLayout[cl_layout].row_major(IndexList[1](batch_size)),
+    blocks_strides[1] = Int64(
+        block_shape[2] * block_shape[3] * block_shape[4] * block_shape[5]
     )
-    comptime lt_layout_2d = Layout.row_major[2]()
-    var lookup_table_lt = LayoutTensor[.uint32, lt_layout_2d](
-        lookup_table_device.unsafe_ptr(),
-        RuntimeLayout[lt_layout_2d].row_major(
-            IndexList[2](batch_size, max_pages_per_batch)
-        ),
+    var blocks = TileTensor(
+        blocks_device, BlocksLayout(blocks_shape, blocks_strides)
     )
-    var kv_collection = PagedKVCacheCollection[kv_type, kv_params, PAGE_SIZE](
-        LayoutTensor[kv_type, Layout.row_major[6]()](
-            blocks_lt.ptr,
-            RuntimeLayout[Layout.row_major[6]()](
-                blocks_lt.runtime_layout.shape.value,
-                blocks_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, cl_layout](
-            cache_lengths_lt.ptr,
-            RuntimeLayout[cl_layout](
-                cache_lengths_lt.runtime_layout.shape.value,
-                cache_lengths_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
-        LayoutTensor[mut=False, .uint32, lt_layout_2d](
-            lookup_table_lt.ptr,
-            RuntimeLayout[lt_layout_2d](
-                lookup_table_lt.runtime_layout.shape.value,
-                lookup_table_lt.runtime_layout.stride.value,
-            ),
-        ).as_unsafe_any_origin(),
+    var cache_lengths_tensor = TileTensor(
+        cache_lengths_device, row_major(Int64(batch_size))
+    )
+    var lookup_table = TileTensor(
+        lookup_table_device,
+        row_major(Int64(batch_size), Int64(max_pages_per_batch)),
+    )
+    var kv_collection = Collection(
+        blocks.as_unsafe_any_origin(),
+        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
+        lookup_table.as_imm().as_unsafe_any_origin(),
         UInt32(1),
         UInt32(max_cache_len),
     )
@@ -782,19 +783,22 @@ def run_schedule_case(
     var mla_args = MLADispatchScalarArgs[num_heads=num_heads](
         batch_size, max_cache_len, 1, ctx
     )
-    var scalar_args_buf_lt = mla_args.gpu_layout_tensor()
+    var scalar_args_tt = mla_args.gpu_tile_tensor()
     # Pin split-K for the `schedule` oracle; leave it to the decode heuristic
     # for the `determinism` oracle.
     var np = Optional[Int](2) if pin_partitions else Optional[Int]()
 
-    generic_flare_mla_decode_kv_cache_ragged[target="gpu", mask_str=MASK](
+    generic_flare_mla_decode_kv_cache_ragged[
+        mask_str=MASK,
+        kernels=SM100MLA,
+    ](
         q_tt,
         row_offsets_tt,
         kv_collection,
         UInt32(0),
         SCALE,
         out_tt,
-        lt_to_tt(scalar_args_buf_lt),
+        scalar_args_tt,
         ctx,
         num_partitions_in=np,
     )
@@ -804,14 +808,17 @@ def run_schedule_case(
     ctx.synchronize()
 
     for _ in range(repeats - 1):
-        generic_flare_mla_decode_kv_cache_ragged[target="gpu", mask_str=MASK](
+        generic_flare_mla_decode_kv_cache_ragged[
+            mask_str=MASK,
+            kernels=SM100MLA,
+        ](
             q_tt,
             row_offsets_tt,
             kv_collection,
             UInt32(0),
             SCALE,
             out_tt,
-            lt_to_tt(scalar_args_buf_lt),
+            scalar_args_tt,
             ctx,
             num_partitions_in=np,
         )
@@ -852,24 +859,13 @@ def main() raises:
         var specs = gen_specs(the_budget, safe=False)
         for i in range(len(specs)):
             print(
-                "FUZZ_SPEC idx=",
-                i,
-                "batch_size=",
-                specs[i].batch_size,
-                "max_cache_len=",
-                specs[i].max_cache_len,
-                "min_cache_len=",
-                specs[i].min_cache_len,
-                "seq_len=",
-                specs[i].seq_len,
-                "pattern=",
-                specs[i].pattern,
-                "ragged_q=",
-                specs[i].ragged_q,
-                "seed=",
-                specs[i].seed,
-                "dist=",
-                specs[i].dist,
+                t"FUZZ_SPEC idx= {i} batch_size="
+                t" {specs[i].batch_size} max_cache_len="
+                t" {specs[i].max_cache_len} min_cache_len="
+                t" {specs[i].min_cache_len} seq_len="
+                t" {specs[i].seq_len} pattern= {specs[i].pattern} ragged_q="
+                t" {specs[i].ragged_q} seed= {specs[i].seed} dist="
+                t" {specs[i].dist}"
             )
         return
 
@@ -899,15 +895,8 @@ def main() raises:
 
     # Default: standalone in-process fuzz.
     print(
-        "=== fuzz_mla_decode num_heads=",
-        num_heads,
-        "mask=",
-        MASK,
-        "seed=",
-        the_seed,
-        "budget=",
-        the_budget,
-        "===",
+        t"=== fuzz_mla_decode num_heads= {num_heads} mask= {MASK} seed="
+        t" {the_seed} budget= {the_budget} ==="
     )
     var specs = gen_specs(the_budget, safe=True)
     with DeviceContext() as ctx:

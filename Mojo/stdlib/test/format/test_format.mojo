@@ -42,13 +42,39 @@ def test_string_constructor() raises:
 def test_format_string() raises:
     assert_equal("{}".format(TestWritable(42)), "write_to: 42")
     assert_equal(String("{}").format(TestWritable(42)), "write_to: 42")
-    assert_equal(StringSlice("{}").format(TestWritable(42)), "write_to: 42")
+    assert_equal(StringSpan("{}").format(TestWritable(42)), "write_to: 42")
 
     assert_equal("{!r}".format(TestWritable(42)), "write_repr_to: 42")
     assert_equal(String("{!r}").format(TestWritable(42)), "write_repr_to: 42")
     assert_equal(
-        StringSlice("{!r}").format(TestWritable(42)), "write_repr_to: 42"
+        StringSpan("{!r}").format(TestWritable(42)), "write_repr_to: 42"
     )
+
+
+@fieldwise_init
+struct Suit(EnumLike, Writable):
+    var _value: Int
+
+    comptime _enum_case_names = ParameterList.of[
+        "hearts".value, "spades".value
+    ].values
+    comptime _enum_case_types = TypeList.splat[2, Tuple[]].values
+
+    def _get_enum_discriminant(self) -> Int:
+        return self._value
+
+    def _unsafe_get_enum_payload[
+        id: Int
+    ](ref self) -> ref[self] TypeList[Trait=AnyType, Self._enum_case_types]()[
+        id
+    ]:
+        comptime assert False, "Suit has no payload"
+
+
+def test_default_write_to_enum_like() raises:
+    assert_equal(String(Suit(0)), "Suit.hearts")
+    assert_equal(String(Suit(1)), "Suit.spades")
+    assert_equal(repr(Suit(1)), "Suit.spades")
 
 
 def test_default_write_to_simple() raises:
@@ -151,7 +177,7 @@ def test_write_sequence_to_custom_delimiters() raises:
 
 
 struct NullWriter(Writer):
-    def write_string(mut self, string: StringSlice):
+    def write_string(mut self, string: StringSpan):
         keep(string)
 
 

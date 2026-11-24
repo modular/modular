@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin.simd import *
+from std.simd import *
 from max.gpu.host import DeviceContext
 from std.memory import bitcast
 
@@ -20,7 +20,7 @@ def print_bits[dtype: DType](val: Scalar[dtype]):
     var u8 = bitcast[.uint8](val)
     var bits = String(capacity_bytes=32)
 
-    comptime for i in reversed(range(8)):
+    for i in reversed(range(8)):
         bits.write((u8 >> UInt8(i)) & 1)
 
     print(dtype, "nan:", u8, bits)

@@ -51,6 +51,9 @@ def KGENDialect : Dialect {
 
     using TypeParseFn = Type (*)(AsmParser &);
     using TypePrintFn = void (*)(AsmPrinter &, Type);
+    /// Prints a type whose parameters are parameter expressions.
+    using ParamTypePrintFn = void (*)(AsmPrinter &, Type,
+                                      M::KGEN::KGENParamPrinter &);
 
     /// Register a keyword parser. A keyword can only be registered once.
     /// Conflicts are up to dialect users to manage. The only restriction on
@@ -61,15 +64,31 @@ def KGENDialect : Dialect {
 
     /// Register a keyword parser and printer. The dialect will try to parse
     /// a pretty type indicated by a keyword when parsing a parameter type.
+    ///
+    /// `paramPrint` is the printer a `KGENParamPrinter` calls.
     void registerPrettyType(StringRef keyword, TypeParseFn parse, mlir::TypeID id,
-                            TypePrintFn print);
+                            TypePrintFn print,
+                            ParamTypePrintFn paramPrint = {});
 
-    /// Register a custom type parser using the type's mnemonic.
+    /// Register a custom type parser, printer, and parameter-aware printer
+    /// using the type's mnemonic.
     template <typename TypeT>
     void registerMnemonicType();
 
     /// Get the "name" of the type, if it has registered one.
     std::optional<StringRef> getTypeName(mlir::TypeID id);
+
+    /// Register attribute classes whose values are compound parameter
+    /// expressions.
+    template <typename... AttrTs>
+    void registerNonTrivialParamAttrs() {
+      (nonTrivialParamAttrs.insert(mlir::TypeID::get<AttrTs>()), ...);
+    }
+
+    /// Returns true if `attr` belongs to a registered non-trivial class.
+    bool isNonTrivialParamAttr(Attribute attr) const {
+      return nonTrivialParamAttrs.contains(attr.getTypeID());
+    }
 
     /// Set the special parser for symbol references.
     void setSymbolTypeParser(
@@ -77,21 +96,38 @@ def KGENDialect : Dialect {
       symbolTypeParser = std::move(parser);
     }
 
+    /// Whether a parameter use-def graph built in this context also runs the
+    /// checks of the parameter verifier. The compiler driver sets it from
+    /// `--run-parameter-verifier` before it parses or compiles.
+    bool getRunParameterVerifier() const {
+      return runParameterVerifier.load(std::memory_order_relaxed);
+    }
+    void setRunParameterVerifier(bool run) {
+      runParameterVerifier.store(run, std::memory_order_relaxed);
+    }
+
   private:
     /// The map of keyword parsers.
     llvm::StringMap<TypeParseFn> typeParseFns;
     /// A map of pretty type printers.
     DenseMap<mlir::TypeID, TypePrintFn> typePrintFns;
+    /// Printers for types whose parameters need the active printer.
+    DenseMap<mlir::TypeID, ParamTypePrintFn> paramTypePrintFns;
     /// A map containing the "names" of types.
     DenseMap<mlir::TypeID, StringRef> typeNames;
+    DenseSet<mlir::TypeID> nonTrivialParamAttrs;
 
     /// Function that parses symbol references as types.
     std::function<FailureOr<Type>(AsmParser &, SymbolRefAttr)> symbolTypeParser;
 
+    /// Atomic because compilations on threads that share the context read it.
+    std::atomic<bool> runParameterVerifier{
+        ::M::KGEN::kVerifyParametersByDefault};
+
     /// Allow the type pretty printer and parser utilities to access the
     /// pretty functions.
     friend OptionalParseResult parseOptionalKGENType(AsmParser &, Type &);
-    friend void printKGENType(AsmPrinter &, Type);
+    friend class KGENParamPrinter;
     friend void printParamName(AsmPrinter &p, StringAttr, bool);
   }];
 }

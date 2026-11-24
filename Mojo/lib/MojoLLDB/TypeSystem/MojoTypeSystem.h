@@ -15,7 +15,6 @@
 #define KGEN_LIB_MOJOLLDB_TYPESYSTEM_MOJOTYPESYSTEM_H
 
 #include "AsyncRT/Runtime/CPUDevice.h"
-#include "Mojo/MojoTooling/PublicASTDecl.h"
 #include "MojoDWARFParser.h"
 #include "Support/Context.h"
 #include "Support/LLVMCompilerForwardDecls.h"
@@ -31,13 +30,21 @@
 #include "lldb/lldb-private.h"
 
 namespace M {
-class MojoASTTypeRef;
-class MojoParserContext;
 class TargetInfoAttr;
 namespace DebugInfo {
 class SourceNameAttr;
 } // namespace DebugInfo
 } // namespace M
+
+namespace M::KGEN::LIT {
+class ASTDecl;
+class ASTType;
+class DefASTDecl;
+class MojoParserContext;
+class MojoREPLContext;
+class SharedState;
+class StructASTDecl;
+} // namespace M::KGEN::LIT
 
 namespace M::AsyncRT {
 class CPUDevice;
@@ -65,7 +72,8 @@ public:
   AsyncRT::CPUDevice &getCPUDevice();
 
   /// Return the Mojo parser context attached to this type system.
-  MojoParserContext &getParserContext();
+  LIT::MojoParserContext &getParserContext();
+  LIT::MojoREPLContext &getREPLContext();
 
   /// Return the target info that corresponds to the current LLDB target, it
   /// might be invalid if it couldn't be computed.
@@ -258,6 +266,9 @@ public:
   llvm::Expected<uint64_t>
   GetBitSize(lldb::opaque_compiler_type_t type,
              lldb_private::ExecutionContextScope *exeScope) override;
+
+  std::optional<uint64_t>
+  GetByteStride(lldb::opaque_compiler_type_t type) override;
 
   std::optional<size_t>
   GetTypeBitAlign(lldb::opaque_compiler_type_t type,
@@ -547,6 +558,12 @@ public:
   lldb_private::CompilerType
   GetPointerType(lldb::opaque_compiler_type_t type) override;
 
+  /// Returns the type unchanged: Mojo pointer types carry their address
+  /// space themselves, and the base implementation returns an invalid type.
+  lldb_private::CompilerType
+  AddAddressSpaceModifier(lldb::opaque_compiler_type_t type,
+                          uint32_t addressSpace) override;
+
   //===--------------------------------------------------------------------===//
   // Type Navigation
   //===--------------------------------------------------------------------===//
@@ -654,8 +671,8 @@ public:
   /// Create a CompilerType for the given MLIR type.
   lldb_private::CompilerType createCompilerType(Type type);
 
-  /// Create a CompilerType for the given MojoASTTypeRef.
-  lldb_private::CompilerType createCompilerType(MojoASTTypeRef type);
+  /// Create a CompilerType for the given AST type.
+  lldb_private::CompilerType createCompilerType(LIT::ASTType type);
 
   //===--------------------------------------------------------------------===//
   // Debug Info Parsing
@@ -689,8 +706,8 @@ public:
   createPOPArrayType(lldb::opaque_compiler_type_t elementType,
                      size_t numElements);
 
-  MojoASTDeclRef getOrCreatePackageDecl(StringRef name,
-                                        MojoASTDeclRef parentDeclRef);
+  LIT::OpASTDecl *getOrCreatePackageDecl(StringRef name,
+                                         LIT::OpASTDecl *parentDecl);
 
   /// If the given `name` is parsable as a `SourceName`, traverse each decl
   /// and create it unless it's been created already.
@@ -701,16 +718,16 @@ public:
   /// should be used.
   ///
   /// Return the leaf decl.
-  MojoASTDeclRef
+  LIT::ASTDecl *
   getOrCreateDeclChainForDie(const lldb_private::plugin::dwarf::DWARFDIE &die,
                              StringRef name);
 
   /// Add a field at the end of the given struct decl and the given type.
   ///
   /// Return the decl of the newly created field.
-  MojoASTDeclRef addFieldToStruct(MojoASTDeclRef structDecl,
-                                  StringRef fieldName,
-                                  lldb::opaque_compiler_type_t type);
+  LIT::ASTDecl *addFieldToStruct(LIT::StructASTDecl *structDecl,
+                                 StringRef fieldName,
+                                 lldb::opaque_compiler_type_t type);
 
 private:
   /// Create a struct decl given its name under the given parent decl. If the
@@ -718,8 +735,8 @@ private:
   /// If the parent decl is null, then a placeholder module will be created.
   ///
   /// Return the decl of the struct.
-  MojoASTDeclRef getOrCreateStructDecl(StringRef structName,
-                                       MojoASTDeclRef parentDecl);
+  LIT::OpASTDecl *getOrCreateStructDecl(StringRef structName,
+                                        LIT::OpASTDecl *parentDecl);
 
   /// Create a module decl given its name under the given parentDecl. If the
   /// parent module already contains a module with that name, return it
@@ -727,8 +744,8 @@ private:
   /// If the parent decl is null, then the Mojo parser's top decl will be used.
   ///
   /// Return the decl of the module.
-  MojoASTDeclRef getOrCreateModuleDecl(StringRef moduleName,
-                                       MojoASTDeclRef parentDecl = {});
+  LIT::OpASTDecl *getOrCreateModuleDecl(StringRef moduleName,
+                                        LIT::OpASTDecl *parentDecl = nullptr);
 
   /// Create a function decl given its name under the given parentDecl. If the
   /// parent decl already contains a function with that name, return it
@@ -736,14 +753,15 @@ private:
   /// If the parent decl is null, then the Mojo parser's top decl will be used.
   ///
   /// Return the decl of the funcction.
-  MojoASTDeclRef getOrCreateFunctionDecl(StringRef functionName,
-                                         MojoASTDeclRef parentDecl = {});
+  LIT::DefASTDecl *
+  getOrCreateFunctionDecl(StringRef functionName,
+                          LIT::OpASTDecl *parentDecl = nullptr);
 
   /// Traverse each decl of the `SourceName` and create it unless it's been
   /// created already.
   ///
   /// Return the leaf decl.
-  MojoASTDeclRef
+  LIT::ASTDecl *
   createDeclsFromSourceNameRecursive(M::DebugInfo::SourceNameAttr sourceName);
 
   //===--------------------------------------------------------------------===//

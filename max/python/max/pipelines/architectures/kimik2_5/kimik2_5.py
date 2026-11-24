@@ -10,7 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from max.nn import Module
+"""The Kimi K2.5 multimodal model."""
+
+from max.nn.legacy import Module
 
 from .layers.language_model import KimiK2_5MoEDecoder
 from .layers.vision.transformer import Transformer
@@ -28,6 +30,7 @@ class KimiK2_5(Module):
         self.language_model = self.build_language_model()
 
     def build_vision_encoder(self) -> Transformer:
+        """Builds the vision encoder from the vision config."""
         return Transformer(self.config.vision_config)
 
     def build_language_model(self) -> KimiK2_5MoEDecoder:

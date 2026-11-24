@@ -45,7 +45,7 @@ def _strip_bazel_path(filename: str) -> str:
     cProfile reports absolute filenames such as
     ``/home/.../bazel-out/.../<bin>.runfiles/_main/max/python/.../generate.py``
     or ``/.../external/rules_python.../python3.13/asyncio/base_events.py``.
-    Returns the human-relevant suffix (e.g. ``max/python/.../generate.py``
+    Returns the human-relevant suffix (such as ``max/python/.../generate.py``
     or ``asyncio/base_events.py``).
     """
     # Bazel runfiles: ".../<bin>.runfiles/<repo>/<actual path>". Strip the

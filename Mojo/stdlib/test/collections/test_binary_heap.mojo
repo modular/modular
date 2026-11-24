@@ -17,7 +17,7 @@ from std.testing import (
     assert_true,
     TestSuite,
 )
-from std.testing.prop.strategy import SIMD, List
+from std.testing.prop.strategy import List
 from std.collections import BinaryHeap
 
 
@@ -49,7 +49,7 @@ def test_binary_heap_heap_property() raises:
             list.append(heap.pop())
             assert_true(_is_heap(heap, 0, len(heap)))
 
-    PropTest().test[properties](List[Int].strategy(Int.strategy()))
+    PropTest().test(List[Int].strategy(Int.strategy()), properties)
 
 
 def test_binary_heap_peek() raises:

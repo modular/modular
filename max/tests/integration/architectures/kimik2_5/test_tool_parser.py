@@ -909,7 +909,7 @@ def test_combined_grammar_accepts_conforming_json_response(
     consumed = matcher.try_consume_tokens(tokens)
     assert consumed == len(tokens), (
         f"rejected a conforming JSON response at offset "
-        f"{consumed} of {len(tokens)}; error: {matcher.get_error()}"
+        f"{consumed} of {len(tokens)}"
     )
     assert matcher.is_accepting(), (
         "matcher not at an accepting state after a complete "
@@ -966,7 +966,7 @@ def test_combined_grammar_still_accepts_tool_call(
     consumed = matcher.try_consume_tokens(tokens)
     assert consumed == len(tokens), (
         f"rejected a tool call in the combined grammar at offset "
-        f"{consumed} of {len(tokens)}; error: {matcher.get_error()}"
+        f"{consumed} of {len(tokens)}"
     )
     assert matcher.is_accepting(), (
         "matcher not accepting after a complete tool call"

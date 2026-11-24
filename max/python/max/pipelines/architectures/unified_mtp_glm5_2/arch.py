@@ -10,14 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Registers the unified GLM-5.2 MTP draft."""
 
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
-from ..deepseekV3_2.memory_planner import DeepseekV3_2MemoryPlanner
+from ..glm5_1.arch import glm_format_spec
 from ..glm5_1.model_config import Glm5_1Config
 from ..glm5_1.reasoning import (
     GlmReasoningParser,  # noqa: F401  registers "glm45"
@@ -26,7 +26,7 @@ from ..glm5_1.tokenizer import GlmTokenizer
 from ..glm5_1.tool_parser import GlmToolParser  # noqa: F401  registers "glm45"
 from .batch_processor import UnifiedMTPGlm5_2BatchProcessor
 from .model import UnifiedMTPGlm5_2Model
-from .weight_adapters import convert_with_mtp_state_dict
+from .weight_adapters import unified_mtp_glm5_2_weight_rules
 
 unified_mtp_glm5_2_arch = SupportedArchitecture(
     name="UnifiedMTPGlmMoeDsaForCausalLM",
@@ -45,17 +45,18 @@ unified_mtp_glm5_2_arch = SupportedArchitecture(
     tokenizer=GlmTokenizer,
     context_type=TextContext,
     default_weights_format=WeightsFormat.safetensors,
-    weight_adapters={
-        WeightsFormat.safetensors: convert_with_mtp_state_dict,
-    },
+    weight_rules=unified_mtp_glm5_2_weight_rules,
+    use_weight_rules=True,
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=Glm5_1Config,
-    memory_planner=DeepseekV3_2MemoryPlanner,
     batching=UnifiedMTPGlm5_2BatchProcessor,
     tool_parser="glm45",
     reasoning_parser="glm45",
-    default_structured_output_backend="xgrammar",
+    format_spec=glm_format_spec,
+    # The draft layer copies the target's MLA cache params, so it reads the
+    # same NVFP4 layout through the same sparse MLA kernels.
+    supports_nvfp4_kv_cache=True,
     # Matches the base GlmMoeDsaForCausalLM arch; see the rationale there.
     default_structured_output_any_whitespace=True,
 )

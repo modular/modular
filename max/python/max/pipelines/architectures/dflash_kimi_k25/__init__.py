@@ -20,9 +20,13 @@ from the target's MLA layout. Supports tensor-parallel and
 data-parallel device topologies.
 """
 
+from .arch import dflash_kimi_k25_draft_arch
 from .dflash_kimi_k25 import DFlashKimiK25, DFlashKimiK25DraftConfig
+from .model import DFlashKimiK25DraftArchConfig
 
 __all__ = [
     "DFlashKimiK25",
+    "DFlashKimiK25DraftArchConfig",
     "DFlashKimiK25DraftConfig",
+    "dflash_kimi_k25_draft_arch",
 ]

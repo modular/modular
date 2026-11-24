@@ -454,8 +454,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--prefer-module-v3",
         action="store_true",
         help=(
-            "Whether to prefer the eager API architecture over the graph API "
-            "architecture. When set, the server uses the eager API architecture "
+            "Whether to prefer the ModuleV3 architecture over the graph API "
+            "architecture. When set, the server uses the ModuleV3 architecture "
             "when available and falls back to the graph API architecture."
         ),
     )
@@ -856,6 +856,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
                 )
 
             field_info = MAXModelConfig.model_fields[field_name]
+            assert field_info.annotation is not None
             adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
             try:
                 parsed = json.loads(raw_value)

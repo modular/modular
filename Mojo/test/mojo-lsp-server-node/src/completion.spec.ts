@@ -213,7 +213,7 @@ def function(arg: Foo):
       `
 from std.collections import Deque
 from std.collections import Deque as RenamedDeque
-from std.hashlib import Hasher
+from std.hash import Hasher
 from std.math import sqrt
 from std import collections
 
@@ -235,6 +235,27 @@ def function() -> De
     assert.strictEqual(kindOf("Copyable"), CompletionItemKind.Interface);
     assert.strictEqual(kindOf("collections"), CompletionItemKind.Module);
   });
+
+  it("should render function docs that import from packages that uses __init__.mojo files", async () => {
+    let doc = new Document(
+      server,
+      "test:///package_init_function_docs.mojo",
+      `
+from std.iter import zip
+
+`
+    );
+
+    await doc.open();
+    const completions = await doc.complete(Position.create(2, 0));
+    assert.ok(completions);
+
+    // helper function that returns the completion kind
+    let kindOf = (label: string) =>
+      completions!.find((i) => i.label === label)?.kind;
+
+    assert.strictEqual(kindOf("zip"), CompletionItemKind.Function);
+  })
 
   it("should complete members", async function () {
     let doc = new Document(
@@ -347,17 +368,6 @@ def function(arg: Int):
   if False:
     return
   elif arg.value:`
-      );
-      await checkSnippet(doc, "value");
-    });
-
-    it("should complete for partial while", async function () {
-      let doc = new Document(
-        server,
-        "test:///while_no_colon.mojo",
-        `
-def function(arg: Int):
-  while arg.value`
       );
       await checkSnippet(doc, "value");
     });

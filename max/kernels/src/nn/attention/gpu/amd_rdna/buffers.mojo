@@ -15,25 +15,24 @@
 Wave32 WMMA fragment geometry:
   A/B per lane = 16 elements (full K; lanes 0-15 unique, 16-31 replicate)
   C/D per lane = 8 elements (M*N / WARP = 256 / 32)
-  Lane->C/D map: lane l, elem v -> D[row = v*2 + l//16, col = l%16]
+  Lane->C/D map: lane l, elem v -> D[row = wmma_acc_row(v, l//16), col = l%16]
 """
 
 from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import umod
-from std.sys import simd_width_of
+from std.sys import align_of, simd_width_of
 
 from max.gpu import lane_id, warp_id as get_warp_id
-from layout import TensorLayout, TileTensor
+from layout import Coord, TensorEngine, TensorLayout, TileTensor
 from layout.tensor_core import TiledTensorCore
-from layout.tile_layout import row_major
+from layout.layout import row_major
 from layout.tile_tensor import stack_allocation as tt_stack_allocation
 from structured_kernels.amd_tile_io import RegTileLoader
 
-from std.utils import IndexList
 
 from .config import RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K
-from .utils import get_warp_coords, pad
+from .utils import get_warp_coords, pad, wmma_acc_row
 
 comptime RDNA_WARP_SIZE = 32
 comptime RDNA_AB_FRAG_SIZE = 16
@@ -48,6 +47,7 @@ comptime RDNA_CD_FRAG_SIZE = 8
 struct KBufferRDNA[
     cache_dtype: DType,
     gmem_layout: TensorLayout,
+    Engine: TensorEngine,
     //,
     tensor_core_mma: TiledTensorCore,
     BN: Int,
@@ -136,18 +136,21 @@ struct KBufferRDNA[
     # DRAM tile + strip iterator state.
     @__allow_legacy_any_origin_fields
     var gmem_tile: TileTensor[
-        Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
+        Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin, Engine=Self.Engine
     ]
     var strip_idx: Int
     var load_tile_id: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         gmem_tile: TileTensor[
-            Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
+            Self.cache_dtype,
+            Self.gmem_layout,
+            ImmutAnyOrigin,
+            Engine=Self.Engine,
         ],
-        shared_ptr: UnsafePointer[
+        shared_ptr: MutPointer[
             Scalar[Self.cache_dtype], MutAnyOrigin, address_space=.SHARED
         ],
     ):
@@ -162,12 +165,12 @@ struct KBufferRDNA[
         self.strip_idx = 0
         self.load_tile_id = 0
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def get_dtype() -> DType:
         return Self._dtype
 
-    @always_inline
+    @inline(.always)
     def load_from_dram(mut self):
         """Load the next BK strip of K from DRAM into the staging
         register slot. The gmem_tile's runtime row count drives SRD
@@ -186,11 +189,11 @@ struct KBufferRDNA[
         self.strip_idx += 1
         self.load_tile_id = (self.load_tile_id + 1) % Self.num_stages
 
-    @always_inline
+    @inline(.always)
     def get_mma_tile(self) -> Self.MMATileType:
         return self.mma_tile
 
-    @always_inline
+    @inline(.always)
     def copy_to_shared[tile_id: Int = 0](self):
         """Write the staging register slot `tile_id` to LDS, distributing
         the (BN, BK) tile across threads using the same row_major(
@@ -208,8 +211,7 @@ struct KBufferRDNA[
         if Int(tid) >= num_busy:
             return
 
-        var tr = Int(tid) // Self._thread_cols
-        var tc = Int(tid) % Self._thread_cols
+        var tr, tc = divmod(Int(tid), Self._thread_cols)
 
         var src = self.load_tile.tile[Self._per_stage_rows, Self.simd_width](
             tile_id, 0
@@ -221,7 +223,7 @@ struct KBufferRDNA[
             comptime for j in range(Self.simd_width):
                 self.smem_tile[smem_row, smem_col + j] = src[i, j]
 
-    @always_inline
+    @inline(.always)
     def load_from_shared[k_mma: Int](self):
         """SMEM->fragment, wave-cooperative.
 
@@ -252,6 +254,7 @@ struct KBufferRDNA[
 struct VBufferRDNA[
     cache_dtype: DType,
     gmem_layout: TensorLayout,
+    Engine: TensorEngine,
     //,
     tensor_core_mma: TiledTensorCore,
     BN: Int,
@@ -355,19 +358,22 @@ struct VBufferRDNA[
     # `strip_idx` over BK strips internally on each load_from_dram.
     @__allow_legacy_any_origin_fields
     var gmem_tile: TileTensor[
-        Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
+        Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin, Engine=Self.Engine
     ]
     var strip_idx: Int
     var current_stage: Int
     var remaining_rows: Int
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
         gmem_tile: TileTensor[
-            Self.cache_dtype, Self.gmem_layout, ImmutAnyOrigin
+            Self.cache_dtype,
+            Self.gmem_layout,
+            ImmutAnyOrigin,
+            Engine=Self.Engine,
         ],
-        shared_ptr: UnsafePointer[
+        shared_ptr: MutPointer[
             Scalar[Self.cache_dtype], MutAnyOrigin, address_space=.SHARED
         ],
         total_rows: OptionalReg[Int] = None,
@@ -389,25 +395,27 @@ struct VBufferRDNA[
         self.gmem_tile = gmem_tile
         self.strip_idx = 0
         self.current_stage = 0
-        self.remaining_rows = total_rows.value() if total_rows else Int.MAX
+        self.remaining_rows = total_rows.or_else(Int.MAX)
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def get_dtype() -> DType:
         return Self._dtype
 
-    @always_inline
+    @inline(.always)
     @staticmethod
     def pad[dim: Int]() -> Int:
         return pad[Self.cache_dtype, Self.depth, dim]()
 
-    @always_inline
+    @inline(.always)
     def load_from_dram(mut self):
         """Load the next BK strip of V from DRAM into the staging
         register slot. Per-thread chunks are bounds-clamped via
         `remaining_rows` for the unaligned tail tile."""
-        var strip = self.gmem_tile.tile[Self.BK, Self.depth](self.strip_idx, 0)
         var stride = Self.gmem_layout.static_stride[0]
+        var strip = self.gmem_tile.tile[Self.BK, Self.depth](
+            self.strip_idx, 0
+        ).reshape(row_major(Self.BK * stride))
         var warp = get_warp_id()
 
         var load_tile = self.load_tile.tile[
@@ -438,9 +446,10 @@ struct VBufferRDNA[
                     )
                     src_col += depth_idx * Self.depth_tile_size
                     var offset = Int(src_row) * stride + Int(src_col)
-                    var data = (strip.ptr + offset).load[
-                        width=Self.load_width
-                    ]()
+                    var data = strip.load[
+                        width=Self.load_width,
+                        alignment=align_of[Self.cache_dtype](),
+                    ](Coord(offset))
                     comptime for j in range(Self.load_width):
                         load_tile[dst_idx, j] = data[j]
                 else:
@@ -451,11 +460,11 @@ struct VBufferRDNA[
         self.remaining_rows -= Self.BK
         self.current_stage = (self.current_stage + 1) % Self.num_stages
 
-    @always_inline
+    @inline(.always)
     def get_mma_tile(self) -> Self.MMATileType:
         return self.mma_tile
 
-    @always_inline
+    @inline(.always)
     def copy_to_shared[tile_id: Int = 0](self):
         """V transpose-on-write: smem[depth_pos, seq_pos] from
         load_tile[seq_pos, depth_pos] (with depth_pos blocked into
@@ -509,7 +518,7 @@ struct VBufferRDNA[
                     ]
                     self.smem_tile[smem_row, Int(smem_col)] = val
 
-    @always_inline
+    @inline(.always)
     def load_from_shared[k_mma: Int](self):
         """SMEM->fragment, wave-cooperative.
 
@@ -562,7 +571,7 @@ struct VBufferRDNA[
 
 struct QRegisterBufferRDNA[
     dtype: DType,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     k_group_size: Int,
     WM: Int,
     WN: Int,
@@ -575,8 +584,7 @@ struct QRegisterBufferRDNA[
 
     Parameters:
         dtype: Element type of the Q tensor and register fragments.
-        mma_shape: `(M, N, K)` shape of a single MMA instruction as an
-            `IndexList[3]`.
+        mma_shape: `(M, N, K)` shape of a single MMA instruction.
         k_group_size: Grouping factor for the MMA K dimension.
         WM: M (query) tile height owned by each warp, in elements.
         WN: N tile width owned by each warp, in elements.
@@ -618,16 +626,19 @@ struct QRegisterBufferRDNA[
     var reg_tile: Self.RegisterTileType
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_dtype() -> DType:
         return Self.reg_dtype
 
-    @always_inline
+    @inline(.always)
     def __init__[
-        q_layout: TensorLayout
+        q_layout: TensorLayout,
+        q_engine: TensorEngine,
     ](
         out self,
-        tensor: TileTensor[Self.dtype, q_layout, ImmutAnyOrigin],
+        tensor: TileTensor[
+            Self.dtype, q_layout, ImmutAnyOrigin, Engine=q_engine
+        ],
         valid_rows: Int,
     ):
         """Load each warp's Q sub-tile from DRAM into register MMA
@@ -635,6 +646,7 @@ struct QRegisterBufferRDNA[
 
         Parameters:
             q_layout: `TensorLayout` of the Q tensor in DRAM (inferred).
+            q_engine: `TensorEngine` of the Q tensor in DRAM (inferred).
 
         Args:
             tensor: DRAM Q tile in `q_layout`.
@@ -656,6 +668,7 @@ struct QRegisterBufferRDNA[
 
         comptime stride = q_layout.static_stride[0]
         var warp_offset = warp_base_row * stride
+        var q_flat = tensor.reshape(row_major(tensor.num_elements()))
 
         comptime for tile_idx in range(Self.num_tiles):
             var depth_offset = tile_idx * Self.BK
@@ -675,13 +688,15 @@ struct QRegisterBufferRDNA[
 
                     if row < (valid_rows - Int(warp_base_row)):
                         var offset0 = warp_offset + row_offset + k_offset
-                        var data0 = (tensor.ptr + offset0).load[
-                            width=Self.simd_width
-                        ]()
+                        var data0 = q_flat.load[
+                            width=Self.simd_width,
+                            alignment=align_of[Self.dtype](),
+                        ](Coord(offset0))
                         var offset1 = offset0 + Self.simd_width
-                        var data1 = (tensor.ptr + offset1).load[
-                            width=Self.simd_width
-                        ]()
+                        var data1 = q_flat.load[
+                            width=Self.simd_width,
+                            alignment=align_of[Self.dtype](),
+                        ](Coord(offset1))
                         comptime for j in range(Self.simd_width):
                             self.reg_tile[frag_idx, j] = data0[j]
                             self.reg_tile[
@@ -692,7 +707,7 @@ struct QRegisterBufferRDNA[
                             self.reg_tile[frag_idx, j] = 0
                             self.reg_tile[frag_idx, Self.simd_width + j] = 0
 
-    @always_inline
+    @inline(.always)
     def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         """MMA fragment for the `tile_idx`-th depth tile, `k_idx`-th K
         strip within it.
@@ -707,11 +722,11 @@ struct QRegisterBufferRDNA[
             ](tile_idx, 0).tile[Self.num_mmas, Self.rdna_frag_size](k_idx, 0)
         )
 
-    @always_inline
+    @inline(.always)
     def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
-    @always_inline
+    @inline(.always)
     def zero(self):
         _ = self.reg_tile.fill(0)
 
@@ -752,22 +767,22 @@ struct OutputRegisterBufferRDNA[
     @__allow_legacy_any_origin_fields
     var reg_tile: Self.RegisterTileType
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self.reg_tile = tt_stack_allocation[Self.dtype, address_space=.LOCAL](
             Self.reg_tile_layout
         )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_dtype() -> DType:
         return Self.reg_dtype
 
-    @always_inline
+    @inline(.always)
     def zero(self):
         _ = self.reg_tile.fill(0)
 
-    @always_inline
+    @inline(.always)
     def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
@@ -787,7 +802,7 @@ struct PRegisterBufferRDNA[
     WN: Int,
     num_m_mmas: Int,
     num_n_mmas: Int,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     k_group_size: Int,
 ]:
     """P register buffer (post-softmax scores). Holds the accumulator
@@ -805,8 +820,7 @@ struct PRegisterBufferRDNA[
         WN: N tile width owned by each warp, in elements.
         num_m_mmas: Number of MMA tiles along the M axis per warp.
         num_n_mmas: Number of MMA tiles along the N axis per warp.
-        mma_shape: `(M, N, K)` shape of a single MMA instruction as an
-            `IndexList[3]`.
+        mma_shape: `(M, N, K)` shape of a single MMA instruction.
         k_group_size: Grouping factor for the MMA K dimension.
     """
 
@@ -838,14 +852,14 @@ struct PRegisterBufferRDNA[
     var reg_tile: Self.RegisterTileType
 
     @__allow_legacy_any_origin_fields
-    var shared_memory_ptr: UnsafePointer[
+    var shared_memory_ptr: MutPointer[
         Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
     ]
 
-    @always_inline
+    @inline(.always)
     def __init__(
         out self,
-        shared_ptr: UnsafePointer[
+        shared_ptr: MutPointer[
             Scalar[Self.dtype], MutAnyOrigin, address_space=.SHARED
         ],
     ):
@@ -854,7 +868,7 @@ struct PRegisterBufferRDNA[
         ](Self.reg_tile_layout)
         self.shared_memory_ptr = shared_ptr
 
-    @always_inline
+    @inline(.always)
     def get_mma_tile[tile_idx: Int, k_idx: Int](self) -> Self.MMATileType:
         """Load one MMA fragment from the SMEM-staged P scores. SMEM is
         keyed as `key * BM + seq`; each lane reads its (seq, key) slot.
@@ -883,19 +897,19 @@ struct PRegisterBufferRDNA[
         return mma_reg_tile
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def get_dtype() -> DType:
         return Self.mma_dtype
 
-    @always_inline
+    @inline(.always)
     def zero(self):
         _ = self.reg_tile.fill(0)
 
-    @always_inline
+    @inline(.always)
     def get_reg_tile[stage: Int = 0](self) -> Self.RegisterTileType:
         return self.reg_tile
 
-    @always_inline
+    @inline(.always)
     def copy_to_shared[chunk_idx: Int](self):
         """Cast accumulator → dtype and write the `chunk_idx`-th BK
         chunk of P to SMEM. Only the warp that owns that chunk
@@ -943,9 +957,9 @@ struct PRegisterBufferRDNA[
 
                 comptime for elem in range(reg_per_thread):
                     # RDNA WMMA C/D mapping: lane l, elem v ->
-                    # D[row=v*2+l//16, col=l%16].
-                    # P^T[key, seq]: key = elem*2 + lane_key_group.
-                    var key_in_mma = elem * 2 + Int(lane_key_group)
+                    # D[row=wmma_acc_row(v, l//16), col=l%16].
+                    # P^T[key, seq]: key = wmma_acc_row(elem, lane_key_group).
+                    var key_in_mma = wmma_acc_row(elem, Int(lane_key_group))
                     var global_key = mma_key_base + key_in_mma
 
                     var smem_offset = global_key * Self.BM + global_seq

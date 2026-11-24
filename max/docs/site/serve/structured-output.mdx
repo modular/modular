@@ -1,0 +1,393 @@
+---
+title: Structured output
+description: Enable structured output to constrain model responses to a specified format
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+
+MAX supports structured output through constrained decoding with
+[XGrammar](https://github.com/mlc-ai/xgrammar). Structured output constrains
+model responses to a specified format, such as a JSON schema, so applications
+can process predictable, structured data.
+
+:::note
+
+Learn more about
+[structured output](https://handbook.modular.com/model-interaction/structured-outputs/)
+in the LLM Inference Handbook.
+
+:::
+
+## Quickstart
+
+To use structured output, serve a text generation model with the
+`--enable-structured-output` flag. Structured output requires a GPU deployment.
+
+```bash
+max serve \
+  --model "google/gemma-4-31B-it" \
+  --enable-structured-output
+```
+
+Once the server is running, you can request structured output through the
+[`/v1/chat/completions`](/rest-api/create-chat-completion/) endpoint in the
+`response_format` field. If you start the server without the
+`--enable-structured-output` flag, the server rejects requests that use a JSON
+`response_format`.
+
+## Choose an output format
+
+MAX supports two JSON output formats through the `response_format` parameter:
+
+- **[JSON Schema](https://json-schema.org/overview/what-is-jsonschema)**
+  (`json_schema`): Constrains the response to match a schema you define. Use
+  this when your application expects specific fields and data types.
+
+- **JSON object** (`json_object`): Constrains the response to valid JSON
+  without requiring a specific schema. Use this when you need valid JSON but
+  don't need to enforce a particular structure.
+
+For production applications that depend on a predictable response structure,
+use JSON Schema. If you're working in Python, you can define the schema with
+Pydantic instead of writing JSON Schema directly.
+
+## Send a request
+
+If you want the response to match a certain schema, you can define the schema
+directly with JSON Schema or use Pydantic in Python. If you only need valid
+JSON, request a [JSON object](#json-object).
+
+:::tip
+
+You can increase the accuracy of structured output responses by mentioning JSON
+output specifications in your system prompt.
+
+:::
+
+### JSON Schema
+
+The following example sends a request for structured output with a JSON schema
+in the `response_format` field:
+
+<Tabs>
+
+<TabItem value="python" label="Python">
+
+```python title="structured-image-description.py"
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+response = client.chat.completions.create(
+    model="google/gemma-4-31B-it",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are an assistant that analyzes images and returns structured descriptions.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Analyze this image and describe what you see.",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+                    },
+                },
+            ],
+        },
+    ],
+    max_completion_tokens=300,
+    response_format={
+        "type": "json_schema",
+        "json_schema": {
+            "name": "ImageAnalysis",
+            "schema": {
+                "type": "object",
+                "properties": {
+                    "description": {"type": "string"},
+                    "subjects": {"type": "array", "items": {"type": "string"}},
+                    "colors": {"type": "array", "items": {"type": "string"}},
+                    "setting": {"type": "string"},
+                    "mood": {"type": "string"},
+                },
+                "required": [
+                    "description",
+                    "subjects",
+                    "colors",
+                    "setting",
+                    "mood",
+                ],
+                "additionalProperties": False,
+            },
+        },
+    },
+)
+
+print(response.choices[0].message.content)
+```
+
+</TabItem>
+<TabItem value="curl" label="curl">
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "google/gemma-4-31B-it",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are an assistant that analyzes images and returns structured descriptions."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Analyze this image and describe what you see."
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+            }
+          }
+        ]
+      }
+    ],
+    "max_completion_tokens": 300,
+    "response_format": {
+      "type": "json_schema",
+      "json_schema": {
+        "name": "ImageAnalysis",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "description": { "type": "string" },
+            "subjects": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "colors": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "setting": { "type": "string" },
+            "mood": { "type": "string" }
+          },
+          "required": ["description", "subjects", "colors", "setting", "mood"],
+          "additionalProperties": false
+        }
+      }
+    }
+  }'
+```
+
+</TabItem>
+</Tabs>
+
+Instead of a typical text response from the model, the `response_format` schema
+defined above results in a JSON-formatted structured output such as the
+following:
+
+```output
+{
+  "description": "A full-body shot of Peter Rabbit, the fictional character, standing on a dirt path. He is dressed in a blue jacket with brass buttons over a white shirt and a small yellow tie. He also wears brown pants and appears to be holding a small basket. The background consists of a rustic stone house with a thatched roof, a winding dirt road, green fields, and rolling hills under a bright sky. Wildflowers in shades of purple and white line the path in the foreground.",
+  "subjects": [
+    "rabbit",
+    "house",
+    "path",
+    "fields",
+    "hills",
+    "flowers",
+    "basket"
+  ],
+  "colors": [
+    "blue",
+    "brown",
+    "green",
+    "white",
+    "yellow",
+    "purple"
+  ],
+  "setting": "Rural countryside",
+  "mood": "Whimsical, charming, idyllic"
+}
+```
+
+### Pydantic
+
+For production Python code, you can define your structured output using
+[Pydantic](https://docs.pydantic.dev/latest/install/). This gives you type-safe
+attribute access and automatic validation instead of manually parsing JSON
+strings.
+
+Here's an example using a Pydantic
+[`BaseModel`](https://docs.pydantic.dev/latest/api/base_model/) to analyze an
+image and return a validated response:
+
+```python title="structured-image-analysis.py"
+from openai import OpenAI
+from pydantic import BaseModel
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+
+class ImageAnalysis(BaseModel):
+    description: str
+    subjects: list[str]
+    colors: list[str]
+    setting: str
+    mood: str
+
+
+completion = client.chat.completions.parse(
+    model="google/gemma-4-31B-it",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are an assistant that analyzes images and returns structured descriptions.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Analyze this image and describe what you see.",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+                    },
+                },
+            ],
+        },
+    ],
+    max_completion_tokens=300,
+    response_format=ImageAnalysis,
+)
+
+analysis = completion.choices[0].message.parsed
+print(analysis)
+```
+
+### JSON object
+
+To request valid JSON without defining a schema, set `response_format` to
+`{"type": "json_object"}`. MAX constrains the response to a JSON object, but
+the model chooses its keys and values. Describe the fields you want in your
+prompt.
+
+<Tabs>
+
+<TabItem value="python" label="Python">
+
+```python title="json-object-image-description.py"
+from openai import OpenAI
+
+client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+response = client.chat.completions.create(
+    model="google/gemma-4-31B-it",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are an assistant that analyzes images and returns structured descriptions as JSON.",
+        },
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Analyze this image. Include a description, a list of subjects, and a list of colors.",
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+                    },
+                },
+            ],
+        },
+    ],
+    max_completion_tokens=300,
+    response_format={"type": "json_object"},
+)
+
+print(response.choices[0].message.content)
+```
+
+</TabItem>
+<TabItem value="curl" label="curl">
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "google/gemma-4-31B-it",
+    "messages": [
+      {
+        "role": "system",
+        "content": "You are an assistant that analyzes images and returns structured descriptions as JSON."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Analyze this image. Include a description, a list of subjects, and a list of colors."
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://huggingface.co/datasets/huggingface/documentation-images/resolve/0052a70beed5bf71b92610a43a52df6d286cd5f3/diffusers/rabbit.jpg"
+            }
+          }
+        ]
+      }
+    ],
+    "max_completion_tokens": 300,
+    "response_format": { "type": "json_object" }
+  }'
+```
+
+</TabItem>
+</Tabs>
+
+## Validate responses
+
+Structured output constrains the format of generated responses, but a response
+that conforms to a schema isn't necessarily correct for your use case. Test
+the generated values as well as the response structure.
+
+If a response doesn't meet your expectations, check the following:
+
+- **Request configuration:** Confirm that structured output is enabled with
+  `--enable-structured-output` and that the request uses a supported
+  `response_format`.
+- **Schema:** Verify that the schema is valid and supported. If a request
+  fails, start with a minimal schema and add constraints incrementally to
+  isolate the problem.
+- **Response content:** Check that generated values meet your application's
+  requirements. Use Pydantic or another validation library to enforce
+  constraints beyond the output schema.
+- **Model behavior:** Test representative inputs and edge cases against each
+  model you intend to deploy. Structured output behavior can vary with model
+  training.
+
+## Next steps
+
+Next, try processing local image files or deploying to the cloud.
+
+- [Image and video to text](/serve/image-to-text): Use the MAX chat
+  completions endpoint with image or video input to generate descriptions and
+  answer questions about visual content.
+- [Deploy MAX on GPU with self-hosted endpoints](/serve/local-to-cloud):
+  Learn how to deploy MAX pipelines to the cloud.

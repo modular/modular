@@ -4,5 +4,5 @@
 // expected-note @below {{see current operation}}
 // expected-error @below {{during header emission for this function}}
 kgen.func export @kernel(%a: f128) cabi -> f128 {
-  kgen.return %a : f128
+  hlcf.return %a : f128
 }

@@ -6,7 +6,7 @@
 #loc = loc("foo.mlir":7:8)
 
 kgen.func @foo() {
-  kgen.return
+  hlcf.return
 // CHECK: foo.mlir:7:8: error: 'kgen.func' op must have subprogram scope in location, but got #debuginfo.file<"test.mlir" in "">
 } loc(fused<#file>[#loc])
 
@@ -16,7 +16,7 @@ kgen.func @foo() {
 #loc = loc("foo.mlir":7:8)
 
 kgen.generator @foo() {
-  kgen.return
+  hlcf.return
 // CHECK: foo.mlir:7:8: error: 'kgen.generator' op must have subprogram scope in location, but got #debuginfo.file<"test.mlir" in "">
 } loc(fused<#file>[#loc])
 
@@ -27,8 +27,8 @@ kgen.generator @foo() {
 #loc = loc("foo.mlir":7:8)
 
 kgen.func @foo() {
-  // CHECK: error: 'kgen.return' op missing source location scope
-  kgen.return
+  // CHECK: error: 'hlcf.return' op missing source location scope
+  hlcf.return
 } loc(fused<#subprogram>[#loc])
 
 // -----
@@ -39,8 +39,8 @@ kgen.func @foo() {
 #loc = loc("foo.mlir":7:8)
 
 kgen.func @foo() {
-  // CHECK: foo.mlir:7:8: error: 'kgen.return' op location scope does not match scope of parent func location
-  kgen.return loc(fused<#file>[#loc])
+  // CHECK: foo.mlir:7:8: error: 'hlcf.return' op location scope does not match scope of parent func location
+  hlcf.return loc(fused<#file>[#loc])
 } loc(fused<#subprogram>[#loc])
 
 // -----
@@ -53,8 +53,8 @@ kgen.func @foo() {
 #callsite = loc(callsite(#loc1 at #loc))
 
 kgen.func @foo() {
-  // CHECK: bar.mlir:5:6: error: 'kgen.return' op missing source location scope
-  kgen.return loc(callsite(#loc1 at #callsite))
+  // CHECK: bar.mlir:5:6: error: 'hlcf.return' op missing source location scope
+  hlcf.return loc(callsite(#loc1 at #callsite))
 } loc(#funcLoc)
 
 // -----
@@ -85,37 +85,18 @@ kgen.func @foo() {
 kgen.func @foo() {
   // CHECK: foo.mlir:7:8: error: 'kgen.param.constant' op contains inconsistent scopes in fused location
   %index1 = kgen.param.constant = <1> loc(callsite(#loc at fused[#loc1, #funcLoc]))
-  kgen.return loc(#funcLoc)
+  hlcf.return loc(#funcLoc)
 } loc(#funcLoc)
 
 // -----
 
-#subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-#subprogram1 = #debuginfo.subprogram<sourceName = <"SomeClosure">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
-
-#loc1 = loc("foo.mlir":44:1)
-#loc2 = loc("foo.mlir":325:11)
-#loc4 = loc(fused<#subprogram>[#loc1])
-#loc5 = loc(fused<#subprogram1>[#loc2])
-
-kgen.func @foo() {
-  %0 = kgen.stage_closure = () {
-    kgen.return loc(#loc5)
-  // CHECK: foo.mlir:325:11: error: 'kgen.stage_closure' op must have callsite location
-  } loc(#loc5)
-  kgen.call_indirect %0() : () -> () loc(#loc4)
-  kgen.return loc(#loc4)
-} loc(#loc4)
-
-// -----
-
 #loc1 = loc("foo.mlir":44:1)
 #loc2 = loc("foo.mlir":325:11)
 #subprogram = #debuginfo.subprogram<sourceName = <"foo">> : !debuginfo.subroutine<() -> (): DW_CC_normal>
 #loc4 = loc(fused<#subprogram>[#loc1])
 
 kgen.func @foo() {
-  kgen.return
+  hlcf.return
 // CHECK: foo.mlir:44:1: error: 'kgen.func' op without debuginfo scope must contain only file/line/col location
 } loc(callsite(#loc4 at #loc2))
 
@@ -138,7 +119,7 @@ kgen.func @foo() {
 #loc2 = loc("foo.mlir":325:11)
 
 kgen.func @foo() {
-  kgen.return
+  hlcf.return
 // CHECK: foo.mlir:44:1: error: 'kgen.func' op must contain exactly one location
 } loc(fused<#subprogram>[#loc1, #loc2])
 
@@ -151,6 +132,6 @@ kgen.func @foo() {
 #loc3 = loc(callsite(#loc1 at #loc2))
 
 kgen.func @foo() {
-  kgen.return
+  hlcf.return
 // CHECK: foo.mlir:44:1: error: 'kgen.func' op must contain only file/line/col location
 } loc(fused<#subprogram>[#loc3])

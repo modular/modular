@@ -141,8 +141,8 @@ def POP_IntLiteralAttr : POP_ExprAttr<"IntLiteral", "int_literal"> {
 
 def POP_IntLiteralConvertAttr : POP_ExprAttr<"IntLiteralConvert",
                                              "int_literal_convert", [
-    DeclareAttrInterfaceMethods<ParameterAttrInterface,
-                                ["validateForElaborator"]>]> {
+    DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                ["evaluateWithContext"]>]> {
   let summary = "Convert an integer literal to a different type.";
   let description = [{
     The `#pop.int_literal_convert` attribute is used to convert an integer
@@ -315,8 +315,8 @@ def POP_FloatLiteralIsaAttr : POP_ExprAttr<"FloatLiteralIsa",
 
 def POP_FloatLiteralConvertAttr : POP_ExprAttr<"FloatLiteralConvert",
                                                "float_literal_convert", [
-    DeclareAttrInterfaceMethods<ParameterAttrInterface,
-                                ["validateForElaborator"]>]> {
+    DeclareAttrInterfaceMethods<ContextuallyEvaluatedAttrInterface,
+                                ["evaluateWithContext"]>]> {
   let summary = "Convert an float literal to a different type.";
   let description = [{
     The `#pop<float_literal_convert` attribute is used to convert an float

@@ -10,30 +10,100 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Maps Gemma 3 checkpoints onto the ModuleV3 module tree."""
 
 from __future__ import annotations
 
-from max.graph.weights import WeightData, Weights
+from collections.abc import Sequence
 
-# Maps from Safetensor to MAX weight names.
-GEMMA3_SAFETENSOR_MAP: dict[str, str] = {
-    "model.embed_tokens.": "language_model.embed_tokens.",
-    "model.norm.": "language_model.norm.",
-    "lm_head.": "language_model.lm_head.",
-    "model.layers.": "language_model.layers.",
+from max.graph.weights import WeightData, Weights
+from max.pipelines.lib import WeightRenaming, WeightRule
+from transformers import PretrainedConfig
+
+
+def gemma3_weight_rules(
+    huggingface_config: PretrainedConfig,
+) -> Sequence[WeightRule]:
+    """Returns the rules that map a Gemma 3 checkpoint onto the decoder.
+
+    Args:
+        huggingface_config: The checkpoint's config.
+    """
+    del huggingface_config
+    return (
+        WeightRenaming(r"^model\.", "language_model."),
+        WeightRenaming(r"^lm_head\.", "language_model.lm_head."),
+    )
+
+
+# V3 language model mapping: compiled from root Gemma3LanguageModel,
+# which has self.language_model = Gemma3TextModel(...).
+# HF "language_model.model.X" → V3 "language_model.X"
+# HF "language_model.lm_head.X" → V3 "language_model.lm_head.X" (unchanged)
+GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
+    "language_model.model.": "language_model.",
+}
+
+# V3 vision model mapping: compiled from root Gemma3VisionModel,
+# which has self.embeddings, self.encoder, self.post_layernorm, self.projector.
+GEMMA3_VISION_SAFETENSOR_MAP: dict[str, str] = {
+    "vision_tower.vision_model.": "",
+    "multi_modal_": "",
 }
 
 
-def convert_safetensor_state_dict(
-    state_dict: dict[str, Weights], **unused_kwargs
+def convert_safetensor_language_state_dict(
+    state_dict: dict[str, Weights],
 ) -> dict[str, WeightData]:
+    """Convert safetensor state dict to MAX format for the V3 language model."""
     new_state_dict: dict[str, WeightData] = {}
 
-    # Remap HuggingFace -> MAX-style names
     for weight_name, value in state_dict.items():
+        if weight_name.startswith("language_model."):
+            max_name = weight_name
+            for before, after in GEMMA3_LANGUAGE_SAFETENSOR_MAP.items():
+                max_name = max_name.replace(before, after)
+            new_state_dict[max_name] = value.data()
+
+    return new_state_dict
+
+
+def convert_safetensor_vision_state_dict(
+    state_dict: dict[str, Weights],
+) -> dict[str, WeightData]:
+    """Convert safetensor state dict to MAX format for the V3 vision model."""
+    new_state_dict: dict[str, WeightData] = {}
+
+    for weight_name, value in state_dict.items():
+        if not weight_name.startswith(
+            "vision_tower.vision_model."
+        ) and not weight_name.startswith("multi_modal_"):
+            continue
+
         max_name = weight_name
-        for before, after in GEMMA3_SAFETENSOR_MAP.items():
+        for before, after in GEMMA3_VISION_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
+
         new_state_dict[max_name] = value.data()
 
     return new_state_dict
+
+
+def convert_registered_state_dict(
+    state_dict: dict[str, Weights], **unused_kwargs
+) -> dict[str, WeightData]:
+    """Maps the checkpoint into disjoint decoder and vision namespaces."""
+    return {
+        **{
+            f"decoder.{name}": value
+            for name, value in convert_safetensor_language_state_dict(
+                state_dict
+            ).items()
+        },
+        **{
+            f"vision.{name}": value
+            for name, value in convert_safetensor_vision_state_dict(
+                state_dict
+            ).items()
+        },
+    }

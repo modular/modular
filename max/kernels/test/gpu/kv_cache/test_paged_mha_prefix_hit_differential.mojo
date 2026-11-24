@@ -90,12 +90,11 @@ from std.random import randn, seed
 from std.testing import assert_equal, assert_true
 
 from max.gpu.host import DeviceContext, HostBuffer
-from std.utils import IndexList
 from std.utils.numerics import nan
 
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
 from kv_cache_test_utils import padded_lut_cols
-from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from layout import Coord, Idx, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention
 from nn.attention.mha_mask import CausalMask
 
@@ -154,8 +153,7 @@ def _run_paged_mha[
     for i in range(kv_block_size):
         kv_host[i] = Scalar[dtype](0)
     for tok in range(phys_tokens):
-        var lblk = tok // PAGE_SIZE
-        var off = tok % PAGE_SIZE
+        var lblk, off = divmod(tok, PAGE_SIZE)
         var page = lut[lblk]
         var is_valid = tok < total_keys
         for kh in range(head_kv):
@@ -211,51 +209,48 @@ def _run_paged_mha[
     ctx.enqueue_copy(dst_buf=lut_dev, src_buf=lut_host)
     ctx.enqueue_copy(dst_buf=ro_dev, src_buf=ro_host)
 
-    comptime kv_block_layout = Layout.row_major[6]()
-    var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
-        kv_block_dev,
-        RuntimeLayout[kv_block_layout].row_major(
-            IndexList[6](num_pages, 2, NUM_LAYERS, PAGE_SIZE, head_kv, head_dim)
-        ),
-    )
-    comptime cl_layout = Layout(UNKNOWN_VALUE)
-    var cl_tensor = LayoutTensor[mut=False, .uint32, cl_layout](
-        cl_dev, RuntimeLayout[cl_layout].row_major(IndexList[1](1))
-    )
-    comptime lut_layout = Layout.row_major[2]()
-    var lut_tensor = LayoutTensor[mut=False, .uint32, lut_layout](
-        lut_dev, RuntimeLayout[lut_layout].row_major(IndexList[2](1, lut_cols))
-    )
-
-    var kv_collection = PagedKVCacheCollection[
+    comptime Collection = PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(num_heads=head_kv, head_size=head_dim),
         PAGE_SIZE,
-    ](
-        kv_block_tensor.as_unsafe_any_origin(),
+        MutAnyOrigin,
+        ImmutAnyOrigin,
+        ImmutAnyOrigin,
+        MutAnyOrigin,
+    ]
+    comptime BlocksLayout = Collection.blocks_tt_layout
+    var blocks_shape = Coord[*BlocksLayout.shape_types]()
+    blocks_shape[0] = Int64(num_pages)
+    blocks_shape[2] = Int64(NUM_LAYERS)
+    var blocks_strides = Coord[*BlocksLayout.stride_types]()
+    blocks_strides[1] = blocks_shape[2] * Int64(blocks_strides[2].value())
+    blocks_strides[0] = Int64(blocks_shape[1].value()) * blocks_strides[1]
+    var kv_block_tensor = TileTensor(
+        kv_block_dev, BlocksLayout(blocks_shape, blocks_strides)
+    ).as_unsafe_any_origin()
+    var cl_tensor = (
+        TileTensor(cl_dev, row_major(Int64(1))).as_imm().as_unsafe_any_origin()
+    )
+    var lut_tensor = (
+        TileTensor(lut_dev, row_major(Int64(1), Int64(lut_cols)))
+        .as_imm()
+        .as_unsafe_any_origin()
+    )
+    var kv_collection = Collection(
+        kv_block_tensor,
         cl_tensor,
         lut_tensor,
         UInt32(extend),  # max_prompt_length
         UInt32(total_keys),  # max_full_context_length
     )
 
-    comptime qo_layout = Layout.row_major(UNKNOWN_VALUE, num_q_heads, head_dim)
-    var q_tensor = LayoutTensor[mut=False, dtype, qo_layout](
-        q_dev,
-        RuntimeLayout[qo_layout].row_major(
-            IndexList[3](extend, num_q_heads, head_dim)
-        ),
+    var q_tensor = TileTensor(
+        q_dev, row_major(Int64(extend), Idx[num_q_heads], Idx[head_dim])
+    ).as_imm()
+    var o_tensor = TileTensor(
+        o_dev, row_major(Int64(extend), Idx[num_q_heads], Idx[head_dim])
     )
-    var o_tensor = LayoutTensor[dtype, qo_layout](
-        o_dev,
-        RuntimeLayout[qo_layout].row_major(
-            IndexList[3](extend, num_q_heads, head_dim)
-        ),
-    )
-    comptime ro_layout = Layout(UNKNOWN_VALUE)
-    var ro_tensor = LayoutTensor[mut=False, .uint32, ro_layout](
-        ro_dev, RuntimeLayout[ro_layout].row_major(IndexList[1](2))
-    )
+    var ro_tensor = TileTensor(ro_dev, row_major(Int64(2))).as_imm()
 
     flash_attention[ragged=True](
         o_tensor,
@@ -311,17 +306,8 @@ def test_prefill_prefix_hit[
     assert_true(P % PAGE_SIZE == 0, "P must be page-aligned")
     comptime head_kv = num_q_heads // group
     print(
-        "  [Layer B prefill] L=",
-        L,
-        " P=",
-        P,
-        " head_q=",
-        num_q_heads,
-        " head_kv=",
-        head_kv,
-        " group=",
-        group,
-        sep="",
+        t"  [Layer B prefill]"
+        t" L={L} P={P} head_q={num_q_heads} head_kv={head_kv} group={group}"
     )
 
     var row_w = num_q_heads * head_dim
@@ -378,17 +364,8 @@ def test_prefill_prefix_hit[
                     if first_bad < 0:
                         first_bad = a
                         print(
-                            "    DIVERGE prefill abs_pos=",
-                            a,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " COLD=",
-                            c,
-                            " HIT=",
-                            hh,
-                            sep="",
+                            t"    DIVERGE prefill"
+                            t" abs_pos={a} h={h} d={d} COLD={c} HIT={hh}"
                         )
     assert_equal(
         mismatches,
@@ -403,7 +380,7 @@ def test_prefill_prefix_hit[
             ") -> prefix-hit / cache_length handling bug",
         ),
     )
-    print("    prefill O MATCHES (max_abs=", max_abs, ")", sep="")
+    print(t"    prefill O MATCHES (max_abs={max_abs})")
     _ = cold_q
     _ = hit_q
     _ = kv_rand
@@ -430,19 +407,8 @@ def test_decode_page_layout[
     var total_keys = cache_length + 1  # decode: 1 new token + the prefix
     var num_pages = ceildiv(total_keys, PAGE_SIZE)
     print(
-        "  [Layer D decode page-layout] cache_length=",
-        cache_length,
-        " total_keys=",
-        total_keys,
-        " num_pages=",
-        num_pages,
-        " head_q=",
-        num_q_heads,
-        " head_kv=",
-        head_kv,
-        " group=",
-        group,
-        sep="",
+        t"  [Layer D decode page-layout]"
+        t" cache_length={cache_length} total_keys={total_keys} num_pages={num_pages} head_q={num_q_heads} head_kv={head_kv} group={group}"
     )
 
     var row_w = num_q_heads * head_dim
@@ -501,13 +467,8 @@ def test_decode_page_layout[
             if first_bad < 0:
                 first_bad = i
                 print(
-                    "    DIVERGE decode i=",
-                    i,
-                    " identity=",
-                    o_cold[i],
-                    " reversed=",
-                    o_hit[i],
-                    sep="",
+                    t"    DIVERGE decode"
+                    t" i={i} identity={o_cold[i]} reversed={o_hit[i]}"
                 )
     assert_equal(
         mismatches,
@@ -557,21 +518,8 @@ def test_prefill_partial_block_nan_canary[
     var num_pages = ceildiv(L, PAGE_SIZE)
     var phys_tokens = num_pages * PAGE_SIZE
     print(
-        "  [Layer E partial-block] L=",
-        L,
-        " P=",
-        P,
-        " tail=[",
-        L,
-        ",",
-        phys_tokens,
-        ") head_q=",
-        num_q_heads,
-        " group=",
-        group,
-        " garbage_tail=",
-        garbage_tail,
-        sep="",
+        t"  [Layer E partial-block] L={L} P={P} tail=[{L},{phys_tokens})"
+        t" head_q={num_q_heads} group={group} garbage_tail={garbage_tail}"
     )
 
     var row_w = num_q_heads * head_dim
@@ -642,30 +590,12 @@ def test_prefill_partial_block_nan_canary[
                     if first_bad < 0:
                         first_bad = a
                         print(
-                            "    DIVERGE partial abs_pos=",
-                            a,
-                            " h=",
-                            h,
-                            " d=",
-                            d,
-                            " COLD=",
-                            c,
-                            " HIT=",
-                            hh,
-                            sep="",
+                            t"    DIVERGE partial"
+                            t" abs_pos={a} h={h} d={d} COLD={c} HIT={hh}"
                         )
     print(
-        "    partial-block O: max_abs=",
-        max_abs,
-        " last_row(pos ",
-        L - 1,
-        ")_max_abs=",
-        last_row_max,
-        " nan_agree=",
-        nan_agree,
-        " nan_solo=",
-        nan_solo,
-        sep="",
+        t"    partial-block O: max_abs={max_abs} last_row(pos"
+        t" {L - 1})_max_abs={last_row_max} nan_agree={nan_agree} nan_solo={nan_solo}"
     )
     # Loud characterization signal: invariance holds (nan_solo==0), but the
     # kernel produced a NaN at EVERY overlapping output element -- it reads the
@@ -677,12 +607,8 @@ def test_prefill_partial_block_nan_canary[
     var overlap = (L - P) * num_q_heads * head_dim
     if nan_solo == 0 and nan_agree == overlap and overlap > 0:
         print(
-            "    NOTE symmetric-NaN-leak: ",
-            nan_agree,
-            "/",
-            overlap,
-            " outputs NaN in BOTH configs (invariant, but tail NaN not masked)",
-            sep="",
+            t"    NOTE symmetric-NaN-leak: {nan_agree}/{overlap} outputs NaN in"
+            t" BOTH configs (invariant, but tail NaN not masked)"
         )
     assert_equal(
         mismatches,

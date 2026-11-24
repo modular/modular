@@ -20,6 +20,10 @@ from max.config import (
     get_default_max_config_file_section_name,
     resolve_max_config_inheritance,
 )
+from max.driver import (
+    float32_array_to_buffer,
+    float32_to_bfloat16_as_uint16,
+)
 from max.pipelines.sampling import (
     SamplingConfig,
     rejection_sampler,
@@ -37,10 +41,6 @@ from max.pipelines.weights.quant import parse_quant_config
 from max.pipelines.weights.weight_path_parser import WeightPathParser
 
 from .audio_tokenizer import AudioGenerationTokenizer
-from .bfloat16_utils import (
-    float32_array_to_buffer,
-    float32_to_bfloat16_as_uint16,
-)
 from .config import (
     DenoisingCacheConfig,
     DenoisingCacheSettings,
@@ -65,18 +65,17 @@ from .config import (
     supported_encoding_supported_on,
 )
 from .embeddings_pipeline import EmbeddingsPipeline, EmbeddingsPipelineType
+from .graph_specs import GraphRole, GraphSpec, compile_and_init_graphs
 from .interfaces import (
     AlwaysSignalBuffersMixin,
     BatchProcessor,
     BatchProcessorRuntime,
-    GraphPipelineModel,
     GraphPipelineModelWithKVCache,
     ModelInputs,
     ModelOutputs,
     ModuleV3MultiGraphPipelineModelWithKVCache,
-    ModuleV3PipelineModel,
+    ModuleV3Outputs,
     ModuleV3PipelineModelWithKVCache,
-    MultiGraphPipelineModelWithKVCache,
     PipelineModel,
     PipelineModelWithKVCache,
     RaggedBatchProcessor,
@@ -85,7 +84,7 @@ from .interfaces import (
     process_ragged_kv_outputs,
     ragged_kv_symbolic_inputs,
 )
-from .memory_estimation import MemoryEstimator, MemoryPlan
+from .memory_plan import FreeMemory, MemoryPlan, plan_memory
 from .model_manifest import ModelManifest
 from .pipeline_runtime_config import PipelineRuntimeConfig
 from .pipeline_variants import PixelGenerationPipeline, TextGenerationPipeline
@@ -106,9 +105,21 @@ from .tokenizer import (
     TextTokenizer,
     build_eos_tracker_for_request,
     max_tokens_to_generate,
+    resolve_eos_token_ids,
 )
 from .utils import CompilationTimer, upper_bounded_default
 from .vision_preprocess_cache import VisionPreprocessCache
+from .weight_transform import (
+    Bitcast,
+    CheckpointRole,
+    Ignore,
+    WeightEntry,
+    WeightNaming,
+    WeightRenaming,
+    WeightRule,
+    WeightTransform,
+    apply_weight_entries,
+)
 
 __all__ = [
     "PIPELINE_REGISTRY",
@@ -116,30 +127,33 @@ __all__ = [
     "AudioGenerationTokenizer",
     "BatchProcessor",
     "BatchProcessorRuntime",
+    "Bitcast",
+    "CheckpointRole",
     "CompilationTimer",
     "DenoisingCacheConfig",
     "DenoisingCacheSettings",
     "EmbeddingsPipeline",
     "EmbeddingsPipelineType",
-    "GraphPipelineModel",
+    "FreeMemory",
     "GraphPipelineModelWithKVCache",
+    "GraphRole",
+    "GraphSpec",
     "HuggingFaceRepo",
     "IdentityPipelineTokenizer",
+    "Ignore",
     "KVCacheConfig",
     "KVConnectorConfig",
     "LoRAConfig",
     "MAXConfig",
     "MAXModelConfig",
     "MAXModelConfigBase",
-    "MemoryEstimator",
     "MemoryPlan",
     "ModelInputs",
     "ModelManifest",
     "ModelOutputs",
     "ModuleV3MultiGraphPipelineModelWithKVCache",
-    "ModuleV3PipelineModel",
+    "ModuleV3Outputs",
     "ModuleV3PipelineModelWithKVCache",
-    "MultiGraphPipelineModelWithKVCache",
     "OverlapTextGenerationPipeline",
     "PipelineArgs",
     "PipelineConfig",
@@ -166,8 +180,15 @@ __all__ = [
     "UnifiedEagleOutputs",
     "UnifiedSpecDecodeInputs",
     "VisionPreprocessCache",
+    "WeightEntry",
+    "WeightNaming",
     "WeightPathParser",
+    "WeightRenaming",
+    "WeightRule",
+    "WeightTransform",
+    "apply_weight_entries",
     "build_eos_tracker_for_request",
+    "compile_and_init_graphs",
     "convert_max_config_value",
     "deep_merge_max_configs",
     "download_weight_files",
@@ -179,10 +200,12 @@ __all__ = [
     "max_tokens_to_generate",
     "parse_quant_config",
     "parse_supported_encoding_from_file_name",
+    "plan_memory",
     "process_ragged_kv_outputs",
     "ragged_kv_symbolic_inputs",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
+    "resolve_eos_token_ids",
     "resolve_max_config_inheritance",
     "supported_encoding_dtype",
     "supported_encoding_quantization",

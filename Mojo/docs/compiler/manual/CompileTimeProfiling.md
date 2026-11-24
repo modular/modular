@@ -12,15 +12,25 @@ act on.
 | `--mlir-timing`              | Times every MLIR pass and analysis.                                                            |
 | `--llvm-timing`              | Times every LLVM pass and analysis.                                                            |
 | `--mlir-timing-display MODE` | `tree` (default) nests by pipeline structure; `list` aggregates per pass name, sorted by time. |
+| `--parser-stats`             | Reports the parser's self time per declaration.                                                |
+| `--elaboration-stats`        | Reports `comptime for` unrolling and interpreter calls per pipeline.                           |
+| `--timing-json`              | Writes the reports as one JSON object instead of as text.                                      |
+| `--timing-file FILE`         | Writes the reports to `FILE` instead of to stderr.                                             |
 
 See them and their full help text with `mojo build --help-hidden` or
-`mojo run --help-hidden`. Their definitions live in
-`KGEN/tools/mojo/Common/CompilationOptions.td`.
+`mojo run --help-hidden`. `mojo precompile` also accepts `--mlir-timing`,
+`--mlir-timing-display`, `--parser-stats`, `--timing-json` and
+`--timing-file`; its MLIR timing covers the parse and the check passes. Their
+definitions live in `Mojo/tools/mojo/Common/CompilationOptions.td`,
+`Mojo/tools/mojo/Common/BackendOptions.td` and the files those include:
+`ParserStatsOptions.td`, `MLIRTimingOptions.td` and `TimingReportOptions.td`.
 
 Four things to know before reading any report they produce:
 
-1. Both reports go to **stderr** when compilation finishes, so capture with
-   `2>`. For `mojo run` they print before the program starts.
+1. The reports go to **stderr** when compilation finishes, so capture with
+   `2>`. For `mojo run` they print before the program starts. `--timing-file`
+   redirects them to a file instead, in either format; see
+   [JSON output](#json-output).
 2. `--llvm-timing` forces single threaded compilation. LLVM's timers are
    process global and not thread safe, so the flag sets `numThreads = 1` and
    overrides `--num-threads`. The report therefore measures total CPU work, not
@@ -40,6 +50,10 @@ Three sections, in this order:
 2. `LLVM pass timing (--llvm-timing): offload <triple>` — one per accelerator
    target.
 3. `LLVM pass timing (--llvm-timing): host <triple>`.
+
+[Parser statistics](#parser-statistics), then
+[elaboration statistics](#elaboration-statistics), print between the MLIR and
+LLVM sections.
 
 Compiling for an accelerator runs the compiler again on the kernels, so the
 accelerator work shows up in **both** halves of the report, in two different
@@ -87,6 +101,62 @@ MLIR root spans the whole compile including code generation. See
 [Reading the numbers by hand](#reading-the-numbers-by-hand) for the
 consequences.
 
+## JSON output
+
+`--timing-json` writes the reports as one JSON object rather than as text, and
+`--timing-file FILE` sends them to a file rather than to stderr. The two are
+independent, so JSON on stderr and text in a file both work. Neither changes
+the measurement: `--llvm-timing` still forces single threaded compilation, and
+a warm cache still reports nothing.
+
+The object holds one member per report, and only the members the command asked
+for — `--timing-json` with no timing flag gets `{}`. See
+[The `parser` member](#the-parser-member) and
+[The `elaboration` member](#the-elaboration-member) for their layouts.
+
+```json
+{
+  "mlir": [
+    {
+      "name": "ElaborateGenerators",
+      "wall": {"duration": 119.7262, "percentage": 45.1},
+      "passes": [
+        {
+          "name": "offload nvptx64-nvidia-cuda sm_100a (also in host)",
+          "wall": {"duration": 101.8517, "percentage": 38.4},
+          "passes": []
+        }
+      ]
+    }
+  ],
+  "llvm": [
+    {
+      "pipeline": "offload nvptx64-nvidia-cuda sm_100a",
+      "times": {"time.pass.SROAPass.wall": 0.000464}
+    }
+  ]
+}
+```
+
+`mlir` follows `--mlir-timing-display`. `tree` nests each entry's children
+under `passes`; `list` is flat and opens with a `root` entry. `llvm` is one
+entry per pipeline in the order they ran — each accelerator target, then the
+host — each with a flat `times` map.
+
+Those `times` keys are `time.<group>.<name>.<metric>`, with `<metric>` one of
+`wall`, `user`, `sys` or `instr`. The four groups are the same four the text
+report prints and they overlap the same way, so the arithmetic in
+[The LLVM groups overlap](#the-llvm-groups-overlap) applies unchanged.
+
+One difference from the text report: accelerator scope names in `mlir` carry no
+`===---` rule. The rule exists to set the scope apart from the host passes it
+sits beside when a human reads a tree, and it only gets in a matcher's way.
+Match the `(also in host)` suffix instead.
+
+The digest script reads the text report, not the JSON. Use `--timing-json`
+when feeding another consumer, and `2> log.txt` or `--timing-file` when feeding
+[the digest](#digesting-the-report).
+
 ## Timing a model
 
 Two steps: get the Mojo that the graph compiler emits for the model, then
@@ -95,14 +165,15 @@ compile that with the timing flags. The example uses gemma-4-31B.
 ### 1. Get the emitted Mojo
 
 ```bash
-MODULAR_DEBUG=ir-output-dir=/tmp/gemma4/out-dir \
+MODULAR_DEBUG=ir-output-dir=/tmp/gemma4/out-dir,pre-jit \
 ./bazelw run //max/python/max/_entrypoints:pipelines -- warm-cache \
   --model-path google/gemma-4-31B-it --target cuda:sm_100a
 ```
 
-This runs the whole pipeline, so it fails without the matching GPU. Run it
-anyway: the emitted files land before the failure. The output directory holds
-the graph IR at each stage plus two Mojo files:
+`pre-jit` stops the graph compiler as soon as the Mojo is written, so this
+needs no GPU and skips the kernel compile, which is most of the time a full
+`warm-cache` takes. The output directory holds the graph IR at each stage plus
+two Mojo files:
 
 - `gemma4_vision+gemma4_language.mojo` — about 3 MB, the file to compile.
 - `gemma4_vision_constant_subgraphs.mojo` — about 12 KB, the constant
@@ -124,8 +195,8 @@ no GPU present, only a valid arch such as `sm_100a` or `gfx950`. `-o /dev/null`
 skips writing the object file, since the timing is the point.
 
 Record which build of `mojo` produced the log. A debug build and a production
-build are not comparable — see
-[Notes for benchmarking](#notes-for-benchmarking).
+build run different pass pipelines, so their timings are not comparable and a
+debug measurement cannot be scaled into a production estimate.
 
 ## Digesting the report
 
@@ -140,7 +211,7 @@ digests it:
 Or run its script directly:
 
 ```bash
-python3 .claude/skills/mojo-compile-timing/scripts/digest_timing_log.py log.txt
+python3 .agents/skills/mojo-compile-timing/scripts/digest_timing_log.py log.txt
 ```
 
 Useful options:
@@ -149,7 +220,7 @@ Useful options:
   first argument is the subject, the second the baseline.
 - `--top N` — passes to name per group before rolling the tail up (default 5).
 - `--markdown` — the tree in a fenced block plus a rollup table.
-- `--json` — machine readable, for a dashboard.
+- `--json` — machine readable, for another consumer.
 
 The output for the gemma-4 debug compile above:
 
@@ -194,7 +265,7 @@ them; they matter when checking its output or writing another consumer.
 ### The MLIR root is the whole compile
 
 It spans parsing, the passes, and code generation, because the `MLIRPassTiming`
-object lives for all of `build()` in `KGEN/tools/mojo/Build/mojo-build.cpp`. On
+object lives for all of `build()` in `Mojo/tools/mojo/Build/mojo-build.cpp`. On
 one gemma-4 compile the root read 272.34s against 272.56s of wall clock. Take
 the compile total from the root; never add sections to it.
 
@@ -209,7 +280,8 @@ computes `Rest` as the root minus the sum of the children, so double counted
 time lands there with its sign flipped: the row reads `-59.0020` in place of the
 42.85s that is genuinely unattributed. Adding the scope back recovers it:
 `-59.00 + 101.85 = 42.85` seconds. A consumer of the report has to either skip
-rows whose name starts with `===---` or subtract them.
+those scope rows or subtract them — by the `===---` prefix in the text report,
+or by the `(also in host)` suffix, which both formats carry.
 
 ### `Rest` is host code generation, not noise
 
@@ -222,12 +294,12 @@ and 8.4s of translation to LLVM IR plus object emission.
 
 Each LLVM section prints up to four groups, and only two are disjoint:
 
-| Group                                  | Relationship                       |
-|----------------------------------------|------------------------------------|
-| `Pass execution timing report`         | the passes                         |
-| `Analysis execution timing report`     | the analyses, separate from passes |
-| `Instruction Selection and Scheduling` | sub-timers inside the ISel pass    |
-| `Register Allocation`                  | sub-timers inside the RA pass      |
+| Group                                  | JSON key prefix    | Relationship                       |
+|----------------------------------------|--------------------|------------------------------------|
+| `Pass execution timing report`         | `time.pass.`       | the passes                         |
+| `Analysis execution timing report`     | `time.analysis.`   | the analyses, separate from passes |
+| `Instruction Selection and Scheduling` | `time.sdag.`       | sub-timers inside the ISel pass    |
+| `Register Allocation`                  | `time.regalloc.`   | sub-timers inside the RA pass      |
 
 The last two come from `NamedRegionTimer` objects inside
 `SelectionDAGISel::CodeGenAndEmitDAG` and the greedy allocator, so their time is
@@ -241,192 +313,305 @@ per module, so `InstCombinePass` appears 765 times at about 0.30s each.
 Aggregate by name, stripping the `#N` instance suffix, or the top of the list
 is ten identical rows.
 
-## The tracked benchmark
+## Parser statistics
 
-The steps above time one compile on one machine. To watch compile time move
-over weeks, CI runs the same measurement daily through
-`utils/benchmarking/kepler/mojo_compilation/`, which has two targets:
+`--parser-stats` shows which declarations the parser spends its time on. For
+each declaration it resolves, it reports the self time of each activity:
 
-| Target                     | What it does                                                 |
-|----------------------------|--------------------------------------------------------------|
-| `make_snapshot`            | Builds the frozen input and publishes it to S3.              |
-| `bench_mojo_compile_time`  | Compiles that input and reports the breakdown.               |
+- `signature` and `body` parse the declaration from source.
+- `synthetic_signature` and `synthetic_body` make a declaration that has no
+  source.
+- `bytecode` resolves a declaration that a precompiled package, such as `std`,
+  holds.
 
-The input is frozen because a compile time only means something against a fixed
-input. The emitted Mojo changes whenever the graph compiler or the kernel
-library changes, and either can move compile time as much as the Mojo compiler
-can. A snapshot pins all of it, so a step in the series is attributable.
+Times are exclusive. When resolving one declaration demands another, the
+demanded one's time counts only for it, so the rows, the unattributed time and
+the profiler overhead add up to the wall time of the parse.
 
-The snapshot holds the library as **source**, not as precompiled `.mojoc`. A
-`.mojoc` loads only in a compiler whose MLIR dialect checksum matches, and that
-checksum hashes the dialect `.td` text, so it changes most days — a snapshot of
-compiled packages is unusable within a day of being taken. Source stays
-compilable for as long as the language accepts it, so the benchmark rebuilds the
-packages with the compiler under test on every invocation. That rebuild is not
-overhead: it compiles the whole standard library and every kernel library, far
-more code than one emitted model, and is reported as `precompile.*`.
-
-### Generating a snapshot
+Like the timing reports, it prints as text to stderr. `--timing-json` switches
+it to JSON under a `parser` key, and `--timing-file` sends it to a file. The
+parser runs on every compile, so unlike the elaboration statistics, a warm
+cache does not empty this report.
 
 ```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:make_snapshot -- \
-  --out ~/mojo-compile-snapshot --skip-upload
+mojo build --parser-stats --timing-json --timing-file=stats.json \
+  model.mojo -o /dev/null
 ```
 
-`--skip-upload` builds and archives the snapshot without publishing it, which is
-what a local run wants. It also bypasses the cadence check, so the snapshot is
-always rebuilt.
+To turn `stats.json` into readable tables, including the self time per source
+file, run the `mojo-compile-stats` skill (`/mojo-compile-stats stats.json`);
+see [Digesting the statistics](#digesting-the-statistics).
 
-The run emits the Mojo for every model in `model_inputs.yaml` the same way
-[step 1 above](#1-get-the-emitted-mojo) does, copies the library sources, reads
-the precompile recipe out of `bazel aquery`, rebuilds the packages once to
-confirm the frozen tree compiles, and counts each source's offload kernels. It
-produces:
+### Reading the parser text report
+
+For a small program that imports `std`, trimmed to three declarations:
 
 ```text
-~/mojo-compile-snapshot/
-├── SNAPSHOT.yaml               the recipe, plus a hash and size per file
-├── library/                    stdlib, kernel and max sources at their repo paths
-├── sources/<dir>/              the emitted .mojo files
-└── mojo_compile_snapshot.tar.gz
+===--- Parser statistics (--parser-stats): demo.mojo ===
+
+parse: 0.3126 s wall, 3,623 declarations
+
+Self time by activity:
+      self s    share  activity
+      0.0003     0.1%  signature
+      0.0045     1.4%  body
+      0.0000     0.0%  synthetic_signature
+      0.0005     0.2%  synthetic_body
+      0.2419    77.4%  bytecode
+      0.0601    19.2%  unattributed
+      0.0052     1.7%  profiler_overhead
+
+Declarations by self time:
+      self s   signature s        body s       other s    frames  declaration
+      0.0150        0.0000        0.0000        0.0150         1  file_module std.builtin._format_float  Mojo/stdlib/std/builtin/_format_float.mojo:1:1
+      0.0089        0.0000        0.0000        0.0089         2  def std.collections.string._parsing_numbers.constants.get_power_of_5  Mojo/stdlib/std/collections/string/_parsing_numbers/constants.mojo:53:5
+      0.0044        0.0001        0.0043        0.0000         2  def demo.main  demo.mojo:13:5
+...
 ```
 
-Two things to expect. The graph compiler run needs HuggingFace access to the
-model and fails on the target it cannot reach from here, exactly as in step 1;
-its output is kept in a log and only shown if a source is missing, which is the
-real failure. And `--skip-emit` reuses the `.mojo` already under `--out` instead
-of running the graph compiler again, which is much faster when iterating on
-everything downstream of the emit.
+| Column or row       | Meaning                                                       |
+|---------------------|---------------------------------------------------------------|
+| `other s`           | The synthetic and `bytecode` time of the declaration.         |
+| `frames`            | The times the parser started an activity for the declaration. |
+| `unattributed`      | Time outside the resolution of any declaration.               |
+| `profiler_overhead` | Time the profiler spends to name new rows.                    |
 
-### Running the benchmark locally
+The text lists the 30 declarations with the most self time; the JSON lists all
+of them. Each declaration shows its kind, its name joined with `.` from the
+module down, and its location.
+
+Caveats:
+
+1. Times are wall time, not CPU time.
+2. A program that imports a precompiled `std` spends most of a small parse in
+   `bytecode`, as above. The cost follows the `std` declarations the program
+   uses, not its own length.
+3. Each parse is one part of the report, with its own header.
+
+### The `parser` member
+
+An array with one entry per parse. Each entry lists every declaration, sorted by
+self time. Trimmed to one declaration:
+
+```json
+{
+  "parser": [
+    {
+      "module": ".../demo.mojo",
+      "total_seconds": 0.408734833,
+      "unattributed_seconds": 0.116075285,
+      "profiler_overhead_seconds": 0.006286287,
+      "activities": {
+        "signature": 0.002619877,
+        "body": 0.007144624,
+        "synthetic_signature": 0.000042583,
+        "synthetic_body": 0.000477164,
+        "bytecode": 0.276089013
+      },
+      "declarations": [
+        {
+          "name": "demo.main",
+          "kind": "def",
+          "location": ".../demo.mojo:13:5",
+          "self_seconds": 0.006474748,
+          "frames": 2,
+          "activities": {"signature": 0.000347626, "body": 0.006127122}
+        }
+      ]
+    }
+  ]
+}
+```
+
+A declaration's `activities` lists only the activities it spent time on.
+
+## Elaboration statistics
+
+`--elaboration-stats` shows which comptime code elaboration spends its work on.
+For each pipeline that elaborated, the host and each accelerator target, it
+reports:
+
+- Each `comptime for` loop, with its trip count and the ops its unrolled
+  iterations produced.
+- Each interpreter call for a comptime value, with its cache hits and the CPU
+  time of the calls the cache missed.
+
+Like the timing reports, it prints as text to stderr. `--timing-json` switches
+it to JSON under an `elaboration` key, and `--timing-file` sends it to a file.
 
 ```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:bench_mojo_compile_time -- \
-  --snapshot ~/mojo-compile-snapshot \
-  --runs 1 \
-  --results /tmp/compile-time.json
+MODULAR_CACHE_DIR=$(mktemp -d) \
+mojo build --elaboration-stats --timing-json --timing-file=stats.json \
+  --target-accelerator=sm_100a model.mojo -o /dev/null
 ```
 
-| Option        | Meaning                                                             |
-|---------------|---------------------------------------------------------------------|
-| `--list`      | Print the benchmark names the manifest declares, and exit.          |
-| `--snapshot`  | Compile an unpacked snapshot instead of fetching the published one. |
-| `--runs`      | Repeats per source, each two full compiles (default: 3).            |
-| `--results`   | Also write the results to a file; `.json` or `.yaml` by extension.  |
-| `--benchmark` | Run only the named benchmark. Repeatable.                           |
+To turn `stats.json` into readable tables, run the `mojo-compile-stats`
+skill (`/mojo-compile-stats stats.json`); see
+[Digesting the statistics](#digesting-the-statistics).
 
-The first four are this benchmark's own. `--benchmark` comes from the shared
-Kepler runner, as does everything else on that command line not listed here.
+### Reading the text report
 
-To see what there is to measure:
+For this program:
 
-```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:bench_mojo_compile_time \
-  -- --list
+```mojo
+def fib(n: Int) -> Int:
+    if n < 2:
+        return n
+    return fib(n - 1) + fib(n - 2)
+
+
+def main():
+    comptime f = fib(20)
+    var total = 0
+    comptime for i in range(8):
+        total += i * f
+    print(total)
 ```
+
+the host section reads, trimmed:
 
 ```text
-gemma-4-31b.language            sm_100a  gemma4/gemma4_vision+gemma4_language.mojo
-gemma-4-31b.constant-subgraphs  sm_100a  gemma4/gemma4_vision_constant_subgraphs.mojo
+===--- Elaboration statistics (--elaboration-stats): host arm64-apple-darwin25.6.0 apple-m5 ===
+
+comptime for: 13 loops, 17 instantiations, 241 ops produced (after elaboration, before inlining)
+
+   ops produced  instances   iterations  body ops  loop
+             65          1           16         9  Mojo/stdlib/std/math/math.mojo:1241:18  @std::math::math::iota
+             51          2          3-4        16  Mojo/stdlib/std/builtin/tuple.mojo:298:18  @std::builtin::tuple::Tuple::__contains__
+             33          1            8        10  .../unroll.mojo:10:14  @unroll::main
+...
+
+interpreter: 703 calls, 356 cache hits, 347 interpreted in 0.0126 s CPU
+
+By callee, each function's calls summed over all its call sites:
+          CPU s  interpreted  cache hits     max s  call sites  callee
+         0.0104            1           7    0.0104           1  @unroll::fib
+         0.0005          110          26    0.0000          13  @std::builtin::_stubs::paramfor_has_next
+...
+... 24 more rows; --timing-json lists them all
+
+By call site, one operation's calls to one function:
+          CPU s  interpreted  cache hits     max s  call site  callee
+         0.0104            1           7    0.0104  .../unroll.mojo:10:14  @unroll::fib
+...
 ```
 
-Then measure one of them, naming it exactly as `--list` printed it:
+| Column         | Meaning                                                                   |
+|----------------|---------------------------------------------------------------------------|
+| `ops produced` | Ops the unrolled iterations produced, before inlining. Rows sort by it.   |
+| `instances`    | Instantiations of the generator that ran the loop, one per parameter set. |
+| `iterations`   | Trip count, or its range when instances differ.                           |
+| `body ops`     | Ops in the loop body before unrolling.                                    |
+| `interpreted`  | Calls the interpreter ran. Only these cost CPU.                           |
+| `cache hits`   | Calls the elaborator's cache answered.                                    |
+| `max s`        | The costliest single call.                                                |
+
+Caveats:
+
+1. Each pipeline elaborates with its own interpreter cache. A function that
+   both the host and an accelerator evaluate is interpreted in both parts. Sum
+   the parts for the compile total; the [digest](#digesting-the-statistics)
+   does.
+2. Times are CPU time of the interpreting thread. Pipelines elaborate in
+   parallel, so removing a callee can save less wall time than its `CPU s`.
+3. A call is located at the op that needed the value. `fib` is charged to the
+   `comptime for` on line 10, which uses `f`, not to line 8. Its 8 uses are 1
+   interpreted call and 7 cache hits.
+4. `--llvm-timing` forces one thread. On one compile, default threads gave 0.3
+   to 0.6% more interpreted calls, from concurrent cache misses on the same
+   value, and 10 to 15% more CPU per call. Leave it out to measure what users
+   wait for.
+5. The parametric elaborator records no interpreter calls. Its pipelines have
+   no interpreter section in the text or `interpreter` member in the JSON.
+
+### The `elaboration` member
+
+An array with one entry per pipeline and every row of the text tables. Trimmed
+to one row per array:
+
+```json
+{
+  "elaboration": [
+    {
+      "pipeline": "host arm64-apple-darwin25.6.0 apple-m5",
+      "comptime_for": {
+        "loop_count": 13,
+        "instantiation_count": 17,
+        "ops_produced": 241,
+        "loops": [
+          {
+            "file": ".../unroll.mojo",
+            "line": 10,
+            "column": 14,
+            "generator": "unroll::main",
+            "instances": 1,
+            "iterations": {"min": 8, "max": 8},
+            "body_ops": 10,
+            "ops_produced": 33
+          }
+        ]
+      },
+      "interpreter": {
+        "call_count": 704,
+        "cache_hit_count": 358,
+        "interpreted_count": 346,
+        "cpu_seconds": 0.012399,
+        "callees": [
+          {
+            "callee": "unroll::fib",
+            "call_sites": 1,
+            "cache_hits": 7,
+            "interpreted": 1,
+            "cpu_seconds": 0.010274,
+            "max_cpu_seconds": 0.010274
+          }
+        ],
+        "calls": [
+          {
+            "file": ".../unroll.mojo",
+            "line": 10,
+            "column": 14,
+            "callee": "unroll::fib",
+            "cache_hits": 7,
+            "interpreted": 1,
+            "cpu_seconds": 0.010274,
+            "max_cpu_seconds": 0.010274
+          }
+        ]
+      }
+    }
+  ]
+}
+```
+
+A row with no source position has `location`, such as `loc(unknown)`, in place
+of `file`, `line` and `column`.
+
+## Digesting the statistics
+
+The `mojo-compile-stats` skill digests the JSON of either report, or both from
+one compile. For the parser, it sums the self time of each source file and of
+each declaration across parses. For elaboration, it sums each callee across
+pipelines.
+
+```text
+/mojo-compile-stats stats.json
+```
+
+Or run its script directly:
 
 ```bash
-./bazelw run //utils/benchmarking/kepler/mojo_compilation:bench_mojo_compile_time -- \
-  --snapshot ~/mojo-compile-snapshot \
-  --runs 1 \
-  --benchmark gemma-4-31b.language
+python3 .agents/skills/mojo-compile-stats/scripts/digest_compile_stats.py stats.json
 ```
 
-The library rebuild happens either way: it is the input to whatever is being
-measured, so filtering saves the model compiles and nothing else.
+Useful options:
 
-Each repeat compiles the source twice: once with no timing flags at the
-compiler's default thread count, reported as `wall.total`, and once with
-`--mlir-timing --llvm-timing` for the phase breakdown. Only the first is a
-latency figure, for the reason in [the flags](#the-flags) — the second is
-single threaded.
+- `--compare BASELINE` — the change per file, declaration, pipeline and callee
+  against a baseline report.
+- `--top N` — rows per table (default 10).
+- `--markdown` — Markdown tables, with files, declarations, call sites and
+  loops linked to source.
+- `--root DIR` — the directory source paths are relative to (default: cwd).
 
-Omitting `--snapshot` fetches the most recently published snapshot over HTTPS,
-which is what CI does.
-
-Budget for the cost in compiles rather than in minutes, which vary by machine.
-An invocation is one library rebuild plus, per source, two full compiles per
-repeat. The rebuild happens once per invocation and not once per repeat, since
-every source compiles against the same packages, and the large emitted source
-dominates everything else. Start with `--runs 1`.
-
-### Adding a model
-
-Every series the benchmark tracks comes from `model_inputs.yaml` beside the two
-targets. A model there is one extraction — one run of the graph compiler — and
-the files that extraction produces are its sources, each compiled and plotted on
-its own.
-
-To add one:
-
-1. Emit it by hand first, with the command from
-   [step 1 above](#1-get-the-emitted-mojo) pointed at the new model, and look at
-   what lands in the output directory. You need the emitted file names, and they
-   are not predictable from the model name.
-2. Add an entry:
-
-   ```yaml
-   - name: my-model
-     target_accelerator: sm_100a
-     emitted_by:
-       model_path: org/My-Model
-       target: cuda:sm_100a
-       command: >-
-         MODULAR_DEBUG=ir-output-dir=<out-dir>
-         ./bazelw run //max/python/max/_entrypoints:pipelines -- warm-cache
-         --model-path org/My-Model --target cuda:sm_100a
-     sources:
-       - name: language
-         file: my-model/the_emitted_file.mojo
-   ```
-
-3. Regenerate the snapshot. The emit, the offload-kernel count and the source
-   statistics all follow from the manifest, so nothing else needs editing.
-
-Four things to get right:
-
-- `file` is the path **inside the snapshot**, not where the extraction wrote it.
-  Only its basename has to match an emitted file; the leading directory is
-  yours to choose, and exists to keep one model's sources away from another's.
-- `emitted_by` is not read at benchmark time. It is recorded so that a refresh
-  is reproducible, since what the graph compiler emits depends on those
-  settings — so keep `command` in step with the fields above it.
-- `name` and each source's `name` form the series name, `<model>.<source>`.
-  They are the dashboard's identity for the series: renaming one starts a fresh
-  line rather than continuing the existing one. A model name must not contain a
-  dot, because the BigQuery view splits the series name on the first one.
-- Each source costs two full compiles per repeat on every CI run, so add
-  sources that answer a question, not every file an extraction happens to
-  produce.
-
-The results land in BigQuery and Looker. See the Kepler docs for the tables and
-the dashboard: `docs/internal/KeplerBenchmarking.md`.
-
-## Notes for benchmarking
-
-Benchmark the production build. It is what ships, and it is faster, so runs cost
-less. More importantly the two builds are not comparable: on the gemma-4 pair
-measured here, production ran 56 outermost passes against 60 in debug, with
-`LowerGlobalPOPToLLVM` absent entirely, and `VerifyParameters` ran twice instead
-of five times. Per pass speedups ranged from 1.2x to 8.2x, so a debug
-measurement cannot be scaled into a production estimate.
-
-Because the timing flags force single threaded compilation, these numbers are
-total CPU work rather than the latency a user sees. Tracking user visible
-compile time needs a second measurement with default threads and no timing
-flags.
-
-The accelerator module count is a property of the input, not the compiler. If it
-moves, the emitted Mojo changed shape, so compare compile times across snapshots
-only while it holds steady.
-
-Some time still belongs to no pass, about 10% of the compiles measured so far:
-the translation and object emit rows on both the host and the accelerator side.
-A regression landing there shows up only in the total.
+Compare reports from the same `mojo` build and thread setting. Debug and
+release compilers parse and interpret at different speeds.

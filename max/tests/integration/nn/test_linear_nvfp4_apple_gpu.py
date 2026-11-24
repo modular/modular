@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Graph-level numeric test for the Apple M5 NVFP4 (W4A16) ``Linear`` path.
 
-Builds a single NVFP4 :class:`~max.nn.Linear` (a FLUX.2 transformer Linear
+Builds a single NVFP4 :class:`~max.nn.legacy.Linear` (a FLUX.2 transformer Linear
 shape) and runs it through the graph on an Apple (Metal) GPU, then compares the
 output to a reference graph branch that performs a plain bf16 dense matmul of
 the *materialized* dequantized weight. Both outputs go through the same MAX
@@ -21,7 +21,7 @@ bf16 MMA, so they must agree to bf16-MMA tolerance.
 This exercises the full Apple weight-only lowering chain:
 ``Linear.__call__ -> linear() -> quantized_matmul() -> _matmul_float4() ->
 (Apple branch) _apple_weight_only_block_scaled_matmul() ->
-mo.matmul.weight.only.block.scaled.apple -> enqueue_apple_fp4_matmul`` plus the
+matmul.weight.only.block.scaled.apple -> enqueue_apple_fp4_matmul`` plus the
 graph-level ``weight_scale_2`` fold.
 
 Unlike the NVIDIA SM100 path, the activation stays in bf16 (it is *not*
@@ -46,7 +46,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType, TensorValue, ops
 from max.graph.weights import WeightData
-from max.nn import Linear
+from max.nn.legacy import Linear
 from max.nn.quant_config import (
     InputScaleSpec,
     QuantConfig,

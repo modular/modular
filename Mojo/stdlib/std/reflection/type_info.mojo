@@ -42,7 +42,7 @@ def main():
 ```
 """
 
-from std.sys.info import _current_target, _TargetType
+from std.sys.info import CompilationTarget
 from std.collections.string.string_span import get_static_string
 
 from .reflect import reflect
@@ -53,7 +53,7 @@ def get_linkage_name[
     //,
     func: func_type,
     *,
-    target: _TargetType = _current_target(),
+    target: CompilationTarget = CompilationTarget.current(),
 ]() -> StaticString:
     """Returns `func`'s symbol name.
 
@@ -67,7 +67,7 @@ def get_linkage_name[
     """
     var res = __mlir_attr[
         `#kgen.get_linkage_name<`,
-        target,
+        target._mlir_value,
         `,`,
         func,
         `> : !kgen.string`,
@@ -100,14 +100,13 @@ def get_function_name[
 # "Generic[module_name.Foo]".
 def _unqualified_type_name[type: AnyType]() -> StaticString:
     comptime name = reflect[type].name()
-    comptime parameter_list_start = name.find("[")
-    comptime if parameter_list_start == -1:
-        # HACK: Split is evaluated twice because `List[StringSlice]` cannot
-        # be materialized to runtime from a comptime context.
-        comptime n = len(name.split("."))
-        return name.split(".")[n - 1]
-    else:
+    comptime if case .Some(parameter_list_start) = name.find("["):
         comptime split = name[byte=:parameter_list_start].split(".")
         comptime base_name = split[len(split) - 1]
         comptime parameters = name[byte=parameter_list_start:]
         return get_static_string[base_name, parameters]()
+    else:
+        # HACK: Split is evaluated twice because `List[StringSpan]` cannot
+        # be materialized to runtime from a comptime context.
+        comptime n = len(name.split("."))
+        return name.split(".")[n - 1]

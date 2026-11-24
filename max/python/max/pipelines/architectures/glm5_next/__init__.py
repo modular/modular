@@ -10,12 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""The GLM-5.3-Flash architecture.
 
-from .model_config import Glm5NextConfig, Glm5NextVisionConfig
-from .quantization import Glm5NextQuantScheme
+A multimodal MoE decoder with a vision tower, built on ModuleV3 from the
+DeepSeek V3.2 model.
+"""
 
-__all__ = [
-    "Glm5NextConfig",
-    "Glm5NextQuantScheme",
-    "Glm5NextVisionConfig",
-]
+from .arch import glm5_next_arch
+
+__all__ = ["glm5_next_arch"]

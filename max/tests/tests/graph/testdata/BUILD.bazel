@@ -13,6 +13,13 @@ filegroup(
         ["*"],
         exclude = ["*.py"],
     ),
+    # Extends the package default with plugin tests.
+    visibility = [
+        "//:__pkg__",
+        "//max/tests:__subpackages__",
+        "//oss/modular/max/tests:__subpackages__",
+        "//plugins:__subpackages__",
+    ],
 )
 
 modular_py_binary(
@@ -20,8 +27,8 @@ modular_py_binary(
     testonly = True,
     srcs = ["gen_external_checkpoints.py"],
     deps = [
+        "//max/python/max:_core",
         requirement("torch"),
-        requirement("gguf"),
         requirement("click"),
         requirement("numpy"),
         requirement("safetensors"),

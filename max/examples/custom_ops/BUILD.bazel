@@ -1,4 +1,5 @@
 load("//bazel:api.bzl", "mojo_binary", "mojo_library", "requirement")
+load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS")
 load(":custom_op_example.bzl", "custom_op_example_py_binary")
 
 package(default_visibility = ["//visibility:private"])
@@ -13,6 +14,11 @@ filegroup(
 custom_op_example_py_binary(
     name = "addition",
     srcs = ["addition.py"],
+)
+
+custom_op_example_py_binary(
+    name = "elementwise_addition",
+    srcs = ["elementwise_addition.py"],
 )
 
 custom_op_example_py_binary(
@@ -44,6 +50,7 @@ custom_op_example_py_binary(
     srcs = ["eager_vector_addition.py"],
     extra_deps = [
         "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
     ],
     # FIXME: MOCO-3663 — consistently times out on remote macOS workers
     target_compatible_with = select({
@@ -104,11 +111,14 @@ mojo_binary(
 mojo_library(
     name = "kernels",
     srcs = [":kernel_sources"],
+    ignore_deprecated = IGNORED_POINTER_DEPRECATIONS,
     validate_missing_docs = False,
     deps = [
         "//max:extensibility",
         "//max:layout",
+        "//max:linalg",
         "//max:max_mojo",
+        "//max:structured_kernels",
         "@mojo//:std",
     ],
 )

@@ -5,15 +5,16 @@ package(default_visibility = ["//Mojo:consumers"])
 modular_cc_binary(
     name = "kgen-opt",
     srcs = glob(["*.cpp"]),
-    internal_deps = select({
-        # Under --config=hal-device-context we don't link the full DeviceContext,
-        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
-        "//:hal_device_context_enabled": [
-            "//MLRT:Driver/CompilationDeviceImpl",
-            "//MLRT:Driver/CompilerDeviceArch",
-        ],
-        "//conditions:default": [],
-    }),
+    data = [
+        "//Mojo:CompilerRT",
+    ],
+    dynamic_deps = [
+        "@llvm-project//llvm:LLVM",
+        "//AsyncRT:RuntimeGlobals",
+        "//MLRT:Driver/Compilation",
+        "//Support:Globals",
+        "//bazel/internal:MLIR",
+    ],
     linkopts = select({
         "@platforms//os:linux": [
             "-Wl,--export-dynamic-symbol=__jit_debug_*",
@@ -26,11 +27,11 @@ modular_cc_binary(
         "//Mojo:plugin_consumers",
     ],
     deps = [
+        "//:accel_registration",
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Init",
         "//Mojo:Compiler",
-        "//Mojo:CompilerRT",
         "//Mojo:ExecutionEngine",
         "//Mojo:KGENDialect",
         "//Mojo:LITDialect",
@@ -42,7 +43,7 @@ modular_cc_binary(
         "//Support:Base",
         "//Support:Compiler",
         "//Support:Context",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MDialect",
         "@llvm-project//mlir:MlirOptLib",
     ],

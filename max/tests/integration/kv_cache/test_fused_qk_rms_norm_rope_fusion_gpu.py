@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Input-prologue fusion for ``mo.fused_qk_rms_norm_rope.ragged.paged``.
+"""Input-prologue fusion for ``kv_cache.fused_qk_rms_norm_rope.ragged.paged``.
 
 The kernel reads Q through a ``FusedInputTensor`` load lambda. When Q is a view
 over a wider producer -- e.g. a ``slice`` + ``reshape`` that carves Q out of a
@@ -32,12 +32,13 @@ from __future__ import annotations
 import ml_dtypes
 import numpy as np
 import pytest
+from max import tree
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
-from max.engine import InferenceSession
+from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import fused_qk_rms_norm_rope_ragged
-from max.nn.kv_cache import MHAKVCacheParams, PagedCacheValues
+from max.nn._graph_ops import fused_qk_rms_norm_rope_ragged
+from max.nn.kv_cache import MHAKVCacheParams
 from test_common.simple_kv_cache import paged_kv_cache_inputs
 
 pytestmark = pytest.mark.skipif(
@@ -153,28 +154,13 @@ def _build_graph(
         freqs_cis = g.inputs[2].tensor
         q_gamma = g.inputs[3].tensor
         k_gamma = g.inputs[4].tensor
-        (
-            blocks,
-            cache_lengths,
-            lookup_table,
-            max_prompt_length,
-            max_cache_length,
-            _dispatch_metadata,
-        ) = g.inputs[5:]
-
         if combined_width is not None:
             # slice + reshape carve Q out of the combined buffer; both fold into
             # the kernel's Q read lambda via input-prologue fusion.
             inp = inp[:, HEAD_DIM : HEAD_DIM + Q_WIDTH]
             inp = inp.reshape([inp.shape[0], NUM_Q_HEADS, HEAD_DIM])
 
-        kv_collection = PagedCacheValues(
-            blocks.buffer,
-            cache_lengths.tensor,
-            lookup_table.tensor,
-            max_prompt_length.tensor,
-            max_cache_length.tensor,
-        )
+        kv_collection = kv_params.unflatten_kv_inputs(iter(g.inputs[5:]))[0]
         q = fused_qk_rms_norm_rope_ragged(
             kv_params,
             inp,
@@ -207,28 +193,16 @@ def _kv_params(dtype: DType) -> MHAKVCacheParams:
 
 
 def _run(
-    session: InferenceSession,
+    model: Model,
     device: Accelerator,
     dtype: DType,
     *,
-    interleaved: bool,
     rope_dim: int,
     q_np: np.ndarray,
     gamma: np.ndarray,
     combined_width: int | None,
     q_out_dtype: DType | None = None,
-    fold_cast: bool = True,
 ) -> np.ndarray:
-    graph = _build_graph(
-        dtype,
-        interleaved=interleaved,
-        rope_dim=rope_dim,
-        combined_width=combined_width,
-        q_out_dtype=q_out_dtype,
-        fold_cast=fold_cast,
-    )
-    model = session.load(graph)
-
     # Allocate the paged cache for the batch. Its contents are irrelevant to Q,
     # which is computed purely from the projection.
     kv_rt = paged_kv_cache_inputs(
@@ -250,12 +224,7 @@ def _run(
         _to_device(_rope_freqs(rope_dim), dtype, device),
         _to_device(gamma, dtype, device),  # q_gamma
         _to_device(gamma, dtype, device),  # k_gamma
-        kv_rt.kv_blocks,
-        kv_rt.cache_lengths,
-        kv_rt.lookup_table,
-        kv_rt.max_prompt_length,
-        kv_rt.max_cache_length,
-        kv_rt.attention_dispatch_metadata,
+        *tree.leaves(kv_rt),
     ]
     (result,) = model.execute(*inputs)
     assert isinstance(result, Buffer)
@@ -291,22 +260,31 @@ def test_fused_matches_unfused(
     # Combined buffer is wider than Q on both sides (offset HEAD_DIM before,
     # HEAD_DIM after) to mimic a real fused `[IndexQ | Q | ...]` layout.
     combined_width = Q_WIDTH + 2 * HEAD_DIM
+    direct_model, fused_model = [
+        session.load(
+            _build_graph(
+                dtype,
+                interleaved=interleaved,
+                rope_dim=rope_dim,
+                combined_width=width,
+            )
+        )
+        for width in (None, combined_width)
+    ]
 
     direct = _run(
-        session,
+        direct_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
         combined_width=None,
     )
     fused = _run(
-        session,
+        fused_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
@@ -340,30 +318,39 @@ def test_q_out_dtype_matches_separate_cast(
         np.float32
     )
     gamma = rng.standard_normal(HEAD_DIM).astype(np.float32)
+    folded_model, separate_model = [
+        session.load(
+            _build_graph(
+                dtype,
+                interleaved=interleaved,
+                rope_dim=rope_dim,
+                combined_width=None,
+                q_out_dtype=q_out_dtype,
+                fold_cast=fold_cast,
+            )
+        )
+        for fold_cast in (True, False)
+    ]
 
     folded = _run(
-        session,
+        folded_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
         combined_width=None,
         q_out_dtype=q_out_dtype,
-        fold_cast=True,
     )
     separate = _run(
-        session,
+        separate_model,
         device,
         dtype,
-        interleaved=interleaved,
         rope_dim=rope_dim,
         q_np=q_np,
         gamma=gamma,
         combined_width=None,
         q_out_dtype=q_out_dtype,
-        fold_cast=False,
     )
 
     # Both arms share the same `SIMD.cast`, so an out-of-range Q lands on the

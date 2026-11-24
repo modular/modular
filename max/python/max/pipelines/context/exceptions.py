@@ -15,7 +15,12 @@
 
 from __future__ import annotations
 
-__all__ = ["InputError", "PromptTooLongError"]
+__all__ = [
+    "InputError",
+    "MediaBudgetExceeded",
+    "MediaDecodeError",
+    "PromptTooLongError",
+]
 
 
 class InputError(ValueError):
@@ -27,12 +32,25 @@ class InputError(ValueError):
     """
 
 
+class MediaDecodeError(InputError):
+    """Raised when client-supplied media is malformed, unsupported, or unreadable.
+
+    The one type for every decoder-specific failure on untrusted media (PyAV,
+    PIL, bad base64), so serving code can report it to the user without
+    knowing which backend raised.
+    """
+
+
+class MediaBudgetExceeded(InputError):
+    """Raised when client-supplied media does not fit the request media budget."""
+
+
 class PromptTooLongError(InputError):
     """Raised when a prompt exceeds the model's maximum input length.
 
     Exposes ``num_tokens`` and ``max_length`` as attributes so callers can
-    handle the failure programmatically (e.g., truncate and retry) instead
-    of parsing the message.
+    handle the failure programmatically (for example, truncate and retry)
+    without parsing the message.
 
     ``limit_description`` describes what is being limited, since the same
     failure mode means different things in different architectures (an LLM

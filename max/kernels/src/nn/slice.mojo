@@ -15,17 +15,16 @@
 from std.math import clamp
 
 from max.algorithm import elementwise
-from max.gpu.host import DeviceContext, get_gpu_target
-from layout import Coord, TileTensor, coord_to_index_list
+from max.gpu.host import DeviceContext
+from layout import Coord, TileTensor
 from layout.coord import DynamicCoord
-from layout.tile_layout import Layout
-from std.sys.info import simd_width_of, _current_target
+from layout.layout import Layout
+from std.sys.info import simd_width_of
 
 from std.utils._select import _select_register_value as select
-from std.utils.index import IndexList
 
 
-@always_inline("nodebug")
+@inline(.nodebug)
 def _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
     # Normalize the start/stop indices
     var normalized_idx = select(start < 0, start + dim_i, start)
@@ -43,7 +42,7 @@ def _normalize_and_clamp_dim(start: Int, step: Int, dim_i: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_dim_as_view[
     dtype: DType, dim: Int
 ](
@@ -72,8 +71,11 @@ def slice_dim_as_view[
         end: Stopping index along `dim` (exclusive; negative values wrap from the end).
         step: Stride between selected indices along `dim`; must be non-zero.
     """
-    var new_shape = coord_to_index_list(tensor.layout.shape_coord())
-    var new_stride = coord_to_index_list(tensor.layout.stride_coord())
+    var new_shape = DynamicCoord[.int64, tensor.rank]()
+    var new_stride = DynamicCoord[.int64, tensor.rank]()
+    comptime for i in range(tensor.rank):
+        new_shape.replace_dynamic[i](Int64(tensor.dim(i)))
+        new_stride.replace_dynamic[i](Int64(tensor.dynamic_stride(i)))
 
     var dim_i = Int(tensor.dim(dim))
     var old_stride = Int(tensor.dynamic_stride(dim))
@@ -86,11 +88,13 @@ def slice_dim_as_view[
 
     # Stride == number of elements to the next index in this dimension.
     # So to step we can just increase the stride.
-    new_stride[dim] = old_stride * step
+    new_stride.replace_dynamic[dim](Int64(old_stride * step))
 
     # If the steps are positive we traverse from start, if negative from
     # stop.
-    new_shape[dim] = len(range(clamped_start, clamped_stop, step))
+    new_shape.replace_dynamic[dim](
+        Int64(len(range(clamped_start, clamped_stop, step)))
+    )
 
     # The data does not change however we will be addressing a different
     # offset of the data.
@@ -99,10 +103,7 @@ def slice_dim_as_view[
     )
     return {
         new_data,
-        Layout(
-            Coord(rebind[IndexList[tensor.rank]](new_shape)),
-            Coord(rebind[IndexList[tensor.rank]](new_stride)),
-        ),
+        Layout(new_shape, new_stride),
     }
 
 
@@ -111,7 +112,7 @@ def slice_dim_as_view[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_as_view[
     dtype: DType,
     start_type: DType,
@@ -150,8 +151,8 @@ def slice_as_view[
     comptime assert ends.flat_rank == 1
     comptime assert steps.flat_rank == 1
 
-    var new_shape = IndexList[tensor.rank]()
-    var new_stride = IndexList[tensor.rank]()
+    var new_shape = DynamicCoord[.int64, tensor.rank]()
+    var new_stride = DynamicCoord[.int64, tensor.rank]()
 
     # The data does not change however we will be addressing a different
     # offset of the data; accumulate that offset and apply it once at the
@@ -173,19 +174,16 @@ def slice_as_view[
 
         # Stride == number of elements to the next index in this dimension.
         # So to step we can just increase the stride.
-        new_stride[i] = stride_i * step
+        new_stride.replace_dynamic[i](Int64(stride_i * step))
 
         # If the steps are positive we traverse from start, if negative from
         # stop.
-        new_shape[i] = len(range(start, stop, step))
+        new_shape.replace_dynamic[i](Int64(len(range(start, stop, step))))
 
     var new_data = tensor._offset_storage(total_offset)
     return {
         new_data,
-        Layout(
-            Coord(new_shape),
-            Coord(rebind[type_of(new_shape)](new_stride)),
-        ),
+        Layout(new_shape, new_stride),
     }
 
 
@@ -194,13 +192,12 @@ def slice_as_view[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def copy_to_slice[
     dtype: DType,
     start_type: DType,
     end_type: DType,
     step_type: DType,
-    target: StaticString = "cpu",
 ](
     buffer: TileTensor[mut=True, dtype, ...],
     in_slice: TileTensor[mut=False, dtype, ...],
@@ -225,26 +222,22 @@ def copy_to_slice[
     """
     var expected_shape = slice_shape(buffer, start, end, step)
 
-    if expected_shape != rebind[IndexList[buffer.rank]](
-        coord_to_index_list(in_slice.layout.shape_coord())
-    ):
+    if expected_shape != in_slice.layout.shape_coord():
         raise Error(
             "Shape mismatch for mo.mutable.store.slice: expected 'slice'",
             " operand to have shape: ",
             expected_shape,
             " but got: ",
-            coord_to_index_list(in_slice.layout.shape_coord()),
+            in_slice.layout.shape_coord(),
         )
 
     var buffer_slice_view = slice_as_view(buffer, start, end, step)
 
-    @always_inline
+    @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        buffer_slice_view.store[width=simd_width](
-            idx, in_slice.load[width=simd_width](idx)
-        )
+        buffer_slice_view.store(idx, in_slice.load[width=simd_width](idx))
 
-    elementwise[1, target=target, _trace_description="slice_copy"](
+    elementwise[1, _trace_description="slice_copy"](
         copy,
         buffer_slice_view.layout.shape_coord(),
         context,
@@ -256,7 +249,7 @@ def copy_to_slice[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_as_copy[
     dtype: DType,
     index_type: DType,
@@ -266,7 +259,7 @@ def slice_as_copy[
     start: TileTensor[mut=False, index_type, ...],
     end: TileTensor[mut=False, index_type, ...],
     step: TileTensor[mut=False, index_type, ...],
-    ctx: DeviceContext,
+    ctx: DeviceContext.CPU,
 ) raises:
     """Copies a slice of `tensor` into `output` using the given start, end, and step indices.
 
@@ -287,9 +280,9 @@ def slice_as_copy[
     var sliced = slice_as_view(tensor, start, end, step)
 
     # Copy lambda sliced view into output buffer.
-    @always_inline
+    @inline(.always)
     def copy[simd_width: Int, alignment: Int = 1](idx: Coord) {var}:
-        output.store[width=simd_width](idx, sliced.load[width=simd_width](idx))
+        output.store(idx, sliced.load[width=simd_width](idx))
 
     # Invoke copy.
     elementwise[1](copy, output.layout.shape_coord(), ctx)
@@ -300,7 +293,7 @@ def slice_as_copy[
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def slice_shape[
     input_type: DType,
     start_type: DType,
@@ -311,7 +304,7 @@ def slice_shape[
     start_buf: TileTensor[mut=False, start_type, ...],
     stop_buf: TileTensor[mut=False, stop_type, ...],
     step_buf: TileTensor[mut=False, step_type, ...],
-) raises -> IndexList[input_buf.rank]:
+) raises -> DynamicCoord[.int, input_buf.rank]:
     """Computes the shape that results from slicing `input_buf` with the given start, stop, and step tensors.
 
     Validates that the index tensors each have one entry per rank of
@@ -325,7 +318,7 @@ def slice_shape[
         step_buf: One-dimensional tensor of strides, one per rank; each must be non-zero.
 
     Returns:
-        An `IndexList` holding the extent of each dimension after slicing.
+        A `Coord` holding the extent of each dimension after slicing.
     """
     comptime assert start_buf.flat_rank == 1, "start_buf.rank must be 1"
     comptime assert stop_buf.flat_rank == 1, "stop_buf.rank must be 1"
@@ -342,9 +335,9 @@ def slice_shape[
         if step_buf[axis] == 0:
             raise Error("[slice] step must be non-zero")
 
-    var output_shape = IndexList[input_buf.rank]()
+    var output_shape = DynamicCoord[.int, input_buf.rank]()
 
-    for i in range(input_buf.rank):
+    comptime for i in range(input_buf.rank):
         var start = Int(start_buf[i])
         var stop = Int(stop_buf[i])
         var step = Int(step_buf[i])
@@ -365,7 +358,7 @@ def slice_shape[
                 " negative step"
             )
 
-        output_shape[i] = len(range(start, stop, step))
+        output_shape.replace_dynamic[i](len(range(start, stop, step)))
 
     return output_shape
 
@@ -378,7 +371,6 @@ def slice_shape[
 def sliced_add[
     dtype: DType,
     //,
-    target: StaticString,
 ](
     c: TileTensor[mut=True, dtype, ...],
     a: TileTensor[mut=False, dtype, ...],
@@ -406,32 +398,22 @@ def sliced_add[
     def _sliced_add[width: Int, alignment: Int = 1](idx: Coord) {var}:
         var out_val: SIMD[dtype, width]
 
-        if Int(idx[0].value()) >= batch_end_idx:
+        if Int(idx[0]) >= batch_end_idx:
             out_val = a.load[width](idx)
         else:
             var a_val = a.load[width](idx)
             var b_val = b.load[width](idx)
             out_val = a_val + b_val
 
-        c.store[width](idx, out_val)
+        c.store(idx, out_val)
 
-    comptime if target == "gpu":
-        comptime compile_target = get_gpu_target()
-        comptime simd_width = simd_width_of[dtype, target=compile_target]()
+    comptime simd_width = simd_width_of[dtype, target=ctx.target]()
 
-        elementwise[
-            simd_width,
-            target=target,
-            _trace_description="slice_add",
-        ](
-            _sliced_add,
-            c.layout.shape_coord(),
-            ctx,
-        )
-    else:
-        comptime compile_target = _current_target()
-        comptime simd_width = simd_width_of[dtype, target=compile_target]()
-
-        elementwise[simd_width, target=target](
-            _sliced_add, c.layout.shape_coord(), ctx
-        )
+    elementwise[
+        simd_width,
+        _trace_description="slice_add",
+    ](
+        _sliced_add,
+        c.layout.shape_coord(),
+        ctx,
+    )

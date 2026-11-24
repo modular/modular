@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Post-process benchmark result JSON blobs into a CSV with selectable columns.
+r"""Post-process benchmark result JSON blobs into a CSV with selectable columns.
 
 The benchmarks treat their JSON output as the single source of truth: a
 ``save_result_json`` blob (serving) or a ``ResultSetInContext`` document (the
@@ -37,24 +37,23 @@ Run it through Bazel. Under ``bazel run`` the working directory is the
 workspace root, so input/output paths are resolved relative to the repo root
 (pass absolute paths to target files elsewhere)::
 
-    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
-        results-1-median.json results-2-median.json -o summary.csv
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- results-1-median.json results-2-median.json -o summary.csv
 
     # engine benchmark output (ResultSetInContext JSON):
-    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \
         engine-results.json -o engine.csv --profile engine
 
     # add the prefill/decode batch stats and GPU columns:
-    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \
         sweep-*/results-*.json -o detailed.csv --groups prefill_decode,gpu
 
     # emit every column found in the JSON:
-    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \
         results.json -o full.csv --all
 
     # pick an exact set of columns (no summary):
-    ./bazelw run //max/python/max/benchmark:results_to_csv -- \\
-        results.json -o custom.csv \\
+    ./bazelw run //max/python/max/benchmark:results_to_csv -- \
+        results.json -o custom.csv \
         --only --columns max_concurrency,mean_ttft_ms,request_throughput
 """
 

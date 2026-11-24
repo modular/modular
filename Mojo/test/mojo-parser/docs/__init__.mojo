@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -o /dev/null -mojo-diagnose-missing-doc-strings -verify-diagnostics %s
+# RUN: %parse-mojo-isolated -o /dev/null --diagnose-missing-doc-strings -verify-diagnostics %s
 # FileModuleOp is located at line 1, col 1 of the buffer, so the diagnostic
 # fires there. @-16 counts back from this line to line 1.
 # expected-warning @-16 {{public module '__init__' is missing a doc string}}

@@ -1,4 +1,5 @@
-load("//bazel:api.bzl", "driver_option_tablegen", "modular_cc_binary", "modular_cc_library", "pkg_files", "td_library")
+load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "pkg_files")
+load("//bazel:tablegen.bzl", "driver_option_tablegen", "td_library")
 
 package(default_visibility = ["//Mojo:consumers"])
 
@@ -24,16 +25,6 @@ package(default_visibility = ["//Mojo:consumers"])
         "Run",
     ]
 ]
-
-# A thin wrapper around Doc.inc_files that adds includes = ["."] so that
-# external tools (e.g. kgen-doc) can access the generated option headers via
-# short paths like "Doc/DocOptions.inc" rather than the full workspace-root
-# path.
-modular_cc_library(
-    name = "DocIncFiles",
-    includes = ["."],
-    deps = [":Doc.inc_files"],
-)
 
 td_library(
     name = "MojoDescriptionTdFiles",
@@ -91,20 +82,34 @@ _MOJO_LINKOPTS = select({
     "//conditions:default": [],
 })
 
+# An alias rather than a select() in `malloc`: cc_binary with dynamic_deps
+# cannot take a select() there.
+alias(
+    name = "mojo_malloc",
+    actual = select({
+        "//:asan_linux": "@bazel_tools//tools/cpp:malloc",
+        "//:tsan_linux": "@bazel_tools//tools/cpp:malloc",
+        "//:ubsan_linux": "@bazel_tools//tools/cpp:malloc",
+        "@platforms//os:linux": "//bazel/internal:jemalloc_global",
+        "//conditions:default": "@bazel_tools//tools/cpp:malloc",
+    }),
+    visibility = ["//visibility:private"],
+)
+
+_MOJO_DYNAMIC_DEPS = [
+    "//AsyncRT:RuntimeGlobals",
+    "//MLRT:Driver/Compilation",
+    "//Support:Globals",
+    "//bazel/internal:MLIR",
+    "@llvm-project//clang:clangBasic",
+    "@llvm-project//llvm:LLVM",
+]
+
 modular_cc_library(
     name = "mojo_common",
     srcs = glob(["**/*.cpp"]),
     hdrs = glob(["**/*.h"]),
     includes = ["."],
-    internal_deps = select({
-        # Under --config=hal-device-context we don't link the full DeviceContext,
-        # but we need CompilationDevice and the HAL-only CompilerDeviceArch.
-        "//:hal_device_context_enabled": [
-            "//MLRT:Driver/CompilationDeviceImpl",
-            "//MLRT:Driver/CompilerDeviceArch",
-        ],
-        "//conditions:default": [],
-    }),
     local_defines = ["MOJO_COMPILER_ACCELERATOR_SUPPORT=1"],
     strip_include_prefix = "",
     deps = [
@@ -117,8 +122,9 @@ modular_cc_library(
         ":Precompile.inc_files",
         ":REPL.inc_files",
         ":Run.inc_files",
+        "//:accel_registration",
         "//AsyncRT:Runtime",
-        "//AsyncRT:RuntimeGlobals",
+        "//AsyncRT:RuntimeGlobals.static",
         "//Config",
         "//Init",
         "//Mojo:Compiler",
@@ -130,6 +136,7 @@ modular_cc_library(
         "//Mojo:MojoTooling",
         "//Mojo:ObjectCompiler",
         "//Mojo:POPDialect",
+        "//Mojo:Precompile",
         "//Mojo:Support",
         "//Mojo:SupportForceLinkMLIRC",
         "//Mojo:TargetBackend.headers",
@@ -138,11 +145,12 @@ modular_cc_library(
         "//Support:Base",
         "//Support:BazelRunfiles",
         "//Support:Compiler",
+        "//Support:Config",
         "//Support:CrashReporting",
         "//Support:DebugInfoDialect",
         "//Support:Driver",
         "//Support:Filesystem",
-        "//Support:Globals",
+        "//Support:Globals.static",
         "//Support:MArchTarget",
         "//Support:MDialect",
         "@llvm-project//mlir:IndexDialect",
@@ -151,7 +159,9 @@ modular_cc_library(
 
 modular_cc_binary(
     name = "mojo",
+    dynamic_deps = _MOJO_DYNAMIC_DEPS,
     linkopts = _MOJO_LINKOPTS,
+    malloc = ":mojo_malloc",
     deps = [":mojo_common"],
 )
 
@@ -165,10 +175,12 @@ modular_cc_binary(
         "@llvm-project//lldb:lldb-argdumper",
         "@llvm-project//llvm:llvm-symbolizer",
     ],
+    dynamic_deps = _MOJO_DYNAMIC_DEPS,
     env = {
         "MODULAR_CRASH_REPORTING_ENABLED": "0",
     },
     linkopts = _MOJO_LINKOPTS,
+    malloc = ":mojo_malloc",
     mojo_deps = ["@mojo//:std"],
     tags = ["manual"],
     deps = [":mojo_common"],

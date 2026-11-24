@@ -45,7 +45,7 @@ def execute_index_tensor_test[
         ),
     )
     # Convert all tensors to dynamic layouts before calling the kernel
-    _index_tensor_impl[batch_dims, target="gpu"](
+    _index_tensor_impl[batch_dims](
         data_device.make_dynamic[.int64](),
         indices_device.make_dynamic[.int64](),
         actual_output_tensor,
@@ -129,7 +129,7 @@ def test_index_tensor_DLRM(ctx: DeviceContext) raises:
     execute_index_tensor_test[batch_dims](
         input_tensor,
         indices_tensor,
-        ref_output_tensor.as_immut(),
+        ref_output_tensor.as_imm(),
         ref_output,
         ctx,
     )
@@ -205,7 +205,7 @@ def test_index_tensor_DLRM_batch(ctx: DeviceContext) raises:
     execute_index_tensor_test[batch_dims](
         input_tensor,
         indices_tensor,
-        ref_output_tensor.as_immut(),
+        ref_output_tensor.as_imm(),
         ref_output,
         ctx,
     )

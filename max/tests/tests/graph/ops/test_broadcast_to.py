@@ -18,6 +18,7 @@ import pytest
 from conftest import (
     broadcast_shapes,
     broadcastable_static_positive_shapes,
+    mismatched_devices,
     shapes,
     valid_broadcast_rank,
 )
@@ -75,9 +76,38 @@ def test_broadcast_to_tensor_value(
             TensorType(DType.int64, (to_rank,), device=DeviceRef.CPU()),
         ],
     )
-    assert "rmo.mo.broadcast_to" in str(graph)
+    assert "mo.broadcast_to" in str(graph)
     expected_type = TensorType(DType.bfloat16, out_dims, device=DeviceRef.CPU())
     assert graph.output_types == [expected_type]
+
+
+@given(
+    input_shape=shared_shapes,
+    to_rank=valid_broadcast_rank(shared_shapes, max_size=max_rank),
+    devices=mismatched_devices(),
+)
+def test_broadcast_to_shape_tensor_device_mismatch(
+    input_shape: ShapeLike,
+    to_rank: int,
+    devices: tuple[DeviceRef, DeviceRef],
+) -> None:
+    """The shape tensor must live on the input's device."""
+    assume(input_shape)
+    input_device, shape_device = devices
+
+    with Graph(
+        "broadcast_to_device_mismatch",
+        input_types=[
+            TensorType(DType.bfloat16, input_shape, device=input_device),
+            TensorType(DType.int64, (to_rank,), device=shape_device),
+        ],
+    ) as graph:
+        with pytest.raises(ValueError, match="same device"):
+            ops.broadcast_to(
+                graph.inputs[0].tensor,
+                graph.inputs[1].tensor,
+                out_dims=[f"dim{i}" for i in range(to_rank)],
+            )
 
 
 def test_broadcast_to__error_message() -> None:

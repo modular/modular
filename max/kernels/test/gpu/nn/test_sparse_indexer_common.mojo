@@ -34,15 +34,14 @@ the same way; `_run_block_dim_invariance` turns that argument into evidence.
 """
 
 from std.collections import Set
-from max.gpu import WARP_SIZE, block_idx
+from max.gpu import block_idx
 from max.gpu.host import DeviceBuffer, DeviceContext
 from std.math import min
 from std.random import rand
 from std.testing import assert_equal, assert_true
-from std.utils.index import Index
 from std.utils.numerics import min_or_neg_inf, nan
 
-from layout import TensorLayout, TileTensor, row_major
+from layout import Coord, TensorEngine, TensorLayout, TileTensor, row_major
 
 from nn.attention.gpu.sparse_indexer_common import block_select_topk
 
@@ -57,9 +56,11 @@ comptime MODE_ALL_NAN = 4  # all NaN -> no selectable winner
 def _select_test_kernel[
     ScoresLT: TensorLayout,
     OutLT: TensorLayout,
+    ScoresEngine: TensorEngine,
+    OutEngine: TensorEngine,
 ](
-    scores: TileTensor[.float32, ScoresLT, MutAnyOrigin],
-    out_idxs: TileTensor[.int32, OutLT, MutAnyOrigin],
+    scores: TileTensor[.float32, ScoresLT, MutAnyOrigin, Engine=ScoresEngine],
+    out_idxs: TileTensor[.int32, OutLT, MutAnyOrigin, Engine=OutEngine],
     num_blocks_dev: Int32,
     k_dev: Int32,
 ):
@@ -67,14 +68,8 @@ def _select_test_kernel[
     var k = Int(k_dev)
     comptime assert scores.flat_rank == 2 and out_idxs.flat_rank == 2
     var row = block_idx.x
-    var s_lt = scores.to_layout_tensor()
-    var o_lt = out_idxs.to_layout_tensor()
-    var scores_row = rebind[MutPointer[Float32, MutAnyOrigin]](
-        s_lt.ptr_at_offset(Index(row, 0))
-    )
-    var out_row = rebind[MutPointer[Int32, MutAnyOrigin]](
-        o_lt.ptr_at_offset(Index(row, 0))
-    )
+    var scores_row = scores.ptr_at_offset(Coord(row, 0))
+    var out_row = out_idxs.ptr_at_offset(Coord(row, 0))
     block_select_topk[.float32, DType.int32](scores_row, num_blocks, k, out_row)
 
 
@@ -134,16 +129,8 @@ def _run_case(
     ctx: DeviceContext,
 ) raises:
     print(
-        "  case: num_rows=",
-        num_rows,
-        " num_blocks=",
-        num_blocks,
-        " k=",
-        k,
-        " force_idx=",
-        force_idx,
-        " mode=",
-        mode,
+        t"  case: num_rows= {num_rows}  num_blocks= {num_blocks}  k= {k} "
+        t" force_idx= {force_idx}  mode= {mode}"
     )
     var n_scores = num_rows * num_blocks
     var n_out = num_rows * k
@@ -156,7 +143,10 @@ def _run_case(
     else:
         for r in range(num_rows):
             _fill_row(
-                scores_host.unsafe_ptr() + r * num_blocks, num_blocks, k, mode
+                scores_host.unsafe_ptr().unsafe_offset(r * num_blocks),
+                num_blocks,
+                k,
+                mode,
             )
     # Force a known block to a large value in every row; it must be selected.
     if force_idx >= 0:
@@ -179,13 +169,16 @@ def _run_case(
     out_dev.enqueue_fill(Int32(-2))  # poison: must be overwritten
 
     var data_buf = DeviceBuffer[.float32](
-        ctx, scores_dev.unsafe_ptr() + 1, n_scores, owning=False
+        ctx, scores_dev.unsafe_ptr().unsafe_offset(1), n_scores, owning=False
     )
     var scores_t = TileTensor(data_buf, row_major((num_rows, num_blocks)))
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))
 
     comptime kernel = _select_test_kernel[
-        type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+        type_of(scores_t).LayoutType,
+        type_of(out_t).LayoutType,
+        type_of(scores_t).Engine,
+        type_of(out_t).Engine,
     ]
     ctx.enqueue_function[kernel](
         scores_t,
@@ -264,7 +257,9 @@ def _run_case(
 
         if mode == MODE_RANDOM:
             # Tie-free: exact set must match the independent host reference.
-            var expected = _host_topk_set(host_ptr + base, num_blocks, k)
+            var expected = _host_topk_set(
+                host_ptr.unsafe_offset(base), num_blocks, k
+            )
             for e in expected:
                 assert_true(e in got, "kernel missed an expected top-k index")
         elif mode == MODE_BOUNDARY_TIE:
@@ -304,7 +299,10 @@ def _launch_select(
     var scores_t = TileTensor(scores_dev, row_major((num_rows, num_blocks)))
     var out_t = TileTensor(out_dev, row_major((num_rows, k)))
     comptime kernel = _select_test_kernel[
-        type_of(scores_t).LayoutType, type_of(out_t).LayoutType
+        type_of(scores_t).LayoutType,
+        type_of(out_t).LayoutType,
+        type_of(scores_t).Engine,
+        type_of(out_t).Engine,
     ]
     ctx.enqueue_function[kernel](
         scores_t,
@@ -335,9 +333,9 @@ def _run_block_dim_invariance(
 ) raises:
     """Every legal CTA width must emit a bit-identical `out_idxs`.
 
-    The ladder is derived from `WARP_SIZE` rather than hard-coded, because the
+    The ladder is derived from `warp_size` rather than hard-coded, because the
     contract is "a positive multiple of the warp size, at most 1024" and a
-    wave-64 arch has no legal 32-wide block. `3 * WARP_SIZE` is deliberate: the
+    wave-64 arch has no legal 32-wide block. `3 * warp_size` is deliberate: the
     contract admits non-power-of-two widths, and the prefill launcher's
     `align_up(..., WARP_SIZE)` sizing rule can land on one.
 
@@ -346,14 +344,8 @@ def _run_block_dim_invariance(
     would actually catch a width-dependent tiebreak.
     """
     print(
-        "  block_dim invariance: num_rows=",
-        num_rows,
-        " num_blocks=",
-        num_blocks,
-        " k=",
-        k,
-        " mode=",
-        mode,
+        t"  block_dim invariance: num_rows= {num_rows}  num_blocks="
+        t" {num_blocks}  k= {k}  mode= {mode}"
     )
     var n_scores = num_rows * num_blocks
     var scores_host = ctx.enqueue_create_host_buffer[.float32](n_scores)
@@ -362,17 +354,21 @@ def _run_block_dim_invariance(
     else:
         for r in range(num_rows):
             _fill_row(
-                scores_host.unsafe_ptr() + r * num_blocks, num_blocks, k, mode
+                scores_host.unsafe_ptr().unsafe_offset(r * num_blocks),
+                num_blocks,
+                k,
+                mode,
             )
     ctx.synchronize()
     var host_ptr = rebind[MutPointer[Float32, MutAnyOrigin]](
         scores_host.unsafe_ptr()
     )
 
+    comptime warp_size = ctx.default_device_info.warp_size
     var bdims = List[Int]()
     for mult in [1, 2, 3, 4, 8, 16, 32]:
-        if mult * WARP_SIZE <= 1024:
-            bdims.append(mult * WARP_SIZE)
+        if mult * warp_size <= 1024:
+            bdims.append(mult * warp_size)
 
     var reference = _launch_select(
         num_rows, num_blocks, k, host_ptr, bdims[0], ctx

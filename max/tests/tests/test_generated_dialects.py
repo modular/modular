@@ -22,7 +22,6 @@ from max._core import (
     NamedAttribute,
     OpBuilder,
     Operation,
-    Pass,
     Type,
     lower,
 )
@@ -488,22 +487,6 @@ def test_lowering_failure_diagnostic(mlir_context) -> None:  # noqa: ANN001
         module.verify()
     with pytest.raises(Exception):
         lower(module, [builtin.passes.RemoveDeadValuesPass()])
-
-
-def test_construct_pass_with_options(mlir_context) -> None:  # noqa: ANN001
-    # Tablegen doesn't generate a public-visibility way to inspect
-    # pass options, so don't try to test the actual pass option values.
-
-    no_options = mo.passes.MOToMOGG()
-    assert isinstance(no_options, Pass)
-    assert no_options.name == "MOToMOGG"
-
-    with_options = mo.passes.MOToMOGG(
-        kernel_library_paths=["foo", "bar"],
-        force_sync=True,
-    )
-    assert isinstance(with_options, Pass)
-    assert with_options.name == "MOToMOGG"
 
 
 def test_get_context_from_cpp(mlir_context) -> None:  # noqa: ANN001

@@ -47,7 +47,7 @@ struct NoneTrivial(Copyable):
         pass
 
 
-struct NonMovable(Movable where False):
+struct NonMovable(not Movable):
     pass
 
 
@@ -55,7 +55,7 @@ struct NonCopyable(Movable):
     pass
 
 
-struct NonDeinitable(Deinitable where False, Movable):
+struct NonDeinitable(not Deinitable, Movable):
     pass
 
 

@@ -1,3 +1,15 @@
+//===----------------------------------------------------------------------===//
+// Copyright (c) 2026, Modular Inc. All rights reserved.
+//
+// Licensed under the Apache License v2.0 with LLVM Exceptions:
+// https://llvm.org/LICENSE.txt
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+//===----------------------------------------------------------------------===//
 // C reference for cross-argument register allocation.
 // Mojo test: test_struct_arguments_multi.mojo
 //
@@ -106,4 +118,23 @@ struct MultiHfa3D c_func_hfa3d_make(double base, double step) {
   s.b = base + step * 2.0;
   s.c = base + step * 3.0;
   return s;
+}
+
+// ============================================================================
+// Sub-eightbyte aggregate on the stack
+// ============================================================================
+
+struct MultiSubEightbyte {
+  int8_t a, b;
+};
+
+// Eight leading integers use all the GPRs, so the 2-byte struct and n go on
+// the stack. C gives the struct a whole 8-byte slot and reads n after it, at
+// sp+8.
+int64_t c_func_all_gprs_and_small_struct_then_int(
+    int64_t a, int64_t b, int64_t c, int64_t d, int64_t e, int64_t f, int64_t g,
+    int64_t h, struct MultiSubEightbyte s, int32_t n) {
+  return a + b * 10 + c * 100 + d * 1000 + e * 10000 + f * 100000 +
+         g * 1000000 + h * 10000000 + (int64_t)s.a * 100000000 +
+         (int64_t)s.b * 1000000000 + (int64_t)n * 10000000000;
 }

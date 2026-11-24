@@ -69,6 +69,7 @@ class TCBasics(BaseScenario):
                 "required": ["city"],
                 "additionalProperties": False,
             },
+            strict=True,
         )
         stock_tool = make_tool(
             "get_stock_price",
@@ -255,7 +256,14 @@ class TCBasics(BaseScenario):
                     [
                         {
                             "role": "user",
-                            "content": "What's the weather in Paris AND the stock price of AAPL?",
+                            # Ask for both calls in one turn: a model left to choose may
+                            # call one tool, wait for its result and call the other,
+                            # which is no parallel call to check.
+                            "content": (
+                                "What's the weather in Paris AND the stock price of "
+                                "AAPL? Call both tools in parallel, in this one "
+                                "response."
+                            ),
                         }
                     ],
                     [weather_tool, stock_tool],
@@ -340,7 +348,11 @@ class TCBasics(BaseScenario):
                     [
                         {
                             "role": "user",
-                            "content": "Look up 'alpha' with lookup_a AND 'beta' with lookup_b.",
+                            "content": (
+                                "Look up 'alpha' with lookup_a AND 'beta' with "
+                                "lookup_b. Call both tools in parallel, in this one "
+                                "response."
+                            ),
                         }
                     ],
                     [lookup_a, lookup_b],
@@ -724,6 +736,7 @@ class TCBasics(BaseScenario):
                     "required": [],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             resp = await loop.run_in_executor(
                 None,
@@ -802,6 +815,7 @@ class TCBasics(BaseScenario):
                     "required": ["config"],
                     "additionalProperties": False,
                 },
+                strict=True,
             )
             resp = await loop.run_in_executor(
                 None,

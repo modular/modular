@@ -1,0 +1,93 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+# The value types and the encoding, which max.experimental imports, so
+# nothing here may depend on max.experimental or max.pipelines.
+modular_py_library(
+    name = "_artifact",
+    srcs = [
+        "__init__.py",
+        "codec.py",
+        "metadata.py",
+        "sampling_defaults.py",
+        "value_types.py",
+        "vision.py",
+    ],
+    deps = [
+        "//max/python/max:tree",
+        requirement("typing-extensions"),
+    ],
+)
+
+# The overlap helper graphs and their component, which Mach's gen_mef
+# writes beside a MEF too.
+modular_py_library(
+    name = "overlap_helpers",
+    srcs = ["overlap_helpers.py"],
+    deps = [
+        ":_artifact",
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+    ],
+)
+
+# The writer and reader, the model component, which holds
+# max.experimental CompiledCallables, the engine_config and kv_cache
+# components, and the max.pipelines.lib WeightTransform.
+modular_py_library(
+    name = "model_artifact",
+    srcs = [
+        "batch_processor.py",
+        "block_diffusion.py",
+        "engine_config.py",
+        "format_spec.py",
+        "kv_cache.py",
+        "model_artifact.py",
+        "pipeline_modules.py",
+        "serialization.py",
+        "tokenizer.py",
+    ],
+    deps = [
+        ":_artifact",
+        "//max/python/max:_core",
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/lib",
+        requirement("huggingface-hub"),
+        requirement("typing-extensions"),
+    ],
+)
+
+# max export, which builds a pipeline.
+modular_py_library(
+    name = "export",
+    srcs = ["export.py"],
+    deps = [
+        ":_artifact",
+        ":model_artifact",
+        ":overlap_helpers",
+        "//max/python/max:tensor",
+        "//max/python/max/_kv_cache_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/kv_cache",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        "//max/python/max/pipelines/weights",
+        requirement("huggingface-hub"),
+    ],
+)

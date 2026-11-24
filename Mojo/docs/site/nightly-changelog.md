@@ -6,604 +6,746 @@ This version is still a work in progress.
 
 ## Highlights
 
-- Code that performs many implicit conversions, most visibly large collection
-  literals, compiles faster: the compiler no longer runs parameter inference on
-  constructors that cannot be used for an implicit conversion in the first
-  place. Files that are mostly data, such as the standard library's Unicode
-  lookup tables, compile about 1.3x faster.
-
 ## Documentation
 
 ## Language enhancements
 
-- Unknown declaration errors now suggest a unique near-miss spelling from the
-  enclosing scopes (for example `coun` → `count`), with a replace-token fixit.
+- `if`, `comptime if`, and `__guard` now support semicolon-separated
+  condition clauses that mix Boolean conditions and `case` patterns. Clauses
+  evaluate left to right, and successful pattern bindings are available to
+  later clauses and the successful path.
 
-- Mojo now supports contextually inferred member references: a leading-dot form
-  such as `.red` or `.float64` resolves against the expected type of the
-  expression, so you can omit a redundant type name when context already
-  supplies it. Static methods, parametric static methods, parentheses, attribute
-  chains, and typed collection literals all work:
+- Added the experimental `__guard` statement for early exits from Boolean
+  conditions and `case` patterns. Its `else` body must not fall through, so
+  bindings from a successful pattern remain in scope on the normal path. This
+  is analogous to features in Rust and Swift, and also supports
+  `comptime __guard`.
+
+- `try` blocks now unify heterogeneous raised error types rather than selecting
+  the first raised type. Mojo selects a common type when one exists, otherwise
+  uses `Error`. It emits a compile-time error when the raised types cannot be
+  unified.
+
+- Experimental support for multiple typed `except` clauses lets `try` blocks
+  handle errors where recovery differs:
 
   ```mojo
-  struct Color(ImplicitlyCopyable):
-      comptime red = Color(...)
-      comptime green = Color(...)
-
-      @staticmethod
-      def hsb_to_rgb(h: Int, s: Int, b: Int) -> Color:
-          return Color(...)
-
-      def opacity(self, amount: Float64) -> Color:
-          return Color(...)
-      def __init__(out self, ...):
-
-  def takes_color(c: Color):
-  def takes_colors(colors: List[Color]):
-
-  takes_color(.green)
-  takes_color(.hsb_to_rgb(120, 100, 50))
-  takes_color(.red.opacity(0.5))
-  var x: Color = .red
-  takes_colors([.red, .green])
+  try:
+      read_input()
+      parse_input()
+  except IOError __as error:
+      recover_io(error)
+  except ParseError __as error:
+      report_parse_error(error)
+  except __as error:
+      report_other_error(error)
   ```
 
-  Without a contextual type, `.member` is an error.
+  Mojo selects the first handler whose type accepts the raised error. A final
+  untyped handler catches remaining errors. When an untyped handler catches
+  different error types, Mojo selects a common type when one exists; otherwise,
+  it uses `Error`. Mojo reports a compile-time error for unhandled error types
+  and warns about unreachable `except` clauses.
 
-- A `thin` function type can now carry trailing `where` clauses, constraining
-  the parameters it declares. This lets a generic algorithm state what it
-  promises the function it is handed, instead of leaving the constraint to be
-  restated at every binding site.
+- `with` statements now no longer copy when passed a reference to a context
+  manager like in `with foo: pass`.
+
+- `__exit__(self, error: E)` now additionally supports `var self` and
+  `deinit self`, similar to the non-error `__exit__`.
+
+- You can bind a non-`Movable` payload from an rvalue enum or tuple subject
+  with a `var` case binding, enabling `case .Some(var value):` and
+  `case (var x, var y):` without copies. This allows `match` and `if case`
+  statements to work with non-movable and linear types, and reduces copies in
+  general.
+
+- You can destructure a tuple of transferred non-copyable values into a `var`
+  pattern without copies, such as `var (x, y) = (a^, b^)`. This includes
+  movable types that are not `Copyable`.
+
+- Comparisons now try the reflected method on the right operand when the left
+  operand does not support the comparison. For example, `0 < value` can call
+  `value.__gt__(0)`.
+
+- `match` now warns when literal cases do not include a catch-all pattern,
+  helping identify unmatched values.
+
+- A closure that captures a value with an `UnsafeAnyOrigin` in its type, such
+  as a `Pointer[Int, MutUnsafeAnyOrigin]`, now produces a warning. A closure
+  does not keep the value behind such a capture alive, so Mojo can destroy that
+  value before the closure runs. Capture a value with a tracked origin instead.
+
+- Auto-parameterization now reaches `_` holes nested inside other parameterized
+  types, so an unbound parameter at any depth of an argument's type becomes an
+  an implicit parameter of the function:
 
   ```mojo
-  comptime Kernel = def[w: Int](Int) thin -> None where (
-      w > 0, "width must be positive"
-  )
-
-  def apply[F: Kernel](x: Int):
-      F[4](x)     # ok
-      F[0](x)     # error: violated constraint
+  def process(p: Optional[Pointer[Int, _]]): ...
   ```
 
-  The clause binds to the innermost function type, so a declaration-level
-  `where` that follows a function-type result needs that result parenthesized:
+- Mojo now allows unbound a parameter that has a default dependencies, the
+  default value will later be refined when the unbound parameter is provided:
 
   ```mojo
-  def make[n: Int]() -> (def() thin -> None) where n > 0: ...
+  def depends_on_a[a: Int]() -> Int:
+      return a
+
+  struct NestedDeps[a: Int, b: Int = depends_on_a[a]()]:
+      ...
+
+  # No longer a compilation error
+  comptime Partial = NestedDeps[_]
+
+  # Bound = NestedDeps[3, depend_on_a[3]()]
+  comptime Bound = Partial[3]
+  ```
+
+- A call to a function that takes a variadic pack (`*args: *Ts`) can now mix
+  arguments and unpacked packs. The callee receives one pack with all the
+  elements in order:
+
+  ```mojo
+  def show[*Ts: Writable](*args: *Ts): ...
+
+  def wrap[*Ts: Writable](*args: *Ts):
+      show("[", *args, "]")
+      show(*args, *args)
+  ```
+
+  Unpacking the same pack twice into a `mut` pack argument, such as
+  `update(*args, *args)`, is an aliasing error.
+
+- A conditional type `A if c else B` now refines to the selected arm inside a
+  `comptime if c:` branch, its `else` branch, and after a `comptime assert c`.
+  You can call the arm's methods and read its fields without a `rebind`:
+
+  ```mojo
+  def describe[present: Bool](value: Int if present else NoneType):
+      comptime if present:
+          print("value:", value + 1)  # `value` is an `Int` here
+      else:
+          print("empty")
+  ```
+
+  A value of the selected arm also converts to the conditional type, so you can
+  return or pass it without a `rebind`:
+
+  ```mojo
+  def make[present: Bool]() -> Int if present else NoneType:
+      comptime if present:
+          return 42  # an `Int` converts to the return type
+      else:
+          return None
+  ```
+
+- The error for converting a function to an invalid function type now explains
+  why the conversion cannot be made, such as a mismatch in argument counts,
+  argument conventions, effects, etc:
+
+  ```mojo
+  def takes_read(f: def(Int) thin -> None):
+      pass
+
+  def mut_arg(mut x: Int):
+      pass
+
+  # error: ... cannot be converted from 'def mut_arg(mut x: Int) thin -> None'
+  # to 'def(Int) thin -> None', argument 'x': expected 'imm' convention,
+  # found 'mut'
+  takes_read(mut_arg)
   ```
 
 ## Language changes
 
-- A walrus expression now always yields its right-hand side, uniformly for
-  every kind of target.
+- `@explicit_destroy("<message>")` on a struct is deprecated and now emits a
+  warning. Give the message on the struct's `Deinitable` conformance instead:
 
-- Binding a constrained function to a function type that declares no matching
-  `where` clause is now an error, instead of silently dropping the constraint.
-  Declare the obligation on the function type (now that a `thin` function type
-  can carry a trailing `where` clause) or bind a function that does not require
-  it. Passing an unconstrained function where a constrained type is expected is
-  still allowed and still free.
+  ```mojo
+  # Before
+  @explicit_destroy("call `close()` instead")
+  struct File(not Deinitable):
+      ...
 
-- Renamed the `@parameter` decorator on parametric closures to
-  `@__parameter`. The deprecated `@parameter if` / `@parameter for`
-  forms are unchanged; prefer `comptime if` / `comptime for` for
-  compile-time control flow.
+  @explicit_destroy("use `deinit_with()` for non-Deinitable elements")
+  struct Box[T: Movable](Deinitable where conforms_to(T, Deinitable)):
+      ...
 
-- The module & package system:
+  # After
+  struct File(not Deinitable else "call `close()` instead"):
+      ...
 
-  - Directories may now have "namespace" semantics; a single directory name may
-    resolve across distinct locations on disk which share that name.
+  struct Box[T: Movable](
+      Deinitable where conforms_to(T, Deinitable) else (
+          "use `deinit_with()` for non-Deinitable elements"
+      ),
+  ):
+      ...
+  ```
 
-    ```mojo
-    # .
-    # ├── one
-    # │   └── foo
-    # │       └── bar.mojo
-    # └── two
-    #     └── foo
-    #         └── baz.mojo
-    #
-    # Compiles with -Ione -Itwo
-    import foo.bar
-    import foo.baz
-    ```
+  The message on a conditional `Deinitable where <condition> else "<message>"`
+  conformance is now reported when a value is abandoned for parameters that
+  don't satisfy the condition. Previously, only an always-false conformance's
+  message was reported.
 
-  - Importing functions with the same name from different modules, combining
-    them into one overload set, is now an error, following a period of
-    deprecation.
+- `@explicit_destroy("<message>")` on a trait is deprecated and now emits a
+  warning. Only structs support a custom linear type error message.
 
-  - Intra-package accesses without explicit `import`s are now an error,
-    following a period of deprecation.
+- Precompiled packages now no longer leak names and provide the same surface as
+  the same packages compiled from source. This may break your code (especially
+  from `std`):
 
-- Use of the `read` argument convention is now a hard error, following a period
-  of deprecation; use `imm` instead.
+  ```mojo
+  from std.os import rmdir
+
+  def main():
+    std.os.rmdir(...) # This no longer works - use rmdir, or import std.os.
+  ```
+
+- It is now possible to `import` a precompiled (`.mojoc`) package from a
+  namespace, assuming it has been precompiled to be built at that namespace.
+  See the help for `mojo precompile --namespace` for more information.
 
 ## Library stabilizations
 
-- String
-  - `def __init__(out self):`
-  - `def __init__(out self, *, capacity_bytes: Int):`
-  - `def reserve_bytes(mut self, new_capacity_bytes: Int, /):`
-- List
-  - `def append(mut self, var value: Self.T, /):`
+<!-- rumdl-disable MD013 -->
+- `ImmSpan` alias
+- `MutSpan` alias
+- `List.insert`
+- `List.clear`
+- `Span.__getitem__(self, slice: ContiguousSlice) -> Self:`
+- `Span.__init__(out self, ref[Self.origin] list: List[Self.T]):`
+- `Span.__init__(out self, ref[Self.origin, Self.address_space] array: Array[Self.T, _]):`
+- `Span.__len__(self) -> Int:`
+- `Hashable`
+  - `Hashable.__hash__`
+- `Hasher`
+  - `Hasher.update`
+  - `Hasher.finish`
+- `Pointer.__init__(to=)`
+- `Pointer.__eq__`
+- `Pointer.__ne__`
+- `Pointer.unsafe_bitcast`
+<!-- rumdl-enable MD013 -->
 
 ## Library performance improvements
 
-- Files with many t-string (`t"..."`) literals compile faster: the
-  compile-time step that encodes each literal's format string (part of
-  elaboration, not the whole compile) is about 7x faster. The effect on
-  total build time scales with how many t-string literals a file has.
+- Reduced the size of `Optional[T]` to the size of `T` when `T` is one of the
+  following types, so code that stores them in an `Optional` uses less memory:
+
+  - `Allocation`
+  - `Layout`
+  - `List`
+  - `ManagedAllocation`
+  - `Span`
+  - `String`
+  - `StringSpan`
+  - `ThinAllocation`
+
+  Don't depend on this size. It relies on bit patterns that each type's current
+  representation never uses, and that representation could change in the
+  future.
 
 ## Library changes
 
-- `Coord` has a new `replace[at](value)` method that returns a `Coord` with
-  the element at `at` swapped for `value`, keeping the other elements' types. A
-  statically known element (`ComptimeInt`) has no runtime storage to assign
-  into, so overwriting one with a runtime value yields a `Coord` of a different
-  type rather than mutating in place. Unlike `make_dynamic()`, which converts
-  every element to a `Scalar`, the untouched dimensions keep their compile-time
-  values:
+- The following enum-like types now use `snake_case` member names. The
+  uppercase names remain as deprecated aliases:
+
+  - `Ordering`: `not_atomic`, `unordered`, `relaxed`, `acquire`, `release`,
+    `acquire_release`, and `sequential`.
+  - `FastMathFlag`: `none`, `nnan`, `ninf`, `nsz`, `arcp`, `contract`,
+    `afn`, `reassoc`, and `fast`. Match patterns, `String()`, and `repr()`
+    use the new names too, so a pattern such as `case .CONTRACT:` must
+    become `case .contract:`.
+  - `Level` in `std.logger`: `notset`, `trace`, `debug`, `info`, `warning`,
+    `error`, and `critical`.
+  - `TestResult` in `std.testing.suite`: `pass`, `fail`, and `skip`.
+
+- An optional mutable pointer now implicitly converts to an optional
+  immutable pointer, as `Pointer` does.
+
+- Added `normpath()` to `std.os.path`, matching Python's `os.path.normpath()`.
+  Contributed by [@BlueDestination](https://github.com/BlueDestination) in
+  [#7342](https://github.com/modular/modular/pull/7342).
+
+- Added `Path.devnull()`, which returns the path to the platform's null device
+  (`/dev/null` on Linux and macOS), so code doesn't need to hardcode it.
+
+- Added a builtin `filter()`, which takes an iterable and a predicate closure
+  and yields the elements the predicate accepts:
+  `filter(items, lambda (x: Int) -> Bool: x > 0)`.
+
+- `take_while()` and `drop_while()` in `std.itertools` now take the predicate
+  as an argument instead of a compile-time parameter, so it can be a closure
+  that captures values. Write `take_while(items, pred)` instead of
+  `take_while[pred](items)`.
+
+- `List(length=, fill_with=)` and `Array(fill_with=)` now accept a function
+  that raises. If it raises, the initializer destroys the elements it already
+  wrote and propagates the error.
+
+- `Span.binary_search_by()` no longer takes the comparator as a compile-time
+  parameter. Pass it as an argument, `span.binary_search_by(cmp)`, which also
+  lets it capture the value being searched for.
+
+- `QuickBench.run()` in `std.benchmark` now takes a single closure with no
+  arguments in place of its eleven overloads for functions of 0 to 10
+  arguments. Capture the inputs instead of passing them separately:
+  `qb.run(lambda () {x} -> Float32: exp(x), bench_id=BenchId("exp"))`.
+
+- `ord()` and `Codepoint.ord()` on a runtime string (`StringSpan`, `String`)
+  now raise an `Error` instead of aborting when the string is empty. They also
+  raise when the string holds more than one codepoint; previously they
+  silently returned the first codepoint unless assertions were enabled.
+  Callers must now handle the error with `try` or a `raises` function. On a
+  string literal, both never raise, and a literal that isn't exactly one
+  codepoint is a compile-time error. Contributed by
+  [@Tharun-Kumar-McW](https://github.com/Tharun-Kumar-McW) in
+  [#7444](https://github.com/modular/modular/pull/7444).
 
   ```mojo
-  var c = Coord(ComptimeInt[3](), ComptimeInt[4]())
-  var moved = c.replace[1](Int64(7))  # Coord(ComptimeInt[3](), Int64(7))
+  var text = String("🔥")
+  var codepoint = ord(text)  # 128293; raises if `text` isn't one codepoint
+  comptime letter = ord("a")  # 97; never raises
   ```
 
-- Python functions exposed through `PythonModuleBuilder.def_function()`,
-  `PythonTypeBuilder.def_method()`, and `PythonTypeBuilder.def_staticmethod()`
-  no longer have a library-imposed limit on positional arguments.
+- `pow()` now takes a modulus as a third argument, like Python's `pow()`:
+  `pow(base, exp, mod)` computes `base ** exp % mod` for integers of up to 64
+  bits without overflowing. The result has the sign of `mod`, and a negative
+  `exp` uses the modular inverse of `base`, so `pow(3, -1, 7)` is `5`.
 
-- `List.extend` and `List.resize` now grow geometrically, so repeatedly
-  extending or resizing by a small increment is no longer quadratic. As a
-  result `capacity()` can report more than was asked for. `reserve` is
-  unchanged and still allocates exactly what you request.
-
-- `CompilationTarget` has a new `is_arm()` predicate, and `is_x86()` now
-  reports the architecture rather than SSE4 availability. Both read the
-  architecture from the target triple, so they no longer vary with
-  `--target-cpu`. This changes `is_x86()` on x86 targets without SSE4.1 — most
-  visibly the baseline `x86-64` CPU, where it used to return `False`. Use
-  `has_sse4()`, `has_avx2()`, and friends to gate code on a specific
-  instruction set.
-
-- `Hasher.update` now takes a `ImmSpan[Byte, _]` instead of
-  `Some[Hashable]`. Code such as `hasher.update(some_subobject)`
-  in `__hash__` implementations should be changed to
-  `some_subobject.__hash__(hasher)`.
-
-- `CompilationTarget` can now describe RISC-V targets: `is_riscv()`,
-  `is_rv32()`, and `is_rv64()` report the architecture, and
-  `has_riscv_extension["m"]()` reports a single ISA extension by its lowercase
-  LLVM name. An extension implied by another counts as present, so a target
-  built with `d` also reports `f`. It is always `False` on a non-RISC-V target,
-  and rejects an uppercase name at compile time.
-
-  Selecting a RISC-V CPU or ISA string now resolves the extensions it implies,
-  so `--target-cpu=sifive-e31` and `--march=rv32imac` both report `m`, `a`, and
-  `c`. Previously either one reported only the base integer ISA.
-
-- `Bencher.bench_function()` now takes a raising closure.
-
-- The zero-argument `Bench.bench_function()` overload now takes a raising
-  closure as a runtime argument. The compile-time parameter form
-  `bench_function[fn]()` for a raising zero-argument body has been removed.
-
-- The remaining compile-time parameter forms of `Bench.bench_function()` and
-  `Bencher.iter()` have been removed. Pass the closure as a runtime argument.
-
-- `Bencher.iter_preproc()` now takes its closures as runtime arguments instead
-  of compile-time parameters, along with an explicit state value that is passed
-  mutably to both: the preprocessing function prepares the state before each
-  timed call of the benchmarked function, so state no longer has to be shuttled
-  through mutable captures.
-
-- `Bencher.bench_with_input()` now takes its benchmark closure as a runtime
-  argument. Its register-passable overload accepts both non-raising and raising
-  closures.
-
-- `Bencher.iter_custom()` now only takes its closure as a runtime argument. The
-  compile-time parameter form has been removed.
-
-- `std.python.numpy` now handles multi-dimensional NumPy arrays, not just 1-D:
-
-  - `copy_to_numpy_tensor()` copies a `Span` into a new NumPy array of a given
-    shape. The shape is a `Coord`, so extents may be compile-time (`Idx[N]`) or
-    runtime (`Int`) in any mix.
-
-  - `from_numpy_tensor()` borrows an N-D C-contiguous array as a `NumPyView`,
-    which holds the buffer and its shape together and indexes as
-    `view[i, j]`.
+- `Tuple` element types no longer need to be `Movable`. A `Tuple` is now
+  `Movable` only when all of its elements are.
+  `Tuple` has a new `init_with` initializer, which constructs each element in
+  place from a closure parameterized on the element index:
 
   ```mojo
-  from std.python.numpy import copy_to_numpy_tensor, from_numpy_tensor
-  from std.utils.coord import Coord, Idx
-
-  var values: List[Float64] = [0, 1, 2, 3, 4, 5]
-  var arr = copy_to_numpy_tensor(values, Coord(Idx[2], Idx[3]))
-
-  var view = from_numpy_tensor[DType.float64, 2](arr)
-  var value = view[1, 2]
+  comptime T = Tuple[Pinned, Pinned]  # `Pinned` is not `Movable`.
+  var t = T(init_with=lambda [i: Int]() -> T.Ts[i]: Pinned(i * 10))
   ```
 
-  The existing 1-D `copy_to_numpy_array()` and `from_numpy_array()` are
-  unchanged.
+- `Layout` now names its element count `length`, matching `Span` and `List`.
+  Construct one with `Layout[T](length=n)` and read the count back with
+  `len(layout)`: `Layout` and `ManagedAllocation` now conform to `Sized`. The
+  `Layout(count=)` initializer and the `Layout.count()` method are deprecated.
 
-- `Array` now conforms to `Comparable` when its element type does, adding `<`,
-  `<=`, `>`, and `>=`. The ordering is **lexicographic**: the first differing
-  element decides, so `[1, 5] < [2, 3]` is `True`.
+  ```mojo
+  var allocation = alloc(Layout[Int32](length=4))
+  for i in range(len(allocation)):
+      allocation.unsafe_ptr().unsafe_offset(i).unsafe_write(Int32(i))
+  dealloc(allocation^)
+  ```
 
-- `StringDict` now conforms to `Writable` when its value type is `Writable`,
-  matching the existing behavior of `Dict`. This lets you `print()` a
-  `StringDict` or convert it to a `String`.
+- Raising an integral `SIMD` value (including `Int`) or a `SIMDLength` to a
+  negative power now aborts at run time instead of silently returning `0`. Use
+  a floating point base instead.
 
-- The `chars` argument of `strip()`, `lstrip()` and `rstrip()` on `StringSpan`,
-  `String` and `StringLiteral` is now an `ImmStringSpan`, so a mutable string
-  is accepted as `chars`, including the string being stripped (`s.strip(s)`).
+- Raising an `IntLiteral` to a negative `IntLiteral` power now computes the
+  exact result as a float literal, the reciprocal of the positive power,
+  instead of evaluating to `0`. The result is a float literal even when the
+  base is `1` or `-1`, so `var x = (-1)**-3` is now a `Float64` holding
+  `-1.0`. Zero to a negative power evaluates to `nan`.
 
-- `StringDict.__getitem__()` now accepts a `StringSpan`, so you can index a
-  `StringDict` with a borrowed string view without first allocating a
-  `String` just to perform the lookup.
+  ```mojo
+  var a = 2**-1             # 0.5, same as 1 / 2
+  var b = Float64(2) ** -1  # 0.5
+  var n = 2
+  var c = n**-1             # aborts at run time
+  ```
 
-- Renamed the variadic type-list parameter on `Tuple` and `VariadicPack` to
-  `Ts`, standardizing the naming convention used across the standard library.
-  The old name, `element_types`, remains as a deprecated alias.
+- Added `FileDescriptor` to `std.io`, an owning wrapper around
+  `RawFileDescriptor`. It is a linear type: close it explicitly with
+  `fd^.close()`, which raises if the close fails. It is movable but not
+  copyable, and `Optional[FileDescriptor]` is the size of a single
+  descriptor. `RawFileDescriptor` gains a raising `close()` method.
+  `FileDescriptor(copy_borrowed=)` duplicates a descriptor with
+  close-on-exec set, so child processes don't inherit the copy.
 
-- Added experimental `DType.float6_e2m3fn` and `DType.float6_e3m2fn`, the two
-  6-bit encodings from the
-  [Open Compute microscaling specification](https://www.opencompute.org/documents/ocp-microscaling-formats-mx-v1-0-spec-final-pdf).
-  Both are finite-only, so neither has an inf nor a NaN encoding.
+- `RawFileDescriptor.read_bytes()`, `RawFileDescriptor.fchdir()`,
+  `RawFileDescriptor.close()`, `FileDescriptor.close()`, and
+  `FileDescriptor(copy_borrowed=)` now raise `IOError`, so callers can
+  match on the error's `kind()`. Code in a plain `raises` function still
+  compiles unchanged.
 
-  These are experimental storage formats for packed weights rather than
-  general-purpose numeric types, and standard library support is deliberately
-  partial. As with the existing `DType.float4_e2m1fn`, they are excluded from
-  `is_numeric()`, arithmetic is not implemented, and converting to or from
-  another floating-point type is unsupported on every target, so values cannot
-  be printed either.
+- File and directory functions in `std.os`, such as `mkdir()`, `remove()`,
+  and `listdir()`, now raise `IOError`, so you can check what went wrong
+  with `e.kind()`:
 
-- `Array` now conforms to `Defaultable` when its type `T` is also `Defaultable`.
+  ```mojo
+  try:
+      os.remove(path)
+  except e:
+      if e.kind() != .not_found:
+          raise e
+  ```
 
-- `Array` now supports concatenation with the `concat` method when its type `T`
-  is `Movable`. Both operands are consumed and their elements are moved into the
-  new array, whose length is the sum of the operands' lengths.
+- `open()`, `FileHandle`, and the `Path` methods that read, write, or list
+  files now raise `IOError` too. `FileHandle.read()` and `Path.read_text()`
+  still raise `Error`, because decoding UTF-8 can fail.
 
-- `Array` now supports repetition with the `repeat` method when its type `T` is
-  `Copyable`. The array is consumed: its elements are copied into all but the
-  last repetition and moved into the last one.
+- Added `BorrowedFileDescriptor` to `std.io`, a copyable, non-owning view
+  of a `FileDescriptor` that carries the owner's origin, so it can be
+  passed around without closing the descriptor or outliving its owner.
 
-- Deprecated `is_trivially_movable()`, `is_trivially_copyable()`, and
-  `is_trivially_deletable()` in `std.memory` in favor of
-  `IsTriviallyMovable[T]`, `IsTriviallyCopyable[T]`, and
-  `IsTriviallyDeinitable[T]` in `std.traits`. The replacements are `comptime`
-  predicates rather than functions, so drop the call parens at use sites, for
-  example `IsTriviallyCopyable[T]` instead of `is_trivially_copyable[T]()`.
+- `ArcPointer` element types no longer need to be `Deinitable`. Destroy an
+  `ArcPointer` of a non-`Deinitable` type with the new `deinit_with()` method.
 
-- Renamed `UnsafeMaybeUninit` to `MaybeUninit`. It conforms to `Movable`,
-  `Copyable`/`ImplicitlyCopyable`, and `Deinitable` only when the contained
-  type's own move, copy, or implicit deinitializer is trivial, since
-  moving, copying, or destroying a `MaybeUninit` only touches its raw bits,
-  never the contained value's own lifecycle methods. Gating conformance this way
-  turns what would otherwise be silent memory-safety bugs into compile-time
-  errors.
+- Added an `OwnedPointer(init_with=)` initializer that constructs the value in
+  place, so the element type doesn't need to be `Movable`, and an
+  `OwnedPointer.deinit_with()` method that destroys an `OwnedPointer` whose
+  element type isn't `Deinitable`. The initializers that copied a value into the
+  allocation are now deprecated.
 
-- Added `deinit()`, for any `Deinitable` type, to explicitly extend a value's
-  lifetime up to a specific point and run its deinitializer there.
+- `FileHandle` now owns its descriptor through a `FileDescriptor` and always
+  refers to an open file. It is no longer `Defaultable`, and `close()`
+  consumes the handle (`f^.close()`) instead of leaving it in an invalid
+  state. It still raises if the close fails. Use `Optional[FileHandle]`,
+  which is the same size as `FileHandle`, for a file that may not be open.
+  `NamedTemporaryFile` follows the same rules: it always holds an open file,
+  `close()` consumes it, and `Optional[NamedTemporaryFile]` is the same size
+  as `NamedTemporaryFile`.
 
-- `Atomic` is now parameterized on a value type `T` instead of a `DType`.
-  Update call sites from `Atomic[DType.float32]` to `Atomic[Float32]`. The
-  atomic operations (`load()`, `store()`, `fetch_add()`, `compare_exchange()`,
-  and so on) still only support `Scalar` types.
+- The `OptionalPointer`, `OptionalMutPointer`, and `OptionalImmPointer`
+  aliases are deprecated. Write `Optional[Pointer[T, origin]]`,
+  `Optional[MutPointer[T, origin]]`, or `Optional[ImmPointer[T, origin]]`
+  instead. An `_` origin nested inside the `Optional` makes the function
+  generic over it, as it did with the aliases:
 
-- Added `Pointer[T].unsafe_write(def() -> T)`, which initializes the pointee
-  with the value returned by a closure, constructing it directly in place rather
-  than moving an already-constructed value there. Unlike `unsafe_write(var T)`,
-  this does not require the pointee type to be `Movable`.
+  ```mojo
+  # Before
+  def fill(buf: OptionalMutPointer[Byte, _]): ...
 
-- `Array[T, N]` has a new `fill_with=` constructor that calls a function with
-  each index in `[0, N)` and writes its result into that position, replacing
-  the `Array(uninitialized=True)` plus manual fill-loop idiom.
+  # After
+  def fill(buf: Optional[MutPointer[Byte, _]]): ...
+  ```
 
-- `List`'s element type is now bounded by `AnyType` instead of `Movable`.
+- The `StringSlice`, `ImmStringSpan`, and `ImmStringSlice` aliases are
+  deprecated. Use `StringSpan` instead. `StringSpan` is always immutable, so
+  the `Imm` variants are redundant.
 
-- `List` has a new `fill_with=` constructor that calls a function with each
-  index in `[0, length)` and writes its result into that position, without
-  requiring the element type to be `Movable`.
+- `Span` now conforms to `Equatable` when its element type does.
 
-- Added `write()` to `MaybeUninit` and `Pointer`, as a safe counterpart to
-  `unsafe_write()` for types that are trivially deinitializable (for example
-  `Int`). Since a trivial deinitializer is a no-op, overwriting a live value
-  through `write()` can't leak a resource, so it's callable without first
-  destroying the previous value. Prefer it over `unsafe_write()` whenever the
-  pointee type is trivially deinitializable.
+- `stdin`, `stdout`, and `stderr` are now `BorrowedFileDescriptor` values,
+  and the `file` argument of `print()` takes a `BorrowedFileDescriptor`
+  instead of a `RawFileDescriptor`. You can pass a `FileHandle` or
+  `FileDescriptor` directly, since both convert implicitly:
 
-- `Pointer.mut_cast` is now deprecated. Developers should prefer using explicit
-  mutabilites at the callsite via `MutPointer` or `ImmPointer`. If mut casting
-  is needed (it should try to be avoided) - you can use `unsafe_mut_cast`.
+  ```mojo
+  with open("log.txt", "w") as f:
+      print("hello", file=f)
+  ```
 
-- Added `ptr()` to `StringLiteral`, `CStringSlice`, `ArcPointer`, and
-  `OwnedPointer`, deprecating their `unsafe_ptr()` methods. These types
-  always hold a valid, live value, so a pointer to it is never unsafe.
+- `SIMD.try_cast()` converts between integer types, raising
+  `TryCastSIMDError` if any element is out of range. `SIMD.cast()` wraps
+  instead, so `Int(-1).cast[.uint8]()` is 255.
 
-- The following APIs have been migrated to unified closures: `sort`,
-  `debug_assert`, `Span.apply`.
+  ```mojo
+  var byte = Int(255).try_cast[.uint8]()  # 255
+  var checked = Int(-1).try_cast[.uint8]()  # raises TryCastSIMDError
+  var lanes = SIMD[.int32, 4](1, 2, 3, 300).try_cast[.uint8]()  # raises
+  ```
 
-- Uncaught exceptions now print to `stderr`, not `stdout`.
+- `find()` and `rfind()` on `String`, `StringSpan`, and `StringLiteral` now
+  return `Optional[Int]`, holding `None` when the substring isn't found,
+  instead of `-1`. Use `x in s` to test for a substring, or bind the offset
+  with a pattern:
+
+  ```mojo
+  var line = String("key=value")
+  if case .Some(eq) = line.find("="):
+      print(line[byte=:eq])  # key
+  print("!" in line)  # False
+  ```
+
+  Ordered checks such as `s.find(x) >= 0` and arithmetic on the result no
+  longer compile. Two old patterns still compile but now give the wrong
+  answer, with no error or warning, so search your code for them:
+
+  - `s.find(x) == -1` is always `False` and `s.find(x) != -1` is always
+    `True`, because `-1` converts implicitly to `Optional[Int]`. This also
+    applies when you store the result in a variable and compare it later.
+  - `if s.find(x):` is now `True` only when `x` is found. Before, it was
+    `True` when `x` was missing and `False` when `x` was at offset 0.
+
+### Interior origins
+
+More standard library APIs now return references, pointers, spans, and
+iterators that carry an *interior origin* of the value they point into,
+instead of the value's own origin. Reassigning the value, or calling a
+`mut self` method on it, invalidates them. Code that uses one afterward is now
+a compile-time error; before, it compiled and read freed or destroyed memory.
+These APIs now return interior origins:
+
+- `List.unsafe_ptr()`.
+- `String.unsafe_ptr()`, `String.unsafe_ptr_mut()`, `as_c_string_span()`,
+  `split_at_grapheme()`, and the `String` iterators, such as `codepoints()`
+  and `bytes()`.
+- `Optional.value()`, `Optional.unsafe_value()`, and `Optional.__getitem__()`.
+- `OwnedPointer.ptr()` and `Variant.unsafe_get()`.
+- The pointers and spans that `Allocation`, `ManagedAllocation`, and
+  `ThinAllocation` return.
+
+Most code that no longer compiles matches one of these patterns:
+
+- A pointer held across a mutation, such as `append()`, that can reallocate.
+
+  ```mojo
+  var p = list.unsafe_ptr()
+  list.append(4)
+  print(p[])  # error: use of invalidated interior reference 'list["element"]'
+  ```
+
+- A reference used after its owner is reassigned.
+
+  ```mojo
+  ref i = opt.value()
+  opt = None
+  print(i)  # error: use of invalidated interior reference 'opt["value"]'
+  ```
+
+- A string mutated while one of its iterators is in use.
+
+  ```mojo
+  # error: use of invalidated interior reference 's["bytes"]'
+  for c in s.codepoints():
+      s += String(c)
+  ```
 
 ## GPU programming
 
-- The `max.gpu` package now mirrors everything reachable from `std.gpu`, making
-  it a complete entry point for accelerator programming. Prefer `max.gpu`, which
-  is becoming the only public source for these utilities.
+- Added the `apple-m6` and `apple-m6-metal4` accelerator targets, and
+  `CompilationTarget.is_apple_m6()` to `std.sys`. Apple M6 GPUs are now
+  detected automatically, so you no longer need to pass
+  `--target-accelerator=apple-m5` on M6 hardware.
 
-- The `std.gpu` package is now private, as `std._gpu`. `max.gpu` is the only
-  public source for the GPU primitives, and its API reference is the only
-  published one; `/docs/std/gpu/...` pages redirect to `/api/mojo/max/gpu/...`.
-  Replace `from std.gpu import ...` with `from max.gpu import ...`; a failed
-  `std.gpu` import carries a note pointing at the new home.
+- `compile_options` now reports an error for LLVM codegen flags such as
+  `frame-pointer=all`, which it accepted before without effect. The only
+  codegen flag that had an effect, `denormal-fp-math-f32=<mode>`, still sets
+  the f32 denormal mode of NVIDIA GPU kernels, and other targets now reject it.
+
+- `Bool`, `Scalar` (including `Int`), `String`, `StringSpan`, and
+  `StringLiteral` now conform to `ConvertibleToPython`, so they can be passed
+  to generic code bounded on that trait. The dedicated `PythonObject`
+  constructors for these types are removed; implicit conversion still works
+  through the single `ConvertibleToPython` constructor.
+  `ConvertibleToPython` gains an associated `ConversionToPythonErrorType`
+  (default `Never`), so conversions that cannot fail, such as `Bool` and
+  `Scalar`, stay non-raising, while `String` conversions keep raising
+  `Error`. This is a breaking change. If a conversion is non-raising, the
+  `raises` effect can be removed from the `ConvertibleToPython` constructor.
+  If a conversion is raising, an error type must be assigned to
+  `ConversionToPythonErrorType`. Contributed by
+  [@christoph-schlumpf](https://github.com/christoph-schlumpf) in
+  [#6547](https://github.com/modular/modular/pull/6547).
 
 ## Tooling changes
 
-- `mojo doc` now reports the condition of a conditional trait conformance, and
-  the generated API docs show it alongside the trait. Previously the condition
-  was dropped, making a conditional conformance indistinguishable from an
-  unconditional one. Also fixed rendering of some `where` clauses.
+- `mojo build` and `mojo run` can now report what elaboration produced, to
+  show which compile-time code makes a compile slow. `--elaboration-stats`
+  lists each `comptime for` loop with its iteration count and the operations
+  its unrolled iterations produced. It also lists the calls that compile-time
+  evaluation made to the interpreter, summed by function and by call site,
+  with their cache hits and the CPU time spent interpreting. The
+  report has one part for each pipeline that elaborated: the host and each
+  accelerator target. This option is hidden; use `--help-hidden` to list it.
 
-- The new `@__doc_inline` decorator on an import statement documents the
-  imported symbols in the importing module, so a package can document an API
-  it re-exports from private modules. Wildcard (`import *`) and renamed
-  (`import ... as ...`) imports are not supported.
+  Like the timing reports, the report prints as text to stderr by default.
+  `--timing-json` prints it as JSON instead, under an `elaboration` key, and
+  `--timing-file` writes it to a file instead of stderr. If the compilation
+  hits the cache, elaboration is skipped and nothing is reported. Clear
+  compilation cache or point `MODULAR_CACHE_DIR` at an empty directory
+  to get a full report.
 
-  ```mojo
-  @__doc_inline
-  from ._impl import Widget, make_widget
-  ```
+- `mojo build` and `mojo run` have a new hidden `--parser-stats` option that
+  reports the time the parser spends to resolve each declaration, to show
+  which declarations make parsing slow. Each declaration's time excludes the
+  resolutions it caused, so the times add up to the total parse time. The
+  report uses the same output options as `--elaboration-stats`.
+
+- `mojo precompile` may now take a `--namespace` option to allow it to bake the
+  provided namespace into the package. A package `pkg` built with `--namespace
+  foo.bar` must be placed at `foo/bar/pkg.mojoc` and imported as `foo.bar.pkg`.
+  While precompiling, the package may refer to itself both by `pkg` and by
+  `foo.bar.pkg`. Both paths resolve to the source being compiled.
 
 ## Removed
 
-- Legacy constructs replaced in 1.0 were removed in this release, including
-  the `fn`, `alias` and `__comptime_assert` keywords, `@parameter if` and
-  `@parameter for` syntax.
+- Legacy closures are removed. The `capturing` function effect and the
+  `@__parameter` (and `@parameter`), `@__copy_capture`, and
+  `@__move_capture` decorators are now errors. Declare a nested function's
+  captures in a capture list instead, and pass the closure as a value:
 
-This release completes the removal of APIs deprecated during the v1.0 cycle.
+  ```mojo
+  def apply[F: def(Int) -> Int](f: F, x: Int) -> Int:
+      return f(x)
 
-- Removed `is_npu()` from `max.gpu.host.info`. A custom op's `target` says
-  whether the op was placed on the host or on a device, not which kind of
-  device it landed on -- that comes from the build, via `_accelerator_arch()`,
-  `get_gpu_target()` or `ctx.default_device_info`. `is_npu()` invited the
-  target string to be asked a question it cannot answer, and nothing called
-  it. `is_accelerator()` is unchanged in meaning for every target a graph
-  produces: use it to ask whether an op is off the host.
+  def main():
+      var offset = 10
+      def add(x: Int) {var offset} -> Int:  # was @__copy_capture(offset)
+          return x + offset
+      print(apply(add, 1))
+  ```
 
-- Implicit variable declaration now produces an error instead of a warning. The
-  walrus operator also only overwrite existing values, not implicitly declare
-  new ones.
+  A function passed as a compile-time parameter must now be `thin`, for
+  example `[f: def(Int) thin -> Int]`.
 
-- Removed the temporary `InlineArray` alias for `Array`, including its
-  re-exports from `std.collections` and the prelude. Use `Array` directly.
+- `CompiledFunctionInfo` no longer has `num_captures`, `capture_sizes`, or
+  `populate` members. Kernels can no longer capture implicitly, so these
+  were always empty.
 
-- Removed redundant `Int` overloads across the standard library:
-  `count_leading_zeros()`, `count_trailing_zeros()`, `bit_reverse()`,
-  `byte_swap()`, `pop_count()`, `log2_ceil()`, `next_power_of_two()`, and
-  `prev_power_of_two()` in `std.bit`; `broadcast()` in `std.gpu.primitives`
-  (including the `UInt` overload); `readfirstlane()` in `std.sys`; and
-  `umod()` in `std.math.uutils`. `Int` is an alias for `Scalar[DType.int]`,
-  so the generic `SIMD` overloads already accept `Int` arguments and return
-  `Int`; call sites need no changes. As a side effect, `broadcast()` on
-  `Int`/`UInt` values now shuffles the full 64-bit value instead of silently
-  truncating it to 32 bits.
+- The AMD-only intrinsics `readfirstlane()`, `sendmsg()`, and
+  `implicitarg_ptr()` moved from `std.sys.intrinsics` to `max.gpu.intrinsics`,
+  next to the other vendor-specific GPU intrinsics. Import them from there
+  instead. `std.sys.intrinsics.ballot()` is removed; use
+  `max.gpu.primitives.warp.vote()`, which works on every GPU vendor.
 
-- Removed the `Int` overloads of `rotate_bits_left()` and
-  `rotate_bits_right()` in `std.bit`. The `SIMD` overloads now accept any
-  integral element type instead of only unsigned ones — rotation is a pure
-  bit-pattern operation, so signed and unsigned rotate identically — and
-  therefore handle `Int` arguments directly. Call sites need no changes.
+- The `Powable` and `CeilDivableRaising` traits are removed. A type that
+  defines `__pow__()` still supports the `**` operator without conforming to a
+  trait, and `pow()` now takes `SIMD` values only. Nothing conformed to
+  `CeilDivableRaising`, so the raising `ceildiv()` overload is removed too.
 
-- Removed the `std.gpu.profiler` module and its `ProfileBlock` context manager.
-  It timed host wall-clock, not GPU work, and reported the elapsed time with the
-  operands reversed. Time a block of host code with
-  [`perf_counter_ns()`](/docs/std/time/time/perf_counter_ns/) directly, and use
-  a GPU profiler such as Nsight Systems or `rocprof` for device timings.
+- Removed APIs that were deprecated in Mojo 1.1 or earlier. Use the
+  replacement in each case:
 
-- Removed `memcmp` and its `std.memory` re-export. Use `unsafe_memcmp`
-  instead.
+  - The `UnsafePointer` alias and the `std.memory.unsafe_pointer` module that
+    defined it. Use `Pointer`.
 
-- Removed `String.set_byte_length()`, an internal helper that set the length
-  field without reserving capacity.
+  - The `Pointer` methods `load()`, `store()`, `strided_load()`,
+    `strided_store()`, `gather()`, `scatter()`, `free()`, `bitcast()`,
+    `address_space_cast()`, and `take_pointee()`. Use their `unsafe_`-prefixed
+    spellings, such as `unsafe_load()`.
 
-- Removed the `validate` parameter from
-  [`b64decode()`](/docs/std/base64/base64/b64decode/), which now always
-  validates. Passing `validate=False` did not skip any work on valid input; it
-  only turned characters outside the base64 alphabet into silently corrupt
-  output bytes. Drop `[validate=True]` from existing calls; calls that relied on
-  the default now raise instead of returning garbage.
+  - `Pointer.mut_cast()`. Spell the mutability in the pointer type
+    (`ImmPointer` or `MutPointer`), or use `unsafe_mut_cast()`.
 
-- Removed the origin aliases left over from the `Immut` to `Imm` and
-  `External` to `Untracked` renames. Use the surviving spelling in each case:
-  `ImmOrigin` for `ImmutOrigin`, `ImmUnsafeAnyOrigin` for
-  `ImmutUnsafeAnyOrigin`, `ImmStaticOrigin` for `StaticConstantOrigin`,
-  `UntrackedOrigin` for `ExternalOrigin`, `MutUntrackedOrigin` for
-  `MutExternalOrigin`, and `ImmUntrackedOrigin` for both
-  `ImmutUntrackedOrigin` and `ImmutExternalOrigin`.
+  - Subtracting an integer from a `Pointer` and the `+=` and `-=` operators.
+    Use `unsafe_offset()`. Adding an integer and positional indexing such as
+    `ptr[i]` remain deprecated.
 
-- Removed the redundant `Int` overloads of `sqrt()`, `fma()`, `align_down()`,
-  `align_up()`, `clamp()`, and `iota()` from `std.math`. `Int` is an alias for
-  `Scalar[DType.int]`, so the generic `SIMD` overloads already accept `Int`
-  arguments and return `Int`; call sites need no changes.
+  - `memmove()`. Use `unsafe_memmove()`.
 
-- Removed the pre-unification pointer aliases `MutUnsafePointer`,
-  `ImmUnsafePointer`, `ImmutUnsafePointer`, `ImmutOpaquePointer`,
-  `ImmutPointer`, and `OptionalUnsafePointer`. Use `MutPointer`, `ImmPointer`,
-  `ImmOpaquePointer`, and `OptionalPointer` instead. `UnsafePointer` itself
-  remains available, but is deprecated in favor of `Pointer`.
+  - The `alloc[T](count)` overload. Use `alloc(Layout[T](length=count))`,
+    which returns an `Allocation`, or `unsafe_alloc[T](count)` for a raw
+    pointer.
 
-- Removed the raw memory functions superseded by their `unsafe_`-prefixed
-  spellings: `memcpy`, `memset`, `memset_zero`, `uninit_move_n`,
-  `uninit_copy_n`, and `destroy_n`. Use `unsafe_memcpy`, `unsafe_memset`,
-  `unsafe_memset_zero`, `unsafe_uninit_move_n`, `unsafe_uninit_copy_n`, and
-  `unsafe_destroy_n` instead.
+  - `is_trivially_movable()`, `is_trivially_copyable()`, and
+    `is_trivially_deletable()`. Use `IsTriviallyMovable[T]`,
+    `IsTriviallyCopyable[T]`, and `IsTriviallyDeinitable[T]` from
+    `std.traits`.
 
-- Removed the `size` aliases left from the `size` to `length` rename:
-  `SIMD.size`, `Array.size`, `TypeList.size`, and the `SIMDSize` alias for
-  `SIMDLength`. Use `length` and `SIMDLength`.
+  - The `CStringSlice` alias and `as_c_string_slice()` on `String`,
+    `StringSlice`, and `StringLiteral`. Use `CStringSpan` and
+    `as_c_string_span()`.
 
-- Removed the `as_immutable()` and `get_immutable()` methods on `Pointer`,
-  `Span`, and `StringSpan`. Use `as_imm()`.
+  - `unsafe_ptr()` on `ArcPointer`, `OwnedPointer`, `CStringSpan`, and
+    `StringLiteral`. Use `ptr()`.
 
-- Removed the `ImmutSpan` alias. Use `ImmSpan`.
+  - `String.capacity()` and `String.reserve()`. Use `capacity_bytes()` and
+    `reserve_bytes()`.
 
-- Removed `String.as_string_slice()`. Construct a `StringSpan` from the string
-  instead: `StringSpan(my_string)`.
+  - `Tuple.element_types` and `VariadicPack.element_types`. Use `Ts`.
 
-- Removed the `ImplicitlyDestructible` and `ImplicitlyDeletable` aliases. Use
-  `Deinitable`.
-
-- Removed the deprecated ownership-transfer methods: `List.steal_data()` and
-  `OwnedPointer.steal_data()` are now `unsafe_take_allocation()`,
-  `OwnedPointer.take()` is `into_inner()`, and `Variant.take()` and
-  `Variant.unsafe_take()` are `unwrap()` and `unsafe_unwrap()`.
-
-- Removed the `Pointer` methods superseded by their `unsafe_`-prefixed
-  spellings: `as_noalias_ptr()`, `destroy_pointee()`, `destroy_pointee_with()`,
-  `init_pointee_move()`, `init_pointee_copy()`, and `init_pointee_move_from()`.
-  Use `unsafe_as_noalias()`, `unsafe_deinit_pointee()`,
-  `unsafe_deinit_pointee_with()`, `unsafe_write()`, and
-  `unsafe_write_move_from()`. The `Pointer.type` alias for `Pointer.T` is gone
-  as well.
-
-- Removed the `ConditionalType` type function and the `std.utils.type_functions`
-  module. Use the ternary expression `T if cond else U`.
-
-- Removed `trait_downcast()`. Constrain on the trait instead, with
-  `conforms_to(type_of(src), Trait)` in a `where` clause or a
-  `comptime assert`.
-
-- Removed the parametric `benchmark.run[func]()` overloads. Pass the function as
-  an argument to `run(f)` instead, which accepts a unified closure.
-
-- Removed `AnyCoroutine`, `Coroutine` and `RaisingCoroutine` from the prelude,
-  and made the module that defines them private. Mojo's async support is
-  unfinished, and these types being globally visible led people to build on an
-  API that carries no stability guarantees. `async def` is unaffected: the
-  compiler still synthesizes these types for you, so they continue to appear in
-  inferred types and diagnostics. There is no supported way to name them
-  directly.
-
-- Removed the async task API from the public `std.runtime.asyncrt` module,
-  which is now private. `initialize_runtime()` and `parallelism_level()` are
-  unaffected and have moved up to the `std.runtime` package, so import them
-  from `std.runtime` instead of `std.runtime.asyncrt`.
-
-- Removed support for `.mojopkg` files after a period of deprecation. Use
-  `.mojoc` files instead.
+  - The `AnyType` and `Deinitable` aliases in `std.builtin.anytype`, and the
+    `Movable`, `Copyable`, and `ImplicitlyCopyable` aliases in
+    `std.builtin.value`. These traits live in `std.traits` and are still
+    exported from the prelude.
 
 ## Fixed
 
-- `unsafe_uninit_move_n()` and `unsafe_uninit_copy_n()` with `overlapping=True`
-  now handle an overlap in either direction when `T` is not trivially movable
-  or copyable. They always walked front-to-back, so a `dest` above `src`
-  overwrote elements that had not been moved or read yet.
+- The compiler now rejects a call that passes a container immutably along with
+  one of its elements mutably, such as `f(items, items[0])` where the second
+  argument is `mut`. This was unsound and could be used to read dangling data.
 
-- `SIMD.__init__(py=...)` now reads unsigned dtypes through the unsigned CPython
-  entry point (`PyLong_AsSize_t`). Constructing an unsigned `SIMD` from a Python
-  int in `[2**63, 2**64)` no longer overflows, and a negative Python int now
-  raises instead of silently wrapping to the maximum value.
+- `VariadicPack` now conforms to `Writable` when all of its element types do,
+  so a pack can be passed to `print()`, `String()` and `repr()`.
 
-- A union whose widest member is a `SIMD[DType.bool, N]` with `N > 1`, such as
-  `Optional[SIMD[DType.bool, 2]]`, now compiles.
+- `find()` and `rfind()` on `String`, `StringSpan` and `StringLiteral` now
+  honor `start` when the substring is empty. `"abc".find("", 2)` returns `2`
+  instead of `0`, and both methods return `None` when `start` is past the end
+  of the string. Contributed by [@dhruvilmehta](https://github.com/dhruvilmehta)
+  in [#7451](https://github.com/modular/modular/pull/7451) and
+  [@Antony-mcw](https://github.com/Antony-mcw) in
+  [#7668](https://github.com/modular/modular/pull/7668).
 
-- A `where` clause naming a type that an enclosing `where` clause constrained
-  to a tighter trait can now be proven. Calling a method declared
-  `where Ts.contains[T]()` with such a `T` failed with `lacking evidence to
-  prove correctness`, even though `T` was plainly in `Ts`.
+- A bare `raise` in an `except` block no longer crashes the compiler when
+  building with debug info.
 
-- `hash()` on a floating-point `SIMD` value now normalizes the sign of zero, so
-  `hash(-0.0) == hash(0.0)`. Hashing the raw bit pattern broke the `Hashable`
-  contract that equal values hash equally: a `Dict` or `Set` could hold both
-  `-0.0` and `0.0` as separate keys even though they compare equal, and a
-  lookup could then return a value stored under the other key.
+- `std.ffi.c_pid_t` is now `c_int` instead of `Int`, matching the 32-bit C
+  `pid_t` on Linux and macOS. As an `Int`, a `-1` returned by a function such
+  as `waitpid()` read back as a large positive number, so checks for `-1` or a
+  negative result never fired.
 
-- `mojo build` can cross-compile to RISC-V again. Emitting LLVM IR, assembly,
-  or an object for a `riscv32` or `riscv64` triple failed with `target '...'
-  is not supported by this build`.
+- On Apple GPUs, building a `SIMD` from device-buffer elements in a kernel, as
+  in `SIMD[DType.float32, 2](src[i], src[i])`, no longer reads zeros.
 
-- `mojo build --print-supported-targets` no longer lists targets that the
-  compiler cannot generate code for.
+- `SIMD.slice()` no longer passes `llvm.vector.extract` an offset that is not
+  a multiple of the output width, which LLVM rejects. A wide slice at such an
+  offset, like `slice[16, offset=8]()` on a 32-element vector, now takes the
+  element-wise path, and aligned slices narrower than the target's native
+  vector width, such as the halves `split()` returns for small vectors, now
+  use the intrinsic.
 
-- `mojo build --emit asm` and `--emit llvm` now always write the offload kernel
-  files next to the host output file. Building a kernel that an earlier build
-  had already compiled could write them into the earlier build's output
-  directory, or skip them with no diagnostic.
+- `**` with an integer exponent no longer truncates the exponent to 32 bits,
+  so `Float64(2.0) ** Int64(4294967296)` is now `inf` instead of `1.0`, and
+  `Float64(2.0) ** Int32.MIN` is now `0.0` instead of `1.0`.
 
-- Parametric `raises` now accepts any primary expression as the thrown type in
-  a function signature, matching the syntax positions where types otherwise
-  appear. This most notably fixes `raises Self.SomeAssocType` on trait and
-  struct methods, which would previously fail with an error. The parenthesized
-  workaround (`raises (Self.DriveErrorType)`) is no longer required.
+- Fixed rejection of negative integer and floating-point literals in `match`
+  patterns. Contributed by [@a-tarasyuk](https://github.com/a-tarasyuk) in
+  [#7316](https://github.com/modular/modular/pull/7316).
 
-- An integer `range()` with a step of zero is now always empty. It previously
-  used to be an infinite loop - iterating forever at runtime, and hanging the
-  compiler at comptime.
+- A `comptime if conforms_to(T, Deinitable)` guard now correctly refines `T`
+  and deinits it after its last use.
 
-- A strided `range()` no longer iterates forever when the element after the
-  last one falls outside the element type, as in
-  `range(UInt8(250), UInt8(255), UInt8(2))`. The cursor used to wrap past the
-  type's limit and land back inside the range, so iteration restarted near the
-  opposite limit and never agreed with `len()`. This affected signed and
-  unsigned ranges in both step directions.
+- Building a `SIMD` value from a list literal with the wrong number of elements
+  is now a compile-time error. Previously, `var x: Int = [1, 2, 3, 4]` compiled
+  and kept only the first element.
 
-- `reversed()` on a scalar `range()` no longer yields an empty iterator when
-  the range starts within one step of the element type's limit, as in
-  `reversed(range(Int8.MIN, Int8.MIN + 8, Int8(1)))`. Unsigned ranges, and
-  ranges whose span overflows their element type, are fixed by the same change.
+- Printing a `Float32` or `Float64` now produces the shortest decimal that
+  rounds back to the same value, with ties rounded to even. Previously about
+  one `Float32` in 200 printed a decimal that parsed back to a neighboring
+  value (for example, `33560532.0` printed as `33560530.0`), and values
+  exactly halfway between two shortest decimals, such as `3.37890625`, rounded
+  up instead of to even.
 
-  Reversing an already-reversed range, as in `reversed(reversed(range(10)))`,
-  is now a compile-time error.
+- `atol()` now rejects a number that ends in an underscore when whitespace
+  follows it, as it already did without the whitespace. Previously
+  `atol("9_ ")` returned `90`.
+- `Process.run()` now passes the child process the arguments it was given.
+  Arguments built at run time, such as `String("a") + String(i)`, reached the
+  child as repeated copies of the last argument or as freed memory.
 
-- Fixed `ceildiv()` returning `0` for unsigned operands near the type's
-  maximum value. The unsigned code path computed `numerator + denominator -
-  1`, which overflows and wraps for large operands; it now derives the
-  ceiling from the floor division and remainder instead.
+- Fixed a bug where a function that modified the elements of a `mut` variadic
+  pack (`mut *args: *Ts`), or of a `VariadicPack` with mutable elements, could
+  leave the values passed to it unchanged.
 
-- `Counter.most_common(n)` now returns all elements when `n` exceeds the
-  number of unique elements, matching Python, instead of aborting.
+- `input()` no longer raises `EOF` after the first line when stdin is a pipe
+  or redirected file.
 
-- `os.path.join()` now inserts separators based on the accumulated path rather
-  than the first argument, so `join("/", "a", "b")` returns `/a/b` (previously
-  `/ab`) and `join("a", "b/", "c")` returns `a/b/c` (previously `a/b//c`).
+- `std.sys.exit()` is now declared `-> Never`, so a function with a return
+  type can end in a call to `exit()` without a trailing `return`.
 
-- `base64.b64decode()` now raises an error when the input length is not
-  divisible by 4 instead of reading past the end of the input (or aborting
-  when asserts are enabled).
+- [#7339](https://github.com/modular/modular/issues/7339) - Mojo now keeps
+  compilation caches that another installed Mojo or MAX still uses.
+  MAX, the `mojo` CLI and projects on different Mojo versions can now share one
+  cache directory. A process can still lose its cache if its Mojo install is
+  replaced while it runs.
 
-- On macOS, `os.stat()` and `os.lstat()` no longer return a negative
-  `st_mode` for regular files. The underlying `mode_t` and `nlink_t` C type
-  aliases were declared as signed 16-bit integers, but macOS defines them as
-  unsigned, so any mode with the `S_IFREG` bit set (every regular file)
-  sign-extended into a negative `Int`.
+- `Dict`, `StringDict`, `Deque`, `LinkedList` and `List.insert()` now accept
+  elements whose type names a mutable origin, such as
+  `Pointer[Int, origin_of(x)]`, as `List.append()` already did. Inserting one
+  was rejected as aliasing the collection.
 
-- On macOS, `os.stat()` and `os.lstat()` now report file timestamps with the
-  correct nanosecond values. `_CTimeSpec.as_nanoseconds()` previously treated
-  the `timespec.tv_nsec` field as microseconds, inflating the subsecond
-  component by a factor of up to 1,000.
+- `FileHandle` can now read and write more than 2 GiB at once on macOS,
+  instead of raising `Invalid argument` or aborting.
 
-- `PythonObject` no longer leaks a CPython reference per positional argument
-  when calling a Python object, nor when setting an item, attribute, or set
-  literal element.
+- [#7669](https://github.com/modular/modular/issues/7669) - At compile time,
+  `unsafe_memmove()` is fixed. `List.insert()` evaluated at compile time no
+  longer repeats the element at the insertion point, and `List.insert()` and
+  `List.pop(i)` now work on lists such as `List[String]`.
 
-- `atol()` (and therefore `Int(String)`) now raises for every value outside
-  the `Int` range. Values just past `Int.MAX` (such as `Int.MAX + 1`) no
-  longer wrap silently, and `Int.MIN` parses correctly by design rather than
-  by wraparound.
-  `atol()` will also now raise instead of aborting on a string that holds only
-  whitespace, or only whitespace and a sign.
+- A NUL byte (`\0`) in the literal text of a t-string is now kept as text.
+  Previously it ended the literal segment early, so `t"a\0b{x}"` with
+  `x = "ls"` produced `alsb` instead of `a\0bls`.
 
-- Every value of a struct type whose `@align(N)` exceeds its natural
-  alignment is now aligned to `N`, including every element of an array or a
-  `List` of that type.
-
-- [`b64decode()`](/docs/std/base64/base64/b64decode/) now ignores ASCII
-  whitespace in its input, so base64 text wrapped across lines by a MIME
-  encoder or the `base64` command line tool decodes without the caller
-  stripping it first. Only the six ASCII whitespace bytes are ignored; unlike
-  Python's `base64.b64decode()`, any other byte outside the base64 alphabet
-  still raises. The "length must be divisible by 4" error now counts only the
-  significant characters.
+- Fixed the lifetime checker to now invalidate uses of an interior reference
+  after its owner was mutated through a type holding the origin as a parameter.
+  This includes closures which capture `mut` data.

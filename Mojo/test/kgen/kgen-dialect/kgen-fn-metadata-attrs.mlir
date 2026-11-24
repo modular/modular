@@ -16,9 +16,9 @@
 "fn_metadata.one_effect"() {aux = #kgen.fn_metadata<[], "throws">} : () -> ()
 
 // CHECK-LABEL: "fn_metadata.all_effects"
-// CHECK-SAME: aux = #kgen.fn_metadata<[], "throws|async|capturing|refresult|cabi"> : !kgen.non_struct_type
+// CHECK-SAME: aux = #kgen.fn_metadata<[], "throws|async|refresult|cabi"> : !kgen.non_struct_type
 "fn_metadata.all_effects"() {aux = #kgen.fn_metadata<
-  [], "throws|async|capturing|refresult|cabi">} : () -> ()
+  [], "throws|async|refresult|cabi">} : () -> ()
 
 // The metadata is the only optional component, and is dialect-specific.
 // CHECK-LABEL: "fn_metadata.metadata"

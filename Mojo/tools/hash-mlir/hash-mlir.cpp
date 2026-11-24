@@ -47,6 +47,7 @@ int main(int argc, char **argv) {
 
   MLIRContext ctx{MLIRContext::Threading::DISABLED};
   ctx.appendDialectRegistry(registry);
+  configureKGENContext(&ctx);
 
   OwningOpRef<ModuleOp> module = mlir::parseSourceFile<ModuleOp>(
       inputFilename.getValue(), mlir::ParserConfig(&ctx));

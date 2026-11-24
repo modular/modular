@@ -14,8 +14,8 @@
 """Graph-compiler reduce-along-axis model cache for the MO interpreter.
 
 Covers the reduce-along-axis family: the reductions (``ReduceMax``/``Min``/
-``Add``/``Mul``/``Mean``), ``Softmax``/``Logsoftmax``, ``ArgMax``/``ArgMin``
-(emit ``int64`` indices), and ``Cumsum``.
+``Add``/``Mul``/``Mean``), ``Softmax``, ``ArgMax``/``ArgMin`` (emit
+``int64`` indices), and ``Cumsum``.
 
 Every op applies one operation along a single ``axis``, which is a compile-time
 attribute, not an operand. To keep the cache key ``(op, device, dtype)`` without
@@ -43,7 +43,7 @@ Models serve the eager handler via :func:`reduce_model`. Must not import from
 ``handlers.py``.
 
 The swept dtype set is deliberately conservative (the IR type category is only a
-ceiling): softmax/logsoftmax sweep floats only; the reductions, argmax/argmin,
+ceiling): softmax sweeps floats only; the reductions, argmax/argmin,
 and cumsum sweep floats + ints; ``ReduceMax``/``ReduceMin`` additionally sweep
 ``bool`` (the logical-OR/AND reductions, issue #6067); cumsum excludes ``bool``.
 CPU floats are f32/f64 (no 16-bit); GPU floats are f16/f32/bf16 (no f64).
@@ -64,8 +64,9 @@ from max.graph import DeviceRef, Graph, Module, TensorType, TensorValue, ops
 # CUDA's reduction kernels (the reduce/argmax family) only support 32- and
 # 64-bit integer reduction: 8/16-bit int reduce fails to compile on the B200
 # backend ("Failed to compile the model"). So on accelerators the reduction
-# family is narrowed to the wide ints. Cumsum is exempt — on GPU it transfers to
-# CPU (KERN-1095), so it keeps the full int set; CPU supports every width.
+# family is narrowed to the wide ints. Cumsum is exempt: its GPU kernel scans
+# narrow ints in 32 bits, so it keeps the full int set. CPU supports every
+# width.
 _WIDE_INT_DTYPES = [DType.int32, DType.int64, DType.uint32, DType.uint64]
 
 # Cumsum's (exclusive, reverse) flags ride in the cache key as a variant; every
@@ -117,10 +118,6 @@ def _b_prod(x: TensorValue, v: Variant) -> TensorValue:
     return ops.prod(x, axis=1)
 
 
-def _b_mean(x: TensorValue, v: Variant) -> TensorValue:
-    return ops.mean(x, axis=1)
-
-
 # The backend only reduces the *innermost* axis for these four ("axis other than
 # innermost/-1 not supported"), but the canonical form reduces axis=1, so they
 # transpose d1 to innermost, reduce at axis=-1, and transpose back (folded into
@@ -131,11 +128,6 @@ def _b_mean(x: TensorValue, v: Variant) -> TensorValue:
 def _b_softmax(x: TensorValue, v: Variant) -> TensorValue:
     xt = ops.transpose(x, 1, 2)
     return ops.transpose(ops.softmax(xt, axis=-1), 1, 2)
-
-
-def _b_logsoftmax(x: TensorValue, v: Variant) -> TensorValue:
-    xt = ops.transpose(x, 1, 2)
-    return ops.transpose(ops.logsoftmax(xt, axis=-1), 1, 2)
 
 
 def _b_argmax(x: TensorValue, v: Variant) -> TensorValue:
@@ -157,9 +149,7 @@ _REDUCE_OPS: dict[type[_core.Operation], ReduceSpec] = {
     mo.ReduceMinOp: ReduceSpec(_b_min, DTypeClass.NUMERIC_BOOL),
     mo.ReduceAddOp: ReduceSpec(_b_sum, DTypeClass.NUMERIC),
     mo.ReduceMulOp: ReduceSpec(_b_prod, DTypeClass.NUMERIC),
-    mo.ReduceMeanOp: ReduceSpec(_b_mean, DTypeClass.NUMERIC),
-    mo.ReduceSoftmaxOp: ReduceSpec(_b_softmax, DTypeClass.FLOAT),
-    mo.ReduceLogsoftmaxOp: ReduceSpec(_b_logsoftmax, DTypeClass.FLOAT),
+    mo.CompositeReduceSoftmaxOp: ReduceSpec(_b_softmax, DTypeClass.FLOAT),
     mo.ReduceArgMaxOp: ReduceSpec(_b_argmax, DTypeClass.NUMERIC),
     mo.ReduceArgMinOp: ReduceSpec(_b_argmin, DTypeClass.NUMERIC),
     mo.CumsumOp: ReduceSpec(
@@ -196,8 +186,8 @@ def _supported_dtypes(dtype_class: DTypeClass, device: Device) -> list[DType]:
     if dtype_class is DTypeClass.FLOAT:
         return gc_compile.float_dtypes(device)
     if dtype_class is DTypeClass.CUMSUM:
-        # Cumsum runs on CPU even for a GPU graph (KERN-1095), so it keeps every
-        # int width on all devices.
+        # The cumsum GPU kernel widens 8/16-bit ints to 32 bits, so it keeps
+        # every int width on all devices.
         return (
             gc_compile.float_dtypes(device)
             + gc_compile.SIGNED_INT_DTYPES
@@ -241,7 +231,7 @@ canonical_rank3 = gc_compile.canonical_rank3
 def variant_for(op: _core.Operation) -> Variant:
     """The cache-key variant for *op*: (exclusive, reverse) for cumsum, else ().
 
-    Matches by canonical name (not ``isinstance``) so an ``rmo.MoCumsumOp``
+    Matches by canonical name (not ``isinstance``) so an ``mo.CumsumOp``
     dispatch carries its variant too, not just ``mo.CumsumOp``.
     """
     if (
@@ -295,8 +285,10 @@ class _ReduceAxisFamily(gc_compile.GCFamilySpec):
     name = "reduce_axis"
 
     def build_module(self) -> Module:
-        """Batched module: every supported (op, device, dtype, variant), all
-        devices."""
+        """Batched module: every supported (op, device, dtype, variant).
+
+        Covers all devices.
+        """
         module = Module()
         for device in self.sweep_devices():
             self.build_module_for_device(device, module)
@@ -305,8 +297,7 @@ class _ReduceAxisFamily(gc_compile.GCFamilySpec):
     def build_module_for_device(
         self, device: Device, module: Module | None = None
     ) -> Module:
-        """Per-slot counterpart of :meth:`build_module`: one *device*
-        only."""
+        """Per-slot counterpart of :meth:`build_module`: one *device* only."""
         if module is None:
             module = Module()
         for op_type, spec in _REDUCE_OPS.items():
@@ -332,8 +323,8 @@ def reduce_model(
 
     Lazy by default: compiled on first use and cached for the process lifetime.
     With ``MAX_EAGER_OP_PRECOMPILE=1`` it was precompiled at import and this is a
-    lookup. On the first miss, a warm cache is adopted whole (manifest
-    force-load, else a batched stamp sweep) instead of compiling per target.
+    lookup. On the first miss, a warm cache is adopted whole (the warm store,
+    else a batched stamp sweep) instead of compiling per target.
 
     Args:
         op_type: The concrete ``mo.*Op`` type of the op being handled.

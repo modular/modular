@@ -11,11 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Token sampling for MAX pipelines.
+
+It holds the samplers, the logits processors, and the acceptance runners used in
+speculative decoding.
+"""
+
+from .label_scoring import LabelScorer
 from .logits_processor import apply_logits_processors
 from .sampling import (
     RejectionRunner,
     SyntheticRunner,
     TokenSampler,
+    TopKSampler,
     build_greedy_acceptance_sampler_graph,
     build_stochastic_acceptance_sampler_graph,
     build_synthetic_acceptance_sampler_graph,
@@ -28,31 +36,41 @@ from .sampling_config import (
     DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE,
     DEFAULT_STRUCTURED_OUTPUT_BACKEND,
     SamplingConfig,
+    ToolCallPolicy,
 )
 from .sampling_logits_processor import (
     FrequencyData,
     FusedSamplingProcessor,
     PenaltyInputs,
     SamplerInputs,
+    batch_max_k,
+    greedy_argmax_suffices,
 )
+from .seeds import request_row_seed
 
 __all__ = [
     "DEFAULT_STRUCTURED_OUTPUT_ANY_WHITESPACE",
     "DEFAULT_STRUCTURED_OUTPUT_BACKEND",
     "FrequencyData",
     "FusedSamplingProcessor",
+    "LabelScorer",
     "PenaltyInputs",
     "RejectionRunner",
     "SamplerInputs",
     "SamplingConfig",
     "SyntheticRunner",
     "TokenSampler",
+    "ToolCallPolicy",
+    "TopKSampler",
     "apply_logits_processors",
+    "batch_max_k",
     "build_greedy_acceptance_sampler_graph",
     "build_stochastic_acceptance_sampler_graph",
     "build_synthetic_acceptance_sampler_graph",
+    "greedy_argmax_suffices",
     "rejection_runner_registry",
     "rejection_sampler",
     "rejection_sampler_with_residuals",
+    "request_row_seed",
     "token_sampler",
 ]

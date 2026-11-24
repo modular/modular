@@ -11,19 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Register the Granite text-generation architecture."""
+
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
-from max.pipelines.kv_cache.memory_planner import PagedMemoryPlanner
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 
 from ..llama3 import weight_adapters
-from ..llama3.batch_processor import Llama3BatchProcessor
-from ..llama3.model import Llama3Model
-from ..llama3.model_config import Llama3Config
+from ..llama3.decoder import Llama3Decoder, Llama3DecoderConfig
 
 granite_arch = SupportedArchitecture(
     name="GraniteForCausalLM",
@@ -38,7 +34,7 @@ granite_arch = SupportedArchitecture(
         "float32",
         "bfloat16",
     },
-    pipeline_model=Llama3Model,
+    modules={GraphRole.DECODER: Llama3Decoder},
     multi_gpu_supported=False,
     tokenizer=TextTokenizer,
     context_type=TextContext,
@@ -46,9 +42,7 @@ granite_arch = SupportedArchitecture(
         WeightsFormat.safetensors: weight_adapters.convert_safetensor_state_dict,
         WeightsFormat.gguf: weight_adapters.convert_gguf_state_dict,
     },
-    config=Llama3Config,
-    batching=Llama3BatchProcessor,
-    memory_planner=PagedMemoryPlanner,
+    config=Llama3DecoderConfig,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
 )

@@ -16,11 +16,11 @@
 travels in a 32-byte fragment despite carrying only 24 payload bytes. One FP6
 MFMA (`cbsz:2 blgp:2`, accumulator width 16) on gfx950 measures:
 
-    operand     wrapper         A/B span  VGPRs  bytes
-    <6 x i32>   @always_inline   6         17     48
-    <8 x i32>   @always_inline   6         17     48
-    <6 x i32>   @no_inline       6         31     48
-    <8 x i32>   @no_inline       6         33     64
+    operand     wrapper           A/B span  VGPRs  bytes
+    <6 x i32>   @inline(.always)  6         17     48
+    <8 x i32>   @inline(.always)  6         17     48
+    <6 x i32>   @inline(.never)   6         31     48
+    <8 x i32>   @inline(.never)   6         33     64
 
 The padding is free only while InstCombine narrows the operand and the wrapper
 stays inlined. The span reads 6 in every row, so the tests also pin whole-kernel
@@ -56,32 +56,34 @@ def _single_mfma_kernel[
     comptime fragment_width = matrix_format.simd_width()
     var lane = Int(lane_id())
 
-    var a_frag = a_in.load[width=fragment_width](lane * fragment_width)
-    var b_frag = b_in.load[width=fragment_width](lane * fragment_width)
+    var a_frag = a_in.unsafe_load[width=fragment_width](lane * fragment_width)
+    var b_frag = b_in.unsafe_load[width=fragment_width](lane * fragment_width)
     var acc = SIMD[.float32, accum_width](0.0)
 
     cdna4_block_scaled_mfma[0, 0, matrix_format, matrix_format](
         acc, a_frag, b_frag, scales[0], scales[1]
     )
 
-    dst.store(lane * accum_width, acc)
+    dst.unsafe_store(lane * accum_width, acc)
 
 
 def _directive_value(asm: String, directive: String) raises -> Int:
-    var start = asm.find(directive)
-    assert_true(start >= 0, "assembly is missing " + directive)
-    var line_end = asm.find("\n", start)
+    __guard case .Some(start) = asm.find(directive) else:
+        raise Error(t"assembly is missing {directive}")
+    var line_end = asm.find("\n", start).or_else(asm.byte_length())
     var line = asm[byte=start:line_end]
-    var colon = line.find(":")
+    __guard case .Some(colon) = line.find(":") else:
+        raise Error(t"expected a value after {directive}")
     return Int(line[byte = colon + 1 :].strip())
 
 
-def _register_span(operand: StringSlice) raises -> Int:
+def _register_span(operand: StringSpan) raises -> Int:
     """Returns how many registers a `v[lo:hi]` instruction operand covers."""
     var text = String(operand).strip()
-    var open_bracket = text.find("[")
-    var colon = text.find(":")
-    var close_bracket = text.find("]")
+    # A missing bracket or colon maps to 0, which fails the check below.
+    var open_bracket = text.find("[").or_else(0)
+    var colon = text.find(":").or_else(0)
+    var close_bracket = text.find("]").or_else(0)
     assert_true(
         open_bracket > 0 and colon > open_bracket and close_bracket > colon,
         "expected a v[lo:hi] register range, got " + text,

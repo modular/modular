@@ -224,19 +224,19 @@ void LoadOp::build(OpBuilder &b, OperationState &state, Value ptr,
 }
 
 LogicalResult LoadOp::verify() {
-  AtomicOrdering ordering = getOrdering();
-  if (ordering != AtomicOrdering::NOT_ATOMIC) {
-    bool isKnownInvariat = false;
+  if (isAtomic()) {
+    bool isKnownInvariant = false;
     if (auto boolAttr = ::dyn_cast<BoolAttr>(getIsInvariantAttr()))
-      isKnownInvariat = boolAttr.getValue();
-    if ((isVolatile().has_value() && *isVolatile()) || isKnownInvariat)
+      isKnownInvariant = boolAttr.getValue();
+    if ((isVolatile().has_value() && *isVolatile()) || isKnownInvariant)
       return emitOpError(
           "invalid combination of volatile or invariant with atomic load");
   }
 
-  if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
+  if (!isAtomic() && getSyncscope())
     return emitOpError("cannot specify syncscope without an atomic load");
 
+  AtomicOrdering ordering = getOrdering();
   if (llvm::is_contained(
           {AtomicOrdering::RELEASE, AtomicOrdering::ACQUIRE_RELEASE},
           ordering)) {
@@ -273,15 +273,15 @@ void StoreOp::build(OpBuilder &b, OperationState &state, Value arg, Value ptr,
 }
 
 LogicalResult StoreOp::verify() {
-  AtomicOrdering ordering = getOrdering();
-  if (ordering != AtomicOrdering::NOT_ATOMIC) {
+  if (isAtomic()) {
     if (auto volatileVal = isVolatile(); volatileVal && *volatileVal)
       return emitOpError("volatile stores cannot be atomic");
   }
 
-  if (ordering == AtomicOrdering::NOT_ATOMIC && getSyncscope())
+  if (!isAtomic() && getSyncscope())
     return emitOpError("cannot specify syncscope without an atomic store");
 
+  AtomicOrdering ordering = getOrdering();
   if (llvm::is_contained(
           {AtomicOrdering::ACQUIRE, AtomicOrdering::ACQUIRE_RELEASE},
           ordering)) {
@@ -404,7 +404,8 @@ static Type getPointerToArrayElementType(Type arrayPtr) {
   if (!ptr)
     return Type();
   auto array = dyn_cast<POP::ArrayType>(ptr.getElementType());
-  return array ? PointerType::get(array.getElementType()) : Type();
+  return array ? PointerType::get(array.getElementType(), ptr.getAddressSpace())
+               : Type();
 }
 
 //===----------------------------------------------------------------------===//
@@ -601,8 +602,8 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state, Type result,
                            StringRef func, ValueRange operands) {
   build(b, state, result,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        mlir::IntegerAttr(), mlir::ArrayAttr(), mlir::ArrayAttr(),
-        mlir::DictionaryAttr(), Attribute());
+        mlir::IntegerAttr(), mlir::IntegerAttr(), mlir::ArrayAttr(),
+        mlir::ArrayAttr(), mlir::DictionaryAttr(), Attribute());
 }
 
 void ExternalCallOp::build(OpBuilder &b, OperationState &state, Type result,
@@ -610,8 +611,8 @@ void ExternalCallOp::build(OpBuilder &b, OperationState &state, Type result,
                            int64_t numFixedArgs) {
   build(b, state, result,
         StringAttr::get(func, StringType::get(b.getContext())), operands,
-        b.getIndexAttr(numFixedArgs), mlir::ArrayAttr(), mlir::ArrayAttr(),
-        mlir::DictionaryAttr(), Attribute());
+        b.getIndexAttr(numFixedArgs), mlir::IntegerAttr(), mlir::ArrayAttr(),
+        mlir::ArrayAttr(), mlir::DictionaryAttr(), Attribute());
 }
 
 LogicalResult
@@ -620,10 +621,13 @@ ExternalCallOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
 }
 
 LogicalResult ExternalCallOp::verify() {
+  if (failed(verifyPackOperand(*this, getExpandPackOperandIdxAttr())))
+    return failure();
+
   // `numFixedArgs` may still be an unresolved parameter expression here, so
   // only a materialized count can be checked. The operand count is not an
-  // upper bound either: argument packs are expanded into individual operands
-  // later, by LowerArgConventions, so the post-expansion bound is checked when
+  // upper bound either: LowerArgConventions expands the pack operand into
+  // individual operands later, so the post-expansion bound is checked when
   // lowering to LLVM.
   auto fixedArgCount = dyn_cast_or_null<IntegerAttr>(getNumFixedArgsAttr());
   if (fixedArgCount && fixedArgCount.getInt() < 0)
@@ -634,6 +638,8 @@ LogicalResult ExternalCallOp::verify() {
     size_t numArgs;
     if (fixedArgCount)
       numArgs = fixedArgCount.getInt();
+    else if (getExpandPackOperandIdxAttr())
+      return success();
     else
       numArgs = getNumOperands();
     if (argAttrs.size() != numArgs) {
@@ -730,6 +736,10 @@ void CallLLVMIntrinsicOp::getEffects(
     effects.emplace_back(mlir::MemoryEffects::Write::get());
 }
 
+LogicalResult CallLLVMIntrinsicOp::verify() {
+  return verifyPackOperand(*this, getExpandPackOperandIdxAttr());
+}
+
 mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
   auto hasSideEffects = dyn_cast<IntegerAttr>(getHasSideEffects());
   if (hasSideEffects && !hasSideEffects.getInt())
@@ -738,12 +748,22 @@ mlir::Speculation::Speculatability CallLLVMIntrinsicOp::getSpeculatability() {
 }
 
 //===----------------------------------------------------------------------===//
+// InlineAsmOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult InlineAsmOp::verify() {
+  return verifyPackOperand(*this, getExpandPackOperandIdxAttr());
+}
+
+//===----------------------------------------------------------------------===//
 // PointerToIndexOp
 //===----------------------------------------------------------------------===//
 
 bool PointerToIndexOp::areCastCompatible(TypeRange inputs, TypeRange outputs) {
   assert(inputs.size() == 1 && outputs.size() == 1);
-  return isa<PointerType>(inputs.front()) && isa<IndexType>(outputs.front());
+  auto result = dyn_cast<SIMDType>(outputs.front());
+  return isa<PointerType>(inputs.front()) && result && result.isScalar() &&
+         result.getResolvedDType() == KGENDType::index;
 }
 
 //===----------------------------------------------------------------------===//

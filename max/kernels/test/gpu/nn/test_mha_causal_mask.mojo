@@ -13,18 +13,13 @@
 
 from std.math import isclose
 from std.random import rand
-from std.sys import argv, size_of
+from std.sys import argv
 from std.sys.defines import get_defined_int
 
 from max.gpu import *
 from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import A100, H100, _is_sm10x_gpu
-from layout import (
-    Idx,
-    TileTensor,
-    row_major,
-)
-from layout import Layout, LayoutTensor
+from layout import ComptimeInt, Idx, RowMajorLayout, TileTensor, row_major
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
 from nn.attention.mha_mask import (
     CausalMask,
@@ -54,27 +49,16 @@ def test[
     seq_len: Int,
     num_keys: Int,
     mask: MaskType,
-    ctx: DeviceContext,
+    ctx: DeviceContext[],
     *,
     is_benchmark: Bool = False,
     num_partitions: Optional[Int] = None,
 ) raises:
     print("test_mha_causal_mask")
     print(
-        "qkv_type:",
-        qkv_type,
-        "depth:",
-        depth,
-        "num_heads:",
-        num_heads,
-        "group:",
-        group,
-        "seq_len:",
-        seq_len,
-        "num_keys:",
-        num_keys,
-        "mask:",
-        MaskType.name(),
+        t"qkv_type: {qkv_type} depth: {depth} num_heads: {num_heads} group:"
+        t" {group} seq_len: {seq_len} num_keys: {num_keys} mask:"
+        t" {MaskType.name()}"
     )
     # Query, key, value dimensions.
     comptime batch_size = 1
@@ -133,9 +117,9 @@ def test[
         row_major((batch_size, seq_len, Idx[num_heads], Idx[depth])),
     )
 
-    @always_inline
+    @inline(.always)
     def kernel_launch(
-        ctx: DeviceContext,
+        ctx: DeviceContext[],
     ) raises {var q_device, var k_device, var v_device, var output_device, imm}:
         flash_attention(
             output_device,
@@ -215,20 +199,10 @@ def test[
                         ].cast[.float64]()
                     var rerr = abs((actual - expect) / expect)
                     print(
-                        "s, h, d = ",
-                        "(" + String(s),
-                        h,
-                        String(d) + ")",
-                        "actual =",
-                        actual,
-                        "expect =",
-                        expect,
-                        "rerr =",
-                        rerr,
-                        "next_expect =",
-                        next_expect,
-                        "next_actual =",
-                        next_actual,
+                        t"s, h, d = "
+                        t""" {"(" + String(s)} {h} {String(d) + ")"} actual ="""
+                        t" {actual} expect = {expect} rerr = {rerr} next_expect"
+                        t" = {next_expect} next_actual = {next_actual}"
                     )
 
                 assert_almost_equal(actual, expect, atol=1e-5, rtol=rtol)
@@ -516,7 +490,7 @@ def main() raises:
         # pins the allocation across the kernel. `test` synchronizes before it
         # returns, so that is the full extent of the launch.
         def vl_buffer(
-            val: UInt32, ctx: DeviceContext
+            val: UInt32, ctx: DeviceContext[]
         ) raises -> DeviceBuffer[.uint32]:
             var dev_buf = ctx.enqueue_create_buffer[.uint32](1)
             ctx.enqueue_memset(dev_buf, val)
@@ -526,8 +500,13 @@ def main() raises:
         # same mutability, so the pointer has to come from a mutable borrow.
         def vl_view(
             mut buf: DeviceBuffer[.uint32],
-        ) -> LayoutTensor[.uint32, Layout.row_major(1), MutUntrackedOrigin]:
-            return {buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()}
+        ) -> TileTensor[
+            .uint32, RowMajorLayout[ComptimeInt[1]], MutUntrackedOrigin
+        ]:
+            return {
+                ptr = buf.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
+                layout = row_major[1](),
+            }
 
         # valid_length == num_keys (equivalent to CausalMask).
         var vl_128_buf = vl_buffer(128, ctx)

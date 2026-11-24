@@ -23,6 +23,8 @@
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
+#pragma GCC visibility push(default)
 #include "Support/MDialect/MTypes.h.inc"
+#pragma GCC visibility pop
 
 #endif // SUPPORT_MDIALECT_MTYPES_H

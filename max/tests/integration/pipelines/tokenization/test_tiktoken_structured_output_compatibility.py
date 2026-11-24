@@ -13,18 +13,15 @@
 """Tests for structured output support with TikToken-based tokenizers.
 
 Verifies that the _TikTokenAdapter correctly wraps TikToken tokenizers
-(like Kimi K2.7's TikTokenTokenizer) for use with llguidance structured
+(like Kimi K2.7's TikTokenTokenizer) for use with xgrammar structured
 output / grammar-guided decoding.
 """
 
 import json
 
-import llguidance
-import llguidance.numpy
 import pytest
-from llguidance import LLMatcher, LLTokenizer
-from llguidance._tokenizer import TokenizerWrapper
 from max.pipelines.lib.pipeline_variants.structured_output_backend import (
+    XgrammarBackend,
     _TikTokenAdapter,
 )
 from transformers import (
@@ -57,52 +54,19 @@ def test_tiktoken_adapter_accepts_kimi_tokenizer(
     adapter = _TikTokenAdapter(kimi_tokenizer)
 
     assert adapter.eos_token_id == kimi_tokenizer.eos_token_id
-    assert adapter.bos_token_id == kimi_tokenizer.bos_token_id
     assert len(adapter.tokens) == len(kimi_tokenizer)
     assert all(isinstance(t, bytes) for t in adapter.tokens)
 
 
-def test_tiktoken_adapter_encodes_special_tokens(
+def test_xgrammar_integration_with_kimi(
     kimi_tokenizer: PreTrainedTokenizerBase,
 ) -> None:
-    """Verify adapter correctly encodes text containing special tokens."""
-    adapter = _TikTokenAdapter(kimi_tokenizer)
-
-    # Encode text with a special token
-    text_with_special = "Hello <|im_end|> world"
-    encoded = adapter(text_with_special)
-
-    # Verify encoding worked and special token was recognized
-    assert isinstance(encoded, list)
-    assert len(encoded) > 0
-
-    # Decode and verify round-trip
-    decoded = kimi_tokenizer.decode(encoded)
-    assert "<|im_end|>" in decoded or "im_end" in decoded
-
-
-def test_tiktoken_adapter_handles_bytes_input(
-    kimi_tokenizer: PreTrainedTokenizerBase,
-) -> None:
-    """Verify adapter correctly handles bytes input."""
-    adapter = _TikTokenAdapter(kimi_tokenizer)
-
-    text = "Hello world"
-    encoded_from_str = adapter(text)
-    encoded_from_bytes = adapter(text.encode("utf-8"))
-
-    assert encoded_from_str == encoded_from_bytes
-
-
-def test_llguidance_integration_with_kimi(
-    kimi_tokenizer: PreTrainedTokenizerBase,
-) -> None:
-    """Verify full llguidance integration works with Kimi's TikToken tokenizer."""
-    # Create the adapter chain
-    adapter = _TikTokenAdapter(kimi_tokenizer)
-    wrapper = TokenizerWrapper(adapter)
+    """Verify full xgrammar integration works with Kimi's TikToken tokenizer."""
     vocab_size = len(kimi_tokenizer)
-    ll_tokenizer = LLTokenizer(wrapper, n_vocab=vocab_size)
+    backend = XgrammarBackend.from_tokenizer_delegate(
+        kimi_tokenizer,
+        vocab_size=vocab_size,
+    )
 
     # Create a JSON schema grammar
     json_schema = {
@@ -114,12 +78,10 @@ def test_llguidance_integration_with_kimi(
         "required": ["name", "age"],
     }
 
-    grammar = LLMatcher.grammar_from_json_schema(json.dumps(json_schema))
-    matcher = LLMatcher(ll_tokenizer, grammar)
-
-    # Allocate and fill bitmask
-    bitmask = llguidance.numpy.allocate_token_bitmask(1, vocab_size)
-    llguidance.numpy.fill_next_token_bitmask(matcher, bitmask, index=0)
+    grammar = backend.compile_json_schema(json.dumps(json_schema))
+    bitmask = backend.allocate_token_bitmask(1, vocab_size)
+    matcher = backend.create_matcher(grammar)
+    backend.fill_next_token_bitmask(matcher, bitmask, index=0)
 
     # Verify bitmask has expected shape and contains data
     assert bitmask.shape == (1, (vocab_size + 31) // 32)
@@ -134,7 +96,7 @@ def test_tiktoken_adapter_recovers_raw_control_bytes(
 
     Byte-level BPE renders a raw newline (0x0A) as the surface char 'Ċ'
     (U+010A); ``convert_ids_to_tokens(i).encode("utf-8")`` would yield
-    ``b"\\xc4\\x8a"`` (no control byte), making llguidance mask against the
+    ``b"\\xc4\\x8a"`` (no control byte), making xgrammar mask against the
     wrong bytes and admit raw newlines into JSON strings. The adapter must
     reverse the byte->unicode map so the token's bytes contain the raw 0x0A.
     """
@@ -161,13 +123,14 @@ def test_grammar_rejects_raw_newline_in_json_string(
 ) -> None:
     """End-to-end: the JSON-schema grammar rejects a raw newline mid-string.
 
-    With the corrected token bytes, llguidance must mask out a newline-bearing
+    With the corrected token bytes, xgrammar must mask out a newline-bearing
     token inside a string value (strict JSON requires it escaped as ``\\n``).
     """
-    adapter = _TikTokenAdapter(kimi_tokenizer)
-    wrapper = TokenizerWrapper(adapter)
     vocab_size = len(kimi_tokenizer)
-    ll_tokenizer = LLTokenizer(wrapper, n_vocab=vocab_size)
+    backend = XgrammarBackend.from_tokenizer_delegate(
+        kimi_tokenizer,
+        vocab_size=vocab_size,
+    )
 
     schema = {
         "type": "object",
@@ -175,10 +138,8 @@ def test_grammar_rejects_raw_newline_in_json_string(
         "required": ["reasoning"],
         "additionalProperties": False,
     }
-    grammar = LLMatcher.grammar_from_json_schema(
-        json.dumps(schema), overrides={"whitespace_pattern": ""}
-    )
-    matcher = LLMatcher(ll_tokenizer, grammar)
+    grammar = backend.compile_json_schema(json.dumps(schema))
+    matcher = backend.create_matcher(grammar)
 
     # Drive the matcher into the open string value.
     prefix = kimi_tokenizer.encode('{"reasoning":"a', allow_special_tokens=True)

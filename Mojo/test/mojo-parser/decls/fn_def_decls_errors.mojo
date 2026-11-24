@@ -180,12 +180,20 @@ def ref_result_invalid4(mut a: MemoryType, b: Int) -> ref [a] MemoryType:
     # expected-error @+1 {{cannot implicitly convert 'Int' value to 'MemoryType'}}
     return b
 
-# expected-error @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type}}
+# expected-error @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type; use a 'ref' argument with an ImmOrigin instead}}
 def ref_result_invalid5[T: AnyType](a: T) -> ref [a] T:
     return a
 
-# expected-error @+1 {{cannot return 'b's origin, because it has RegisterPassable type 'Int'}}
+# expected-error @+1 {{cannot return 'b's origin, because it has RegisterPassable type 'Int'; use a 'ref' argument with a MutOrigin instead}}
 def ref_result_invalid6(mut a: MemoryType, mut b: Int) -> ref [b] Int:
+    pass
+
+# expected-error @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type; use a 'ref' argument with a MutOrigin instead}}
+def ref_result_invalid_mut[T: AnyType](mut a: T) -> ref [a] T:
+    pass
+
+# expected-error-re @+1 {{cannot return 'a's origin, because it might expand to a RegisterPassable type{{$}}}}
+def ref_result_invalid_var[T: AnyType](var a: T) -> ref [a] T:
     pass
 
 # expected-error @+1 {{'ref' result requires an origin specifier}}
@@ -200,6 +208,10 @@ def ref_result_invalid8(a: Int) -> ref [a] MemoryType:
 def ref_result_invalid9() -> ref [_] MemoryType:
     pass
 
+# expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+def ref_result_invalid10() -> ref [String("lit")] MemoryType:
+    pass
+
 def valid_ref_result(x: MemoryType) -> ref [x] MemoryType: return x
 
 def ref_invalid():
@@ -211,18 +223,27 @@ def return_ref_type_error(a: def (x: MemoryType) thin -> ref [x] MemoryType):
     # expected-error @+1 {{cannot implicitly convert 'def(x: MemoryType) thin -> ref[*[0,0]] MemoryType' value to 'Int'}}
     var b: Int = a
 
+def ref_address_space_type_error[o: Origin[mut=True], addr_space: AddressSpace](
+    a: def (ref [o, addr_space] x: MemoryType) thin -> None,
+    b: def (ref [o, AddressSpace.SHARED] x: MemoryType) thin -> None,
+):
+    # expected-error @+1 {{cannot implicitly convert 'def(ref[o, addr_space] x: MemoryType) thin -> None' value to 'Int'}}
+    var c: Int = a
+    # expected-error @+1 {{cannot implicitly convert 'def(ref[o, 2] x: MemoryType) thin -> None' value to 'Int'}}
+    var d: Int = b
+
 struct SBValue(RegisterPassable):
     pass
 
 # expected-error @below {{TODO: read-only non-trivial register-passable arguments are not yet supported in async functions}}
-async def invalid_sb_value(value: SBValue):
+__async def invalid_sb_value(value: SBValue):
     pass
 
 # expected-error @below {{TODO: read-only non-trivial register-passable arguments are not yet supported in async functions}}
-async def invalid_sb_value_variadic(*value: SBValue):
+__async def invalid_sb_value_variadic(*value: SBValue):
     pass
 
-async def borrowed_generic_arg[T: AnyType](value: T):
+__async def borrowed_generic_arg[T: AnyType](value: T):
     pass
 
 def valid_sbvalue_borrow(value: SBValue):
@@ -230,6 +251,10 @@ def valid_sbvalue_borrow(value: SBValue):
 
 # expected-error @+1 {{address space must be specified once; remove duplicate address space specifications}}
 def bad_ref_as[a: AddressSpace](ref [a, a] x: Int):
+    pass
+
+# expected-error @+1 {{origin in origin specifier must outlive the expression naming it}}
+def bad_ref_temporary(ref [String("lit")] x: Int):
     pass
 
 struct HasOwnedOverloadedMethod(Movable where False):

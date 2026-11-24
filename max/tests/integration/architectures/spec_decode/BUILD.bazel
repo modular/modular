@@ -1,0 +1,249 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+load(
+    "//max/python/max/pipelines/architectures:all_arches.bzl",
+    "ALL_ARCHITECTURES",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "test_registered_draft",
+    size = "medium",
+    srcs = ["test_registered_draft.py"],
+    ignore_extra_deps = [
+        "//max/python/max/pipelines",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_variable_rows_per_replica",
+    srcs = ["test_variable_rows_per_replica.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_decode_architecture",
+    srcs = ["test_spec_decode_architecture.py"],
+    ignore_extra_deps = [
+        "//max/python/max/pipelines",
+        # Resolve the targets and their drafts by name.
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/dflash_llama3",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/gemma4_assistant_modulev3",
+        "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
+        "//max/python/max/pipelines/architectures/mtp_inkling",
+        "//max/python/max/pipelines/architectures/mtp_qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/deepseekV41",
+        "//max/python/max/pipelines/architectures/dflash_llama3",
+        "//max/python/max/pipelines/architectures/dflash_mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/gemma4_assistant_modulev3",
+        "//max/python/max/pipelines/architectures/gemma4_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_next",
+        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mtp_glm5_next",
+        "//max/python/max/pipelines/architectures/mtp_inkling",
+        "//max/python/max/pipelines/architectures/mtp_qwen3_5",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_adapter_long_rows",
+    size = "small",
+    srcs = ["test_spec_adapter_long_rows.py"],
+    ignore_extra_deps = ALL_ARCHITECTURES,
+    deps = [
+        # The registry imports each architecture's module and adapter by name.
+        "//max/python/max/pipelines/architectures",
+        # The guard test materializes every registered architecture.
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ] + ALL_ARCHITECTURES,
+)
+
+modular_py_test(
+    name = "test_spec_adapter_prefill_rows",
+    size = "small",
+    srcs = ["test_spec_adapter_prefill_rows.py"],
+    ignore_extra_deps = ALL_ARCHITECTURES,
+    deps = [
+        # The registry imports each architecture's module and adapter by name.
+        "//max/python/max/pipelines/architectures",
+        # The guard test materializes every registered architecture.
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ] + ALL_ARCHITECTURES,
+)
+
+modular_py_test(
+    name = "test_spec_decode_kv_tree",
+    srcs = ["test_spec_decode_kv_tree.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards the batch the fused graph stages for a target that declares the
+# expert-parallel collectives at one attention replica: the target's own
+# batching holds no signal buffers, so the runtime's stand in for them, and a
+# batch that stages fewer collectives than the graph declares is refused where
+# it is built. CPU buffers only, no device and no trace.
+modular_py_test(
+    name = "test_ep_tail_batching",
+    srcs = ["test_ep_tail_batching.py"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/dspark_mistral_large4_modulev3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_decode_graph_names",
+    srcs = ["test_spec_decode_graph_names.py"],
+    ignore_extra_deps = [
+        "//max/python/max/pipelines",
+        # Resolve each target's architecture by name at runtime.
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+    ],
+    deps = [
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/deepseekV3",
+        "//max/python/max/pipelines/architectures/deepseekV4",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/architectures/kimi_k3_modulev3",
+        "//max/python/max/pipelines/architectures/kimik2_5",
+        "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
+        "//max/python/max/pipelines/architectures/mistral_large4_modulev3",
+        "//max/python/max/pipelines/architectures/qwen3_5",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_decode_pipeline_stage",
+    srcs = ["test_spec_decode_pipeline_stage.py"],
+    ignore_extra_deps = [
+        "//max/python/max/pipelines",
+        # Resolve the Gemma 4 and Llama targets and their drafts by name.
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/llama3",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/eagle_llama3",
+        "//max/python/max/pipelines/architectures/gemma4",
+        "//max/python/max/pipelines/architectures/gemma4_assistant",
+        "//max/python/max/pipelines/architectures/llama3",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/speculative",
+    ],
+)
+
+modular_py_test(
+    name = "test_spec_decode_replay",
+    srcs = ["test_spec_decode_replay.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_registered_target",
+    srcs = ["test_registered_target.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn:core",
+        "//max/python/max/pipelines/context",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
+        "//max/tests/integration/test_common:context_utils",
+        requirement("numpy"),
+        requirement("typing-extensions"),
+    ],
+)

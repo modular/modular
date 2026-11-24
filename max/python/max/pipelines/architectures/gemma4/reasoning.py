@@ -32,11 +32,11 @@ from .tokenizer import REASONING_OPEN, SpecialToken
 
 @register("gemma4")
 class Gemma4ReasoningParser(ReasoningParser):
-    """Gemma 4 reasoning parser for ``<|channel>``...``<channel|>`` sections.
+    r"""Gemma 4 reasoning parser for ``<|channel>``...``<channel|>`` sections.
 
     When thinking is enabled, the chat template injects a ``<|think|>``
     token in the system message. The model then wraps reasoning output in
-    ``<|channel>thought\\n...\\n<channel|>`` blocks. This parser identifies
+    ``<|channel>thought\n...\n<channel|>`` blocks. This parser identifies
     those blocks at the token-ID level.
 
     Reasoning may end implicitly when a tool call begins (``<|tool_call>``).
@@ -75,6 +75,7 @@ class Gemma4ReasoningParser(ReasoningParser):
         )
 
     def reset(self) -> None:
+        """Clears the parser's cursor and buffer for the next response."""
         self._prefix_cursor = 0
         self._channel_started = False
 
@@ -101,7 +102,7 @@ class Gemma4ReasoningParser(ReasoningParser):
         delta_token_ids: Sequence[int],
         is_currently_reasoning: bool = True,
     ) -> ParsedReasoningDelta:
-        """Identifies a reasoning span within a streaming delta chunk.
+        r"""Identifies a reasoning span within a streaming delta chunk.
 
         Returns a :class:`ParsedReasoningDelta` containing:
 
@@ -111,11 +112,11 @@ class Gemma4ReasoningParser(ReasoningParser):
         - ``is_still_reasoning``: ``True`` when no end delimiter was found
           in this chunk *and* the chunk contained a reasoning section.
         - ``reasoning_text_formatter``: callback that strips the
-          ``"thought\\n"`` prefix from decoded reasoning text.
+          ``"thought\n"`` prefix from decoded reasoning text.
 
         When ``is_currently_reasoning=False`` and no ``<|channel>`` start
         delimiter appears in the chunk, the parser returns an empty
-        reasoning span — Gemma 4 emits ``<|channel>thought\\n...<channel|>``
+        reasoning span — Gemma 4 emits ``<|channel>thought\n...<channel|>``
         even when ``enable_thinking`` is off, so callers should pass every
         chunk through here and let the parser dynamically detect mid-stream
         reasoning sections (mirroring vLLM's behavior).

@@ -24,8 +24,10 @@ import json
 from typing import TYPE_CHECKING, Any
 
 from helpers import (
+    budget_exhausted,
     collect_stream,
     make_tool,
+    stream_budget_exhausted,
 )
 
 from scenarios import BaseScenario, ScenarioResult, Verdict, register_scenario
@@ -304,25 +306,51 @@ class ProductionResilience(BaseScenario):
         kwargs: dict[str, Any] = {"temperature": 0, "seed": 42}
 
         # Non-streaming
-        ns_resp = v.chat(messages, max_tokens=64, **kwargs)
+        ns_resp = v.chat(messages, max_tokens=2048, **kwargs)
         ns_content = ns_resp.choices[0].message.content or ""
         ns_fr = ns_resp.choices[0].finish_reason
 
         # Streaming
-        s_result = v.chat_stream(messages, max_tokens=64, **kwargs)
+        s_result = v.chat_stream(messages, max_tokens=2048, **kwargs)
         s_content = s_result["content"]
         s_fr = s_result["finish_reason"]
 
         issues: list[str] = []
+        # A reasoning model can spend the whole budget thinking and
+        # return no content: a limit of this test, so INTERESTING. Empty
+        # content after a plain truncation still fails.
+        ns_message = ns_resp.choices[0].message
+        ns_reasoned = bool(
+            getattr(ns_message, "reasoning_content", None)
+            or getattr(ns_message, "reasoning", None)
+        )
+        budget: list[str] = []
         if not ns_content.strip():
-            issues.append("non-streaming produced empty content")
+            ran_out = budget_exhausted(ns_resp) and ns_reasoned
+            (budget if ran_out else issues).append(
+                "non-streaming produced empty content"
+            )
         if not s_content.strip():
-            issues.append("streaming produced empty content")
+            ran_out = stream_budget_exhausted(s_result) and bool(
+                s_result.get("reasoning")
+            )
+            (budget if ran_out else issues).append(
+                "streaming produced empty content"
+            )
         if ns_fr not in ("stop", "length"):
             issues.append(f"non-streaming finish_reason={ns_fr!r}")
         if s_fr not in ("stop", "length"):
             issues.append(f"streaming finish_reason={s_fr!r}")
 
+        if budget and not issues:
+            return [
+                self.make_result(
+                    self.name,
+                    test_name,
+                    Verdict.INTERESTING,
+                    detail="Budget exhausted: " + "; ".join(budget),
+                )
+            ]
         if issues:
             return [
                 self.make_result(

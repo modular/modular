@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tests for max.nn.sampling"""
+"""Tests for max.nn.legacy.sampling"""
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, cast
 
 import numpy as np
@@ -22,17 +23,18 @@ import pytest
 from max.driver import CPU, Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.kernels import (
+from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.nn._graph_ops import (
     topk_fused_sampling_with_dist,
     topk_topp_masked_probs,
 )
-from max.nn.sampling import (
-    MinPSampler,
+from max.nn._graph_ops.sampling import (
+    AcceptanceSampler,
     compute_synthetic_acceptance_base_rate,
     greedy_acceptance_sampler,
     stochastic_acceptance_sampler,
 )
+from max.nn.legacy.sampling import MinPSampler
 from max.pipelines.sampling import (
     SyntheticRunner,
     build_greedy_acceptance_sampler_graph,
@@ -983,6 +985,13 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
         device=DeviceRef.from_device(device), draft_proposal="argmax"
     )
     argmax_model = session.load(argmax_graph)
+    sampled_graph = build_stochastic_acceptance_sampler_graph(
+        device=DeviceRef.from_device(device),
+        draft_proposal="sampled",
+        vocab_size=vocab_size,
+    )
+    sampled_model = session.load(sampled_graph)
+
     argmax_out = argmax_model.execute(
         *_stochastic_sampler_inputs(
             device,
@@ -993,13 +1002,6 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
             temperature_np,
         )
     )
-
-    sampled_graph = build_stochastic_acceptance_sampler_graph(
-        device=DeviceRef.from_device(device),
-        draft_proposal="sampled",
-        vocab_size=vocab_size,
-    )
-    sampled_model = session.load(sampled_graph)
     sampled_out = sampled_model.execute(
         *_sampled_stochastic_sampler_inputs(
             device,
@@ -1017,6 +1019,64 @@ def test_stochastic_acceptance_sampler_sampled_matches_argmax_when_q_is_one() ->
             cast(Buffer, argmax_buf).to_numpy(),
             cast(Buffer, sampled_buf).to_numpy(),
         )
+
+
+def test_sampled_greedy_row_takes_first_argmax() -> None:
+    """A sampled-mode ``temperature==0`` row is the greedy verdict.
+
+    The target maximum is tied between tokens 1 and 3 and the request asks
+    for no top-k, so the verdict must reduce the row to its first argmax
+    itself: drafts equal to token 1 are accepted, everything else recovers to
+    token 1, the bonus is token 1, and no seed changes any of it.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+
+    vocab_size = 6
+    num_steps = 3
+    batch_size = 2
+
+    logits = np.full(
+        (batch_size * (num_steps + 1), vocab_size), -5.0, dtype=np.float32
+    )
+    logits[:, 1] = 10.0
+    logits[:, 3] = 10.0
+    logits[:, 4] = 9.5
+    draft_tokens_np = np.array([[1, 1, 3], [3, 3, 1]], dtype=np.int64)
+    draft_probs_np = np.ones((batch_size, num_steps), dtype=np.float32)
+    temperature_np = np.zeros(batch_size, dtype=np.float32)
+
+    model = session.load(
+        build_stochastic_acceptance_sampler_graph(
+            device=DeviceRef.from_device(device),
+            draft_proposal="sampled",
+            vocab_size=vocab_size,
+        )
+    )
+
+    def _run(seed: int) -> tuple[npt.NDArray[Any], ...]:
+        outs = model.execute(
+            *_sampled_stochastic_sampler_inputs(
+                device,
+                batch_size,
+                vocab_size,
+                draft_tokens_np,
+                logits,
+                temperature_np,
+                draft_probs_np,
+                seed=seed,
+            )
+        )
+        return tuple(cast(Buffer, o).to_numpy().copy() for o in outs)
+
+    base = _run(1)
+    for seed in (2, 3):
+        for got, expected in zip(_run(seed), base, strict=True):
+            np.testing.assert_array_equal(got, expected)
+
+    np.testing.assert_array_equal(base[0], [2, 0])
+    np.testing.assert_array_equal(base[1], [[1, 1, 1], [1, 1, 1]])
+    np.testing.assert_array_equal(base[2], [[1], [1]])
 
 
 def test_sampled_zeroed_distribution_matches_argmax() -> None:
@@ -2220,9 +2280,15 @@ def test_greedy_acceptance_sampler_bitmask_is_graph_capturable() -> None:
 
 
 def _load_stochastic_model(
-    session: InferenceSession, device_ref: DeviceRef, per_row_seed: bool
+    session: InferenceSession,
+    device_ref: DeviceRef,
+    per_row_seed: bool,
+    synthetic_rate: float | None = None,
 ) -> Model:
-    """Compiles stochastic_acceptance_sampler with a rank-0 or rank-1 seed."""
+    """Compiles stochastic_acceptance_sampler with a rank-0 or rank-1 seed.
+
+    With ``synthetic_rate``, compiles a synthetic AcceptanceSampler instead.
+    """
     seed_type = (
         TensorType(DType.uint64, ["batch_size"], device=device_ref)
         if per_row_seed
@@ -2240,13 +2306,23 @@ def _load_stochastic_model(
         TensorType(DType.float32, [], device=DeviceRef.CPU()),
         seed_type,
     ]
+    sampler: Callable[..., tuple[TensorValue, ...]] = (
+        stochastic_acceptance_sampler
+    )
+    if synthetic_rate is not None:
+        sampler = AcceptanceSampler(
+            synthetic_acceptance_rate=synthetic_rate,
+            num_draft_steps=3,
+            use_stochastic=True,
+        )
     with Graph(
-        f"stochastic_seed_rank{int(per_row_seed)}", input_types=input_types
+        f"stochastic_seed_rank{int(per_row_seed)}_{synthetic_rate}",
+        input_types=input_types,
     ) as graph:
         draft, logits, temp, top_k, max_k, top_p, min_top_p, seed = graph.inputs
-        outs = stochastic_acceptance_sampler(
-            draft_tokens=draft.tensor,
-            target_logits=logits.tensor,
+        outs = sampler(
+            draft.tensor,
+            logits.tensor,
             temperature=temp.tensor,
             top_k=top_k.tensor,
             max_k=max_k.tensor,
@@ -2282,6 +2358,44 @@ def _run_stochastic(
         Buffer.from_numpy(seeds).to(device),
     )
     return [cast(Buffer, x).to_numpy() for x in result]
+
+
+@pytest.mark.parametrize("rate", [0.0, 1.0])
+def test_synthetic_acceptance_commits_stochastic_draws(rate: float) -> None:
+    """Synthetic acceptance commits the stochastic sampler's draws.
+
+    At rate 0 each row commits the stochastic draw at position 0, not the
+    target argmax; at rate 1 it commits every draft token.
+    """
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+    num_steps, vocab_size, batch = 3, 16, 8
+    synthetic = _load_stochastic_model(
+        session, device_ref, per_row_seed=True, synthetic_rate=rate
+    )
+    stochastic = _load_stochastic_model(session, device_ref, per_row_seed=True)
+
+    rng = np.random.default_rng(5)
+    for _ in range(10):
+        draft = rng.integers(0, vocab_size, size=(batch, num_steps)).astype(
+            np.int64
+        )
+        logits = rng.standard_normal(
+            (batch * (num_steps + 1), vocab_size)
+        ).astype(np.float32)
+        seeds = rng.integers(0, 2**62, size=batch).astype(np.uint64)
+        args = (device, draft, logits, [1.0] * batch, seeds, vocab_size)
+        first_rejected, recovered, bonus = _run_stochastic(synthetic, *args)
+        _, ref_recovered, ref_bonus = _run_stochastic(stochastic, *args)
+
+        np.testing.assert_array_equal(bonus, ref_bonus)
+        if rate == 0.0:
+            np.testing.assert_array_equal(first_rejected, [0] * batch)
+            np.testing.assert_array_equal(recovered[:, 0], ref_recovered[:, 0])
+        else:
+            np.testing.assert_array_equal(first_rejected, [num_steps] * batch)
+            np.testing.assert_array_equal(recovered, draft)
 
 
 def test_stochastic_per_row_seed_single_row_matches_scalar_seed() -> None:

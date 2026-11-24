@@ -21,9 +21,9 @@ from max._core.dialects.builtin import BoolAttr, IntegerAttr, IntegerType
 from max.dtype import DType
 
 from ..graph import Graph
-from ..type import DeviceRef, _ChainType
+from ..type import _ChainType
 from ..value import BufferValueLike, TensorType, TensorValue, TensorValueLike
-from .constant import constant
+from .rms_norm import _float32_attr
 from .utils import _buffer_values, _tensor_values
 
 
@@ -35,6 +35,7 @@ def reduce_scatter_rms_norm(
     residuals: Iterable[TensorValueLike] | None = None,
     weight_offset: float = 0.0,
     group_size: int | None = None,
+    quant_bits: int = 0,
 ) -> tuple[list[TensorValue], list[TensorValue]]:
     """Fused reduce-scatter sum + optional residual add + RMSNorm (bf16 in/out).
 
@@ -52,6 +53,8 @@ def reduce_scatter_rms_norm(
 
     Args:
         inputs: The input tensors to reduce and scatter, one per device.
+            Shapes must match within a group (see ``group_size``), and only
+            axis 0 may differ across groups.
         signal_buffers: Device buffer values used for synchronization.
         gammas: RMSNorm gamma weights, one per device (input dtype, length
             ``cols``).
@@ -71,6 +74,12 @@ def reduce_scatter_rms_norm(
             reduce-scatter group. Defaults to all devices (a full-world
             collective). Under TP-within-DP this is the TP degree, so each
             replica reduces only within its own group.
+        quant_bits: ``4`` or ``8`` to send each device's contribution to its
+            peers quantized in groups of 32 elements (symmetric INT4 with a
+            bf16 scale, or MXFP8) whenever the shards are too large for the
+            fused kernel; ``0`` keeps the exact reduce-scatter. Quantizing is
+            lossy, and applies only to a full-world reduce-scatter whose column
+            count is a multiple of 32; other shapes stay exact.
 
     Returns:
         A tuple ``(normed, residual)`` of two lists, each with one tensor per
@@ -123,6 +132,10 @@ def reduce_scatter_rms_norm(
             "reduce_scatter_rms_norm requires the same rank across all input "
             f"tensors. Got: {inputs=}"
         )
+    if quant_bits not in (0, 4, 8):
+        raise ValueError(
+            f"reduce_scatter_rms_norm quant_bits must be 0, 4 or 8, got {quant_bits}"
+        )
     group_size = group_size or num_devices
     if group_size < 2:
         raise ValueError(
@@ -134,14 +147,22 @@ def reduce_scatter_rms_norm(
             "reduce_scatter_rms_norm requires group_size to evenly divide the "
             f"number of input tensors. Got: {group_size=} and {num_devices=}"
         )
-    # Shapes need only match within a group: DP replicas are independent
-    # collectives and may carry different symbolic dims.
+    # Shapes must match within a group. Across groups only axis 0 (the
+    # scattered rows) may differ: DP replicas carry different symbolic row
+    # counts, but the kernel gates the fused path on device 0's columns.
     for group_start in range(0, num_devices, group_size):
         group_inputs = inputs[group_start : group_start + group_size]
         if not all(t.shape == group_inputs[0].shape for t in group_inputs[1:]):
             raise ValueError(
                 "reduce_scatter_rms_norm requires the same shape across all "
                 f"input tensors in each group. Got: {inputs=}"
+            )
+    for t in inputs[1:]:
+        if t.shape[1:] != inputs[0].shape[1:]:
+            raise ValueError(
+                "reduce_scatter_rms_norm requires the same shape in all "
+                "dimensions except axis 0 (rows) across every input tensor, "
+                f"including across groups. Got: {inputs=}"
             )
     # The residual is indexed by GLOBAL row, so a shard-shaped one runs past its
     # own storage on every rank whose shard does not start at row 0.
@@ -189,15 +210,6 @@ def reduce_scatter_rms_norm(
             TensorType(dtype=input_dtype, shape=shard_shape, device=device)
         )
 
-    # epsilon/weight_offset as CPU scalars: the kernel reads them host-side for
-    # launch params. One operand slot per device (SameVariadicOperandSize),
-    # reusing the same host constant.
-    cpu = DeviceRef.CPU()
-    eps_const = constant(epsilon, DType.float32, cpu)
-    weight_offset_const = constant(weight_offset, input_dtype, cpu)
-    epsilons = [eps_const] * num_devices
-    weight_offsets = [weight_offset_const] * num_devices
-
     in_chain = graph.device_chains.merge_for(devices)
 
     # The op's variadic groups must all match in size, so there is no empty
@@ -212,12 +224,13 @@ def reduce_scatter_rms_norm(
         inputs,
         signal_buffers,
         gammas,
-        epsilons,
-        weight_offsets,
         residual_operands,
         in_chain,
+        _float32_attr(epsilon),
+        _float32_attr(weight_offset),
         IntegerAttr(IntegerType(64), group_size),
         BoolAttr(has_residual),
+        IntegerAttr(IntegerType(64), quant_bits),
     )
 
     graph._update_chain(out_chain)

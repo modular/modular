@@ -120,81 +120,24 @@ CommandLineFunc::executeAndPrint(KGEN::CompiledFunc &compiledFunc) const {
   return Error("unhandled signature: " + signature);
 }
 
-bool CommandLineFuncParser::parse(llvm::cl::Option &o, StringRef argName,
-                                  StringRef argValue, CommandLineFunc &val) {
+CommandLineFunc CommandLineFunc::parse(StringRef value) {
   // Match a function name and signature, of the form: `name:signature`. This
   // check also ensures that "name" supports '::' tokens, which may be used for
   // scope signifiers.
   static llvm::Regex funcAndSignatureMatcher("(.*[^:]):([^:].*)");
 
   // Check if the value contains the name and signature.
+  CommandLineFunc func;
   SmallVector<StringRef> matches;
-  if (funcAndSignatureMatcher.match(argValue, &matches)) {
-    val.name = matches[1];
-    val.signature = matches.back();
-    return false;
+  if (funcAndSignatureMatcher.match(value, &matches)) {
+    func.name = matches[1];
+    func.signature = matches.back();
+    return func;
   }
 
   // Otherwise, if we don't have a signature, the value is the name.
-  val.name = argValue;
-  return false;
-}
-
-bool KGENCLOptionsParser::parse(llvm::cl::Option &o, StringRef argName,
-                                StringRef argValue, Command &val) {
-  if (argName == "elaborate") {
-    if (argValue == "no-use-parametric-interpreter")
-      val = Command::kElaborateNoUseParametricInterpreter;
-    else if (argValue == "use-parametric-interpreter")
-      val = Command::kElaborateUseParametricInterpreter;
-    else
-      val = Command::kElaborate;
-
-    return false;
-  }
-  if (argName == "emit") {
-    if (argValue == "llvm")
-      val = Command::kEmitLLVM;
-    else if (argValue == "llvm-bitcode")
-      val = Command::kEmitLLVMBitcode;
-    else if (argValue == "llvm-opt")
-      val = Command::kEmitLLVMOpt;
-    else if (argValue == "llvm-opt-bitcode")
-      val = Command::kEmitLLVMOptBitcode;
-    else if (argValue == "asm")
-      val = Command::kEmitAssembly;
-    else if (argValue == "asm-verbose")
-      val = Command::kEmitAssemblyVerbose;
-    else if (argValue == "object")
-      val = Command::kEmit;
-    else if (argValue == "shared-lib")
-      val = Command::kEmitSharedObject;
-    else if (argValue == "header")
-      val = Command::kEmitHeader;
-    else if (argValue.empty())
-      val = Command::kEmit;
-    else
-      return o.error("unsupported 'emit' option value '" + argValue + "'");
-
-    return false;
-  }
-
-  if (argName == "execute") {
-    val = Command::kExecute;
-    return false;
-  }
-
-  if (argName == "lsp") {
-    if (argValue == "no-dump")
-      val = Command::kLSPNoDump;
-    else if (argValue.empty())
-      val = Command::kLSP;
-    else
-      return o.error("unsupported 'lsp' option value '" + argValue + "'");
-
-    return false;
-  }
-  return o.error("unsupported option '" + argName + "'");
+  func.name = value;
+  return func;
 }
 
 llvm::ManagedStatic<KGENPassCLOptions::PassOptions>

@@ -20,6 +20,8 @@
 // ODS-Generated Declarations
 //===----------------------------------------------------------------------===//
 
+#pragma GCC visibility push(default)
 #include "Support/MDialect/MTypeInterfaces.h.inc"
+#pragma GCC visibility pop
 
 #endif // SUPPORT_MDIALECT_MTYPEINTERFACES_H

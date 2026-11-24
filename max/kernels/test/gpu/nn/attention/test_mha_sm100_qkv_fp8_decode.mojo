@@ -46,7 +46,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout._fillers import random
 from std.random import randn
 
 from nn.attention.gpu.mha import flash_attention
@@ -56,7 +55,7 @@ from nn.attention.mha_mask import (
     SlidingWindowCausalMask,
 )
 
-from std.testing import assert_almost_equal, assert_true
+from std.testing import assert_true
 
 
 # ===-----------------------------------------------------------------------===#
@@ -64,7 +63,7 @@ from std.testing import assert_almost_equal, assert_true
 # ===-----------------------------------------------------------------------===#
 
 
-@always_inline
+@inline(.always)
 def host_cast_fp8_to_bf16[
     fp8_t: DType,
     bf16_t: DType,
@@ -79,7 +78,7 @@ def host_cast_fp8_to_bf16[
         dst[i] = src[i].cast[bf16_t]()
 
 
-@always_inline
+@inline(.always)
 def host_cast_bf16_to_fp8[
     bf16_t: DType,
     fp8_t: DType,
@@ -99,7 +98,12 @@ def host_cast_bf16_to_fp8[
 # ===-----------------------------------------------------------------------===#
 
 comptime head_dim = get_defined_int["MHA_FP8_HEAD_DIM", 128]()
-comptime label = "test_mha_sm100_qkv_fp8_d{}_decode".format(head_dim)
+
+
+def _label() -> String:
+    # Built at run time: a comptime `String` holds heap pointers, which trips
+    # the elaborator's cached-interpretation determinism check.
+    return String(t"test_mha_sm100_qkv_fp8_d{head_dim}_decode")
 
 
 def execute_pure_fp8_decode_test[
@@ -125,24 +129,9 @@ def execute_pure_fp8_decode_test[
     comptime cosine_bar = Float64(0.998) if bf16_to_fp8 else Float64(0.9997)
 
     print(
-        label,
-        ": ",
-        "mode=",
-        mode_name,
-        " mask=",
-        mask_name,
-        " head_dim=",
-        head_dim,
-        " group=",
-        group,
-        " n_q_heads=",
-        num_q_heads,
-        " n_kv_heads=",
-        kv_num_heads,
-        " seq_len=",
-        seq_len,
-        " num_keys=",
-        num_keys,
+        t"{_label()} :  mode= {mode_name}  mask= {mask_name}  head_dim="
+        t" {head_dim}  group= {group}  n_q_heads= {num_q_heads}  n_kv_heads="
+        t" {kv_num_heads}  seq_len= {seq_len}  num_keys= {num_keys}"
     )
 
     comptime fp8_dtype = DType.float8_e4m3fn
@@ -294,18 +283,8 @@ def execute_pure_fp8_decode_test[
                     if diff > atol + rtol * abs(expect):
                         if num_mismatches < 16:
                             print(
-                                "mismatch b=",
-                                b,
-                                "s=",
-                                s,
-                                "h=",
-                                h,
-                                "d=",
-                                d,
-                                "actual=",
-                                actual,
-                                "expect=",
-                                expect,
+                                t"mismatch b= {b} s= {s} h= {h} d= {d} actual="
+                                t" {actual} expect= {expect}"
                             )
                         num_mismatches += 1
                     dot += actual * expect
@@ -316,20 +295,10 @@ def execute_pure_fp8_decode_test[
     if aa > 0.0 and bb > 0.0:
         cos = dot / (sqrt(aa) * sqrt(bb))
     print(
-        "  num_mismatches=",
-        num_mismatches,
-        " / ",
-        num_compared,
-        " nan_actual=",
-        num_nan_actual,
-        " nan_expect=",
-        num_nan_expect,
-        " mean_abs_diff=",
-        total_abs_diff / Float64(num_compared),
-        " max_abs_diff=",
-        max_abs_diff,
-        " cosine=",
-        cos,
+        t"  num_mismatches= {num_mismatches}  /  {num_compared}  nan_actual="
+        t" {num_nan_actual}  nan_expect= {num_nan_expect}  mean_abs_diff="
+        t" {total_abs_diff / Float64(num_compared)}  max_abs_diff="
+        t" {max_abs_diff}  cosine= {cos}"
     )
     # Bar depends on the input flow: kernel-correctness (lossless inputs)
     # uses 0.9997; production-realism (lossy quantization) uses 0.998.
@@ -510,4 +479,4 @@ def main() raises:
                     mask_name="SW1024_g8_decode_k4096",
                 ](sw_1024, ctx)
 
-        print(label, ": ALL PASSED")
+        print(_label(), ": ALL PASSED")

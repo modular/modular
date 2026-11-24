@@ -1,0 +1,88 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# MXFP4 block-scaled matmul on CDNA4 (MI355X) at the shapes whose dispatch
+# lands on the inter-block split-K route, so both the split matmul and the
+# separate split-K reduce kernel are on the measured path.
+#
+# Covers the wide-N short-K band the dispatcher stops splitting (entries with
+# 48 blocks or more, `blocks` = ceildiv(N, 128) * ceildiv(M, 64)), the block
+# counts on both sides of that floor at M > 16, and three long-K rows that keep
+# their split at every block count.
+#
+# Use with:
+#   kbench bench_block_scaled_matmul_amd_splitk.yaml \
+#     --target-accelerator=amdgpu:mi355x
+
+name: bench_block_scaled_matmul_amd_splitk
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_block_scaled_matmul.mojo
+
+common: &common
+  scaling_mode: mxfp4_amd
+  # The bench's verify arm compares against hipBLASLt, which disagrees with the
+  # kernel on unmodified main at every shape here, so it cannot gate these
+  # rows:
+  #   M=64  N=16384 K=2048  relative_difference 1.7072142 > 0.001
+  #   M=128 N=7168  K=2048  element-wise worst violation 3.402819e+38
+  #   M=128 N=4096  K=7168  element-wise worst violation inf
+  # The plain wide-N route these rows measure is covered by values instead, in
+  # //max/kernels/test/gpu/linalg:test_mxfp4_matmul_amd's
+  # `test_mxfp4_dispatch_plain_wide_n` (scalar dequant reference plus a route
+  # assertion, at M=17 and M=72 so the M tail is exercised), and the shapes
+  # that keep their split by `test_mxfp4_matmul_split_k`.
+  $verify: False
+
+params:
+# DeepSeek/Llama-class down projection: 128 and 512 blocks, 4 splits at K=2048.
+- <<: *common
+  $M: [64, 256]
+  N: 16384
+  K: 2048
+  metadata:
+    MODEL: down-proj
+# Kimi K2.5 down projection: 112 blocks.
+- <<: *common
+  $M: [128]
+  N: 7168
+  K: 2048
+  metadata:
+    MODEL: kimi-k2.5
+# 32 blocks: under the 48-block floor, so this row keeps its split.
+- <<: *common
+  $M: [64]
+  N: 4096
+  K: 2048
+  metadata:
+    MODEL: kimi-k2.5-up-proj
+# 18 blocks (under the floor, keeps its split) vs 54 blocks (over it).
+- <<: *common
+  $M: [64, 192]
+  N: 2304
+  K: 2048
+  metadata:
+    MODEL: kimi-k2.5-qkv-proj
+# Long K: over the block floor but past the K bound, so both keep their split.
+- <<: *common
+  $M: [64]
+  N: 4096
+  K: 7168
+  metadata:
+    MODEL: kimi-k2.5-up-proj
+# 16 splits, and at M=512 the reduce reads 16 partials per output (72 MiB),
+# so this row is the reduce kernel's share of the total.
+- <<: *common
+  $M: [64, 512]
+  N: 2304
+  K: 8192
+  metadata:
+    MODEL: kimi-k2.5-qkv-proj

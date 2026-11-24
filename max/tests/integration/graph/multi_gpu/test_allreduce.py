@@ -36,7 +36,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn import Allreduce, Module, Signals
+from max.nn.legacy import Allreduce, Module, Signals
 
 M = 512
 N = 1024
@@ -572,7 +572,7 @@ def test_transfer_to_subgraph_with_allreduce(num_gpus: int) -> None:
     """Tests transfers from GPU 0 -> subgraph with two allreduce calls.
 
     Mimics the Llama distributed transformer pattern:
-    1. Input on GPU 0 is transferred to all peers (serialized rmo.mo.transfer)
+    1. Input on GPU 0 is transferred to all peers (serialized mo.transfer)
     2. A subgraph (via ops.call) performs two allreduce operations with
        shared signal buffers and per-device constants
     3. Constants inside the subgraph trigger the HoistConstantSubgraphs pass
@@ -661,7 +661,7 @@ def _grouped_allreduce_graph(
             [inp.buffer for inp in graph.inputs[num_devices:]],
             group_size=group_size,
         )
-        graph.output(*outputs)
+        graph.output(outputs)
         return graph
 
 

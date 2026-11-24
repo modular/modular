@@ -53,12 +53,13 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import torch_dtype_to_max
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
-from max.nn.attention import MHAMaskVariant
-from max.nn.kernels import (
-    flare_mla_decode_ragged,
-    flare_mla_prefill_ragged,
+from max.nn._graph_ops import flare_mla_decode_ragged, flare_mla_prefill_ragged
+from max.nn.attention_mask import MHAMaskVariant
+from max.nn.kv_cache import (
+    MLAKVCacheParams,
+    PagedCacheValues,
+    packed_page_stride,
 )
-from max.nn.kv_cache import MLAKVCacheParams, PagedCacheValues
 
 _aiter: types.ModuleType | None
 _aiter_mla: types.ModuleType | None
@@ -451,6 +452,7 @@ def bench_max_decode(
                     lut.tensor,
                     max_prompt_len.tensor,
                     max_cache_len.tensor,
+                    page_stride=packed_page_stride(bl.buffer),
                 ),
                 layer_idx,
                 mask_variant=MHAMaskVariant.CAUSAL_MASK,
@@ -714,6 +716,7 @@ def bench_max_prefill(
             lut.tensor,
             max_prompt_len.tensor,
             max_cache_len.tensor,
+            page_stride=packed_page_stride(blocks.buffer),
         )
         layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
         result = flare_mla_prefill_ragged(

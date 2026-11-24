@@ -1,0 +1,155 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Each test loads a full checkpoint, so they stay out of presubmit and run
+# on a schedule by name.
+_TAGS = [
+    "gpu",
+    "manual",
+    "no-sandbox",
+    # Keeps HF_HOME on the executor's Hugging Face cache rather than the test's
+    # temp dir. HF_HUB_OFFLINE in _ENV keeps every load in that cache.
+    "requires-network",
+]
+
+# The references name the checkpoint revision they were made from, which has
+# to come from the cache, never from the Hub.
+_ENV = {"HF_HUB_OFFLINE": "1"}
+
+_ARCHITECTURES = [
+    "//max/python/max/pipelines/architectures/flux2_modulev3",
+    "//max/python/max/pipelines/architectures/gemma4_modulev3",
+]
+
+modular_py_library(
+    name = "generate_api",
+    testonly = True,
+    srcs = ["_generate_api.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/modeling",
+        "//max/tests/integration/test_common:numpy_encoder",
+        "//max/tests/integration/test_common:storage",
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+        requirement("pillow"),
+    ],
+)
+
+_TEST_DEPS = [
+    ":generate_api",
+    "//max/python/max/pipelines",
+    "//max/python/max/pipelines/modeling",
+    requirement("jinja2"),
+    requirement("numpy"),
+] + _ARCHITECTURES
+
+modular_py_test(
+    name = "test_gemma4_text_gpu",
+    size = "enormous",
+    srcs = ["test_gemma4_text_gpu.py"],
+    env = _ENV,
+    exec_properties = {"test.resources:gpu-memory": "180"},
+    gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = _ARCHITECTURES + [requirement("jinja2")],
+    tags = _TAGS,
+    deps = _TEST_DEPS + [requirement("transformers")],
+)
+
+modular_py_test(
+    name = "test_gemma4_multimodal_gpu",
+    size = "enormous",
+    srcs = ["test_gemma4_multimodal_gpu.py"],
+    env = _ENV,
+    exec_properties = {"test.resources:gpu-memory": "180"},
+    gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = _ARCHITECTURES + [requirement("jinja2")],
+    tags = _TAGS,
+    deps = _TEST_DEPS,
+)
+
+modular_py_test(
+    name = "test_generate_api",
+    size = "small",
+    srcs = ["test_generate_api.py"],
+    deps = [
+        ":generate_api",
+        requirement("numpy"),
+    ],
+)
+
+# Makes two 1024x1024 images at 50 steps, about 26 minutes on B200. The
+# reference images come from S3 (FLUX2_GOLDEN_TAR in _generate_api.py).
+modular_py_test(
+    name = "test_flux2_dev_gpu",
+    size = "enormous",
+    srcs = ["test_flux2_dev_gpu.py"],
+    env = _ENV,
+    exec_properties = {"test.resources:gpu-memory": "180"},
+    gpu_constraints = ["//:has_gpu"],
+    ignore_extra_deps = _ARCHITECTURES + [
+        # ModuleV3 runs eager ops through the interpreter.
+        "//max/python/max/_interpreter_ops",
+        requirement("jinja2"),
+        # LPIPS loads its backbone through torchvision.
+        requirement("torchvision"),
+    ],
+    tags = _TAGS,
+    deps = _TEST_DEPS + [
+        "//max/python/max/_interpreter_ops",
+        "//max/tests/integration/test_common:verify_utils",
+        requirement("pillow"),
+        requirement("torchvision"),
+    ],
+)
+
+_REGENERATE_DEPS = [
+    ":generate_api",
+    "//max/tests/integration/test_common:test_data",
+    "//max/tests/integration/test_common:torch_utils",
+    requirement("diffusers"),
+    requirement("pillow"),
+    requirement("accelerate"),
+    requirement("huggingface-hub"),
+    requirement("numpy"),
+    requirement("torch"),
+    requirement("torchvision"),
+    requirement("transformers"),
+]
+
+# Regenerates one run's references on the GPU the config selects. They land in
+# the target's test.outputs.
+[
+    modular_py_test(
+        name = "regenerate_references_" + run,
+        size = "enormous",
+        srcs = ["regenerate_references.py"],
+        args = [
+            "--run",
+            run,
+        ],
+        env = _ENV,
+        exec_properties = {"test.resources:gpu-memory": "180"},
+        gpu_constraints = ["//:has_gpu"],
+        ignore_extra_deps = [
+            requirement("accelerate"),
+            requirement("torchvision"),
+        ],
+        main = "regenerate_references.py",
+        tags = _TAGS,
+        deps = _REGENERATE_DEPS,
+    )
+    for run in [
+        "gemma4_text",
+        "gemma4_multimodal",
+        "flux2_dev",
+    ]
+]

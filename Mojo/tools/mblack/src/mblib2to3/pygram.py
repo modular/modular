@@ -52,6 +52,7 @@ class Symbols:
 
 
 class _python_symbols(Symbols):
+    accesses_clause: int
     and_expr: int
     and_test: int
     annassign: int
@@ -73,6 +74,8 @@ class _python_symbols(Symbols):
     comp_iter: int
     comp_op: int
     comparison: int
+    conditional_guard_clause_tail: int
+    conditional_if_clause_tail: int
     compound_stmt: int
     comptime_assert_stmt_body: int
     comptime_stmt: int
@@ -87,6 +90,8 @@ class _python_symbols(Symbols):
     dotted_as_names: int
     dotted_name: int
     encoding_decl: int
+    enum_case_payload: int
+    enum_case_stmt: int
     eval_input: int
     except_clause: int
     exec_stmt: int
@@ -102,7 +107,9 @@ class _python_symbols(Symbols):
     generatortype: int
     global_stmt: int
     guard: int
+    guard_stmt: int
     if_stmt: int
+    inline_if_conditions: int
     import_as_name: int
     import_as_names: int
     import_from: int
@@ -112,6 +119,7 @@ class _python_symbols(Symbols):
     listmaker: int
     match_stmt: int
     metaparams: int
+    multiline_if_conditions: int
     named_effect: int
     namedexpr_test: int
     not_test: int
@@ -155,6 +163,7 @@ class _python_symbols(Symbols):
     tname_star: int
     trailer: int
     try_stmt: int
+    typeconv: int
     typedargslist: int
     varargslist: int
     var_stmt: int
@@ -254,6 +263,8 @@ def initialize(cache_dir: Union[str, "os.PathLike[str]", None] = None) -> None:
         "__mlir_region",
         "struct",
         "trait",
+        "__enum",
+        "__union",
     ]
     mojo_grammar.version = (0, 1)
 

@@ -14,6 +14,7 @@
 import json
 
 import llm_fuzz_matrix
+import pytest
 from click.testing import CliRunner
 
 
@@ -30,7 +31,14 @@ def test_llm_fuzz_matrix_schedule_all() -> None:
     assert len(output["include"]) == len(llm_fuzz_matrix.PIPELINES)
 
 
-def test_llm_fuzz_matrix_dispatch_specific() -> None:
+@pytest.mark.parametrize(
+    "pipeline",
+    [
+        "minimax/MiniMax-M3-MXFP8-ep-tp",
+        "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__dspark-tp2",
+    ],
+)
+def test_llm_fuzz_matrix_dispatch_specific(pipeline: str) -> None:
     """workflow_dispatch with a specific pipeline returns only that one."""
     runner = CliRunner()
     result = runner.invoke(
@@ -39,16 +47,13 @@ def test_llm_fuzz_matrix_dispatch_specific() -> None:
             "--event-name",
             "workflow_dispatch",
             "--selected-pipeline",
-            "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash",
+            pipeline,
         ],
     )
     assert result.exit_code == 0
     output = json.loads(result.output)
     assert len(output["include"]) == 1
-    assert (
-        output["include"][0]["pipeline"]
-        == "nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-dflash"
-    )
+    assert output["include"][0]["pipeline"] == pipeline
 
 
 def test_llm_fuzz_matrix_dispatch_all() -> None:
@@ -135,3 +140,17 @@ def test_llm_fuzz_matrix_no_local_path_keeps_default_runner() -> None:
     # Default runners are open-weights only; no override should leak in.
     for default_runner in runners:
         assert "modrunner-" in default_runner
+
+
+def test_smoke_test_pipeline_is_in_the_matrix() -> None:
+    """The PR fallback must name an entry that exists.
+
+    filter_entries selects the fallback with a comprehension over PIPELINES,
+    so a name no entry carries yields an empty matrix rather than an error:
+    configure succeeds, evaluate is skipped by its matrix check, and the run
+    is green having fuzzed nothing. Removing the pipeline this constant named
+    is exactly how that happens.
+    """
+    assert llm_fuzz_matrix.SMOKE_TEST_PIPELINE in {
+        entry.pipeline for entry in llm_fuzz_matrix.PIPELINES
+    }

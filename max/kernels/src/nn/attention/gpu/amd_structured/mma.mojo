@@ -25,14 +25,12 @@ from max.gpu.compute.mma import mma as gpu_mma
 from max.gpu import lane_id, WARP_SIZE
 from max.gpu.intrinsics import ds_read_tr16_b64
 from std.math.uutils import ufloordiv, umod
-from std.memory import AddressSpace
 from std.sys import simd_width_of
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 from layout import TileTensor
 from layout.swizzle import Swizzle
 from layout.tensor_core import num_matrix_reg
-from layout.tile_layout import row_major, col_major
+from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout import Coord, ComptimeInt, MixedLayout
 from structured_kernels.amd_tile_io import (
@@ -44,7 +42,7 @@ from structured_kernels.amd_tile_io import (
 struct TiledMmaOp[
     out_type: DType,
     in_type: DType,
-    shape: IndexList[3],
+    shape: Tuple[Int, Int, Int],
     transpose_b: Bool = False,
 ]:
     """TileTensor-native MMA operation for AMD attention kernels.
@@ -64,7 +62,7 @@ struct TiledMmaOp[
     comptime c_frag_size = num_matrix_reg[Self.shape[0], Self.shape[1]]()
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def mma[
         swap_a_b: Bool = False
     ](
@@ -124,7 +122,7 @@ struct TiledMmaOp[
                     )
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_b[
         swizzle: Optional[Swizzle] = None,
     ](
@@ -176,7 +174,7 @@ struct TiledMmaOp[
                 reg_vec[i, 0] = dist[0, 0]
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def load_a[
         swizzle: Optional[Swizzle] = None,
     ](
@@ -219,7 +217,7 @@ struct TiledMmaOp[
 
 struct KVMmaOp[
     in_type: DType,
-    mma_shape: IndexList[3],
+    mma_shape: Tuple[Int, Int, Int],
     num_mmas: Int,
     num_k_mmas: Int,
     num_k_tiles: Int,
@@ -270,13 +268,13 @@ struct KVMmaOp[
         address_space=.LOCAL,
     ]
 
-    @always_inline
+    @inline(.always)
     def __init__(out self):
         self.reg_tile = stack_allocation[Self.in_type, address_space=.LOCAL](
             Self._reg_layout
         )
 
-    @always_inline
+    @inline(.always)
     def load_prefill[
         bk_tile: Int
     ](
@@ -310,7 +308,7 @@ struct KVMmaOp[
         comptime for i in range(total_frags):
             dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frags[Int(i)])
 
-    @always_inline
+    @inline(.always)
     def load_prefill_split[
         bk_tile: Int,
         has_hi: Bool,
@@ -355,9 +353,7 @@ struct KVMmaOp[
 
         # Half-K MMA tile shape: 16 × 16 × 64 (matches load_b's
         # `num_packs == 2` half).
-        comptime half_k_shape = IndexList[3](
-            Self.MMA_M, Self.mma_shape[1], Self.MMA_K // 2
-        )
+        comptime half_k_shape = (Self.MMA_M, Self.mma_shape[1], Self.MMA_K // 2)
         # Half-K per-lane fragment width. Bound symbolically to the
         # MMA shape so `lo.join(hi)` stays correct if MMA_K ever
         # changes. For FP8 16x16x128 this equals 16, matching
@@ -400,7 +396,7 @@ struct KVMmaOp[
             var joined = lo.join(hi)
             dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](joined)
 
-    @always_inline
+    @inline(.always)
     def mma_tile_at[
         bk_tile: Int, kg: Int
     ](self) -> TileTensor[
@@ -423,12 +419,12 @@ struct KVMmaOp[
             bk_tile, 0
         ).tile[Self.num_mmas, Self.input_frag_size](kg, 0)
 
-    @always_inline
+    @inline(.always)
     def load_v_bf16[
         bk_tile: Int
     ](
         self,
-        smem_base: UnsafePointer[
+        smem_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
     ):
@@ -470,7 +466,7 @@ struct KVMmaOp[
         # `ds_read_tr16_b64` intrinsic with a swizzled per-lane address.
         # Mirrors `load_v_fp8_strip`'s swizzle path. No-swizzle case
         # keeps the original helper-based load.
-        comptime if Self.swizzle:
+        comptime if case .Some(swizzle) = Self.swizzle:
             # Per-lane element offset within a (4, 16) shared_b_tile
             # (inside a (16, 16) half of the (MMA_K, MMA_N) sub-tile).
             # Stride along the K-dim of the tile is `BK` elements.
@@ -494,8 +490,10 @@ struct KVMmaOp[
                         Self.MMA_K, Self.MMA_M, Self.BN, Self.BK
                     ](bk_tile, Int(k), Int(i))
 
-                    @__parameter
-                    def _read_half[half_idx: Int]() -> SIMD[Self.in_type, 4]:
+                    @__allow_legacy_any_origin_fields
+                    def _read_half[
+                        half_idx: Int
+                    ]() {imm} -> SIMD[Self.in_type, 4]:
                         comptime half_off = (
                             half_idx * (Self.MMA_K // 2) * Self.BK
                         )
@@ -505,10 +503,11 @@ struct KVMmaOp[
                         var vec_idx = total_elem // simd_w_elem
                         var sub_vec = total_elem & (simd_w_elem - 1)
                         var swizzled_elem = (
-                            Self.swizzle.value()(vec_idx) * simd_w_elem
-                            + sub_vec
+                            swizzle(vec_idx) * simd_w_elem + sub_vec
                         )
-                        return ds_read_tr16_b64(smem_base + swizzled_elem)
+                        return ds_read_tr16_b64(
+                            smem_base.unsafe_offset(swizzled_elem)
+                        )
 
                     var part_1 = _read_half[0]()
                     var part_2 = _read_half[1]()
@@ -534,7 +533,7 @@ struct KVMmaOp[
                         _MmaTileLayout,
                         MutAnyOrigin,
                         address_space=.SHARED,
-                    ](smem_base + offset, _MmaTileLayout())
+                    ](smem_base.unsafe_offset(offset), _MmaTileLayout())
                     var frag = TiledMmaLoader[
                         Self.in_type, Self.mma_shape
                     ].load_b_tr(mma_smem)
@@ -546,12 +545,12 @@ struct KVMmaOp[
                     ]().vectorize[1, Self.input_frag_size]()
                     dst[Int(i), 0] = rebind[type_of(dst[Int(i), 0])](frag)
 
-    @always_inline
+    @inline(.always)
     def load_v_fp8_strip[
         bk_tile: Int
     ](
         self,
-        smem_base: UnsafePointer[
+        smem_base: MutPointer[
             Scalar[Self.in_type], MutAnyOrigin, address_space=.SHARED
         ],
         rel_key: Int,
@@ -604,7 +603,7 @@ struct KVMmaOp[
             )
             dst[Int(dt), 0] = rebind[type_of(dst[Int(dt), 0])](joined)
 
-    @always_inline
+    @inline(.always)
     def mma[
         swap_a_b: Bool = False,
     ](

@@ -1,0 +1,839 @@
+{
+ "repo": "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark",
+ "revision": "6d127b50ecd98562cea85d0087680b7d86091fb0",
+ "config": {
+  "architectures": [
+   "Qwen3DSparkModel"
+  ],
+  "attention_bias": false,
+  "attention_sink_bias": true,
+  "block_size": 8,
+  "dflash_config": {
+   "attention_sink_bias": true,
+   "causal": true,
+   "mask_token_id": 990,
+   "swa_window_size": 1024,
+   "target_layer_ids": [
+    1,
+    5,
+    19,
+    29,
+    41,
+    51
+   ],
+   "use_swa": true,
+   "sample_from_anchor": false
+  },
+  "dflash_query_causal": true,
+  "draft_vocab_size": null,
+  "dspark_bonus_anchor": true,
+  "dspark_fixup_head_type": "markov",
+  "dspark_markov_rank": 512,
+  "dtype": "bfloat16",
+  "eagle_aux_hidden_state_layer_ids": [
+   2,
+   6,
+   20,
+   30,
+   42,
+   52
+  ],
+  "has_embed_tokens": true,
+  "has_lm_head": false,
+  "head_dim": 128,
+  "hidden_act": "silu",
+  "hidden_size": 2688,
+  "intermediate_size": 6144,
+  "layer_types": [
+   "sliding_attention",
+   "sliding_attention",
+   "sliding_attention",
+   "sliding_attention",
+   "sliding_attention",
+   "sliding_attention"
+  ],
+  "markov_head_type": "vanilla",
+  "markov_rank": 512,
+  "mask_token_id": 990,
+  "max_position_embeddings": 1048576,
+  "model_type": "qwen3",
+  "num_attention_heads": 32,
+  "num_aux_layers": 6,
+  "num_hidden_layers": 6,
+  "num_key_value_heads": 2,
+  "pard_token": 990,
+  "rms_norm_eps": 1e-06,
+  "rope_parameters": null,
+  "rope_theta": 10000,
+  "sliding_window": 1024,
+  "target_layer_ids": [
+   1,
+   5,
+   19,
+   29,
+   41,
+   51
+  ],
+  "train_embed_tokens": false,
+  "transformers_version": "5.5.3",
+  "use_cache": false,
+  "vocab_size": 131072,
+  "sample_from_anchor": false,
+  "quantization_config": {
+   "quant_method": "modelopt",
+   "producer": {
+    "name": "modelopt",
+    "version": "0.45.0"
+   },
+   "ignore": [
+    "*embed_tokens*",
+    "*markov_w1*",
+    "*self_attn*"
+   ],
+   "quant_algo": "W4A16_NVFP4",
+   "kv_cache_quant_algo": null,
+   "group_size": 16,
+   "exclude_modules": [
+    "*embed_tokens*",
+    "*markov_w1*",
+    "*self_attn*"
+   ]
+  }
+ },
+ "tensors": {
+  "embed_tokens.weight": [
+   "BF16",
+   [
+    131072,
+    2688
+   ]
+  ],
+  "fc.weight": [
+   "U8",
+   [
+    2688,
+    8064
+   ]
+  ],
+  "fc.weight_scale": [
+   "F8_E4M3",
+   [
+    2688,
+    1008
+   ]
+  ],
+  "fc.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "hidden_norm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.0.input_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.0.mlp.down_proj.weight": [
+   "U8",
+   [
+    2688,
+    3072
+   ]
+  ],
+  "layers.0.mlp.down_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    2688,
+    384
+   ]
+  ],
+  "layers.0.mlp.down_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.0.mlp.gate_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.0.mlp.gate_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.0.mlp.gate_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.0.mlp.up_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.0.mlp.up_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.0.mlp.up_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.0.post_attention_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.0.self_attn.attention_sink_bias": [
+   "BF16",
+   [
+    32
+   ]
+  ],
+  "layers.0.self_attn.k_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.0.self_attn.k_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.0.self_attn.o_proj.weight": [
+   "BF16",
+   [
+    2688,
+    4096
+   ]
+  ],
+  "layers.0.self_attn.q_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.0.self_attn.q_proj.weight": [
+   "BF16",
+   [
+    4096,
+    2688
+   ]
+  ],
+  "layers.0.self_attn.v_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.1.input_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.1.mlp.down_proj.weight": [
+   "U8",
+   [
+    2688,
+    3072
+   ]
+  ],
+  "layers.1.mlp.down_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    2688,
+    384
+   ]
+  ],
+  "layers.1.mlp.down_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.1.mlp.gate_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.1.mlp.gate_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.1.mlp.gate_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.1.mlp.up_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.1.mlp.up_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.1.mlp.up_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.1.post_attention_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.1.self_attn.attention_sink_bias": [
+   "BF16",
+   [
+    32
+   ]
+  ],
+  "layers.1.self_attn.k_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.1.self_attn.k_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.1.self_attn.o_proj.weight": [
+   "BF16",
+   [
+    2688,
+    4096
+   ]
+  ],
+  "layers.1.self_attn.q_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.1.self_attn.q_proj.weight": [
+   "BF16",
+   [
+    4096,
+    2688
+   ]
+  ],
+  "layers.1.self_attn.v_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.2.input_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.2.mlp.down_proj.weight": [
+   "U8",
+   [
+    2688,
+    3072
+   ]
+  ],
+  "layers.2.mlp.down_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    2688,
+    384
+   ]
+  ],
+  "layers.2.mlp.down_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.2.mlp.gate_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.2.mlp.gate_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.2.mlp.gate_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.2.mlp.up_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.2.mlp.up_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.2.mlp.up_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.2.post_attention_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.2.self_attn.attention_sink_bias": [
+   "BF16",
+   [
+    32
+   ]
+  ],
+  "layers.2.self_attn.k_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.2.self_attn.k_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.2.self_attn.o_proj.weight": [
+   "BF16",
+   [
+    2688,
+    4096
+   ]
+  ],
+  "layers.2.self_attn.q_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.2.self_attn.q_proj.weight": [
+   "BF16",
+   [
+    4096,
+    2688
+   ]
+  ],
+  "layers.2.self_attn.v_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.3.input_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.3.mlp.down_proj.weight": [
+   "U8",
+   [
+    2688,
+    3072
+   ]
+  ],
+  "layers.3.mlp.down_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    2688,
+    384
+   ]
+  ],
+  "layers.3.mlp.down_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.3.mlp.gate_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.3.mlp.gate_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.3.mlp.gate_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.3.mlp.up_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.3.mlp.up_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.3.mlp.up_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.3.post_attention_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.3.self_attn.attention_sink_bias": [
+   "BF16",
+   [
+    32
+   ]
+  ],
+  "layers.3.self_attn.k_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.3.self_attn.k_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.3.self_attn.o_proj.weight": [
+   "BF16",
+   [
+    2688,
+    4096
+   ]
+  ],
+  "layers.3.self_attn.q_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.3.self_attn.q_proj.weight": [
+   "BF16",
+   [
+    4096,
+    2688
+   ]
+  ],
+  "layers.3.self_attn.v_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.4.input_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.4.mlp.down_proj.weight": [
+   "U8",
+   [
+    2688,
+    3072
+   ]
+  ],
+  "layers.4.mlp.down_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    2688,
+    384
+   ]
+  ],
+  "layers.4.mlp.down_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.4.mlp.gate_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.4.mlp.gate_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.4.mlp.gate_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.4.mlp.up_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.4.mlp.up_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.4.mlp.up_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.4.post_attention_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.4.self_attn.attention_sink_bias": [
+   "BF16",
+   [
+    32
+   ]
+  ],
+  "layers.4.self_attn.k_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.4.self_attn.k_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.4.self_attn.o_proj.weight": [
+   "BF16",
+   [
+    2688,
+    4096
+   ]
+  ],
+  "layers.4.self_attn.q_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.4.self_attn.q_proj.weight": [
+   "BF16",
+   [
+    4096,
+    2688
+   ]
+  ],
+  "layers.4.self_attn.v_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.5.input_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.5.mlp.down_proj.weight": [
+   "U8",
+   [
+    2688,
+    3072
+   ]
+  ],
+  "layers.5.mlp.down_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    2688,
+    384
+   ]
+  ],
+  "layers.5.mlp.down_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.5.mlp.gate_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.5.mlp.gate_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.5.mlp.gate_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.5.mlp.up_proj.weight": [
+   "U8",
+   [
+    6144,
+    1344
+   ]
+  ],
+  "layers.5.mlp.up_proj.weight_scale": [
+   "F8_E4M3",
+   [
+    6144,
+    168
+   ]
+  ],
+  "layers.5.mlp.up_proj.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "layers.5.post_attention_layernorm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ],
+  "layers.5.self_attn.attention_sink_bias": [
+   "BF16",
+   [
+    32
+   ]
+  ],
+  "layers.5.self_attn.k_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.5.self_attn.k_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "layers.5.self_attn.o_proj.weight": [
+   "BF16",
+   [
+    2688,
+    4096
+   ]
+  ],
+  "layers.5.self_attn.q_norm.weight": [
+   "BF16",
+   [
+    128
+   ]
+  ],
+  "layers.5.self_attn.q_proj.weight": [
+   "BF16",
+   [
+    4096,
+    2688
+   ]
+  ],
+  "layers.5.self_attn.v_proj.weight": [
+   "BF16",
+   [
+    256,
+    2688
+   ]
+  ],
+  "markov_head.markov_w1.weight": [
+   "BF16",
+   [
+    131072,
+    512
+   ]
+  ],
+  "markov_head.markov_w2.weight": [
+   "U8",
+   [
+    131072,
+    256
+   ]
+  ],
+  "markov_head.markov_w2.weight_scale": [
+   "F8_E4M3",
+   [
+    131072,
+    32
+   ]
+  ],
+  "markov_head.markov_w2.weight_scale_2": [
+   "F32",
+   []
+  ],
+  "norm.weight": [
+   "BF16",
+   [
+    2688
+   ]
+  ]
+ }
+}

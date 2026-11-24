@@ -23,7 +23,7 @@ from max.pipelines.modeling.types import RequestID
 
 
 def _log_probs(i: int) -> LogProbabilities:
-    return LogProbabilities([float(i)], [{i: float(i)}])
+    return LogProbabilities([float(i)], [{i: float(i)}], [i])
 
 
 def test_combine_many() -> None:
@@ -113,3 +113,22 @@ def test_combine_many_with_mixed_log_probabilities() -> None:
 def test_combine_empty() -> None:
     with pytest.raises(ValueError):
         _ = TextGenerationOutput.merge([])
+
+
+def test_merge_keeps_first_chunk_ttft_join_hops() -> None:
+    request_id = RequestID("1")
+    hops = {"admit_ms": 10.0, "span_ms": 20.0}
+    first = TextGenerationOutput(
+        request_id=request_id,
+        tokens=[1],
+        final_status=GenerationStatus.ACTIVE,
+        ttft_join_hops_ms=hops,
+    )
+    second = TextGenerationOutput(
+        request_id=request_id,
+        tokens=[2],
+        final_status=GenerationStatus.END_OF_SEQUENCE,
+    )
+    merged = TextGenerationOutput.merge([first, second])
+    assert merged.ttft_join_hops_ms == hops
+    assert merged.tokens == [1, 2]

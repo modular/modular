@@ -19,8 +19,11 @@
 #   - `var second = first` where `first` is `List[Int]` (not
 #     `ImplicitlyCopyable`)
 #   - `ref item_ref = items[2]` rebinding an existing reference binding
-#   - reading `source` after `var moved = source^` (uninitialized)
-from std.testing import assert_equal
+#   - reading `source` after `var transferred = source^` (uninitialized)
+#   - `var second = first^` where `first` is not `Movable` (transfer
+#     into a new binding requires `Movable`, unlike transfer into a
+#     `var` argument)
+from std.testing import assert_equal, assert_false
 
 # --- Declaration forms: value, annotation, or both ---
 
@@ -73,9 +76,9 @@ def test_literal_establishes_ownership() raises:
 def test_copy_and_transfer() raises:
     var source = String("Hello")
     var copied = source  # A copy
-    var moved = source^  # A transfer
+    var transferred = source^  # A transfer
     assert_equal(copied, "Hello")
-    assert_equal(moved, "Hello")
+    assert_equal(transferred, "Hello")
 
 
 # --- `copy()` leaves the original intact ---
@@ -100,7 +103,7 @@ def test_implicit_copy() raises:
     assert_equal(another_value, 16)
 
 
-# --- The transfer sigil moves ownership ---
+# --- The transfer sigil transfers ownership ---
 
 
 def test_transfer_sigil() raises:
@@ -108,6 +111,26 @@ def test_transfer_sigil() raises:
     var second = first^
     assert_equal(len(second), 3)
     assert_equal(second[0], 1)
+
+
+# --- Transfer into a `var` argument doesn't require `Movable` ---
+
+
+@fieldwise_init
+struct NonMovable(Movable where False):
+    var tag: Int
+
+
+def consume_non_movable(var arg: NonMovable) -> Int:
+    return arg.tag
+
+
+def test_transfer_to_var_argument_without_movable() raises:
+    assert_false(conforms_to(NonMovable, Movable))
+    var foo = NonMovable(7)
+    # Ownership changes hands without relocating the value, so the
+    # `Movable` conformance a new binding would need never comes up.
+    assert_equal(consume_non_movable(foo^), 7)
 
 
 # --- Subscripting a collection returns a reference, not a copy ---
@@ -148,6 +171,7 @@ def main() raises:
     test_explicit_copy()
     test_implicit_copy()
     test_transfer_sigil()
+    test_transfer_to_var_argument_without_movable()
     test_reference_avoids_copy()
     test_assignment_from_reference_copies()
     test_reference_binding()

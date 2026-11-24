@@ -23,12 +23,13 @@
 #include "Support/ErrorOr.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 #include "Support/MDialect/MAttrs.h"
+#include "Support/SymbolExport.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
 
 namespace M::KGEN {
 
-class KGENCompiler {
+class MODULAR_CXX_EXPORT KGENCompiler {
 public:
   KGENCompiler(
       MLIRContext &context, CompilationOptions options,

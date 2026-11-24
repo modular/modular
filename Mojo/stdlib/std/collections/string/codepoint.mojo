@@ -23,10 +23,9 @@ from std.sys.intrinsics import likely
 from std.bit import count_leading_zeros
 from std.bit.mask import splat
 import std.format._utils as fmt
-from std.os import abort
 
 
-@always_inline
+@inline(.always)
 def _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     """Returns True if `codepoint` is a valid Unicode scalar value.
 
@@ -104,7 +103,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, *, unsafe_unchecked_codepoint: UInt32):
         """Construct a `Codepoint` from a code point value without checking that it
         falls in the valid range.
@@ -124,7 +123,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         self._scalar_value = unsafe_unchecked_codepoint
 
-    @always_inline
+    @inline(.always)
     def __init__(out self, codepoint: UInt8):
         """Construct a `Codepoint` from a single byte value.
 
@@ -136,7 +135,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         self._scalar_value = UInt32(Int(codepoint))
 
-    @always_inline("nodebug")
+    @inline(.nodebug)
     def __init__(out self, lit: StringLiteral):
         """Construct a `Codepoint` from a single-codepoint `StringLiteral`.
 
@@ -215,7 +214,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             return None
 
     @staticmethod
-    def ord(string: StringSlice[mut=False, _]) -> Codepoint:
+    def ord(string: StringSpan[_]) raises -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
         string.
 
@@ -228,26 +227,66 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         returns a `Codepoint` instead of an `Int`.
 
         Args:
-            string: The input string, which must contain only a single character.
+            string: The input string, which must contain exactly one codepoint.
 
         Returns:
             A `Codepoint` representing the codepoint of the given character.
+
+        Raises:
+            Error: If `string` is empty or contains more than one codepoint.
         """
-        if string.byte_length() == 0:
-            abort("Codepoint.ord: input string must not be empty")
+        var byte_length = string.byte_length()
+        if byte_length == 0:
+            raise Error(
+                "ord() expected a single codepoint, but got an empty string"
+            )
 
         # SAFETY:
-        #   This is safe because `StringSlice` is guaranteed to point to valid
+        #   This is safe because `StringSpan` is guaranteed to point to valid
         #   UTF-8, and we verified above that the input is non-empty.
         var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
             string.as_bytes()
         )
-
-        assert (
-            string.byte_length() == num_bytes
-        ), "input string must be one character"
-
+        if num_bytes != byte_length:
+            raise Error(
+                t"ord() expected a single codepoint, but got a string of"
+                t" {string.count_codepoints()} codepoints: '{string}'"
+            )
         return char
+
+    @staticmethod
+    def ord(string: StringLiteral[_]) -> Codepoint:
+        """Returns the `Codepoint` that represents the given single-character
+        string literal.
+
+        Given a string containing one character, return a `Codepoint`
+        representing the codepoint of that character. For example,
+        `Codepoint.ord("a")` returns the codepoint `97`. This is the inverse of
+        the `chr()` function.
+
+        This function is similar to the `ord()` free function, except that it
+        returns a `Codepoint` instead of an `Int`.
+
+        Args:
+            string: The input string, which must contain exactly one codepoint.
+
+        Returns:
+            A `Codepoint` representing the codepoint of the given character.
+
+        Constraints:
+            The literal must contain exactly one codepoint.
+            `Codepoint.ord("")` and `Codepoint.ord("ab")` fail to compile.
+        """
+        comptime literal = type_of(string)()
+        # TODO(MOCO-5221): Use a plain `comptime assert` once it is checked
+        # before the fold below. Until then the fold sits in a branch so bad
+        # input never reaches it.
+        comptime if literal.count_codepoints() == 1:
+            return comptime (Codepoint(literal))
+        else:
+            comptime assert (
+                False
+            ), "ord() expects a string literal containing exactly one character"
 
     # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
@@ -337,7 +376,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def __int__(self) -> Int:
         """Returns the numeric value of this scalar value as an integer.
 
@@ -358,7 +397,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         _ = self.unsafe_write_utf8(result.unsafe_as_bytes_mut().unsafe_ptr())
         w.write_string(result)
 
-    @no_inline
+    @inline(.never)
     def write_repr_to(self, mut writer: Some[Writer]):
         """Write the repr of this `Codepoint` to a writer.
 
@@ -374,7 +413,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @always_inline
+    @inline(.always)
     def is_ascii(self) -> Bool:
         """Returns True if this `Codepoint` is an ASCII character.
 
@@ -423,7 +462,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         return ord_a <= self.to_u32() <= ord_z
 
     @staticmethod
-    @always_inline
+    @inline(.always)
     def _is_ascii_printable(codepoint: Scalar) -> Bool:
         """Determines whether the given character is a printable character.
 
@@ -440,7 +479,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         comptime `~` = type_of(codepoint)(ord("~"))
         return ` ` <= codepoint <= `~`
 
-    @always_inline
+    @inline(.always)
     def is_ascii_printable(self) -> Bool:
         """Determines whether the given character is a printable character.
 
@@ -449,7 +488,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         return Self._is_ascii_printable(self.to_u32())
 
-    @always_inline
+    @inline(.always)
     def is_python_space(self) -> Bool:
         """Determines whether this character is a Python whitespace string.
 
@@ -534,7 +573,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             or c == `\x1e`
         )
 
-    @always_inline
+    @inline(.always)
     def to_u32(self) -> UInt32:
         """Returns the numeric value of this scalar value as an unsigned 32-bit
         integer.
@@ -545,7 +584,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         """
         return self._scalar_value
 
-    @always_inline
+    @inline(.always)
     def unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
     ](self, ptr: MutPointer[Byte, ...]) -> Int:
@@ -653,7 +692,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         return num_bytes
 
-    @always_inline
+    @inline(.always)
     def utf8_byte_length(self) -> Int:
         """Returns the number of UTF-8 bytes required to encode this character.
 

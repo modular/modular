@@ -20,8 +20,9 @@ from std.testing import assert_almost_equal
 
 
 def _linspace_fill[dtype: DType](mut buff: TileTensor[mut=True, dtype, ...]):
+    var flat = buff.reshape(row_major(buff.num_elements()))
     for i in range(buff.num_elements()):
-        buff.raw_store(i, Scalar[dtype](i))
+        flat.store((i,), Scalar[dtype](i))
 
 
 def _get_test_name[

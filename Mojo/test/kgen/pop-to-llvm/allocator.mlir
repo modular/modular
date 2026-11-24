@@ -14,10 +14,10 @@
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   kgen.func @alloc_free() {
-    %size = index.constant 1
-    %align = index.constant 8
+    %size = kgen.param.constant: scalar<index> = <1>
+    %align = kgen.param.constant: scalar<index> = <8>
     %0 = pop.aligned_alloc %align, %size : <index>
     pop.aligned_free %0 : <index>
-    kgen.return
+    hlcf.return
   }
 }

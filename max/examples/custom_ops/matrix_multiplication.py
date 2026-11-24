@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# DOC: max/develop/custom-ops-matmul.mdx
+# DOC: develop/custom-ops-matmul.mdx
 
 from pathlib import Path
 
@@ -103,9 +103,15 @@ if __name__ == "__main__":
         devices=[device],
     )
 
-    # Fill the input matrices with random values.
-    a = np.random.uniform(size=(M, K)).astype(np.float32)
-    b = np.random.uniform(size=(K, N)).astype(np.float32)
+    # Dyadic inputs are exactly representable by the Tensor Core TF32 path.
+    rng = np.random.default_rng(0)
+    a = (rng.integers(-8, 9, size=(M, K)) / 16).astype(np.float32)
+    b = (rng.integers(-8, 9, size=(K, N)) / 16).astype(np.float32)
+
+    # Independent fp64 reference; the fp32 cast is the best-achievable result.
+    expected = (a.astype(np.float64) @ b.astype(np.float64)).astype(np.float32)
+
+    expected = a @ b
 
     # First, perform the matrix multiplication in NumPy.
     print("A:")
@@ -117,47 +123,89 @@ if __name__ == "__main__":
     print()
 
     print("Expected result:")
-    print(a @ b)
+    print(expected)
     print()
 
     if accelerator_count() > 0:
         # Then, test the various versions of matrix multiplication operations.
         naive_result = matrix_multiplication(a, b, "naive", session, device)
         print("Naive matrix multiplication:")
+        np.testing.assert_allclose(
+            naive_result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+        )
         print(naive_result.to_numpy())
+        np.testing.assert_allclose(
+            naive_result.to_numpy(), expected, rtol=1e-3, atol=1e-4
+        )
         print()
 
         coalescing_result = matrix_multiplication(
             a, b, "coalescing", session, device
         )
         print("Coalescing matrix multiplication:")
+        np.testing.assert_allclose(
+            coalescing_result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+        )
         print(coalescing_result.to_numpy())
+        np.testing.assert_allclose(
+            coalescing_result.to_numpy(), expected, rtol=1e-3, atol=1e-4
+        )
         print()
 
         tiled_result = matrix_multiplication(a, b, "tiled", session, device)
         print("Tiled matrix multiplication:")
+        np.testing.assert_allclose(
+            tiled_result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+        )
         print(tiled_result.to_numpy())
+        np.testing.assert_allclose(
+            tiled_result.to_numpy(), expected, rtol=1e-3, atol=1e-4
+        )
         print()
 
         tiled_register_result = matrix_multiplication(
             a, b, "tiled_register", session, device
         )
         print("Shared memory and register tiling matrix multiplication:")
+        np.testing.assert_allclose(
+            tiled_register_result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+        )
         print(tiled_register_result.to_numpy())
+        np.testing.assert_allclose(
+            tiled_register_result.to_numpy(), expected, rtol=1e-3, atol=1e-4
+        )
         print()
 
         block_tiled_result = matrix_multiplication(
             a, b, "block_tiled", session, device
         )
         print("2D block tiled matrix multiplication:")
+        np.testing.assert_allclose(
+            block_tiled_result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+        )
         print(block_tiled_result.to_numpy())
+        np.testing.assert_allclose(
+            block_tiled_result.to_numpy(), expected, rtol=1e-3, atol=1e-4
+        )
         print()
 
         block_tiled_vectorized_result = matrix_multiplication(
             a, b, "block_tiled_vectorized", session, device
         )
         print("2D block tiled matrix multiplication (vectorized):")
+        np.testing.assert_allclose(
+            block_tiled_vectorized_result.to_numpy(),
+            expected,
+            rtol=1e-5,
+            atol=1e-5,
+        )
         print(block_tiled_vectorized_result.to_numpy())
+        np.testing.assert_allclose(
+            block_tiled_vectorized_result.to_numpy(),
+            expected,
+            rtol=1e-3,
+            atol=1e-4,
+        )
         print()
 
         # Note: Apple silicon GPUs do not yet support Tensor Core operations.
@@ -166,14 +214,49 @@ if __name__ == "__main__":
                 a, b, "tensor_core", session, device
             )
             print("Matrix multiplication using Tensor Cores:")
+            np.testing.assert_allclose(
+                tensor_core_result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+            )
             print(tensor_core_result.to_numpy())
+            np.testing.assert_allclose(
+                tensor_core_result.to_numpy(), expected, rtol=1e-3, atol=1e-4
+            )
             print()
+        # Full tiles exercise rectangular layouts without relying on tail handling.
+        rectangular_a = np.random.uniform(size=(128, 256)).astype(np.float32)
+        rectangular_b = np.random.uniform(size=(256, 384)).astype(np.float32)
+        rectangular_expected = rectangular_a @ rectangular_b
+        algorithms = [
+            "naive",
+            "coalescing",
+            "tiled",
+            "tiled_register",
+            "block_tiled",
+            "block_tiled_vectorized",
+        ]
+        if device.api != "metal":
+            algorithms.append("tensor_core")
+        for algorithm in algorithms:
+            result = matrix_multiplication(
+                rectangular_a, rectangular_b, algorithm, session, device
+            )
+            np.testing.assert_allclose(
+                result.to_numpy(), rectangular_expected, rtol=1e-3, atol=1e-4
+            )
+            print(f"Verified {algorithm}: 128 x 256 x 384")
     else:
         print(
-            "No MAX-compatible accelerator detected, only running a naive matrix multiplication:"
+            "No MAX-compatible accelerator detected, only running a naive"
+            " matrix multiplication:"
         )
 
         naive_result = matrix_multiplication(a, b, "naive", session, device)
         print("Naive matrix multiplication:")
+        np.testing.assert_allclose(
+            naive_result.to_numpy(), expected, rtol=1e-5, atol=1e-5
+        )
         print(naive_result.to_numpy())
+        np.testing.assert_allclose(
+            naive_result.to_numpy(), expected, rtol=1e-3, atol=1e-4
+        )
         print()

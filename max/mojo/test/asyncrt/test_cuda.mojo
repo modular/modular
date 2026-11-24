@@ -13,7 +13,7 @@
 
 from asyncrt_test_utils import create_test_device_context
 from max.gpu.host import DeviceContext, Dim
-from max.gpu.host._nvidia_cuda import (
+from max.gpu.host import (
     CUDA,
     CUcontext,
     CUDA_get_current_context,
@@ -101,9 +101,9 @@ def _run_cuda_external_function(ctx: DeviceContext) raises:
 
     # Signature of externally compiled kernel function
     def vec_add_sig(
-        in0: Pointer[Float32, MutAnyOrigin],
-        in1: Pointer[Float32, MutAnyOrigin],
-        output: Pointer[Float32, MutAnyOrigin],
+        in0: Pointer[Float32, ImmutAnyOrigin],
+        in1: Pointer[Float32, ImmutAnyOrigin],
+        output: Pointer[Float32, ImmutAnyOrigin],
         len: Int,
     ):
         pass
@@ -210,7 +210,7 @@ def _run_cuda_external_function_distinct_entry_points(
     print("_run_cuda_external_function_distinct_entry_points()")
 
     def kernel_sig(
-        output: Pointer[Float32, MutAnyOrigin],
+        output: Pointer[Float32, ImmutAnyOrigin],
         len: Int,
     ):
         pass

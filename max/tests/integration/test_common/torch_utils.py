@@ -23,9 +23,9 @@ import numpy.typing as npt
 import requests
 import torch
 from diffusers import DiffusionPipeline
-from max.support import fetch_bytes_from_s3
 from PIL import Image
 from test_common.numerics import log_softmax
+from test_common.storage import load_bytes
 from test_common.test_data import (
     MockPixelGenerationRequest,
     MockTextGenerationRequest,
@@ -33,7 +33,6 @@ from test_common.test_data import (
 from transformers import (
     LogitsProcessorList,
     MllamaProcessor,
-    PixtralProcessor,
     PreTrainedModel,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
@@ -83,8 +82,7 @@ def run_text_generation(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer
     | PreTrainedTokenizerFast
-    | MllamaProcessor
-    | PixtralProcessor,
+    | MllamaProcessor,
     device: torch.device,
     textgen_requests: Iterable[MockTextGenerationRequest],
     num_steps: int = 50,
@@ -454,8 +452,9 @@ def _is_flux2_pipeline(pipeline: Any) -> bool:
 def _load_input_image(image_uri: str) -> Image.Image:
     """Load an input image for image-to-image generation."""
     if image_uri.startswith("s3://"):
-        image_bytes = fetch_bytes_from_s3(image_uri)
-        return Image.open(BytesIO(image_bytes)).convert("RGB")
+        # Falls back to an unsigned read of the public bucket when the
+        # runner has no AWS credentials, as test_data's images do.
+        return Image.open(BytesIO(load_bytes(image_uri))).convert("RGB")
     if image_uri.startswith(("http://", "https://")):
         return Image.open(requests.get(image_uri, stream=True).raw).convert(
             "RGB"

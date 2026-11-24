@@ -29,3 +29,6 @@ class LogProbabilities(msgspec.Struct, tag=True, omit_defaults=True):
     """Probabilities of each token."""
     top_log_probabilities: list[dict[int, float]]
     """Top tokens and their corresponding probabilities."""
+    sampled_token_ids: list[int]
+    """Sampled token at each position, whose probability is in
+    ``token_log_probabilities``."""

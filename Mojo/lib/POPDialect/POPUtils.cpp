@@ -21,6 +21,8 @@
 #include "Mojo/Interpreter/InterpreterState.h"
 #include "Mojo/Interpreter/ParametricInterpreterState.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
+#include "Mojo/KGENDialect/KGENUtils.h"
 #include "Mojo/POPDialect/POPAttrs.h"
 #include "mlir/IR/Builders.h"
 
@@ -31,20 +33,6 @@ using namespace POP;
 /// Get the value of a scalar index-like parameter value.
 /// This is a temporary helper utility during the Int->SIMD unification project.
 /// After it's done, we should remove the IntegerAttr case.
-ErrorOr<int64_t> POP::getScalarIndexValue(TypedAttr value) {
-  if (auto intAttr = dyn_cast<IntegerAttr>(value))
-    return intAttr.getInt();
-  if (auto simdAttr = dyn_cast<KGEN::SIMDAttr>(value)) {
-    ArrayRef<DTypeValue> values = simdAttr.getValues();
-    if (values.size() != 1)
-      return Error("expected a scalar SIMD value");
-    if (!values.front().getDType().isIndex())
-      return Error("expected an index-typed SIMD value");
-    return values.front().getIndexVal();
-  }
-  return Error("expected an integer or scalar SIMD");
-}
-
 // verifyConversionCast / foldCastToBuiltin / foldCastFromBuiltin migrated to
 // KGENUtils.h/cpp.
 
@@ -81,7 +69,29 @@ OpFoldResult POP::foldCast(TypedAttr operand, SIMDType resultType,
         },
         [&](APFloat in) {
           bool ignored;
+          // `float8_e8m0fnu` is a signless, exponent-only scale: the cast
+          // takes the magnitude, rounds it up to a power of two, and saturates
+          // the top binade because the all-ones encoding is NaN. Must match
+          // the snippet that lowers the op.
+          if (*dtype == DType::f8e8m0fnu) {
+            bool wasFinite = in.isFinite();
+            in.clearSign();
+            in.convert(*sem, APFloat::rmTowardPositive, &ignored);
+            if (wasFinite && in.isNaN())
+              in = APFloat::getLargest(*sem);
+            return in;
+          }
+          // Every other float8 saturates: the conversion this op lowers to
+          // clamps an overflow, and an infinity, to the largest finite value
+          // and keeps the sign. `APFloat::convert` instead yields an infinity,
+          // or a NaN in a format that has none, so a folded cast would
+          // disagree with the lowered one.
+          bool saturates = dtype->isFloat() && dtype->getWidthInBits() == 8;
+          bool wasNaN = in.isNaN();
+          bool negative = in.isNegative();
           in.convert(*sem, APFloat::rmNearestTiesToEven, &ignored);
+          if (saturates && !wasNaN && !in.isFinite())
+            in = APFloat::getLargest(*sem, negative);
           return in;
         },
         [&](bool in) { return APFloat(*sem, in); });
@@ -334,7 +344,7 @@ static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
                                           Attribute len, Location loc,
                                           State &state) {
   ErrorOr<int64_t> lenOr =
-      POP::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(len));
+      KGEN::getScalarIndexValue(dyn_cast_or_null<TypedAttr>(len));
   if (lenOr.isError())
     return ErrorTree(loc, "interpreting memcpy 3nd operand len is not "
                           "interpreted correctly");
@@ -372,7 +382,7 @@ static ErrorTreeOrSuccess interpretMemcpy(Attribute dst, Attribute src,
   std::memcpy(*dstAddrOr, *srcAddrOr, lenOr.get());
 
   // Propagate pointer/symbol region markings so that pointer fields copied
-  // as raw bytes (e.g. UnsafePointer inside a struct) remain tracked for
+  // as raw bytes (e.g. Pointer inside a struct) remain tracked for
   // correct materialization from comptime to runtime.
   ErrorOrSuccess cpyResult =
       state.copyMarkedRegions(srcPtr.getAddr(), dstPtr.getAddr(), lenOr.get());
@@ -393,4 +403,62 @@ ErrorTreeOrSuccess POP::interpretMemcpy(Attribute dst, Attribute src,
                                         ParametricInterpreterState &state) {
   return ::interpretMemcpy<ParametricInterpreterState>(dst, src, len, loc,
                                                        state);
+}
+
+SmallVector<Attribute>
+POP::getOperandsWithPackExpanded(ArrayRef<Attribute> operands,
+                                 IntegerAttr expandPackOperandIdx) {
+  SmallVector<Attribute> result(operands);
+  if (!expandPackOperandIdx)
+    return result;
+  size_t index = expandPackOperandIdx.getInt();
+  // An operand that is not a struct constant is kept, so that the caller can
+  // diagnose the unknown value.
+  auto pack = dyn_cast<StructAttr>(operands[index]);
+  if (!pack)
+    return result;
+  result.erase(result.begin() + index);
+  result.insert(result.begin() + index, pack.getValues().begin(),
+                pack.getValues().end());
+  return result;
+}
+
+SmallVector<Value>
+POP::getOperandsWithPackExpanded(OpBuilder &builder, Location loc,
+                                 ValueRange operands,
+                                 IntegerAttr expandPackOperandIdx) {
+  SmallVector<Value> result(operands);
+  if (!expandPackOperandIdx)
+    return result;
+  size_t index = expandPackOperandIdx.getInt();
+  Value pack = operands[index];
+  std::optional<SmallVector<Type>> eltTypes =
+      cast<StructType>(pack.getType()).getElementTypes();
+  assert(eltTypes && "pack operand must have resolved element types");
+  SmallVector<Value> elts;
+  for (auto [i, eltType] : llvm::enumerate(*eltTypes)) {
+    elts.push_back(StructExtractOp::create(builder, loc, eltType, pack,
+                                           builder.getIndexAttr(i)));
+  }
+  result.erase(result.begin() + index);
+  result.insert(result.begin() + index, elts.begin(), elts.end());
+  return result;
+}
+
+LogicalResult POP::verifyPackOperand(Operation *op,
+                                     IntegerAttr expandPackOperandIdx) {
+  if (!expandPackOperandIdx)
+    return success();
+  int64_t index = expandPackOperandIdx.getInt();
+  if (index < 0 || index >= static_cast<int64_t>(op->getNumOperands())) {
+    return op->emitOpError("'expandPackOperandIdx' ")
+           << index << " is out of range for " << op->getNumOperands()
+           << " operands";
+  }
+  if (!isa<StructType>(op->getOperand(index).getType())) {
+    return op->emitOpError("'expandPackOperandIdx' must refer to an operand of "
+                           "'!kgen.struct' type, found ")
+           << op->getOperand(index).getType();
+  }
+  return success();
 }

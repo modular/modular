@@ -717,6 +717,7 @@ class Glm3am(BaseScenario):
                 "additionalProperties": False,
             },
             description="Store a configuration key-value pair (value may be JSON string)",
+            strict=True,
         )
 
         resp = v.tc_chat(

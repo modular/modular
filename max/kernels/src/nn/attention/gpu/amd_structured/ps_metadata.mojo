@@ -194,8 +194,7 @@ def kn_generate_ps_metadata(
             total_units += num_units
 
     # --- Step 2: distribute split units evenly across TGs. ---
-    var average = total_units // available_tgs
-    var remainder = total_units % available_tgs
+    var average, remainder = divmod(total_units, available_tgs)
 
     var result = PsMetadata()
     result.work_indptr.append(0)  # work_indptr[0] = 0

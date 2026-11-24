@@ -22,4 +22,5 @@ model:
 # Mutually exclusive with device_graph_capture (this arch's default), which
 # the config resolution disables when synthesis is set.
 runtime:
+  prefer_module_v3: false
   experimental_device_graph_synthesis: true

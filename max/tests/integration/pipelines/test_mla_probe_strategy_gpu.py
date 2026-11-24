@@ -18,7 +18,7 @@ to the nearest probed length and the graph captured at that length is replayed.
 This relies on ``num_partitions`` being monotonic non-decreasing in cache
 length, so the bucketed (longer) probe always yields ``num_partitions >=`` the
 runtime value -- a captured graph with enough partitions. These tests verify
-that invariant against the real ``mo.mla.compute_dispatch_args.scalar`` op.
+that invariant through ``MHAKVCacheParams.resolve_attn_key``.
 """
 
 from collections.abc import Sequence

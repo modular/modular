@@ -11,5 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Recording and replaying serving traffic."""
+
 # Please leave this file empty, and do not reexport modules from here.  Other
 # files should directly import from constituent modules as appropriate.

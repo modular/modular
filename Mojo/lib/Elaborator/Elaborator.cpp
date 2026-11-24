@@ -36,6 +36,7 @@
 #include "Mojo/TransformUtils/EliminateDeadSymbolUtils.h"
 #include "Mojo/TransformUtils/ManglingUtils.h"
 #include "Support/Compiler/DiagnosticHandler.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Index/IR/IndexDialect.h"
@@ -55,13 +56,11 @@ using namespace KGEN;
 using namespace AsyncRT;
 
 /// Short living attribute that is needed to set on KGEN::FuncOp or
-/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVMetadata
+/// KGEN::DeclareRegeionOp. This attribute will be converted to LLVM attributes
 /// after concretization and will be removed from the operation, therefore won't
 /// survive Elaborator.
-static constexpr StringRef kLLVMMetadataArrayAttrName =
-    "kgen.elaborator.llvm_metadata_array";
-static constexpr StringRef kLLVMArgMetadataArrayAttrName =
-    "kgen.elaborator.llvm_arg_metadata_array";
+static constexpr StringRef kFnAttrsAttrName = "kgen.elaborator.fn_attrs";
+static constexpr StringRef kFnArgAttrsAttrName = "kgen.elaborator.fn_arg_attrs";
 
 //===----------------------------------------------------------------------===//
 // InterpreterCache
@@ -123,35 +122,7 @@ ImplNode::ImplNode(ParamNode *parent)
   return mutex;
 }
 
-void ImplNode::setToError(ErrorTree &&err) {
-  if (error) {
-#ifndef MODULAR_PRODUCTION
-    std::lock_guard<std::mutex> guard(getGlobalMutex());
-    llvm::errs() << "INTERNAL ELABORATOR ERROR PROCESSING: ";
-    if (parent && parent->gen)
-      llvm::errs() << parent->getMangledName().strref();
-    else if (inst)
-      llvm::errs() << inst.getName();
-    else
-      llvm::errs() << "[ROOT NODE]";
-    llvm::errs() << "\n";
-
-    ErrorLimit errorLimit{this->getEvaluator().getErrorLimit(), 0};
-
-    emitLimitedError(
-        [&] {
-          return std::move(*error).emit(
-              [](Location loc) { return mlir::emitError(loc); }, "HERE",
-              this->getEvaluator().getElabErrorIncludePrelude());
-        },
-        errorLimit);
-
-#endif // MODULAR_PRODUCTION
-    llvm_unreachable("impl node already has an error");
-  }
-  hasError.store(true);
-  error = std::move(err);
-}
+void ImplNode::setToError(ErrorTree &&err) { setFirstError(std::move(err)); }
 
 void ParamNode::emplace() {
   if (done.exchange(DoneState::DONE) == DoneState::NOT_DONE)
@@ -201,10 +172,10 @@ void ExpansionGraph::didCompleteTask() {
 void ExpansionGraph::didAddTask() { ++numOutstandingResources; }
 
 ErrorTreeOr<ImplNode *> ParamNode::getFirstConcreteNode() {
-  if (!impl.error)
-    return &impl;
-  return ErrorTree(gen.getLoc(), "function instantiation failed",
-                   impl.error->copy());
+  if (auto err = impl.copyError())
+    return ErrorTree(gen.getLoc(), "function instantiation failed",
+                     std::move(*err));
+  return &impl;
 }
 
 ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
@@ -217,10 +188,10 @@ ErrorTreeOr<FuncOp> ParamNode::getFirstConcreteFunc() {
 }
 
 ErrorTreeOrSuccess ParamNode::collectErrorsOrSuccess() {
-  if (!impl.error)
-    return success();
-  return ErrorTree(gen.getLoc(), "function instantiation failed",
-                   impl.error->copy());
+  if (auto err = impl.copyError())
+    return ErrorTree(gen.getLoc(), "function instantiation failed",
+                     std::move(*err));
+  return success();
 }
 
 #define HANDLE_EVALUATOR_CONC(VAR, INODE, LOC, EXPR)                           \
@@ -319,9 +290,17 @@ static ElaborationState processParamAssertOp(ImplNode *inode,
 
 /// Convert llvm metadata array attrs into dicts by treating every pair of
 /// attributes in the array as (key, value) pairs, where the key is always a
-/// StringAttr.
-static ErrorTreeOr<DictionaryAttr>
-concretizeLLVMMetadataArrays(Location loc, ArrayAttr array) {
+/// StringAttr. The Mojo parser wraps non-`TypedAttr` values (e.g. `ArrayAttr`)
+/// in `#kgen.deferred` to satisfy PValue's typed-attribute contract; strip
+/// those wrappers so the assembled dict exposes concrete attributes.
+static ErrorTreeOr<DictionaryAttr> concretizeLLVMFnAttrArrays(Location loc,
+                                                              ArrayAttr array) {
+  mlir::AttrTypeReplacer stripDeferred;
+  stripDeferred.addReplacement(
+      [](DeferredAttr attr) -> std::pair<Attribute, WalkResult> {
+        return {attr.getAttr(), WalkResult::advance()};
+      });
+
   NamedAttrList llvmMetadata;
   DenseSet<StringAttr> seenMetadataNames;
   for (int i = 0, e = array.size(); i < e; i += 2) {
@@ -337,7 +316,7 @@ concretizeLLVMMetadataArrays(Location loc, ArrayAttr array) {
       continue;
     }
     seenMetadataNames.insert(name);
-    llvmMetadata.append(name, array[i + 1]);
+    llvmMetadata.append(name, stripDeferred.replace(array[i + 1]));
   }
   return llvmMetadata.getDictionary(array.getContext());
 }
@@ -360,32 +339,31 @@ static ElaborationState processGenericOp(ImplNode *parent, Operation *op) {
     op->setAttrs(newAttrs);
 
   if (auto func = dyn_cast<FuncOp>(op)) {
-    if (auto llvmMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMMetadataArrayAttrName))) {
+    if (auto fnAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnAttrsAttrName))) {
       ErrorTreeOr<DictionaryAttr> result =
-          concretizeLLVMMetadataArrays(op->getLoc(), llvmMetadataArray);
+          concretizeLLVMFnAttrArrays(op->getLoc(), fnAttrs);
       if (result.isError()) {
         parent->setToError(result.takeError());
         return ElaborationState::error();
       }
-      func.setLLVMMetadataAttr(result.takeValue());
-      func->removeAttr(kLLVMMetadataArrayAttrName);
+      func.setFnAttrsAttr(result.takeValue());
+      func->removeAttr(kFnAttrsAttrName);
     }
-    if (auto llvmArgMetadataArray = dyn_cast_or_null<ArrayAttr>(
-            func->getAttr(kLLVMArgMetadataArrayAttrName))) {
-      SmallVector<Attribute> resultArray;
-      for (Attribute perArgMetadataArray : llvmArgMetadataArray) {
-        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMMetadataArrays(
-            op->getLoc(), cast<ArrayAttr>(perArgMetadataArray));
+    if (auto argAttrs =
+            dyn_cast_or_null<ArrayAttr>(func->getAttr(kFnArgAttrsAttrName))) {
+      SmallVector<Attribute> resultAttrs;
+      for (Attribute perArgAttrArray : argAttrs) {
+        ErrorTreeOr<DictionaryAttr> result = concretizeLLVMFnAttrArrays(
+            op->getLoc(), cast<ArrayAttr>(perArgAttrArray));
         if (result.isError()) {
           parent->setToError(result.takeError());
           return ElaborationState::error();
         }
-        resultArray.push_back(result.takeValue());
+        resultAttrs.push_back(result.takeValue());
       }
-      func.setLLVMArgMetadataAttr(
-          ArrayAttr::get(op->getContext(), resultArray));
-      func->removeAttr(kLLVMArgMetadataArrayAttrName);
+      func.setFnArgAttrsAttr(ArrayAttr::get(op->getContext(), resultAttrs));
+      func->removeAttr(kFnArgAttrsAttrName);
     }
   }
 
@@ -508,9 +486,9 @@ void Elaborator::finalizeInstance(ImplNode *node) {
 // Elaborator::getConcreteFunction
 //===----------------------------------------------------------------------===//
 
-ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
-                                                    Location loc,
-                                                    SymbolConstantAttr symbol) {
+ErrorTreeOr<FuncOp>
+Elaborator::getConcreteFunction(ImplNode *parent, Location loc,
+                                FuncSymbolGenerator symbol) {
   StringAttr name = cast<FlatSymbolRefAttr>(symbol.getSymbol()).getAttr();
   auto gen = oldSymTab.lookup<GeneratorOpInterface>(name);
   // If this doesn't reference anything in the existing module, then it must
@@ -520,8 +498,10 @@ ErrorTreeOr<FuncOp> Elaborator::getConcreteFunction(ImplNode *parent,
       auto iter = insts.find(name);
       return iter == insts.end() ? nullptr : iter->second;
     });
-    if (!implNode)
-      return FuncOp();
+    if (!implNode) {
+      return ErrorTree(loc, "no concrete function for symbol '@" +
+                                name.getValue().str() + "'");
+    }
     // A generator instance is registered under its concrete name before it
     // has elaborated (or failed), so it must go through the same
     // readiness/error protocol as a call by generator name. Only an instance
@@ -619,19 +599,22 @@ ErrorTreeOr<Attribute> Elaborator::concretizeSymbolsWithin(Attribute value,
   mlir::AttrTypeReplacer replacer;
   std::optional<ErrorTree> error;
   replacer.addReplacement(
-      [&](SymbolConstantAttr cst) -> std::pair<Attribute, WalkResult> {
-        // Ignore parametric constants.
-        if (!cst.getType().getInputParamTypes().empty())
-          return {cst, WalkResult::advance()};
-        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, cst);
+      [&](GeneratorAttr gen)
+          -> std::optional<std::pair<Attribute, WalkResult>> {
+        // Ignore parametric references and non-function generators.
+        auto symbol = FuncSymbolGenerator::dynCast(gen);
+        if (!symbol || !symbol.isFullyBound())
+          return std::nullopt;
+        ErrorTreeOr<FuncOp> func = getConcreteFunction(parent, loc, symbol);
         if (func.isError()) {
           error = func.takeError();
-          return {cst, WalkResult::interrupt()};
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
         }
         if (!*func)
-          return {cst, WalkResult::interrupt()};
-
-        return {SymbolConstantAttr::get(func.takeValue()), WalkResult::skip()};
+          return std::make_pair(Attribute(gen), WalkResult::interrupt());
+        return std::make_pair(
+            Attribute(FuncSymbolGenerator::get(func.takeValue())),
+            WalkResult::skip());
       });
   if (Attribute result = replacer.replace(value))
     return result;
@@ -691,7 +674,7 @@ ElaborationState Elaborator::processParamConstantOp(ImplNode *parent, OpT op) {
 
 std::pair<ElaborationState, ImplNode *>
 Elaborator::instantiateGeneratorReference(
-    ImplNode *parent, Operation *user, SymbolConstantAttr calleeSymbol,
+    ImplNode *parent, Operation *user, FuncSymbolGenerator calleeSymbol,
     ParameterExprArrayAttr &inputParamKey, GeneratorOpInterface &gen,
     function_ref<bool(ParamNode *)> shouldWait) {
   // Lookup the callee.
@@ -777,11 +760,11 @@ Elaborator::collectConcreteImplementations(Location loc, ImplNode *parent,
 
 ElaborationState
 Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
-                                 SymbolConstantAttr calleeSymbol,
+                                 FuncSymbolGenerator calleeSymbol,
                                  ImplNode *parent) {
   // Not all operations can verify their callee type, if for instance, it is a
   // generic type. Verify here as a fallback.
-  if (!calleeSymbol.getType().getInputParamTypes().empty()) {
+  if (!calleeSymbol || !calleeSymbol.isFullyBound()) {
     parent->setToError(
         ErrorTree(user.getLoc(), "cannot reference parametric function"));
     return ElaborationState::error();
@@ -836,7 +819,8 @@ Elaborator::processGeneratorUser(GeneratorUserOpInterface user,
   // symbol reference immediately.
   IRRewriter b{OpBuilder(user)};
   auto newCallee =
-      SymbolConstantAttr::get(concreteSymName, calleeSymbol.getType());
+      FuncSymbolGenerator::getParamLess(FlatSymbolRefAttr::get(concreteSymName),
+                                        calleeSymbol.getInstantiatedType(), {});
   user.concretizeCallee(b, newCallee);
   return ElaborationState::advance();
 }
@@ -853,32 +837,28 @@ ElaborationState Elaborator::processParamApplyOp(ImplNode *inode,
   Attribute value;
   HANDLE_EVALUATOR_CONC(value, inode, op.getLoc(), op.getOperandsAttr());
 
-  // Attempt to lookup a cached value. This returns a thread local cached value.
   auto operandsAttr = cast<ParameterExprArrayAttr>(value);
-  TypedAttr &cached = lookupCachedInterpretation(func, operandsAttr);
-  if (!cached) {
-    ErrorTreeOr<Attribute> operandsOr =
-        concretizeSymbolsWithin(operandsAttr, inode, op.getLoc());
-    if (operandsOr.isError()) {
-      inode->setToError(operandsOr.takeError());
-      return failure();
-    }
-    operandsAttr = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
-    if (!operandsAttr)
-      return ElaborationState::skipNode();
-
-    inode->getEvaluator().setErrorLoc(op.getLoc());
-    ErrorTreeOr<TypedAttr> result =
-        inode->getEvaluator().evaluateFunction(func, operandsAttr);
-    if (result.isError()) {
-      inode->setToError(result.takeError());
-      return failure();
-    }
-    // Get the value from the global cache and use it below. This way, all
-    // call sites to this function use exactly the same value.
-    cached =
-        writeGlobalCachedInterpretation(func, operandsAttr, result.takeValue());
+  ErrorTreeOr<TypedAttr> result = interpretWithCache(
+      op.getLoc(), func, operandsAttr,
+      [this, inode, &op,
+       func](ParameterExprArrayAttr &operands) -> ErrorTreeOr<TypedAttr> {
+        ErrorTreeOr<Attribute> operandsOr =
+            concretizeSymbolsWithin(operands, inode, op.getLoc());
+        if (operandsOr.isError())
+          return operandsOr.takeError();
+        operands = cast_or_null<ParameterExprArrayAttr>(operandsOr.takeValue());
+        if (!operands)
+          return TypedAttr();
+        inode->getEvaluator().setErrorLoc(op.getLoc());
+        return inode->getEvaluator().evaluateFunction(func, operands);
+      });
+  if (result.isError()) {
+    inode->setToError(result.takeError());
+    return failure();
   }
+  TypedAttr cached = result.takeValue();
+  if (!cached)
+    return ElaborationState::skipNode();
 
   // Bind the result and erase the operation.
   inode->getEvaluator().setDeclBinding(op.getParamDecl(), cached);
@@ -896,7 +876,7 @@ ElaborationState Elaborator::processCallOp(ImplNode *parent,
   Attribute symbol;
   HANDLE_EVALUATOR_CONC(symbol, parent, call.getLoc(), call.getCallee());
   return processGeneratorUser(
-      call, extractSymbolConstantAttr(cast<TypedAttr>(symbol)), parent);
+      call, extractFuncSymbolGenerator(cast<TypedAttr>(symbol)), parent);
 }
 
 //===----------------------------------------------------------------------===//
@@ -914,40 +894,54 @@ static AttrType concretizeAttr(AttrType attr, mlir::Location loc,
     inode->setToError(exprResult.takeError());
     return {};
   }
-  if (LLVM_UNLIKELY(!*exprResult)) {
-    inode->setToError(ErrorTree(
-        loc, "concretized parameter expression in attribute is null"));
+  // A debug attribute can name a generator this node never depended on, since
+  // dependencies come from ops. The fold then yields null until that value
+  // lands.
+  if (LLVM_UNLIKELY(!*exprResult))
     return {};
-  }
   return cast<AttrType>(*exprResult);
+}
+
+/// Classify a fold that yielded null. Parking is safe because every null here
+/// comes from `specializeGenerator`, which registers the continuation that
+/// resumes the node. An unresolvable symbol errors at its source instead.
+static ElaborationState pendingOrError(ImplNode *inode) {
+  return inode->recordedError() ? ElaborationState::error()
+                                : ElaborationState::skipNode();
 }
 
 /// Concretizes the location of an op or a block argument.
 template <typename ArgOrOp>
-static LogicalResult concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
+static ElaborationState concretizeLocOf(ArgOrOp &argOrOp, ImplNode *inode) {
   LocationAttr loc = argOrOp.getLoc();
   if (LocationAttr newLocAttr = concretizeAttr<LocationAttr>(loc, loc, inode)) {
     argOrOp.setLoc(newLocAttr);
-    return success();
+    return ElaborationState::advance();
   }
-  return failure();
+  return pendingOrError(inode);
 }
 
-static LogicalResult
+static ElaborationState
 concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
-  // Location concretization cannot yield and restart. Suppress blocker
-  // registration for this node while concretizing locations. Empty
-  // concretization results will result in UnknownLoc.
-  inode->suppressBlockers = true;
+  ElaborationState state = ElaborationState::advance();
+  auto stop = [&](ElaborationState result) {
+    state = result;
+    return WalkResult::interrupt();
+  };
+  auto nullState = [&] { return pendingOrError(inode); };
   for (Operation &op : scope) {
-    op.walk([&](Operation *op) {
-      if (failed(concretizeLocOf(*op, inode)))
-        return WalkResult::interrupt();
+    WalkResult walked = op.walk([&](Operation *op) {
+      if (ElaborationState result = concretizeLocOf(*op, inode);
+          result.isError() || result.shouldSkipNode())
+        return stop(result);
 
       // Update the ValueInfo attr since they contain types.
       if (isa<DebugInfo::ValueOp, DebugInfo::KillOp>(op)) {
-        op->setAttrs(
-            concretizeAttr(op->getAttrDictionary(), op->getLoc(), inode));
+        DictionaryAttr attrs =
+            concretizeAttr(op->getAttrDictionary(), op->getLoc(), inode);
+        if (!attrs)
+          return stop(nullState());
+        op->setAttrs(attrs);
         return WalkResult::advance();
       }
 
@@ -955,17 +949,21 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
       // what we are dealing with.
       if (auto inlined = dyn_cast<DebugInfo::InlinedSubprogramScoped>(op)) {
         if (LocationAttr callLoc = inlined.getCallLocAttr()) {
-          inlined.setCallLocAttr(
-              concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode));
+          LocationAttr concrete =
+              concretizeAttr<LocationAttr>(callLoc, op->getLoc(), inode);
+          if (!concrete)
+            return stop(nullState());
+          inlined.setCallLocAttr(concrete);
         }
       }
       // When elaboration is complete, only the first block in any region is
-      // valid (any other block may be illegal, e.g. due to how kgen.param.if
+      // valid (any other block may be illegal, e.g. due to how hlcf.comptime.if
       // is handled). So we only need to go through the region arguments.
       for (Region &r : op->getRegions()) {
         for (BlockArgument arg : r.getArguments())
-          if (failed(concretizeLocOf(arg, inode)))
-            return WalkResult::interrupt();
+          if (ElaborationState result = concretizeLocOf(arg, inode);
+              result.isError() || result.shouldSkipNode())
+            return stop(result);
       }
 
       // Walk over nested scopes.
@@ -974,19 +972,22 @@ concretizeLocsInScope(iterator_range<Block::iterator> scope, ImplNode *inode) {
 
       return WalkResult::advance();
     });
+    // Stop at the first interrupt: the node suspended, or the first failure is
+    // the root cause and later ones report consequences.
+    if (walked.wasInterrupted())
+      return state;
   }
-  inode->suppressBlockers = false;
-  return success(!inode->error);
+  return ElaborationState::advance();
 }
 
 /// Concretizes the locations of all operations within scope bound by the
 /// specified block.
-static LogicalResult concretizeLocsInScope(Block &scope, ImplNode *inode) {
+static ElaborationState concretizeLocsInScope(Block &scope, ImplNode *inode) {
   return concretizeLocsInScope({scope.begin(), scope.end()}, inode);
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator::processParamIfOp
+// Elaborator::processComptimeIfOp
 //===----------------------------------------------------------------------===//
 
 /// We always erase this op and its nested scopes from the parameter graph -
@@ -1003,13 +1004,14 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   // `ParameterUseDefGraph::calculate` flattens the graph so that the top-level
   // `nestedScopes` map holds the scopes for ALL nesting depths (see the comment
   // in `ParameterUseDefGraph::dump`: "Nested graphs are actually contained on
-  // the top-level map"), and `copy` preserves that flattening when `param.for`
-  // unrolling clones scopes. So every scope to erase is a key in the top-level
-  // map, and erasing a key drops its whole sub-graph. We therefore only need a
-  // direct, keyed erase against `regionsWithinOp` rather than scanning every
-  // scope and walking each one's ancestor chain — the latter was quadratic in
-  // the size of the enclosing function (every param.if/param.for resolution
-  // rescanned the whole function's scope graph).
+  // the top-level map"), and `copy` preserves that flattening when
+  // `comptime.for` unrolling clones scopes. So every scope to erase is a key in
+  // the top-level map, and erasing a key drops its whole sub-graph. We
+  // therefore only need a direct, keyed erase against `regionsWithinOp` rather
+  // than scanning every scope and walking each one's ancestor chain — the
+  // latter was quadratic in the size of the enclosing function (every
+  // comptime.if/comptime.for resolution rescanned the whole function's scope
+  // graph).
   llvm::SmallPtrSet<Region *, 8> regionsWithinOp;
   for (Region &r : op->getRegions())
     regionsWithinOp.insert(&r);
@@ -1040,18 +1042,23 @@ static void recursivelyEraseFromNestedScopes(ImplNode *node, Operation *op) {
   }
 }
 
-ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
-  // Check the condition expression.
-  Attribute value;
-  HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), op.getCond());
+ElaborationState Elaborator::processComptimeIfOp(ImplNode *parent,
+                                                 HLCF::ComptimeIfOp op) {
+  // Select the live arm: first true condition's then, else the final else.
+  size_t liveRegion = op.getNumRegions() - 1;
+  for (auto [idx, attr] : llvm::enumerate(op.getCondAttrs())) {
+    Attribute value;
+    HANDLE_EVALUATOR_CONC(value, parent, op.getLoc(), cast<TypedAttr>(attr));
+    if (cast<SIMDAttr>(value).getAsBool()) {
+      liveRegion = idx;
+      break;
+    }
+  }
 
-  // Take whichever branch the condition indicated, and simply inline those ops
-  // then elaborate them. We can do this by splicing the op list into the parent
-  // block. We splice it this way to avoid remapping the ops when we process
-  // them later.
-  bool resultBool = cast<SIMDAttr>(value).getAsBool();
-  // Get the appropriate region.
-  Region &toProcess = op->getRegion(!resultBool);
+  // Take the selected arm and simply inline those ops then elaborate them. We
+  // can do this by splicing the op list into the parent block. We splice it
+  // this way to avoid remapping the ops when we process them later.
+  Region &toProcess = op->getRegion(liveRegion);
 
   // Push a new node and skip over the current frame until it completes.
   ImplNode::WorkItem item{{}, nullptr, parent->getEvaluator()};
@@ -1059,30 +1066,32 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 
   // When the nested scope completes processing, finish processing the current
   // parameter if.
-  item.onComplete = [resultBool, debug = config.elaborateDebugInfo](
-                        ImplNode *node) -> LogicalResult {
+  item.onComplete = [liveRegion, debug = config.elaborateDebugInfo](
+                        ImplNode *node) -> ElaborationState {
     assert(node->stack.size() >= 2 && "expected at least two work items");
     // Retrieve the current state.
     ImplNode::WorkItem &parentFrame = *std::next(node->stack.rbegin());
-    auto op = cast<ParamIfOp>(parentFrame.ops.back());
+    auto op = cast<HLCF::ComptimeIfOp>(parentFrame.ops.back());
 
     // Splice the ops into the parent. Grab the terminator before the iterators
     // invalidate.
     Block::iterator iter = op->getIterator();
-    Block &block = op->getRegion(!resultBool).front();
+    Block &block = op->getRegion(liveRegion).front();
 
     // First update the locations if necessary
     if (debug) {
-      if (failed(concretizeLocsInScope(block, node)))
-        return failure();
+      if (ElaborationState result = concretizeLocsInScope(block, node);
+          result.isError() || result.shouldSkipNode())
+        return result;
     }
 
     Operation *terminator = block.getTerminator();
     op->getBlock()->getOperations().splice(iter, block.getOperations());
+    Block *deadBlock = nullptr;
 
     // Update the values for the result parameters and do other processing
-    // necessary for param.yield.
-    if (auto yieldOp = dyn_cast<ParamYieldOp>(terminator)) {
+    // necessary for comptime.yield.
+    if (auto yieldOp = dyn_cast<HLCF::ComptimeYieldOp>(terminator)) {
       // RAUW the op's results with the terminator's inputs.
       op->getResults().replaceAllUsesWith(yieldOp.getOperands());
 
@@ -1090,8 +1099,8 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
       terminator->erase();
     } else if (auto hlcfTerm =
                    dyn_cast<HLCF::ControlFlowTerminator>(terminator)) {
-      // If it's an kgen.return op, we have to split the block after the return.
-      hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
+      // If it's an hlcf.return op, we have to split the block after the return.
+      deadBlock = hlcfTerm->getBlock()->splitBlock(++hlcfTerm->getIterator());
       // Drop all uses of the if op because any of its uses will be null and
       // void at this point.
       op->dropAllDefinedValueUses();
@@ -1107,7 +1116,15 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
     recursivelyEraseFromNestedScopes(node, op);
     op->erase();
     parentFrame.ops.pop_back();
-    return success();
+
+    // Manually remove the ops in the dead block. Cannot drop everything
+    // afterwards since it may contain ops from outer scopes.
+    if (deadBlock) {
+      llvm::erase_if(parentFrame.ops, [&](Operation *o) {
+        return deadBlock->findAncestorOpInBlock(*o) != nullptr;
+      });
+    }
+    return ElaborationState::advance();
   };
 
   parent->stack.push_back(std::move(item));
@@ -1115,11 +1132,11 @@ ElaborationState Elaborator::processParamIfOp(ImplNode *parent, ParamIfOp op) {
 }
 
 //===----------------------------------------------------------------------===//
-// Elaborator::processParamForOp
+// Elaborator::processComptimeForOp
 //===----------------------------------------------------------------------===//
 
 // Take a look at the HLCF::Loop operation generated by unrolling one iteration
-// of a kgen.param.for. If the loop is pointless, we can inline it into the
+// of a hlcf.comptime.for. If the loop is pointless, we can inline it into the
 // containing region to reduce control flow complexity from downstream passes.
 //
 // This returns true if the rest of the containing logic is dead.
@@ -1190,8 +1207,8 @@ static bool simplifyParamForLoop(HLCF::LoopOp loop, HLCF::LoopOp outerLoop) {
   return false;
 }
 
-ElaborationState Elaborator::processParamForOp(ImplNode *parent,
-                                               ParamForOp op) {
+ElaborationState Elaborator::processComptimeForOp(ImplNode *parent,
+                                                  HLCF::ComptimeForOp op) {
   // First, concretize the iterator value and the hasnext/getnext expressions.
   Attribute initial, hasNext, getNextIter;
   HANDLE_EVALUATOR_CONC(initial, parent, op.getLoc(), op.getInitial());
@@ -1199,16 +1216,16 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   HANDLE_EVALUATOR_CONC(getNextIter, parent, op.getLoc(), op.getGetNextIter());
 
   // Get the result types of the for loop.  These are the values passed from
-  // kgen.param.for.break/continue across loop iterations and to the result of
-  // the kgen.param.for.  These are created by mem2reg promoting stack objects
-  // in the body of the loop.
+  // hlcf.comptime.for.break/continue across loop iterations and to the result
+  // of the hlcf.comptime.for.  These are created by mem2reg promoting stack
+  // objects in the body of the loop.
   SmallVector<Type> resultTypes;
   for (Type type : op.getResultTypes())
     HANDLE_EVALUATOR_CONC(resultTypes.emplace_back(), parent, op.getLoc(),
                           type);
 
   // Concretize the paramfor_has_next generator function.
-  auto hasNextSymbol = extractSymbolConstantAttr(cast<TypedAttr>(hasNext));
+  auto hasNextSymbol = extractFuncSymbolGenerator(cast<TypedAttr>(hasNext));
   if (!hasNextSymbol) {
     parent->setToError(ErrorTree(op.getLoc(),
                                  "INTERNAL ERROR: paramfor_has_next should "
@@ -1226,7 +1243,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
 
   // Concretize the sequence generator function.
   auto getNextIterSymbol =
-      extractSymbolConstantAttr(cast<TypedAttr>(getNextIter));
+      extractFuncSymbolGenerator(cast<TypedAttr>(getNextIter));
   if (!getNextIterSymbol) {
     parent->setToError(
         ErrorTree(op.getLoc(), "INTERNAL ERROR: paramfor_get_next_iter should "
@@ -1283,27 +1300,40 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
       hasNextInput =
           StoreToMemAttr::get(iterator, hasNextType.getArguments()[0]);
 
-    ErrorTreeOr<TypedAttr> hasNextResult =
-        parent->getEvaluator().evaluateFunction(*hasNextFunc, hasNextInput);
+    // Iterator states recur across instantiations of the enclosing generator.
+    auto hasNextKey =
+        ParameterExprArrayAttr::get(op.getContext(), {hasNextInput});
+    ErrorTreeOr<TypedAttr> hasNextResult = interpretWithCache(
+        op.getLoc(), *hasNextFunc, hasNextKey,
+        [parent, &hasNextFunc,
+         &hasNextInput](ParameterExprArrayAttr &) -> ErrorTreeOr<TypedAttr> {
+          return parent->getEvaluator().evaluateFunction(*hasNextFunc,
+                                                         hasNextInput);
+        });
     if (hasNextResult.isError()) {
       parent->setToError(hasNextResult.takeError());
       return failure();
     }
-    if (!cast<SIMDAttr>(*hasNextResult).getAsBool())
+    if (!cast<SIMDAttr>(hasNextResult.takeValue()).getAsBool())
       break;
 
     // Get the next iterator value.
     iterator =
         StoreToMemAttr::get(iterator, PointerType::get(iterator.getType()));
     parent->getEvaluator().setErrorLoc(op.getLoc());
-    ErrorTreeOr<TypedAttr> result =
-        parent->getEvaluator().evaluateFunctionWithResultSlot(*getNextIterFunc,
-                                                              iterator);
-    if (result.isError()) {
-      parent->setToError(result.takeError());
+    auto nextKey = ParameterExprArrayAttr::get(op.getContext(), {iterator});
+    ErrorTreeOr<TypedAttr> nextResult = interpretWithCache(
+        op.getLoc(), *getNextIterFunc, nextKey,
+        [parent, &getNextIterFunc,
+         &iterator](ParameterExprArrayAttr &) -> ErrorTreeOr<TypedAttr> {
+          return parent->getEvaluator().evaluateFunctionWithResultSlot(
+              *getNextIterFunc, iterator);
+        });
+    if (nextResult.isError()) {
+      parent->setToError(nextResult.takeError());
       return failure();
     }
-    iterator = *result;
+    iterator = nextResult.takeValue();
     ++loopUnrollCount;
   }
 
@@ -1318,11 +1348,21 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
                           "threshold or set to `0` to disable this warning)");
   }
 
-  // The else body should be unreachable after LowerSemanticCF.
-  assert(isa<UnreachableOp>(op.getElseRegion().front().front()) &&
-         "LowerSemanticCF didn't lower the else block of param.for?");
+  // Measured here because unrolling clones the body before the completion
+  // runs.
+  std::optional<ComptimeForRecord> record;
+  if (config.printStats) {
+    record = ComptimeForRecord{
+        op.getLoc(),
+        StringAttr::get(op.getContext(), parent->parent->gen.getName()),
+        loopUnrollCount, countOps(op.getBody()), /*resultOps=*/0};
+  }
 
-  // Lower the `kgen.param.for` into an outer loop and wrapper loops for each
+  // The else body should be unreachable after LowerSemanticCF.
+  assert(isa<HLCF::UnreachableOp>(op.getElseRegion().front().front()) &&
+         "LowerSemanticCF didn't lower the else block of comptime.for?");
+
+  // Lower the `hlcf.comptime.for` into an outer loop and wrapper loops for each
   // generated iteration. This way, we can lower `continue` to a break to the
   // wrapper loop to model exiting a single iteration and lower `break` to a
   // break to the outer loop to model exiting the whole loop.
@@ -1337,12 +1377,12 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
   // end of this function.
   parent->stack.back().ops.pop_back();
 
-  // Add a worklist item to delete the param.for op when all the iterations are
-  // processed and done and cleanup the result IR.
+  // Add a worklist item to delete the comptime.for op when all the iterations
+  // are processed and done and cleanup the result IR.
   ImplNode::WorkItem finalItem{{}, nullptr, parent->getEvaluator()};
-  finalItem.onComplete = [op, parent,
-                          outerLoop](ImplNode *node) mutable -> LogicalResult {
-    // Remove the original kgen.param.for now that it has been lowered.
+  finalItem.onComplete = [this, op, parent, outerLoop,
+                          record](ImplNode *node) mutable -> ElaborationState {
+    // Remove the original hlcf.comptime.for now that it has been lowered.
     recursivelyEraseFromNestedScopes(parent, op);
     op.erase();
 
@@ -1353,40 +1393,50 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
         break;
     }
 
+    // Count before the outer loop is simplified, which may splice its body
+    // into the parent and erase it.
+    if (record) {
+      record->resultOps = countOps(outerLoop.getBody());
+      comptimeForStats.modify(
+          [&](auto &records) { records.push_back(*record); });
+    }
+
     // Check to see if we can simplify the final outer loop.
     simplifyParamForLoop(outerLoop, outerLoop);
 
-    // Each iteration of the kgen.param.for will be turned into a nested
+    // Each iteration of the hlcf.comptime.for will be turned into a nested
     // hlcf.loop and many of them will be trivial (no breaks/continues out of
     // them other than the final one).  Clean up the IR to improve compile time.
-    return success();
+    return ElaborationState::advance();
   };
   parent->stack.push_back(std::move(finalItem));
 
   // Upon completion of elaboration of each such generated loop, replace the
-  // `kgen.param.for` terminators with the appropriate HLCF ones.
+  // `hlcf.comptime.for` terminators with the appropriate HLCF ones.
   auto makeCompletion =
-      [debug = config.elaborateDebugInfo,
-       outerLabel](Region &region) -> std::function<LogicalResult(ImplNode *)> {
-    return [debug, &region, outerLabel](ImplNode *node) -> LogicalResult {
+      [debug = config.elaborateDebugInfo, outerLabel](
+          Region &region) -> std::function<ElaborationState(ImplNode *)> {
+    return [debug, &region, outerLabel](ImplNode *node) -> ElaborationState {
       if (debug) {
-        if (failed(concretizeLocsInScope(region.front(), node)))
-          return failure();
+        if (ElaborationState result =
+                concretizeLocsInScope(region.front(), node);
+            result.isError() || result.shouldSkipNode())
+          return result;
       }
 
       auto thisLoop = cast<HLCF::LoopOp>(region.getParentOp());
 
-      // Replace the `kgen.param.for` terminators with the HLCF equivalent.
+      // Replace the `hlcf.comptime.for` terminators with runtime variants.
       region.walk([&](Operation *op) {
-        if (isa<ParamForOp>(op))
+        if (isa<HLCF::ComptimeForOp>(op))
           return WalkResult::skip();
-        if (isa<ParamForBreakOp>(op)) {
+        if (isa<HLCF::ComptimeForBreakOp>(op)) {
           IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
                                               outerLabel);
           return WalkResult::advance();
         }
-        if (isa<ParamForContinueOp>(op)) {
+        if (isa<HLCF::ComptimeForContinueOp>(op)) {
           IRRewriter b{OpBuilder(op)};
           b.replaceOpWithNewOp<HLCF::BreakOp>(op, op->getOperands(),
                                               thisLoop.getLabelAttr());
@@ -1395,7 +1445,7 @@ ElaborationState Elaborator::processParamForOp(ImplNode *parent,
         return WalkResult::advance();
       });
 
-      return success();
+      return ElaborationState::advance();
     };
   };
 
@@ -1482,7 +1532,7 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
   // NOTE: This is one of the two spots where an ImplNode may be accessed in
   // parallel. Synchronize the error state check using an atomic. Any data race
   // here is benign but this makes TSAN happy.
-  bool hasError = inode->hasError.load();
+  bool hasError = inode->recordedError();
   if ((!hasError && (--inode->numDependencies != 0)) ||
       inode->done.exchange(true)) {
     signalWorklist();
@@ -1517,14 +1567,14 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
     // Check intra-SCC edges that were removed to break the cycle. Any callee
     // that errored during the first pass needs to propagate its error here.
     for (auto [loc, genNode] : inode->sccRemovedDeps) {
-      if (inode->error)
+      if (inode->recordedError())
         break;
       if (failed(collectConcreteImplementations(loc, inode, genNode)))
         break;
     }
     inode->sccRemovedDeps.clear();
 
-    if (!inode->error)
+    if (!inode->recordedError())
       finalizeInstance(inode);
   }
 
@@ -1536,15 +1586,12 @@ void Elaborator::completeImplNodeProcessing(ImplNode *inode) {
 }
 
 void Elaborator::processImplNodeTask(ImplNode *inode) {
-  // Hold a resume guard for the duration of the pass so blocker completions
-  // cannot re-run the node while it is still being processed.
-  inode->pendingResumes.fetch_add(1);
   // Process the node. If processing the node got pre-empted, then return. It
   // will get scheduled again later.
   // If processImplNode returns success, it means the node is either fully
   // processed or in error state, no more to do here so we can complete it.
   // Otherwise, it means the node is being suspended and will be resumed later
-  // once its blockers are done.
+  // once its blocker is done.
   if (succeeded(processImplNode(inode))) {
     // Only increment numWorkItems if inode is not in error state because we
     // don't put an errored-out node's dependencies back onto the worklist. This
@@ -1555,15 +1602,7 @@ void Elaborator::processImplNodeTask(ImplNode *inode) {
     if (!inode->parent->getIsError())
       g.numWorkItems.fetch_add(1);
     completeImplNodeProcessing(inode);
-  }
-  // Release the guard. If every registered blocker completed while this pass
-  // ran, re-run the node here — no resume is left to do it. The nested
-  // invocation signals the worklist once, so back it with a work item.
-  if (inode->pendingResumes.fetch_sub(1) == 1 && !inode->done &&
-      !inode->blockers.empty() && !inode->parent->getIsError()) {
-    inode->blockers.clear();
-    g.numWorkItems.fetch_add(1);
-    processImplNodeTask(inode);
+    flushInterpreterCalls();
   }
   // Signal the worklist that the work is complete.
   if (!inode->parent->getIsError())
@@ -1573,25 +1612,6 @@ void Elaborator::processImplNodeTask(ImplNode *inode) {
 void Elaborator::scheduleImplNode(ImplNode *inode) {
   cpuDevice.getWorkQueue()->addTask(
       [inode, this] { processImplNodeTask(inode); });
-}
-
-void Elaborator::registerBlocker(ImplNode *inode, Location from,
-                                 ParamNode *genNode) {
-  inode->blockers.emplace_back(from, genNode);
-  inode->pendingResumes.fetch_add(1);
-  genNode->andThenAsync([inode, this] {
-    // Re-process only once every registered blocker has completed and no
-    // processing pass is in flight (a pass holds a guard count).
-    if (inode->pendingResumes.fetch_sub(1) == 1) {
-      inode->blockers.clear();
-      processImplNodeTask(inode);
-      return;
-    }
-    // Another blocker completion or the in-flight pass resumes the node;
-    // consume the work item added for this waiter on callee completion.
-    if (!inode->parent->getIsError())
-      signalWorklist();
-  });
 }
 
 LogicalResult Elaborator::processImplNode(ImplNode *inode) {
@@ -1615,7 +1635,8 @@ LogicalResult Elaborator::processImplNode(ImplNode *inode) {
     ElaborationState result = processScope(inode, item);
     if (result.isError()) {
       // Interrupt indicates a fatal error.
-      assert(inode->error && "node processing interrupted but no error set");
+      assert(inode->recordedError() &&
+             "node processing interrupted but no error set");
       return success();
     }
     if (result.shouldSkipFrame()) {
@@ -1631,13 +1652,19 @@ LogicalResult Elaborator::processImplNode(ImplNode *inode) {
     // Advance indicates the current work item's operation list was exhausted.
     assert(inode->stack.size() == size && "new frame with no skip");
     assert(item.ops.empty() && "advance did not exhaust worklist");
-    if (failed(item.onComplete(inode))) {
-      assert(inode->error && "callback failed but no error set");
-      return success();
+    if (item.onComplete) {
+      ElaborationState result = item.onComplete(inode);
+      // Keep the frame so the resume runs the callback again.
+      if (result.shouldSkipNode())
+        return failure();
+      if (result.isError()) {
+        assert(inode->recordedError() && "callback failed but no error set");
+        return success();
+      }
     }
     inode->stack.pop_back();
   }
-  assert(!inode->error && "unexpected error");
+  assert(!inode->recordedError() && "unexpected error");
   return success();
 }
 
@@ -1660,10 +1687,6 @@ ElaborationState Elaborator::processScope(ImplNode *node,
 }
 
 ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
-  if (Block *block = op->getBlock())
-    if (!block->isEntryBlock())
-      return ElaborationState::advance();
-
   if (auto declare = dyn_cast<ParamDeclareOp>(op))
     return processParamDeclareOp(node, declare);
   if (auto constant = dyn_cast<ParamConstantOp>(op))
@@ -1674,10 +1697,10 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
     return processRebindOp(node, rebindOp);
   if (auto assertOp = dyn_cast<ParamAssertOp>(op))
     return processParamAssertOp(node, assertOp);
-  if (auto ifOp = dyn_cast<ParamIfOp>(op))
-    return processParamIfOp(node, ifOp);
-  if (auto forOp = dyn_cast<ParamForOp>(op))
-    return processParamForOp(node, forOp);
+  if (auto ifOp = dyn_cast<HLCF::ComptimeIfOp>(op))
+    return processComptimeIfOp(node, ifOp);
+  if (auto forOp = dyn_cast<HLCF::ComptimeForOp>(op))
+    return processComptimeForOp(node, forOp);
   if (auto call = dyn_cast<GeneratorUserOpInterface>(op))
     return processCallOp(node, call);
   if (auto compileOffload = dyn_cast<CompileOffloadOp>(op))
@@ -1701,22 +1724,38 @@ ElaborationState Elaborator::processOp(ImplNode *node, Operation *op) {
 
 ParamNode *Elaborator::getOrCreateNode(ParameterExprArrayAttr values,
                                        GeneratorOpInterface gen, size_t depth) {
-  // TODO: Split this into `get` and `create` methods, so that some can be
-  // read-only accesses.
-  ParamNode *paramNode = g.nodes.modify([&](auto &map) {
-    std::unique_ptr<ParamNode> &n = map[{values, gen}];
-    if (!n)
-      n = std::make_unique<ParamNode>(cpuDevice, gen, values, depth, &g);
-    return n.get();
+  // Most calls name a node that already exists, so look it up under the reader
+  // lock and take the writer lock only to create one. `SmartRWMutex` cannot be
+  // upgraded, so the writer lock repeats the lookup: another thread can insert
+  // this key while no lock is held, and `specializeGenerator` elects the thread
+  // that elaborates a node by test-and-set on the node itself, which requires
+  // exactly one node per key.
+  std::pair<ParameterExprArrayAttr, GeneratorOpInterface> key(values, gen);
+  ParamNode *paramNode = g.nodes.read([&key](const auto &map) -> ParamNode * {
+    if (auto it = map.find(key); it != map.end())
+      return it->second.get();
+    return nullptr;
   });
+  if (!paramNode) {
+    paramNode = g.nodes.modify([&](auto &map) {
+      std::unique_ptr<ParamNode> &n = map[key];
+      if (!n)
+        n = std::make_unique<ParamNode>(cpuDevice, gen, values, depth, &g);
+      return n.get();
+    });
+  }
   // Add the node to the concrete nodes map regardless of whether it was
   // created or not. This guarantees that both nodes (ParamNode and ImplNode)
   // are in the corresponding maps (g.nodes and concreteNodes) when this
   // function returns.
   StringAttr name = paramNode->getMangledName();
   ImplNode *implNode = &paramNode->impl;
-  concreteNodes.modify(
-      [name, implNode](auto &map) { map.try_emplace(name, implNode); });
+  bool isConcrete = concreteNodes.read(
+      [name](const auto &map) { return map.contains(name); });
+  if (!isConcrete) {
+    concreteNodes.modify(
+        [name, implNode](auto &map) { map.try_emplace(name, implNode); });
+  }
   return paramNode;
 }
 
@@ -1762,7 +1801,7 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     //   kgen.call @foo<() -> y>()
     //   %0 = kgen.param.constant = <y>
     //   kgen.param.result_bind<2>
-    //   kgen.return
+    //   hlcf.return
     // }
     // ```
     //
@@ -1773,9 +1812,13 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // In multi-threaded execution, call resolution is also deferred as late as
     // possible. This maximizes parallelism on the expansion graph (without
     // intra-node parallelism) while correctly handling recursion.
-    if (addWaiter && !inode->suppressBlockers) {
+    if (addWaiter && !inode->blocker.has_value()) {
       if (genNode->state.addWaiter()) {
-        registerBlocker(inode, from, genNode);
+        inode->blocker = std::make_pair(from, genNode);
+        genNode->andThenAsync([inode, this] {
+          inode->blocker.reset();
+          processImplNodeTask(inode);
+        });
         return ElaborationState::skipNode();
       }
       // Raced with node completion.
@@ -1811,20 +1854,24 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
             generatorOp.getFunctionType(),
             generatorOp.getFuncTypeGenerator().getBody().getArgConventions(),
             generatorOp.getFuncTypeGenerator().getBody().getFnEffects()),
-        generatorOp.getInlineLevel(), generatorOp.getExportKind(),
-        generatorOp.getExternal(), /*convergent=*/false,
-        generatorOp.getLinkageNameAttr(), generatorOp.getDecorators(),
-        DictionaryAttr::get(b.getContext())));
-    // Process LLVM metadata recorded in the generator by fusing names and
-    // values from the LLVMetadataName and LLVMMetadataValue dictionaries.
+        inlineLevelOrAutomatic(generatorOp.getInlineLevel()),
+        generatorOp.getExportKind(), generatorOp.getExternal(),
+        /*convergent=*/false, generatorOp.getLinkageNameAttr(),
+        generatorOp.getDecorators(), DictionaryAttr::get(b.getContext())));
+    cast<FuncOp>(*instance).setInlineLevelAttr(
+        generatorOp.getInlineLevelAttr());
     auto newFunc = cast<FuncOp>(*instance);
-    if (!generatorOp.getLLVMMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMMetadataArrayAttrName,
-                       generatorOp.getLLVMMetadataArray());
-    }
-    if (!generatorOp.getLLVMArgMetadataArray().empty()) {
-      newFunc->setAttr(kLLVMArgMetadataArrayAttrName,
-                       generatorOp.getLLVMArgMetadataArray());
+    if (!generatorOp.getFnAttrs().empty())
+      newFunc->setAttr(kFnAttrsAttrName, generatorOp.getFnAttrs());
+    if (!generatorOp.getFnArgAttrs().empty())
+      newFunc->setAttr(kFnArgAttrsAttrName, generatorOp.getFnArgAttrs());
+    // The instance is created with an empty discardable dictionary; forward
+    // the offload target-attribute dictionary so the target backend can read
+    // it off the compiled kernel function.
+    if (auto targetAttrs = generatorOp->getDiscardableAttr(
+            CompileOffloadOp::getTargetAttrsForwardedAttrName())) {
+      newFunc->setAttr(CompileOffloadOp::getTargetAttrsForwardedAttrName(),
+                       targetAttrs);
     }
     instantiateBody = true;
   } else {
@@ -1845,22 +1892,31 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     // ParametricNode (or similar) that doesn't store the input parameters, in
     // which we could store the ParameterUseDefGraph.
 
-    ParameterUseDefGraph *genNodeGraph = knownGraphs.modify(
-        [gen, &paramCache = this->paramCache](auto &map) mutable {
+    // Most generators already have a graph, so look it up under the reader lock
+    // and take the writer lock only to compute a missing one.
+    ParameterUseDefGraph *genNodeGraph =
+        knownGraphs.read([gen](const auto &map) -> ParameterUseDefGraph * {
           if (auto it = map.find(gen); it != map.end())
             return it->second.get();
-          // Compute a new graph. The computed graph could end up getting
-          // discarded if two threads end up here at the same time for the same
-          // generator.
-          auto newGraph =
-              std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
-
-          // calculate() modifies gen.getBodyRegion(), so this needs to be done
-          // in a thread safe manner to avoid tsan failures.
-          newGraph->calculate(paramCache.getThreadLocalCache());
-
-          return map.try_emplace(gen, std::move(newGraph)).first->second.get();
+          return nullptr;
         });
+    if (!genNodeGraph) {
+      genNodeGraph = knownGraphs.modify([&gen, this](auto &map) mutable {
+        // Repeat the lookup: another thread can insert this generator while no
+        // lock is held.
+        if (auto it = map.find(gen); it != map.end())
+          return it->second.get();
+
+        auto newGraph =
+            std::make_unique<ParameterUseDefGraph>(gen.getBodyRegion());
+
+        // calculate() modifies gen.getBodyRegion(), so this needs to be done
+        // in a thread safe manner to avoid tsan failures.
+        newGraph->calculate(paramCache.getThreadLocalCache());
+
+        return map.try_emplace(gen, std::move(newGraph)).first->second.get();
+      });
+    }
 
     // Clone the body of the generator into the function.
     // TODO: is there a nice way for us to avoid cloning this?
@@ -1913,22 +1969,18 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
     }
   }
 
-  std::function<LogicalResult(ImplNode *)> onComplete;
+  std::function<ElaborationState(ImplNode *)> onComplete;
   if (config.elaborateDebugInfo) {
     // We need to recursively elaborate locations within nested regions, both on
     // ops and block arguments. We do this after the worklist is processed, to
     // ensure that all parameter computation is completed, e.g. we have
     // processed all kgen.param.decl ops.
-    onComplete = [](ImplNode *inode) -> LogicalResult {
-      if (failed(concretizeLocOf(*inode->inst, inode)))
-        return failure();
-      if (failed(concretizeLocsInScope(inode->inst.getBodyRegion().front(),
-                                       inode)))
-        return failure();
-      return success();
+    onComplete = [](ImplNode *inode) -> ElaborationState {
+      if (ElaborationState result = concretizeLocOf(*inode->inst, inode);
+          result.isError() || result.shouldSkipNode())
+        return result;
+      return concretizeLocsInScope(inode->inst.getBodyRegion().front(), inode);
     };
-  } else {
-    onComplete = [](ImplNode *) { return success(); };
   }
 
   IREvaluator evaluator(*this, newFuncNode);
@@ -1939,10 +1991,14 @@ ElaborationState Elaborator::specializeGenerator(ImplNode *inode,
                           std::move(evaluator)};
   newFuncNode->stack.push_back(std::move(item));
 
-  if (addWaiter && !inode->suppressBlockers) {
+  if (addWaiter && !inode->blocker.has_value()) {
     [[maybe_unused]] bool added = genNode->state.addWaiter();
     assert(added);
-    registerBlocker(inode, from, genNode);
+    inode->blocker = std::make_pair(from, genNode);
+    genNode->andThenAsync([inode, this] {
+      inode->blocker.reset();
+      processImplNodeTask(inode);
+    });
   }
   g.numWorkItems.fetch_add(1);
   scheduleImplNode(newFuncNode);
@@ -1982,13 +2038,7 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
     return offloadFuncOr.takeError();
   auto [symbol, func] = offloadFuncOr.takeValue();
 
-  // Construct the expected result type.
   MLIRContext *ctx = op.getContext();
-  Builder b(ctx);
-  auto noneType = KGEN::NoneType::get(ctx);
-  auto populateFnType = FuncTypeGeneratorType::get(
-      {}, b.getFunctionType(PointerType::get(noneType), noneType),
-      {ArgConvention::ImmReg}, FnEffects().setCapturing());
 
   // Specialize the generator with another target by slicing it and its
   // transitive dependencies out of the IR and re-invoking the elaborator. If it
@@ -1996,34 +2046,46 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
   // the elaborator invocation will fail due to multiple implementations of a
   // primary generator, and the functor will return an error.
 
+  DictionaryAttr targetAttrs = op.getTargetAttrsAttr();
+
   targetOffloadInfos.modify([&](auto &info) {
-    std::string groupKey =
-        emissionOptionsStr.str() + emissionLinkOptionsStr.str();
-    OffloadInfo::Group &offloadInfo = info[target].groups[groupKey];
+    OffloadInfo::Group &offloadInfo =
+        info[target].groups[makeOffloadGroupKey(op)];
     offloadInfo.emissionOptions = emissionOptionsStr;
     offloadInfo.emissionLinkOptions = emissionLinkOptionsStr;
+    offloadInfo.targetAttrs = targetAttrs;
 
     // Slice out a pre-elaboration module for the new target to compile for.
     ExportMap &exportedSymbols = offloadInfo.exportedSymbols;
     exportedSymbols.insert_or_assign(func.getSymNameAttr(),
                                      ExportKind::Exported);
 
+    if (targetAttrs) {
+      // Function symbols referenced only from `target_attrs` (e.g. window
+      // transform functions) have no SSA use in the slice, so a `NotExported`
+      // entry would be DCEd; export them.
+      //
+      // `insert_or_assign` upgrades a symbol the param replacers below reached
+      // first, and `Exported` is external linkage in the artifact, not just
+      // liveness. That is deliberate -- reachable only through an attribute,
+      // the symbol has nothing else to keep it alive -- but it does mean the
+      // same callee linked differently depending on how it is referenced.
+      mlir::AttrTypeWalker attrWalker;
+      attrWalker.addWalk([&](FuncSymbolAttr ref) {
+        exportedSymbols.insert_or_assign(ref.getSymbol().getRootReference(),
+                                         ExportKind::Exported);
+      });
+      attrWalker.walk(targetAttrs);
+    }
+
     // Make sure to slice out anything referenced in the input parameters. When
     // generator references are instantiated in the standalone module, they are
     // instantiated with the new target.
     mlir::AttrTypeReplacer replacer;
     replacer.addReplacement(
-        [&](SymbolConstantAttr ref)
-            -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref != symbol)
-            exportedSymbols.insert(
-                {ref.getSymbol().getRootReference(), ExportKind::NotExported});
-          return std::nullopt;
-        });
-    replacer.addReplacement(
         [&](FuncSymbolAttr ref)
             -> std::optional<std::pair<Attribute, WalkResult>> {
-          if (ref != symbol)
+          if (ref.getSymbol() != symbol.getSymbol())
             exportedSymbols.insert(
                 {ref.getSymbol().getRootReference(), ExportKind::NotExported});
           return std::nullopt;
@@ -2049,7 +2111,15 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
           Attribute newGenRef = replacer.replace(genRef);
           return std::make_pair(newGenRef, WalkResult::skip());
         });
-    symbol = cast<SymbolConstantAttr>(replacer.replace(symbol));
+    symbol = cast<TypedAttr>(replacer.replace(TypedAttr(symbol)));
+
+    // The replacer above reaches the offload function's parameters only, so a
+    // struct referenced solely by `opaque_plugin` would never be exported.
+    // `compileOffloads` stamps the rewritten target on the slice.
+    if (target.getOpaquePlugin()) {
+      offloadInfo.slicedTarget =
+          dyn_cast_or_null<TargetInfoAttr>(replacer.replace(Attribute(target)));
+    }
 
     auto iter =
         offloadInfo.symbols.insert({func, OffloadInfo::Group::SymbolInfo{}})
@@ -2060,9 +2130,9 @@ ErrorTreeOrSuccess Elaborator::bundleCompileOffloadOp(CompileOffloadOp op,
       sourceName = StringAttr::get(ctx, *srcName);
 
     auto pair = iter->second.insert(
-        {symbol,
+        {symbol.getInstantiatedFuncSymbol(),
          OffloadInfo::KernelInfo{
-             name, offloadInfo.numKernels, populateFnType, {}, sourceName}});
+             name, offloadInfo.numKernels, {}, sourceName}});
 
     if (pair.second)
       offloadInfo.numKernels += 1;
@@ -2109,11 +2179,10 @@ ElaborationState Elaborator::processCompileOffload(ImplNode *parent,
       parent->setToError(thunkCallee->takeError());
       return ElaborationState::error();
     }
-    SymbolConstantAttr calleeSym = thunkCallee->takeValue();
+    FuncSymbolGenerator calleeSym = thunkCallee->takeValue();
     if (!calleeSym)
       return ElaborationState::skipNode();
-    symbol = calleeSym;
-    op.setFuncAttr(symbol);
+    op.setFuncAttr(calleeSym);
   }
 
   compileOffloadOps.modify([&](auto &set) { set.insert(op); });
@@ -2365,7 +2434,7 @@ struct GraphEdge {
   /// In the graph edge, this ParamNode represents the caller node.
   ParamNode *pnode;
   /// This is the index into the concatenated range over
-  /// `[*dependencies, *blockers]` pointing to the callee ParamNode.
+  /// `[*dependencies, blocker]` pointing to the callee ParamNode.
   size_t depIdx;
 
   /// This function returns the callee ParamNode by indexing into the
@@ -2374,7 +2443,7 @@ struct GraphEdge {
     auto &inode = pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].second;
-    return inode.blockers[depIdx - inode.dependencies.size()].second;
+    return inode.blocker->second;
   }
   /// Return the location on the callee side representing where the edge
   /// originates from, to be used for diagnostic reporting.
@@ -2382,7 +2451,7 @@ struct GraphEdge {
     auto &inode = pnode->impl;
     if (depIdx < inode.dependencies.size())
       return inode.dependencies[depIdx].first;
-    return inode.blockers[depIdx - inode.dependencies.size()].first;
+    return inode.blocker->first;
   }
   /// Return true if this edge is a blocker/interpreter edge.
   bool isBlockerEdge() const {
@@ -2392,7 +2461,7 @@ struct GraphEdge {
     // we may break it previously and marked it as errored, we don't
     // want to keep breaking the same node then come back
     // to enter an infinite loop here.
-    return depIdx >= inode.dependencies.size() && !inode.error;
+    return depIdx >= inode.dependencies.size() && !inode.recordedError();
   }
 
   // Comparison operators for GraphTraits.
@@ -2413,7 +2482,7 @@ struct GraphEdge {
   GraphEdge end() const {
     ParamNode *next = getPointee();
     ImplNode &inode = next->impl;
-    return {next, inode.dependencies.size() + inode.blockers.size()};
+    return {next, inode.dependencies.size() + inode.blocker.has_value()};
   }
 
   /// GraphEdge is its own iterator.
@@ -2521,18 +2590,30 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
 
   // These are the nodes we are going to reschedule at the end.
   std::vector<ImplNode *> reschedule;
-  // Suspended SCC members are woken by their blocker resumes rather than a
-  // reschedule, so progress is not implied by `reschedule` alone.
-  bool brokeScc = false;
+
+  // A set of ParamNode that is waiting on a blocker.
+  DenseSet<ParamNode *> waitingOnBlocker;
+  auto isBlocking = [&](GraphEdge edge) {
+    // If the edge src has a blocker or its dst has a blocker, then the edge is
+    // blocked.
+    return edge.pnode->impl.blocker.has_value() ||
+           waitingOnBlocker.contains(edge.getPointee());
+  };
 
   // Early increment since we will modify the graph as we go.
   for (auto sccIt = llvm::scc_begin(graph); !sccIt.isAtEnd();) {
-    if (!sccIt.hasCycle()) {
-      ++sccIt;
-      continue;
-    }
+    bool hasCycle = sccIt.hasCycle();
     std::vector<GraphEdge> scc = *sccIt;
     ++sccIt;
+
+    // Classify before breaking, also run this before hasCycle check.
+    bool blocking = llvm::any_of(scc, isBlocking);
+    if (blocking)
+      for (GraphEdge edge : scc)
+        waitingOnBlocker.insert(edge.pnode);
+
+    if (!hasCycle)
+      continue;
 
     // First build a set of edges in the SCC for convenient lookup.
     inSCC.clear();
@@ -2555,8 +2636,13 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
       break;
     }
 
+    // If this SCC is waiting on a blocker, don't schedule it.
+    if (blocking) {
+      sccNodes.clear();
+      continue;
+    }
+
     // Now, we break all the edges in the SCC for each node in the SCC.
-    brokeScc = true;
     for (ParamNode *node : sccNodes) {
       ImplNode *inode = &node->impl;
       std::vector<std::pair<Location, ParamNode *>> newDeps;
@@ -2567,17 +2653,13 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
           inode->sccRemovedDeps.push_back(dep);
       }
 
-      // A node suspended on blockers still holds its unconsumed processing
-      // count and is re-run by its blocker resume, so it gets neither a
-      // reschedule nor the extra count reserved for the rescheduled pass.
-      bool suspended = inode->pendingResumes.load() > 0;
+      // Decrement the number of dependencies and set the new dependencies.
       inode->numDependencies -=
-          (inode->dependencies.size() - newDeps.size() - (suspended ? 0 : 1));
+          (inode->dependencies.size() - newDeps.size() - 1);
       inode->dependencies = std::move(newDeps);
       inode->sccCh = AsyncValueRef<Chain>::allocate(cpuDevice);
       sccChains.push_back(inode->sccCh.copy());
-      if (!suspended)
-        reschedule.push_back(inode);
+      reschedule.push_back(inode);
     }
 
     // When all of them are done as individual nodes, they will reset their
@@ -2597,123 +2679,58 @@ bool Elaborator::diagnoseAndBreakRecursion(unsigned generation,
     g.numWorkItems.fetch_add(1);
     scheduleImplNode(inode);
   }
-  return brokeScc || !reschedule.empty();
+  return !reschedule.empty();
 }
 
 //===----------------------------------------------------------------------===//
 // Elaborator::run
 //===----------------------------------------------------------------------===//
 
-static WalkResult rewriteCompileOffloadOp(
+/// Replaces `op` with its offload compilation result, or returns an error if
+/// `compiledOffload` has no result for it. Several threads call this at once,
+/// so it only reads `compiledOffload`.
+static std::optional<ErrorTree> rewriteCompileOffloadOp(
     CompileOffloadOp op, Location loc,
-    DenseMap<TargetInfoAttr,
-             llvm::DenseMap<std::string,
-                            DenseMap<uint64_t, OffloadCompilationResult>>>
-        &compiledOffload,
-    bool &failed, ErrorLimit &errorLimit, bool errorIncludePrelude) {
+    const DenseMap<TargetInfoAttr,
+                   llvm::DenseMap<std::string,
+                                  DenseMap<uint64_t, OffloadCompilationResult>>>
+        &compiledOffload) {
   // Plug offload compilation results as strings back to the elaborated IR.
   auto kernelId = cast<IntegerAttr>(op.getKernelIDAttr()).getInt();
   EmitAs emissionKind = cast<EmitAsAttr>(op.getEmissionKindAttr()).getValue();
   TargetInfoAttr target =
       cast<TargetParamAttr>(op.getTargetTypeAttr()).getTarget();
-  StringRef emissionOptionsStr =
-      cast<StringAttr>(op.getEmissionOptionAttr()).getValue();
-  StringRef emissionLinkOptionsStr =
-      cast<StringAttr>(op.getEmissionLinkOptionAttr()).getValue();
-  std::string groupKey =
-      emissionOptionsStr.str() + emissionLinkOptionsStr.str();
+  std::string groupKey = makeOffloadGroupKey(op);
 
   auto targetIter = compiledOffload.find(target);
-  if (targetIter == compiledOffload.end()) {
-    ErrorTree compileOffloadError(loc, "compile offload result missing target");
-    emitLimitedError(
-        [&] {
-          return std::move(compileOffloadError)
-              .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", errorIncludePrelude);
-        },
-        errorLimit);
-    failed = true;
-    return WalkResult::interrupt();
-  }
+  if (targetIter == compiledOffload.end())
+    return ErrorTree(loc, "compile offload result missing target");
 
   auto iter0 = targetIter->second.find(groupKey);
-  if (iter0 == targetIter->second.end()) {
-    ErrorTree compileOffloadError(
-        loc,
-        "compile offload result missing emissionOptions \"" + groupKey + "\"");
-
-    emitLimitedError(
-        [&] {
-          return std::move(compileOffloadError)
-              .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", errorIncludePrelude);
-        },
-        errorLimit);
-
-    failed = true;
-    return WalkResult::interrupt();
-  }
+  if (iter0 == targetIter->second.end())
+    return ErrorTree(loc, "compile offload result missing emissionOptions \"" +
+                              groupKey + "\"");
 
   auto iter = iter0->second.find(kernelId);
-  if (iter == iter0->second.end()) {
-    ErrorTree compileOffloadError(loc,
-                                  "compile offload result missing kernelId " +
-                                      std::to_string(kernelId));
-    emitLimitedError(
-        [&] {
-          return std::move(compileOffloadError)
-              .emit([](Location loc) { return mlir::emitError(loc); },
-                    "Compile offload failed.", errorIncludePrelude);
-        },
-        errorLimit);
-    failed = true;
-    return WalkResult::interrupt();
-  }
+  if (iter == iter0->second.end())
+    return ErrorTree(loc, "compile offload result missing kernelId " +
+                              std::to_string(kernelId));
 
   ImplicitLocOpBuilder b(op.getLoc(), OpBuilder(op));
-  StringAttr content = iter->second.contents[emissionKind];
-  StringAttr moduleName = iter->second.moduleNames[emissionKind];
-  IntegerAttr numCaptures = iter->second.numCaptures;
-  mlir::DenseI64ArrayAttr captureSizes = iter->second.captureSizes;
-  PointerType nonePtr = PointerType::get(KGEN::NoneType::get(op->getContext()));
-  auto structType = StructType::get(op->getContext(), {
-                                                          content.getType(),
-                                                          moduleName.getType(),
-                                                          numCaptures.getType(),
-                                                          nonePtr,
-                                                      });
+  StringAttr content = iter->second.contents.lookup(emissionKind);
+  StringAttr moduleName = iter->second.moduleNames.lookup(emissionKind);
+  auto structType = StructType::get(op->getContext(),
+                                    {content.getType(), moduleName.getType()});
 
   SmallVector<Value> values;
-
-  auto constantV = ParamConstantOp::create(b, content);
-  auto moduleNameV = ParamConstantOp::create(b, moduleName);
-  auto numCapturesV = ParamConstantOp::create(b, numCaptures);
-  // Allocate an array numCaptures elements of int64 integers to store capture
-  // sizes
-  auto captureSizesV = POP::StackAllocationOp::create(
-      b, PointerType::get(captureSizes.getElementType()), numCaptures.getInt());
-  for (auto [i, typeSize] : llvm::enumerate(captureSizes.asArrayRef())) {
-    Value gep = POP::OffsetOp::create(
-        b, captureSizesV, ParamConstantOp::create(b, b.getIndexAttr(i)));
-    POP::StoreOp::create(
-        b, ParamConstantOp::create(b, b.getI64IntegerAttr(typeSize)), gep);
-  }
-  auto opaqueCaptureSizesV =
-      POP::PointerBitcastOp::create(b, nonePtr, captureSizesV);
-
-  assert(numCaptures.getInt() == captureSizes.size() &&
-         "Num captures and number of their sizes mismatch");
-  values.push_back(constantV);
-  values.push_back(moduleNameV);
-  values.push_back(numCapturesV);
-  values.push_back(opaqueCaptureSizesV);
+  values.push_back(ParamConstantOp::create(b, content));
+  values.push_back(ParamConstantOp::create(b, moduleName));
   auto newOp = StructCreateOp::create(b, op->getLoc(), structType, values);
 
   op->replaceUsesOfWith(op.getResult(), newOp);
   op.replaceAllUsesWith(newOp.getResult());
   op.erase();
-  return WalkResult::advance();
+  return std::nullopt;
 }
 
 bool Elaborator::checkCodeGenUnreachable(ModuleOp module,
@@ -2932,12 +2949,8 @@ LogicalResult Elaborator::run(
   // generators - everything else we don't care about.
   // Sort instantiations of each generator to ensure we have a deterministic
   // output in multithreaded execution.
-  struct SuccessfulInstances {
-    std::string paramStr;
-    InstantiatedOpInterface inst;
-  };
   auto *newBlock = new Block;
-  llvm::MapVector<GeneratorOpInterface, std::vector<SuccessfulInstances>>
+  llvm::MapVector<GeneratorOpInterface, std::vector<InstantiatedOpInterface>>
       genInstantiations;
   for (Operation &op : llvm::make_early_inc_range(*theModule.getBody())) {
     if (auto gen = dyn_cast<GeneratorOpInterface>(op)) {
@@ -2952,22 +2965,22 @@ LogicalResult Elaborator::run(
     VerboseCompilerTimeTraceScope traceScope(
         "processGen", [name = node.gen.getName()] { return name.str(); });
     // Erase all erroneous instances.
-    if (node.impl.error) {
+    if (node.impl.recordedError()) {
       node.impl.inst.erase();
       continue;
     }
 
-    genInstantiations[node.gen].push_back(SuccessfulInstances{
-        mlir::debugString(node.inputParams), node.impl.inst});
+    genInstantiations[node.gen].push_back(node.impl.inst);
   }
 
   // Now reorder all instantiations of each generator to be deterministic.
   for (auto &[gen, instantiations] : genInstantiations) {
-    llvm::sort(instantiations, [](auto &lhs, auto &rhs) {
-      return lhs.paramStr < rhs.paramStr;
-    });
-    for (auto &[_, func] : instantiations)
-      newBlock->push_back(func);
+    llvm::sort(instantiations,
+               [](InstantiatedOpInterface lhs, InstantiatedOpInterface rhs) {
+                 return lhs.getName() < rhs.getName();
+               });
+    for (InstantiatedOpInterface inst : instantiations)
+      newBlock->push_back(inst);
   }
 
   // Sort and then push on all the deferred functions.
@@ -2987,60 +3000,46 @@ LogicalResult Elaborator::run(
 
   renameFunctions(theModule, target.isGPU(), failed);
 
-  // Fill populate_captures stubs with the body generated during offload
-  // compilation.
-  //
-  // @__name kernels are renamed by renameFunctions above, so this fill step
-  // runs after renaming. Both sides of the name lookup are deliberately
-  // anchored to the pre-rename auto-mangled sym to survive that rename:
-  //
-  //   - The host stub was created in evaluateCompileOffloadClosureAttr using
-  //     the pre-rename sym (mangleParameterValues of the generator).
-  //   - writeCaptureArgs (in KGENCompiler) names the offload-side populate
-  //     function using the same mangled kernel.name.
-  //
-  // So populate.getSymName() here is the pre-rename sym, and lookupSymbolIn
-  // finds the host stub by that same name.
-  for (auto &[fillTarget, fillResult] : compiledOffload) {
-    for (auto &[_, fillGroup] : fillResult) {
-      for (auto &[_, kernel] : fillGroup) {
-        auto populate = cast<FuncOp>(kernel.func.get());
-        StringRef populateName = populate.getSymName();
-        StringAttr lookupName =
-            StringAttr::get(theModule.getContext(), populateName);
-        // A host stub only exists for kernels that had a
-        // compile_offload_closure declared on the host side. Kernels compiled
-        // only for their info (e.g. via compile_offload without a matching
-        // closure) have no stub; skip.
-        Operation *stubOp =
-            mlir::SymbolTable::lookupSymbolIn(theModule, lookupName);
-        if (!stubOp)
-          continue;
-        auto stubFunc = cast<FuncOp>(stubOp);
-        // Fill in the actual body of the populate closure which is
-        // generated while compiling all the offload functions.
-        stubFunc.getBodyRegion().takeBody(
-            cast<FuncOp>(*kernel.func).getBodyRegion());
-      }
+  // Rewrite each top-level op in parallel. Emit the errors afterward, in module
+  // order, so the error limit keeps the same errors at every thread count.
+  SmallVector<Operation *, 0> topLevelOps;
+  for (Operation &op : theModule.getOps())
+    topLevelOps.push_back(&op);
+  SmallVector<SmallVector<ErrorTree>, 0> rewriteErrors = parallelMap(
+      theModule->getContext(), topLevelOps, [&](Operation *topLevelOp) {
+        SmallVector<ErrorTree> errors;
+        topLevelOp->walk([&](Operation *op) {
+          if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
+            // Plug offload compilation results as strings back to the
+            // elaborated IR.
+            if (std::optional<ErrorTree> error = rewriteCompileOffloadOp(
+                    offloadOp, theModule.getLoc(), compiledOffload))
+              errors.push_back(std::move(*error));
+          } else if (auto isCompileTime =
+                         dyn_cast<IsRunInComptimeInterpreterOp>(op)) {
+            // Rewrite IsCompileTimeOp to cpuDevice value as always false.
+            OpBuilder b(op);
+            isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
+                b, op->getLoc(),
+                SIMDAttr::getScalarBool(b.getContext(), false)));
+            op->erase();
+          }
+        });
+        return errors;
+      });
+  for (SmallVector<ErrorTree> &errors : rewriteErrors) {
+    for (ErrorTree &error : errors) {
+      emitLimitedError(
+          [&] {
+            return std::move(error).emit(
+                [](Location loc) { return mlir::emitError(loc); },
+                "Compile offload failed.",
+                options.elaborationErrorIncludePrelude);
+          },
+          errorLimit);
+      failed = true;
     }
   }
-
-  theModule.walk([&](Operation *op) {
-    if (auto offloadOp = dyn_cast<CompileOffloadOp>(op)) {
-      // Plug offload compilation results as strings back to the elaborated
-      // IR.
-      rewriteCompileOffloadOp(offloadOp, theModule.getLoc(), compiledOffload,
-                              failed, errorLimit,
-                              options.elaborationErrorIncludePrelude);
-    } else if (auto isCompileTime =
-                   dyn_cast<IsRunInComptimeInterpreterOp>(op)) {
-      // Rewrite IsCompileTimeOp to cpuDevice value as always false.
-      OpBuilder b(op);
-      isCompileTime->replaceAllUsesWith(ParamConstantOp::create(
-          b, op->getLoc(), SIMDAttr::getScalarBool(b.getContext(), false)));
-      op->erase();
-    }
-  });
 
   for (Operation &op : theModule.getOps())
     if (op.hasTrait<OpTrait::SymbolTable>())
@@ -3052,6 +3051,12 @@ LogicalResult Elaborator::run(
 
   failed |=
       !checkCodeGenUnreachable(theModule, usedSymbols, errorLimit, oldSymTab);
+
+  if (config.printStats) {
+    reportElaborationStats(target.isGPU(), options,
+                           std::move(comptimeForStats.get()),
+                           std::move(interpreterCalls.get()));
+  }
 
   return success(!failed);
 }
@@ -3145,12 +3150,19 @@ public:
                                       useParametricInterpreter,
                                       errorIncludePrelude,
                                       errorVerbose,
-                                      loopUnrollingWarnThreshold};
+                                      loopUnrollingWarnThreshold,
+                                      printStats};
 
     VerboseCompilerTimeTraceScope traceScope("elaborate-generators");
     options.elaborationErrorIncludePrelude = errorIncludePrelude;
     options.elaborationErrorVerbose = errorVerbose;
     options.elaborationMaxDepth = maxDepth;
+
+    // The standalone pass can enable debug info without CompilationOptions.
+    // Nested compile_assembly calls must preserve that debug info too.
+    if (elaborateDebugInfo &&
+        options.debugLevel == CompilationOptions::kNoDebug)
+      options.debugLevel = CompilationOptions::kFullDebugInfo;
 
     // Now, construct and run the elaborator.
     if (useParametricInterpreter) {

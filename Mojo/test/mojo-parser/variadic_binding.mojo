@@ -41,8 +41,8 @@ def f0[*elt_type: Copyable](t: SomeVA[*elt_type]):
 
 
 # CHECK-LABEL: lit.fn @"f1
-# CHECK-SAME: "elt_type.values`1": param_list<meta<!Int>>
-# CHECK-SAME:(%t: !lit.ref<!lit.struct<#SomeVA <:param_list<!AnyType> upcast(:param_list<meta<!Int>> *"elt_type.values`1")
+# CHECK-SAME: "elt_type.values`": param_list<meta<!Int>>
+# CHECK-SAME:(%t: !lit.ref<!lit.struct<#SomeVA <:param_list<!AnyType> upcast(:param_list<meta<!Int>> *"elt_type.values`")
 def f1[*elt_type: type_of(Int)](t: SomeVA[*elt_type]):
     pass
 

@@ -26,33 +26,13 @@ iteration in `main()`. PyTorch-like tolerance per dtype.
 from max.gpu.host import DeviceContext
 from std.random import rand
 from std.testing import assert_equal
-from std.utils import IndexList
 
-from layout import TileTensor, row_major
+from layout import Coord, TileTensor, row_major
 
 from nn.conv.gpu.amd.amd_4wave_conv_residual import (
     amd_4wave_conv_fprop_with_residual,
 )
 from nn.conv.gpu.nvidia.sm100.conv_config import Conv2dProblemShape
-
-
-# Pure pre-residual compute lambda used by the "compute_lambda" test
-# variant — adds a comptime-fixed bias to the MMA output. Mirrors the
-# canonical UNet/ResNet "conv + bias + residual" fusion (bias is
-# trivially in-register, real bias-per-channel would index by
-# coords[1] = C_out). Used to validate the SM100-style ordering
-# `D = lambda(Conv(A,B)) + beta * C`.
-@__parameter
-@always_inline
-def _bias_compute_lambda[
-    _dtype: DType,
-    _width: SIMDLength,
-    *,
-    alignment: Int = 1,
-](coords: IndexList[2], val: SIMD[_dtype, _width]) capturing -> SIMD[
-    _dtype, _width
-]:
-    return val + SIMD[_dtype, _width](0.5)
 
 
 def _permute_filter_frsc_to_kpadded_host[
@@ -182,19 +162,11 @@ def _compare[
         if d > threshold:
             n_exceed += 1
             if n_printed < 3:
-                print("  ", label, " mismatch at i=", i, ": a=", a, " e=", e)
+                print(t"   {label}  mismatch at i= {i} : a= {a}  e= {e}")
                 n_printed += 1
     print(
-        "  ",
-        label,
-        ": max_abs=",
-        max_diff,
-        " max_rel=",
-        max_rel,
-        " n_exceed=",
-        n_exceed,
-        "/",
-        n_elems,
+        t"   {label} : max_abs= {max_diff}  max_rel= {max_rel}  n_exceed="
+        t" {n_exceed} / {n_elems}"
     )
     assert_equal(n_exceed, 0)
 
@@ -217,7 +189,7 @@ def test_conv_residual[
     pad: Int,
     beta: Float32,
     has_residual: Bool,
-    # When True, wire `_bias_compute_lambda` (adds 0.5 to MMA output
+    # When True, wire a bias `compute_fn` (adds 0.5 to MMA output
     # BEFORE the residual FMA). The host reference adds 0.5 in the
     # same place. Validates the SM100-style
     # `D = lambda(Conv(A,B)) + beta * C` ordering.
@@ -245,38 +217,10 @@ def test_conv_residual[
     comptime K_padded = ((K_real + 255) // 256) * 256
 
     print(
-        "==",
-        label,
-        " in_dtype=",
-        in_dtype,
-        " out_dtype=",
-        out_dtype,
-        " N=",
-        N,
-        " H=",
-        H,
-        " W=",
-        W,
-        " C_in=",
-        C_in,
-        " C_out=",
-        C_out,
-        " RxS=",
-        R,
-        "x",
-        S,
-        " s=",
-        stride,
-        " p=",
-        pad,
-        " beta=",
-        beta,
-        " has_residual=",
-        has_residual,
-        " K_real=",
-        K_real,
-        " K_padded=",
-        K_padded,
+        t"== {label}  in_dtype= {in_dtype}  out_dtype= {out_dtype}  N= {N}  H="
+        t" {H}  W= {W}  C_in= {C_in}  C_out= {C_out}  RxS= {R} x {S}  s="
+        t" {stride}  p= {pad}  beta= {beta}  has_residual= {has_residual} "
+        t" K_real= {K_real}  K_padded= {K_padded}"
     )
 
     var n_in = N * H * W * C_in
@@ -336,12 +280,29 @@ def test_conv_residual[
     var residual_tt = TileTensor(residual_buf, output_layout)
 
     comptime if use_compute_lambda:
+        # Pure pre-residual bias on the MMA output. Mirrors the canonical
+        # UNet/ResNet "conv + bias + residual" fusion (a real per-channel
+        # bias would index by `coords[1]` = C_out) and validates the
+        # SM100-style ordering `D = lambda(Conv(A,B)) + beta * C`.
+        var bias = Float32(0.5)
+
+        @inline(.always)
+        def bias_compute_fn[
+            _dtype: DType, _width: SIMDLength, *, alignment: Int
+        ](coords: Coord, val: SIMD[_dtype, _width]) {var bias} -> SIMD[
+            _dtype, _width
+        ]:
+            comptime assert (
+                coords.rank == 2
+            ), "the matmul epilogue contract is rank 2"
+            return val + bias.cast[_dtype]()
+
         amd_4wave_conv_fprop_with_residual[
             in_dtype,
             in_dtype,
             out_dtype,
             has_residual=has_residual,
-            elementwise_compute_lambda_fn=_bias_compute_lambda,
+            has_compute_fn=True,
         ](
             output_tt,
             input_tt,
@@ -350,6 +311,7 @@ def test_conv_residual[
             beta=beta,
             problem=problem,
             ctx=ctx,
+            compute_fn=bias_compute_fn,
         )
     else:
         amd_4wave_conv_fprop_with_residual[
@@ -421,7 +383,7 @@ def run_dtype_sweep[
     """Run the four residual variants for one dtype on a naturally
     K-aligned shape (C_in=C_out=256, R=S=3 → K=2304=9×256)."""
 
-    print("-- in_dtype=", in_dtype, "  out_dtype=", out_dtype, "  --")
+    print(t"-- in_dtype= {in_dtype}   out_dtype= {out_dtype}   --")
 
     # (a) has_residual=False — plain conv early-out.
     test_conv_residual[

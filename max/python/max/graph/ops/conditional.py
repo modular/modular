@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
+from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph, GraphBlock
@@ -110,6 +111,11 @@ def cond(
             f" tensor on {pred.device}. Transfer it explicitly with"
             " `ops.transfer_to(pred, CPU())`."
         )
+    if pred.dtype != DType.bool or pred.rank != 0:
+        raise ValueError(
+            "The predicate for `ops.cond` must be a scalar bool tensor, but"
+            f" got {pred.type}."
+        )
 
     out_types_list = list(out_types) if out_types is not None else []
 
@@ -122,7 +128,13 @@ def cond(
         # exceed what the surrounding scope expects.
         live_on_entry = set(graph.device_chains)
         results = as_values(as_iterable(fn()), out_types_list)
-        new_devices = set(graph.device_chains) - live_on_entry
+        # A list in the map's sorted order, not a set difference: set order
+        # follows the per-process string hash and would reach the IR.
+        new_devices = [
+            device
+            for device in graph.device_chains
+            if device not in live_on_entry
+        ]
         graph.device_chains.merge_for(new_devices)
         for device in new_devices:
             del graph.device_chains[device]

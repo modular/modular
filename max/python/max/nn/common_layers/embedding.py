@@ -1,0 +1,122 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Vocab-parallel embedding for multi-device tensor parallelism."""
+
+from __future__ import annotations
+
+import itertools
+
+from max import functional as F
+from max.graph import DimLike
+from max.nn.common_layers.mesh_axis import TP
+from max.nn.embedding import Embedding
+from max.tensor import Tensor
+from max.tensor.sharding import (
+    DeviceMapping,
+    NamedMapping,
+    Partial,
+    Replicated,
+    Sharded,
+)
+from max.tensor.sharding.action import PerShard
+
+
+def _masked_gather(
+    weight: Tensor,
+    indices: Tensor,
+    vocab_start: int,
+    vocab_end: int,
+) -> Tensor:
+    """Gathers the rows of ``indices`` from one vocabulary shard of ``weight``.
+
+    Indices outside ``[vocab_start, vocab_end)`` read rows of zeros.
+    """
+    in_range = (indices >= vocab_start) & (indices < vocab_end)
+    gathered = F.gather(weight, (indices - vocab_start) * in_range, axis=0)
+    return gathered * in_range.unsqueeze(-1).cast(gathered.dtype)
+
+
+class VocabParallelEmbedding(Embedding):
+    """An embedding whose vocabulary is sharded across devices.
+
+    On a single device this behaves identically to
+    :class:`~max.nn.embedding.Embedding`.  On a multi-device
+    mesh the vocabulary dimension (axis 0) is split so each device holds
+    a contiguous range of rows.  A lookup gathers from the local shard,
+    masks out-of-range indices, and all-reduces the results.
+    """
+
+    def __init__(
+        self, vocab_size: DimLike, *, dim: DimLike, tp_axis: str | None = None
+    ) -> None:
+        super().__init__(vocab_size, dim=dim)
+        if tp_axis is None:
+            tp_axis = TP
+        self.weight = self.weight.to(
+            NamedMapping(self.weight.mesh, (tp_axis, None))
+        )
+
+    def forward(self, indices: Tensor) -> Tensor:
+        """Gather the embeddings for the input indices."""
+        if not self.weight.is_distributed:
+            return F.gather(self.weight, indices, axis=0)
+        return self._vocab_parallel_gather(indices)
+
+    def _vocab_parallel_gather(self, indices: Tensor) -> Tensor:
+        """Per-shard gather with masking and all-reduce.
+
+        The vocabulary splits over one mesh axis; on a mesh of several axes,
+        the devices along the others hold the same rows, so the all-reduce
+        runs over that axis only.
+        """
+        mesh = self.weight.mesh
+        sharded = [
+            i for i, p in enumerate(self.weight.placements) if p == Sharded(0)
+        ]
+        if len(sharded) != 1:
+            raise NotImplementedError(
+                "a vocabulary-parallel embedding splits its rows over one "
+                f"mesh axis, got {self.weight.mapping}"
+            )
+        axis = sharded[0]
+        # An uneven split gives the first devices one row more, so each
+        # device's vocabulary range comes from its own shard.
+        rows = {
+            mesh.device_coord(i, axis): int(shard.shape[0])
+            for i, shard in enumerate(self.weight.local_shards)
+        }
+        ends = list(
+            itertools.accumulate(rows[c] for c in range(mesh.mesh_shape[axis]))
+        )
+        coords = [mesh.device_coord(i, axis) for i in range(mesh.num_devices)]
+        if not indices.is_distributed:
+            indices = indices.to(
+                DeviceMapping(mesh, (Replicated(),) * mesh.ndim)
+            )
+        # Each device gathers only its own vocabulary rows, so the rows
+        # summed across the axis are the embedding. The other axes keep the
+        # indices' placements.
+        placements = list(indices.placements)
+        placements[axis] = Partial()
+        partial = F.call_on_mesh(
+            _masked_gather,
+            mesh,
+            out_specs=DeviceMapping(mesh, tuple(placements)),
+        )(
+            self.weight,
+            indices,
+            PerShard([0, *ends][c] for c in coords),
+            PerShard(ends[c] for c in coords),
+        )
+        return F.allreduce_sum(partial, mesh_axis=axis)

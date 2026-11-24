@@ -22,8 +22,9 @@ guessed from the URL.
 
 import base64
 import io
-from collections.abc import AsyncIterator
-from typing import Any
+import ipaddress
+from typing import Any, Protocol
+from unittest.mock import Mock
 
 import pytest
 from max.pipelines.context.exceptions import InputError
@@ -32,14 +33,11 @@ from max.serve.router import _image_resolution
 from max.serve.router._image_resolution import fetch_media_data_uri
 from PIL import Image
 
-pytestmark = [
-    pytest.mark.asyncio,
-    pytest.mark.skip(
-        reason="SERVOPT-1577: the media fetch now resolves and validates the "
-        "URL host before connecting, so these fakes fail at DNS resolution "
-        "and need a _resolve_host stub."
-    ),
-]
+pytestmark = pytest.mark.asyncio
+
+# A public address, so the SSRF guard admits the hosts these tests fetch from.
+# Nothing ever connects to it: the transport is faked too.
+_PUBLIC_IP = "93.184.216.34"
 
 
 def _image_bytes(image_format: str) -> bytes:
@@ -56,20 +54,39 @@ def _settings(**overrides: Any) -> Settings:
     return Settings(**kwargs)
 
 
+class _FakeBody:
+    """A response body as a plain async iterator.
+
+    Deliberately not an ``async def`` generator: the fetch abandons this
+    iterator mid-body when a chunk pushes the running total over the byte cap,
+    and an abandoned generator leaves its ``aclose`` coroutine unawaited.
+    """
+
+    def __init__(self, chunks: list[bytes]) -> None:
+        self._chunks = iter(chunks)
+
+    def __aiter__(self) -> "_FakeBody":
+        return self
+
+    async def __anext__(self) -> bytes:
+        try:
+            return next(self._chunks)
+        except StopIteration:
+            raise StopAsyncIteration from None
+
+
 class _FakeResponse:
     def __init__(self, chunks: list[bytes], headers: dict[str, str]) -> None:
         self.headers = headers
         self.status_code = 200
+        self.is_redirect = False
         self._chunks = chunks
 
     def raise_for_status(self) -> None:
         return None
 
-    async def aiter_bytes(
-        self, chunk_size: int | None = None
-    ) -> AsyncIterator[bytes]:
-        for chunk in self._chunks:
-            yield chunk
+    def aiter_bytes(self, chunk_size: int | None = None) -> _FakeBody:
+        return _FakeBody(self._chunks)
 
 
 class _FakeStream:
@@ -97,17 +114,42 @@ class _FakeAsyncClient:
         return _FakeStream(self._response)
 
 
-def _install_fake_client(
-    monkeypatch,  # noqa: ANN001
-    body: bytes,
-    headers: dict[str, str] | None = None,
-) -> None:
-    response = _FakeResponse([body], headers or {})
-    monkeypatch.setattr(
-        _image_resolution,
-        "AsyncClient",
-        lambda **kw: _FakeAsyncClient(response),
-    )
+async def _fake_resolve_host(host: str, port: int) -> list[str]:
+    """Answer the SSRF guard's lookup without touching DNS.
+
+    Follows the real ``_resolve_host``: an IP literal resolves to itself, a
+    hostname to one address. Faking the resolver rather than the guard keeps
+    host validation in the loop, so an internal host is still rejected here.
+    """
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return [_PUBLIC_IP]
+    return [host]
+
+
+class _ServeMedia(Protocol):
+    """Installs the canned body a media fetch will return."""
+
+    def __call__(
+        self, body: bytes, headers: dict[str, str] | None = None
+    ) -> None: ...
+
+
+@pytest.fixture
+def serve_media(monkeypatch: pytest.MonkeyPatch) -> _ServeMedia:
+    """Serve canned bytes for any media fetch, with no DNS and no network."""
+    monkeypatch.setattr(_image_resolution, "_resolve_host", _fake_resolve_host)
+
+    def install(body: bytes, headers: dict[str, str] | None = None) -> None:
+        response = _FakeResponse([body], headers or {})
+        monkeypatch.setattr(
+            _image_resolution,
+            "AsyncClient",
+            lambda **kw: _FakeAsyncClient(response),
+        )
+
+    return install
 
 
 def _split_data_uri(data_uri: str) -> tuple[str, bytes]:
@@ -118,11 +160,11 @@ def _split_data_uri(data_uri: str) -> tuple[str, bytes]:
 
 
 async def test_fetch_returns_data_uri_with_original_bytes(
-    monkeypatch,  # noqa: ANN001
+    serve_media: _ServeMedia,
 ) -> None:
     """A fetched image comes back inlined byte-for-byte as a data URI."""
     png = _image_bytes("PNG")
-    _install_fake_client(monkeypatch, png)
+    serve_media(png)
     mime, decoded = _split_data_uri(
         await fetch_media_data_uri("https://example.com/cat.png", _settings())
     )
@@ -131,7 +173,7 @@ async def test_fetch_returns_data_uri_with_original_bytes(
 
 
 async def test_mime_is_sniffed_from_bytes_not_url(
-    monkeypatch,  # noqa: ANN001
+    serve_media: _ServeMedia,
 ) -> None:
     """A host that content-negotiates WebP for a .jpg URL is labelled webp.
 
@@ -140,9 +182,7 @@ async def test_mime_is_sniffed_from_bytes_not_url(
     its payload.
     """
     webp = _image_bytes("WEBP")
-    _install_fake_client(
-        monkeypatch, webp, headers={"content-type": "image/jpeg"}
-    )
+    serve_media(webp, headers={"content-type": "image/jpeg"})
     mime, decoded = _split_data_uri(
         await fetch_media_data_uri("https://example.com/photo.jpg", _settings())
     )
@@ -151,18 +191,21 @@ async def test_mime_is_sniffed_from_bytes_not_url(
 
 
 async def test_non_image_content_rejected(
-    monkeypatch,  # noqa: ANN001
+    serve_media: _ServeMedia,
 ) -> None:
-    """Fetched non-image content is a clean 400, not an inlined fake image."""
-    _install_fake_client(monkeypatch, b'{"models": ["internal"]}')
+    """Fetched non-image content is a clean 400, not an inlined fake image.
+
+    The host here is public on purpose: rejecting an internal one is the SSRF
+    guard's job (covered in ``test_image_resolution``), and this case has to
+    fail on the payload rather than on the address.
+    """
+    serve_media(b'{"models": ["internal"]}')
     with pytest.raises(InputError, match="invalid or unreadable image content"):
-        await fetch_media_data_uri(
-            "http://10.0.0.1:8000/v1/models", _settings()
-        )
+        await fetch_media_data_uri("https://example.com/v1/models", _settings())
 
 
 async def test_truncated_image_rejected(
-    monkeypatch,  # noqa: ANN001
+    serve_media: _ServeMedia,
 ) -> None:
     """A header-valid but truncated image fails here, not in the tokenizer.
 
@@ -176,51 +219,34 @@ async def test_truncated_image_rejected(
     # exercises the decode rather than the open.
     Image.new("RGB", (256, 256), color="blue").save(buf, format="PNG")
     full = buf.getvalue()
-    _install_fake_client(monkeypatch, full[: int(len(full) * 0.6)])
+    serve_media(full[: int(len(full) * 0.6)])
     with pytest.raises(InputError, match="invalid or unreadable image content"):
         await fetch_media_data_uri(
             "https://example.com/truncated.png", _settings()
         )
 
 
-async def test_server_level_cap_applies(
-    monkeypatch,  # noqa: ANN001
+async def test_request_budget_applies(
+    serve_media: _ServeMedia,
 ) -> None:
-    """``Settings.max_bytes`` bounds the responses fetch.
+    """``Settings.max_media_bytes`` bounds the responses fetch.
 
     The old path had no cap at all, so a large body was downloaded in full and
-    then base64-expanded in memory.
+    then base64-expanded in memory. The former per-call and server-level
+    per-item ``max_bytes`` caps are gone: one aggregate budget covers it.
     """
-    _install_fake_client(monkeypatch, b"\x00" * 4096)
-    with pytest.raises(InputError, match="image exceeds the maximum"):
+    serve_media(b"\x00" * 4096)
+    with pytest.raises(InputError, match="exceeds the maximum"):
         await fetch_media_data_uri(
-            "https://example.com/big.png", _settings(max_bytes=1024)
+            "https://example.com/big.png", _settings(max_media_bytes=1024)
         )
 
 
-async def test_per_call_cap_applies(
-    monkeypatch,  # noqa: ANN001
+async def test_image_encoded_off_the_event_loop(
+    serve_media: _ServeMedia,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An explicit ``max_bytes`` bounds the fetch even with no server cap."""
-    _install_fake_client(monkeypatch, b"\x00" * 4096)
-    with pytest.raises(InputError, match="image exceeds the maximum"):
-        await fetch_media_data_uri(
-            "https://example.com/big.png", _settings(), max_bytes=1024
-        )
-
-
-async def test_large_image_encoded_off_the_event_loop(
-    monkeypatch,  # noqa: ANN001
-) -> None:
-    """A payload over the offload threshold encodes on a worker thread.
-
-    Base64 encoding is pure-Python CPU work, so a multi-MB image must not block
-    the loop while other requests are in flight.
-    """
-    big = _image_bytes("PNG") + b"\x00" * (
-        _image_resolution._DATA_URI_OFFLOAD_THRESHOLD + 1
-    )
-    _install_fake_client(monkeypatch, big)
+    serve_media(_image_bytes("PNG"))
 
     offloaded: list[str] = []
     original = _image_resolution.asyncio.to_thread
@@ -230,7 +256,69 @@ async def test_large_image_encoded_off_the_event_loop(
         return await original(fn, *args, **kwargs)
 
     monkeypatch.setattr(_image_resolution.asyncio, "to_thread", spy)
-    # PNG bytes with trailing junk still open as a PNG, so this exercises the
-    # offload without needing a genuinely huge image.
     await fetch_media_data_uri("https://example.com/big.png", _settings())
     assert "_encode_data_uri" in offloaded
+
+
+async def test_a_decoded_image_records_its_media_facts(
+    serve_media: _ServeMedia,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``/v1/responses`` decodes pixels too, so it feeds the same counters.
+
+    Leaving its decode unrecorded made ``media.image_decodes`` and
+    ``media.image_decode_ms`` read zero on a responses-only deployment while
+    ``media.items`` climbed -- a per-format decode cost whose denominator
+    silently excluded a whole public route.
+    """
+    metrics = Mock()
+    monkeypatch.setattr(_image_resolution, "METRICS", metrics)
+    png = _image_bytes("PNG")
+    serve_media(png)
+
+    await fetch_media_data_uri("https://example.com/cat.png", _settings())
+
+    metrics.media_image_decodes.assert_called_once_with("png")
+    metrics.media_image_size.assert_called_once_with(16, "png")
+    (decode_ms, image_format) = metrics.media_image_decode_ms.call_args.args
+    assert image_format == "png"
+    assert decode_ms >= 0.0
+    metrics.media_rejections.assert_not_called()
+
+
+async def test_an_undecodable_image_records_a_rejection(
+    serve_media: _ServeMedia,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The 400 this route already returned produced no rejection sample."""
+    metrics = Mock()
+    monkeypatch.setattr(_image_resolution, "METRICS", metrics)
+    serve_media(b"not an image at all")
+
+    with pytest.raises(InputError):
+        await fetch_media_data_uri("https://example.com/cat.png", _settings())
+
+    metrics.media_rejections.assert_called_once_with("undecodable")
+    metrics.media_image_decodes.assert_not_called()
+
+
+async def test_an_oversized_image_records_its_size_before_refusing(
+    serve_media: _ServeMedia,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A refusal past the header read still knows the format and pixels."""
+    metrics = Mock()
+    monkeypatch.setattr(_image_resolution, "METRICS", metrics)
+    buf = io.BytesIO()
+    Image.new("RGB", (256, 256), color="red").save(buf, format="PNG")
+    # Small on the wire, 192KiB once decoded: the budget admits the fetch and
+    # the header estimate refuses the pixel buffer.
+    serve_media(buf.getvalue())
+
+    with pytest.raises(InputError, match="exceeding the maximum media size"):
+        await fetch_media_data_uri(
+            "https://example.com/cat.png", _settings(max_media_bytes=50_000)
+        )
+
+    metrics.media_rejections.assert_called_once_with("decode_too_large")
+    metrics.media_image_size.assert_called_once_with(256 * 256, "png")

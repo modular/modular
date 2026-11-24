@@ -1,0 +1,286 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+load("//bazel:config.bzl", "REQUIRES_INTERNAL_KERNELS")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Guards pipelines/architectures/hf_config_shims.py.
+modular_py_test(
+    name = "test_hf_config_shim",
+    srcs = ["test_hf_config_shim.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+    ],
+)
+
+# Guards architectures/inkling2/dspark_config.py's read of the checkpoint's
+# mtp_config: max.dtype's width table through kv_bytes_per_token, and the
+# target_layer_ids the drafter's graph reads as taps, which Inkling2.run_layers
+# validates. Both turn a silent parse drift into a failed export otherwise.
+modular_py_test(
+    name = "test_dspark_config",
+    srcs = ["test_dspark_config.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+# Guards architectures/inkling2/model_config.py's loop config: the visit order
+# a looped core puts the decoder in, the per-visit counts both caches are
+# sized from, the loops it refuses, the weights-vs-config guard, and the fact
+# that an unlooped checkpoint keeps Small's walk. Pure config arithmetic, no
+# graph.
+modular_py_test(
+    name = "test_loop_config",
+    size = "small",
+    srcs = ["test_loop_config.py"],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+# Guards architectures/inkling2/dspark.py against the checkpoint it loads:
+# Module.compile drops a weight no parameter matches, so the drafter's
+# parameters and mtp.safetensors' header must agree both ways.
+modular_py_test(
+    name = "test_dspark_drafter",
+    size = "small",
+    srcs = ["test_dspark_drafter.py"],
+    data = ["testdata/mtp_safetensors_header.json"],
+    # Import-bound: pulling the pipelines stack outruns the 300s budget on the
+    # shared BuildBuddy macOS workers.
+    tags = ["skip-ci-macos"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards the drafter's Markov head and feature mix against NumPy transcriptions
+# of vLLM's kernels, eagerly on the host. `manual` because it compiles its host
+# graphs on first use: 800.8s on m7i at size=large after 300.2s at medium, and
+# the eager rule cannot carry it (its CPU warm has no float32 to bfloat16 cast).
+# Run it with `bazel test //max/tests/integration/architectures/inkling2:test_dspark_numerics`.
+modular_py_test(
+    name = "test_dspark_numerics",
+    size = "large",
+    srcs = ["test_dspark_numerics.py"],
+    # The eager interpreter imports its op families lazily, so pydeps cannot
+    # see the dependency: without it the test reaches the host graphs with
+    # max._interpreter_ops missing and every eager op fails to load.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    tags = [
+        "manual",
+        "skip-ci-macos",
+    ],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+# Guards the drafter's sequential draft loop against a NumPy transcription of
+# vLLM's sampler, eagerly on the host. `manual` because it compiles its host
+# graphs on first use: 800.8s on m7i at size=large after 300.2s at medium, and
+# the eager rule cannot carry it (its CPU warm has no float32 to bfloat16 cast).
+# Run it with `bazel test //max/tests/integration/architectures/inkling2:test_dspark_draft_loop`.
+modular_py_test(
+    name = "test_dspark_draft_loop",
+    size = "large",
+    srcs = ["test_dspark_draft_loop.py"],
+    # The eager interpreter imports its op families lazily, so pydeps cannot
+    # see the dependency: without it the test reaches the host graphs with
+    # max._interpreter_ops missing and every eager op fails to load.
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    tags = [
+        "manual",
+        "skip-ci-macos",
+    ],
+    deps = [
+        requirement("numpy"),
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_tool_parser",
+    srcs = ["test_tool_parser.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+# The q-side projection's layout checks that compile no graph. The numeric
+# checks (test_query_side_projection, test_query_side_shards) each build their
+# modules under one F.lazy() block, so each realizes one graph.
+modular_py_test(
+    name = "test_query_side_layout",
+    srcs = ["test_query_side_layout.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_query_side_projection",
+    size = "enormous",
+    srcs = ["test_query_side_projection.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_query_side_shards",
+    size = "enormous",
+    srcs = ["test_query_side_shards.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_vision_input_contract",
+    srcs = ["test_vision_input_contract.py"],
+    deps = [
+        "//max/python/max:tree",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+# The NumPy reference and runner the two mix_norm GPU targets share.
+modular_py_library(
+    name = "mix_norm_check",
+    testonly = True,
+    srcs = ["_mix_norm_check.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/inkling2",
+        requirement("numpy"),
+    ],
+)
+
+# Guards the fused inkling2_mix_norm op against its NumPy reference at two
+# shapes that reach every axis; test_mix_norm_gpu_sweep runs the rest.
+modular_py_test(
+    name = "test_mix_norm_gpu",
+    size = "enormous",
+    srcs = ["test_mix_norm_gpu.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":mix_norm_check",
+        "//max/python/max/dtype",
+    ],
+)
+
+# The full shape sweep of inkling2_mix_norm, postsubmit only: every shape
+# compiles the op on the GPU.
+modular_py_test(
+    name = "test_mix_norm_gpu_sweep",
+    size = "enormous",
+    srcs = ["test_mix_norm_gpu_sweep.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = [
+        "gpu",
+        "postsubmit",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        ":mix_norm_check",
+        "//max/python/max/dtype",
+    ],
+)
+
+# Guards layers/kv_prologue.py's gate by tracing one attention block on the
+# host: with INKLING2_FUSED_KV_PROLOGUE unset the graph is the composed K/V
+# path, node for node; with it set every local layer takes the fused op.
+modular_py_test(
+    name = "test_kv_prologue_graph",
+    srcs = ["test_kv_prologue_graph.py"],
+    tags = ["skip-external-ci"],
+    # Needs inkling2.kv_prologue, registered only by the closed-source kernels.
+    target_compatible_with = REQUIRES_INTERNAL_KERNELS,
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/inkling2",
+    ],
+)
+
+# The fused K/V prologue against MAX's composed ops on a real paged cache:
+# decode at batch 1 and 8, and a ragged batch of prefill chunks and decode rows
+# at two ring lengths. One compiled graph per ring length.
+modular_py_test(
+    name = "test_kv_prologue_gpu",
+    size = "enormous",
+    srcs = ["test_kv_prologue_gpu.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max:tree",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/inkling2",
+        "//max/tests/integration/test_common:simple_kv_cache",
+        requirement("numpy"),
+    ],
+)

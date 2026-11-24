@@ -126,7 +126,7 @@ def pipeline_method(func: Callable[..., Any]) -> Callable[..., Any]:
     every iteration step, which is what keeps p2p result handles alive
     across a streamed response.
 
-    If a coroutine body returns an :py:class:`Awaitable` (e.g.
+    If a coroutine body returns an :py:class:`Awaitable` (such as
     :py:class:`~.result.Result`), the wrapper awaits it before exiting
     the scope, so the body can read as a chain of local ``await`` calls
     (including the final one) and the caller still gets the unwrapped

@@ -14,7 +14,8 @@
 #ifndef KGEN_LOWERLIT_SINGLETONTYPEHELPER_H
 #define KGEN_LOWERLIT_SINGLETONTYPEHELPER_H
 
-#include "LowerLITTypes.h"
+#include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
@@ -23,6 +24,63 @@
 #include "llvm/ADT/SmallVector.h"
 
 namespace M::KGEN::LIT {
+
+struct StructDecl {
+  /// Return true if the struct should be flattened when lowered.
+  /// Single-element register-passable structs are flattened to their element
+  /// type, UNLESS @align is specified with a value > 1 - in that case we
+  /// preserve the struct to maintain the alignment metadata.
+  /// True when the struct is unconditionally register-passable (isMemoryOnly
+  /// is a concrete false).
+  bool isRegisterPassable() const {
+    if (auto b = dyn_cast<BoolAttr>(isMemoryOnlyAttr))
+      return !b.getValue();
+    return false;
+  }
+
+  bool isSingleElement() const {
+    if (!isRegisterPassable() || fields.size() != 1)
+      return false;
+    if (!minAlignment)
+      return true;
+    if (auto intAttr = dyn_cast<IntegerAttr>(minAlignment))
+      return intAttr.getInt() == 1;
+    return false;
+  }
+
+  /// The un-parameterized SourceNameAttr for the struct decl.
+  DebugInfo::SourceNameAttr sourceName;
+  /// The struct input parameters.
+  ParamDeclArrayAttr decls;
+  /// The isMemoryOnly attribute for the KGEN struct type. Can be a concrete
+  /// BoolAttr or an i1-typed constraint proposition for conditional RP.
+  TypedAttr isMemoryOnlyAttr;
+  /// Explicit minimum alignment specified via @align(N), or null if
+  /// unspecified. Uses TypedAttr to support future parametric alignment.
+  TypedAttr minAlignment;
+  /// The location of the decl, for emitting errors.
+  LocationAttr loc;
+  /// The field names and types of the struct in order.
+  SmallVector<std::pair<StringAttr, Type>> fields;
+  /// The symbol ref for the type-value generator.
+  SymbolRefAttr symRef;
+};
+
+struct StructDecls {
+  /// Lookup a struct decl.
+  StructDecl &get(StringAttr name) {
+    auto it = structDecls.find(name);
+    assert(it != structDecls.end() && "struct decl not found");
+    return it->second;
+  }
+
+  /// A map from struct name and field name to index. Used for lowering `insert`
+  /// and `extract` ops.
+  DenseMap<std::pair<StringAttr, StringAttr>, int> fieldIndices;
+  /// Map from struct name to the lowering info.
+  llvm::MapVector<StringAttr, StructDecl> structDecls;
+};
+
 /// Flatten the given symbol reference, collapsing all nested scopes into one
 /// mangled name.
 FlatSymbolRefAttr flattenSymbolRefAttr(SymbolRefAttr ref);
@@ -41,6 +99,14 @@ public:
   /// If `type` is a singleton type, this returns the singleton value of that
   /// type. Otherwise, returns a null result.
   mlir::TypedAttr getSingletonValue(mlir::Type type);
+
+  /// Classifies every processed struct decl, so that later lookups of those
+  /// decls only read the caches.
+  void populateAll();
+
+  /// While frozen, the caches are read from several threads and must not
+  /// change, so a lookup that would populate them is a fatal error.
+  void setFrozen(bool value) { frozen = value; }
 
 private:
   using StructCacheTy = llvm::DenseMap<
@@ -82,6 +148,8 @@ private:
   /// again, it is not checked again, but immediately returns as _not_ a
   /// singleton type (since it is actually illegal, and will be caught later).
   llvm::DenseSet<mlir::StringAttr> inProgressStructs;
+
+  bool frozen = false;
 };
 
 } // namespace M::KGEN::LIT

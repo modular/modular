@@ -13,13 +13,20 @@
 """Op implementation for matmul."""
 
 from max._core.dialects import rmo
+from max.dtype import DType
 
 from ..graph import Graph
+from ..type import TensorType
 from ..value import TensorValue, TensorValueLike
 from .validation import assert_same_device
 
 
-def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
+def matmul(
+    lhs: TensorValueLike,
+    rhs: TensorValueLike,
+    *,
+    out_dtype: DType | None = None,
+) -> TensorValue:
     """Computes the matrix product of two tensors.
 
     Use matrix multiplication to implement key building blocks like linear
@@ -41,7 +48,7 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
             rhs = ops.constant(
                 [[5.0, 6.0], [7.0, 8.0]], DType.float32, device=device
             )
-            graph.output(ops.matmul(lhs, rhs))
+            graph.output(ops.matmul(lhs, rhs, out_dtype=DType.float32))
 
         model = InferenceSession().load(graph)
         result = model.execute()[0]
@@ -62,9 +69,15 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
     reshaped to ``Dx1``. In both cases, the added size-1 dimensions are
     removed from the output shape.
 
+    The result has dtype ``out_dtype``. The inputs keep their own dtypes and
+    are never cast, so ``bfloat16`` inputs with ``out_dtype=DType.float32``
+    keep the float32 accumulator instead of rounding it to bfloat16.
+
     Args:
         lhs: The left-hand side input tensor.
         rhs: The right-hand side input tensor.
+        out_dtype: The dtype of the result. Defaults to the inputs' dtype,
+            which they must then share.
 
     Returns:
         A tensor value representing the matrix product of ``lhs`` and ``rhs``.
@@ -72,10 +85,27 @@ def matmul(lhs: TensorValueLike, rhs: TensorValueLike) -> TensorValue:
         ``(M, K)`` and ``rhs`` is ``(K, N)``. For higher-dimensional inputs,
         batch dimensions are preserved and the operation is applied to the
         last two dimensions of each input.
+
+    Raises:
+        ValueError: If ``out_dtype`` is not given and ``lhs`` and ``rhs``
+            have different dtypes.
     """
     lhs = TensorValue(lhs)
     rhs = TensorValue(rhs)
     assert_same_device(lhs=lhs, rhs=rhs)
-    return Graph.current._add_op_generated(
+    if out_dtype is None:
+        if lhs.dtype != rhs.dtype:
+            raise ValueError(
+                f"matmul inputs have different dtypes ({lhs.dtype} and"
+                f" {rhs.dtype}); pass out_dtype to choose the result dtype"
+            )
+        out_dtype = lhs.dtype
+    inferred = Graph.current._add_op_generated(
         rmo.MatmulOp, input_x=lhs, input_y=rhs
     )[0].tensor
+    # rmo.matmul infers only the shape; the result dtype is the caller's.
+    result = inferred.to_mlir()
+    result.type = TensorType(
+        out_dtype, inferred.shape, inferred.device
+    ).to_mlir()
+    return TensorValue(result)

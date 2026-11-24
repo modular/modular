@@ -15,7 +15,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn import Signals
+from max.nn.legacy import Signals
 
 
 def test_reducescatter_rep_device() -> None:
@@ -318,3 +318,25 @@ def test_reducescatter_group_size_must_divide_inputs() -> None:
                 axis=0,
                 group_size=4,
             )
+
+
+def test_reducescatter_group_size_one_is_noop() -> None:
+    """Tests that one-device reducescatter groups return the original tensors."""
+    devices = [DeviceRef.GPU(id=0), DeviceRef.GPU(id=1)]
+    signals = Signals(devices)
+
+    with Graph(
+        "reducescatter_group_size_one",
+        input_types=[
+            TensorType(dtype=DType.float32, shape=[6, 5], device=device)
+            for device in devices
+        ]
+        + list(signals.input_types()),
+    ) as graph:
+        outputs = ops.reducescatter.sum(
+            inputs=(v.tensor for v in graph.inputs[: len(devices)]),
+            signal_buffers=(v.buffer for v in graph.inputs[len(devices) :]),
+            group_size=1,
+        )
+        assert outputs[0]._mlir_value == graph.inputs[0]._mlir_value
+        assert outputs[1]._mlir_value == graph.inputs[1]._mlir_value

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import CStringSlice, c_int, external_call
+from std.ffi import CStringSpan, c_char, c_int, external_call
 from std.sys.info import CompilationTarget, platform_map
 
 
@@ -417,19 +417,12 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
 
         comptime if CompilationTarget.is_macos():
             assert self != ErrNo.SUCCESS, "macos can't stringify ErrNo.SUCCESS"
-        var ptr = external_call["strerror", Pointer[Byte, MutUntrackedOrigin]](
-            self.value
-        )
-        var string = StringSlice(
-            unsafe_from_utf8=CStringSlice(
-                unsafe_from_ptr=ptr.unsafe_bitcast[Int8]().unsafe_mut_cast[
-                    False
-                ]()
-            )
-        )
-        string.write_to(writer)
+        var ptr = external_call[
+            "strerror", Pointer[c_char, ImmUntrackedOrigin]
+        ](self.value)
+        CStringSpan(unsafe_from_ptr=ptr).write_to(writer)
 
-    @always_inline
+    @inline(.always)
     def __eq__(self, other: Self) -> Bool:
         """Checks if two `ErrNo` values are equal.
 
@@ -441,7 +434,7 @@ struct ErrNo(Equatable, TrivialRegisterPassable, Writable):
         """
         return self.value == other.value
 
-    @always_inline
+    @inline(.always)
     def __ne__(self, other: Self) -> Bool:
         """Checks if two `ErrNo` values are not equal.
 

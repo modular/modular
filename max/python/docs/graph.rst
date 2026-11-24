@@ -14,8 +14,16 @@ max.graph
 Submodules
 ----------
 
+.. autosummary::
+   :nosignatures:
+
+   max.graph.ops
+   max.graph.quantization
+   max.graph.weights
+
 .. toctree::
    :maxdepth: 1
+   :hidden:
 
    graph.ops
    graph.quantization
@@ -30,8 +38,19 @@ Graph construction
    :template: autosummary/class.rst
 
    Graph
+   GraphOutputs
    KernelLibrary
    Module
+
+Exceptions
+----------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   KernelRegistrationError
 
 Custom extensions
 -----------------
@@ -118,4 +137,5 @@ Configuration
    :template: autosummary/class.rst
 
    GraphDebugConfig
+   ProfileScopeColor
 

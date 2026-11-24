@@ -11,20 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import max.gpu.primitives.warp as warp
 from max.gpu import global_idx
 from max.gpu.sync import barrier
-from max.gpu.globals import WARP_SIZE
 from max.gpu.host import DeviceContext
 from std.testing import assert_equal
 
 
 def kernel[
-    dtype: DType
+    dtype: DType,
+    input_origin: ImmOrigin,
+    output_origin: MutOrigin,
+    shared_data_origin: MutOrigin,
 ](
-    input: ImmPointer[Scalar[dtype], ImmutAnyOrigin],
-    output: MutPointer[Scalar[dtype], MutAnyOrigin],
-    shared_data: MutPointer[Scalar[dtype], MutAnyOrigin],
+    input: ImmPointer[Scalar[dtype], input_origin],
+    output: MutPointer[Scalar[dtype], output_origin],
+    shared_data: MutPointer[Scalar[dtype], shared_data_origin],
     size_dev: Int32,
 ):
     var size = Int(size_dev)
@@ -41,7 +42,7 @@ def kernel[
 
 
 def test_barrier[dtype: DType](ctx: DeviceContext) raises:
-    comptime block_size = WARP_SIZE
+    comptime block_size = ctx.default_device_info.warp_size
     comptime buffer_size = block_size
     comptime constant_add: Scalar[dtype] = 42
     var input_host = ctx.enqueue_create_host_buffer[dtype](buffer_size)
@@ -61,7 +62,14 @@ def test_barrier[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_buffer, output_host)
     ctx.enqueue_copy(shared_buffer, shared_host)
 
-    ctx.enqueue_function[kernel[dtype]](
+    ctx.enqueue_function[
+        kernel[
+            dtype,
+            ImmOrigin(origin_of(input_buffer)),
+            origin_of(output_buffer),
+            origin_of(shared_buffer),
+        ]
+    ](
         input_buffer,
         output_buffer,
         shared_buffer,

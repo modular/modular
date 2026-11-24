@@ -18,31 +18,84 @@ from std.sys import CompilationTarget, argv, simd_width_of, size_of
 
 import std.benchmark
 from std.algorithm.functional import vectorize
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
-from layout.int_tuple import size
-from layout.layout import expand_modes_alike, flatten
-from std.memory import alloc, unsafe_stack_allocation
+from layout import (
+    Coord,
+    CoordLike,
+    ComptimeInt,
+    TileTensor,
+    TensorLayout,
+    coord,
+    row_major,
+)
+from layout.layout import Layout as NativeLayout
+from layout.tensor_engine import DefaultEngine
+from std.memory import unsafe_stack_allocation
+from std.memory.alloc import unsafe_alloc
 from std.testing import assert_false
 
 from std.utils import StaticTuple
 
 
+def _typed_metadata[
+    L: TensorLayout
+]() -> NativeLayout[shape_types=L._shape_types, stride_types=L._stride_types]:
+    """Rebuilds the typed layout value from a layout type.
+
+    Every dimension is known at compile time, so the value follows from the
+    type alone.
+    """
+    comptime assert L.all_dims_known
+    return NativeLayout[
+        shape_types=L._shape_types, stride_types=L._stride_types
+    ]()
+
+
 def matmul_naive[
-    layoutC: Layout, layoutA: Layout, layoutB: Layout, elt: DType
+    layoutC_type: TensorLayout,
+    layoutA_type: TensorLayout,
+    layoutB_type: TensorLayout,
+    elt: DType,
 ](
-    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
+    C: TileTensor[
+        mut=True,
+        elt,
+        layoutC_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    A: TileTensor[
+        mut=True,
+        elt,
+        layoutA_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    B: TileTensor[
+        mut=True,
+        elt,
+        layoutB_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
 ):
-    comptime assert len(layoutC) == 2
-    comptime assert len(layoutA) == 2
-    comptime assert len(layoutB) == 2
-    comptime M: Int = size(layoutC.shape[0])
-    comptime N: Int = size(layoutC.shape[1])
-    comptime K: Int = size(layoutA.shape[1])
-    comptime assert M == size(layoutA.shape[0])
-    comptime assert N == size(layoutB.shape[1])
-    comptime assert K == size(layoutB.shape[0])
+    comptime assert (
+        C.rank
+        == C.flat_rank
+        == A.rank
+        == A.flat_rank
+        == B.rank
+        == B.flat_rank
+        == 2
+    )
+    comptime M: Int = C.static_shape[0]
+    comptime N: Int = C.static_shape[1]
+    comptime K: Int = A.static_shape[1]
+    comptime assert M == A.static_shape[0]
+    comptime assert N == B.static_shape[1]
+    comptime assert K == B.static_shape[0]
     for m in range(M):
         for n in range(N):
             C[m, n] = Scalar[elt]()
@@ -62,7 +115,7 @@ comptime cacheline_size: Int = 64
 # Firestorm core's l1 caches are so large, that we wouldn't
 # really need this, though.
 # Also: cacheline_size of 64 is currently hard coded.
-@always_inline
+@inline(.always)
 def stride[elt: DType](nrw: Int) -> Int:
     if nrw * size_of[elt]() >= cacheline_size:
         return cacheline_size // size_of[elt]()
@@ -70,16 +123,7 @@ def stride[elt: DType](nrw: Int) -> Int:
         return nrw
 
 
-@always_inline
-def getKr[mode: IntTuple]() -> Int:
-    if mode.is_value() or len(mode) == 1:
-        return 1
-    else:
-        return mode[0].value()
-
-
 # Assumes that we have packed `A` and `B`, `C` also uses a packed layout.
-# @always_inline
 def matmul_ukern[
     elt: DType, width: Int, mr: Int, nr: Int, kr: Int, kf: Int
 ](
@@ -95,8 +139,6 @@ def matmul_ukern[
     comptime CstoresPer: Int = Astride // width
     comptime assert CstoresPer * width == Astride
     comptime assert CstoresPer * CstoreReps == nr
-    # for n0 in range(CstoreReps):
-    #   for n1 in range(CstoresPer):
 
     var acc: StaticTuple[SIMD[elt, width], mr * nr] = StaticTuple[
         SIMD[elt, width], mr * nr
@@ -116,31 +158,32 @@ def matmul_ukern[
     var Bo = B
     # TODO: static assert that kf%Astride == 0
     for _ in range(Astride):
-        # Aecause we repeatedly call `matmul_ukern` with the same
+        # Because we repeatedly call `matmul_ukern` with the same
         # slice of `A`, but different slice of `B`, we wish for `A`
         # to remain in the l1 cache, but freely evict `B`.
         # Repeatedly re-touching the cachelines of `A` helps us achieve this.
         var Atmp = Ao
-        Ao = Ao + 1
+        Ao = Ao.unsafe_offset(1)
         for _ in range(kf):
             comptime for _ in range(kr):
                 comptime for n in range(nr):
-                    Bloads[n] = Bo.load[width=width, alignment=Align](n * width)
+                    Bloads[n] = Bo.unsafe_load[width=width, alignment=Align](
+                        n * width
+                    )
 
                 comptime for m in range(mr):
                     var Abroadcast: SIMD[elt, width] = SIMD[elt, width](
-                        Atmp.load[width=1, alignment=size_of[elt]()](
+                        Atmp.unsafe_load[width=1, alignment=size_of[elt]()](
                             m * Astride
                         )
                     )
 
                     comptime for n in range(nr):
-                        # breakpoint()
                         acc[n + m * nr] = fma(
                             Abroadcast, Bloads[n], acc[n + m * nr]
                         )
-                Atmp = Atmp + mr * Astride
-                Bo = Bo + nr * width
+                Atmp = Atmp.unsafe_offset(mr * Astride)
+                Bo = Bo.unsafe_offset(nr * width)
     if inc:
         # Note, `C` would have spilled from the L1 cache by the time
         # we load it again had we loaded before the reduction loop.
@@ -149,14 +192,14 @@ def matmul_ukern[
                 comptime for n1 in range(CstoresPer):
                     acc[n1 + n0 * CstoresPer + m * nr] = acc[
                         n1 + n0 * CstoresPer + m * nr
-                    ] + C.load[width=width, alignment=Align](
+                    ] + C.unsafe_load[width=width, alignment=Align](
                         (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width
                     )
 
     comptime for m in range(mr):
         comptime for n0 in range(CstoreReps):
             comptime for n1 in range(CstoresPer):
-                C.store[alignment=Align](
+                C.unsafe_store[alignment=Align](
                     (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width,
                     acc[n1 + n0 * CstoresPer + m * nr],
                 )
@@ -183,83 +226,38 @@ def matmul[
     Mr: Int,
     Nr: Int,
     Kr: Int,
-    layoutC: Layout,
-    layoutA: Layout,
-    layoutB: Layout,
+    layoutC_type: TensorLayout,
+    layoutA_type: TensorLayout,
+    layoutB_type: TensorLayout,
 ](
-    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
+    C: TileTensor[
+        mut=True,
+        elt,
+        layoutC_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    A: TileTensor[
+        mut=True,
+        elt,
+        layoutA_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    B: TileTensor[
+        mut=True,
+        elt,
+        layoutB_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
 ):
+    comptime assert C.rank == A.rank == B.rank == 2
     comptime WNr = W * Nr
     comptime Stride = stride[elt](WNr)
-
-    comptime assert len(layoutC) == 2
-    comptime assert len(layoutA) == 2
-    comptime assert len(layoutB) == 2
-    # I am assuming that the `shape` and `stride` are congruent (i.e., equal length)
-    # so that I don't need to check both here.
-    comptime assert len(layoutC.shape[0]) == 3
-    comptime assert len(layoutC.shape[1]) == 4
-    comptime assert len(layoutA.shape[0]) == 3
-    comptime assert len(layoutA.shape[1]) == 4
-    comptime assert len(layoutB.shape[0]) == 3
-    comptime assert len(layoutB.shape[1]) == 3
-
-    # Matrix C
-    comptime assert size(layoutC.shape[0].tuple()[0]) == Mr
-    comptime assert size(layoutC.shape[0].tuple()[1]) * Mr == Mc
-    comptime assert size(layoutC.shape[0].tuple()[2]) * Mc == M
-
-    comptime assert size(layoutC.shape[1].tuple()[0]) == Stride
-    comptime assert size(layoutC.shape[1].tuple()[1]) * Stride == WNr
-    comptime assert size(layoutC.shape[1].tuple()[2]) * WNr == Nc
-    comptime assert size(layoutC.shape[1].tuple()[3]) * Nc == N
-
-    comptime assert size(layoutC.stride[0].tuple()[0]) == Stride
-    comptime assert size(layoutC.stride[0].tuple()[1]) == Mr * Nc
-    comptime assert size(layoutC.stride[0].tuple()[2]) == Mc * N
-
-    comptime assert size(layoutC.stride[1].tuple()[0]) == 1
-    comptime assert size(layoutC.stride[1].tuple()[1]) == Mr * Stride
-    comptime assert size(layoutC.stride[1].tuple()[2]) == Mr * WNr
-    comptime assert size(layoutC.stride[1].tuple()[3]) == Mc * Nc
-
-    # Matrix A
-    comptime assert size(layoutA.shape[0].tuple()[0]) == Mr
-    comptime assert size(layoutA.shape[0].tuple()[1]) * Mr == Mc
-    comptime assert size(layoutA.shape[0].tuple()[2]) * Mc == M
-
-    comptime assert size(layoutA.shape[1].tuple()[0]) == Stride
-    comptime assert size(layoutA.shape[1].tuple()[1]) * Stride == WNr
-    comptime assert size(layoutA.shape[1].tuple()[2]) * WNr == Kc
-    comptime assert size(layoutA.shape[1].tuple()[3]) * Kc == K
-
-    comptime assert size(layoutA.stride[0].tuple()[0]) == Stride
-    comptime assert size(layoutA.stride[0].tuple()[1]) == Mr * Kc
-    comptime assert size(layoutA.stride[0].tuple()[2]) == Mc * K
-
-    comptime assert size(layoutA.stride[1].tuple()[0]) == 1
-    comptime assert size(layoutA.stride[1].tuple()[1]) == Mr * Stride
-    comptime assert size(layoutA.stride[1].tuple()[2]) == Mr * WNr
-    comptime assert size(layoutA.stride[1].tuple()[3]) == Mc * Kc
-
-    # Matrix B
-    comptime assert size(layoutB.shape[0].tuple()[0]) == Stride
-    comptime assert size(layoutB.shape[0].tuple()[1]) * Stride == Kc
-    comptime assert size(layoutB.shape[0].tuple()[2]) * Kc == K
-
-    comptime assert size(layoutB.shape[1].tuple()[0]) == WNr
-    comptime assert size(layoutB.shape[1].tuple()[1]) * WNr == Nc
-    comptime assert size(layoutB.shape[1].tuple()[2]) * Nc == N
-
-    comptime assert size(layoutB.stride[0].tuple()[0]) * Stride == WNr * Kc
-    comptime assert size(layoutB.stride[0].tuple()[1]) == WNr
-    comptime assert size(layoutB.stride[0].tuple()[2]) == Nc * Kc
-
-    comptime assert size(layoutB.stride[1].tuple()[0]) == 1
-    comptime assert size(layoutB.stride[1].tuple()[1]) == WNr * Kc
-    comptime assert size(layoutB.stride[1].tuple()[2]) == Nc * K
 
     var pc = C.ptr
     var pa = A.ptr
@@ -283,30 +281,19 @@ def matmul[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pck, pak, pbk, kc != 0
                         )
-                        pbk = pbk + WNr * Kc
-                        pck = pck + Mr * WNr
-                    pak = pak + Mr * Kc
+                        pbk = pbk.unsafe_offset(WNr * Kc)
+                        pck = pck.unsafe_offset(Mr * WNr)
+                    pak = pak.unsafe_offset(Mr * Kc)
                 pb = pbk
             pc = pck
         pa = pak
 
 
 def alloc_tensor[
-    elt: DType, layout: Layout
-]() -> LayoutTensor[elt, layout, MutUntrackedOrigin]:
-    comptime size: Int = layout.size()
-    return LayoutTensor[elt, layout, MutUntrackedOrigin](
-        alloc[Scalar[elt]](size, alignment=64)
-    )
-
-
-def alloc_tensor[
-    elt: DType, layout: Layout
-](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
-    elt, layout, MutUntrackedOrigin
-]:
-    return LayoutTensor[elt, layout, MutUntrackedOrigin](
-        alloc[Scalar[elt]](rtlayout.size(), alignment=64),
+    elt: DType, layout: TensorLayout
+](rtlayout: layout) -> TileTensor[mut=True, elt, layout, MutUntrackedOrigin]:
+    return TileTensor[mut=True, elt, layout, MutUntrackedOrigin](
+        unsafe_alloc[Scalar[elt]](Int(rtlayout.product()), alignment=64),
         rtlayout,
     )
 
@@ -336,27 +323,27 @@ def delete_idx(arg: List[Int], idx: Int) -> List[Int]:
     return res^
 
 
-@always_inline
+@inline(.always)
 def strided_load[
     elt: DType, //, W: Int, X: Int
 ](p: ImmPointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
     comptime if X == 1:
-        return p.load[width=W](i)
+        return p.unsafe_load[width=W](i)
     else:
-        return (p + i * X).unsafe_strided_load[width=W](X)
+        return p.unsafe_offset(i * X).unsafe_strided_load[width=W](X)
 
 
-@always_inline
+@inline(.always)
 def strided_store[
     elt: DType, W: Int, //, X: Int
 ](p: MutPointer[Scalar[elt], _], i: Int, x: SIMD[elt, W]):
     comptime if X == 1:
-        p.store(i, x)
+        p.unsafe_store(i, x)
     else:
-        (p + i * X).unsafe_strided_store(x, X)
+        p.unsafe_offset(i * X).unsafe_strided_store(x, X)
 
 
-@always_inline
+@inline(.always)
 def vectorize_flat[
     elt_a: DType,
     elt_b: DType,
@@ -388,7 +375,7 @@ def vectorize_flat[
         comptime int_stride_b: Int = stride_b[0]
         comptime size = shape[0]
 
-        @always_inline
+        @inline(.always)
         def vf[width: Int](i: Int) {var a, var b, imm f}:
             f[width, int_stride_a, int_stride_b](a, b, i)
 
@@ -412,28 +399,161 @@ def vectorize_flat[
                 subset_shape,
                 subset_stride_a,
                 subset_stride_b,
-            ](a + i * a_stride, b + i * b_stride, f)
+            ](a.unsafe_offset(i * a_stride), b.unsafe_offset(i * b_stride), f)
 
 
-def tolist(x: IntTuple) -> List[Int]:
-    var list = List[Int]()
-    var flat = flatten(x)
-    for y in flat:
-        list.append(y.value())
-    return list^
+struct _ExpandedModes(Copyable, Movable):
+    """Flat shape and per-operand strides of two mode-aligned layouts."""
+
+    var shape: List[Int]
+    """Common shape leaves, in depth-first order."""
+
+    var stride_a: List[Int]
+    """Stride leaves of the first layout, aligned with `shape`."""
+
+    var stride_b: List[Int]
+    """Stride leaves of the second layout, aligned with `shape`."""
+
+    def __init__(out self):
+        self.shape = List[Int]()
+        self.stride_a = List[Int]()
+        self.stride_b = List[Int]()
 
 
-def vectorize_layout_tensor[
+@always_inline
+def _emit_flat[
+    s: CoordLike, t: CoordLike
+](shape: s, stride: t, mut out_shape: List[Int], mut out_stride: List[Int],):
+    """Appends the leaves of one shape/stride mode in depth-first order."""
+    comptime if s.is_tuple:
+        var shape_t = shape.tuple()
+        var stride_t = stride.tuple()
+        comptime for i in range(s.__len__()):
+            _emit_flat(shape_t[i], stride_t[i], out_shape, out_stride)
+    else:
+        out_shape.append(Int(shape))
+        out_stride.append(Int(stride))
+
+
+@always_inline
+def _emit_expanded_strides[
+    s: CoordLike
+](shape: s, mut stride_value: Int, mut out: List[Int]):
+    """Expands one scalar stride over the leaves of `shape`.
+
+    The first leaf keeps `stride_value` and every later leaf steps by the
+    product of the leaves preceding it, so a scalar mode of extent `n`
+    contributes `n` consecutive strides. This is the typed form of
+    `expand_strides`.
+    """
+    comptime if s.is_tuple:
+        var shape_t = shape.tuple()
+        comptime for i in range(s.__len__()):
+            _emit_expanded_strides(shape_t[i], stride_value, out)
+    else:
+        out.append(stride_value)
+        stride_value *= Int(shape)
+
+
+@always_inline
+def _expand_modes_alike[
+    sa: CoordLike, ta: CoordLike, sb: CoordLike, tb: CoordLike
+](
+    shape_a: sa,
+    stride_a: ta,
+    shape_b: sb,
+    stride_b: tb,
+    mut expanded: _ExpandedModes,
+):
+    """Aligns two layouts' mode nesting and appends their flat leaves.
+
+    Mirrors `layout.layout.expand_modes_alike`: a scalar mode facing a nested
+    one is expanded leaf by leaf with `_emit_expanded_strides`, so both
+    operands end up with one stride per common shape leaf.
+    """
+    comptime assert sa.__len__() == sb.__len__(), (
+        "expand_modes_alike requires the same mode count, got "
+        + String(sa.__len__())
+        + " and "
+        + String(sb.__len__())
+    )
+    var shape_a_t = shape_a.tuple()
+    var stride_a_t = stride_a.tuple()
+    var shape_b_t = shape_b.tuple()
+    var stride_b_t = stride_b.tuple()
+    comptime for i in range(sa.__len__()):
+        comptime a_is_tuple = sa.ParamListType[i].is_tuple
+        comptime b_is_tuple = sb.ParamListType[i].is_tuple
+        comptime if a_is_tuple and b_is_tuple:
+            _expand_modes_alike(
+                shape_a_t[i],
+                stride_a_t[i],
+                shape_b_t[i],
+                stride_b_t[i],
+                expanded,
+            )
+        elif a_is_tuple:
+            _emit_flat(
+                shape_a_t[i], stride_a_t[i], expanded.shape, expanded.stride_a
+            )
+            var b_stride = Int(stride_b_t[i])
+            _emit_expanded_strides(shape_a_t[i], b_stride, expanded.stride_b)
+        elif b_is_tuple:
+            var a_stride = Int(stride_a_t[i])
+            _emit_expanded_strides(shape_b_t[i], a_stride, expanded.stride_a)
+            _emit_flat(
+                shape_b_t[i], stride_b_t[i], expanded.shape, expanded.stride_b
+            )
+        else:
+            # Both modes are scalars; `expand_modes_alike` keeps the second
+            # shape here.
+            expanded.shape.append(Int(shape_b_t[i]))
+            expanded.stride_a.append(Int(stride_a_t[i]))
+            expanded.stride_b.append(Int(stride_b_t[i]))
+
+
+def _flat_modes[
+    layout_a_type: TensorLayout, layout_b_type: TensorLayout
+]() -> _ExpandedModes:
+    """Returns the flat, mode-aligned shape/strides of two layouts."""
+    comptime layout_a = _typed_metadata[layout_a_type]()
+    comptime layout_b = _typed_metadata[layout_b_type]()
+    var expanded = _ExpandedModes()
+    _expand_modes_alike(
+        layout_a.shape_coord(),
+        layout_a.stride_coord(),
+        layout_b.shape_coord(),
+        layout_b.stride_coord(),
+        expanded,
+    )
+    return expanded^
+
+
+def vectorize_tile_tensor[
     elt_a: DType,
-    layout_a: Layout,
+    layout_a_type: TensorLayout,
     elt_b: DType,
-    layout_b: Layout,
+    layout_b_type: TensorLayout,
     //,
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
 ](
-    a: LayoutTensor[elt_a, layout_a, MutAnyOrigin],
-    b: LayoutTensor[elt_b, layout_b, MutAnyOrigin],
+    a: TileTensor[
+        mut=True,
+        elt_a,
+        layout_a_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    b: TileTensor[
+        mut=True,
+        elt_b,
+        layout_b_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
     f: Some[
         def[
             width: Int, stride_a: Int, stride_b: Int
@@ -444,30 +564,46 @@ def vectorize_layout_tensor[
         ) -> None
     ],
 ):
-    comptime expanded = expand_modes_alike(
-        layout_a.shape, layout_a.stride, layout_b.shape, layout_b.stride
-    )
-    comptime shape = tolist(expanded[0])
-    comptime stride_a = tolist(expanded[1])
-    comptime stride_b = tolist(expanded[2])
-    vectorize_flat[simd_width, unroll_factor, shape, stride_a, stride_b](
-        a.ptr, b.ptr, f
-    )
+    comptime expanded = _flat_modes[layout_a_type, layout_b_type]()
+    vectorize_flat[
+        simd_width,
+        unroll_factor,
+        expanded.shape,
+        expanded.stride_a,
+        expanded.stride_b,
+    ](a.ptr, b.ptr, f)
 
 
 def copy_to[
     elt_dst: DType,
-    layout_dst: Layout,
+    layout_dst_type: TensorLayout,
     elt_src: DType,
-    layout_src: Layout,
+    layout_src_type: TensorLayout,
     //,
     simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
     unroll_factor: Int = 4,
 ](
-    dst: LayoutTensor[elt_dst, layout_dst, MutAnyOrigin],
-    src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
+    dst: TileTensor[
+        mut=True,
+        elt_dst,
+        layout_dst_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    src: TileTensor[
+        mut=True,
+        elt_src,
+        layout_src_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
 ):
-    @always_inline
+    comptime layout_dst = _typed_metadata[layout_dst_type]()
+    comptime layout_src = _typed_metadata[layout_src_type]()
+
+    @inline(.always)
     def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
@@ -478,14 +614,14 @@ def copy_to[
         var vsrc = strided_load[width, stride_b](srcp, i)
         strided_store[stride_a](dstp, i, vsrc.cast[elt_dst]())
 
-    vectorize_layout_tensor[simd_width, unroll_factor](dst, src, copy)
+    vectorize_tile_tensor[simd_width, unroll_factor](dst, src, copy)
 
 
 def check_approx_equal[
     elt_dst: DType,
-    layout_dst: Layout,
+    layout_dst_type: TensorLayout,
     elt_src: DType,
-    layout_src: Layout,
+    layout_src_type: TensorLayout,
     //,
     cmp_elt: DType,
     simd_width: Int = max(simd_width_of[elt_dst](), simd_width_of[elt_src]()),
@@ -495,12 +631,28 @@ def check_approx_equal[
     rtol: Float64 = 1e-05,
     equal_nan: Bool = False,
 ](
-    dst: LayoutTensor[elt_dst, layout_dst, MutAnyOrigin],
-    src: LayoutTensor[elt_src, layout_src, MutAnyOrigin],
+    dst: TileTensor[
+        mut=True,
+        elt_dst,
+        layout_dst_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    src: TileTensor[
+        mut=True,
+        elt_src,
+        layout_src_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
 ) raises:
+    comptime layout_dst = _typed_metadata[layout_dst_type]()
+    comptime layout_src = _typed_metadata[layout_src_type]()
     var fail: Bool = False
 
-    @always_inline
+    @inline(.always)
     def check[
         width: Int, stride_a: Int, stride_b: Int
     ](
@@ -513,7 +665,7 @@ def check_approx_equal[
         if not all(isclose(va, vb, atol=atol, rtol=rtol, equal_nan=equal_nan)):
             fail = True
 
-    vectorize_layout_tensor[simd_width, unroll_factor](dst, src, check)
+    vectorize_tile_tensor[simd_width, unroll_factor](dst, src, check)
     assert_false(fail)
 
 
@@ -530,105 +682,48 @@ def matmulb2b[
     Mr: Int,
     Nr: Int,
     Kr: Int,
-    layoutD: Layout,
-    layoutA: Layout,
-    layoutB: Layout,
-    layoutC: Layout,
+    layoutD_type: TensorLayout,
+    layoutA_type: TensorLayout,
+    layoutB_type: TensorLayout,
+    layoutC_type: TensorLayout,
 ](
-    D: LayoutTensor[elt, layoutD, MutAnyOrigin],
-    A: LayoutTensor[elt, layoutA, MutAnyOrigin],
-    B: LayoutTensor[elt, layoutB, MutAnyOrigin],
-    C: LayoutTensor[elt, layoutC, MutAnyOrigin],
+    D: TileTensor[
+        mut=True,
+        elt,
+        layoutD_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    A: TileTensor[
+        mut=True,
+        elt,
+        layoutA_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    B: TileTensor[
+        mut=True,
+        elt,
+        layoutB_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
+    C: TileTensor[
+        mut=True,
+        elt,
+        layoutC_type,
+        Engine=DefaultEngine[element_width=1],
+        address_space=.GENERIC,
+        ...,
+    ],
 ):
+    comptime assert D.rank == A.rank == B.rank == C.rank == 2
     comptime WNr = W * Nr
     comptime Stride = stride[elt](WNr)
     comptime Kc = Nc
-
-    comptime assert len(layoutD) == 2
-    comptime assert len(layoutA) == 2
-    comptime assert len(layoutB) == 2
-    comptime assert len(layoutC) == 2
-
-    comptime assert len(layoutD.shape[0]) == 3
-    comptime assert len(layoutD.shape[1]) == 4
-    comptime assert len(layoutA.shape[0]) == 3
-    comptime assert len(layoutA.shape[1]) == 4
-    comptime assert len(layoutB.shape[0]) == 3
-    comptime assert len(layoutB.shape[1]) == 3
-    comptime assert len(layoutC.shape[0]) == 3
-    comptime assert len(layoutC.shape[1]) == 3
-
-    # Matrix D
-    comptime assert size(layoutD.shape[0].tuple()[0]) == Mr
-    comptime assert size(layoutD.shape[0].tuple()[1]) * Mr == Mc
-    comptime assert size(layoutD.shape[0].tuple()[2]) * Mc == M
-
-    comptime assert size(layoutD.shape[1].tuple()[0]) == Stride
-    comptime assert size(layoutD.shape[1].tuple()[1]) * Stride == WNr
-    comptime assert size(layoutD.shape[1].tuple()[2]) * WNr == Nc
-    comptime assert size(layoutD.shape[1].tuple()[3]) * Nc == N
-
-    comptime assert size(layoutD.stride[0].tuple()[0]) == Stride
-    comptime assert size(layoutD.stride[0].tuple()[1]) == Mr * Nc
-    comptime assert size(layoutD.stride[0].tuple()[2]) == Mc * N
-
-    comptime assert size(layoutD.stride[1].tuple()[0]) == 1
-    comptime assert size(layoutD.stride[1].tuple()[1]) == Mr * Stride
-    comptime assert size(layoutD.stride[1].tuple()[2]) == Mr * WNr
-    comptime assert size(layoutD.stride[1].tuple()[3]) == Mc * Nc
-
-    # Matrix A
-    comptime assert size(layoutA.shape[0].tuple()[0]) == Mr
-    comptime assert size(layoutA.shape[0].tuple()[1]) * Mr == Mc
-    comptime assert size(layoutA.shape[0].tuple()[2]) * Mc == M
-
-    comptime assert size(layoutA.shape[1].tuple()[0]) == Stride
-    comptime assert size(layoutA.shape[1].tuple()[1]) * Stride == WNr
-    comptime assert size(layoutA.shape[1].tuple()[2]) * WNr == Kc
-    comptime assert size(layoutA.shape[1].tuple()[3]) * Kc == K
-
-    comptime assert size(layoutA.stride[0].tuple()[0]) == Stride
-    comptime assert size(layoutA.stride[0].tuple()[1]) == Mr * Kc
-    comptime assert size(layoutA.stride[0].tuple()[2]) == Mc * K
-
-    comptime assert size(layoutA.stride[1].tuple()[0]) == 1
-    comptime assert size(layoutA.stride[1].tuple()[1]) == Mr * Stride
-    comptime assert size(layoutA.stride[1].tuple()[2]) == Mr * WNr
-    comptime assert size(layoutA.stride[1].tuple()[3]) == Mc * Kc
-
-    # Matrix B
-    comptime assert size(layoutB.shape[0].tuple()[0]) == Stride
-    comptime assert size(layoutB.shape[0].tuple()[1]) * Stride == Kc
-    comptime assert size(layoutB.shape[0].tuple()[2]) * Kc == K
-
-    comptime assert size(layoutB.shape[1].tuple()[0]) == WNr
-    comptime assert size(layoutB.shape[1].tuple()[1]) * WNr == Nc
-    comptime assert size(layoutB.shape[1].tuple()[2]) * Nc == L
-
-    comptime assert size(layoutB.stride[0].tuple()[0]) * Stride == WNr * Nc
-    comptime assert size(layoutB.stride[0].tuple()[1]) == WNr
-    comptime assert size(layoutB.stride[0].tuple()[2]) == Nc * Kc
-
-    comptime assert size(layoutB.stride[1].tuple()[0]) == 1
-    comptime assert size(layoutB.stride[1].tuple()[1]) == WNr * Kc
-    comptime assert size(layoutB.stride[1].tuple()[2]) == Nc * K
-
-    # Matrix C
-    comptime assert size(layoutC.shape[0].tuple()[0]) == Stride
-    comptime assert size(layoutC.shape[0].tuple()[1]) * Stride == Kc
-    comptime assert size(layoutC.shape[0].tuple()[2]) * Kc == L
-
-    comptime assert size(layoutC.shape[1].tuple()[0]) == WNr
-    comptime assert size(layoutC.shape[1].tuple()[1]) * WNr == Nc
-    comptime assert size(layoutC.shape[1].tuple()[2]) * Nc == N
-
-    comptime assert size(layoutC.stride[0].tuple()[0]) * Stride == WNr * Kc
-    comptime assert size(layoutC.stride[0].tuple()[1]) == WNr
-    comptime assert size(layoutC.stride[0].tuple()[2]) == N * Kc
-
-    comptime assert size(layoutC.stride[1].tuple()[0]) == 1
-    comptime assert size(layoutC.stride[1].tuple()[1]) == WNr * Kc
-    comptime assert size(layoutC.stride[1].tuple()[2]) == Nc * Kc
 
     var pa = A.ptr
     var pd = D.ptr
@@ -685,7 +780,7 @@ def matmulb2b[
                         # B[Kc, WNr]  - replaced
                         #
                         # These sizes roughly indicate how much data is needed at
-                        # a cache level. Here, bbecause `A` is the only array that
+                        # a cache level. Here, because `A` is the only array that
                         # can be held, `matmul_ukern` strides across it, touching
                         # only one element per cacheline at a time, while streaming
                         # across `B`.
@@ -704,9 +799,9 @@ def matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pabk, pak, pbk, kc != 0
                         )
-                        pbk = pbk + WNr * Kc
-                        pabk = pabk + Mr * WNr
-                    pak = pak + Mr * Kc
+                        pbk = pbk.unsafe_offset(WNr * Kc)
+                        pabk = pabk.unsafe_offset(Mr * WNr)
+                    pak = pak.unsafe_offset(Mr * Kc)
                 pb = pbk
             pdk = pd
             for _ in range(
@@ -723,7 +818,7 @@ def matmulb2b[
                 # Hence, `AB` takes the role that `A` took above.
                 # However, because of the different loop order for this
                 # nest, we hold `AB` in the L3 cache, while we streamed `A`.
-                # `AB` was also held in the `L3` cache in th previous subloop,
+                # `AB` was also held in the `L3` cache in the previous subloop,
                 # allowing for reuse of the block across these subloops.
                 #
                 # Instead, we stream through `D` and `C`.
@@ -761,15 +856,15 @@ def matmulb2b[
                         matmul_ukern[elt, W, Mr, Nr, Kr, Kc // (Stride * Kr)](
                             pdk, pabk, pck, lc != 0
                         )
-                        pck = pck + WNr * Kc
-                        pdk = pdk + Mr * WNr
-                    pabk = pabk + Mr * Kc
+                        pck = pck.unsafe_offset(WNr * Kc)
+                        pdk = pdk.unsafe_offset(Mr * WNr)
+                    pabk = pabk.unsafe_offset(Mr * Kc)
                 pc = pck
         pa = pak
         pd = pdk
 
 
-@always_inline
+@inline(.always)
 def bench_b2b[
     elt: DType,
     M: Int,
@@ -797,92 +892,237 @@ def bench_b2b[
     comptime assert L % Nc == 0
     comptime assert N % Nc == 0
 
-    comptime layout_D: Layout = Layout(
-        IntTuple(
-            IntTuple(Mr, Mc // Mr, M // Mc),
-            IntTuple(Stride, WNr // Stride, Nc // WNr, N // Nc),
+    comptime layout_D = NativeLayout(
+        Coord(
+            coord[Mr, Mc // Mr, M // Mc],
+            coord[Stride, WNr // Stride, Nc // WNr, N // Nc],
         ),
-        IntTuple(
-            IntTuple(Stride, Mr * Nc, Mc * N),
-            IntTuple(1, Mr * Stride, Mr * WNr, Mc * Nc),
-        ),
-    )
-    comptime layout_AB: Layout = Layout(
-        IntTuple(
-            IntTuple(Mr, Mc // Mr, M // Mc),
-            IntTuple(Stride, WNr // Stride, Kc // WNr, L // Kc),
-        ),
-        IntTuple(
-            IntTuple(Stride, Mr * Nc, Mc * L),
-            IntTuple(1, Mr * Stride, Mr * WNr, Mc * Nc),
+        Coord(
+            coord[Stride, Mr * Nc, Mc * N],
+            coord[1, Mr * Stride, Mr * WNr, Mc * Nc],
         ),
     )
-    comptime layout_A: Layout = Layout(
-        IntTuple(
-            IntTuple(Mr, Mc // Mr, M // Mc),
-            IntTuple(Stride, WNr // Stride, Kc // WNr, K // Kc),
+    comptime layout_AB = NativeLayout(
+        Coord(
+            coord[Mr, Mc // Mr, M // Mc],
+            coord[Stride, WNr // Stride, Kc // WNr, L // Kc],
         ),
-        IntTuple(
-            IntTuple(Stride, Mr * Kc, Mc * K),
-            IntTuple(
-                1,
-                Mr * Stride,
-                Mr * WNr,
-                Mc * Kc,
-            ),
+        Coord(
+            coord[Stride, Mr * Nc, Mc * L],
+            coord[1, Mr * Stride, Mr * WNr, Mc * Nc],
         ),
     )
-    comptime layout_B: Layout = Layout(
-        IntTuple(
-            IntTuple(Stride, Kc // Stride, K // Kc),
-            IntTuple(WNr, Nc // WNr, L // Kc),
+    comptime layout_A = NativeLayout(
+        Coord(
+            coord[Mr, Mc // Mr, M // Mc],
+            coord[Stride, WNr // Stride, Kc // WNr, K // Kc],
         ),
-        IntTuple(
-            IntTuple((WNr * Kc) // Stride, WNr, Nc * Kc),
-            IntTuple(
-                1,
-                WNr * Kc,
-                Nc * K,
-            ),
+        Coord(
+            coord[Stride, Mr * Kc, Mc * K],
+            coord[1, Mr * Stride, Mr * WNr, Mc * Kc],
         ),
     )
-    comptime layout_CL_b2b: Layout = Layout(
-        IntTuple(
-            IntTuple(Stride, Kc // Stride, L // Kc),
-            IntTuple(WNr, Nc // WNr, N // Nc),
+    comptime layout_B = NativeLayout(
+        Coord(
+            coord[Stride, Kc // Stride, K // Kc],
+            coord[WNr, Nc // WNr, L // Kc],
         ),
-        IntTuple(
-            IntTuple((WNr * Kc) // Stride, WNr, N * Kc),
-            IntTuple(
-                1,
-                WNr * Kc,
-                Nc * Kc,
-            ),
+        Coord(
+            coord[(WNr * Kc) // Stride, WNr, Nc * Kc],
+            coord[1, WNr * Kc, Nc * K],
         ),
     )
-    comptime layout_C: Layout = Layout(
-        IntTuple(
-            IntTuple(Stride, Kc // Stride, L // Kc),
-            IntTuple(WNr, Nc // WNr, N // Nc),
+    comptime layout_CL_b2b = NativeLayout(
+        Coord(
+            coord[Stride, Kc // Stride, L // Kc],
+            coord[WNr, Nc // WNr, N // Nc],
         ),
-        IntTuple(
-            IntTuple((WNr * Kc) // Stride, WNr, Nc * Kc),
-            IntTuple(1, WNr * Kc, Nc * L),
+        Coord(
+            coord[(WNr * Kc) // Stride, WNr, N * Kc],
+            coord[1, WNr * Kc, Nc * Kc],
+        ),
+    )
+    comptime layout_C = NativeLayout(
+        Coord(
+            coord[Stride, Kc // Stride, L // Kc],
+            coord[WNr, Nc // WNr, N // Nc],
+        ),
+        Coord(
+            coord[(WNr * Kc) // Stride, WNr, Nc * Kc],
+            coord[1, WNr * Kc, Nc * L],
         ),
     )
 
-    var Dtile = alloc_tensor[elt, layout_D]()
-    var Atile = alloc_tensor[elt, layout_A]()
-    var Btile = alloc_tensor[elt, layout_B]()
-    var Ctileb2b = alloc_tensor[elt, layout_CL_b2b]()
-    var Ctile = alloc_tensor[elt, layout_C]()
-    var ABtile = alloc_tensor[elt, layout_AB]()
+    # The plan functions below are generic over the tensor layouts, so the
+    # fixtures are validated here, where they are concrete values.
+    #
+    # `matmul`'s view: D/AB share the C layout, A and B their own.
+    comptime assert layout_AB.rank == 2
+    comptime assert layout_A.rank == 2
+    comptime assert layout_B.rank == 2
+    # I am assuming that the `shape` and `stride` are congruent (i.e., equal length)
+    # so that I don't need to check both here.
+    comptime assert layout_AB.shape_coord()[0].__len__() == 3
+    comptime assert layout_AB.shape_coord()[1].__len__() == 4
+    comptime assert layout_A.shape_coord()[0].__len__() == 3
+    comptime assert layout_A.shape_coord()[1].__len__() == 4
+    comptime assert layout_B.shape_coord()[0].__len__() == 3
+    comptime assert layout_B.shape_coord()[1].__len__() == 3
 
-    var Drm64 = alloc_tensor[.float64, Layout.row_major(M, N)]()
-    var Arm64 = alloc_tensor[.float64, Layout.row_major(M, K)]()
-    var Brm64 = alloc_tensor[.float64, Layout.row_major(K, L)]()
-    var Crm64 = alloc_tensor[.float64, Layout.row_major(L, N)]()
-    var ABrm64 = alloc_tensor[.float64, Layout.row_major(M, L)]()
+    # Matrix C
+    comptime assert Int(layout_AB.shape_coord()[0][0]) == Mr
+    comptime assert Int(layout_AB.shape_coord()[0][1]) * Mr == Mc
+    comptime assert Int(layout_AB.shape_coord()[0][2]) * Mc == M
+
+    comptime assert Int(layout_AB.shape_coord()[1][0]) == Stride
+    comptime assert Int(layout_AB.shape_coord()[1][1]) * Stride == WNr
+    comptime assert Int(layout_AB.shape_coord()[1][2]) * WNr == Nc
+    comptime assert Int(layout_AB.shape_coord()[1][3]) * Nc == L
+
+    comptime assert Int(layout_AB.stride_coord()[0][0]) == Stride
+    comptime assert Int(layout_AB.stride_coord()[0][1]) == Mr * Nc
+    comptime assert Int(layout_AB.stride_coord()[0][2]) == Mc * L
+
+    comptime assert Int(layout_AB.stride_coord()[1][0]) == 1
+    comptime assert Int(layout_AB.stride_coord()[1][1]) == Mr * Stride
+    comptime assert Int(layout_AB.stride_coord()[1][2]) == Mr * WNr
+    comptime assert Int(layout_AB.stride_coord()[1][3]) == Mc * Nc
+
+    # Matrix A
+    comptime assert Int(layout_A.shape_coord()[0][0]) == Mr
+    comptime assert Int(layout_A.shape_coord()[0][1]) * Mr == Mc
+    comptime assert Int(layout_A.shape_coord()[0][2]) * Mc == M
+
+    comptime assert Int(layout_A.shape_coord()[1][0]) == Stride
+    comptime assert Int(layout_A.shape_coord()[1][1]) * Stride == WNr
+    comptime assert Int(layout_A.shape_coord()[1][2]) * WNr == Kc
+    comptime assert Int(layout_A.shape_coord()[1][3]) * Kc == K
+
+    comptime assert Int(layout_A.stride_coord()[0][0]) == Stride
+    comptime assert Int(layout_A.stride_coord()[0][1]) == Mr * Kc
+    comptime assert Int(layout_A.stride_coord()[0][2]) == Mc * K
+
+    comptime assert Int(layout_A.stride_coord()[1][0]) == 1
+    comptime assert Int(layout_A.stride_coord()[1][1]) == Mr * Stride
+    comptime assert Int(layout_A.stride_coord()[1][2]) == Mr * WNr
+    comptime assert Int(layout_A.stride_coord()[1][3]) == Mc * Kc
+
+    # Matrix B
+    comptime assert Int(layout_B.shape_coord()[0][0]) == Stride
+    comptime assert Int(layout_B.shape_coord()[0][1]) * Stride == Kc
+    comptime assert Int(layout_B.shape_coord()[0][2]) * Kc == K
+
+    comptime assert Int(layout_B.shape_coord()[1][0]) == WNr
+    comptime assert Int(layout_B.shape_coord()[1][1]) * WNr == Nc
+    comptime assert Int(layout_B.shape_coord()[1][2]) * Nc == L
+
+    comptime assert Int(layout_B.stride_coord()[0][0]) * Stride == WNr * Kc
+    comptime assert Int(layout_B.stride_coord()[0][1]) == WNr
+    comptime assert Int(layout_B.stride_coord()[0][2]) == Nc * Kc
+
+    comptime assert Int(layout_B.stride_coord()[1][0]) == 1
+    comptime assert Int(layout_B.stride_coord()[1][1]) == WNr * Kc
+    comptime assert Int(layout_B.stride_coord()[1][2]) == Nc * K
+
+    # `matmulb2b`'s view, which also covers the fused-back-to-back C tile.
+    comptime assert layout_D.rank == 2
+    comptime assert layout_A.rank == 2
+    comptime assert layout_B.rank == 2
+    comptime assert layout_CL_b2b.rank == 2
+
+    comptime assert layout_D.shape_coord()[0].__len__() == 3
+    comptime assert layout_D.shape_coord()[1].__len__() == 4
+    comptime assert layout_A.shape_coord()[0].__len__() == 3
+    comptime assert layout_A.shape_coord()[1].__len__() == 4
+    comptime assert layout_B.shape_coord()[0].__len__() == 3
+    comptime assert layout_B.shape_coord()[1].__len__() == 3
+    comptime assert layout_CL_b2b.shape_coord()[0].__len__() == 3
+    comptime assert layout_CL_b2b.shape_coord()[1].__len__() == 3
+
+    # Matrix D
+    comptime assert Int(layout_D.shape_coord()[0][0]) == Mr
+    comptime assert Int(layout_D.shape_coord()[0][1]) * Mr == Mc
+    comptime assert Int(layout_D.shape_coord()[0][2]) * Mc == M
+
+    comptime assert Int(layout_D.shape_coord()[1][0]) == Stride
+    comptime assert Int(layout_D.shape_coord()[1][1]) * Stride == WNr
+    comptime assert Int(layout_D.shape_coord()[1][2]) * WNr == Nc
+    comptime assert Int(layout_D.shape_coord()[1][3]) * Nc == N
+
+    comptime assert Int(layout_D.stride_coord()[0][0]) == Stride
+    comptime assert Int(layout_D.stride_coord()[0][1]) == Mr * Nc
+    comptime assert Int(layout_D.stride_coord()[0][2]) == Mc * N
+
+    comptime assert Int(layout_D.stride_coord()[1][0]) == 1
+    comptime assert Int(layout_D.stride_coord()[1][1]) == Mr * Stride
+    comptime assert Int(layout_D.stride_coord()[1][2]) == Mr * WNr
+    comptime assert Int(layout_D.stride_coord()[1][3]) == Mc * Nc
+
+    # Matrix A
+    comptime assert Int(layout_A.shape_coord()[0][0]) == Mr
+    comptime assert Int(layout_A.shape_coord()[0][1]) * Mr == Mc
+    comptime assert Int(layout_A.shape_coord()[0][2]) * Mc == M
+
+    comptime assert Int(layout_A.shape_coord()[1][0]) == Stride
+    comptime assert Int(layout_A.shape_coord()[1][1]) * Stride == WNr
+    comptime assert Int(layout_A.shape_coord()[1][2]) * WNr == Kc
+    comptime assert Int(layout_A.shape_coord()[1][3]) * Kc == K
+
+    comptime assert Int(layout_A.stride_coord()[0][0]) == Stride
+    comptime assert Int(layout_A.stride_coord()[0][1]) == Mr * Kc
+    comptime assert Int(layout_A.stride_coord()[0][2]) == Mc * K
+
+    comptime assert Int(layout_A.stride_coord()[1][0]) == 1
+    comptime assert Int(layout_A.stride_coord()[1][1]) == Mr * Stride
+    comptime assert Int(layout_A.stride_coord()[1][2]) == Mr * WNr
+    comptime assert Int(layout_A.stride_coord()[1][3]) == Mc * Kc
+
+    # Matrix B
+    comptime assert Int(layout_B.shape_coord()[0][0]) == Stride
+    comptime assert Int(layout_B.shape_coord()[0][1]) * Stride == Kc
+    comptime assert Int(layout_B.shape_coord()[0][2]) * Kc == K
+
+    comptime assert Int(layout_B.shape_coord()[1][0]) == WNr
+    comptime assert Int(layout_B.shape_coord()[1][1]) * WNr == Nc
+    comptime assert Int(layout_B.shape_coord()[1][2]) * Nc == L
+
+    comptime assert Int(layout_B.stride_coord()[0][0]) * Stride == WNr * Nc
+    comptime assert Int(layout_B.stride_coord()[0][1]) == WNr
+    comptime assert Int(layout_B.stride_coord()[0][2]) == Nc * Kc
+
+    comptime assert Int(layout_B.stride_coord()[1][0]) == 1
+    comptime assert Int(layout_B.stride_coord()[1][1]) == WNr * Kc
+    comptime assert Int(layout_B.stride_coord()[1][2]) == Nc * K
+
+    # Matrix C
+    comptime assert Int(layout_CL_b2b.shape_coord()[0][0]) == Stride
+    comptime assert Int(layout_CL_b2b.shape_coord()[0][1]) * Stride == Kc
+    comptime assert Int(layout_CL_b2b.shape_coord()[0][2]) * Kc == L
+
+    comptime assert Int(layout_CL_b2b.shape_coord()[1][0]) == WNr
+    comptime assert Int(layout_CL_b2b.shape_coord()[1][1]) * WNr == Nc
+    comptime assert Int(layout_CL_b2b.shape_coord()[1][2]) * Nc == N
+
+    comptime assert Int(layout_CL_b2b.stride_coord()[0][0]) * Stride == WNr * Kc
+    comptime assert Int(layout_CL_b2b.stride_coord()[0][1]) == WNr
+    comptime assert Int(layout_CL_b2b.stride_coord()[0][2]) == N * Kc
+
+    comptime assert Int(layout_CL_b2b.stride_coord()[1][0]) == 1
+    comptime assert Int(layout_CL_b2b.stride_coord()[1][1]) == WNr * Kc
+    comptime assert Int(layout_CL_b2b.stride_coord()[1][2]) == Nc * Kc
+
+    var Dtile = alloc_tensor[elt](layout_D)
+    var Atile = alloc_tensor[elt](layout_A)
+    var Btile = alloc_tensor[elt](layout_B)
+    var Ctileb2b = alloc_tensor[elt](layout_CL_b2b)
+    var Ctile = alloc_tensor[elt](layout_C)
+    var ABtile = alloc_tensor[elt](layout_AB)
+
+    var Drm64 = alloc_tensor[.float64](row_major[M, N]())
+    var Arm64 = alloc_tensor[.float64](row_major[M, K]())
+    var Brm64 = alloc_tensor[.float64](row_major[K, L]())
+    var Crm64 = alloc_tensor[.float64](row_major[L, N]())
+    var ABrm64 = alloc_tensor[.float64](row_major[M, L]())
     comptime layout_A_size: Int = layout_A.size()
     comptime layout_B_size: Int = layout_B.size()
     comptime layout_C_size: Int = layout_C.size()
@@ -896,7 +1136,7 @@ def bench_b2b[
     matmul_naive(ABrm64, Arm64, Brm64)
     matmul_naive(Drm64, ABrm64, Crm64)
 
-    @always_inline
+    @inline(.always)
     def test_tile_fn() {var}:
         matmul[elt, M, L, K, W, Mc, Nc, Kc, Mr, Nr, Kr](ABtile, Atile, Btile)
         matmul[elt, M, N, L, W, Mc, Nc, Kc, Mr, Nr, Kr](Dtile, ABtile, Ctile)
@@ -912,7 +1152,7 @@ def bench_b2b[
 
     check_approx_equal[.float32](Dtile, Drm64)
 
-    @always_inline
+    @inline(.always)
     def test_tile_b2b_fn() {var}:
         matmulb2b[elt, M, N, K, L, W, Mc, Nc, Mr, Nr, Kr](
             Dtile, Atile, Btile, Ctileb2b
@@ -928,17 +1168,17 @@ def bench_b2b[
 
     check_approx_equal[.float32](Dtile, Drm64)
 
-    Atile.ptr.free()
-    Btile.ptr.free()
-    Ctile.ptr.free()
-    Ctileb2b.ptr.free()
-    Dtile.ptr.free()
-    ABtile.ptr.free()
-    Arm64.ptr.free()
-    Brm64.ptr.free()
-    Crm64.ptr.free()
-    Drm64.ptr.free()
-    ABrm64.ptr.free()
+    Atile.ptr.unsafe_free()
+    Btile.ptr.unsafe_free()
+    Ctile.ptr.unsafe_free()
+    Ctileb2b.ptr.unsafe_free()
+    Dtile.ptr.unsafe_free()
+    ABtile.ptr.unsafe_free()
+    Arm64.ptr.unsafe_free()
+    Brm64.ptr.unsafe_free()
+    Crm64.ptr.unsafe_free()
+    Drm64.ptr.unsafe_free()
+    ABrm64.ptr.unsafe_free()
 
 
 def getMr() -> Int:
@@ -973,7 +1213,7 @@ def main() raises -> None:
     comptime N = 6 * Nc
     comptime K = 2 * Kc
     comptime L = 5 * Kc
-    print("Multiplying M =", M, "; N =", N, "; K =", K, "; L =", L, "\n")
+    print(t"Multiplying M = {M} ; N = {N} ; K = {K} ; L = {L} \n")
     comptime assert Kc == Nc, "b2b requires Kc == Nc"
     var do_benchmark: Bool = False
     var args = argv()

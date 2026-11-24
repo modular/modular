@@ -17,17 +17,22 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+from max import functional as F
 from max.dtype import DType
-from max.experimental import functional as F
-from max.experimental.tensor import Tensor, default_dtype
-from max.nn.quant_config import QuantConfig
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_moe import (
+from max.graph import Graph
+from max.nn.activation import GatedActivation
+from max.nn.common_layers.quant_moe import (
+    ExpertParallelMoE,
     QuantizedMoE,
 )
-from max.pipelines.architectures.deepseekV3_modulev3.layers.quant_tensor import (
+from max.nn.common_layers.quant_tensor import (
     FP8BlockTensor,
+    MXFP8Tensor,
     NVFP4Tensor,
 )
+from max.nn.quant_config import QuantConfig
+from max.tensor import Tensor, default_dtype
 
 _HIDDEN_DIM = 256
 _MOE_DIM = 128
@@ -37,12 +42,7 @@ _SHARED_EXPERTS_DIM = 128
 _SEQ_LEN = 4
 
 
-_NVFP4_LEAVES = (
-    "weight.data",
-    "weight.weight_scale",
-    "weight.weight_scale_2",
-    "weight.input_scale",
-)
+_NVFP4_LEAVES = ("weight", "weight_scale", "weight_scale_2", "input_scale")
 
 
 def _expected_expert_param_names(
@@ -50,11 +50,7 @@ def _expected_expert_param_names(
 ) -> set[str]:
     """Per-expert MLP parameter names for the routed experts."""
     if leaves is None:
-        leaves = (
-            ("weight.data", "weight.weight_scale_inv")
-            if quantized
-            else ("weight",)
-        )
+        leaves = ("weight", "weight_scale_inv") if quantized else ("weight",)
     names = set()
     for i in range(_NUM_EXPERTS):
         for proj in ("gate_proj", "up_proj", "down_proj"):
@@ -189,9 +185,9 @@ def test_moe_stacked_weights_fp8(
         gate_up = layer.gate_up_proj
         assert len(gate_up) == 1
         assert isinstance(gate_up[0], FP8BlockTensor)
-        assert gate_up[0].data.dtype == DType.float8_e4m3fn
+        assert gate_up[0].weight.dtype == DType.float8_e4m3fn
         assert gate_up[0].weight_scale_inv.dtype == DType.float32
-        assert list(gate_up[0].data.shape) == [
+        assert list(gate_up[0].weight.shape) == [
             _NUM_EXPERTS,
             2 * _MOE_DIM,
             _HIDDEN_DIM,
@@ -200,7 +196,11 @@ def test_moe_stacked_weights_fp8(
         down = layer.down_proj
         assert len(down) == 1
         assert isinstance(down[0], FP8BlockTensor)
-        assert list(down[0].data.shape) == [_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM]
+        assert list(down[0].weight.shape) == [
+            _NUM_EXPERTS,
+            _HIDDEN_DIM,
+            _MOE_DIM,
+        ]
 
 
 # --------------------------------------------------------------------------- #
@@ -268,6 +268,53 @@ def test_moe_forward_with_shared_experts(mock_accelerator: MagicMock) -> None:
         assert out.dtype == DType.bfloat16
 
 
+@pytest.mark.parametrize(
+    ("activation", "expected"),
+    [(None, "silu"), (GatedActivation("gelu_tanh"), "gelu_tanh")],
+    ids=["default_silu", "gelu_tanh"],
+)
+def test_moe_routed_experts_run_the_given_activation(
+    mock_accelerator: MagicMock,
+    activation: GatedActivation | None,
+    expected: str,
+) -> None:
+    """The routed experts' fused activation is the one the layer was given."""
+    device = mock_accelerator()
+    with F.lazy():
+        layer = QuantizedMoE(
+            hidden_dim=_HIDDEN_DIM,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            moe_dim=_MOE_DIM,
+            activation=activation,
+        ).to(device)
+        layer(
+            Tensor.zeros(
+                [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+            )
+        )
+        ir = str(Graph.current._mlir_op)
+
+    assert ir.count('"ep.fused_silu"') == 1
+    assert f'activation = "{expected}"' in ir
+
+
+def test_expert_parallel_moe_rejects_an_activation(
+    mock_accelerator: MagicMock,
+) -> None:
+    """EP would silently run SiLU, so a non-default activation is refused."""
+    device = mock_accelerator()
+    with F.lazy(), pytest.raises(ValueError, match="activation"):
+        ExpertParallelMoE(
+            hidden_dim=_HIDDEN_DIM,
+            num_experts=_NUM_EXPERTS,
+            num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+            moe_dim=_MOE_DIM,
+            activation=GatedActivation("gelu_tanh"),
+            ep_config=MagicMock(),
+        ).to(device)
+
+
 # --------------------------------------------------------------------------- #
 # NVFP4
 # --------------------------------------------------------------------------- #
@@ -311,9 +358,9 @@ def test_moe_stacked_weights_nvfp4(
         gate_up = layer.gate_up_proj
         assert len(gate_up) == 1
         assert isinstance(gate_up[0], NVFP4Tensor)
-        assert gate_up[0].data.dtype == DType.uint8
+        assert gate_up[0].weight.dtype == DType.uint8
         assert gate_up[0].weight_scale.dtype == DType.float8_e4m3fn
-        assert list(gate_up[0].data.shape) == [
+        assert list(gate_up[0].weight.shape) == [
             _NUM_EXPERTS,
             2 * _MOE_DIM,
             _HIDDEN_DIM // 2,
@@ -330,7 +377,7 @@ def test_moe_stacked_weights_nvfp4(
         down = layer.down_proj
         assert len(down) == 1
         assert isinstance(down[0], NVFP4Tensor)
-        assert list(down[0].data.shape) == [
+        assert list(down[0].weight.shape) == [
             _NUM_EXPERTS,
             _HIDDEN_DIM,
             _MOE_DIM // 2,
@@ -386,6 +433,87 @@ def test_moe_nvfp4_forward_with_shared_experts(
             has_shared_experts=True,
             shared_experts_dim=_SHARED_EXPERTS_DIM,
             quant_config=nvfp4_quant_config,
+        ).to(device)
+        x = Tensor.zeros(
+            [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device
+        )
+        out = layer(x)
+
+        assert list(out.shape) == [_SEQ_LEN, _HIDDEN_DIM]
+        assert out.dtype == DType.bfloat16
+
+
+# --------------------------------------------------------------------------- #
+# MXFP8
+# --------------------------------------------------------------------------- #
+
+
+def _mxfp8_moe(
+    quant_config: QuantConfig, shared_experts_dim: int = 0
+) -> QuantizedMoE:
+    return QuantizedMoE(
+        hidden_dim=_HIDDEN_DIM,
+        num_experts=_NUM_EXPERTS,
+        num_experts_per_token=_NUM_EXPERTS_PER_TOKEN,
+        moe_dim=_MOE_DIM,
+        has_shared_experts=shared_experts_dim > 0,
+        shared_experts_dim=shared_experts_dim,
+        quant_config=quant_config,
+    )
+
+
+def test_moe_mxfp8_parameters(
+    mock_accelerator: MagicMock, mxfp8_quant_config: QuantConfig
+) -> None:
+    device = mock_accelerator()
+    with F.lazy():
+        layer = _mxfp8_moe(mxfp8_quant_config).to(device)
+        names = {name for name, _ in layer.parameters}
+        expected = {"gate.gate_score.weight"} | _expected_expert_param_names(
+            quantized=True, leaves=("weight", "weight_scale")
+        )
+        assert names == expected
+
+
+def test_moe_stacked_weights_mxfp8(
+    mock_accelerator: MagicMock, mxfp8_quant_config: QuantConfig
+) -> None:
+    device = mock_accelerator()
+    with F.lazy():
+        layer = _mxfp8_moe(mxfp8_quant_config).to(device)
+
+        (gate_up,) = layer.gate_up_proj
+        assert isinstance(gate_up, MXFP8Tensor)
+        assert list(gate_up.weight.shape) == [
+            _NUM_EXPERTS,
+            2 * _MOE_DIM,
+            _HIDDEN_DIM,
+        ]
+        assert list(gate_up.weight_scale.shape) == [
+            _NUM_EXPERTS,
+            2 * _MOE_DIM,
+            _HIDDEN_DIM // 32,
+        ]
+        (down,) = layer.down_proj
+        assert isinstance(down, MXFP8Tensor)
+        assert list(down.weight.shape) == [_NUM_EXPERTS, _HIDDEN_DIM, _MOE_DIM]
+        assert list(down.weight_scale.shape) == [
+            _NUM_EXPERTS,
+            _HIDDEN_DIM,
+            _MOE_DIM // 32,
+        ]
+
+
+def test_moe_mxfp8_forward_with_shared_experts(
+    mock_accelerator: MagicMock,
+    mxfp8_quant_config: QuantConfig,
+    sm100_arch: None,
+) -> None:
+    """The MXFP8 grouped matmuls and shared expert return ``[S, hidden]``."""
+    device = mock_accelerator()
+    with F.lazy():
+        layer = _mxfp8_moe(
+            mxfp8_quant_config, shared_experts_dim=_SHARED_EXPERTS_DIM
         ).to(device)
         x = Tensor.zeros(
             [_SEQ_LEN, _HIDDEN_DIM], dtype=DType.bfloat16, device=device

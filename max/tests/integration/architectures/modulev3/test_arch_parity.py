@@ -14,14 +14,20 @@
 
 The ModuleV3 arch must default the same serving-layer request-handling
 features as its graph counterpart: tool-call parsing, reasoning parsing, and
-the structured-output (constrained decoding) backend. The parsers themselves
-live at the serving layer and are shared; only the ``SupportedArchitecture``
-defaults differ per registration.
+the structured-output (constrained decoding) backend. The parsers live at the
+serving layer, where most pairs share them; GLM-5.3-Flash's arch registers its
+own copies of the GLM-5.x parsers.
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
+from max.pipelines.architectures.deepseekV3_2.arch import deepseekV3_2_arch
+from max.pipelines.architectures.deepseekV3_2_modulev3.arch import (
+    deepseekV3_2_modulev3_arch,
+)
 from max.pipelines.architectures.gemma4.arch import (
     gemma4_arch,
     gemma4_unified_arch,
@@ -29,6 +35,12 @@ from max.pipelines.architectures.gemma4.arch import (
 from max.pipelines.architectures.gemma4_modulev3.arch import (
     gemma4_modulev3_arch,
     gemma4_unified_modulev3_arch,
+)
+from max.pipelines.architectures.glm5_1.tool_parser import (
+    GlmToolParser as Glm51ToolParser,
+)
+from max.pipelines.architectures.glm5_next.arch import (
+    glm5_next_arch,
 )
 from max.pipelines.lib import reasoning, tool_parsing
 from max.pipelines.lib.registry import SupportedArchitecture
@@ -43,9 +55,14 @@ from max.pipelines.lib.registry import SupportedArchitecture
             gemma4_unified_modulev3_arch,
             id="gemma4_unified",
         ),
+        pytest.param(
+            deepseekV3_2_arch,
+            deepseekV3_2_modulev3_arch,
+            id="deepseekV3_2",
+        ),
     ],
 )
-def test_gemma4_request_handling_parity(
+def test_request_handling_parity(
     graph_arch: SupportedArchitecture,
     modulev3_arch: SupportedArchitecture,
 ) -> None:
@@ -73,4 +90,65 @@ def test_gemma4_modulev3_default_parsers_are_registered() -> None:
     assert (
         reasoning.get_parser_cls(gemma4_modulev3_arch.reasoning_parser)
         is not None
+    )
+
+
+def test_deepseekv3_2_modulev3_registration_parity() -> None:
+    """The V3.2 ModuleV3 arch mirrors the graph arch's serving contract.
+
+    Importing it here also exercises the package's import graph: the arch is
+    registered lazily, so a bad import would otherwise only surface the first
+    time someone tries to serve the model.
+    """
+    assert deepseekV3_2_modulev3_arch.name == "DeepseekV32ForCausalLM_ModuleV3"
+    assert (
+        deepseekV3_2_modulev3_arch.default_encoding
+        == deepseekV3_2_arch.default_encoding
+    )
+    assert (
+        deepseekV3_2_modulev3_arch.supported_encodings
+        == deepseekV3_2_arch.supported_encodings
+    )
+    # Sparse MLA shards the same way the graph arch does; a V3 port that
+    # silently dropped multi-GPU would not fit the model on any node.
+    assert deepseekV3_2_modulev3_arch.multi_gpu_supported
+    assert (
+        deepseekV3_2_modulev3_arch.example_repo_ids
+        == deepseekV3_2_arch.example_repo_ids
+    )
+
+
+def test_glm5_next_parsers_are_its_own() -> None:
+    """The ModuleV3 arch registers its own copies of the GLM-5.x parsers.
+
+    They read the format GLM-5.1's "glm45" parsers do, under a name of their
+    own, so neither registration replaces the other's.
+    """
+    assert glm5_next_arch.tool_parser == "glm5_next"
+    assert glm5_next_arch.reasoning_parser == "glm5_next"
+    tool_parser_cls = tool_parsing.get_parser_cls("glm5_next")
+    assert tool_parser_cls is not None
+    assert tool_parser_cls.__module__.endswith("glm5_next.tool_parser")
+    reasoning_cls = reasoning.get_parser_cls("glm5_next")
+    assert reasoning_cls is not None
+    assert reasoning_cls.__module__.endswith("glm5_next.reasoning")
+    response = (
+        "Checking.<tool_call>get_weather"
+        "<arg_key>city</arg_key><arg_value>Paris</arg_value>"
+        "<arg_key>days</arg_key><arg_value>3</arg_value>"
+        "</tool_call>"
+    )
+    parsed = []
+    for parser_cls in (tool_parser_cls, Glm51ToolParser):
+        result = parser_cls().parse_complete(response)
+        parsed.append(
+            (
+                result.content,
+                [(c.name, json.loads(c.arguments)) for c in result.tool_calls],
+            )
+        )
+    assert parsed[0] == parsed[1]
+    assert parsed[0] == (
+        "Checking.",
+        [("get_weather", {"city": "Paris", "days": 3})],
     )

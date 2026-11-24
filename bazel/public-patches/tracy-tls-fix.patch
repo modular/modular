@@ -1,0 +1,14 @@
+diff --git a/public/client/tracy_rpmalloc.cpp b/public/client/tracy_rpmalloc.cpp
+index c43b8ca..1ff98e8 100644
+--- a/public/client/tracy_rpmalloc.cpp
++++ b/public/client/tracy_rpmalloc.cpp
+@@ -693,7 +693,8 @@ static pthread_key_t _memory_thread_heap;
+ #    if defined(__ANDROID__) && __ANDROID_API__ >= 29 && defined(__NDK_MAJOR__) && __NDK_MAJOR__ >= 26
+ #      define TLS_MODEL __attribute__((tls_model("local-dynamic")))
+ #    elif !defined(__HAIKU__)
+-#      define TLS_MODEL __attribute__((tls_model("initial-exec")))
++// Use global-dynamic TLS model to avoid static TLS exhaustion when dlopen'ed.
++#      define TLS_MODEL __attribute__((tls_model("global-dynamic")))
+ #    else
+ #      define TLS_MODEL
+ #    endif

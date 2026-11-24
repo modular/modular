@@ -13,9 +13,12 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import resource
 import time
+from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -120,6 +123,112 @@ def test_get_tokenizer_forwards_local_files_only(
         revision="abc123",
         local_files_only=True,
     )
+
+
+def _write_checkpoint(
+    path: Path,
+    *,
+    config: dict[str, object],
+    tokenizer_config: dict[str, object],
+) -> str:
+    """Writes a checkpoint whose tokenizer maps "hello world" to [0, 1]."""
+    tokenizer: dict[str, object] = {
+        "version": "1.0",
+        "truncation": None,
+        "padding": None,
+        "added_tokens": [],
+        "normalizer": None,
+        "pre_tokenizer": {"type": "Whitespace"},
+        "post_processor": None,
+        "decoder": None,
+        "model": {
+            "type": "WordLevel",
+            "vocab": {"hello": 0, "world": 1, "[UNK]": 2},
+            "unk_token": "[UNK]",
+        },
+    }
+    for name, content in (
+        ("config.json", config),
+        ("tokenizer_config.json", tokenizer_config),
+        ("tokenizer.json", tokenizer),
+    ):
+        (path / name).write_text(json.dumps(content))
+    return str(path)
+
+
+def test_get_tokenizer_loads_tokenizer_files_when_config_fails(
+    mocker: MockerFixture, tmp_path: Path
+) -> None:
+    """A config.json transformers rejects leaves the tokenizer loadable."""
+    mocker.patch(
+        "transformers.AutoConfig.from_pretrained",
+        side_effect=AttributeError("'NoneType' object has no attribute 'get'"),
+    )
+    path = _write_checkpoint(
+        tmp_path,
+        config={"model_type": "future_model"},
+        tokenizer_config={"tokenizer_class": "PreTrainedTokenizerFast"},
+    )
+
+    tokenizer = get_tokenizer(
+        path, revision=None, model_max_length=262144, local_files_only=True
+    )
+
+    assert tokenizer.encode("hello world", add_special_tokens=False) == [0, 1]
+    assert tokenizer.model_max_length == 262144
+    assert tokenizer._resolved_architectures == []
+
+
+def test_get_tokenizer_refuses_a_custom_tokenizer_without_remote_code(
+    tmp_path: Path,
+) -> None:
+    """A custom tokenizer class is never swapped for a generic one."""
+    path = _write_checkpoint(
+        tmp_path,
+        config={
+            "model_type": "custom_model",
+            "auto_map": {"AutoConfig": "configuration.CustomConfig"},
+        },
+        tokenizer_config={
+            "tokenizer_class": "CustomTokenizer",
+            "auto_map": {
+                "AutoTokenizer": [None, "tokenization.CustomTokenizer"]
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="trust_remote_code"):
+        get_tokenizer(path, revision=None, local_files_only=True)
+
+
+def test_get_tokenizer_raises_the_autotokenizer_error_when_retry_fails(
+    mocker: MockerFixture,
+) -> None:
+    """Without loadable tokenizer files, the original error surfaces."""
+    mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+        side_effect=[
+            ValueError("model type `beam` is not recognized"),
+            ValueError("no tokenizer files"),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="beam"):
+        get_tokenizer("repo/model", revision=None, architectures=[])
+
+
+def test_get_tokenizer_does_not_retry_an_os_error(
+    mocker: MockerFixture,
+) -> None:
+    """A gated repo or an unreachable Hub fails without a second load."""
+    from_pretrained = mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+        side_effect=OSError("gated repo"),
+    )
+
+    with pytest.raises(OSError, match="gated repo"):
+        get_tokenizer("repo/model", revision=None, architectures=[])
+    from_pretrained.assert_called_once()
 
 
 def test_get_tokenizer_stashes_resolved_architectures(
@@ -256,38 +365,37 @@ def test_print_section_formats_output(
 # ---- parse_comma_separated ----
 
 
-def test_parse_comma_separated_single_value() -> None:
-    assert parse_comma_separated("42", int) == [42]
-
-
-def test_parse_comma_separated_multiple_values() -> None:
-    assert parse_comma_separated("1,2,4", int) == [1, 2, 4]
-
-
-def test_parse_comma_separated_strips_whitespace() -> None:
-    assert parse_comma_separated(" 10 , 20 , 30 ", float) == [10.0, 20.0, 30.0]
-
-
-def test_parse_comma_separated_none_returns_default() -> None:
-    assert parse_comma_separated(None, int) == [None]
+@pytest.mark.parametrize(
+    ("value", "convert", "expected"),
+    [
+        pytest.param("42", int, [42], id="single_value"),
+        pytest.param("1,2,4", int, [1, 2, 4], id="multiple_values"),
+        pytest.param(
+            " 10 , 20 , 30 ",
+            float,
+            [10.0, 20.0, 30.0],
+            id="strips_whitespace",
+        ),
+        pytest.param(None, int, [None], id="none_returns_default"),
+        pytest.param(
+            "1,None,3", int_or_none, [1, None, 3], id="with_int_or_none"
+        ),
+        pytest.param("inf", float, [float("inf")], id="float_inf"),
+        pytest.param(
+            "10,inf,0.5", float, [10.0, float("inf"), 0.5], id="mixed_floats"
+        ),
+    ],
+)
+def test_parse_comma_separated(
+    value: str | None,
+    convert: Callable[[str], float | None],
+    expected: list[float | None],
+) -> None:
+    assert parse_comma_separated(value, convert) == expected
 
 
 def test_parse_comma_separated_none_with_explicit_default() -> None:
     assert parse_comma_separated(None, int, default=0) == [0]
-
-
-def test_parse_comma_separated_with_int_or_none() -> None:
-    assert parse_comma_separated("1,None,3", int_or_none) == [1, None, 3]
-
-
-def test_parse_comma_separated_float_inf() -> None:
-    result = parse_comma_separated("inf", float)
-    assert result == [float("inf")]
-
-
-def test_parse_comma_separated_mixed_floats() -> None:
-    result = parse_comma_separated("10,inf,0.5", float)
-    assert result == [10.0, float("inf"), 0.5]
 
 
 # ---- is_castable_to_int ----
@@ -347,19 +455,19 @@ def test_exceeds_deadline_none_is_unbounded() -> None:
     assert exceeds_deadline(3600.0, None) is False
 
 
-def test_exceeds_deadline_false_when_sleep_fits() -> None:
-    deadline = time.perf_counter_ns() + int(10 * 1e9)
-    assert exceeds_deadline(0.1, deadline) is False
-
-
-def test_exceeds_deadline_true_when_sleep_overshoots() -> None:
-    deadline = time.perf_counter_ns() + int(0.05 * 1e9)
-    assert exceeds_deadline(5.0, deadline) is True
-
-
-def test_exceeds_deadline_zero_seconds_does_not_overshoot() -> None:
-    deadline = time.perf_counter_ns() + int(0.001 * 1e9)
-    assert exceeds_deadline(0.0, deadline) is False
+@pytest.mark.parametrize(
+    ("sleep_s", "deadline_in_s", "expected"),
+    [
+        pytest.param(0.1, 10, False, id="false_when_sleep_fits"),
+        pytest.param(5.0, 0.05, True, id="true_when_sleep_overshoots"),
+        pytest.param(0.0, 0.001, False, id="zero_seconds_does_not_overshoot"),
+    ],
+)
+def test_exceeds_deadline(
+    sleep_s: float, deadline_in_s: float, expected: bool
+) -> None:
+    deadline = time.perf_counter_ns() + int(deadline_in_s * 1e9)
+    assert exceeds_deadline(sleep_s, deadline) is expected
 
 
 # ---- wait_for_server_ready ----
@@ -546,3 +654,30 @@ def test_wait_for_server_ready_no_base_url_sends_no_auth(
     request = urlopen.call_args.args[0]
     assert request.full_url == "http://localhost:8000/health"
     assert request.get_header("Authorization") is None
+
+
+@pytest.mark.parametrize(
+    ("backend", "path", "expected_url"),
+    [
+        ("tokenspeed", None, "http://localhost:8000/readiness"),
+        ("tokenspeed-chat", None, "http://localhost:8000/readiness"),
+        ("vllm", None, "http://localhost:8000/health"),
+        ("tokenspeed", "v1/models", "http://localhost:8000/v1/models"),
+    ],
+)
+def test_wait_for_server_ready_polls_the_backends_readiness_route(
+    mocker: MockerFixture,
+    backend: str,
+    path: str | None,
+    expected_url: str,
+) -> None:
+    urlopen = mocker.patch(
+        "urllib.request.urlopen", return_value=_mock_response(200)
+    )
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.0])
+
+    wait_for_server_ready(
+        "localhost", 8000, path, timeout_s=60, backend=backend
+    )
+
+    assert urlopen.call_args.args[0].full_url == expected_url

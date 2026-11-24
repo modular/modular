@@ -17,12 +17,12 @@ comptime tM = 8
 comptime tN = 4
 
 
-@always_inline
+@inline(.always)
 def mm(
     k: Int,
-    a: UnsafePointer[Float32, _, address_space=.SHARED],
+    a: Pointer[Float32, _, address_space=.SHARED],
     lda: Int,
-    b: UnsafePointer[Float32, _, address_space=.SHARED],
+    b: Pointer[Float32, _, address_space=.SHARED],
     ldb: Int,
     c: SIMD[.float32, tM * tN],
 ) -> SIMD[.float32, tM * tN]:

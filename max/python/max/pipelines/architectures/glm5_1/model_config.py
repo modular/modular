@@ -38,7 +38,7 @@ from typing_extensions import Self, override
 logger = logging.getLogger("max.pipelines")
 
 
-def _glm_unpadded_vocab_size(
+def glm_unpadded_vocab_size(
     pipeline_config: PipelineConfig,
 ) -> int | None:
     """Returns the tokenizer's token count, or ``None`` to skip tail masking."""
@@ -59,7 +59,7 @@ def _glm_unpadded_vocab_size(
     return len(tokenizer)
 
 
-def _glm_rope_scaling(huggingface_config: AutoConfig) -> dict[str, Any] | None:
+def glm_rope_scaling(huggingface_config: AutoConfig) -> dict[str, Any] | None:
     """Return YaRN rope_scaling for MAX, or None for standard RoPE.
 
     GLM-5.x repos declare ``rope_parameters`` with ``rope_type: "default"``
@@ -170,7 +170,7 @@ class Glm5_1Config(DeepseekV3_2Config):
             rms_norm_eps=config.rms_norm_eps,
             tie_word_embeddings=config.tie_word_embeddings,
             rope_theta=get_rope_theta(config),
-            rope_scaling=_glm_rope_scaling(config),
+            rope_scaling=glm_rope_scaling(config),
             rope_interleave=getattr(config, "rope_interleave", True),
             scoring_func=config.scoring_func,
             attention_bias=config.attention_bias,
@@ -185,5 +185,5 @@ class Glm5_1Config(DeepseekV3_2Config):
                 config, "indexer_rope_interleave", False
             ),
             quantization_encoding=quantization_encoding,
-            unpadded_vocab_size=_glm_unpadded_vocab_size(pipeline_config),
+            unpadded_vocab_size=glm_unpadded_vocab_size(pipeline_config),
         )

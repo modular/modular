@@ -218,7 +218,7 @@ if elect_one_cta:
 
     comptime for j in range(num_k_mmas):
         var c_scale = 0 if i == 0 and j == 0 else 1
-        alias idx = IntTuple(0, MMA_K * j)
+        alias idx = Coord(0, MMA_K * j)
         alias a_offset = a_smem_layout(idx) * sizeof[a_type]()
         alias b_offset = b_smem_layout(idx) * sizeof[b_type]()
 

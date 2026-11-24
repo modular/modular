@@ -17,7 +17,7 @@ from std.testing import TestSuite, assert_equal, assert_false
 
 
 def test_isatty_matches_file_descriptor() raises:
-    """Test that os.isatty(fd) matches FileDescriptor.isatty() for standard streams.
+    """Test that os.isatty(fd) matches RawFileDescriptor.isatty() for standard streams.
     """
     assert_equal(isatty(0), stdin.isatty())
     assert_equal(isatty(1), stdout.isatty())

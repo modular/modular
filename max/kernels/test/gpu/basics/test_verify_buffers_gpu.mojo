@@ -24,14 +24,18 @@ from std.testing import assert_equal, assert_true
 # mojo_binary target, so duplication is the standard pattern).
 # ---------------------------------------------------------------------------
 def _verify_buffers_gpu[
-    c_type: DType, BLOCK_SIZE: Int
+    c_type: DType,
+    BLOCK_SIZE: Int,
+    output_origin: ImmOrigin,
+    reference_origin: ImmOrigin,
+    result_origin: MutOrigin,
 ](
-    output: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
-    reference: ImmPointer[Scalar[c_type], ImmutAnyOrigin],
+    output: ImmPointer[Scalar[c_type], output_origin],
+    reference: ImmPointer[Scalar[c_type], reference_origin],
     length_dev: Int32,
     atol: Float32,
     rtol: Float32,
-    result: MutPointer[Float32, MutAnyOrigin],
+    result: MutPointer[Float32, result_origin],
 ):
     """GPU kernel that computes verification metrics in one pass.
 
@@ -83,8 +87,9 @@ def _verify_buffers_gpu[
 # ---------------------------------------------------------------------------
 def _fill_buffer[
     dtype: DType,
+    ptr_origin: MutOrigin,
 ](
-    ptr: MutPointer[Scalar[dtype], MutAnyOrigin],
+    ptr: MutPointer[Scalar[dtype], ptr_origin],
     length_dev: Int32,
     val: Scalar[dtype],
 ):
@@ -126,7 +131,13 @@ def run_verify_kernel[
 ) raises -> VerifyMetrics:
     var result_device = ctx.enqueue_create_buffer[.float32](NUM_BLOCKS * 5)
 
-    comptime kernel = _verify_buffers_gpu[dtype, BLOCK_SIZE]
+    comptime kernel = _verify_buffers_gpu[
+        dtype,
+        BLOCK_SIZE,
+        ImmOrigin(origin_of(output_buf)),
+        ImmOrigin(origin_of(reference_buf)),
+        origin_of(result_device),
+    ]
     ctx.enqueue_function[kernel](
         output_buf,
         reference_buf,
@@ -172,13 +183,13 @@ def fill_on_device[
     dtype: DType,
 ](
     ctx: DeviceContext,
-    buf: DeviceBuffer[dtype],
+    mut buf: DeviceBuffer[dtype],
     length: Int,
     val: Scalar[dtype],
 ) raises:
     comptime FILL_BLOCK = 256
     var fill_grid = ceildiv(length, FILL_BLOCK)
-    comptime kernel = _fill_buffer[dtype]
+    comptime kernel = _fill_buffer[dtype, origin_of(buf)]
     ctx.enqueue_function[kernel](
         buf,
         Int32(length),
