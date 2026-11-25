@@ -324,6 +324,7 @@ def _launch_grouped_block_scaled[
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
+    first_tile_scan: Bool = False,
     RowScalesT: RowScales = NullRowScales,
     grid_scale: Int = 1,
 ](
@@ -372,6 +373,8 @@ def _launch_grouped_block_scaled[
         swiglu_use_inplace: When True, the fused epilogue uses the
             in-place register path (no SMEM scratch) on decode shapes.
             Default False keeps the cooperative path.
+        first_tile_scan: When True, every warp finds its CTA's first tile
+            with a warp scan of the group slots; False keeps lane 0's walk.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`.
         grid_scale: CTAs launched per SM, forwarded to the launcher.
@@ -437,6 +440,7 @@ def _launch_grouped_block_scaled[
         swiglu_enable_trace=swiglu_enable_trace,
         TraceBufT=TraceBufT,
         swiglu_use_inplace=_swiglu_use_inplace,
+        first_tile_scan=first_tile_scan,
         RowScalesT=RowScalesT,
         grid_scale=grid_scale,
     ](
@@ -926,6 +930,7 @@ def grouped_matmul_mxfp8_dispatch[
         k_group: Int,
         grid: Int,
         ab_swapped: Bool,
+        scan: Bool = False,
     ]() raises {imm}:
         _launch_grouped_block_scaled[
             transpose_b,
@@ -935,6 +940,7 @@ def grouped_matmul_mxfp8_dispatch[
             num_pipeline_stages=stages,
             k_group_size=k_group,
             grid_scale=grid,
+            first_tile_scan=scan,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
             pdl_level=pdl_level,
             fuse_swiglu=fuse_swiglu,
@@ -988,6 +994,17 @@ def grouped_matmul_mxfp8_dispatch[
     comptime for r in regimes:
         comptime _s = Optional[Int](r[3]) if r[3] >= 0 else Optional[Int](None)
         if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
+            # Decode calls with fewer routed rows than groups list mostly
+            # empty slots (DeepSeek-V4-Flash at TP2 passes all 128 local
+            # experts for 6 rows a token), which is exactly when lane 0's
+            # walk over the slots is long: those take the warp-scan
+            # instantiation. With rows >= groups the walk is short and the
+            # scan instantiation's extra code costs ~1% per call, so they
+            # keep the walk. One extra decode instantiation per shape.
+            comptime if r[0] == DECODE_AVG_M:
+                if estimated_total_m < num_active_experts:
+                    _go[r[1], r[2], _s, r[4], 1, True, scan=True]()
+                    return
             _go[r[1], r[2], _s, r[4], 1, True]()
             return
 

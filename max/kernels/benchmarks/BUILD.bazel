@@ -401,6 +401,9 @@ mojo_binary(
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
             # Same reason: the MoE decode-shape ablation, timed on remote B200.
             "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Same reason: the DeepSeek-V4-Flash decode call of the grouped
+            # W4A8 matmul, timed on remote B200.
+            "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo",
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
@@ -460,6 +463,9 @@ mojo_binary(
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
             # Same reason: the MoE decode-shape ablation, timed on remote B200.
             "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Same reason: the DeepSeek-V4-Flash decode call of the grouped
+            # W4A8 matmul, timed on remote B200.
+            "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo",
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
@@ -527,6 +533,38 @@ build_test(
     name = "gpu/linalg/bench_moe_w4a8_decode.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/linalg/bench_moe_w4a8_decode.mojo.run"],
+)
+
+# SM100 grouped W4A8 matmul as DeepSeek-V4-Flash calls it at decode under TP2
+# (128 expert groups, most empty); without arguments it hashes the output at
+# 1 to 8 local rows so two builds compare bit for bit; `--test_arg=--bench`
+# times calls. Timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo.run",
+    size = "large",
+    srcs = ["gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo.run"],
 )
 
 # The GLM-5.3-Flash router per call at its decode row counts
