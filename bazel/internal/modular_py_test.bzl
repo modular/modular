@@ -69,7 +69,8 @@ def _wire_precompile(
         mojo_deps,
         imports,
         gpu_constraints,
-        target_compatible_with):
+        target_compatible_with,
+        exec_compatible_with):
     """Emits the record half of one per-file test, on CPU.
 
     The producer is the test's own pytest invocation as a `py_binary`, and the
@@ -100,6 +101,9 @@ def _wire_precompile(
         gpu_constraints: The consumer's GPU requirements, which say which arch
             to record for.
         target_compatible_with: The consumer's own constraints.
+        exec_compatible_with: Constraints on the executor the record action
+            runs on. The producer is built for that executor, so a lane whose
+            mojo packages depend on a platform constraint names it here.
 
     Returns:
         A struct of what to add to the consumer test so it replays.
@@ -141,6 +145,9 @@ def _wire_precompile(
         # own environment above.
         env = env_for_available_tools() | runtime_sanitizer_env() | {
             "PYTHONUNBUFFERED": "set",
+            # A lane whose virtual device comes from a driver plugin needs it
+            # while recording too.
+            "MODULAR_DRIVER_PLUGINS": "$(MODULAR_DRIVER_PLUGINS)",
             "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
             "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
             "MODULAR_MOJO_MAX_IMPORT_PATH": "$(COMPUTED_IMPORT_PATH)",
@@ -180,6 +187,7 @@ def _wire_precompile(
         strip_env = _RECORD_STRIP_ENV,
         test_label = "//{}:{}".format(native.package_name(), test_name),
         expansion_targets = data,
+        exec_compatible_with = exec_compatible_with,
         tags = ["manual"],
         testonly = True,
         target_compatible_with = gpu_constraints + target_compatible_with + _NO_RECORD,
@@ -229,6 +237,7 @@ def modular_py_test(
         precompile_mefs = False,
         precompile_shards = None,
         precompile_device_count = 1,
+        precompile_exec_compatible_with = [],
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -265,6 +274,8 @@ def modular_py_test(
             nothing correlates a record shard with a test shard.
         precompile_device_count: How many virtual accelerators to present while
             recording. Defaults to 1.
+        precompile_exec_compatible_with: Constraints on the CPU executor that
+            records. Defaults to none, which is any CPU executor.
         **kwargs: Extra arguments passed through to py_test
     """
 
@@ -436,6 +447,7 @@ def modular_py_test(
                     imports = imports,
                     gpu_constraints = gpu_constraints,
                     target_compatible_with = target_compatible_with + per_test_target_compatible_with.get(src, []),
+                    exec_compatible_with = precompile_exec_compatible_with,
                 )
             py_test(
                 name = test_name,
@@ -492,6 +504,7 @@ def modular_py_test(
                 imports = imports,
                 gpu_constraints = gpu_constraints,
                 target_compatible_with = target_compatible_with,
+                exec_compatible_with = precompile_exec_compatible_with,
             )
 
         # test_name_prefix intentionally doesn't apply here: single-source
