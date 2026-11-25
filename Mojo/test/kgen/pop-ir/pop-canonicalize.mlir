@@ -2413,6 +2413,53 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: hlcf.return %[[RES]] : !kgen.scalar<uindex>
     hlcf.return %6 : !kgen.scalar<uindex>
   }
+
+  // 1099511627776 (2^40) truncates to 0 at 32 bits, so these fold only when
+  // the target's index bit width is known.
+  // CHECK-LABEL: @index_min_max
+  kgen.func @index_min_max() -> (!kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>) {
+    // CHECK-DAG: %[[SMALL:.*]] = kgen.param.constant: scalar<index> = <11>
+    // CHECK-DAG: %[[LARGE:.*]] = kgen.param.constant: scalar<index> = <1099511627776>
+    // CHECK-DAG: %[[USMALL:.*]] = kgen.param.constant: scalar<uindex> = <3>
+    // CHECK-DAG: %[[ULARGE:.*]] = kgen.param.constant: scalar<uindex> = <1099511627776>
+    // CHECK: hlcf.return %[[SMALL]], %[[LARGE]], %[[USMALL]], %[[ULARGE]]
+    %small = kgen.param.constant: scalar<index> = <11>
+    %large = kgen.param.constant: scalar<index> = <1099511627776>
+    %usmall = kgen.param.constant: scalar<uindex> = <3>
+    %ularge = kgen.param.constant: scalar<uindex> = <1099511627776>
+    %0 = pop.min %small, %large : !kgen.scalar<index>
+    %1 = pop.max %small, %large : !kgen.scalar<index>
+    %2 = pop.min %ularge, %usmall : !kgen.scalar<uindex>
+    %3 = pop.max %ularge, %usmall : !kgen.scalar<uindex>
+    hlcf.return %0, %1, %2, %3 : !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>
+  }
+}
+
+// -----
+
+// Without target info, pop.min and pop.max on index values still fold only when
+// 32-bit and 64-bit arithmetic agree.
+// CHECK-LABEL: @index_min_max_no_target_info
+kgen.func @index_min_max_no_target_info() -> (!kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>) {
+  // CHECK-DAG: %[[SMALL:.*]] = kgen.param.constant: scalar<index> = <11>
+  // CHECK-DAG: %[[MID:.*]] = kgen.param.constant: scalar<index> = <1048576>
+  // CHECK-DAG: %[[MIN:.*]] = pop.min %{{.*}} : !kgen.scalar<index>
+  // CHECK-DAG: %[[MAX:.*]] = pop.max %{{.*}} : !kgen.scalar<index>
+  // CHECK-DAG: %[[UMIN:.*]] = pop.min %{{.*}} : !kgen.scalar<uindex>
+  // CHECK-DAG: %[[UMAX:.*]] = pop.max %{{.*}} : !kgen.scalar<uindex>
+  // CHECK: hlcf.return %[[MIN]], %[[SMALL]], %[[MAX]], %[[MID]], %[[UMIN]], %[[UMAX]]
+  %small = kgen.param.constant: scalar<index> = <11>
+  %large = kgen.param.constant: scalar<index> = <1099511627776>
+  %mid = kgen.param.constant: scalar<index> = <1048576>
+  %0 = pop.min %small, %large : !kgen.scalar<index>
+  %1 = pop.min %small, %mid : !kgen.scalar<index>
+  %2 = pop.max %small, %large : !kgen.scalar<index>
+  %3 = pop.max %small, %mid : !kgen.scalar<index>
+  %usmall = kgen.param.constant: scalar<uindex> = <11>
+  %ularge = kgen.param.constant: scalar<uindex> = <1099511627776>
+  %4 = pop.min %usmall, %ularge : !kgen.scalar<uindex>
+  %5 = pop.max %usmall, %ularge : !kgen.scalar<uindex>
+  hlcf.return %0, %1, %2, %3, %4, %5 : !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>
 }
 
 // -----
