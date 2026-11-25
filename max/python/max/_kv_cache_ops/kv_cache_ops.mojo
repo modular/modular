@@ -18,17 +18,15 @@ from std.python import Python, PythonObject
 from std.python.bindings import PythonModuleBuilder
 
 
+from nn.attention.gpu.attn_dispatch import (
+    AttnDispatchDesc,
+    attn_dispatch_resolve as _attn_dispatch_resolve,
+    mha_split_kv_decode_num_partitions_runtime,
+    mla_decode_dispatch_scalars,
+)
 from nn.attention.gpu.mha_decode_partition_heuristic import (
-    amd_mla_decode_dispatch_scalars,
     mha_decoding_num_partitions,
 )
-from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
-    compute_mla_dispatch_key_runtime,
-)
-from nn.attention.gpu.nvidia.sm100.dispatch import (
-    mha_split_kv_decode_num_partitions as _split_kv_decode_num_partitions,
-)
-from nn.attention.gpu.nvidia.sm100.fa4_splitk_combine import P_MAX
 
 
 @export
@@ -55,6 +53,13 @@ def PyInit_kv_cache_ops() abi("C") -> PythonObject:
             docstring=(
                 "Returns the MLA dispatch metadata scalars and the kernel"
                 " variant."
+            ),
+        )
+        b.def_function[attn_dispatch_resolve](
+            "attn_dispatch_resolve",
+            docstring=(
+                "Returns the decode dispatch of one KV cache: the key length,"
+                " then the key, then the dispatch record scalars."
             ),
         )
         return b.finalize()
@@ -135,23 +140,11 @@ def mha_split_kv_decode_num_partitions(
     if sm_count < 1:
         raise Error("sm_count must be positive.")
 
-    # The policy's ladder tops out at the SM count, a compile-time parameter,
-    # so it is instantiated for every count up to the combine's `P_MAX`, which
-    # also caps the count it returns. A MIG slice gets its own count's ladder.
-    # TODO(DISTINF-639): a device with more than `P_MAX` SMs takes the `P_MAX`
-    # instantiation, whose wave bound counts `P_MAX` SMs and so may split less
-    # than the device could; give the policy a runtime SM count if one ships.
-    var policy_sm_count = min(sm_count, P_MAX)
-    comptime for ladder_sm_count in range(1, P_MAX + 1):
-        if policy_sm_count == ladder_sm_count:
-            var num_partitions = _split_kv_decode_num_partitions[
-                ladder_sm_count
-            ](batch_size, num_keys, kv_heads_per_device, sliding_window)
-            ref cpython = Python().cpython()
-            return PythonObject(
-                from_owned=cpython.PyLong_FromSsize_t(num_partitions)
-            )
-    raise Error("unreachable: every SM count up to P_MAX has a policy")
+    var num_partitions = mha_split_kv_decode_num_partitions_runtime(
+        batch_size, num_keys, kv_heads_per_device, sliding_window, sm_count
+    )
+    ref cpython = Python().cpython()
+    return PythonObject(from_owned=cpython.PyLong_FromSsize_t(num_partitions))
 
 
 def multiprocessor_count(
@@ -207,41 +200,21 @@ def mla_dispatch_args_scalar(
 
     var device_ctx = DeviceContext(ctx)
 
-    # The variant separates capture keys whose launches share a split count;
-    # only the SM100 sparse decode has more than one.
-    var scalars: Tuple[Int, Int, Int, Int]
-    if device_ctx.api() == "hip":
-        var amd = amd_mla_decode_dispatch_scalars(
-            batch_size,
-            max_cache_valid_length,
-            q_max_seq_len,
-            num_heads,
-            is_fp8_kv,
-            device_ctx,
-            sparse_indices_stride=sparse_indices_stride,
-        )
-        scalars = (amd[0], amd[1], amd[2], 0)
-    elif device_ctx.api() == "cuda":
-        scalars = compute_mla_dispatch_key_runtime(
-            batch_size,
-            max_cache_valid_length,
-            q_max_seq_len,
-            num_heads,
-            is_fp8_kv,
-            sparse_indices_stride,
-            device_ctx.device().multiprocessor_count(),
-            kv_form=kv_form,
-            page_size=page_size,
-            fixed_topk=fixed_topk,
-            physical_indices=physical_indices,
-            depth=depth,
-            row_invariant_verify=row_invariant_verify,
-        )
-    else:
-        raise Error(
-            "MLA decode dispatch metadata supports only HIP (AMD) and CUDA"
-            " (NVIDIA) devices."
-        )
+    var scalars = mla_decode_dispatch_scalars(
+        device_ctx,
+        batch_size,
+        max_cache_valid_length,
+        q_max_seq_len,
+        num_heads,
+        is_fp8_kv,
+        sparse_indices_stride,
+        kv_form,
+        page_size,
+        fixed_topk,
+        physical_indices,
+        depth,
+        row_invariant_verify,
+    )
     var result: Array[Int, 4] = [
         scalars[0],
         scalars[1],
@@ -249,3 +222,50 @@ def mla_dispatch_args_scalar(
         scalars[3],
     ]
     return _make_int_list(result)
+
+
+def attn_dispatch_resolve(
+    device_context_ptr: PythonObject,
+    kind_obj: PythonObject,
+    fields_obj: PythonObject,
+    batch_size_obj: PythonObject,
+    q_max_seq_len_obj: PythonObject,
+    max_cache_valid_length_obj: PythonObject,
+) raises -> PythonObject:
+    # `fields_obj` holds the descriptor's integer fields in declaration order.
+    var desc = AttnDispatchDesc(
+        kind=String(py=kind_obj),
+        num_q_heads=Int(py=fields_obj[0]),
+        num_kv_heads=Int(py=fields_obj[1]),
+        head_dim=Int(py=fields_obj[2]),
+        page_size=Int(py=fields_obj[3]),
+        window_size=Int(py=fields_obj[4]),
+        sparse_indices_stride=Int(py=fields_obj[5]),
+        kv_dtype=Int(py=fields_obj[6]),
+        kv_form=Int(py=fields_obj[7]),
+        flags=Int(py=fields_obj[8]),
+    )
+    var resolved = _attn_dispatch_resolve(
+        DeviceContext(_get_ctx(device_context_ptr)),
+        desc,
+        Int(py=batch_size_obj),
+        Int(py=q_max_seq_len_obj),
+        Int(py=max_cache_valid_length_obj),
+    )
+    ref cpython = Python().cpython()
+    var count = 1 + len(resolved.key) + len(resolved.metadata)
+    var result = cpython.PyList_New(count)
+    _ = cpython.PyList_SetItem(
+        result, 0, cpython.PyLong_FromSsize_t(len(resolved.key))
+    )
+    for i in range(len(resolved.key)):
+        _ = cpython.PyList_SetItem(
+            result, 1 + i, cpython.PyLong_FromSsize_t(resolved.key[i])
+        )
+    for i in range(len(resolved.metadata)):
+        _ = cpython.PyList_SetItem(
+            result,
+            1 + len(resolved.key) + i,
+            cpython.PyLong_FromSsize_t(resolved.metadata[i]),
+        )
+    return PythonObject(from_owned=result)

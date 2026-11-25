@@ -21,6 +21,7 @@ modular_py_library(
     data = [":kv_cache_ops"],
     ignore_unresolved_imports = [
         # mojo.importer populates these symbols from the native extension.
+        ".kv_cache_ops.attn_dispatch_resolve",
         ".kv_cache_ops.mha_decode_num_partitions",
         ".kv_cache_ops.mha_split_kv_decode_num_partitions",
         ".kv_cache_ops.mla_dispatch_args_scalar",

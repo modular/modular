@@ -35,11 +35,13 @@ from typing import (
 import numpy as np
 from max import tree
 from max._kv_cache_ops import (
+    ATTN_DISPATCH_UNSET,
+    AttnDispatch,
+    AttnDispatchDesc,
+    AttnDispatchFlag,
+    AttnKVDType,
     MLASparseKVForm,
-    mha_decode_num_partitions,
-    mha_split_kv_decode_num_partitions,
-    mla_dispatch_key,
-    multiprocessor_count,
+    attn_dispatch_resolve,
 )
 from max._kv_core import LeafShape
 from max.driver import Buffer, Device
@@ -1845,6 +1847,34 @@ class KVCacheParams(KVCacheParamInterface):
         return device_ref.to_device()
 
     @property
+    def dispatch_desc(self) -> AttnDispatchDesc:
+        """Returns what the decode dispatch reads of this cache."""
+        raise NotImplementedError
+
+    def _resolve_dispatch(
+        self,
+        batch_size: int,
+        max_prompt_length: int,
+        max_cache_valid_length: int,
+    ) -> AttnDispatch | None:
+        """Resolves the kernels' decode dispatch, the same way for every kind.
+
+        Returns:
+            The dispatch, or ``None`` for an empty replica or a CPU-only
+            host, where no decode kernel launches.
+        """
+        device = self._primary_device
+        if batch_size <= 0 or device is None:
+            return None
+        return attn_dispatch_resolve(
+            device,
+            self.dispatch_desc,
+            batch_size,
+            max_prompt_length,
+            max_cache_valid_length,
+        )
+
+    @property
     def is_fp8_kv_dtype(self) -> bool:
         """Whether the KV cache stores FP8 data, for dispatch resolution.
 
@@ -2555,6 +2585,26 @@ class MHAKVCacheParams(KVCacheParams):
         """Returns the spec :class:`MHAAttnKey` packs into."""
         return MHAAttnKey.dispatch_metadata_spec()
 
+    @property
+    def dispatch_desc(self) -> AttnDispatchDesc:
+        """Returns what the decode dispatch reads of this cache."""
+        return AttnDispatchDesc(
+            kind="mha",
+            num_kv_heads=self.n_kv_heads_per_device,
+            head_dim=self.head_dim,
+            page_size=self.page_size,
+            window_size=(
+                ATTN_DISPATCH_UNSET
+                if self.window_size is None
+                else self.window_size
+            ),
+            flags=(
+                AttnDispatchFlag.SPLIT_HEAD_DIMS
+                if self.has_split_head_dims
+                else AttnDispatchFlag.NONE
+            ),
+        )
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2572,27 +2622,11 @@ class MHAKVCacheParams(KVCacheParams):
         Returns:
             The resolved :class:`AttnKeyInterface`.
         """
-        device = self._primary_device
-        if batch_size <= 0 or device is None:
-            # Sentinel for empty / degenerate replicas or a CPU-only host;
-            # skip the GPU dispatch kernel.
-            num_partitions = 1
-        elif self.has_split_head_dims:
-            # The split cache's decode kernel launches exactly this count.
-            num_partitions = mha_split_kv_decode_num_partitions(
-                batch_size,
-                max_cache_valid_length,
-                self.n_kv_heads_per_device,
-                self.window_size,
-                self._sm_count,
-            )
-        else:
-            num_partitions = mha_decode_num_partitions(
-                batch_size,
-                max_cache_valid_length,
-                self.n_kv_heads_per_device,
-                device,
-            )
+        dispatch = self._resolve_dispatch(
+            batch_size, max_prompt_length, max_cache_valid_length
+        )
+        # The sentinel of an empty replica or a CPU-only host is one partition.
+        num_partitions = 1 if dispatch is None else dispatch.key[0]
         return MHAAttnKey(
             batch_size=batch_size,
             max_prompt_length=max_prompt_length,
@@ -2725,13 +2759,6 @@ class MHAKVCacheParams(KVCacheParams):
             split_head_dims=self._split_head_dims_marker,
             mixed_step_split=mixed_step_split,
         )
-
-    @cached_property
-    def _sm_count(self) -> int:
-        # resolve_attn_key reads this every decode step; uncached, each read
-        # is a driver query.
-        assert self._primary_device is not None
-        return multiprocessor_count(self._primary_device)
 
     @property
     def _split_head_dims_marker(self) -> SplitKVHeadDims | None:
@@ -2874,6 +2901,31 @@ class MLAKVCacheParams(KVCacheParams):
             sparse_dispatch_head_dim=mla.resolved_sparse_dispatch_head_dim,
         )
 
+    @property
+    def dispatch_desc(self) -> AttnDispatchDesc:
+        """Returns what the decode dispatch reads of this cache."""
+        flags = AttnDispatchFlag.NONE
+        if self.sparse_fixed_topk:
+            flags |= AttnDispatchFlag.FIXED_TOPK
+        if self.resolved_sparse_physical_indices:
+            flags |= AttnDispatchFlag.PHYSICAL_INDICES
+        if self.sparse_row_invariant_verify:
+            flags |= AttnDispatchFlag.ROW_INVARIANT_VERIFY
+        return AttnDispatchDesc(
+            kind="mla",
+            num_q_heads=self.num_q_heads_per_device,
+            head_dim=self.resolved_sparse_dispatch_head_dim,
+            page_size=self.page_size,
+            sparse_indices_stride=(
+                self.sparse_indices_stride or ATTN_DISPATCH_UNSET
+            ),
+            kv_dtype=(
+                AttnKVDType.FP8 if self.is_fp8_kv_dtype else AttnKVDType.OTHER
+            ),
+            kv_form=self.resolved_sparse_kv_form,
+            flags=flags,
+        )
+
     def resolve_attn_key(
         self,
         batch_size: int,
@@ -2891,39 +2943,26 @@ class MLAKVCacheParams(KVCacheParams):
         Returns:
             The resolved :class:`AttnKeyInterface`.
         """
-        device = self._primary_device
-        if batch_size <= 0 or device is None:
-            # Sentinel for empty / degenerate replicas or a CPU-only host;
-            # skip the GPU dispatch kernel.
+        dispatch = self._resolve_dispatch(
+            batch_size, max_prompt_length, max_cache_valid_length
+        )
+        if dispatch is None:
+            # The sentinel of an empty replica or a CPU-only host.
             return MLAAttnKey(
                 batch_size=batch_size,
                 max_prompt_length=max_prompt_length,
                 num_partitions=1,
             )
-        # ``mla_dispatch_key`` may adjust batch_size / max_prompt_length
-        # alongside the resolved num_partitions; carry the adjusted values.
-        adj_batch_size, adj_max_prompt_length, num_partitions, variant = (
-            mla_dispatch_key(
-                batch_size,
-                max_cache_valid_length,
-                max_prompt_length,
-                self.num_q_heads_per_device,
-                self.is_fp8_kv_dtype,
-                device,
-                sparse_indices_stride=self.sparse_indices_stride or 0,
-                kv_form=self.resolved_sparse_kv_form,
-                page_size=self.page_size,
-                fixed_topk=self.sparse_fixed_topk,
-                physical_indices=self.resolved_sparse_physical_indices,
-                depth=self.resolved_sparse_dispatch_head_dim,
-                row_invariant_verify=self.sparse_row_invariant_verify,
-            )
+        # The dispatch may adjust the batch size and the query width along
+        # with the partition count; the record carries the adjusted values.
+        adj_batch_size, adj_max_prompt_length, num_partitions = (
+            dispatch.metadata
         )
         return MLAAttnKey(
-            batch_size=int(adj_batch_size),
-            max_prompt_length=int(adj_max_prompt_length),
-            num_partitions=int(num_partitions),
-            kernel_variant=int(variant),
+            batch_size=adj_batch_size,
+            max_prompt_length=adj_max_prompt_length,
+            num_partitions=num_partitions,
+            kernel_variant=dispatch.key[1],
         )
 
     def _resolve_target_key(
@@ -3131,6 +3170,11 @@ class MSAKVCacheParams(MHAKVCacheParams):
     # metadata in its kernel. Once the indexer graph is migrated to a dedicated
     # MSA input record, drop ``attention_dispatch_metadata`` from the symbolic
     # and runtime inputs entirely.
+    @property
+    def dispatch_desc(self) -> AttnDispatchDesc:
+        """Returns what the decode dispatch reads of this cache."""
+        return AttnDispatchDesc(kind="msa")
+
     def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
         """Returns the spec :class:`MSAAttnKey` packs into."""
         return MSAAttnKey.dispatch_metadata_spec()
@@ -3183,6 +3227,11 @@ class MSAIndexKVCacheParams(MHAKVCacheParams):
     def replicates_kv_across_tp(self) -> bool:
         """Whether more than one tensor-parallel device holds the head."""
         return self.tensor_parallel_degree > 1
+
+    @property
+    def dispatch_desc(self) -> AttnDispatchDesc:
+        """Returns what the decode dispatch reads of this cache."""
+        return AttnDispatchDesc(kind="msa_index")
 
     def dispatch_metadata_spec(self) -> DispatchMetadataSpec:
         """Returns the spec :class:`MSAIndexAttnKey` packs into."""
