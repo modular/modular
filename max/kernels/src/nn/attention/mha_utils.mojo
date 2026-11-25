@@ -1027,10 +1027,6 @@ struct NonNullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @inline(.always)
     def __init__(out self, ptr: Self.PtrType):
         self.ptr = ptr
@@ -1080,10 +1076,6 @@ struct NullPointer[dtype_: DType, address_space_: AddressSpace = .GENERIC](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_device_type_name() -> String:
-        return Self.get_type_name()
 
     @inline(.always)
     def __init__(out self):

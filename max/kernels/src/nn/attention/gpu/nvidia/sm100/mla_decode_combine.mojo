@@ -169,10 +169,6 @@ struct CombineParams[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_device_type_name() -> String:
-        return "CombineParams"
-
     def __init__(
         out self,
         out_accum_split_ptr: MutPointer[
@@ -697,10 +693,6 @@ struct SplitParallelCombineParams[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_device_type_name() -> String:
-        return "SplitParallelCombineParams"
 
     def __init__(
         out self,

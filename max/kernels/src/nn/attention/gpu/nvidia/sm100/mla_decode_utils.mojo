@@ -490,10 +490,6 @@ struct MLA_Decode_Pack[
     def get_type_name() -> String:
         return "Pack"
 
-    @staticmethod
-    def get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @inline(.always)
     def __init__(
         out self,
