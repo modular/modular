@@ -84,14 +84,14 @@ def _check_mla_prefill[
     comptime k_size = key_rows * heads * depth
     comptime rope_size = key_rows * heads * rope
     comptime out_size = query_rows * heads * depth
-    comptime guard = 32
+    comptime guard_value = 32
     comptime scale = Float32(0.125)
 
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
     var k_host = ctx.enqueue_create_host_buffer[dtype](k_size)
     var v_host = ctx.enqueue_create_host_buffer[dtype](k_size)
     var rope_host = ctx.enqueue_create_host_buffer[dtype](rope_size)
-    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size + guard)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size + guard_value)
     var scores = ctx.enqueue_create_host_buffer[.float64](keys)
 
     for row in range(query_rows):
@@ -116,14 +116,14 @@ def _check_mla_prefill[
                 rope_host[(row * heads + head) * rope + col] = Scalar[dtype](
                     Float32((row * 5 + head * 7 + col * 3) % 13 - 6) / 16
                 ) if row < keys else Scalar[dtype](0)
-    for i in range(out_size + guard):
+    for i in range(out_size + guard_value):
         out_host[i] = Scalar[dtype](42)
 
     var q_buffer = ctx.enqueue_create_buffer[dtype](q_size)
     var k_buffer = ctx.enqueue_create_buffer[dtype](k_size)
     var v_buffer = ctx.enqueue_create_buffer[dtype](k_size)
     var rope_buffer = ctx.enqueue_create_buffer[dtype](rope_size)
-    var out_buffer = ctx.enqueue_create_buffer[dtype](out_size + guard)
+    var out_buffer = ctx.enqueue_create_buffer[dtype](out_size + guard_value)
     ctx.enqueue_copy(q_buffer, q_host)
     ctx.enqueue_copy(k_buffer, k_host)
     ctx.enqueue_copy(v_buffer, v_host)
@@ -211,7 +211,7 @@ def _check_mla_prefill[
                     atol=3e-3,
                     rtol=2e-2,
                 )
-    for i in range(out_size, out_size + guard):
+    for i in range(out_size, out_size + guard_value):
         assert_equal(out_host[i], Scalar[dtype](42))
 
 

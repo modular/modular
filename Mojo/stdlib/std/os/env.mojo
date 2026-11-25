@@ -73,7 +73,7 @@ def getenv(var name: String, default: String = "") -> String:
     Returns:
       The value of the environment variable.
     """
-    __guard case .Some(ptr) = external_call[
+    guard case .Some(ptr) = external_call[
         "getenv", Optional[Pointer[UInt8, ImmUntrackedOrigin]]
     ](name.as_c_string_span()) else:
         return default

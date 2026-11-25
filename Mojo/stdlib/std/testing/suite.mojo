@@ -606,7 +606,7 @@ struct TestSuite(
     def _should_skip(self, test: _Test) -> Bool:
         if test.name in self.skip_list:
             return True
-        __guard case .Some(allow_list) = self.allow_list else:
+        guard case .Some(allow_list) = self.allow_list else:
             return False
         return test.name not in allow_list
 

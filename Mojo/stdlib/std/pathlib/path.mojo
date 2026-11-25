@@ -87,7 +87,7 @@ def _dir_of_current_file() raises -> Path:
 
 @inline(.never)
 def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
-    __guard case .Some(i) = file_name.rfind(DIR_SEPARATOR) else:
+    guard case .Some(i) = file_name.rfind(DIR_SEPARATOR) else:
         return Path(".")
     if i == 0:
         return Path(DIR_SEPARATOR)

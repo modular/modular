@@ -428,7 +428,7 @@ def test_optional_reg_encodes_engaged_payload() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    __guard case .Some(value) = buf[] else:
+    guard case .Some(value) = buf[] else:
         raise Error("expected an engaged OptionalReg")
     assert_equal(value, 42)
 
@@ -450,7 +450,7 @@ def test_optional_reg_identity_payload_round_trips() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     opt._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    __guard case .Some(value) = buf[] else:
+    guard case .Some(value) = buf[] else:
         raise Error("expected an engaged OptionalReg")
     assert_equal(value, 7)
 
@@ -523,7 +523,7 @@ def test_optional_reg_field_encodes_payload() raises:
     var buf = allocation.unsafe_ptr()
     var encoder = DefaultDeviceTypeEncoder()
     box._to_device_type(encoder, buf.unsafe_bitcast[NoneType]())
-    __guard case .Some(value) = buf[].maybe else:
+    guard case .Some(value) = buf[].maybe else:
         raise Error("expected an engaged OptionalReg")
     assert_equal(value, 10)
     assert_equal(buf[].tag, 9)
@@ -574,7 +574,7 @@ def _assert_slot_matches[Host: AnyType, Declared: AnyType]():
     """Asserts `Host` may fill `Declared` and the slot is `Host`'s own layout.
     """
     comptime slot = _declared_slot[Host, Declared, _target]()
-    comptime __guard case .Some(layout) = slot else:
+    comptime guard case .Some(layout) = slot else:
         comptime assert False, "expected a declared slot"
     comptime assert layout.size == size_of[Host]()
     comptime assert layout.align == align_of[Host]()
@@ -591,7 +591,7 @@ def test_declared_slot_of_same_or_encodable_type() raises:
     _assert_slot_matches[Int32, Int32]()
     # `ScaledInt` encodes to `Int32`, so the slot is the declared type's.
     comptime slot = _declared_slot[ScaledInt, Int32, _target]()
-    comptime __guard case .Some(layout) = slot else:
+    comptime guard case .Some(layout) = slot else:
         comptime assert False, "expected a declared slot"
     comptime assert layout.size == size_of[Int32]()
     comptime assert not _declared_slot[Int32, Float32, _target]()

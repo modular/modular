@@ -24,7 +24,7 @@
 # CHECK: hlcf.match.complete
 # CHECK: ([[VALUE]],
 def guard_binding(x: Int):
-    __guard case var value = x else:
+    guard case var value = x else:
         return  # expected-warning {{unreachable code after match that always completes}}
     value += 1
 
@@ -34,7 +34,7 @@ def guard_binding(x: Int):
 # CHECK: hlcf.if
 # CHECK: lit.return
 def guard_condition(condition: Bool) -> Int:
-    __guard condition else:
+    guard condition else:
         return 0
     return 1
 
@@ -44,7 +44,7 @@ def guard_condition(condition: Bool) -> Int:
 # CHECK: hlcf.match {
 # CHECK: hlcf.match.complete
 def guard_multiple_clauses(condition: Bool, x: Optional[Int]):
-    __guard condition;
+    guard condition;
       case .Some(value) = x else:
         return
     _ = value
@@ -56,7 +56,7 @@ def guard_multiple_clauses(condition: Bool, x: Optional[Int]):
 # CHECK: else {
 # CHECK: hlcf.unreachable <fallthroughError = "guard 'else' block must not fall through">
 def guard_no_fallthrough(x: Int):
-    __guard case 0 = x else:  # expected-error {{guard 'else' block must not fall through}}
+    guard case 0 = x else:  # expected-error {{guard 'else' block must not fall through}}
         pass
     _ = x
 
@@ -68,7 +68,7 @@ def guard_no_fallthrough(x: Int):
 # CHECK: lit.return
 # CHECK: }
 def comptime_guard_binding[pair: Tuple[Int, Int]]() -> Int:
-    comptime __guard case (0, value) = pair else:
+    comptime guard case (0, value) = pair else:
         return -1
     return value
 
@@ -76,7 +76,7 @@ def comptime_guard_binding[pair: Tuple[Int, Int]]() -> Int:
 # CHECK-LABEL: lit.fn @"comptime_guard_condition
 # CHECK: hlcf.comptime.if
 def comptime_guard_condition[condition: Bool]() -> Int:
-    comptime __guard condition else:
+    comptime guard condition else:
         return 0
     return 1
 
@@ -84,7 +84,7 @@ def comptime_guard_condition[condition: Bool]() -> Int:
 # CHECK-LABEL: lit.fn @"comptime_guard_multiple_clauses
 # CHECK: hlcf.comptime.if
 def comptime_guard_multiple_clauses[T: AnyType, enabled: Bool]() -> Int:
-    comptime __guard enabled;
+    comptime guard enabled;
       case == Int = T else:
         return 0
     return 1

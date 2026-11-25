@@ -151,7 +151,7 @@ def test_malloc() raises:
     var block = external_call[
         "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
     ](c_size_t(SIZE))
-    __guard case .Some(ptr) = block else:
+    guard case .Some(ptr) = block else:
         raise Error("malloc failed")
     var bytes = Span(unsafe_ptr=ptr, length=SIZE)
     bytes[0] = 42

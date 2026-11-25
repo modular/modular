@@ -617,7 +617,7 @@ struct assert_raises:
         Returns:
             True if the error was successfully caught and matched.
         """
-        __guard case .Some(message_contains) = self.message_contains else:
+        guard case .Some(message_contains) = self.message_contains else:
             return True
         comptime assert conforms_to(
             E, Writable

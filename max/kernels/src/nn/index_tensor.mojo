@@ -251,7 +251,7 @@ def _index_tensor_impl[
                 cpu_ctx,
             )
     else:
-        __guard case .Some(cuda_ctx) = ctx else:
+        guard case .Some(cuda_ctx) = ctx else:
             abort("Must provide DeviceContext if executing on GPU.")
         if use_simd:
             elementwise[target_simd_width](

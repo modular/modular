@@ -2143,7 +2143,7 @@ def topk_topp_sampling_from_prob[
         ] = None
 
         comptime if emit_dist:
-            __guard case .Some(dist) = out_dist else:
+            guard case .Some(dist) = out_dist else:
                 raise Error("out_dist is required when emit_dist is set")
             var dist_shape = dist.layout.shape_coord()
             if Int(dist_shape[0]) != batch_size or Int(dist_shape[1]) != d:

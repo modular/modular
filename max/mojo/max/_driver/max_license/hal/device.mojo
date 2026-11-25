@@ -214,7 +214,7 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
         var maybe_limit = self._raw[].get_optional_device_property[
             "max_queues_per_context", Int64
         ](self._handle)
-        __guard case .Some(limit) = maybe_limit else:
+        guard case .Some(limit) = maybe_limit else:
             return None
         return Int(limit)
 
@@ -224,7 +224,7 @@ struct Device[spec: DeviceSpec](Deinitable, Movable):
         var maybe_limit = self._raw[].get_optional_device_property[
             "max_contexts_per_device", Int64
         ](self._handle)
-        __guard case .Some(limit) = maybe_limit else:
+        guard case .Some(limit) = maybe_limit else:
             return None
         return Int(limit)
 

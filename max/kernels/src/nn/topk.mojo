@@ -3557,7 +3557,7 @@ def gumbel_sampling_fused_gpu[
             ImmPointer[Scalar[DType.int64], ImmutAnyOrigin]
         ] = None
         comptime if subtract:
-            __guard case .Some(sub) = sub else:
+            guard case .Some(sub) = sub else:
                 raise Error("sub is required when subtract is set")
             if Int(sub.num_elements()) < batch_size * Int(input.dim(1)):
                 raise Error("sub must be a contiguous [batch, vocab] tensor")

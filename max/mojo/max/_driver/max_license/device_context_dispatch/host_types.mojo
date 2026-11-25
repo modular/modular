@@ -276,7 +276,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         # Now it's safe to use results on the host
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.synchronize()
             return
 
@@ -295,7 +295,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the wait operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_wait_for(event._impl)
             return
 
@@ -336,7 +336,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         new_stream.enqueue_wait_for(event)
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.record_event(event._impl)
             return
 
@@ -372,7 +372,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the underlying device does not support host callbacks, or if
             the driver rejects the enqueue.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_host_func(func, user_data)
             return
 
@@ -393,7 +393,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the device has no completion flags, the flag belongs to
             another backend, or enqueueing the wait fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.wait_for_flag(flag._impl, value)
             return
 
@@ -444,7 +444,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
@@ -726,7 +726,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If event creation or recording fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(ctx._impl)
             return
 
@@ -776,7 +776,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If synchronization fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.synchronize()
             return
 
@@ -937,7 +937,7 @@ struct CompletionFlag(ImplicitlyCopyable):
             unsafe_from_address: Raw address of an `M::Driver::CompletionFlag`
                 (as packed into a graph payload buffer by the producer side).
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(unsafe_from_address=unsafe_from_address)
             return
 
@@ -985,7 +985,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         Args:
             value: The value to store.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.signal(value)
             return
 
@@ -1004,7 +1004,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         Returns:
             The value the flag holds.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.load()
 
         try:
@@ -1018,7 +1018,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         Don't reset while a wait on the flag is pending; doing so is undefined
         behavior. Aborts if the plugin fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.reset()
             return
 
@@ -1103,7 +1103,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the device name cannot be queried.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_name()
 
         return self._impl._ctx[]._device[].name()
@@ -1120,7 +1120,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the attribute cannot be queried.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_attribute(attr)
 
         return Int(self._impl._ctx[]._device[].get_attribute(attr._value))
@@ -1240,7 +1240,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the device cannot be queried.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.is_host_unified()
 
         return self._impl._ctx[]._device[].is_host_unified()
@@ -1254,7 +1254,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the plugin does not report an architecture.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_arch()
 
         return self._impl._ctx[]._device[].arch()
@@ -1278,7 +1278,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the plugin query fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.can_access_peer(peer._impl)
 
         ref ctx = self._impl._ctx[]
@@ -1485,7 +1485,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If the allocation fails or multicast is unsupported.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             var legacy = List[LegacyDeviceContext[]]()
             for ctx in contexts:
                 legacy.append(ctx._impl)
@@ -1519,7 +1519,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.unicast_buffer_for(ctx._impl)
             )
@@ -1540,7 +1540,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.multicast_buffer_for(ctx._impl)
             )

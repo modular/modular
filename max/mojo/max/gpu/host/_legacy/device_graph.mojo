@@ -709,7 +709,7 @@ struct LegacyDeviceGraph(ImplicitlyCopyable, Writable):
             ctx.synchronize()
         ```
         """
-        comptime __guard not HAL_DEVICE_CONTEXT else:
+        comptime guard not HAL_DEVICE_CONTEXT else:
             raise Error(
                 "device graphs are unsupported by the HAL DeviceContext"
             )
@@ -756,7 +756,7 @@ struct LegacyDeviceGraph(ImplicitlyCopyable, Writable):
             If publishing a slot, enqueuing a wait, replaying a graph, or
             synchronizing a context fails.
         """
-        comptime __guard not HAL_DEVICE_CONTEXT else:
+        comptime guard not HAL_DEVICE_CONTEXT else:
             raise Error(
                 "device graphs are unsupported by the HAL DeviceContext"
             )
@@ -895,7 +895,7 @@ struct LegacyDeviceGraph(ImplicitlyCopyable, Writable):
             ctx.synchronize()
         ```
         """
-        comptime __guard not HAL_DEVICE_CONTEXT else:
+        comptime guard not HAL_DEVICE_CONTEXT else:
             raise Error(
                 "device graphs are unsupported by the HAL DeviceContext"
             )
@@ -1009,7 +1009,7 @@ struct LegacyDeviceGraph(ImplicitlyCopyable, Writable):
             ctx.synchronize()
         ```
         """
-        comptime __guard not HAL_DEVICE_CONTEXT else:
+        comptime guard not HAL_DEVICE_CONTEXT else:
             raise Error(
                 "device graphs are unsupported by the HAL DeviceContext"
             )
@@ -1090,7 +1090,7 @@ struct LegacyDeviceGraph(ImplicitlyCopyable, Writable):
             ctx.synchronize()
         ```
         """
-        comptime __guard not HAL_DEVICE_CONTEXT else:
+        comptime guard not HAL_DEVICE_CONTEXT else:
             raise Error(
                 "device graphs are unsupported by the HAL DeviceContext"
             )

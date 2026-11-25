@@ -73,8 +73,8 @@ def _check_decode[dtype: DType](ctx: DeviceContext) raises:
     comptime keys = 128
     comptime query_size = query_rows * depth
     comptime key_size = keys * depth
-    comptime guard = 32
-    comptime output_size = query_size + 2 * guard
+    comptime guard_value = 32
+    comptime output_size = query_size + 2 * guard_value
     comptime scale = Float32(0.125)
     comptime accum_type = get_accum_type[dtype]()
     # Q, K, V, P tiles plus the two-row Float32 reduction scratch.
@@ -136,7 +136,9 @@ def _check_decode[dtype: DType](ctx: DeviceContext) raises:
         q.unsafe_ptr().as_unsafe_any_origin(),
         k,
         v,
-        out_buffer.unsafe_ptr().unsafe_offset(guard).as_unsafe_any_origin(),
+        out_buffer.unsafe_ptr()
+        .unsafe_offset(guard_value)
+        .as_unsafe_any_origin(),
         exp_sum_buffer.unsafe_ptr().as_unsafe_any_origin(),
         qk_max_buffer.unsafe_ptr().as_unsafe_any_origin(),
         grid_dim=(1, 1, 1),
@@ -165,14 +167,14 @@ def _check_decode[dtype: DType](ctx: DeviceContext) raises:
             for key in range(keys):
                 expected += scores[key] * Float64(v_host[key * depth + col])
             assert_almost_equal(
-                Float64(out_host[guard + head * depth + col]),
+                Float64(out_host[guard_value + head * depth + col]),
                 expected / denominator,
                 atol=2e-3,
                 rtol=1e-2,
             )
-    for i in range(guard):
+    for i in range(guard_value):
         assert_equal(out_host[i], Scalar[dtype](42))
-    for i in range(guard + heads * depth, output_size):
+    for i in range(guard_value + heads * depth, output_size):
         assert_equal(out_host[i], Scalar[dtype](42))
 
 

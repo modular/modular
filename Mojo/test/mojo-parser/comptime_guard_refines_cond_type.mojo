@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# A Boolean `comptime __guard` on the condition of a conditional type
+# A Boolean `comptime guard` on the condition of a conditional type
 # `A if c else B` must refine that type to the selected arm in the else suite
 # and in the continuation, like the two branches of a `comptime if`.
 #
@@ -38,7 +38,7 @@ struct Bar(Movable):
 # CHECK: } else {
 # CHECK: kgen.rebind %arg : {{.*}} to !lit.ref<!Bar, imm
 def guard_condition[c: Bool](arg: Foo if c else Bar):
-    comptime __guard c else:
+    comptime guard c else:
         arg.bar()
         return
     arg.foo()
@@ -50,7 +50,7 @@ def guard_condition[c: Bool](arg: Foo if c else Bar):
 # CHECK: } else {
 # CHECK: kgen.rebind %arg : {{.*}} to !lit.ref<!Foo, imm
 def guard_negated[c: Bool](arg: Foo if c else Bar):
-    comptime __guard not c else:
+    comptime guard not c else:
         arg.foo()
         return
     arg.bar()
@@ -72,7 +72,7 @@ struct Dispatch[target: Int](Movable):
     # CHECK: } else {
     # CHECK: kgen.rebind {{.*}} to !lit.ref<!Foo, imm
     def call(self):
-        comptime __guard not Self._use_legacy else:
+        comptime guard not Self._use_legacy else:
             self._impl.foo()
             return
         self._impl.bar()

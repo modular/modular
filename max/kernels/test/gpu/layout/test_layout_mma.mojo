@@ -227,8 +227,8 @@ def test_c_fragment_layout[
     comptime M = shape[0]
     comptime N = shape[1]
     comptime registers = M * N // warp_size
-    comptime guard = 8
-    comptime storage_size = 2 * guard + (M - 1) * row_stride + (
+    comptime guard_value = 8
+    comptime storage_size = 2 * guard_value + (M - 1) * row_stride + (
         N - 1
     ) * col_stride + 1
     comptime storage_layout = row_major[storage_size]()
@@ -247,17 +247,17 @@ def test_c_fragment_layout[
     _ = loaded.host_tensor().fill(nan[dtype]())
     for row in range(M):
         for col in range(N):
-            c_host[guard + row * row_stride + col * col_stride] = Scalar[dtype](
-                row * N + col + 1
-            )
+            c_host[guard_value + row * row_stride + col * col_stride] = Scalar[
+                dtype
+            ](row * N + col + 1)
     c.to_device()
     d.to_device()
     loaded.to_device()
     var c_view = TileTensor(
-        c.device_tensor().unsafe_ptr().unsafe_offset(guard), matrix_layout
+        c.device_tensor().unsafe_ptr().unsafe_offset(guard_value), matrix_layout
     )
     var d_view = TileTensor(
-        d.device_tensor().unsafe_ptr().unsafe_offset(guard), matrix_layout
+        d.device_tensor().unsafe_ptr().unsafe_offset(guard_value), matrix_layout
     )
     comptime kernel = c_fragment_kernel[
         dtype,
@@ -292,9 +292,9 @@ def test_c_fragment_layout[
             assert_equal(
                 fragments[lane, register], Scalar[dtype](row * N + col + 1)
             )
-            expected_host[guard + row * row_stride + col * col_stride] = Scalar[
-                dtype
-            ](lane * registers + register)
+            expected_host[
+                guard_value + row * row_stride + col * col_stride
+            ] = Scalar[dtype](lane * registers + register)
     var d_host = d.host_tensor()
     for i in range(storage_size):
         if isnan(expected_host[i]):
@@ -349,8 +349,8 @@ def test_input_fragment_layout[
     comptime registers = rows * cols // warp_size
     var row_stride = 1 if column_major else cols + 3
     var col_stride = rows + 3 if column_major else 1
-    comptime guard = 8
-    comptime storage_size = 2 * guard + max(
+    comptime guard_value = 8
+    comptime storage_size = 2 * guard_value + max(
         rows * (cols + 3), cols * (rows + 3)
     )
     comptime storage_layout = row_major[storage_size]()
@@ -362,7 +362,8 @@ def test_input_fragment_layout[
     var loaded = HostDeviceTileTensor[dtype](fragment_layout, ctx)
     var source_host = source.host_tensor().fill(nan[dtype]())
     var source_view = TileTensor(
-        source.device_tensor().unsafe_ptr().unsafe_offset(guard), matrix_layout
+        source.device_tensor().unsafe_ptr().unsafe_offset(guard_value),
+        matrix_layout,
     )
     comptime kernel = input_fragment_kernel[
         dtype,
@@ -384,7 +385,7 @@ def test_input_fragment_layout[
                         coordinate % 8 if tag % 2 == 0 else coordinate // 8
                     )
                 source_host[
-                    guard + row * row_stride + col * col_stride
+                    guard_value + row * row_stride + col * col_stride
                 ] = Scalar[dtype](coordinate)
         source.to_device()
         _ = loaded.host_tensor().fill(nan[dtype]())
@@ -407,7 +408,9 @@ def test_input_fragment_layout[
                         Float32(fragments[lane, register, operand]),
                         Float32(
                             source_host[
-                                guard + row * row_stride + col * col_stride
+                                guard_value
+                                + row * row_stride
+                                + col * col_stride
                             ]
                         ),
                     )

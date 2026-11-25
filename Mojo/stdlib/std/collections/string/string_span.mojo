@@ -1096,7 +1096,7 @@ struct StringSpan[origin: ImmOrigin](
         var current_pos = 0
 
         for _ in range(occurrences):
-            __guard case .Some(idx) = self.find(old, current_pos) else:
+            guard case .Some(idx) = self.find(old, current_pos) else:
                 assert False, "expected to find occurrence during find"
                 break
 
@@ -1875,7 +1875,7 @@ struct StringSpan[origin: ImmOrigin](
 
         var haystack = self.as_bytes()[start_byte:]
 
-        __guard case .Some(loc) = _memmem(
+        guard case .Some(loc) = _memmem(
             haystack.as_imm(),
             substr.as_bytes().as_imm(),
         ) else:
@@ -1923,7 +1923,7 @@ struct StringSpan[origin: ImmOrigin](
         )
         var haystack = self.as_bytes()[start_byte:]
 
-        __guard case .Some(loc) = _memrmem(
+        guard case .Some(loc) = _memrmem(
             haystack,
             substr.as_bytes(),
         ) else:

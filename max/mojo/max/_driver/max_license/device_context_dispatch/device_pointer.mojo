@@ -186,7 +186,7 @@ struct DevicePointer[
     ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
         # Metal's argument encoder binds each buffer by its C++ handle. HAL
         # buffers have none.
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return Optional(
                 self._buffer[]
                 ._legacy_buffer()

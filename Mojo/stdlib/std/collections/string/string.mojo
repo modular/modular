@@ -2508,7 +2508,7 @@ def chr(c: Int) -> String:
     if c <= _LARGEST_UNICODE_ASCII_BYTE:
         return _unsafe_chr_ascii(UInt8(c))
 
-    __guard case .Some(char) = Codepoint.from_u32(UInt32(c)) else:
+    guard case .Some(char) = Codepoint.from_u32(UInt32(c)) else:
         # TODO: Raise ValueError instead.
         abort(t"chr({c}) is not a valid Unicode codepoint")
     return String(char)

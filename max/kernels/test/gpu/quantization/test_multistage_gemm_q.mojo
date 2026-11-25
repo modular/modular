@@ -718,14 +718,14 @@ def test_quantized[
 
 def _find_required(text: StringSpan, needle: StaticString) raises -> Int:
     """Returns where `needle` first occurs in `text`."""
-    __guard case .Some(index) = text.find(needle) else:
+    guard case .Some(index) = text.find(needle) else:
         raise Error(t"expected to find {needle}")
     return index
 
 
 def _rfind_required(text: StringSpan, needle: StaticString) raises -> Int:
     """Returns where `needle` last occurs in `text`."""
-    __guard case .Some(index) = text.rfind(needle) else:
+    guard case .Some(index) = text.rfind(needle) else:
         raise Error(t"expected to find {needle}")
     return index
 

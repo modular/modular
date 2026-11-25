@@ -828,7 +828,7 @@ struct GuardSearchable:
 
 
 def guard_dependent_bindings(searchable: GuardSearchable):
-    __guard case .Some(directive_idx) = searchable.find();
+    guard case .Some(directive_idx) = searchable.find();
       case .Some(line_end) = searchable.find(directive_idx) else:
         return
     var line = searchable.slice(directive_idx, line_end)

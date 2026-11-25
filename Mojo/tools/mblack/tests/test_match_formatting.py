@@ -200,18 +200,18 @@ def f():
 def test_mojo_formats_multiple_guard_clauses():
     source = """\
 def f(enabled, user):
-    __guard enabled;case .Some(value)=user else:
+    guard enabled;case .Some(value)=user else:
         return
-    __guard enabled;
+    guard enabled;
       ready else:
         return
     serve(value)
 """
     expected = """\
 def f(enabled, user):
-    __guard enabled; case .Some(value) = user else:
+    guard enabled; case .Some(value) = user else:
         return
-    __guard enabled; ready else:
+    guard enabled; ready else:
         return
     serve(value)
 """
@@ -221,12 +221,12 @@ def f(enabled, user):
 def test_mojo_splits_long_multiple_guard_clauses():
     source = """\
 def f():
-    __guard is_feature_enabled(); case .Some(request) = next_request(); request.ok() else:
+    guard is_feature_enabled(); case .Some(request) = next_request(); request.ok() else:
         return
 """
     expected = """\
 def f():
-    __guard is_feature_enabled();
+    guard is_feature_enabled();
       case .Some(request) = next_request();
       request.ok() else:
         return
@@ -271,13 +271,13 @@ def f(pair):
 def test_mojo_formats_guard_case():
     source = """\
 def f(opt):
-    __guard case .Some(var value)=opt else:
+    guard case .Some(var value)=opt else:
         return
     use(value)
 """
     expected = """\
 def f(opt):
-    __guard case .Some(var value) = opt else:
+    guard case .Some(var value) = opt else:
         return
     use(value)
 """
@@ -287,13 +287,13 @@ def f(opt):
 def test_mojo_formats_comptime_guard_case():
     source = """\
 def f[T: AnyType]():
-    comptime __guard case ==Int=T else:
+    comptime guard case ==Int=T else:
         return
     use(T)
 """
     expected = """\
 def f[T: AnyType]():
-    comptime __guard case == Int = T else:
+    comptime guard case == Int = T else:
         return
     use(T)
 """
@@ -301,6 +301,22 @@ def f[T: AnyType]():
 
 
 def test_mojo_formats_guard_condition():
+    source = """\
+def f(cond):
+    guard   cond   else:
+        return
+    use()
+"""
+    expected = """\
+def f(cond):
+    guard cond else:
+        return
+    use()
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_mojo_formats_deprecated_guard_condition():
     source = """\
 def f(cond):
     __guard   cond   else:
@@ -319,13 +335,13 @@ def f(cond):
 def test_mojo_formats_comptime_guard_condition():
     source = """\
 def f[cond: Bool]():
-    comptime __guard not  cond else:
+    comptime guard not  cond else:
         return
     use()
 """
     expected = """\
 def f[cond: Bool]():
-    comptime __guard not cond else:
+    comptime guard not cond else:
         return
     use()
 """

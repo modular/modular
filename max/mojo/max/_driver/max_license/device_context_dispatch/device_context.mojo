@@ -252,7 +252,7 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
         API name, or the plugin has no arch for the device.
     """
     var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-    __guard case .Some(driver) = maybe_driver[] else:
+    guard case .Some(driver) = maybe_driver[] else:
         raise Error("no accelerator driver plugin is loaded")
     var api = String(driver[].name()).lower()
     # A plugin listed as a bare path, without a `name@`, is named after
@@ -701,7 +701,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 # `_open_cpu_plugin` only loads a plugin that satisfies "cpu",
                 # so the driver needs no api check here.
                 var maybe_plugin = _CPU_PLUGIN.get_or_create_ptr()
-                __guard case .Some(plugin) = maybe_plugin[] else:
+                guard case .Some(plugin) = maybe_plugin[] else:
                     # The cached load drops its error; load again to raise it.
                     _ = _open_cpu_plugin()
                     raise Error("failed to load the CPU plugin")
@@ -790,7 +790,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     t" from: {call_location()}"
                 )
             )
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceContext.CPU(_impl=self._impl.assert_cpu_target())
 
         return rebind_var[DeviceContext.CPU](self^)
@@ -1055,7 +1055,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             print("Failed to get memory information")
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_memory_info()
 
         var info = self._impl._context[].get_memory_info()
@@ -1087,7 +1087,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the compute capability fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.compute_capability()
 
         var major = self.device().get_attribute(
@@ -1121,7 +1121,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error setting the current device.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.set_as_current()
             return
 
@@ -1191,7 +1191,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             print("GPU API version:", api_version)
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_api_version()
 
         # TODO: HAL stub - returns 0. Plumb plugin-side `cuDriverGetVersion`
@@ -1230,7 +1230,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         print("Device is compatible with MAX:", ctx.is_compatible())
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.is_compatible()
 
         # TODO: HAL stub - always returns True. Hook this up to a plugin-side
@@ -1260,7 +1260,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails. The HAL backend never raises.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.is_graph_capturing()
 
         # TODO(DRIV-687): answer from the queue once the HAL has stream capture.
@@ -1279,7 +1279,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             The number of devices, or 0 if no driver plugin is available or the
             loaded plugin does not support the requested API.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return LegacyDeviceContext[Self.target].number_of_devices(api=api^)
 
         # The built-in host (CPU) backend always provides a single device and
@@ -1377,7 +1377,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         default_stream.synchronize()
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceEvent(_impl=self._impl.create_event())
 
         # The HAL uses logical events where creation and recording happen in
@@ -1400,7 +1400,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails, or if the device's plugin has no
             completion flags.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return CompletionFlag(_impl=self._impl.allocate_completion_flag())
 
         return CompletionFlag(
@@ -1496,7 +1496,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.stream_priority_range()
 
         # TODO: HAL stub - returns the trivial range.
@@ -1565,7 +1565,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Returns:
             A `Device` that borrows this context.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return Device[Self.target, ImmOrigin(origin_of(self))](
                 _impl=rebind_var[
                     Device[Self.target, ImmOrigin(origin_of(self))]._Impl
@@ -1604,7 +1604,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[dtype](
                 _impl=self._impl.enqueue_create_buffer[dtype](size)
             )
@@ -1630,7 +1630,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the allocation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[dtype](
                 _impl=self._impl.create_buffer_sync[dtype](size)
             )
@@ -1684,7 +1684,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return HostBuffer[dtype](
                 _impl=self._impl.enqueue_create_host_buffer[dtype](size)
             )
@@ -1780,7 +1780,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
             return
 
@@ -1810,7 +1810,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
             return
 
@@ -1839,7 +1839,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
             return
 
@@ -1866,7 +1866,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails, or if `dst_buf` is not on this context's
             device.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1898,7 +1898,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1927,7 +1927,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1958,7 +1958,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1990,7 +1990,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
             return
 
@@ -2133,7 +2133,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy_no_cross_stream_sync(
                 dst_buf._impl, src_buf._impl
             )
@@ -2158,7 +2158,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_memset(dst._impl, val)
             return
 
@@ -2184,7 +2184,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_memset(dst._impl, val)
             return
 
@@ -2217,7 +2217,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If self is not a CPU DeviceContext.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_cpu_range(func, count)
             return
 
@@ -2433,7 +2433,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the load fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             result = type_of(result)(
                 _impl=self._impl.load_function[func](
                     function_name=function_name^,
@@ -2513,7 +2513,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
@@ -2598,7 +2598,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             comptime plugin = MaxPluginForTarget[Self.target]
             comptime if plugin._handles_enqueue_function:
                 plugin.enqueue_function_fn(
@@ -2778,7 +2778,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the compilation or the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
@@ -2909,7 +2909,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the compilation or the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             # The legacy backend doesn't support the full
             # `DeviceContext.ExecutionConfigType`, so the legacy
             # context's launch configurations are asserted here.
@@ -3402,7 +3402,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
 
             def run_legacy(inner: Self._Legacy) raises {imm}:
                 func(Self(_impl=inner.copy()))
@@ -3436,7 +3436,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.execution_time(func, num_iters)
 
         self.synchronize()
@@ -3466,7 +3466,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
 
             def run_legacy(inner: Self._Legacy, i: Int) raises {imm}:
                 func(Self(_impl=inner.copy()), i)
@@ -3511,7 +3511,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If enabling peer access fails: the build or `peer`'s driver lacks
             peer access, or the plugin refuses the pair.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enable_peer_access(peer._impl)
             return
 
@@ -3544,7 +3544,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             On the first pair the plugin refuses.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             LegacyDeviceContext[Self.target].enable_all_peer_access()
             return
 
@@ -3552,7 +3552,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime Ext = _HALDevice[device_spec].Extensions
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            __guard case .Some(driver) = maybe_driver[] else:
+            guard case .Some(driver) = maybe_driver[] else:
                 return
             var count = Int(driver[].device_count())
             if count <= 1:
@@ -3594,7 +3594,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return LegacyDeviceContext[Self.target].all_peer_access_enabled()
 
         return _PEER_STATE.get_or_create_ptr()[].all_enabled.load() != 0
@@ -3609,7 +3609,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails. The HAL backend never raises.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.supports_multicast()
 
         return False

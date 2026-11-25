@@ -176,7 +176,7 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if T == UInt8 or T == Int8:
             return None
-        __guard case .Some(scalar_name) = _c_scalar_name[T]() else:
+        guard case .Some(scalar_name) = _c_scalar_name[T]() else:
             raise Error(t"unexpected SIMD type: {TName}")
         return String(t"{scalar_name} *ptr")
 
@@ -186,7 +186,7 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if ElementType == UInt8 or ElementType == Int8:
             return None
-        __guard case .Some(scalar_name) = _c_scalar_name[ElementType]() else:
+        guard case .Some(scalar_name) = _c_scalar_name[ElementType]() else:
             raise Error(t"unsupported array type: {TName}")
         return String(t"{scalar_name} (*ptr)[{T._cabi_length}]")
 
@@ -311,7 +311,7 @@ def _implied_type_check[
                 t" {field})"
             )
         case _:
-            __guard case .Some(decl) = _c_field_decl[FieldType]() else:
+            guard case .Some(decl) = _c_field_decl[FieldType]() else:
                 return String()
             return String(
                 t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"

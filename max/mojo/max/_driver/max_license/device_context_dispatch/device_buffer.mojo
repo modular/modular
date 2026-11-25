@@ -164,7 +164,7 @@ struct DeviceBuffer[dtype: DType](
         """This init takes in a constructed `DeviceContext` and schedules an
         owned buffer allocation using the stream in the device context.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 size=size,
@@ -211,7 +211,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the HAL plugin refuses to wrap the memory.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 rebind[Self._DevicePtr](ptr),
@@ -262,7 +262,7 @@ struct DeviceBuffer[dtype: DType](
     @staticmethod
     @doc_hidden
     def empty(context: DeviceContext) -> Self:
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return Self(_impl=Self._Legacy.empty(context._impl))
 
         # `empty` has no error channel, and only a broken plugin refuses to
@@ -287,7 +287,7 @@ struct DeviceBuffer[dtype: DType](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         """Device dtype mapping from DeviceBuffer to the device's `Pointer`."""
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl._to_device_type(encoder, target)
             return
 
@@ -356,7 +356,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The buffer's identity.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             if case .Some(handle) = self._legacy_buffer()._handle:
                 return Int(handle)
             return 0
@@ -376,7 +376,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The number of elements in the buffer.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return len(self._impl)
 
         return (
@@ -410,7 +410,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the range is invalid.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[view_type](
                 _impl=self._impl.create_sub_buffer[view_type](offset, size)
             )
@@ -451,7 +451,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer owned by this buffer.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return rebind[Pointer[Scalar[Self.dtype], origin]](
                 self._impl.unsafe_ptr()
             )
@@ -479,7 +479,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If this device's memory is not host-accessible.
         """
-        comptime __guard case False = use_legacy_backend() else:
+        comptime guard case False = use_legacy_backend() else:
             comptime assert use_legacy_backend()  # TODO(MOCO-5393)
             return rebind[Pointer[Scalar[Self.dtype], origin]](
                 self._impl.unsafe_host_ptr()
@@ -513,7 +513,7 @@ struct DeviceBuffer[dtype: DType](
         Raises:
             If the query fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceContext[](_impl=self._impl.context())
 
         return rebind_var[DeviceContext[]](self._impl._ctx)
@@ -529,7 +529,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The raw device pointer that was owned by this buffer.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.take_ptr()
 
         # Ownership of the underlying allocation transfers to the caller: the
@@ -731,7 +731,7 @@ struct DeviceBuffer[dtype: DType](
         Returns:
             The native handle of the buffer.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl^.take_handle()
 
         var ptr = self._impl._device_ptr
@@ -760,7 +760,7 @@ struct DeviceBuffer[dtype: DType](
 
         Used by `max.gpu.host._legacy._tensormap.create_tensormap`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl._tensor_map_encode_tiled(
                 tensor_map,
                 data_type,
@@ -814,7 +814,7 @@ struct DeviceBuffer[dtype: DType](
 
         Used by `max.gpu.host._legacy._tensormap.create_tensormap_im2col`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl._tensor_map_encode_im2col(
                 tensor_map,
                 data_type,

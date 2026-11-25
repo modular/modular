@@ -347,14 +347,14 @@ Choose the form by what the code does when the value is absent:
 
 - It uses a default: `opt.or_else(default)`.
 - It leaves the scope with `return`, `raise`, `continue`, `break`, or
-  `abort()`: `__guard case .Some(x) = opt else:`. The binding `x` stays in
+  `abort()`: `guard case .Some(x) = opt else:`. The binding `x` stays in
   scope after the statement, so the main path keeps its indentation.
 - It uses the payload only when it's present: `if case .Some(x) = opt:`.
 - Both cases do work and continue: `match opt:` with `.Some(x)` and `.None`
   cases.
 
 When the value can't be absent, write
-`__guard case .Some(x) = opt else: abort("<reason>")` so the code states the
+`guard case .Some(x) = opt else: abort("<reason>")` so the code states the
 invariant where it relies on it.
 
 ```mojo
@@ -364,7 +364,7 @@ if not opt:
 use(opt.value())
 
 # 🟢 Prefer
-__guard case .Some(x) = opt else:
+guard case .Some(x) = opt else:
     return -1
 use(x)
 ```

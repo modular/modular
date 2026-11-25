@@ -280,7 +280,7 @@ struct DeviceFunction[
             If the compilation or function loading fails, or if given an
             unsupported function attribute.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 func_attribute=func_attribute,
@@ -846,7 +846,7 @@ struct DeviceFunction[
         Raises:
             If the occupancy calculation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.occupancy_max_active_blocks_per_multiprocessor(
                 block_size, dynamic_shared_mem_size
             )
@@ -932,7 +932,7 @@ struct DeviceExternalFunction[
         Raises:
             If the load fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
                 ctx._impl,
                 function_name=function_name^,

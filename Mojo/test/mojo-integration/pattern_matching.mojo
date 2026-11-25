@@ -98,7 +98,7 @@ def take_optional_non_movable_payload() -> Int:
 
 
 def describe_guard_optional(opt: Optional[Int]) -> String:
-    __guard case .Some(value) = opt else:
+    guard case .Some(value) = opt else:
         return "none"
     return String("some:", value)
 
@@ -113,7 +113,7 @@ def classify_if_clauses(enabled: Bool, opt: Optional[Int]) -> String:
 
 
 def describe_guard_clauses(enabled: Bool, opt: Optional[Int]) -> String:
-    __guard enabled; case .Some(value) = opt; value > 0 else:
+    guard enabled; case .Some(value) = opt; value > 0 else:
         return "unavailable"
     return String("positive:", value)
 
@@ -264,7 +264,7 @@ def classify_comptime_if_clauses[T: AnyType, enabled: Bool]() -> String:
 
 
 def classify_comptime_guard_clauses[T: AnyType, enabled: Bool]() -> String:
-    comptime __guard enabled; case == Int = T else:
+    comptime guard enabled; case == Int = T else:
         return "other"
     return "integer"
 
@@ -395,19 +395,19 @@ def classify_comptime_as[x: Int]() -> String:
 
 
 def classify_comptime_guard[pair: Tuple[Int, Int]]() -> String:
-    comptime __guard case (0, value) = pair else:
+    comptime guard case (0, value) = pair else:
         return "miss"
     return String("hit:", value)
 
 
 def comptime_guard_does_not_fall_through[condition: Bool]():
-    comptime __guard case True = condition else:
+    comptime guard case True = condition else:
         return
     comptime assert False, "shouldn't get instantiated"
 
 
 def comptime_guard_does_not_enter_else[condition: Bool]():
-    comptime __guard case True = condition else:
+    comptime guard case True = condition else:
         comptime assert False, "shouldn't happen"
 
 

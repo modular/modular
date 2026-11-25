@@ -62,7 +62,7 @@ def _check_mla_decode[dtype: DType, keys: Int](ctx: DeviceContext) raises:
     comptime q_size = BM * depth
     comptime k_size = key_rows * depth
     comptime out_size = BM * depth_v
-    comptime guard = 32
+    comptime guard_value = 32
     comptime scale = Float32(0.125)
     comptime accum_type = get_accum_type[dtype]()
     # Q, K and P tiles plus the cross-warp softmax scratch.
@@ -73,7 +73,9 @@ def _check_mla_decode[dtype: DType, keys: Int](ctx: DeviceContext) raises:
 
     var q_host = ctx.enqueue_create_host_buffer[dtype](q_size)
     var k_host = ctx.enqueue_create_host_buffer[dtype](k_size)
-    var out_host = ctx.enqueue_create_host_buffer[dtype](out_size + 2 * guard)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](
+        out_size + 2 * guard_value
+    )
     var scores = ctx.enqueue_create_host_buffer[.float64](keys)
 
     for row in range(BM):
@@ -86,12 +88,14 @@ def _check_mla_decode[dtype: DType, keys: Int](ctx: DeviceContext) raises:
             k_host[row * depth + col] = Scalar[dtype](
                 Float32((row * 11 + col * 3) % 19 - 9) / 16
             ) if row < keys else Scalar[dtype](0)
-    for i in range(out_size + 2 * guard):
+    for i in range(out_size + 2 * guard_value):
         out_host[i] = Scalar[dtype](42)
 
     var q_buffer = ctx.enqueue_create_buffer[dtype](q_size)
     var k_buffer = ctx.enqueue_create_buffer[dtype](k_size)
-    var out_buffer = ctx.enqueue_create_buffer[dtype](out_size + 2 * guard)
+    var out_buffer = ctx.enqueue_create_buffer[dtype](
+        out_size + 2 * guard_value
+    )
     var exp_sum_buffer = ctx.enqueue_create_buffer[accum_type](BM)
     var qk_max_buffer = ctx.enqueue_create_buffer[accum_type](BM)
     ctx.enqueue_copy(q_buffer, q_host)
@@ -107,7 +111,9 @@ def _check_mla_decode[dtype: DType, keys: Int](ctx: DeviceContext) raises:
     ctx.enqueue_function[kernel](
         q_buffer.unsafe_ptr().as_unsafe_any_origin(),
         k,
-        out_buffer.unsafe_ptr().unsafe_offset(guard).as_unsafe_any_origin(),
+        out_buffer.unsafe_ptr()
+        .unsafe_offset(guard_value)
+        .as_unsafe_any_origin(),
         exp_sum_buffer.unsafe_ptr().as_unsafe_any_origin(),
         qk_max_buffer.unsafe_ptr().as_unsafe_any_origin(),
         grid_dim=(1, 1, 1),
@@ -136,14 +142,14 @@ def _check_mla_decode[dtype: DType, keys: Int](ctx: DeviceContext) raises:
             for key in range(keys):
                 expected += scores[key] * Float64(k_host[key * depth + col])
             assert_almost_equal(
-                Float64(out_host[guard + head * depth_v + col]),
+                Float64(out_host[guard_value + head * depth_v + col]),
                 expected / denominator,
                 atol=3e-3,
                 rtol=2e-2,
             )
-    for i in range(guard):
+    for i in range(guard_value):
         assert_equal(out_host[i], Scalar[dtype](42))
-    for i in range(guard + out_size, out_size + 2 * guard):
+    for i in range(guard_value + out_size, out_size + 2 * guard_value):
         assert_equal(out_host[i], Scalar[dtype](42))
 
 

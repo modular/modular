@@ -1425,7 +1425,7 @@ struct List[T: AnyType, /](
         print(my_list.index(2)) # prints `1`
         ```
         """
-        __guard case .Some(index) = self.try_index(
+        guard case .Some(index) = self.try_index(
             value, start=start, stop=stop
         ) else:
             raise "ValueError: Given element is not in list"

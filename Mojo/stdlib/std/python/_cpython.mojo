@@ -1537,7 +1537,7 @@ def _untracked_symbol[
     Returns:
         An optional pointer to the symbol, or `None` if not found.
     """
-    __guard case .Some(ptr) = lib.get_symbol[result_type](name) else:
+    guard case .Some(ptr) = lib.get_symbol[result_type](name) else:
         return None
     return ptr.unsafe_origin_cast[MutUntrackedOrigin]()
 

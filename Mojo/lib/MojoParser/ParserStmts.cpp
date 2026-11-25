@@ -113,6 +113,7 @@ static bool isStatementThatMightHaveDecorators(Token::Kind tokenKind) {
   case Token::kw_with:
   case Token::kw_match:
   case Token::kw___match:
+  case Token::kw_guard:
   case Token::kw___guard:
   case Token::kw___async:
   case Token::kw_def:
@@ -972,6 +973,7 @@ ParseResult StmtParser::parseStmt(bool onlySimpleStmt, bool &parsedCompound,
     if (rejectInNonFunctionScope())
       return success();
     return parseMatchStmt(stmtIndent, /*isComptime=*/false);
+  case Token::kw_guard:
   case Token::kw___guard:
     rejectDecorator();  // Decorators not allowed.
     rejectSimpleStmt(); // Not a simple_stmt.
@@ -1194,6 +1196,7 @@ ParseResult StmtParser::parseComptimeCompoundStmt(LexerCursor startCursor,
     if (rejectInNonFunctionScope("match"))
       return success();
     return parseMatchStmt(curIndent, /*isComptime=*/true);
+  case Token::kw_guard:
   case Token::kw___guard:
     rejectDecorator();
     if (rejectInNonFunctionScope("guard"))
@@ -1827,14 +1830,21 @@ FailureOr<TypedAttr> StmtParser::emitComptimeConditionalClauses(
   return combined;
 }
 
-/// guard_stmt ::= "__guard" conditional_clause (";" conditional_clause)*
+/// guard_stmt ::= "guard" conditional_clause (";" conditional_clause)*
 ///                "else" ":" suite
 ///
 /// Pattern declarations are emitted before the match so successful bindings
 /// remain visible in the continuation. The failure path ends in a fallthrough
 /// assertion because a guard's `else` suite must exit its enclosing scope.
 ParseResult StmtParser::parseGuardStmt(size_t curIndent, bool isComptime) {
-  SMLoc guardLoc = consumeToken(Token::kw___guard).getLoc();
+  Token guardToken = consumeToken();
+  assert((guardToken.is(Token::kw_guard) || guardToken.is(Token::kw___guard)) &&
+         "expected guard keyword");
+  SMLoc guardLoc = guardToken.getLoc();
+  if (guardToken.is(Token::kw___guard)) {
+    shared.emitWarning(guardLoc, "'__guard' is deprecated; use 'guard'")
+        << FixIt::replaceToken(guardLoc, "guard");
+  }
 
   SmallVector<ConditionalClause, 2> clauses;
   if (failed(parseConditionalClauseList(clauses, curIndent)))

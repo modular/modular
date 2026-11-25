@@ -149,7 +149,7 @@ conditional_if_clause_tail: (inline_if_conditions ':' suite | multiline_if_condi
 inline_if_conditions: if_condition (';' if_condition)*
 multiline_if_conditions: NEWLINE INDENT if_condition (';' NEWLINE if_condition)*
 while_stmt: 'while' if_condition ':' suite ['else' ':' suite]
-guard_stmt: '__guard' if_condition ('else' ':' suite | ';' conditional_guard_clause_tail)
+guard_stmt: ('guard' | '__guard') if_condition ('else' ':' suite | ';' conditional_guard_clause_tail)
 conditional_guard_clause_tail: (inline_if_conditions 'else' ':' suite | multiline_if_conditions 'else' ':' suite DEDENT)
 for_stmt: 'for' exprlist 'in' testlist_star_expr ':' suite ['else' ':' suite]
 try_stmt: ('try' ':' suite

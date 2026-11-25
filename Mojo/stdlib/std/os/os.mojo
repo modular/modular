@@ -97,7 +97,7 @@ struct _DirHandle:
         Args:
           path: The path to open.
         """
-        __guard case .Some(handle) = external_call[
+        guard case .Some(handle) = external_call[
             "opendir", Optional[Pointer[NoneType, UntrackedOrigin[mut=True]]]
         ](path.as_c_string_span()) else:
             raise IOError.last_os_error("opendir")._with_subject(.path(path))

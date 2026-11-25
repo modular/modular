@@ -228,14 +228,14 @@ def _find_required(
     text: StringSpan, needle: StaticString, start: Int = 0
 ) raises -> Int:
     """Returns where `needle` first occurs in `text`, at or after `start`."""
-    __guard case .Some(index) = text.find(needle, start) else:
+    guard case .Some(index) = text.find(needle, start) else:
         raise Error(t"expected to find {needle}")
     return index
 
 
 def _rfind_required(text: StringSpan, needle: StaticString) raises -> Int:
     """Returns where `needle` last occurs in `text`."""
-    __guard case .Some(index) = text.rfind(needle) else:
+    guard case .Some(index) = text.rfind(needle) else:
         raise Error(t"expected to find {needle}")
     return index
 

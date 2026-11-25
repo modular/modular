@@ -741,7 +741,7 @@ def test_optional_file_handle_uses_niche() raises:
 
     var temp_file = Path(gettempdir().value()) / "test_file_optional_niche"
     var maybe: Optional[FileHandle] = open(temp_file, "w")
-    __guard case .Some(ref handle) = maybe else:
+    guard case .Some(ref handle) = maybe else:
         raise Error("expected an open file handle")
     handle.write("niche")
     maybe = None

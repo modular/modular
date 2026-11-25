@@ -265,7 +265,7 @@ def _matmul_impl[
             )
             # fmt: on
 
-        __guard case .Some(gpu_ctx) = ctx else:
+        guard case .Some(gpu_ctx) = ctx else:
             abort("expected DeviceContext for GPU target")
         with Trace[TraceLevel.OP, target=ctx.T.target.device_kind_label()](
             trace_name,

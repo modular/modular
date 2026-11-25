@@ -326,7 +326,7 @@ def _run_sparse_reference[
     channels: Int = 192,
 ](ctx: DeviceContext, h: Int, w: Int) raises:
     comptime dtype = DType.float16
-    comptime guard = 64
+    comptime guard_value = 64
     comptime filter_size = 3 * 3 * channels * filters
     comptime channel_offset = 96 if channels == 2 * filters else 97
     var n = 1
@@ -335,7 +335,7 @@ def _run_sparse_reference[
     var input_host = ctx.enqueue_create_host_buffer[dtype](input_size)
     var filter_host = ctx.enqueue_create_host_buffer[dtype](filter_size)
     var output_host = ctx.enqueue_create_host_buffer[dtype](
-        output_size + 2 * guard
+        output_size + 2 * guard_value
     )
     var input_view = TileTensor(input_host, row_major(h, w, Idx[channels]))
     for y in range(h):
@@ -359,11 +359,11 @@ def _run_sparse_reference[
         else:
             filter_view[1, 1, f, f] = 1
             filter_view[0, 0, other, f] = 0.5
-    for i in range(output_size + 2 * guard):
+    for i in range(output_size + 2 * guard_value):
         output_host[i] = bitcast[dtype](UInt16(0x7E01))
     var input = ctx.enqueue_create_buffer[dtype](input_size)
     var filter = ctx.enqueue_create_buffer[dtype](filter_size)
-    var output = ctx.enqueue_create_buffer[dtype](output_size + 2 * guard)
+    var output = ctx.enqueue_create_buffer[dtype](output_size + 2 * guard_value)
     ctx.enqueue_copy(input, input_host)
     ctx.enqueue_copy(filter, filter_host)
     ctx.enqueue_copy(output, output_host)
@@ -390,16 +390,16 @@ def _run_sparse_reference[
             )
         comptime if has_epilogue_fn:
             var shape_host = ctx.enqueue_create_host_buffer[dtype](
-                output_size + 2 * guard
+                output_size + 2 * guard_value
             )
-            for i in range(output_size + 2 * guard):
+            for i in range(output_size + 2 * guard_value):
                 shape_host[i] = bitcast[dtype](UInt16(0x7E01))
             var shape = ctx.enqueue_create_buffer[dtype](
-                output_size + 2 * guard
+                output_size + 2 * guard_value
             )
             ctx.enqueue_copy(shape, shape_host)
             var shape_tt = TileTensor(
-                shape.unsafe_ptr().unsafe_offset(guard), output_tt.layout
+                shape.unsafe_ptr().unsafe_offset(guard_value), output_tt.layout
             )
 
             def store[
@@ -429,7 +429,7 @@ def _run_sparse_reference[
             )
             ctx.enqueue_copy(shape_host, shape)
             ctx.synchronize()
-            for i in range(output_size + 2 * guard):
+            for i in range(output_size + 2 * guard_value):
                 if bitcast[.uint16](shape_host[i]) != UInt16(0x7E01):
                     raise Error("store epilogue wrote shape-only output")
         else:
@@ -447,7 +447,7 @@ def _run_sparse_reference[
     comptime if dynamic:
         var input_tt = TileTensor(input, row_major(n, h, w, Idx[channels]))
         var output_tt = TileTensor(
-            output.unsafe_ptr().unsafe_offset(guard),
+            output.unsafe_ptr().unsafe_offset(guard_value),
             row_major(n, h, w, Idx[filters]),
         )
         invoke(input_tt, output_tt)
@@ -457,17 +457,17 @@ def _run_sparse_reference[
             row_major(Idx[1], Idx[static_h], Idx[static_w], Idx[channels]),
         )
         var output_tt = TileTensor(
-            output.unsafe_ptr().unsafe_offset(guard),
+            output.unsafe_ptr().unsafe_offset(guard_value),
             row_major(Idx[1], Idx[static_h], Idx[static_w], Idx[filters]),
         )
         invoke(input_tt, output_tt)
     ctx.enqueue_copy(output_host, output)
     ctx.synchronize()
-    for i in range(guard):
+    for i in range(guard_value):
         if bitcast[.uint16](output_host[i]) != UInt16(0x7E01) or bitcast[
             .uint16
-        ](output_host[guard + output_size + i]) != UInt16(0x7E01):
-            raise Error("sparse convolution output guard corrupted")
+        ](output_host[guard_value + output_size + i]) != UInt16(0x7E01):
+            raise Error("sparse convolution output guard_value corrupted")
     for y in range(h):
         for x in range(w):
             for f in range(filters):
@@ -484,7 +484,7 @@ def _run_sparse_reference[
                 comptime if has_epilogue_fn:
                     expected += 1.0
                 var actual = Float32(
-                    output_host[guard + (y * w + x) * filters + f]
+                    output_host[guard_value + (y * w + x) * filters + f]
                 )
                 if actual != expected:
                     print(

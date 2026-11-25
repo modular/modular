@@ -68,11 +68,11 @@ def _single_mfma_kernel[
 
 
 def _directive_value(asm: String, directive: String) raises -> Int:
-    __guard case .Some(start) = asm.find(directive) else:
+    guard case .Some(start) = asm.find(directive) else:
         raise Error(t"assembly is missing {directive}")
     var line_end = asm.find("\n", start).or_else(asm.byte_length())
     var line = asm[byte=start:line_end]
-    __guard case .Some(colon) = line.find(":") else:
+    guard case .Some(colon) = line.find(":") else:
         raise Error(t"expected a value after {directive}")
     return Int(line[byte = colon + 1 :].strip())
 

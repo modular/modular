@@ -427,7 +427,7 @@ def test_source_location_prefix() raises:
     var loc = source_location()
     var msg = loc.prefix("test message")
     # A position past 0 means location context precedes the message.
-    __guard case .Some(index) = msg.find("test message") else:
+    guard case .Some(index) = msg.find("test message") else:
         raise Error("expected to find the message")
     assert_true(index > 0)
 

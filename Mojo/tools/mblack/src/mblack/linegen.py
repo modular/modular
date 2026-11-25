@@ -497,12 +497,14 @@ class LineGenerator(Visitor[Line]):
         """Visit a guard statement."""
         if not self._has_conditional_clauses(node):
             yield from self.visit_stmt(
-                node, keywords={"__guard"}, parens={"__guard"}
+                node,
+                keywords={"guard", "__guard"},
+                parens={"guard", "__guard"},
             )
             return
 
         normalize_invisible_parens(
-            node, parens_after={"__guard"}, preview=self.mode.preview
+            node, parens_after={"guard", "__guard"}, preview=self.mode.preview
         )
         yield from self.line()
         yield from self._visit_conditional_stmt_children(node)

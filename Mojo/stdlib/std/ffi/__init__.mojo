@@ -451,7 +451,7 @@ struct OwnedDLHandle(Boolable, Movable):
             ' `get_function[def(Arg) abi("C") -> Ret](name)` to'
             " `get_function[Ret](name)`."
         )
-        __guard case .Some(ptr) = self._handle.get_symbol[NoneType](
+        guard case .Some(ptr) = self._handle.get_symbol[NoneType](
             cstr_name=name.as_c_string_span()
         ) else:
             raise Error(t"symbol not found: {name}")
@@ -554,7 +554,7 @@ struct OwnedDLHandle(Boolable, Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        __guard case .Some(res) = self._handle.get_symbol[result_type](
+        guard case .Some(res) = self._handle.get_symbol[result_type](
             cstr_name=cstr_name
         ) else:
             return None
@@ -794,7 +794,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             A handle to the function.
         """
-        __guard case .Some(opaque_function_ptr) = self.get_symbol[NoneType](
+        guard case .Some(opaque_function_ptr) = self.get_symbol[NoneType](
             cstr_name=cstr_name
         ) else:
             abort(t"symbol not found: {cstr_name}")
