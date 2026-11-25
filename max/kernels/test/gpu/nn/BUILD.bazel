@@ -182,6 +182,12 @@ _EXTRA_CONSTRAINTS = {
     "test_cudnn_bindings.mojo": ["//:nvidia_gpu"],
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_conv_gpu_residual_fallback.mojo": ["//:nvidia_gpu"],
+    # The FCRS cases need the cuDNN or MIOpen fallback, and `conv_gpu` raises
+    # for an FCRS filter on Apple.
+    "test_conv_gpu_naive_epilogue.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     # 4-wave implicit-GEMM conv inherits the matmul's MI355X-only MFMA
     # + chiplet/L2 swizzle; not compilable on other AMD parts.
