@@ -60,6 +60,39 @@ def infer_out_address_space():
     var m = MemType()
 
 
+struct Storage(Movable):
+    var value: Int
+
+    def __init__[
+        addr_space: AddressSpace
+    ](out[addr_space] self, *, uninitialized: Bool):
+        __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
+
+
+# A pointer to the var gets the var's origin and address space, and a store
+# through it writes to the var.
+# CHECK-LABEL: lit.fn @"pointer_to_var
+# CHECK: %p = lit.var.decl "p" var : !lit.ref<!lit.struct<#Pointer <{{.*}} *"x`", {{.*}}, :!AddressSpace {_value: !SIMDLength = {_mlir_value = sugar_preserved({{.*}}, 2)}}>>, mut *"p`{{[0-9]*}}">
+# CHECK: %[[REF:.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}} -> !lit.ref<!Storage, mut *"x`", sugar_preserved({{.*}}, 2)>>
+# CHECK: lit.ref.struct.ger %[[REF]][value] : <!Storage, mut *"x`", sugar_preserved({{.*}}, 2)>
+def pointer_to_var():
+    @__address_space(.SHARED)
+    var x = Storage(uninitialized=True)
+    var p = Pointer(to=x)
+    p[].value = 1
+
+
+# CHECK-LABEL: lit.fn @"pointer_to_parametric_var
+# CHECK: %p = lit.var.decl "p" var : !lit.ref<!lit.struct<#Pointer <{{.*}} *"x`", {{.*}}, :!AddressSpace addr_space>>, mut *"p`{{[0-9]*}}">
+# CHECK: %[[REF:.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}} -> !lit.ref<!Storage, mut *"x`", #lit.struct.extract<{{.*}}addr_space, "_value">, "_mlir_value">>>
+# CHECK: lit.ref.struct.ger %[[REF]][value] : <!Storage, mut *"x`", #lit.struct.extract<{{.*}}addr_space, "_value">, "_mlir_value">>
+def pointer_to_parametric_var[addr_space: AddressSpace]():
+    @__address_space(addr_space)
+    var x = Storage(uninitialized=True)
+    var p = Pointer(to=x)
+    p[].value = 1
+
+
 # CHECK-LABEL: lit.fn @"undecorated
 # CHECK: %x = lit.var.decl "x" var : !lit.ref<{{.*}}Int, mut *"x`">
 def undecorated():
