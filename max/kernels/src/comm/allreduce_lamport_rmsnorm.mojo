@@ -68,7 +68,6 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import _ComptimeConditionalTileTensor
-from std.memory import unsafe_stack_allocation
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
@@ -188,9 +187,9 @@ def _allreduce_lamport_rmsnorm_kernel[
     var col = pack * atomic_width
     var is_valid = col < cols
     var packs_per_row = cols // atomic_width
-    var cluster_slot = unsafe_stack_allocation[
-        2, Scalar[accum_type], address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var cluster_slot_storage = Array[Scalar[accum_type], 2](uninitialized=True)
+    var cluster_slot = cluster_slot_storage.unsafe_ptr()
 
     # PDL: wait for the producer, then release the consumer immediately so it
     # overlaps the whole AR+RMSNorm. Called by all threads in the block before

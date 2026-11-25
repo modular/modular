@@ -114,7 +114,6 @@ from max.gpu.primitives.grid_controls import (
 )
 from max.gpu.sync import barrier
 from std.math import ceildiv, fma, rsqrt
-from std.memory import unsafe_stack_allocation
 from std.utils.static_tuple import StaticTuple
 from layout import Idx, TensorEngine, TensorLayout, TileTensor, row_major
 
@@ -372,18 +371,26 @@ def gated_delta_recurrence_fwd_gpu[
     # (`GatedDeltaNetStateCache.claim`) guarantees `slot < max_slots`.
     var slot = Int(slot_idx[batch_item_idx])
 
-    var q_raw_s = unsafe_stack_allocation[
-        KEY_HEAD_DIM, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var q_raw_s_storage = Array[Float32, KEY_HEAD_DIM](uninitialized=True)
+    var q_raw_s = q_raw_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var k_raw_s = unsafe_stack_allocation[
-        KEY_HEAD_DIM, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var k_raw_s_storage = Array[Float32, KEY_HEAD_DIM](uninitialized=True)
+    var k_raw_s = k_raw_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
     comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
-    var q_warp_sumsq_s = unsafe_stack_allocation[
-        NUM_WARPS, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var q_warp_sumsq_s_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var q_warp_sumsq_s = q_warp_sumsq_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var k_warp_sumsq_s = unsafe_stack_allocation[
-        NUM_WARPS, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var k_warp_sumsq_s_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var k_warp_sumsq_s = k_warp_sumsq_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
 
     # ── Load this thread's KD-element state column from pool[slot, ...] ──────
@@ -668,18 +675,26 @@ def gated_delta_recurrence_verify_ring_gpu[
     var slot = Int(slot_idx[batch_item_idx])
     var ring_row = Int(ring_slot_idx[batch_item_idx])
 
-    var q_raw_s = unsafe_stack_allocation[
-        KEY_HEAD_DIM, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var q_raw_s_storage = Array[Float32, KEY_HEAD_DIM](uninitialized=True)
+    var q_raw_s = q_raw_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var k_raw_s = unsafe_stack_allocation[
-        KEY_HEAD_DIM, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var k_raw_s_storage = Array[Float32, KEY_HEAD_DIM](uninitialized=True)
+    var k_raw_s = k_raw_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
     comptime NUM_WARPS = ceildiv(KEY_HEAD_DIM, WARP_SIZE)
-    var q_warp_sumsq_s = unsafe_stack_allocation[
-        NUM_WARPS, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var q_warp_sumsq_s_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var q_warp_sumsq_s = q_warp_sumsq_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var k_warp_sumsq_s = unsafe_stack_allocation[
-        NUM_WARPS, Float32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var k_warp_sumsq_s_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var k_warp_sumsq_s = k_warp_sumsq_s_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
 
     var state_col = SIMD[.float32, KEY_HEAD_DIM](0.0)
@@ -901,11 +916,11 @@ def gated_delta_state_fold_gpu[
     )
 
     # Every thread of the block reads every key, so stage them once.
-    var k_raw_s = unsafe_stack_allocation[
-        RING_LEN * KEY_HEAD_DIM,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var k_raw_s_storage = Array[Float32, RING_LEN * KEY_HEAD_DIM](
+        uninitialized=True
+    )
+    var k_raw_s = k_raw_s_storage.unsafe_ptr()
     comptime for record_idx in range(RING_LEN):
         if record_idx < accepted:
             k_raw_s[record_idx * KEY_HEAD_DIM + tid] = Float32(
