@@ -465,7 +465,10 @@ struct Path(
         ```
         """
         with open(self, "r") as f:
-            return f.read_bytes()
+            try:
+                return f.read_bytes()
+            except e:
+                raise e._with_subject(.path(self.path))
 
     def write_text[T: Writable](self, value: T) raises IOError:
         """Writes the value to the file as text.

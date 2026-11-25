@@ -101,6 +101,18 @@ def test_read_write_bytes() raises:
         assert_equal(List[Byte](data), file.read_bytes())
 
 
+def test_read_bytes_error_names_path() raises:
+    # Opening a directory for reading succeeds, so the error comes from the
+    # read itself.
+    var dir = Path(std.os.getenv("TEST_TMPDIR"))
+    try:
+        _ = dir.read_bytes()
+    except e:
+        assert_true(String(e).startswith(String("read ", dir, ": ")))
+    else:
+        raise Error("`read_bytes()` read a directory")
+
+
 def get_user_path() -> Path:
     return Path("/home/user")
 
