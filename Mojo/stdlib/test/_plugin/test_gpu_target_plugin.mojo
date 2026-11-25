@@ -293,6 +293,8 @@ def test_plugin_for_target_specializes_on_target() raises:
     assert_true(_h100_target.stdlib_plugin._handles_debug_assert)
     assert_true(_mi300x_target.stdlib_plugin._handles_debug_assert)
     assert_false(_host_target.stdlib_plugin._handles_debug_assert)
+    assert_true(_host_target.stdlib_plugin.supports_assertions)
+    assert_true(_h100_target.stdlib_plugin.supports_assertions)
 
 
 def main() raises:

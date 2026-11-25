@@ -220,6 +220,9 @@ struct MetalPluginHooks[target: CompilationTarget](PluginHooks):
 
     comptime has_generic_address_space: Bool = False
 
+    # FIXME(MSTDL-1888): Enable assertions on Apple GPU.
+    comptime supports_assertions: Bool = False
+
     comptime prefetch_fn[
         address_space: AddressSpace, params: PrefetchOptions
     ]: OptionalReg[_PrefetchPluginHookFnType[address_space]] = _drop_prefetch[

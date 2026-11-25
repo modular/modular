@@ -466,6 +466,11 @@ trait PluginHooks:
     `_debug_assert_msg` and deadlocks instantiation when assertions are
     enabled."""
 
+    comptime supports_assertions: Bool = True
+    """If `False`, `debug_assert` compiles to nothing on this target in every
+    `ASSERT` mode. For a target that cannot run the failed-assertion path,
+    such as one with no way to report the failure or stop the program."""
+
 
 # ===-----------------------------------------------------------------------===#
 # DefaultPlugin
