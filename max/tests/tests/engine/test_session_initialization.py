@@ -117,12 +117,11 @@ def test_runtime_initialization_order(
 def test_compile_twice_with_one_thread(tmp_path: Path) -> None:
     _run(
         """
-        from max.driver import CPU
         from max.dtype import DType
         from max.engine import InferenceSession
         from max.graph import DeviceRef, Graph, TensorType
 
-        session = InferenceSession(devices=[CPU()])
+        session = InferenceSession()
         tensor = TensorType(DType.float32, [1], device=DeviceRef.CPU())
         with Graph("identity", input_types=[tensor]) as graph:
             graph.output(graph.inputs[0].tensor)
