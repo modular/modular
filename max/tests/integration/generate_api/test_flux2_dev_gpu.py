@@ -37,6 +37,7 @@ from _generate_api import (
     device_memory_used_gib,
     load_flux2_references,
     save_output,
+    use_build_lpips_backbone,
 )
 from max.pipelines import AutoPipeline
 from max.pipelines.modeling.types import PipelineTask
@@ -74,6 +75,7 @@ def test_flux2_dev() -> None:
 
 
 def _run(report: Report) -> None:
+    use_build_lpips_backbone()
     revision = FLUX2_REVISION
     check_revision(FLUX2_DEV, revision)
     references = load_flux2_references()

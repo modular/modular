@@ -1167,6 +1167,32 @@ http_archive(
     ],
 )
 
+# The generate API accuracy tests read these from the build instead of
+# downloading them at run time, so they need no network on the test machine.
+# Keep the first two in step with GENERATE_API_DATA and FLUX2_GOLDEN_TAR in
+# max/tests/integration/generate_api/_generate_api.py.
+http_file(
+    name = "generate_api_references",
+    downloaded_file_path = "generate_api_references.tar.gz",
+    sha256 = "4a2db75d4be3e35c399ea229c3a9df5b166afccbc376e2a25d58dacc6873ef1c",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/generate_api_references/1/4a2db75d4be3e35c399ea229c3a9df5b166afccbc376e2a25d58dacc6873ef1c/generate_api_references.tar.gz",
+)
+
+http_file(
+    name = "generate_api_flux2_dev_golden",
+    downloaded_file_path = "torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz",
+    sha256 = "09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295",
+    url = "https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/torch_black-forest-labs_FLUX.2-dev-t2i_golden/1/09e2330e3ea8016979b145072037df30ac8a7c6a425c00d64ae340cd52455295/torch_black-forest-labs_FLUX.2-dev-t2i_golden.tar.gz",
+)
+
+# torchvision's SqueezeNet weights, which LPIPS loads as its backbone.
+http_file(
+    name = "lpips_squeezenet1_1",
+    downloaded_file_path = "squeezenet1_1-b8a52dc0.pth",
+    sha256 = "b8a52dc049b60e4b6ab68ad0df457362afab8b6304b2febdc1650a5dab4d7e7b",
+    url = "https://download.pytorch.org/models/squeezenet1_1-b8a52dc0.pth",
+)
+
 # BEGIN GENERATED LOGIT_VERIFICATION GOLDEN HTTP_FILES
 
 LOGIT_VERIFICATION_GOLDENS = [
