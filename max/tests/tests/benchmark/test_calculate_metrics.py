@@ -20,7 +20,7 @@ import logging
 import math
 import statistics
 from array import array
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
@@ -127,6 +127,40 @@ def _calculate(
     )
 
 
+def _build_text_result(
+    outputs: Sequence[RequestFuncOutput],
+    *,
+    benchmark_duration: float,
+    tokenizer: MagicMock,
+    cpu_metrics: CPUMetrics | None = None,
+    skip_first_n_requests: int = 0,
+    skip_last_n_requests: int = 0,
+    max_concurrency: int | None = None,
+    outputs_by_session: Mapping[str, Sequence[RequestFuncOutput]] | None = None,
+    steady_state_filtering: bool = True,
+    goodput_targets: GoodputTargets | None = None,
+    num_gpus: int | None = None,
+) -> BenchmarkResult:
+    """Runs ``build_text_generation_result`` with no GPU stats or conversation
+    limit."""
+    return build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=benchmark_duration,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=cpu_metrics,
+        skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
+        max_concurrency=max_concurrency,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+        outputs_by_session=outputs_by_session,
+        steady_state_filtering=steady_state_filtering,
+        goodput_targets=goodput_targets,
+        num_gpus=num_gpus,
+    )
+
+
 def _calculate_one_five_token_request() -> BenchmarkResult:
     """Returns metrics for one 5-token request with distinct ITL and TPOT."""
     output = RequestFuncOutput(
@@ -171,17 +205,8 @@ def test_recorded_chunk_tpots_reach_the_result() -> None:
         itl=[0.4, 0.4], pending_tpot_ends=[5, 8, 11]
     )
 
-    result = build_text_generation_result(
-        outputs=[output],
-        benchmark_duration=1.0,
-        tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
+    result = _build_text_result(
+        [output], benchmark_duration=1.0, tokenizer=tokenizer
     )
 
     assert output.tpot == [pytest.approx(0.2), pytest.approx(0.4)]
@@ -1084,17 +1109,8 @@ def test_build_text_generation_result_not_detected_falls_back_to_trim() -> None:
     """
     outputs = [_make_request_func_output() for _ in range(3)]
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
-    result = build_text_generation_result(
-        outputs=outputs,
-        benchmark_duration=1.0,
-        tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
+    result = _build_text_result(
+        outputs, benchmark_duration=1.0, tokenizer=tokenizer
     )
 
     assert result.steady_state_detected is False
@@ -1117,30 +1133,15 @@ def _outputs_with_completion_tokens(
     return outputs
 
 
-def _stream_read_result(
-    outputs: list[RequestFuncOutput],
-) -> BenchmarkResult:
-    return build_text_generation_result(
-        outputs=outputs,
-        benchmark_duration=1.0,
-        tokenizer=_make_tokenizer_mock(),
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
-    )
-
-
 def test_build_text_generation_result_pools_stream_reads() -> None:
     """Bunched socket reads are pooled over the run into the diagnostics."""
-    result = _stream_read_result(
+    result = _build_text_result(
         [
             _make_request_func_output(stream_events_per_read={1: 3, 3: 1}),
             _make_request_func_output(stream_events_per_read={1: 4}),
-        ]
+        ],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
     )
 
     assert result.stream_reads == 8
@@ -1164,7 +1165,11 @@ def test_build_text_generation_result_pools_stream_reads() -> None:
 
 def test_build_text_generation_result_omits_read_stats_without_reads() -> None:
     """No streamed text means no samples: ``None``, not zeros that read as data."""
-    result = _stream_read_result([_make_request_func_output()])
+    result = _build_text_result(
+        [_make_request_func_output()],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+    )
 
     assert result.stream_reads is None
     assert result.stream_reads_bunched is None
@@ -1182,7 +1187,7 @@ def test_build_text_generation_result_omits_read_stats_without_reads() -> None:
 
 def test_build_text_generation_result_pools_itl_unresolved() -> None:
     """The ITL shortfall is pooled, so a short series is explainable."""
-    result = _stream_read_result(
+    result = _build_text_result(
         [
             _make_request_func_output(
                 stream_events_per_read={3: 1}, itl_unresolved=2
@@ -1193,7 +1198,9 @@ def test_build_text_generation_result_pools_itl_unresolved() -> None:
             _make_request_func_output(
                 stream_events_per_read={2: 1}, itl_unresolved=1
             ),
-        ]
+        ],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
     )
 
     assert result.itl_unresolved == 3
@@ -1205,11 +1212,13 @@ def test_build_text_generation_result_omits_itl_unresolved_without_reads() -> (
     None
 ):
     """No streamed text means no shortfall to explain: ``None``, not zero."""
-    result = _stream_read_result(
+    result = _build_text_result(
         [
             _make_request_func_output(),
             _make_request_func_output(itl_unresolved=4),
-        ]
+        ],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
     )
 
     assert result.itl_unresolved is None
@@ -1218,8 +1227,10 @@ def test_build_text_generation_result_omits_itl_unresolved_without_reads() -> (
 
 def test_build_text_generation_result_reports_unbunched_reads() -> None:
     """A run whose reads each carried one event still reports the stats."""
-    result = _stream_read_result(
-        [_make_request_func_output(stream_events_per_read={1: 5})]
+    result = _build_text_result(
+        [_make_request_func_output(stream_events_per_read={1: 5})],
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
     )
 
     assert result.stream_reads == 5
@@ -1232,17 +1243,8 @@ def test_build_text_generation_result_reports_unbunched_reads() -> None:
 def test_build_text_generation_result_attaches_aggregate_server_stats() -> None:
     """Without sessions, server stats are attached flat in output order."""
     outputs = _outputs_with_completion_tokens([3, 1, 2])
-    result = build_text_generation_result(
-        outputs=outputs,
-        benchmark_duration=1.0,
-        tokenizer=_make_tokenizer_mock(),
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
+    result = _build_text_result(
+        outputs, benchmark_duration=1.0, tokenizer=_make_tokenizer_mock()
     )
 
     assert result.session_server_stats is None
@@ -1255,17 +1257,10 @@ def test_build_text_generation_result_attaches_session_server_stats() -> None:
     """With sessions, server stats are grouped per session."""
     a, b, c, d = _outputs_with_completion_tokens([1, 2, 3, 4])
     by_session = {"10": [a], "anon": [b], "2": [c, d]}
-    result = build_text_generation_result(
-        outputs=[a, b, c, d],
+    result = _build_text_result(
+        [a, b, c, d],
         benchmark_duration=1.0,
         tokenizer=_make_tokenizer_mock(),
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
         outputs_by_session=by_session,
     )
 
@@ -1294,17 +1289,11 @@ def test_build_text_generation_result_all_failed_suppresses_ss_warning(
     ]
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
     with caplog.at_level(logging.WARNING):
-        result = build_text_generation_result(
-            outputs=outputs,
+        result = _build_text_result(
+            outputs,
             benchmark_duration=1.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=None,
-            skip_first_n_requests=0,
-            skip_last_n_requests=0,
             max_concurrency=32,  # detection runs (not skipped)
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
         )
 
     assert not any(
@@ -1326,17 +1315,11 @@ def test_build_text_generation_result_too_few_but_some_success_warns(
     outputs = [_make_request_func_output() for _ in range(3)]  # 3 successful
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
     with caplog.at_level(logging.WARNING):
-        build_text_generation_result(
-            outputs=outputs,
+        _build_text_result(
+            outputs,
             benchmark_duration=1.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=None,
-            skip_first_n_requests=0,
-            skip_last_n_requests=0,
             max_concurrency=32,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
         )
 
     assert any("Steady-state detection:" in r.message for r in caplog.records)
@@ -1354,17 +1337,8 @@ def test_build_text_generation_result_detected_uses_window_with_rejection() -> (
     """
     outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
-    result = build_text_generation_result(
-        outputs=outputs,
-        benchmark_duration=200.0,
-        tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
+    result = _build_text_result(
+        outputs, benchmark_duration=200.0, tokenizer=tokenizer
     )
 
     assert result.steady_state_detected is True
@@ -1416,17 +1390,10 @@ def test_per_gpu_throughput_spans_full_run_on_steady_state_path() -> None:
         for i in range(100)
     ]
     tokenizer = _make_mock_tokenizer({"warmup": 5, "steady": 5})
-    result = build_text_generation_result(
-        outputs=warmup + steady,
+    result = _build_text_result(
+        warmup + steady,
         benchmark_duration=80.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
         num_gpus=1,
     )
 
@@ -1453,17 +1420,11 @@ def test_build_text_generation_result_concurrency_one_falls_back() -> None:
     """
     outputs = [_make_stable_request_func_output(float(i)) for i in range(50)]
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
-    result = build_text_generation_result(
-        outputs=outputs,
+    result = _build_text_result(
+        outputs,
         benchmark_duration=50.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
         max_concurrency=1,  # detection skipped
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
     )
 
     # Detection was skipped → not detected.
@@ -1484,17 +1445,12 @@ def test_build_text_generation_result_filtering_disabled_uses_skip_counts() -> (
     """
     outputs = [_make_stable_request_func_output(float(i)) for i in range(200)]
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
-    result = build_text_generation_result(
-        outputs=outputs,
+    result = _build_text_result(
+        outputs,
         benchmark_duration=200.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
         skip_first_n_requests=10,
         skip_last_n_requests=5,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
         steady_state_filtering=False,
     )
 
@@ -1539,17 +1495,10 @@ def test_build_text_generation_result_filtering_disabled_keeps_all_requests() ->
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
 
     def build(steady_state_filtering: bool) -> BenchmarkResult:
-        return build_text_generation_result(
-            outputs=outputs,
+        return _build_text_result(
+            outputs,
             benchmark_duration=211.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=None,
-            skip_first_n_requests=0,
-            skip_last_n_requests=0,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
             steady_state_filtering=steady_state_filtering,
         )
 
@@ -1597,17 +1546,10 @@ def test_build_text_generation_result_excludes_failures(
     tokenizer = _make_tokenizer_mock(tokens_per_output=5)
 
     with caplog.at_level(logging.WARNING):
-        result = build_text_generation_result(
-            outputs=outputs,
+        result = _build_text_result(
+            outputs,
             benchmark_duration=200.0,
             tokenizer=tokenizer,
-            gpu_metrics=None,
-            cpu_metrics=None,
-            skip_first_n_requests=0,
-            skip_last_n_requests=0,
-            max_concurrency=None,
-            max_concurrent_conversations=None,
-            collect_gpu_stats=False,
             steady_state_filtering=steady_state_filtering,
         )
 
@@ -1633,17 +1575,11 @@ def test_build_text_generation_result_all_failed_still_counts_failures() -> (
 ):
     """With no successful request, failures are kept and still counted."""
     outputs = [_make_failed_request_func_output(float(i)) for i in range(5)]
-    result = build_text_generation_result(
-        outputs=outputs,
+    result = _build_text_result(
+        outputs,
         benchmark_duration=5.0,
         tokenizer=_make_tokenizer_mock(tokens_per_output=5),
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
         max_concurrency=32,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
         steady_state_filtering=False,
     )
 
@@ -1702,17 +1638,11 @@ def test_build_text_generation_result_with_outlier_inputs() -> None:
     # (a+b) With concurrency > 1, detection may find a window; if it does,
     # rejection should drop the extreme TTFTs so the mean stays near 50 ms.
     # We also simply verify the result is sane and completes without error.
-    result_high = build_text_generation_result(
-        outputs=all_outputs,
+    result_high = _build_text_result(
+        all_outputs,
         benchmark_duration=120.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
         max_concurrency=32,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
     )
     assert result_high.text_data is not None
     assert result_high.steady_state_detected is not None
@@ -1721,17 +1651,11 @@ def test_build_text_generation_result_with_outlier_inputs() -> None:
 
     # (c) At concurrency=1, detection is skipped; trim is used; outliers are
     # included but the fallback path should still complete without error.
-    result_one = build_text_generation_result(
-        outputs=all_outputs,
+    result_one = _build_text_result(
+        all_outputs,
         benchmark_duration=120.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
-        cpu_metrics=None,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
         max_concurrency=1,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
     )
     assert result_one.steady_state_detected is False
     assert result_one.steady_state_warning is None  # skipped, not failed
@@ -1982,17 +1906,12 @@ def test_steady_state_records_keep_dispatch_indices() -> None:
     ]
     tokenizer = _make_mock_tokenizer({"alpha": 5})
 
-    result = build_text_generation_result(
-        outputs=outputs,
+    result = _build_text_result(
+        outputs,
         benchmark_duration=12.0,
         tokenizer=tokenizer,
-        gpu_metrics=None,
         cpu_metrics=_EMPTY_CPU_METRICS,
-        skip_first_n_requests=0,
-        skip_last_n_requests=0,
         max_concurrency=4,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
     )
 
     assert result.text_data is not None
@@ -2588,17 +2507,12 @@ def test_goodput_unset_reports_nothing() -> None:
 
 
 def test_build_text_generation_result_passes_goodput_targets() -> None:
-    result = build_text_generation_result(
-        outputs=_goodput_outputs(),
+    result = _build_text_result(
+        _goodput_outputs(),
         benchmark_duration=10.0,
         tokenizer=_make_mock_tokenizer(_GOODPUT_TOKENIZER_COUNTS),
-        gpu_metrics=None,
         cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
-        skip_last_n_requests=0,
-        max_concurrency=None,
-        max_concurrent_conversations=None,
-        collect_gpu_stats=False,
         steady_state_filtering=False,
         goodput_targets=GoodputTargets(ttft_ms=200.0, tpot_ms=150.0),
     )
