@@ -52,6 +52,8 @@ from max.pipelines.speculative.driver import (
     SequentialBatch,
     TensorAdapter,
     gather_variable_rows,
+    gather_verify_prefix,
+    replica_size,
 )
 from max.pipelines.speculative.spec_adapters import (
     HISPARSE_INPUTS,
@@ -225,6 +227,11 @@ class Glm5_1Target:
             # A later pipeline stage starts from the previous stage's hidden
             # states over the merged window instead of embedding its tokens.
             boundary=batch.extra.get(STAGE_BOUNDARY),
+            verify_lengths=(
+                as_tensors(batch.verify_lengths)
+                if batch.verify_lengths is not None
+                else None
+            ),
         )
         # Under data parallelism each device's shard is its replica's rows,
         # the layout the proposer's step 0 reads.
@@ -250,6 +257,7 @@ class Glm5_1MTPProposer(TensorAdapter):
     step_hidden_mode = ReturnHiddenStates.LAST_PER_DEVICE
     uses_thinking_phase = True
     supports_zero_draft_rows = False
+    reads_verify_lengths = True
     takes_distributed_inputs = True
 
     def __init__(self, draft: DeepseekV3_2NextN, target: Glm5_1Decoder) -> None:
@@ -292,13 +300,28 @@ class Glm5_1MTPProposer(TensorAdapter):
         # ``return_n_logits`` rows, which the driver gathers at the accepted
         # position. Under data parallelism the hidden states and top-k stay
         # with their replica, and only the logit rows join the whole batch.
-        rows, _ = gather_variable_rows(
-            h,
-            offsets,
-            batch.return_n_logits,
-            self.mesh,
-            data_parallel_degree=batch.data_parallel_degree,
-        )
+        # A per-row window holds only the row's first k_r drafts, so the
+        # fixed-stride tail gather would read rows no draft of its own owns.
+        if batch.verify_lengths is not None:
+            rows, _ = gather_verify_prefix(
+                h,
+                offsets,
+                as_tensors(batch.verify_lengths),
+                batch.distributed.data_parallel_splits
+                if batch.distributed is not None
+                else None,
+                batch.return_n_logits,
+                self.mesh,
+                batch.data_parallel_degree,
+            )
+        else:
+            rows, _ = gather_variable_rows(
+                h,
+                offsets,
+                batch.return_n_logits,
+                self.mesh,
+                data_parallel_degree=batch.data_parallel_degree,
+            )
         reuse: list[Tensor] = []
         if self.reuse is not None:
             # Only a draft without DCP reuses its selection, and only a
@@ -404,6 +427,7 @@ class Glm5_1MTPProposer(TensorAdapter):
                 F.cast(batch.distributed.host_query_offsets, DType.int64),
                 batch.distributed.data_parallel_splits,
                 rows,
+                replica_size(rows.mesh),
                 prefix=split_prefix,
             )
         kv_mapping = _kv_mapping(self.mesh, batch.data_parallel_degree)
@@ -558,6 +582,25 @@ def _takes_prefill_rows(target_config: Any) -> bool:
     return target_config.decode_context_parallel_degree <= 1
 
 
+def _per_row_layout_error(
+    data_parallel_degree: int,
+    hisparse: bool,
+    decode_context_parallel_degree: int,
+) -> str | None:
+    """Returns why a layout cannot serve the per-row MTP verify."""
+    if (
+        data_parallel_degree == 1
+        and not hisparse
+        and decode_context_parallel_degree <= 1
+    ):
+        return None
+    return (
+        "per-row verify is checked on the TP8/EP8 layout alone: "
+        "--data-parallel-degree 1, no --hisparse, "
+        "--decode-context-parallel-degree 1"
+    )
+
+
 ADAPTER = TargetAdapter(
     primary_kv=PRIMARY_KV,
     verify=verify,
@@ -571,4 +614,8 @@ ADAPTER = TargetAdapter(
     # The NextN layer reads the final hidden states, the embedding and head
     # the last stage builds, and its own caches.
     speculates_on_last_stage=True,
+    per_row_verify_methods=frozenset({"mtp"}),
+    # Per-row verify is checked on the TP8/EP8 shape alone: one attention
+    # replica, no HiSparse, no decode context parallelism.
+    per_row_verify_layout_error=_per_row_layout_error,
 )

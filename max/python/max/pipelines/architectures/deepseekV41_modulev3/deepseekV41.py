@@ -54,6 +54,7 @@ from max.pipelines.lib import ModuleV3Outputs
 from max.pipelines.lib.role_contracts import VisionInputs
 from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.lib.vlm_utils import F_merge_multimodal_embeddings
+from max.pipelines.speculative.driver import slice_requests
 from max.tensor import Tensor, default_device, default_dtype
 from max.tensor.sharding import (
     DeviceMapping,
@@ -124,36 +125,6 @@ def _hc_mean(stream: Tensor) -> Tensor:
     for i in range(1, hc_mult):
         total = total + stream[:, i].cast(DType.float32)
     return (total * (1.0 / hc_mult)).cast(stream.dtype)
-
-
-def _slice_requests(
-    t: Tensor,
-    data_parallel_splits: Tensor,
-    mapping: DeviceMapping,
-    prefix: str,
-) -> Tensor:
-    """Slices a replicated per-request tensor into each rank's requests.
-
-    ``t`` is ``[batch, ...]`` over the DP mesh; rank ``r`` keeps rows
-    ``[splits[r], splits[r + 1])`` -- the same request ranges the token
-    split uses, cut from its own replicated copy.
-    """
-    splits = TensorValue(data_parallel_splits)
-    shards = []
-    for r, shard in enumerate(t.local_shards):
-        shards.append(
-            ops.slice_tensor(
-                TensorValue(shard),
-                [
-                    (
-                        slice(splits[r], splits[r + 1]),
-                        f"{prefix}_requests_r{r}",
-                    ),
-                    ...,
-                ],
-            )
-        )
-    return Tensor.from_shard_values(shards, mapping)
 
 
 def _per_rank_ragged_rows(
@@ -637,16 +608,16 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
                 data_parallel_splits,
                 shard_mapping,
             )
-            swa_begin = _slice_requests(
+            swa_begin = slice_requests(
                 swa_begin, data_parallel_splits, shard_mapping, "swa_begin"
             )
-            floor = _slice_requests(
+            floor = slice_requests(
                 floor, data_parallel_splits, shard_mapping, "write_floor"
             )
-            lookback = _slice_requests(
+            lookback = slice_requests(
                 lookback, data_parallel_splits, shard_mapping, "lookback"
             )
-            lookback_dead = _slice_requests(
+            lookback_dead = slice_requests(
                 lookback_dead,
                 data_parallel_splits,
                 shard_mapping,
@@ -680,7 +651,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
         if history is not None:
             if self.dp > 1:
                 assert data_parallel_splits is not None
-                source = _slice_requests(
+                source = slice_requests(
                     source,
                     data_parallel_splits,
                     shard_mapping,
@@ -806,7 +777,7 @@ class DeepseekV41(Module[..., ModuleV3Outputs]):
             )
         assert data_parallel_splits is not None
         mapping = DeviceMapping(mesh, (Sharded(0),))
-        skip = _slice_requests(
+        skip = slice_requests(
             skip, data_parallel_splits, mapping, "replay_skip"
         )
         host_kept: Tensor | None = None

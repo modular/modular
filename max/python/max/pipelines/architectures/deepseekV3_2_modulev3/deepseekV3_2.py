@@ -43,6 +43,8 @@ from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.speculative.driver import (
     gather_variable_rows,
+    gather_verify_prefix,
+    replica_size,
 )
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
@@ -96,14 +98,6 @@ def mask_padded_tail(
         shape=[vocab_size - unpadded_vocab_size],
     )
     return logits + F.cast(F.concat([keep, drop]), logits.dtype)
-
-
-def replica_size(mesh: DeviceMesh) -> int:
-    """Returns the devices one data-parallel replica spans.
-
-    It is the ``tp`` axis of a ``(dp, tp)`` mesh, else one device.
-    """
-    return mesh.axis_size(TP) if TP in mesh.axis_names else 1
 
 
 def _replica_rows_on_first_device(t: Tensor, mesh: DeviceMesh) -> Tensor:
@@ -291,6 +285,7 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         ep: EPBuffers | None = None,
         hisparse: HiSparseInputs | None = None,
         boundary: Sequence[Tensor] | None = None,
+        verify_lengths: Tensor | None = None,
     ) -> tuple[Tensor, ...]:
         """Runs the embedding and decoder stack over the tokens.
 
@@ -419,7 +414,13 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
             outputs.append(self._project(last_token_h))
         if self.return_logits is ReturnLogits.VARIABLE:
             outputs.extend(
-                self._variable_logits(h, input_row_offsets, return_n_logits)
+                self._variable_logits(
+                    h,
+                    input_row_offsets,
+                    return_n_logits,
+                    verify_lengths,
+                    data_parallel_splits,
+                )
             )
         if self.return_hidden_states is ReturnHiddenStates.ALL_NORMALIZED:
             outputs.append(self.norm(h))
@@ -583,18 +584,34 @@ class DeepseekV3_2TextModel(Module[..., tuple[Tensor, ...]]):
         )
 
     def _variable_logits(
-        self, h: Tensor, input_row_offsets: Tensor, return_n_logits: Tensor
+        self,
+        h: Tensor,
+        input_row_offsets: Tensor,
+        return_n_logits: Tensor,
+        verify_lengths: Tensor | None = None,
+        data_parallel_splits: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         assert self.mesh is not None
         # Under data parallelism each replica holds only its own rows, and
         # the vocab-sharded head needs the whole batch on every device.
-        variable_h, offsets = gather_variable_rows(
-            h,
-            input_row_offsets,
-            return_n_logits,
-            self.mesh,
-            data_parallel_degree=self.config.data_parallel_degree,
-        )
+        if verify_lengths is not None:
+            variable_h, offsets = gather_verify_prefix(
+                h,
+                input_row_offsets,
+                verify_lengths,
+                data_parallel_splits,
+                return_n_logits,
+                self.mesh,
+                self.config.data_parallel_degree,
+            )
+        else:
+            variable_h, offsets = gather_variable_rows(
+                h,
+                input_row_offsets,
+                return_n_logits,
+                self.mesh,
+                data_parallel_degree=self.config.data_parallel_degree,
+            )
         return self._project(variable_h), offsets
 
 

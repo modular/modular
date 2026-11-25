@@ -157,28 +157,72 @@ modular_py_test(
     ],
 )
 
+modular_py_library(
+    name = "mtp_contract_helpers",
+    testonly = True,
+    srcs = ["mtp_contract_helpers.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
+        "//max/python/max/pipelines/architectures/glm5_1_modulev3",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        requirement("pytest"),
+    ],
+)
+
 modular_py_test(
-    name = "test_dp_mtp_contracts",
+    name = "mtp_contract_tests",
     # An eight-device CPU mesh builds a lot of graph ops per case.
     size = "large",
-    srcs = ["test_dp_mtp_contracts.py"],
+    srcs = [
+        "test_dp_mtp_contracts.py",
+        "test_dp_mtp_contracts_sweep.py",
+    ],
+    args = [
+        "-p",
+        "eager_warm_plugin",
+    ],
+    # The CPU warm store supports Linux. Other hosts run these contracts cold.
+    data = select({
+        "@platforms//os:linux": ["//max/tests/integration/xarch_warm:warm_cpu"],
+        "//conditions:default": [],
+    }),
+    env = select({
+        "@platforms//os:linux": {
+            "CUDA_VISIBLE_DEVICES": "",
+            "HIP_VISIBLE_DEVICES": "",
+            "MAX_EAGER_EXECUTOR": "fallback-internal",
+            "XARCH_WARM_RLOCATIONS": "$(rlocationpaths //max/tests/integration/xarch_warm:warm_cpu)",
+        },
+        "//conditions:default": {},
+    }),
     ignore_extra_deps = [
         # Eager tensors import the MO interpreter; without its compiled ops
         # the realizations fall back to compiling each graph.
         "//max/python/max/_interpreter_ops",
+        "//max/tests/integration/xarch_warm:eager_warm_plugin",
     ],
+    per_test_tags = {
+        "test_dp_mtp_contracts_sweep.py": ["postsubmit"],
+    },
     deps = [
+        ":mtp_contract_helpers",
         "//max/python/max:tensor",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/graph",
         "//max/python/max/nn:core",
-        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/deepseekV3_2_modulev3",
         "//max/python/max/pipelines/architectures/glm5_1_modulev3",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/speculative",
+        "//max/tests/integration/xarch_warm:eager_warm_plugin",
         requirement("numpy"),
     ],
 )
@@ -241,6 +285,7 @@ modular_py_test(
         exclude = [
             "test_chat_template.py",
             "test_dp_mtp_contracts.py",
+            "test_dp_mtp_contracts_sweep.py",
             "test_format_spec.py",
             "test_hisparse_graph.py",
             "test_hisparse_mtp_graph.py",

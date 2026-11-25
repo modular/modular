@@ -357,7 +357,9 @@ class SpecDecodeOutputs(GraphGroup[str, _TensorT | tuple[_TensorT, ...]]):
     """A speculative-decoding step's verdicts and the next step's drafts.
 
     How many drafts each row accepted, the token that follows them, the next
-    step's drafts, and any distributions the draft sampled those from.
+    step's drafts, any distributions the draft sampled those from, and under
+    a per-row verify the next step's draft scores (`next_draft_scores`) and
+    each row's verified draft count (`verify_lengths`).
     """
 
     kind = "spec_decode_outputs"

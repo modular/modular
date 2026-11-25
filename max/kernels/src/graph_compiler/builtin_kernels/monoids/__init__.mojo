@@ -25,7 +25,7 @@ compiler.
 from std.math import exp
 from std.sys.info import simd_width_of
 
-from std.utils.numerics import max_finite, min_finite
+from std.utils.numerics import isfinite, max_finite, min_finite, neg_inf
 
 import extensibility
 
@@ -1480,3 +1480,310 @@ struct ArgMin[
         reducer.generic(self)
         self.acc_values[0] = self.best
         self.acc_indices[0] = _in_range_index(Int64(self.best_idx))
+
+
+# ===-----------------------------------------------------------------------===#
+# Top-token monoids (head-free draft score reduction half)
+# ===-----------------------------------------------------------------------===#
+
+# Accumulate off-peak mass separately to preserve it for confident rows.
+
+
+@inline(.always)
+def _top_token_accumulate[
+    dtype: DType, W: Int, //
+](
+    mut m: SIMD[dtype, W],
+    mut b: SIMD[dtype, W],
+    mut t: SIMD[dtype, W],
+    v: SIMD[dtype, W],
+) -> Tuple[SIMD[.bool, W], SIMD[.bool, W]]:
+    """Folds padded tile `v` into the `(m, b, t)` statistics of the
+    top-token monoids via a lane-wise flash update. `-inf` and NaN lanes
+    contribute nothing. Returns the `(raised, tied)` lane masks: `v`
+    raised the old max, or `v` is a real element equal to it."""
+    comptime assert dtype.is_floating_point(), "requires a floating-point dtype"
+    comptime empty = neg_inf[dtype]()
+    comptime zero = SIMD[dtype, W](0)
+    comptime one = SIMD[dtype, W](1)
+    var real = isfinite(v)
+    var v_real = real.select(v, SIMD[dtype, W](empty))
+    var new_m = max(m, v_real)
+    var raised = v_real.gt(m)
+    var tied = v_real.eq(m) & real
+    var below = v_real.lt(m) & real
+    # Empty lanes need a finite scale before subtraction.
+    var safe_new_m = new_m.gt(SIMD[dtype, W](empty)).select(new_m, zero)
+    var safe_m = below.select(m, zero)
+    var b_raised = (b + t) * exp(m - safe_new_m)
+    # Masked lanes must contribute zero, not a clamped subnormal exp.
+    var b_below = below.select(exp(below.select(v_real, zero) - safe_m), zero)
+    b = raised.select(b_raised, b + b_below)
+    t = raised.select(one, t + tied.select(one, zero))
+    m = new_m
+    return (raised, tied)
+
+
+@inline(.always)
+def _top_token_join[
+    dtype: DType, W: Int, //
+](
+    mut m: SIMD[dtype, W],
+    mut b: SIMD[dtype, W],
+    mut t: SIMD[dtype, W],
+    other_m: SIMD[dtype, W],
+    other_b: SIMD[dtype, W],
+    other_t: SIMD[dtype, W],
+) -> Tuple[SIMD[.bool, W], SIMD[.bool, W]]:
+    """Combines the other partial `(m, b, t)` state into this one,
+    lane-wise. Returns the `(self_is_max, tied)` lane masks: this side
+    held the higher or equal max, or both held the same real max."""
+    comptime assert dtype.is_floating_point(), "requires a floating-point dtype"
+    comptime empty = neg_inf[dtype]()
+    comptime zero = SIMD[dtype, W](0)
+    var new_m = max(m, other_m)
+    var self_is_max = m.ge(other_m)
+    var tied = m.eq(other_m) & m.gt(SIMD[dtype, W](empty))
+    var b_lo = self_is_max.select(other_b, b)
+    var t_lo = self_is_max.select(other_t, t)
+    var b_hi = self_is_max.select(b, other_b)
+    var t_hi = self_is_max.select(t, other_t)
+    # Empty pairs need a finite scale before subtraction.
+    var safe_max = new_m.gt(SIMD[dtype, W](empty)).select(new_m, zero)
+    var rescale = exp(min(m, other_m) - safe_max)
+    b = tied.select(b_hi + b_lo, b_hi + (b_lo + t_lo) * rescale)
+    t = tied.select(t_hi + t_lo, t_hi)
+    m = new_m
+    return (self_is_max, tied)
+
+
+@extensibility.register("reduction.top_token_logit.tmp")
+struct TopTokenLogit[
+    dtype: DType,
+    W: Int = simd_width_of[dtype](),
+](ReduceOp):
+    """Online top-token-logit monoid — the reduction half of the
+    head-free draft score.
+
+    Holds `{m, b, t}` — the sufficient statistics of
+    `excluded_mass = sum_{j != top} exp(l_j - l_max) + (ties - 1)` over
+    one row: `m` the running max, `b` the exp-sum of the elements
+    strictly below `m` (scaled to `m`), `t` the count of elements equal
+    to `m`. The body emits `-log(b + t - 1)`.
+
+    `-inf` elements (top-k/top-p masked logits, SIMD tail padding)
+    contribute nothing: they never raise the max and are excluded from
+    `b` and `t`. A row whose only finite logit is the top leaves
+    `b + t - 1 == 0`, so the emitted score is `+inf`; the caller clamps.
+    A row with no finite logit leaves `t == 0`, and the body emits
+    `+inf` for it too rather than `-log(-1)`.
+
+    Parameters:
+        dtype: The accumulator dtype (must be floating-point).
+        W: SIMD width of the per-lane flash accumulators.
+    """
+
+    comptime Single = TopTokenLogit[Self.dtype, 1]
+    comptime width = Self.W
+
+    var m: SIMD[Self.dtype, Self.W]
+    """`W`-lane running maxima. Final scalar at `m[0]` post-join."""
+
+    var b: SIMD[Self.dtype, Self.W]
+    """`W`-lane exp-sums of the elements strictly below `m`, scaled to
+    `m`. Final scalar at `b[0]` post-join."""
+
+    var t: SIMD[Self.dtype, Self.W]
+    """`W`-lane counts of elements equal to `m`. Exact while the row
+    has fewer than 2**24 maxima. Final scalar at `t[0]` post-join."""
+
+    @inline(.always)
+    def __init__(out self):
+        """Identity: every lane at `(-inf, 0, 0)`."""
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "TopTokenLogit requires a floating-point dtype"
+        self.m = SIMD[Self.dtype, Self.W](neg_inf[Self.dtype]())
+        self.b = SIMD[Self.dtype, Self.W](0)
+        self.t = SIMD[Self.dtype, Self.W](0)
+
+    @inline(.always)
+    def accumulate[
+        val_dtype: DType, w: Int
+    ](
+        mut self,
+        val: SIMD[val_dtype, w],
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
+    ):
+        """Folds a SIMD tile via lane-wise flash update. `-inf` lanes
+        (masked logits, `Self.pad` tail padding) and NaN lanes
+        contribute nothing.
+
+        Parameters:
+            val_dtype: The tile's source dtype.
+            w: SIMD width of the tile.
+
+        Args:
+            val: The SIMD tile to fold.
+            idx: Unused (the score is index-agnostic).
+        """
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "TopTokenLogit requires a floating-point dtype"
+        comptime empty = neg_inf[Self.dtype]()
+        _ = _top_token_accumulate(
+            self.m, self.b, self.t, Self.pad[Self.W, Self.dtype, empty](val)
+        )
+
+    @inline(.always)
+    def join(mut self, other: Self):
+        """Sequential combine: lane-wise flash combine of two partial
+        states. Equal maxima add `b` and `t`; else the higher side
+        keeps `m` and `t`, and the lower side's `b` and `t` rescale
+        into `b`.
+
+        Args:
+            other: The state to combine into `self`.
+        """
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "TopTokenLogit requires a floating-point dtype"
+        _ = _top_token_join(self.m, self.b, self.t, other.m, other.b, other.t)
+
+    @inline(.always)
+    def __getitem__(self, j: Int) -> Self.Single:
+        """Returns lane `j` as a width-1 monoid."""
+        var r = Self.Single()
+        r.m[0] = self.m[j]
+        r.b[0] = self.b[j]
+        r.t[0] = self.t[j]
+        return r
+
+    @inline(.always)
+    def __setitem__(mut self, j: Int, s: Self.Single):
+        """Writes width-1 monoid `s` into lane `j`."""
+        self.m[j] = s.m[0]
+        self.b[j] = s.b[0]
+        self.t[j] = s.t[0]
+
+
+@extensibility.register("reduction.top_token_pieces.tmp")
+struct TopTokenPieces[
+    dtype: DType,
+    W: Int = simd_width_of[dtype](),
+](ReduceOp):
+    """Online top-token monoid that also tracks the max's index.
+
+    Holds `{m, b, t, i}` — the `TopTokenLogit` statistics plus `i`, the
+    lowest axis index among the elements equal to `m`. The body emits
+    the three pieces a vocabulary-sharded greedy drafter allgathers:
+    the row max, its index, and the excluded mass `b + (t - 1)`.
+
+    Ties keep the lower index in every join order, so partial states
+    combine in any lane, warp, block or split-K order. `-inf` and NaN
+    elements contribute nothing; a row whose only finite logit is the
+    top leaves `b + t - 1 == 0`.
+
+    Parameters:
+        dtype: The accumulator dtype (must be floating-point).
+        W: SIMD width of the per-lane flash accumulators.
+    """
+
+    comptime Single = TopTokenPieces[Self.dtype, 1]
+    comptime width = Self.W
+
+    var m: SIMD[Self.dtype, Self.W]
+    """`W`-lane running maxima. Final scalar at `m[0]` post-join."""
+
+    var b: SIMD[Self.dtype, Self.W]
+    """`W`-lane exp-sums of the elements strictly below `m`, scaled to
+    `m`. Final scalar at `b[0]` post-join."""
+
+    var t: SIMD[Self.dtype, Self.W]
+    """`W`-lane counts of elements equal to `m`. Exact while the row
+    has fewer than 2**24 maxima. Final scalar at `t[0]` post-join."""
+
+    var i: SIMD[.int32, Self.W]
+    """`W`-lane lowest indices of the elements equal to `m`. Final
+    scalar at `i[0]` post-join."""
+
+    @inline(.always)
+    def __init__(out self):
+        """Identity: every lane at `(-inf, 0, 0, MAX)`."""
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "TopTokenPieces requires a floating-point dtype"
+        self.m = SIMD[Self.dtype, Self.W](neg_inf[Self.dtype]())
+        self.b = SIMD[Self.dtype, Self.W](0)
+        self.t = SIMD[Self.dtype, Self.W](0)
+        self.i = SIMD[.int32, Self.W](Int32.MAX)
+
+    @inline(.always)
+    def accumulate[
+        val_dtype: DType, w: Int
+    ](
+        mut self,
+        val: SIMD[val_dtype, w],
+        idx: SIMD[.int64, w] = SIMD[.int64, w](0),
+    ):
+        """Folds a SIMD tile via lane-wise flash update. `-inf` lanes
+        (masked logits, `Self.pad` tail padding) and NaN lanes
+        contribute nothing.
+
+        Parameters:
+            val_dtype: The tile's source dtype.
+            w: SIMD width of the tile.
+
+        Args:
+            val: The SIMD tile to fold.
+            idx: Per-lane axis positions of `val`'s lanes.
+        """
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "TopTokenPieces requires a floating-point dtype"
+        comptime empty = neg_inf[Self.dtype]()
+        var idx_padded = Self.pad[Self.W, .int32, Int32.MAX](idx.cast[.int32]())
+        var masks = _top_token_accumulate(
+            self.m, self.b, self.t, Self.pad[Self.W, Self.dtype, empty](val)
+        )
+        # A raised lane takes the new element's index; a tie keeps the
+        # lower of the two, so the lowest index wins in any fold order.
+        var i_raised = masks[0].select(idx_padded, self.i)
+        self.i = masks[1].select(min(self.i, idx_padded), i_raised)
+
+    @inline(.always)
+    def join(mut self, other: Self):
+        """Sequential combine: lane-wise flash combine of two partial
+        states. Equal maxima add `b` and `t` and keep the lower index;
+        else the higher side keeps `m`, `t` and `i`, and the lower
+        side's `b` and `t` rescale into `b`.
+
+        Args:
+            other: The state to combine into `self`.
+        """
+        comptime assert (
+            Self.dtype.is_floating_point()
+        ), "TopTokenPieces requires a floating-point dtype"
+        var masks = _top_token_join(
+            self.m, self.b, self.t, other.m, other.b, other.t
+        )
+        var i_hi = masks[0].select(self.i, other.i)
+        self.i = masks[1].select(min(self.i, other.i), i_hi)
+
+    @inline(.always)
+    def __getitem__(self, j: Int) -> Self.Single:
+        """Returns lane `j` as a width-1 monoid."""
+        var r = Self.Single()
+        r.m[0] = self.m[j]
+        r.b[0] = self.b[j]
+        r.t[0] = self.t[j]
+        r.i[0] = self.i[j]
+        return r
+
+    @inline(.always)
+    def __setitem__(mut self, j: Int, s: Self.Single):
+        """Writes width-1 monoid `s` into lane `j`."""
+        self.m[j] = s.m[0]
+        self.b[j] = s.b[0]
+        self.t[j] = s.t[0]
+        self.i[j] = s.i[0]

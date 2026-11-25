@@ -633,6 +633,7 @@ SPECULATIVE = EngineSpeculativeConfig(
     verify_takes_prefill_rows=True,
     verify_commits_long_rows=False,
     successor_replay=True,
+    per_row_verify=True,
 )
 
 ENGINE_CONFIG = EngineConfig(
@@ -712,6 +713,7 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                 "verify_takes_prefill_rows": True,
                 "verify_commits_long_rows": False,
                 "successor_replay": True,
+                "per_row_verify": True,
             },
             "prefill_context_parallel": None,
             "prefix_caching": False,
@@ -776,6 +778,38 @@ def test_inconsistent_parallel_layouts_are_refused(
             devices=tuple(DeviceSpec.accelerator(i) for i in range(devices)),
             parallel=_parallel(**degrees),
         )
+
+
+def test_an_artifact_without_per_row_verify_reads_it_as_off(
+    tmp_path: Path,
+) -> None:
+    dest = serialize(ModelArtifact(engine_config=ENGINE_CONFIG), tmp_path / "a")
+    sections = json.loads((dest / "artifact.json").read_text())
+    del sections["engine_config"]["speculative"]["per_row_verify"]
+    _rewrite_sections(dest, sections)
+    engine_config = deserialize(dest).engine_config
+    assert engine_config is not None
+    assert engine_config.speculative is not None
+    assert not engine_config.speculative.per_row_verify
+
+
+def test_a_per_row_verify_of_false_serializes_with_no_key(
+    tmp_path: Path,
+) -> None:
+    """Checks that flag-off artifacts omit the per-row key and read it as off."""
+    config = dataclasses.replace(
+        ENGINE_CONFIG,
+        speculative=dataclasses.replace(SPECULATIVE, per_row_verify=False),
+    )
+    dest = serialize(ModelArtifact(engine_config=config), tmp_path / "a")
+    section = json.loads((dest / "artifact.json").read_text())["engine_config"][
+        "speculative"
+    ]
+    assert "per_row_verify" not in section
+    engine_config = deserialize(dest).engine_config
+    assert engine_config is not None
+    assert engine_config.speculative is not None
+    assert not engine_config.speculative.per_row_verify
 
 
 def test_the_pcp_record_comes_only_with_pcp_ranks() -> None:

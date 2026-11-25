@@ -29,6 +29,7 @@ share, until each moves onto :class:`SpecDecodePipelineModel`.
 from __future__ import annotations
 
 import logging
+from collections import OrderedDict
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
@@ -70,7 +71,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.graph_groups import DecoderGraphInputs
+from max.nn.legacy.graph_groups import DecoderGraphInputs, SpecDecodeOutputs
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
     ImageMetadata,
@@ -171,10 +172,28 @@ __all__ = [
     "SpecGraph",
     "_UnifiedSpecDecodeModelMixin",
     "build_spec_graph",
+    "extra_output_count",
+    "route_per_row_verify_layout_error",
+    "route_verifies_per_row",
+    "route_wires_head_score",
     "spec_decode_architecture",
 ]
 
 logger = logging.getLogger("max.pipelines")
+
+
+def extra_output_count(pipeline_config: PipelineConfig) -> int:
+    """Counts the outputs the graph emits before the distributions.
+
+    A per-row verify adds ``next_draft_scores`` and ``verify_lengths``
+    (``spec_decode_outputs`` names both); skipping them keeps the
+    distribution probe from reading the scores' trailing ``K`` as a
+    vocabulary.
+    """
+    speculative = pipeline_config.speculative
+    if speculative is None:
+        return 0
+    return 2 * int(speculative.per_row_verify)
 
 
 class _UnifiedSpecDecodeModelMixin:
@@ -183,6 +202,7 @@ class _UnifiedSpecDecodeModelMixin:
     # Provided by the concrete PipelineModel this mixin is combined with.
     model: Model
     devices: list[Device]
+    pipeline_config: PipelineConfig
 
     # Dflash-style block drafters derive the draft width from the draft
     # checkpoint at model construction and expose it here instead of
@@ -199,17 +219,18 @@ class _UnifiedSpecDecodeModelMixin:
     def sampled_draft_vocab_size(self) -> int | None:
         """The vocabulary the draft's proposal distributions span.
 
-        ``None`` when the compiled graph drafts by argmax. Read off the
-        compiled graph's ``next_draft_probs_full`` output rather than the
-        config, so the pipeline binds ``draft_probs_full`` exactly when the
-        graph declares it.
+        ``None`` when the compiled graph drafts by argmax. The vocabulary
+        is read off the graph's ``next_draft_probs_full`` output, past the
+        per-row verify's outputs, so the pipeline binds
+        ``draft_probs_full`` exactly when the graph declares it.
         """
         outputs = self._spec_decode_model.output_metadata
+        skip = extra_output_count(self.pipeline_config)
         # One distribution, or one per replica under
         # draft_probs_layout="replica".
-        if len(outputs) < 4:
+        if len(outputs) < 4 + skip:
             return None
-        shape = outputs[3].shape
+        shape = outputs[3 + skip].shape
         assert shape is not None and isinstance(shape[-1], int), (
             f"next_draft_probs_full needs a static vocab dim, got {shape}"
         )
@@ -218,7 +239,12 @@ class _UnifiedSpecDecodeModelMixin:
     @property
     def num_draft_distributions(self) -> int:
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
-        return max(0, len(self._spec_decode_model.output_metadata) - 3)
+        return max(
+            0,
+            len(self._spec_decode_model.output_metadata)
+            - 3
+            - extra_output_count(self.pipeline_config),
+        )
 
     @property
     def next_draft_tokens_dtype(self) -> DType:
@@ -227,7 +253,9 @@ class _UnifiedSpecDecodeModelMixin:
 
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         model_outputs = self._spec_decode_model.execute(*model_inputs.buffers)
-        return UnifiedEagleOutputs.from_buffers(model_outputs)
+        return UnifiedEagleOutputs.from_buffers(
+            model_outputs, skip=extra_output_count(self.pipeline_config)
+        )
 
     def _next_seed(self) -> Buffer:
         self._seed_counter = getattr(self, "_seed_counter", 0) + 1
@@ -568,14 +596,84 @@ class _Pairing:
 
     @property
     def adapter_arch(self) -> str:
-        """The name spec decoding finds the target's call under.
+        """The name spec decoding finds the target's call under."""
+        return _adapter_arch(self.target_arch, self.target)
 
-        A ModuleV3 target's is its variant's name, since its module calls
-        unlike its graph twin's.
-        """
-        if _builds_modulev3(self.target):
-            return self.target.name
-        return self.target_arch
+
+def _adapter_arch(target_arch: str, target: SupportedArchitecture) -> str:
+    """Returns the name spec decoding finds the target's call under.
+
+    A ModuleV3 target's is its variant's name, since its module calls
+    unlike its graph twin's.
+    """
+    if _builds_modulev3(target):
+        return target.name
+    return target_arch
+
+
+def route_verifies_per_row(
+    target_arch: str,
+    method: str,
+    *,
+    prefer_module_v3: bool,
+    data_parallel_degree: int = 1,
+    hisparse: bool = False,
+    decode_context_parallel_degree: int = 1,
+) -> bool:
+    """Returns whether the route an export resolves verifies per row.
+
+    It answers before the pipeline is built, from the target variant the
+    build would pick; a target with no buildable variant wires none. The
+    layout arguments are the export's, and an adapter with no layout rule
+    serves every layout its method does.
+    """
+    target = _target_architecture(target_arch, prefer_module_v3)
+    return target is not None and spec_adapters.verifies_per_row(
+        _adapter_arch(target_arch, target),
+        method,
+        data_parallel_degree=data_parallel_degree,
+        hisparse=hisparse,
+        decode_context_parallel_degree=decode_context_parallel_degree,
+    )
+
+
+def route_per_row_verify_layout_error(
+    target_arch: str,
+    *,
+    prefer_module_v3: bool,
+    data_parallel_degree: int,
+    hisparse: bool,
+    decode_context_parallel_degree: int,
+) -> str | None:
+    """Returns why the route's layout cannot serve a per-row verify.
+
+    It answers before the pipeline is built, from the target variant the
+    build would pick; a route with no adapter, or whose adapter declares
+    no layout rule, serves every layout.
+    """
+    target = _target_architecture(target_arch, prefer_module_v3)
+    if target is None:
+        return None
+    return spec_adapters.per_row_verify_layout_error(
+        _adapter_arch(target_arch, target),
+        data_parallel_degree=data_parallel_degree,
+        hisparse=hisparse,
+        decode_context_parallel_degree=decode_context_parallel_degree,
+    )
+
+
+def route_wires_head_score(
+    target_arch: str, method: str, *, prefer_module_v3: bool
+) -> bool:
+    """Returns whether the route an export resolves wires a confidence head.
+
+    It answers before the pipeline is built, from the target variant the
+    build would pick; a target with no buildable variant wires none.
+    """
+    target = _target_architecture(target_arch, prefer_module_v3)
+    return target is not None and spec_adapters.wires_head_score(
+        _adapter_arch(target_arch, target), method
+    )
 
 
 def _takes_distributed_inputs(*parts: object) -> bool:
@@ -1446,6 +1544,9 @@ class SpecDecodePipelineModel(
     export_contract: Mapping[str, object] | None = None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    export_acceptance_mode: str | None = None
+    """The rule the fused graph verifies with; an export's sidecar must
+    record the same."""
     replay_model: Model | None = None
     """The replay graph, compiled beside :attr:`model` and sharing its
     weights, when the target's adapter enables one."""
@@ -1497,17 +1598,18 @@ class SpecDecodePipelineModel(
     def sampled_draft_vocab_size(self) -> int | None:
         """The vocabulary the draft's proposal distributions span.
 
-        ``None`` when the compiled graph drafts by argmax. Read off the
-        compiled graph's ``next_draft_probs_full`` output rather than the
-        config, so the pipeline binds ``draft_probs_full`` exactly when the
-        graph declares it.
+        ``None`` when the compiled graph drafts by argmax. The vocabulary
+        is read off the graph's ``next_draft_probs_full`` output, past the
+        per-row verify's outputs, so the pipeline binds
+        ``draft_probs_full`` exactly when the graph declares it.
         """
         outputs = self.model.output_metadata
+        skip = extra_output_count(self.pipeline_config)
         # One distribution, or one per replica under
         # draft_probs_layout="replica".
-        if len(outputs) < 4:
+        if len(outputs) < 4 + skip:
             return None
-        shape = outputs[3].shape
+        shape = outputs[3 + skip].shape
         assert shape is not None and isinstance(shape[-1], int), (
             f"next_draft_probs_full needs a static vocab dim, got {shape}"
         )
@@ -1516,7 +1618,12 @@ class SpecDecodePipelineModel(
     @property
     def num_draft_distributions(self) -> int:
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
-        return max(0, len(self.model.output_metadata) - 3)
+        return max(
+            0,
+            len(self.model.output_metadata)
+            - 3
+            - extra_output_count(self.pipeline_config),
+        )
 
     @property
     def next_draft_tokens_dtype(self) -> DType:
@@ -1549,7 +1656,9 @@ class SpecDecodePipelineModel(
             assert self.replay_model is not None
             model = self.replay_model
         model_outputs = model.execute(*model_inputs.buffers)
-        outputs = UnifiedEagleOutputs.from_buffers(model_outputs)
+        outputs = UnifiedEagleOutputs.from_buffers(
+            model_outputs, skip=extra_output_count(self.pipeline_config)
+        )
         if self.replay_model is not None and isinstance(model_inputs, _Inputs):
             self._batching.record_submission(model_inputs)
         return outputs
@@ -2124,7 +2233,7 @@ def build_spec_graph(
         module=module,
     ) as graph:
         graph.output(
-            spec_decode_outputs(
+            call.named_outputs(
                 call(nn_model.decode_inputs(graph.inputs, call.kv_params))
             )
         )
@@ -2200,6 +2309,19 @@ class _DriverCall:
         if self.input_tree is None:
             return tuple(self.input_types)
         return (self.input_tree,)
+
+    def named_outputs(
+        self, outputs: Sequence[TensorValue]
+    ) -> OrderedDict[str, SpecDecodeOutputs[TensorValue]]:
+        """Names the driver's outputs in one ``spec`` group.
+
+        A per-row verify's driver emits the drafts' scores and each row's
+        verify length after the drafts.
+        """
+        per_row = self.driver.input_spec.include_per_row_verify
+        return spec_decode_outputs(
+            outputs, scores=per_row, verify_lengths=per_row
+        )
 
     def __call__(
         self,
@@ -2936,7 +3058,7 @@ class _SpecDecodeModule(ModuleV3[..., Mapping[str, Any]]):
         outputs = call(
             graph_inputs, signal_buffers=list(signals) if signals else None
         )
-        result: Mapping[str, Any] = as_tensors(spec_decode_outputs(outputs))
+        result: Mapping[str, Any] = as_tensors(call.named_outputs(outputs))
         return result
 
 

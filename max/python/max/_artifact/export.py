@@ -661,6 +661,7 @@ def pipeline_speculative_config(
         verify_takes_prefill_rows=facts.verify_takes_prefill_rows,
         verify_commits_long_rows=facts.verify_commits_long_rows,
         successor_replay=facts.successor_replay,
+        per_row_verify=speculative.per_row_verify,
     )
 
 
@@ -1240,8 +1241,8 @@ def export_pipeline(
         The path of the written artifact.
 
     Raises:
-        ArtifactError: If the pipeline cannot be exported, or the destination
-            exists.
+        ArtifactError: If the pipeline cannot be exported, the destination
+            exists, or the configuration asks for a per-row verify.
     """
     dest = Path(path)
     if dest.suffix != ARTIFACT_SUFFIX:
@@ -1249,6 +1250,13 @@ def export_pipeline(
     # Fail before the build, which can take minutes; serialize checks again.
     if dest.exists():
         raise ArtifactError(f"artifact destination {dest} already exists")
+    # The artifact boot stages no draft scores, so it refuses a per-row export.
+    spec = pipeline_config.speculative
+    if spec is not None and spec.per_row_verify:
+        raise ArtifactError(
+            "--per-row-verify is not exported for an artifact: the artifact"
+            " boot does not serve a per-row verify"
+        )
     # An architecture whose artifact graphs differ from MAX Serve's reads
     # this when it initializes its config; the caller's config is unchanged.
     pipeline_config = pipeline_config.model_copy(

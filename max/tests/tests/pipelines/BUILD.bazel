@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test", "requirement")
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -16,6 +16,12 @@ exports_files(
     ],
 )
 
+# The sampled-draft verdict tests, like the sampling suite, skip Apple GPUs.
+_SAMPLING_GPU_CONSTRAINTS = ["//:has_gpu"] + select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 # Skip only in macOS CI, so the tests still run on a developer's Mac.
 config_setting(
     name = "macos_ci",
@@ -23,16 +29,64 @@ config_setting(
     flag_values = {"//:modular_config": "ci_build"},
 )
 
+modular_py_library(
+    name = "spec_step_stubs",
+    testonly = True,
+    srcs = ["spec_step_stubs.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_library(
+    name = "ragged_prefix_checks",
+    testonly = True,
+    srcs = ["ragged_prefix_checks.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
 modular_py_test(
     name = "pipelines",
     srcs = glob(
         ["*.py"],
         exclude = [
+            "ragged_prefix_checks.py",
+            "test_block_driver_sweep.py",
+            "test_ragged_prefix_merge_sweep.py",
+            "test_sequential_per_row_sweep.py",
             "test_recurrent_spec_prefix_caching.py",
             "test_tokenizer_context_forwarding.py",
+            "test_sampled_per_row_verdict.py",
+            "test_sampled_per_row_step.py",
+            "spec_step_stubs.py",
+            "test_flag_off_op_golden.py",
+            "test_block_flag_off_op_golden.py",
         ],
     ),
-    data = glob(["testdata/*"]),
+    data = glob(
+        ["testdata/*"],
+        exclude = [
+            "testdata/block_flag_off_accept_op_sequence.txt",
+            "testdata/block_flag_off_step_op_sequence.txt",
+            "testdata/flag_off_host_mirror_op_sequence.txt",
+            "testdata/flag_off_op_sequence.txt",
+        ],
+    ),
     target_compatible_with = select({
         ":macos_ci": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -108,11 +162,151 @@ modular_py_test(
         "//max/python/max/pipelines/speculative",
         "//max/python/max/pipelines/weights",
         "//max/tests/integration/test_common:mixed_step_split_ops",
+        "//max/tests/tests/pipelines/driver_steps:block_step_helpers",
+        "//max/tests/tests/pipelines/driver_steps:cpu_step_session",
+        "//max/tests/tests/pipelines/driver_steps:sequential_step_helpers",
+        ":ragged_prefix_checks",
+        ":spec_step_stubs",
         # TODO(GEX-2238): replace data field in WeightData with driver tensor.
         requirement("numpy"),
         requirement("safetensors"),
         requirement("torch"),
         requirement("transformers"),
+    ],
+)
+
+modular_py_test(
+    name = "postsubmit_test_ragged_prefix_merge",
+    srcs = ["test_ragged_prefix_merge_sweep.py"],
+    tags = ["postsubmit"],
+    target_compatible_with = select({
+        ":macos_ci": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        ":ragged_prefix_checks",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/speculative",
+        "//max/tests/tests/pipelines/driver_steps:cpu_step_session",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "postsubmit_test_block_driver",
+    srcs = ["test_block_driver_sweep.py"],
+    tags = ["postsubmit"],
+    target_compatible_with = select({
+        ":macos_ci": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/speculative",
+        "//max/tests/tests/pipelines/driver_steps:block_step_helpers",
+        "//max/tests/tests/pipelines/driver_steps:cpu_step_session",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "postsubmit_test_sequential_per_row",
+    srcs = ["test_sequential_per_row_sweep.py"],
+    tags = ["postsubmit"],
+    target_compatible_with = select({
+        ":macos_ci": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/speculative",
+        "//max/tests/tests/pipelines/driver_steps:cpu_step_session",
+        "//max/tests/tests/pipelines/driver_steps:sequential_step_helpers",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_sampled_per_row_verdict",
+    srcs = ["test_sampled_per_row_verdict.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        ":spec_step_stubs",
+    ],
+)
+
+modular_py_test(
+    name = "test_sampled_per_row_step",
+    srcs = ["test_sampled_per_row_step.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = _SAMPLING_GPU_CONSTRAINTS,
+    precompile_mefs = True,
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        ":spec_step_stubs",
+    ],
+)
+
+modular_py_test(
+    name = "test_flag_off_op_golden",
+    srcs = ["test_flag_off_op_golden.py"],
+    data = [
+        "testdata/flag_off_host_mirror_op_sequence.txt",
+        "testdata/flag_off_op_sequence.txt",
+    ],
+    deps = [
+        ":spec_step_stubs",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn:core",
+        "//max/python/max/nn/_graph_ops",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_block_flag_off_op_golden",
+    srcs = ["test_block_flag_off_op_golden.py"],
+    data = [
+        "testdata/block_flag_off_accept_op_sequence.txt",
+        "testdata/block_flag_off_step_op_sequence.txt",
+    ],
+    deps = [
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/nn/legacy",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+        ":spec_step_stubs",
     ],
 )
 

@@ -96,6 +96,25 @@ modular_py_test(
     ],
 )
 
+modular_py_test(
+    name = "test_dspark_confidence_scores",
+    size = "medium",
+    srcs = ["test_dspark_confidence_scores.py"],
+    env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    ignore_extra_deps = ["//max/python/max/_interpreter_ops"],
+    imports = ["."],
+    deps = [
+        ":dspark_test_support",
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
 # The DP4 context store and sampled draft head stage their graphs on
 # virtual SM100 devices: the store per rank over the replicas' own rows,
 # the sampler on the first device (graph build only, no execution; the

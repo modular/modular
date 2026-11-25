@@ -1,0 +1,21 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "top_token_helpers",
+    testonly = True,
+    srcs = ["top_token_helpers.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn/_graph_ops",
+        requirement("numpy"),
+    ],
+)

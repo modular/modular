@@ -803,6 +803,11 @@ class AcceptanceSampler:
             return "stochastic"
         return "greedy"
 
+    @property
+    def draft_proposal(self) -> Literal["argmax", "sampled"]:
+        """How the draft chose its tokens, which its verdict's math reads."""
+        return self._draft_proposal
+
     def __call__(
         self,
         draft_tokens: TensorValue,
@@ -819,6 +824,7 @@ class AcceptanceSampler:
         draft_probs_full: TensorValue | None = None,
         penalties: LogitPenalties | None = None,
         rows: str = "batch_size",
+        verify_lengths: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
 
@@ -863,12 +869,30 @@ class AcceptanceSampler:
                 ``target_logits``, subtracted before anything is sampled.
             rows: The name of the batch dimension, for a caller that verifies
                 a slice of the batch (the stochastic path only).
+            verify_lengths: Each row's verified draft count ``[batch]``
+                int32, in ``0..=num_steps`` (the sampled-proposal stochastic
+                path only). Argmax-family callers mask the draft ids past
+                ``k_r`` instead under a real verdict, so passing it there
+                raises; a synthetic rate refuses the pair at config
+                validation.
         """
         if rows != "batch_size" and not (
             self._use_stochastic and self._base_rate is None
         ):
             raise ValueError(
                 "a named row dimension needs stochastic acceptance"
+            )
+        if verify_lengths is not None and self._draft_proposal != "sampled":
+            raise ValueError(
+                "verify_lengths needs draft_proposal='sampled': the"
+                " argmax-family verdicts reject a masked draft id instead"
+            )
+        if verify_lengths is not None and self._base_rate is not None:
+            raise ValueError(
+                "verify_lengths cannot be combined with"
+                " synthetic_acceptance_rate: the synthetic verdict draws"
+                " from the constructor's uniform step count, not each"
+                " row's length"
             )
         if penalties is not None and (
             not self._use_stochastic
@@ -919,6 +943,7 @@ class AcceptanceSampler:
                 penalties=penalties,
                 rows=rows,
                 fold_index_glue=self._fold_index_glue,
+                verify_lengths=verify_lengths,
             )
         return greedy_acceptance_sampler(
             draft_tokens,
@@ -943,6 +968,7 @@ def _sampled_draft_verdict(
     rows: str = "batch_size",
     *,
     fold_index_glue: bool = False,
+    verify_lengths: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue]:
     """Judges sampled draft proposals with the exact rejection-sampling test.
 
@@ -953,6 +979,11 @@ def _sampled_draft_verdict(
     ``fold_index_glue`` opts the caller into answering the verdict's index
     glue in one launch, an opt-in only the K3 accept path sets; every other
     caller keeps the chain.
+
+    With ``verify_lengths`` set, each row judges only its first ``k_r``
+    positions: position ``k_r`` (when ``k_r < num_steps``) rejects and
+    draws from the target's own distribution, because no draft was
+    verified there.
 
     Returns:
         ``(rejected, recovered)``, both ``[batch, num_steps]``.
@@ -990,8 +1021,10 @@ def _sampled_draft_verdict(
     coins = keyed_uniform(_coin_seed_rows(seed, batch_size, num_steps, device))
 
     numel = _static_numel(token_indices)
+    # A row masked past k_r needs the chain's step index, so it never fuses.
     if (
-        fold_index_glue
+        verify_lengths is None
+        and fold_index_glue
         and device != DeviceRef.CPU()
         and (numel is None or numel <= _INDEX_GLUE_MAX_ELEMENTS)
     ):
@@ -1058,6 +1091,26 @@ def _sampled_draft_verdict(
             ),
             [flat_rows],
         )
+
+        if verify_lengths is not None:
+            # Past k_r no draft was verified: the slot rejects, and its empty
+            # draft mass leaves the residual with the target's full mass.
+            verified = step_indices < ops.cast(
+                ops.unsqueeze(verify_lengths, axis=-1), DType.int64
+            )
+            rejected = ops.logical_or(rejected, ops.logical_not(verified))
+            dist = ops.where(
+                ops.unsqueeze(verified, axis=-1),
+                dist,
+                ops.constant(0.0, DType.float32, device),
+            )
+            # An unverified slot has no draft to remove, so its fallback
+            # one-hot must not subtract the placeholder id from the target.
+            fallback = ops.where(
+                ops.reshape(verified, [flat_rows]),
+                fallback,
+                ops.constant(-1, DType.int64, device),
+            )
 
     # Residual: max(masked target - proposal, 0), both already normalized.
     # A row without a distribution subtracts a one-hot of its drafted
@@ -1228,6 +1281,55 @@ def _relaxed_thinking_verdict(
     return rejected, recovered
 
 
+def _cpu_greedy_verdict(
+    target_logits_3d: TensorValue,
+    token_indices: TensorValue,
+    rows: str,
+    recovered_dtype: DType,
+    verify_lengths: TensorValue | None,
+) -> tuple[TensorValue, TensorValue, TensorValue]:
+    """The greedy verdict for CPU runs, where no kernel answers argmax rows.
+
+    With ``verify_lengths`` set, positions at or past each row's ``k_r``
+    reject, the same mask the strict verdict applies.
+    """
+    device = token_indices.device
+    num_steps = token_indices.shape[1]
+    all_target_argmax = ops.squeeze(
+        ops.argmax(target_logits_3d, axis=-1), axis=-1
+    )
+    target_argmax_draft = ops.rebind(
+        all_target_argmax[:, :-1], [Dim(rows), Dim("num_steps")]
+    )
+    bonus_argmax = all_target_argmax[:, -1:]
+    rejected = ops.not_equal(
+        token_indices, target_argmax_draft.cast(token_indices.dtype)
+    )
+    if verify_lengths is not None:
+        # The argmax verdict never saw the lengths, so greedy rows would
+        # otherwise accept past k_r.
+        step_indices = ops.broadcast_to(
+            ops.reshape(
+                ops.range(
+                    0,
+                    num_steps,
+                    1,
+                    out_dim=Dim("num_steps"),
+                    device=device,
+                    dtype=DType.int64,
+                ),
+                shape=[1, Dim("num_steps")],
+            ),
+            shape=[Dim(rows), Dim("num_steps")],
+        )
+        past_length = step_indices >= ops.cast(
+            ops.unsqueeze(verify_lengths, axis=-1), DType.int64
+        )
+        rejected = ops.logical_or(rejected, past_length)
+    recovered = target_argmax_draft.cast(recovered_dtype)
+    return rejected, recovered, bonus_argmax
+
+
 def stochastic_acceptance_sampler(
     draft_tokens: TensorValue,
     target_logits: TensorValue,
@@ -1248,6 +1350,7 @@ def stochastic_acceptance_sampler(
     rows: str = "batch_size",
     *,
     fold_index_glue: bool = False,
+    verify_lengths: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Verifies speculative draft tokens against the target model.
 
@@ -1297,6 +1400,10 @@ def stochastic_acceptance_sampler(
     glue in one launch, an opt-in only the K3 accept path sets; every other
     caller keeps the chain.
 
+    ``verify_lengths`` caps each row's judged positions at its own ``k_r``
+    (sampled proposals only); the argmax-family verdicts take masked draft
+    ids instead, so passing it with ``draft_proposal="argmax"`` raises.
+
     Returns:
         Tuple of ``(first_rejected_idx, recovered_tokens, bonus_tokens)``:
         - first_rejected_idx: Index of first rejected draft position ``[batch]``
@@ -1321,6 +1428,11 @@ def stochastic_acceptance_sampler(
     elif draft_probs_full is not None:
         raise ValueError(
             "draft_probs_full must be None when draft_proposal='argmax'"
+        )
+    if verify_lengths is not None and draft_proposal != "sampled":
+        raise ValueError(
+            "verify_lengths needs draft_proposal='sampled': the"
+            " argmax-family verdicts reject a masked draft id instead"
         )
     if seed.rank == 1 and seed.shape[0] == 1:
         # A rank-1 ``[1]`` tensor is the graph-level :func:`SeedType` input —
@@ -1389,9 +1501,11 @@ def stochastic_acceptance_sampler(
     draft_verification_logits = target_logits_3d[:, :-1]
 
     batch_size = draft_tokens.shape[0]
-    num_steps = draft_tokens.shape[1]
 
     token_indices = ops.rebind(draft_tokens, [Dim(rows), Dim("num_steps")])
+    # The logits keep the symbolic step dim even when the drafts are
+    # declared at a fixed width, so flattened shapes must use that dim.
+    num_steps = token_indices.shape[1]
 
     sampled_bonus: TensorValue | None = None
     if draft_proposal == "sampled":
@@ -1411,6 +1525,7 @@ def stochastic_acceptance_sampler(
             device,
             rows,
             fold_index_glue=fold_index_glue,
+            verify_lengths=verify_lengths,
         )
     else:
         rejected_strict, recovered_strict, sampled_bonus = (
@@ -1432,17 +1547,17 @@ def stochastic_acceptance_sampler(
         rejected_greedy = rejected_strict
         recovered_greedy = recovered_strict
     else:
-        all_target_argmax = ops.squeeze(
-            ops.argmax(target_logits_3d, axis=-1), axis=-1
+        (
+            rejected_greedy,
+            recovered_greedy,
+            bonus_argmax,
+        ) = _cpu_greedy_verdict(
+            target_logits_3d,
+            token_indices,
+            rows,
+            recovered_strict.dtype,
+            verify_lengths,
         )
-        target_argmax_draft = ops.rebind(
-            all_target_argmax[:, :-1], [Dim(rows), Dim("num_steps")]
-        )
-        bonus_argmax = all_target_argmax[:, -1:]
-        rejected_greedy = ops.not_equal(
-            token_indices, target_argmax_draft.cast(token_indices.dtype)
-        )
-        recovered_greedy = target_argmax_draft.cast(recovered_strict.dtype)
 
     use_relaxed = (
         in_thinking_phase is not None

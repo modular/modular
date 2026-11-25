@@ -57,6 +57,14 @@ _EXTRA_DEPS = {
     "test_layer_norm.mojo": ["//max:builtin_kernels"],
     "test_mha_mask_make.mojo": ["//max:extensibility"],
     "test_subvolume_start_indices_static.mojo": ["//max:max_mojo"],
+    "test_top_token_logit_cpu.mojo": [
+        "//max:builtin_kernels",
+        "//max/kernels/test/common/top_token_test_utils",
+    ],
+    "test_top_token_pieces_cpu.mojo": [
+        "//max:builtin_kernels",
+        "//max/kernels/test/common/top_token_test_utils",
+    ],
     "test_toppminp.mojo": ["//max:max_mojo"],
 }
 

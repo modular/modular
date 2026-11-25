@@ -6,12 +6,22 @@ package(default_visibility = [
     "//oss/modular/max/tests:__subpackages__",
 ])
 
+_SPECULATIVE_TEST_SRCS = [
+    "test_draft_scores.py",
+    "test_verify_budget.py",
+]
+
+_SPECULATIVE_SWEEP_SRCS = [
+    "test_draft_scores_sweep.py",
+    "test_verify_budget_sweep.py",
+]
+
 # Guards shared PipelineArgs/PipelineConfig loading and CLI precedence.
 modular_py_test(
     name = "tests",
     srcs = glob(
         ["test_*.py"],
-        exclude = [
+        exclude = _SPECULATIVE_TEST_SRCS + _SPECULATIVE_SWEEP_SRCS + [
             "test_artifact.py",
             "test_overlap_helpers.py",
             "test_export.py",
@@ -42,6 +52,7 @@ modular_py_test(
         "//max/python/max:_validation_hooks",
         "//max/python/max:tensor",
         "//max/python/max:tree",
+        "//max/python/max/_artifact",
         "//max/python/max/_entrypoints",
         "//max/python/max/_xgrammar",
         "//max/python/max/config",
@@ -84,6 +95,45 @@ modular_py_test(
         requirement("pytest-mock"),
         requirement("pyyaml"),
         requirement("transformers"),
+    ],
+)
+
+_SPECULATIVE_BASE_DEPS = [
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/graph",
+    "//max/python/max/pipelines/speculative",
+    "//max/tests/tests/pipelines/lib/speculative_test_utils:speculative_test_helpers",
+    requirement("numpy"),
+]
+
+_SPECULATIVE_TEST_PLATFORMS = select({
+    "@platforms//os:macos": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+modular_py_test(
+    name = "speculative_tests",
+    srcs = _SPECULATIVE_TEST_SRCS,
+    target_compatible_with = _SPECULATIVE_TEST_PLATFORMS,
+    deps = _SPECULATIVE_BASE_DEPS + [
+        "//max/python/max:tensor",
+        "//max/python/max/mlir",
+    ],
+)
+
+modular_py_test(
+    name = "speculative_layout_tests",
+    srcs = _SPECULATIVE_SWEEP_SRCS,
+    per_test_shard_count = {
+        "test_draft_scores_sweep.py": 2,
+        "test_verify_budget_sweep.py": 4,
+    },
+    tags = ["postsubmit"],
+    target_compatible_with = _SPECULATIVE_TEST_PLATFORMS,
+    deps = _SPECULATIVE_BASE_DEPS + [
+        "//max/tests/tests/nn/top_token:top_token_helpers",
     ],
 )
 

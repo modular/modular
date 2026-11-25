@@ -247,3 +247,15 @@ modular_py_test(
         requirement("typing-extensions"),
     ],
 )
+
+modular_py_test(
+    name = "test_prefix_rows",
+    srcs = ["test_prefix_rows.py"],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/pipelines/speculative",
+        requirement("numpy"),
+    ],
+)

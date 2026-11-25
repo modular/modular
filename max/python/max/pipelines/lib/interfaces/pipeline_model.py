@@ -450,12 +450,15 @@ class UnifiedEagleOutputs(ModelOutputs):
     hidden_states: None = None
 
     @classmethod
-    def from_buffers(cls, buffers: Sequence[Buffer]) -> UnifiedEagleOutputs:
+    def from_buffers(
+        cls, buffers: Sequence[Buffer], skip: int = 0
+    ) -> UnifiedEagleOutputs:
         """Reads a unified graph's outputs.
 
-        ``(num_accepted_draft_tokens, next_tokens, next_draft_tokens)``, then
-        under ``draft_proposal="sampled"`` the distributions: one tensor, or
-        one per replica (always more than one) under
+        ``(num_accepted_draft_tokens, next_tokens, next_draft_tokens)``,
+        then ``skip`` confidence outputs a score-on export emits, then
+        under ``draft_proposal="sampled"`` the distributions: one tensor,
+        or one per replica (always more than one) under
         ``draft_probs_layout="replica"``.
 
         Raises:
@@ -467,7 +470,7 @@ class UnifiedEagleOutputs(ModelOutputs):
                 " expected num_accepted_draft_tokens, next_tokens,"
                 " next_draft_tokens and any draft distributions"
             )
-        dists = list(buffers[3:])
+        dists = list(buffers[3 + skip :])
         return cls(
             num_accepted_draft_tokens=buffers[0],
             next_tokens=buffers[1],
@@ -513,6 +516,13 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     draft_block_offsets: Buffer | None = None
     """The draft block's ragged row offsets: ``[0, K, 2K, ...]`` to draft, all
     zeros to skip."""
+    draft_scores: Buffer | None = None
+    """The previous step's per-draft scores, which a per-row verify graph
+    declares. MAX Serve feeds none, so :meth:`_spec_decode_buffers` refuses
+    that graph."""
+    draft_score_coeffs: Buffer | None = None
+    """The host-fitted calibrator coefficients over the draft positions,
+    declared beside :attr:`draft_scores`."""
     pinned_bitmask: Buffer | None = None
     wait_payload: Buffer | None = None
     device_bitmask_scratch: Buffer | None = None
@@ -541,9 +551,19 @@ class UnifiedSpecDecodeInputs(ModelInputs):
 
         Takes the inputs ahead of the tail from the caller, which holds them,
         and passes over any group :attr:`spec` leaves out.
+
+        Raises:
+            ValueError: If :attr:`spec` declares the per-row verify inputs,
+                which this pipeline never feeds.
         """
         spec = self.spec
         assert spec is not None, "the batch processor sets the graph's spec"
+        if spec.include_per_row_verify:
+            raise ValueError(
+                "per_row_verify is not served by MAX Serve's speculative"
+                " pipeline: it does not feed the draft scores and calibrator"
+                " coefficients the graph declares"
+            )
         assert self.draft_tokens is not None
         assert self.seed is not None
         assert self.temperature is not None

@@ -43,6 +43,10 @@ from max.dtype import DType
 from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.sequential import ModuleList
+from max.pipelines.speculative.draft_scores import (
+    combine_shard_scores,
+    top_token_pieces,
+)
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Sharded
 
@@ -277,10 +281,8 @@ class DSparkDrafter(Module[..., Tensor]):
             draft_vocab_size=config.vocab_size,
             markov_rank=config.dspark_markov_rank,
         )
-        # Mounted on request: the loader drops the checkpoint's
-        # ``confidence_head.*`` tensors by default (the reference never
-        # runs adaptive verification), and the serving flag flips both
-        # this mount and that drop together.
+        # The weight loader drops the checkpoint's head unless the export
+        # mounts it, so the mount and the load follow the same flag.
         if load_confidence_head:
             self.confidence_head = DSparkConfidenceHead(
                 hidden_size=hidden,
@@ -498,9 +500,7 @@ class DSparkDrafter(Module[..., Tensor]):
         logits: Tensor,
         anchor_ids: Tensor,
         *,
-        hidden: Tensor | None = None,
         sampler: Callable[[Tensor, int], Tensor] | None = None,
-        confidence_floor: float | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Draws ``block_size`` draft tokens per request, one at a time.
 
@@ -508,31 +508,15 @@ class DSparkDrafter(Module[..., Tensor]):
         ``i - 1`` (the anchor at step 0); the loop unrolls over the static
         ``block_size``.
 
-        With ``confidence_floor`` set, each step also scores the position's
-        acceptance probability through the mounted confidence head, and a
-        request whose score falls below the floor emits
-        ``dspark_noise_token_id`` for that position and every remaining
-        one instead of sampling. The driver already treats noise-filled
-        tails as no-ops (all-noise rows are dropped, partial tails fail
-        token comparison), so the committed stream is unaffected.
-
         Args:
             logits: ``[b * block_size, vocab]``, :meth:`logits`' output.
             anchor_ids: ``[b]`` int32, each block's first token.
-            hidden: ``[b * block_size, hidden]`` :meth:`forward_block`'s
-                output; required with ``confidence_floor``.
             sampler: Draws step ``i``'s ``[b]`` tokens from its ``[b,
                 vocab]`` biased logits; greedy argmax when ``None``.
-            confidence_floor: The adaptive stop's acceptance floor.
 
         Returns:
             ``([b, block_size]`` int32 draft ids, ``[b, block_size, vocab]``
             float32 biased logits).
-
-        Raises:
-            ValueError: If ``confidence_floor`` is set but the confidence
-                head is not mounted, ``hidden`` is missing, or the config
-                declares no noise token to fill stopped positions with.
         """
         sample = _greedy if sampler is None else sampler
         block_size = self.block_size
@@ -543,56 +527,64 @@ class DSparkDrafter(Module[..., Tensor]):
         )
         current = anchor_ids.cast(DType.int32)
 
-        if confidence_floor is not None:
-            head = getattr(self, "confidence_head", None)
-            if head is None:
-                raise ValueError(
-                    "confidence_floor needs the confidence head mounted "
-                    "(DSparkDrafter(load_confidence_head=True))"
-                )
-            if hidden is None:
-                raise ValueError(
-                    "confidence_floor needs forward_block's hidden states"
-                )
-            if self.config.dspark_noise_token_id is None:
-                raise ValueError(
-                    "confidence_floor needs dspark_noise_token_id to fill "
-                    "stopped positions"
-                )
-            assert isinstance(head, DSparkConfidenceHead)
-            confidence: DSparkConfidenceHead = head
-            hidden_steps = F.reshape(
-                F.rebind(hidden, [b * block_size, self.config.hidden_size]),
-                [b, block_size, self.config.hidden_size],
-            )
-            noise = F.constant(
-                self.config.dspark_noise_token_id,
-                DType.int32,
-                device=logits.device,
-            )
-            stopped: Tensor | None = None
-
         drafted: list[Tensor] = []
         biased: list[Tensor] = []
         for i in range(block_size):
             step = logits[:, i] + self.markov_head.bias_float32(current)
             biased.append(step)
-            if confidence_floor is not None:
-                markov_embed, _ = self.markov_head(current)
-                score = confidence(hidden_steps[:, i], markov_embed)
-                fire = score < confidence_floor
-                stopped = (
-                    fire if stopped is None else F.logical_or(stopped, fire)
-                )
             current = sample(step, i).cast(DType.int32)
-            if confidence_floor is not None and stopped is not None:
-                current = F.where(stopped, noise, current)
             drafted.append(current)
         return F.stack(drafted, axis=1), F.stack(biased, axis=1)
 
-    def draft_vocab_parallel(
-        self, hidden: Tensor, head_weight: Tensor, anchor_ids: Tensor
+    def confidence_scores(
+        self, hidden: Tensor, anchor_ids: Tensor, drafted: Tensor
     ) -> Tensor:
+        """Scores every position's proposal in one batched head pass.
+
+        Position ``i`` pairs ``hidden[:, i]`` with the Markov embed of the
+        token that biased it: the anchor at step 0, the draw at step
+        ``i - 1`` after it. It is one GEMM over the block and runs no
+        vocabulary pass.
+
+        Args:
+            hidden: ``[b * block_size, hidden]`` :meth:`forward_block`'s
+                output.
+            anchor_ids: ``[b]`` int32, each block's first token.
+            drafted: ``[b, block_size]`` int32 draft ids.
+
+        Returns:
+            ``[b, block_size]`` float32 head outputs, aligned with
+            ``drafted``.
+
+        Raises:
+            ValueError: If the confidence head is not mounted.
+        """
+        head = getattr(self, "confidence_head", None)
+        if head is None:
+            raise ValueError(
+                "the confidence head must be mounted "
+                "(DSparkDrafter(load_confidence_head=True))"
+            )
+        assert isinstance(head, DSparkConfidenceHead)
+        k = self.block_size
+        b = anchor_ids.shape[0]
+        hidden_size = self.config.hidden_size
+        hidden_steps = F.reshape(
+            F.rebind(hidden, [b * k, hidden_size]), [b, k, hidden_size]
+        )
+        prev = F.concat(
+            [anchor_ids.cast(DType.int32)[:, None], drafted[:, :-1]], axis=1
+        )
+        return head(hidden_steps, self.markov_head.embed(prev))
+
+    def draft_vocab_parallel(
+        self,
+        hidden: Tensor,
+        head_weight: Tensor,
+        anchor_ids: Tensor,
+        *,
+        with_scores: bool = False,
+    ) -> Tensor | tuple[Tensor, Tensor]:
         """Greedy-drafts over a vocab-sharded head without joining the vocab.
 
         :meth:`logits` joins the head's vocabulary shards on rank 0, and the
@@ -607,15 +599,27 @@ class DSparkDrafter(Module[..., Tensor]):
         kernel's own tie-break -- so equal per-element logits and biases
         draw the same tokens as :meth:`draft`.
 
+        With ``with_scores`` each rank reduces its shard's biased logits
+        to the three pieces in one fused launch — the row max, its
+        global index, and the excluded mass — and the same allgather
+        carries them beside the pair, so the head-free score combines
+        per rank without a second collective. The pieces of every
+        position combine once after the loop, on the argmax step's
+        own global max and ids.
+
         Args:
             hidden: :meth:`forward_block`'s output, the whole batch on every
                 rank.
             head_weight: The target's LM head weight, row-sharded over the
                 vocabulary.
             anchor_ids: ``[b]`` anchors, replicated on the mesh.
+            with_scores: Whether to return the head-free scores beside the
+                drafts.
 
         Returns:
-            ``[b, block_size]`` int32 draft ids on the mesh's first device.
+            ``[b, block_size]`` int32 draft ids on the mesh's first
+            device, or beside them ``[b, block_size]`` float32 scores --
+            the joined head's ``top_token_logit`` -- when ``with_scores``.
         """
         k = self.block_size
         logits = (self.norm(hidden) @ head_weight.T).local_shards
@@ -642,6 +646,8 @@ class DSparkDrafter(Module[..., Tensor]):
         current = [anchor.cast(DType.int32) for anchor in anchors]
         pairs_mapping = DeviceMapping(self.mesh, (Sharded(0),))
         drafted: list[Tensor] = []
+        gathered_pieces: list[Tensor] = []
+        step_maxima: list[Tensor] = []
         for i in range(k):
             pairs = []
             for rank, step_logits in enumerate(steps):
@@ -652,44 +658,64 @@ class DSparkDrafter(Module[..., Tensor]):
                     )
                     @ biases[rank].T
                 )
+                if with_scores:
+                    # One fused launch reads the shard's logits once
+                    # and emits the three allgather columns.
+                    pairs.append(
+                        F.unsqueeze(top_token_pieces(step, starts[rank]), 0)
+                    )
+                    continue
                 # Vocabulary ids stay below 2**24, so they ride the float32
                 # pair exactly and one collective carries both halves.
                 index = (F.argmax(step, axis=-1) + starts[rank]).cast(
                     DType.float32
                 )
-                pairs.append(
-                    F.unsqueeze(
-                        F.concat([F.max(step, axis=-1), index], axis=-1), 0
-                    )
-                )
+                columns = [F.max(step, axis=-1), index]
+                pairs.append(F.unsqueeze(F.concat(columns, axis=-1), 0))
             gathered = F.allgather(
                 Tensor.from_shard_values(pairs, pairs_mapping), tensor_axis=0
             )
-            current = [
+            picked = [
                 _lowest_argmax(shard, self.config.vocab_size)
                 for shard in gathered.local_shards
             ]
+            current = [ids for ids, _ in picked]
             drafted.append(current[0])
-        return F.stack(drafted, axis=1)
+            if with_scores:
+                # Rank 0's gathered copy holds every shard's pieces --
+                # the drafts' own home.
+                gathered_pieces.append(gathered.local_shards[0])
+                step_maxima.append(F.squeeze(picked[0][1], 0))
+        drafts = F.stack(drafted, axis=1)
+        if not with_scores:
+            return drafts
+        # One combine over all positions, on the stacked pieces; the
+        # argmax step's own max and ids feed it, so the shards reduce
+        # once for the whole block.
+        return drafts, combine_shard_scores(
+            F.stack(gathered_pieces, axis=2),
+            F.stack(drafted, axis=1),
+            F.stack(step_maxima, axis=1),
+        )
 
 
-def _lowest_argmax(pairs: Tensor, vocab_size: int) -> Tensor:
+def _lowest_argmax(pairs: Tensor, vocab_size: int) -> tuple[Tensor, Tensor]:
     """The global argmax from every vocabulary shard's ``(max, index)`` pair.
 
     Args:
-        pairs: ``[shards, b, 2]`` float32, each shard's row maxima and their
-            global indices.
+        pairs: ``[shards, b, 2+]`` float32, each shard's row maxima and
+            their global indices in the first two columns.
         vocab_size: An index no shard can return, for the shards that lose.
 
     Returns:
-        ``[b]`` int32, the lowest index among the shards holding the row's
-        maximum.
+        The lowest index among the shards holding the row's maximum,
+        ``[b]`` int32, beside the maximum itself, ``[1, b]`` float32.
     """
     values = pairs[:, :, 0]
     indices = pairs[:, :, 1]
     best = F.max(values, axis=0)
     candidates = F.where(F.equal(values, best), indices, float(vocab_size))
-    return F.squeeze(F.min(candidates, axis=0), 0).cast(DType.int32)
+    return F.squeeze(F.min(candidates, axis=0), 0).cast(DType.int32), best
 
 
 def block_ids_for(

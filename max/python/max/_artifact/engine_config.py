@@ -242,6 +242,9 @@ class EngineSpeculativeConfig:
             than one token and its drafts in every recurrent leaf.
         successor_replay: Whether an engine replays a cached prompt
             row's boundary token for the draft head.
+        per_row_verify: Whether the graph verifies a per-row prefix of
+            the drafts, so it also takes the previous step's draft scores
+            and the calibrator's coefficients.
     """
 
     speculative_method: str
@@ -256,6 +259,7 @@ class EngineSpeculativeConfig:
     verify_takes_prefill_rows: bool = False
     verify_commits_long_rows: bool = False
     successor_replay: bool = False
+    per_row_verify: bool = False
 
     def __post_init__(self) -> None:
         widths = self.verify_widths
@@ -485,6 +489,13 @@ class EngineConfig:
                     speculative.verify_commits_long_rows
                 ),
                 "successor_replay": speculative.successor_replay,
+                # Older strict readers reject an unknown key, so the marker
+                # ships only when it changes what the engine runs.
+                **(
+                    {"per_row_verify": True}
+                    if speculative.per_row_verify
+                    else {}
+                ),
             },
             "prefill_context_parallel": None
             if (pcp := self.prefill_context_parallel) is None
@@ -656,6 +667,7 @@ def _speculative(value: ArtifactType) -> EngineSpeculativeConfig:
         verify_takes_prefill_rows=_bool(obj["verify_takes_prefill_rows"]),
         verify_commits_long_rows=_bool(obj["verify_commits_long_rows"]),
         successor_replay=_bool(obj["successor_replay"]),
+        per_row_verify=_bool(obj.get("per_row_verify", False)),
     )
 
 

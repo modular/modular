@@ -18549,6 +18549,96 @@ def argmax_with_bias(
     )[0].tensor
 
 
+def top_token_logit(logits: TensorValue) -> TensorValue:
+    """Scores each row's top token as ``-log(excluded_mass)``.
+
+    The excluded mass is
+    ``sum_{j != top} exp(l_j - l_max) + (ties - 1)`` over one row of
+    logits, so the score is the top token's logit with the head's
+    renormalization removed. Masked ``-inf`` logits contribute nothing.
+    A row whose only finite logit is the top scores ``inf``; the caller
+    clamps. Runs on CPU and GPU in one launch.
+
+    Args:
+        logits: Logits ``[rows, vocab_size]``, float32 or bfloat16.
+
+    Returns:
+        The per-row score, float32 ``[rows, 1]``.
+
+    Raises:
+        ValueError: If the logits are not rank-2 floating-point.
+    """
+    if logits.rank != 2:
+        raise ValueError(
+            f"top_token_logit requires rank-2 logits, got {logits.rank}"
+        )
+    if not logits.dtype.is_float():
+        raise ValueError(
+            f"top_token_logit requires floating-point logits, got"
+            f" {logits.dtype}"
+        )
+
+    return ops.custom(
+        "spec.top_token_logit",
+        device=logits.device,
+        values=[logits],
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[logits.shape[0], Dim(1)],
+                device=logits.device,
+            ),
+        ],
+    )[0].tensor
+
+
+def top_token_pieces(logits: TensorValue, start: int) -> TensorValue:
+    """Reduces each row to its top token's allgather pieces.
+
+    The pieces are the row max, the lowest index of the max plus
+    ``start`` (the shard's start in the joined vocabulary), and the
+    excluded mass ``sum(exp(l_j - max))`` over every element except one
+    top element, with tied maxima summed back minus one. Masked
+    ``-inf`` logits contribute nothing. Runs on CPU and GPU in one
+    launch.
+
+    Args:
+        logits: Logits ``[rows, vocab_size]``, float32 or bfloat16.
+        start: The shard's start in the joined vocabulary, added to
+            each row's local max index.
+
+    Returns:
+        The per-row pieces, float32 ``[rows, 3]`` in the column order
+        ``(max, index, excluded mass)``.
+
+    Raises:
+        ValueError: If the logits are not rank-2 floating-point.
+    """
+    if logits.rank != 2:
+        raise ValueError(
+            f"top_token_pieces requires rank-2 logits, got {logits.rank}"
+        )
+    if not logits.dtype.is_float():
+        raise ValueError(
+            f"top_token_pieces requires floating-point logits, got"
+            f" {logits.dtype}"
+        )
+
+    return ops.custom(
+        "spec.top_token_pieces",
+        device=logits.device,
+        values=[logits],
+        out_types=[
+            TensorType(
+                dtype=DType.float32,
+                shape=[logits.shape[0], Dim(3)],
+                device=logits.device,
+            ),
+        ],
+        parameters={"start": start},
+    )[0].tensor
+
+
 def sgmv_kernel(
     input: TensorValue,
     lora: TensorValue,

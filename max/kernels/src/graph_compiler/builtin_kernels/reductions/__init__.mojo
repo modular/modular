@@ -27,6 +27,10 @@ from builtin_kernels.rowwise_reductions import (
     reduce_argmax,
     reduce_argmin,
     reduce_min_and_max,
+    top_token_columns,
+    TopTokenColumns,
+    TopTokenLogitColumns,
+    TopTokenPiecesColumns,
 )
 
 from max.gpu.host import DeviceContext
@@ -1600,3 +1604,126 @@ struct ArgSort[*, ascending: Bool]:
             argsort[ascending=Self.ascending](indices_tensor, input_tensor)
         else:
             argsort[ascending=Self.ascending](indices_tensor, input_tensor, ctx)
+
+
+def _top_token_execute[
+    Columns: TopTokenColumns
+](
+    output: Some[Output & Tensor],
+    input: Some[Input & Fused & LoadAccess & Tensor],
+    ctx: DeviceContext,
+) raises:
+    """Runs `Columns`' top-token reduction over `[rows, vocab]` logits
+    into a `[rows, Columns.columns]` fp32 output."""
+    comptime assert conforms_to(type_of(output), TileTensorable)
+    comptime in_dtype = type_of(input).dtype
+    comptime assert type_of(output).rank == 2
+    comptime assert type_of(input).rank == 2
+    comptime assert (
+        in_dtype.is_floating_point()
+    ), "top-token ops require floating-point logits"
+
+    if (
+        Int(output.shape()[0].value()) != Int(input.shape()[0].value())
+        or Int(output.shape()[1].value()) != Columns.columns
+    ):
+        raise Error(String(t"output must have shape [rows, {Columns.columns}]"))
+
+    # Project the host proxy to its access-enabled view so the closure
+    # can load on the GPU lane.
+    comptime assert conforms_to(type_of(input), UnsafeFusedView)
+    var input_view = unsafe_fused_view(input)
+    comptime assert conforms_to(type_of(input_view), Loadable)
+    var output_tile = output.to_tile_tensor()
+
+    @inline(.always)
+    def input_fn[
+        width: Int, alignment: Int
+    ](coords: Coord) {var input_view} -> SIMD[in_dtype, width]:
+        return rebind[SIMD[in_dtype, width]](
+            input_view.load[width=width, element_alignment=alignment](coords)
+        )
+
+    @inline(.always)
+    def output_fn[
+        width: SIMDLength
+    ](coords: Coord, val: SIMD[.float32, width]) {var output_tile}:
+        # The emit puts column `c` at position `c` of the reduce axis.
+        output_tile.store[width=width, alignment=align_of[DType.float32]()](
+            coords,
+            rebind[SIMD[output_tile.dtype, width]](val),
+        )
+
+    top_token_columns[in_dtype, Columns=Columns, reduce_dim=1](
+        input_fn, output_fn, input.shape().flatten(), ctx
+    )
+
+
+@extensibility.register("spec.top_token_logit")
+struct TopTokenLogitOp:
+    """Registers the `spec.top_token_logit` graph op.
+
+    Scores each row of a `[rows, vocab]` logits tensor with the
+    head-free draft score `-log(excluded_mass)`, one launch per call on
+    CPU and GPU. Masked `-inf` logits contribute nothing; a row whose
+    only finite logit is the top scores `+inf` (the caller clamps).
+    """
+
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        """Executes the `spec.top_token_logit` graph op.
+
+        Args:
+            output: Output tensor of shape `[rows, 1]` receiving the
+                per-row scores.
+            input: Logits tensor of shape `[rows, vocab]`.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If `output` does not have shape `[rows, 1]`.
+        """
+        _top_token_execute[TopTokenLogitColumns](output, input, ctx)
+
+
+@extensibility.register("spec.top_token_pieces")
+struct TopTokenPiecesOp:
+    """Registers the `spec.top_token_pieces` graph op.
+
+    Reduces each row of a `[rows, vocab]` logits tensor to the three
+    pieces a vocabulary-sharded greedy drafter allgathers — the row
+    max, the lowest index of the max plus `start`, and the excluded
+    mass — one launch per call on CPU and GPU. Masked `-inf` logits
+    contribute nothing; a row whose only finite logit is the top
+    leaves an excluded mass of zero.
+    """
+
+    @staticmethod
+    def execute[
+        start: Int,
+        _trace_name: StaticString,
+    ](
+        output: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        """Executes the `spec.top_token_pieces` graph op.
+
+        Parameters:
+            start: The shard's start in the joined vocabulary, added
+                to each row's local max index.
+            _trace_name: Name used for tracing and debugging.
+
+        Args:
+            output: Output tensor of shape `[rows, 3]` receiving the
+                per-row pieces.
+            input: Logits tensor of shape `[rows, vocab]`.
+            ctx: Device context used to enqueue the kernel.
+
+        Raises:
+            Error: If `output` does not have shape `[rows, 3]`.
+        """
+        _top_token_execute[TopTokenPiecesColumns[start]](output, input, ctx)

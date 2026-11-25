@@ -338,6 +338,25 @@ class TargetAdapter:
     """Whether an engine replays a cached prompt row's boundary token
     for the draft head."""
 
+    per_row_verify_methods: frozenset[str] = frozenset()
+    """The speculative methods whose verify path wires per-row prefix
+    selection into the graph; an export may ask for per-row verify only
+    under one of them."""
+
+    per_row_verify_layout_error: (
+        (Callable[[int, bool, int], str | None]) | None
+    ) = None
+    """Returns why an export layout cannot serve the per-row verify its
+    method wires, or ``None`` when it can. The arguments are the export's
+    data-parallel degree, HiSparse flag and decode-context-parallel degree.
+    ``None`` (unset) serves every layout the method does, the behavior of
+    every adapter that has not checked layouts apart."""
+
+    head_score_methods: frozenset[str] = frozenset()
+    """The speculative methods whose drafter wires a checkpoint confidence
+    head into its graph; an export may ask for the ``head`` score source
+    only under one of them."""
+
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on
     every device count, for an engine that binds them there. It counts the

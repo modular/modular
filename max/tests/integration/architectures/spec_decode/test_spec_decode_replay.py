@@ -37,6 +37,7 @@ def _model(
     replay: bool, settled: bool
 ) -> tuple[SpecDecodePipelineModel, Mock, Mock]:
     model = object.__new__(SpecDecodePipelineModel)
+    model.pipeline_config = Mock(speculative=None)
     full, replay_graph = Mock(), Mock()
     for graph in (full, replay_graph):
         graph.execute.return_value = [Mock(), Mock(), Mock()]

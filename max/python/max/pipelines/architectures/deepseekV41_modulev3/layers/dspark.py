@@ -129,19 +129,14 @@ class DSparkMarkovHead(Module[..., tuple[Tensor, Tensor]]):
 
 
 class DSparkConfidenceHead(Module[[Tensor, Tensor], Tensor]):
-    """Predicts one draft position's acceptance probability.
-
-    A single float32 linear over the concatenation of a hidden state and
-    that position's Markov embedding. The checkpoint stores the projection
-    bf16; the loader widens it, like every other float32 weight.
-    """
+    """Returns a raw float32 score for one draft position."""
 
     def __init__(self, *, hidden_size: int, markov_rank: int) -> None:
         super().__init__()
         self.proj = _DenseLinear(1, hidden_size + markov_rank, DType.float32)
 
     def forward(self, hidden: Tensor, markov_embed: Tensor) -> Tensor:
-        """Scores one position's acceptance probability.
+        """Returns the raw float32 score for each proposed position.
 
         Args:
             hidden: ``[..., hidden_size]`` bf16 hidden state.

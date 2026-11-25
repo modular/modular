@@ -260,17 +260,21 @@ def spec_realize_mixed_inplace_graph_name(
     kv_groups: int,
     next_draft_dtype: DType = DType.int32,
     positions: bool = False,
+    draft_scores: bool = False,
 ) -> str:
     """Name of the mixed-step fused spec feed for a ``(dp, kv_groups)`` geometry.
 
     Same destination ABI as :func:`spec_realize_inplace_dp_graph_name`, plus the
     per-previous-row offsets the bonus token lands at. A registry engine
     requires the name, so it can never wire a decode feed built for one
-    geometry in the mixed step's place.
+    geometry in the mixed step's place. ``draft_scores`` adds the
+    ``_scores`` suffix a per-row boot demands.
     """
     suffix = "_i32drafts" if next_draft_dtype == DType.int32 else ""
     if positions:
         suffix += "_positions"
+    if draft_scores:
+        suffix += "_scores"
     return f"spec_realize_mixed_inplace_dp{dp}_kv{kv_groups}{suffix}"
 
 
@@ -279,6 +283,7 @@ def spec_realize_inplace_dp_graph_name(
     kv_groups: int,
     next_draft_dtype: DType = DType.int64,
     positions: bool = False,
+    draft_scores: bool = False,
 ) -> str:
     """Returns the name of the data-parallel fused spec feed.
 
@@ -294,11 +299,14 @@ def spec_realize_inplace_dp_graph_name(
     non-default draft dtype is spelled into it; the engine requires the
     loaded MEF to declare the one its geometry spells. The ``_narrow`` suffix
     is the TP build's, and ``_positions`` marks the build that also advances
-    3-axis positions.
+    3-axis positions. ``_scores`` marks the build that also scatters the
+    previous step's draft scores, two inputs more.
     """
     suffix = "" if next_draft_dtype == DType.int64 else "_i32drafts"
     if positions:
         suffix += "_positions"
+    if draft_scores:
+        suffix += "_scores"
     return f"spec_realize_inplace_dp{dp}_kv{kv_groups}{suffix}_narrow"
 
 
@@ -381,6 +389,47 @@ def _advance_packed_positions(
         indices=window_offsets.reshape([-1, 1]),
     )
     ops.buffer_store(dest_positions, current + ops.unsqueeze(per_token, 0))
+
+
+def _feed_flat(
+    dest: BufferValue,
+    prev_scores: TensorValue,
+    mapping: TensorValue,
+    width: Dim,
+) -> None:
+    """Scatters each previous row's leading scores into its current row, flat.
+
+    The destination is the same k-wide rows the drafts use, viewed flat;
+    the flat indices keep the store's vector accesses aligned whatever k
+    is. The source stays 2-D so a wider previous step trims to k.
+    """
+    # A Dim-typed multiply lowers to a CPU constant, which mismatches the
+    # mapping's device; the range trick keeps the scalar on-device.
+    width_cpu = ops.shape_to_tensor([width])
+    k_on_device = ops.range(
+        start=width_cpu[0],
+        stop=width_cpu[0] + 1,
+        out_dim=1,
+        dtype=DType.int64,
+        device=mapping.device,
+    )[0]
+    cols = ops.range(
+        start=0,
+        stop=width,
+        out_dim=width,
+        device=mapping.device,
+        dtype=DType.int64,
+    )
+    flat = ops.reshape(mapping[:, None] * k_on_device + cols, [-1])
+    curr = ops.buffer_load(dest)
+    ops.buffer_store(
+        dest,
+        scatter_nd_skip_oob_indices(
+            input=curr,
+            updates=ops.reshape(prev_scores[:, :width], [-1]),
+            indices=ops.unsqueeze(flat, axis=-1),
+        ),
+    )
 
 
 def _build_spec_realize_inplace(
@@ -526,6 +575,7 @@ def _build_spec_realize_inplace_dp(
     next_draft_dtype: DType = _TOK,
     packed_token_offsets: bool = False,
     positions: bool = False,
+    draft_scores: bool = False,
     name: str | None = None,
 ) -> Graph:
     """Graph: the spec-overlap device feed, sliced by data-parallel replica.
@@ -579,6 +629,14 @@ def _build_spec_realize_inplace_dp(
     ``prev_num_accepted``, ``prev_next_tokens``, ``prev_next_draft``,
     ``prev_to_curr_map``, the token offsets for the mixed build, and the
     ``[dp + 1]`` replica row bounds on the host.
+
+    ``draft_scores`` adds the per-row draft scores beside the drafts: one
+    more float32 destination right after the drafts one, scattered from one
+    more previous-step input right after the previous drafts, by the same
+    row map and the same trim — the scores belong to the drafts the feed
+    lands, so they take the drafts' path. The name gains the ``_scores``
+    suffix, because the two extra inputs are the only arity a per-row boot
+    adds and a mismatched helper must fail at startup, not in the feed.
     """
     n_devices = len(device_refs)
     if data_parallel_degree < 1 or n_devices % data_parallel_degree:
@@ -597,6 +655,10 @@ def _build_spec_realize_inplace_dp(
         ),
         BufferType(_TOK, ["curr_batch", "k"], dev0),
     ]
+    if draft_scores:
+        dest_types.append(
+            BufferType(DType.float32, ["curr_batch_times_k"], dev0)
+        )
     for _group in range(kv_groups):
         for i, dev in enumerate(device_refs):
             dest_types.append(
@@ -610,8 +672,14 @@ def _build_spec_realize_inplace_dp(
         TensorType(_TOK, ["prev_batch"], dev0),  # num_accepted
         TensorType(_TOK, ["prev_batch"], dev0),  # next_tokens
         TensorType(next_draft_dtype, ["prev_batch", "prev_k"], dev0),  # drafts
-        TensorType(_TOK, ["prev_batch"], dev0),  # prev_to_curr_map
     ]
+    if draft_scores:
+        prev_types.append(
+            TensorType(DType.float32, ["prev_batch", "prev_k"], dev0)
+        )
+    prev_types.append(
+        TensorType(_TOK, ["prev_batch"], dev0)
+    )  # prev_to_curr_map
     if packed_token_offsets:
         prev_types.append(
             TensorType(_TOK, ["prev_batch"], dev0)
@@ -624,11 +692,19 @@ def _build_spec_realize_inplace_dp(
     if name is None:
         name = (
             spec_realize_mixed_inplace_graph_name(
-                data_parallel_degree, kv_groups, next_draft_dtype, positions
+                data_parallel_degree,
+                kv_groups,
+                next_draft_dtype,
+                positions,
+                draft_scores,
             )
             if packed_token_offsets
             else spec_realize_inplace_dp_graph_name(
-                data_parallel_degree, kv_groups, next_draft_dtype, positions
+                data_parallel_degree,
+                kv_groups,
+                next_draft_dtype,
+                positions,
+                draft_scores,
             )
         )
     with Graph(name, input_types=[*dest_types, *prev_types]) as graph:
@@ -636,18 +712,25 @@ def _build_spec_realize_inplace_dp(
         n_cache = kv_groups * n_devices
         dest_tokens = graph.inputs[0].buffer
         dest_draft = graph.inputs[1].buffer
-        dest_cache = [graph.inputs[2 + i].buffer for i in range(n_cache)]
+        first_cache = 2 + int(draft_scores)
+        dest_cache = [
+            graph.inputs[first_cache + i].buffer for i in range(n_cache)
+        ]
         prev_num_accepted = graph.inputs[n_dest].tensor
         prev_next_tokens = graph.inputs[n_dest + 1].tensor
         prev_next_draft = graph.inputs[n_dest + 2].tensor
-        prev_to_curr_map = graph.inputs[n_dest + 3].tensor
-        splits = graph.inputs[n_dest + 4 + int(packed_token_offsets)].tensor
+        prev_to_curr_map = graph.inputs[n_dest + 3 + int(draft_scores)].tensor
+        splits = graph.inputs[
+            n_dest + 4 + int(draft_scores) + int(packed_token_offsets)
+        ].tensor
 
         indices = ops.unsqueeze(prev_to_curr_map, axis=-1)
         # The drafts and the cache bump stay row-indexed; only the bonus token
         # goes where the batch's packed token input holds its row.
         token_indices = (
-            ops.unsqueeze(graph.inputs[n_dest + 4].tensor, axis=-1)
+            ops.unsqueeze(
+                graph.inputs[n_dest + 4 + int(draft_scores)].tensor, axis=-1
+            )
             if packed_token_offsets
             else indices
         )
@@ -667,6 +750,13 @@ def _build_spec_realize_inplace_dp(
             else prev_next_draft.cast(_TOK)
         )
         _feed_drafts(dest_draft, draft_updates, indices)
+        if draft_scores:
+            _feed_flat(
+                graph.inputs[2].buffer,
+                graph.inputs[n_dest + 3].tensor,
+                prev_to_curr_map,
+                Dim("k"),
+            )
         one = ops.broadcast_to(
             ops.constant(1, dtype=_TOK, device=dev0), ["prev_batch"]
         )
@@ -701,13 +791,15 @@ def _build_spec_realize_inplace_dp(
             # The verify rows' windows are `k + 1` wide, beside prompt
             # chunks of any length.
             _advance_packed_positions(
-                graph.inputs[2 + n_cache].buffer,
+                graph.inputs[first_cache + n_cache].buffer,
                 prev_num_accepted + one,
-                graph.inputs[n_dest + 4].tensor,
+                graph.inputs[n_dest + 4 + int(draft_scores)].tensor,
                 dest_draft.shape[1] + 1,
             )
         elif positions:
-            _advance_positions(graph.inputs[2 + n_cache].buffer, increments)
+            _advance_positions(
+                graph.inputs[first_cache + n_cache].buffer, increments
+            )
 
         # No tensor outputs; `output()` packs the device chain, which is what
         # orders the stores against the replay that reads the buffers.
@@ -796,9 +888,19 @@ class SpecFeed:
     next_draft_dtype: DType = DType.int64
     positions: bool = False
     """Whether the feed also advances 3-axis positions."""
+    draft_scores: bool = False
+    """Whether the data-parallel build also scatters the previous step's
+    draft scores. The tensor-parallel build has no scores destination."""
     graph_name: str | None = None
     """The name to build the graph under, for an engine that requires one
     other than the geometry's."""
+
+    def __post_init__(self) -> None:
+        if self.draft_scores and not self.dp:
+            raise ValueError(
+                "draft_scores requires the data-parallel feed (dp >= 1): the "
+                "tensor-parallel feed has no scores destination"
+            )
 
     def build(self) -> Callable[[list[DeviceRef]], Graph]:
         """Returns the builder of the feed's graph across ``tp`` devices."""
@@ -809,6 +911,7 @@ class SpecFeed:
                 kv_groups=self.kv_groups,
                 next_draft_dtype=self.next_draft_dtype,
                 positions=self.positions,
+                draft_scores=self.draft_scores,
                 name=self.graph_name,
             )
         return partial(
@@ -843,6 +946,7 @@ class SpecFeed:
             next_draft_dtype=self.next_draft_dtype,
             packed_token_offsets=True,
             positions=self.positions,
+            draft_scores=self.draft_scores,
         )
 
 

@@ -61,6 +61,7 @@ from typing_extensions import override
 
 from ._tensor_compat import as_graph_values, as_tensors
 from .config import MAGIC_DRAFT_TOKEN_ID, SpeculativeConfig
+from .draft_prefix import merge_draft_prefixes
 from .driver import (
     _B,
     _T,
@@ -85,6 +86,12 @@ from .spec_input_types import (
 from .spec_target import Verified
 from .spec_width_policy import declares_skippable_draft
 from .unified_graph_ops import apply_overlap_bitmask, broadcast_per_device
+from .verify_budget import (
+    floored_survival,
+    rows_without_proposals,
+    select_replica_verify_lengths,
+    unverified_draft_placeholders,
+)
 
 __all__ = [
     "Accepted",
@@ -346,6 +353,15 @@ class BlockBatch(Generic[_T, _B, _V]):
     draft_block_offsets: TensorValue | None = None
     """Runtime replacement for the block's fixed-``K``-stride row offsets,
     ``None`` on a graph that always drafts."""
+    verify_lengths: TensorValue | None = None
+    """Each row's verified draft count, ``None`` on a graph that verifies
+    a fixed prefix."""
+    packed_drafts: Dim | None = None
+    """The per-row step's packed draft count, ``None`` on other exports.
+
+    A per-row export binds all ``K`` drafts every step, so the draft axis
+    cannot tell a context step from a decode one; this count can.
+    """
 
     block_size: int = 0
     """``K``, so a phase can turn :attr:`draft_slot_ids`' extent into a
@@ -496,7 +512,7 @@ class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT, _T, _B, _V]):
         block_hs: _BlockHiddenT,
         accepted: Accepted,
         sampler: DraftSampler,
-    ) -> _T:
+    ) -> _T | tuple[_T, ...]:
         """Turns the block's hidden states into the next step's proposals.
 
         ``[batch.num_draft_seqs, K - 1]``, or ``[batch.num_draft_seqs,
@@ -509,6 +525,11 @@ class BlockProposer(Protocol[_TargetHiddenT, _BlockHiddenT, _T, _B, _V]):
         sliced off before or after the projection, logit softcapping. The
         tokens themselves come from ``sampler``, which the driver picks for
         the configured ``draft_proposal``.
+
+        A proposer that declares ``confidence_outputs`` returns its drafts
+        beside one head-free score per position; the driver unpacks and
+        pads each beside the drafts. Every other proposer returns the
+        drafts alone.
         """
         ...
 
@@ -865,12 +886,37 @@ class BlockDriver(
         self._trailing_input_types = tuple(trailing_input_types)
         self._hisparse_input_types = tuple(hisparse_input_types)
         self._proposer = proposer
+        self.block_size = proposer.block_size
+        # The block always runs at its trained width; a step may verify fewer
+        # of its proposals than it holds.
+        max_drafts = self.block_size - (
+            0 if proposer.samples_from_anchor else 1
+        )
+        if num_speculative_tokens is None:
+            num_speculative_tokens = max_drafts
+        elif not 1 <= num_speculative_tokens <= max_drafts:
+            raise ValueError(
+                f"A block of {self.block_size} holds 1 to {max_drafts}"
+                " proposals; got"
+                f" num_speculative_tokens={num_speculative_tokens}."
+            )
+        speculative_config.check_per_row_acceptance()
+        if speculative_config.per_row_verify and not getattr(
+            proposer, "confidence_outputs", False
+        ):
+            raise ValueError(
+                f"{type(proposer).__name__} declares no confidence_outputs,"
+                " so it cannot run the per-row verify the config asks for"
+            )
+        self.num_speculative_tokens = num_speculative_tokens
         self._input_spec = replace(
             input_spec,
             enable_structured_output=enable_structured_output,
             include_skippable_draft=declares_skippable_draft(
                 speculative_config
             ),
+            include_per_row_verify=speculative_config.per_row_verify,
+            num_draft_positions=num_speculative_tokens,
         )
         self.devices = self._input_spec.devices
         self.data_parallel_degree = self._input_spec.data_parallel_degree
@@ -888,21 +934,6 @@ class BlockDriver(
         self._ctx_at_draft_cache_length = ctx_at_draft_cache_length
         self.enable_structured_output = enable_structured_output
         self._bitmask_side_stream = speculative_config.bitmask_side_stream
-        self.block_size = proposer.block_size
-        # The block always runs at its trained width; a step may verify fewer
-        # of its proposals than it holds.
-        max_drafts = self.block_size - (
-            0 if proposer.samples_from_anchor else 1
-        )
-        if num_speculative_tokens is None:
-            num_speculative_tokens = max_drafts
-        elif not 1 <= num_speculative_tokens <= max_drafts:
-            raise ValueError(
-                f"A block of {self.block_size} holds 1 to {max_drafts}"
-                " proposals; got"
-                f" num_speculative_tokens={num_speculative_tokens}."
-            )
-        self.num_speculative_tokens = num_speculative_tokens
 
         draft_proposal: Literal["argmax", "sampled"] = (
             speculative_config.draft_proposal
@@ -1023,6 +1054,8 @@ class BlockDriver(
         device_bitmask_scratch: BufferLike | BufferValue | None = None,
         draft_slot_ids: TensorLike | None = None,
         draft_block_offsets: TensorLike | None = None,
+        draft_scores: TensorLike | None = None,
+        draft_score_coeffs: TensorLike | None = None,
         extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorLike | None = None,
         draft_probs_replicas: Sequence[TensorLike] | None = None,
@@ -1072,6 +1105,12 @@ class BlockDriver(
                 :meth:`decode_inputs` when not passed.
             draft_block_offsets: Runtime row offsets for the block forward,
                 paired with ``draft_slot_ids``.
+            draft_scores: The previous step's per-draft scores, which a
+                per-row verify chooses each row's verified prefix from.
+                Declared only under ``include_per_row_verify``, and taken
+                from :meth:`decode_inputs` when not passed.
+            draft_score_coeffs: The host-fitted calibrator coefficients
+                over the draft positions, paired with ``draft_scores``.
             extra: This model's own graph inputs, reaching its adapters
                 through :attr:`BlockBatch.extra` untouched.
             draft_probs_full: ``[batch, num_speculative_tokens, vocab_size]``
@@ -1127,6 +1166,8 @@ class BlockDriver(
                     device_bitmask_scratch=device_bitmask_scratch,
                     draft_slot_ids=draft_slot_ids,
                     draft_block_offsets=draft_block_offsets,
+                    draft_scores=draft_scores,
+                    draft_score_coeffs=draft_score_coeffs,
                     extra=dict(extra or {}),
                     draft_probs_full=draft_probs_full,
                     draft_probs_replicas=(
@@ -1172,6 +1213,8 @@ class BlockDriver(
         device_bitmask_scratch: BufferValue | None = None,
         draft_slot_ids: TensorValue | None = None,
         draft_block_offsets: TensorValue | None = None,
+        draft_scores: TensorValue | None = None,
+        draft_score_coeffs: TensorValue | None = None,
         extra: Mapping[str, Any] | None = None,
         draft_probs_full: TensorValue | None = None,
         draft_probs_replicas: list[TensorValue] | None = None,
@@ -1192,15 +1235,60 @@ class BlockDriver(
         draft_slot_ids, draft_block_offsets = self._draft_rows(
             draft_slot_ids, draft_block_offsets
         )
+        draft_scores, draft_score_coeffs = self._per_row_verify(
+            draft_scores, draft_score_coeffs
+        )
         if not self._skips_draft_rows:
             # The pipeline binds the row inputs whenever the schedule can
             # skip, whatever the draft. This graph cannot run it on fewer
             # rows, so it leaves them unread and drafts every row.
             draft_slot_ids = draft_block_offsets = None
         signals = signal_buffers or []
-        merged_tokens, merged_offsets = self.merger(
-            tokens, input_row_offsets, draft_tokens
-        )
+        verify_lengths: TensorValue | None = None
+        packed: Dim | None = None
+        if self._input_spec.include_per_row_verify:
+            assert draft_scores is not None and draft_score_coeffs is not None
+            num_draft_positions = self._input_spec.num_draft_positions
+            assert num_draft_positions is not None
+            # The per-row export binds all K drafts, so a [B, w] binding
+            # fails at this rebind rather than mis-shaping the selection.
+            draft_tokens = draft_tokens.rebind(
+                ["batch_size", num_draft_positions]
+            )
+            # The export binds `merged_seq_len` at the uniform merged
+            # extent, so the packed count is that dim minus the prompt tokens.
+            packed = Dim("merged_seq_len") - tokens.shape[0]
+
+            def width(device: DeviceRef, dtype: DType) -> TensorValue:
+                return _shape_to_scalar(packed, device, dtype) // (
+                    _shape_to_scalar(draft_tokens.shape[0], device, dtype)
+                )
+
+            w = width(self.devices[0], DType.int32)
+            survival = floored_survival(
+                draft_scores,
+                draft_score_coeffs,
+                rows_without_proposals(
+                    draft_tokens,
+                    Dim(num_draft_positions),
+                    self.devices[0],
+                    padded=False,
+                ),
+            )
+            verify_lengths = select_replica_verify_lengths(
+                survival, w, data_parallel_splits
+            )
+            merged_tokens, merged_offsets = merge_draft_prefixes(
+                tokens,
+                input_row_offsets,
+                draft_tokens,
+                verify_lengths,
+                packed,
+            )
+        else:
+            merged_tokens, merged_offsets = self.merger(
+                tokens, input_row_offsets, draft_tokens
+            )
         # Clean symbolic dims so the target's attention reshapes simplify.
         merged_tokens = merged_tokens.rebind(["merged_seq_len"])
         merged_offsets = merged_offsets.rebind(["input_row_offsets_len"])
@@ -1223,7 +1311,12 @@ class BlockDriver(
             ),
             host_merged_offsets=(
                 compute_host_merged_offsets(
-                    host_input_row_offsets, draft_tokens
+                    host_input_row_offsets,
+                    (
+                        width(DeviceRef.CPU(), DType.uint32)
+                        if verify_lengths is not None
+                        else draft_tokens.shape[1]
+                    ),
                 )
                 if host_input_row_offsets is not None
                 else None
@@ -1238,6 +1331,8 @@ class BlockDriver(
             num_accepted=None,
             draft_slot_ids=draft_slot_ids,
             draft_block_offsets=draft_block_offsets,
+            verify_lengths=verify_lengths,
+            packed_drafts=packed,
             block_size=self.block_size,
         )
 
@@ -1315,7 +1410,7 @@ class BlockDriver(
             ),
         )
         if not self._sampled:
-            next_draft_tokens = _from_adapter(
+            headed = _from_adapter(
                 self._proposer,
                 self._proposer.head(
                     _for_adapter(self._proposer, batch),
@@ -1324,10 +1419,21 @@ class BlockDriver(
                     ArgmaxDraftSampler(),
                 ),
             )
+            if not getattr(self._proposer, "confidence_outputs", False):
+                return (
+                    accepted.num_accepted,
+                    accepted.next_tokens,
+                    self._pad_skipped_rows(batch, headed),
+                    *self._verify_length_outputs(batch),
+                )
+            # A row with no real proposal carries no score to read.
+            drafts, scores = headed
             return (
                 accepted.num_accepted,
                 accepted.next_tokens,
-                self._pad_skipped_rows(batch, next_draft_tokens),
+                self._pad_skipped_rows(batch, drafts),
+                self._pad_skipped_rows(batch, scores, fill=0),
+                *self._verify_length_outputs(batch),
             )
 
         assert self._vocab_size is not None
@@ -1433,8 +1539,16 @@ class BlockDriver(
                 token_bitmasks=token_bitmasks,
             )
         else:
+            # Only the sampler reads the masked copy; the magic-token count
+            # needs the real drafts or a k_r = 0 row would look all-magic.
             num_accepted, recovered, bonus = self.acceptance_sampler(
-                batch.draft_tokens,
+                (
+                    unverified_draft_placeholders(
+                        batch.draft_tokens, batch.verify_lengths
+                    )
+                    if batch.verify_lengths is not None
+                    else batch.draft_tokens
+                ),
                 target_logits,
                 seed=seed,
                 temperature=temperature,
@@ -1447,25 +1561,18 @@ class BlockDriver(
                 draft_probs_full=draft_probs_full,
             )
 
-        num_steps_u32 = _shape_to_scalar(
-            batch.num_draft_tokens, device, dtype=DType.uint32
+        # A per-row export binds all K drafts every step, so the draft axis
+        # cannot tell a context step from a decode one; the packed count can.
+        steps_dim = (
+            batch.packed_drafts
+            if batch.packed_drafts is not None
+            else batch.num_draft_tokens
         )
+        num_steps_u32 = _shape_to_scalar(steps_dim, device, dtype=DType.uint32)
         is_prefill = (num_steps_u32 == 0).broadcast_to(["batch_size"])
 
-        num_magic_tokens = ops.squeeze(
-            ops.sum(
-                (batch.draft_tokens == MAGIC_DRAFT_TOKEN_ID)
-                .cast(DType.int32)
-                .rebind(["batch_size", "num_steps"]),
-                axis=-1,
-            ),
-            axis=-1,
-        )
-        num_steps_i32 = _shape_to_scalar(
-            batch.num_draft_tokens, device, dtype=DType.int32
-        )
-        is_dummy_draft = num_magic_tokens == num_steps_i32.broadcast_to(
-            ["batch_size"]
+        is_dummy_draft = rows_without_proposals(
+            batch.draft_tokens, batch.num_draft_tokens, device, padded=False
         )
         no_proposals = is_prefill | is_dummy_draft
         num_accepted = ops.where(
@@ -1776,7 +1883,9 @@ class BlockDriver(
         ``batch_size`` rows, because device-graph capture records the output
         shapes and replays into them. Proposals are filled with
         :data:`MAGIC_DRAFT_TOKEN_ID`, which the next step's accept already
-        recognizes as "this row carried no proposal" and scores zero.
+        recognizes as "this row carried no proposal" and scores zero; the
+        float scores pad with ``fill=0``, a skipped row's no-score value —
+        a float output must never see the int fill.
         ``broadcast_to`` of a constant hoists out of the step, so the fill
         costs nothing per iteration.
         """
@@ -1791,6 +1900,17 @@ class BlockDriver(
         return ops.concat([draft_values, skipped], axis=0).rebind(
             ["batch_size", *trailing]
         )
+
+    def _verify_length_outputs(
+        self, batch: BlockBatch
+    ) -> tuple[TensorValue, ...]:
+        """The per-row verify lengths as the graph's last output, if any.
+
+        Already one row per batch row, so no skipped-row pad applies.
+        """
+        if batch.verify_lengths is None:
+            return ()
+        return (batch.verify_lengths,)
 
     @override
     @property

@@ -15,6 +15,7 @@ sized, and that an artifact stores them as hashed ``model`` roles."""
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import unittest.mock
 from pathlib import Path
@@ -34,6 +35,7 @@ from max._artifact.overlap_helpers import (
     attention_cache_count,
     compile_helpers,
     helper_builds,
+    spec_realize_inplace_dp_graph_name,
 )
 from max._artifact.pipeline_modules import PipelineModules
 from max._artifact.serialization import deserialize, serialize
@@ -182,6 +184,27 @@ def test_the_mixed_feed_lands_each_row_at_its_token_offset() -> None:
     expected = np.arange(10, dtype=np.int64)
     expected[7:] += 2
     np.testing.assert_array_equal(positions, np.tile(expected, (3, 1)))
+
+
+def test_a_scored_feed_builds_the_scores_graph() -> None:
+    """A per-row verify boot's feed also scatters the previous step's draft
+    scores, under the ``_scores`` name the boot's gate demands."""
+    devices = [DeviceRef.CPU()] * 8
+    plain = SpecFeed(tp=8, kv_groups=6, dp=8, next_draft_dtype=DType.int32)
+    scored = dataclasses.replace(plain, draft_scores=True)
+    assert scored.build()(devices).name == spec_realize_inplace_dp_graph_name(
+        8, 6, DType.int32, draft_scores=True
+    )
+    assert len(scored.build()(devices).inputs) == (
+        len(plain.build()(devices).inputs) + 2
+    )
+
+
+def test_the_tensor_parallel_feed_refuses_draft_scores() -> None:
+    """The tensor-parallel feed has no scores destination, so asking it for
+    scores fails at construction instead of building a feed without them."""
+    with pytest.raises(ValueError, match="draft_scores requires"):
+        SpecFeed(tp=8, kv_groups=6, draft_scores=True)
 
 
 def _stub_compile(monkeypatch: pytest.MonkeyPatch) -> list[int]:

@@ -1335,11 +1335,46 @@ def test_a_cli_export_for_a_target_needs_a_batch_size(
     assert not exported
 
 
+def test_an_artifact_export_refuses_a_per_row_verify_before_the_build(
+    tmp_path: Path,
+) -> None:
+    class _Built(Exception):
+        pass
+
+    def config(per_row_verify: bool) -> PipelineConfig:
+        return _pipeline_config(
+            sampling=SamplingConfig.model_construct(),
+            speculative=SpeculativeConfig.model_construct(
+                speculative_method="mtp",
+                num_speculative_tokens=3,
+                per_row_verify=per_row_verify,
+            ),
+        )
+
+    registry = export_module.PIPELINE_REGISTRY
+    with (
+        patch.object(
+            ModelManifest,
+            "main_architecture_name",
+            new_callable=PropertyMock,
+            return_value="LlamaForCausalLM",
+        ),
+        patch.object(registry, "retrieve_pipeline_task", side_effect=_Built),
+    ):
+        with pytest.raises(ArtifactError, match="--per-row-verify"):
+            export_module.export_pipeline(config(True), tmp_path / "pipeline")
+        # Without per-row verify the same export goes on to the build.
+        with pytest.raises(_Built):
+            export_module.export_pipeline(config(False), tmp_path / "pipeline")
+
+
 def test_engine_config_records_the_verify_facts() -> None:
     config = _pipeline_config(
         sampling=SamplingConfig.model_construct(),
         speculative=SpeculativeConfig.model_construct(
-            speculative_method="mtp", num_speculative_tokens=3
+            speculative_method="mtp",
+            num_speculative_tokens=3,
+            per_row_verify=True,
         ),
     )
     # Mixed values, so a swapped field cannot pass.
@@ -1355,13 +1390,16 @@ def test_engine_config_records_the_verify_facts() -> None:
     assert speculative.verify_takes_prefill_rows
     assert not speculative.verify_commits_long_rows
     assert speculative.successor_replay
+    assert speculative.per_row_verify
 
 
 def test_engine_config_records_the_reversed_verify_facts() -> None:
     config = _pipeline_config(
         sampling=SamplingConfig.model_construct(),
         speculative=SpeculativeConfig.model_construct(
-            speculative_method="mtp", num_speculative_tokens=3
+            speculative_method="mtp",
+            num_speculative_tokens=3,
+            per_row_verify=False,
         ),
     )
     # The reverse mix, so the two keys cannot be swapped anywhere.
@@ -1377,6 +1415,7 @@ def test_engine_config_records_the_reversed_verify_facts() -> None:
     assert not speculative.verify_takes_prefill_rows
     assert speculative.verify_commits_long_rows
     assert speculative.successor_replay
+    assert not speculative.per_row_verify
 
 
 def test_engine_config_without_verify_facts_reads_all_false() -> None:
@@ -1391,6 +1430,7 @@ def test_engine_config_without_verify_facts_reads_all_false() -> None:
     assert not speculative.verify_takes_prefill_rows
     assert not speculative.verify_commits_long_rows
     assert not speculative.successor_replay
+    assert not speculative.per_row_verify
 
 
 def test_verify_facts_read_the_spec_pipeline_model() -> None:

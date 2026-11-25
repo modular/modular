@@ -99,6 +99,13 @@ class SpecDecodeInputTypeSpec:
     sequential driver skips on one device, tensor-parallel or data-parallel,
     and the block driver on one device, for argmax and sampled proposals
     alike. A sampled step pads the skipped rows' distributions with zeros."""
+    include_per_row_verify: bool = False
+    """Declare the ``draft_scores`` and ``draft_score_coeffs`` inputs, which
+    a per-row verify chooses each row's verified prefix from. Set by the
+    driver from ``SpeculativeConfig.per_row_verify``, never by an
+    architecture. Requires ``num_draft_positions``."""
+    num_draft_positions: int | None = None
+    """Static draft count ``K``, required by ``include_per_row_verify``."""
     trace_owns_signal_buffers: bool = False
     """Declare no signal-buffer inputs, whatever the flags above say.
 
@@ -234,6 +241,13 @@ class SpecDecodeGraphInputs(Generic[_T, _B, _V]):
     """The draft forward's ragged row offsets: ``[0, K, 2K, ...]`` to draft,
     all zeros to skip. ``None`` unless the spec set
     ``include_skippable_draft``."""
+    draft_scores: _T | None = None
+    """The previous step's per-draft scores, which a per-row verify chooses
+    each row's verified prefix from. ``None`` unless the spec set
+    ``include_per_row_verify``."""
+    draft_score_coeffs: _T | None = None
+    """The host-fitted calibrator coefficients over the draft positions.
+    ``None`` unless the spec set ``include_per_row_verify``."""
     pinned_bitmask: _T | None = None
     wait_payload: _B | None = None
     device_bitmask_scratch: _B | None = None
@@ -329,7 +343,9 @@ def declared_spec_decode_inputs(
             canonical tail.
 
     Raises:
-        ValueError: If ``spec`` samples its drafts with no ``vocab_size``.
+        ValueError: If ``spec`` declares inputs whose static size it
+            lacks: sampled drafts with no ``vocab_size``, or
+            ``include_per_row_verify`` with no ``num_draft_positions``.
     """
     devices = spec.devices
     device = devices[0]
@@ -338,6 +354,20 @@ def declared_spec_decode_inputs(
     def per_row(dtype: DType) -> TensorType:
         return TensorType(dtype, shape=["batch_size"], device=device)
 
+    draft_scores: TensorType | None = None
+    draft_score_coeffs: TensorType | None = None
+    if spec.include_per_row_verify:
+        if spec.num_draft_positions is None:
+            raise ValueError(
+                "num_draft_positions is required when"
+                " include_per_row_verify is set"
+            )
+        draft_scores = TensorType(
+            DType.float32, ["batch_size", spec.num_draft_positions], device
+        )
+        draft_score_coeffs = TensorType(
+            DType.float32, [spec.num_draft_positions + 1], device
+        )
     draft_probs_full: TensorType | None = None
     draft_probs_replicas: list[TensorType] | None = None
     if spec.enable_sampled_draft_proposal:
@@ -456,6 +486,8 @@ def declared_spec_decode_inputs(
             if skippable
             else None
         ),
+        draft_scores=draft_scores,
+        draft_score_coeffs=draft_score_coeffs,
         pinned_bitmask=(
             TensorType(DType.int32, shape=bitmask, device=cpu)
             if structured
@@ -516,6 +548,10 @@ class _SpecDecodeTail(Protocol):
     @property
     def draft_block_offsets(self) -> object: ...
     @property
+    def draft_scores(self) -> object: ...
+    @property
+    def draft_score_coeffs(self) -> object: ...
+    @property
     def pinned_bitmask(self) -> object: ...
     @property
     def wait_payload(self) -> object: ...
@@ -529,10 +565,11 @@ def spec_decode_tail_groups(
     """Groups the canonical tail every unified spec-decode graph ends with.
 
     The ``spec`` group holds the drafts, the distributions they were sampled
-    from, each row's sampling inputs, the thinking-phase flags and the draft
-    row inputs; the ``bitmask`` group follows it. A pipeline sets the
-    distributions and the draft row inputs exactly when its graph declares
-    them, so their presence in ``inputs`` stands for the signature's flags.
+    from, each row's sampling inputs, the thinking-phase flags, the draft
+    row inputs and the per-row verify inputs; the ``bitmask`` group follows
+    it. A pipeline sets the distributions, the draft row inputs and the
+    per-row verify inputs exactly when its graph declares them, so their
+    presence in ``inputs`` stands for the signature's flags.
 
     Args:
         inputs: The declared types, the graph's values or a step's buffers,
@@ -579,6 +616,11 @@ def spec_decode_tail_groups(
         tail["draft_slot_ids"] = inputs.draft_slot_ids
         tail["draft_block_offsets"] = required(
             "draft_block_offsets", inputs.draft_block_offsets
+        )
+    if inputs.draft_scores is not None:
+        tail["draft_scores"] = inputs.draft_scores
+        tail["draft_score_coeffs"] = required(
+            "draft_score_coeffs", inputs.draft_score_coeffs
         )
     groups: list[SpecDecode[object] | TokenBitmask[object]] = [tail]
     if bitmask:
@@ -809,6 +851,8 @@ def decode_spec_decode_input_values(
         in_thinking_phase=_tensor(tail.get("in_thinking_phase")),
         draft_slot_ids=_tensor(tail.get("draft_slot_ids")),
         draft_block_offsets=_tensor(tail.get("draft_block_offsets")),
+        draft_scores=_tensor(tail.get("draft_scores")),
+        draft_score_coeffs=_tensor(tail.get("draft_score_coeffs")),
         pinned_bitmask=(bitmask["pinned_bitmask"].tensor if bitmask else None),
         wait_payload=bitmask["wait_payload"].buffer if bitmask else None,
         device_bitmask_scratch=(
@@ -845,6 +889,9 @@ def decode_spec_decode_input_values(
 
 def spec_decode_outputs(
     outputs: Sequence[_T],
+    *,
+    scores: bool = False,
+    verify_lengths: bool = False,
 ) -> OrderedDict[str, SpecDecodeOutputs[_T]]:
     """Names a spec-decode driver's outputs, as a decoder names its groups.
 
@@ -852,20 +899,30 @@ def spec_decode_outputs(
         outputs: ``(num_accepted, next_tokens, next_draft_tokens)``, then
             under a sampled draft proposal the draft's distributions, one
             per data-parallel replica when it holds them per replica.
+        scores: The fourth output is the drafts' per-position head-free
+            scores, not distributions.
+        verify_lengths: The last output before the distributions is each
+            row's verified draft count, from a per-row verify.
 
     Returns:
         The outputs in one ``spec`` group, in the same order.
     """
     num_accepted, next_tokens, next_draft_tokens = outputs[:3]
-    probs = outputs[3:]
+    extra = outputs[3:]
     named: SpecDecodeOutputs[_T] = SpecDecodeOutputs(
         num_accepted=num_accepted,
         next_tokens=next_tokens,
         next_draft_tokens=next_draft_tokens,
     )
-    if probs:
+    if scores:
+        named["next_draft_scores"] = extra[0]
+        extra = extra[1:]
+    if verify_lengths:
+        named["verify_lengths"] = extra[0]
+        extra = extra[1:]
+    if extra:
         named["next_draft_probs"] = (
-            probs[0] if len(probs) == 1 else tuple(probs)
+            extra[0] if len(extra) == 1 else tuple(extra)
         )
     return OrderedDict(spec=named)
 
@@ -1037,9 +1094,14 @@ class SpecDecodeGraphSignature:
         )
         # The driver declares the draft row inputs from the config, so it
         # takes them back here rather than having every model forward them.
+        # The per-row verify inputs follow the same rule.
         self._decoded_draft_rows = (
             decoded.draft_slot_ids,
             decoded.draft_block_offsets,
+        )
+        self._decoded_per_row_verify = (
+            decoded.draft_scores,
+            decoded.draft_score_coeffs,
         )
         return as_tensors(decoded) if takes_tensors else decoded
 
@@ -1090,14 +1152,39 @@ class SpecDecodeGraphSignature:
         draft_block_offsets: TensorValue | None,
     ) -> tuple[TensorValue | None, TensorValue | None]:
         """The draft row inputs: the caller's, else the decoded graph's."""
-        if draft_slot_ids is not None or not (
-            self.input_spec.include_skippable_draft
-        ):
-            return draft_slot_ids, draft_block_offsets
-        decoded = getattr(self, "_decoded_draft_rows", None)
+        return self._caller_or_decoded(
+            (draft_slot_ids, draft_block_offsets),
+            self.input_spec.include_skippable_draft,
+            getattr(self, "_decoded_draft_rows", None),
+            "draft row",
+        )
+
+    def _per_row_verify(
+        self,
+        draft_scores: TensorValue | None,
+        draft_score_coeffs: TensorValue | None,
+    ) -> tuple[TensorValue | None, TensorValue | None]:
+        """The per-row verify inputs: the caller's, else the decoded graph's."""
+        return self._caller_or_decoded(
+            (draft_scores, draft_score_coeffs),
+            self.input_spec.include_per_row_verify,
+            getattr(self, "_decoded_per_row_verify", None),
+            "per-row verify",
+        )
+
+    def _caller_or_decoded(
+        self,
+        given: tuple[TensorValue | None, TensorValue | None],
+        declared: bool,
+        decoded: tuple[TensorValue | None, TensorValue | None] | None,
+        noun: str,
+    ) -> tuple[TensorValue | None, TensorValue | None]:
+        """Returns the caller's input pair, else the decoded graph's."""
+        if given[0] is not None or not declared:
+            return given
         if decoded is None:
             raise ValueError(
-                f"{type(self).__name__} declares the draft row inputs, so"
+                f"{type(self).__name__} declares the {noun} inputs, so"
                 " build its graph through decode_inputs() or pass them"
             )
         return decoded

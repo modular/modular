@@ -74,9 +74,12 @@ from max.pipelines.speculative.block_driver import (
     SampledDraftSampler,
 )
 from max.pipelines.speculative.config import SpeculativeConfig
+from max.pipelines.speculative.draft_scores import top_token_logit
 from max.pipelines.speculative.driver import (
     SequentialBatch,
     gather_variable_rows,
+    gather_verify_prefix,
+    slice_requests,
 )
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_input_types import draft_probs_rows_name
@@ -90,7 +93,7 @@ from max.tensor.sharding import (
     Unknown,
 )
 
-from .deepseekV41 import DeepseekV41, _slice_requests
+from .deepseekV41 import DeepseekV41
 from .dspark_drafter import DSparkDrafter
 from .history import distributed_history, read_history, record_history
 from .inputs import DeepseekV41Inputs
@@ -474,13 +477,21 @@ class DeepseekV41BlockTarget:
         stream, pre = target.embed_stream(b)
         stream, pre, taps = target.run_trunk_with_taps(b, stream, pre)
         hidden = target.hidden_states(stream, pre)
-        # The acceptance sampler reads one flat request-major block of
-        # num_steps + 1 logit rows per request, which is exactly what the
-        # last-K+1 gather produces over the merged window. Under data
-        # parallelism the gather runs per rank over its own rows and one
-        # allgather reconstitutes the global batch -- the trunk's own
-        # ``logits`` pattern.
-        if dp > 1:
+        # The sampler reads a fixed block of logit rows per request, which the
+        # last-K+1 gather produces; a per-row verify gathers each row's prefix.
+        if batch.verify_lengths is not None:
+            var_h, _ = gather_verify_prefix(
+                hidden,
+                b.row_offsets,
+                as_tensors(batch.verify_lengths),
+                as_tensors(batch.data_parallel_splits)
+                if batch.data_parallel_splits is not None
+                else None,
+                as_tensors(batch.return_n_logits),
+                target.mesh,
+                dp,
+            )
+        elif dp > 1:
             var_h = _dp_gather_variable_rows(
                 hidden,
                 b.row_offsets,
@@ -560,12 +571,12 @@ class DeepseekV41BlockTarget:
                 splits,
                 sharded,
             )
-            lookback = _slice_requests(
+            lookback = slice_requests(
                 lookback, splits, sharded, "history_lookback"
             )
-            source = _slice_requests(source, splits, sharded, "history_source")
-            drafts = _slice_requests(drafts, splits, sharded, "history_drafts")
-            accepted = _slice_requests(
+            source = slice_requests(source, splits, sharded, "history_source")
+            drafts = slice_requests(drafts, splits, sharded, "history_drafts")
+            accepted = slice_requests(
                 accepted, splits, sharded, "history_accepted"
             )
         lookback = read_history(
@@ -625,11 +636,18 @@ class DSparkDeepseekV41Proposer:
         *,
         per_replica_head: bool = False,
         per_replica_probs: bool = False,
+        scores: bool = False,
+        head_scores: bool = False,
     ) -> None:
         if config.dspark_noise_token_id is None:
             raise ValueError(
                 "DeepSeek-V4.1 DSpark needs dspark_noise_token_id to fill "
                 "the draft block"
+            )
+        if per_replica_head and scores and head_scores:
+            raise ValueError(
+                "the per-replica draft head scores head-free only; use "
+                "--draft-score-source head_free"
             )
         self.drafter = drafter
         self.target = target
@@ -650,6 +668,11 @@ class DSparkDeepseekV41Proposer:
         # broadcasts them back as float32) stays as the greedy head's
         # tensor-parallel route.
         self.vocab_parallel_draft = self.dp > 1
+        # The scores ride beside the drafts, from the mounted head or
+        # head-free off the drafter's own biased logits; a head build runs
+        # none of the head-free vocabulary work.
+        self.confidence_outputs = scores
+        self.head_free_scores = scores and not head_scores
 
     def materialize(
         self,
@@ -814,8 +837,14 @@ class DSparkDeepseekV41Proposer:
         block_hs: Tensor,
         accepted: Accepted,
         sampler: DraftSampler,
-    ) -> TensorValue:
-        """Turns the block's hidden states into draft tokens, one at a time."""
+    ) -> TensorValue | tuple[TensorValue, ...]:
+        """Turns the block's hidden states into draft tokens, one at a time.
+
+        With scores declared, the drafts come back beside their
+        per-position scores: the mounted head's output, or head-free
+        ``logit(q_max)`` read off the drafter's own biased logits. The
+        driver unpacks and pads each beside the drafts.
+        """
         block_hs = as_tensors(block_hs)
         if self.dp > 1 and self.per_replica_head:
             return self._replica_head(batch, block_hs, accepted, sampler)
@@ -838,10 +867,29 @@ class DSparkDeepseekV41Proposer:
             # vocab-parallel and exchanges only each row's per-shard
             # winner -- not the ``[b * block_size, vocab]`` float32 logits
             # the joined head would broadcast to every rank.
-            return as_graph_values(
-                self.drafter.draft_vocab_parallel(
-                    block_hs, self.target.head.weight, anchors
+            drawn = self.drafter.draft_vocab_parallel(
+                block_hs,
+                self.target.head.weight,
+                anchors,
+                with_scores=self.head_free_scores,
+            )
+            if not self.confidence_outputs:
+                assert not isinstance(drawn, tuple)
+                return as_graph_values(_to_lead(drawn))
+            if self.head_free_scores:
+                assert isinstance(drawn, tuple)
+                drafts, scores = drawn
+            else:
+                # The head runs on the mesh like its hidden states, so the
+                # drafts re-stage the way the anchors did.
+                assert not isinstance(drawn, tuple)
+                drafts = F.distributed_broadcast(drawn, self.mesh)
+                scores = self.drafter.confidence_scores(
+                    block_hs, anchors, drafts
                 )
+            return (
+                as_graph_values(_to_lead(drafts)),
+                as_graph_values(_to_lead(scores)),
             )
         # The joined head's logits land on rank 0 (its allgather takes
         # rank 0's copy), so they are re-staged onto the mesh too.
@@ -856,12 +904,22 @@ class DSparkDeepseekV41Proposer:
         # mesh, so exactly the greedy class bypasses the bridge; a
         # subclass that overrides ``sample_next`` is its own sampler and
         # still goes through it.
-        drafts, _ = self.drafter.draft(
+        drafts, biased = self.drafter.draft(
             logits,
             anchors,
             sampler=None if greedy else _sample_next(sampler, self.mesh),
         )
-        return as_graph_values(_to_lead(drafts))
+        if not self.confidence_outputs:
+            return as_graph_values(_to_lead(drafts))
+        scores = (
+            top_token_logit(biased)
+            if self.head_free_scores
+            else self.drafter.confidence_scores(block_hs, anchors, drafts)
+        )
+        return (
+            as_graph_values(_to_lead(drafts)),
+            as_graph_values(_to_lead(scores)),
+        )
 
     def _replica_head(
         self,
@@ -869,8 +927,12 @@ class DSparkDeepseekV41Proposer:
         hidden: Tensor,
         accepted: Accepted,
         sampler: DraftSampler,
-    ) -> TensorValue:
-        """Draws replica-local proposals and retains each replica's true q."""
+    ) -> TensorValue | tuple[TensorValue, TensorValue]:
+        """Draws replica-local proposals and retains each replica's true q.
+
+        With head-free scores declared, each replica scores its drafts off
+        its own biased logits and the scores come back beside the drafts.
+        """
         assert batch.data_parallel_splits is not None
         splits = as_tensors(batch.data_parallel_splits)
         rows = [f"dspark_head_rows_{rank}" for rank in range(self.dp)]
@@ -895,6 +957,7 @@ class DSparkDeepseekV41Proposer:
         anchors = select(accepted.next_tokens)
         weights = self.target.replicated_head_weight()
         drafted = []
+        scored = []
         for rank, (local_hidden, local_anchor, local_sampler) in enumerate(
             zip(hidden.local_shards, anchors, samplers, strict=True)
         ):
@@ -911,7 +974,7 @@ class DSparkDeepseekV41Proposer:
             )
             logits = local.logits(local_hidden, weights.local_shards[rank])
             greedy = type(local_sampler) is ArgmaxDraftSampler
-            local_ids, _ = local.draft(
+            local_ids, biased = local.draft(
                 logits,
                 as_tensors(local_anchor),
                 sampler=(
@@ -923,6 +986,8 @@ class DSparkDeepseekV41Proposer:
                 ),
             )
             drafted.append(as_graph_values(local_ids))
+            if self.head_free_scores:
+                scored.append(as_graph_values(top_token_logit(biased)))
         if isinstance(sampler, SampledDraftSampler):
             distributions = [
                 local.distributions()
@@ -942,8 +1007,15 @@ class DSparkDeepseekV41Proposer:
                 sampler.adopt_distributions(
                     ops.allgather(distributions, batch.signal_buffers)[0]
                 )
-        return ops.allgather(drafted, batch.signal_buffers)[0].rebind(
-            [accepted.next_tokens.shape[0], self.block_size]
+        block: list[Dim | int] = [
+            accepted.next_tokens.shape[0],
+            self.block_size,
+        ]
+        drafts = ops.allgather(drafted, batch.signal_buffers)[0].rebind(block)
+        if not scored:
+            return drafts
+        return drafts, ops.allgather(scored, batch.signal_buffers)[0].rebind(
+            block
         )
 
 
@@ -986,6 +1058,8 @@ def block_proposer(
         draft_config,
         per_replica_head=speculative.draft_head_parallelism == "replica",
         per_replica_probs=verify.replica_logits,
+        scores=speculative.per_row_verify,
+        head_scores=speculative.draft_score_source == "head",
     )
 
 
@@ -1061,4 +1135,6 @@ ADAPTER = TargetAdapter(
     batch_trailing_buffers=batch_trailing_buffers,
     extra=extra,
     verify_takes_prefill_rows=_takes_prefill_rows,
+    per_row_verify_methods=frozenset({"dspark"}),
+    head_score_methods=frozenset({"dspark"}),
 )

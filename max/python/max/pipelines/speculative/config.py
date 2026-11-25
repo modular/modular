@@ -308,7 +308,8 @@ class SpeculativeConfig(ConfigModel):
             "When set, the rejection sampler bypasses the real "
             "draft/target comparison and accepts each draft position "
             "with a calibrated probability so the mean joint acceptance "
-            "across ``num_speculative_tokens`` positions matches this value."
+            "across ``num_speculative_tokens`` positions matches this "
+            "value. Incompatible with ``per_row_verify``."
         ),
     )
     """A benchmarking-only override that accepts drafts with a calibrated
@@ -455,6 +456,34 @@ class SpeculativeConfig(ConfigModel):
         ),
     )
 
+    per_row_verify: bool = Field(
+        default=False,
+        description=(
+            "The fused graph verifies a per-row prefix of the drafts, "
+            "chosen on the device from the drafts' confidence scores, "
+            "with the step's total verify width kept fixed per "
+            "data-parallel replica. The export emits those scores beside "
+            "the drafts. It takes effect only in an engine that feeds the "
+            "scores and the calibrator coefficients; MAX Serve's "
+            "speculative pipeline does not, and refuses its first step. "
+            "Incompatible with ``synthetic_acceptance_rate``."
+        ),
+    )
+
+    draft_score_source: Literal["head", "head_free"] | None = Field(
+        default=None,
+        description=(
+            "Where the fused graph fills the per-position draft scores "
+            "from, when the export emits them: 'head' mounts the drafter's "
+            "checkpoint confidence head and emits its raw float32 score "
+            "per draft position; 'head_free' scores each position with the "
+            "log-odds of its top token computed from the drafter's own "
+            "biased sampling logits, with no head mounted. Unset scores "
+            "head-free, the same as 'head_free'. The export's sidecar "
+            "records the source; the route must wire it."
+        ),
+    )
+
     @model_validator(mode="after")
     def _validate_draft_proposal(self) -> Self:
         if (
@@ -486,6 +515,49 @@ class SpeculativeConfig(ConfigModel):
                 " only its own replica's logits, which only those layouts"
                 " read"
             )
+        return self
+
+    @model_validator(mode="after")
+    def _validate_per_row_verify_proposal(self) -> Self:
+        self.check_per_row_acceptance()
+        return self
+
+    def check_per_row_acceptance(self) -> None:
+        """Checks that the per-row verify's config is self-consistent.
+
+        Drivers call this again because ``model_copy`` skips validators.
+
+        Raises:
+            ValueError: If per-row verification conflicts with another
+                configured option.
+        """
+        # A block draft's sampled arm keeps its own distributions, and no
+        # consumer reads the scores the per-row verify needs there.
+        if (
+            self.per_row_verify
+            and self.draft_proposal != "argmax"
+            and self.is_block_draft()
+        ):
+            raise ValueError(
+                "per_row_verify needs draft_proposal='argmax': a block "
+                "draft's sampled arm draws its own proposals and keeps "
+                "their distributions, and no consumer reads scores there"
+            )
+        if self.per_row_verify and self.synthetic_acceptance_rate is not None:
+            raise ValueError(
+                "per_row_verify cannot be combined with"
+                " synthetic_acceptance_rate: the synthetic verdict"
+                " accepts from a uniform step count, so it can count"
+                " drafts a row did not verify"
+            )
+        # The scores ride the graph's outputs only with per-row verify, so a
+        # source without it would mount a head whose output nothing reads.
+        if self.draft_score_source is not None and not self.per_row_verify:
+            raise ValueError("draft_score_source needs per_row_verify")
+
+    @model_validator(mode="after")
+    def _validate_draft_score_source_needs_per_row_verify(self) -> Self:
+        self.check_per_row_acceptance()
         return self
 
     @field_validator("relaxed_topk")
