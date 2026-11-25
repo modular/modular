@@ -728,8 +728,29 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   diag << "parameter "
        << ParamDeclRefAttr::get(declaredParamPogs.getName(paramIdx),
                                 declaredParamTypes[paramIdx])
-       << " has " << expectedType << " type, but value has type "
-       << diagBindingVal.getType() << binding.expr->getRange();
+       << " has " << expectedType << " type, but ";
+
+  // A `def(...)` function type without `thin` is a closure trait, not a type.
+  // This is an easy mistake to make when a function pointer type was intended
+  // (e.g. `Dict[String, def(Int) -> Int]`), so explain it and suggest `thin`.
+  const ExprNode *bindingExpr = binding.expr;
+  while (auto *paren = dyn_cast_or_null<ParenNode>(bindingExpr))
+    bindingExpr = paren->subExpr;
+  auto *fnTypeExpr = dyn_cast_or_null<FunctionTypeNode>(bindingExpr);
+  auto anyTraitTy = sugarDynCast<AnyTraitType>(diagBindingVal.getType());
+  if (fnTypeExpr && !fnTypeExpr->isThin && anyTraitTy) {
+    diag << "value is the closure trait " << anyTraitTy.getTraitType()
+         << ", not a type" << binding.expr->getRange();
+    diag.attachNote(fnTypeExpr->getLoc())
+        << "a 'def' type without 'thin' is a closure trait; add 'thin' after "
+           "the argument list to make it a function pointer type"
+        << FixIt::insertAfterToken(fnTypeExpr->argsRParenLoc, " thin",
+                                   shared.diags);
+    return failure();
+  }
+
+  diag << "value has type " << diagBindingVal.getType()
+       << binding.expr->getRange();
 
   return failure();
 }
