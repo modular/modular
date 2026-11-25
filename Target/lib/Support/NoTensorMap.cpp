@@ -11,11 +11,10 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 
-// HIP has no TMA engine, so the descriptor encoders report
-// M_DRIVER_STATUS_INCOMPATIBLE. The symbols must still exist because plugin
-// entry points are resolved eagerly at load time.
+// The descriptor encoders of a plugin without a TMA engine. The symbols must
+// exist because plugin entry points are resolved eagerly at load time.
 
-#include "HAL/M_driver_api.h"
+#include "HAL/M_driver_tma.h"
 
 M_driver_status_t
 M_driver_tensor_map_encode_tiled(M_driver_context_t, void *, int32_t, uint32_t,

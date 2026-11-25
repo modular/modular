@@ -163,6 +163,7 @@ modular_cc_binary(
     linkstatic = False,
     visibility = ["//visibility:public"],
     deps = [
+        ":NoTensorMap",
         ":Support",
         "//SDK:HAL",
         "@dlpack",
@@ -288,6 +289,7 @@ modular_cc_binary(
     linkstatic = False,
     visibility = ["//visibility:public"],
     deps = [
+        ":NoTensorMap",
         ":Support",
         "//AsyncRT:Runtime",
         "//SDK:HAL",
@@ -380,7 +382,10 @@ modular_cc_test(
 
 modular_cc_library(
     name = "Support",
-    srcs = glob(["lib/Support/*.cpp"]),
+    srcs = glob(
+        ["lib/Support/*.cpp"],
+        exclude = ["lib/Support/NoTensorMap.cpp"],
+    ),
     hdrs = glob(["lib/Support/*.h"]),
     textual_hdrs = glob(["lib/Support/*.inc"]),
     visibility = ["//visibility:public"],
@@ -388,6 +393,16 @@ modular_cc_library(
         "//SDK:HAL",
         "@llvm-project//llvm:Support",
     ],
+)
+
+# The TMA descriptor encoders for a plugin without a TMA engine. Nothing in the
+# plugin calls them, so `alwayslink` keeps them in its exports.
+modular_cc_library(
+    name = "NoTensorMap",
+    srcs = ["lib/Support/NoTensorMap.cpp"],
+    visibility = ["//visibility:public"],
+    deps = ["//SDK:HAL"],
+    alwayslink = True,
 )
 
 modular_cc_test(
