@@ -1664,9 +1664,14 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   if (p.parseToken(Token::l_paren, "expected '(' for argument list"))
     return failure();
 
-  if (!p.consumeIf(Token::r_paren)) {
-    if (parseArgOrParamList(p, parsedArgs, &resultArg, kind) ||
-        p.parseToken(Token::r_paren, "expected ')' in argument list"))
+  if (p.getToken().is(Token::r_paren)) {
+    rParenLoc = p.getToken().getLoc();
+    p.consumeToken();
+  } else {
+    if (parseArgOrParamList(p, parsedArgs, &resultArg, kind))
+      return failure();
+    rParenLoc = p.getToken().getLoc();
+    if (p.parseToken(Token::r_paren, "expected ')' in argument list"))
       return failure();
   }
 
