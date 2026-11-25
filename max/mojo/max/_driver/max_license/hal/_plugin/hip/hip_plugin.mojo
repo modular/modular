@@ -13,14 +13,12 @@
 
 from .._trait import HalPluginHooks
 from ..._machine import DeviceRef
-from ...execution_config._amd import ExecutionConfigForTarget
+from ...execution_config._amd import AmdExecutionConfiguration
 from ...extensions.hip import HIPHALExtensions
 
 
 struct HipHalPluginHooks(HalPluginHooks):
-    comptime ExecutionConfigType[device: DeviceRef] = ExecutionConfigForTarget[
-        device.spec.name
-    ]
+    comptime ExecutionConfigType[device: DeviceRef] = AmdExecutionConfiguration
     """Returns the execution configuration for the given device."""
 
     comptime extensions = HIPHALExtensions
