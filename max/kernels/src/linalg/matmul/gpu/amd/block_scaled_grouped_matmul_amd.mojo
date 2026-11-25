@@ -270,7 +270,7 @@ struct PreShuffledBGroupedGEMM[
         max_padded_M: Int32,
         # Destination for the fused epilogue's E8M0 scales, and the
         # per-expert slot stride (0 = plain row-major).
-        c_scales_ptr: Pointer[UInt8, MutAnyOrigin],
+        c_scales_ptr: Pointer[UInt8, MutUntrackedOrigin],
         c_scales_max_padded_m: UInt32,
     ):
         var _num_active_experts = Int(num_active_experts)
@@ -533,7 +533,7 @@ struct PreShuffledBGroupedGEMM[
         max_padded_M: Int32,
         # Destination for the fused epilogue's E8M0 scales, and the
         # per-expert slot stride (0 = plain row-major).
-        c_scales_ptr: Pointer[UInt8, MutAnyOrigin],
+        c_scales_ptr: Pointer[UInt8, MutUntrackedOrigin],
         c_scales_max_padded_m: UInt32,
     ):
         var _max_padded_M = Int(max_padded_M)
@@ -657,6 +657,7 @@ struct PreShuffledBGroupedGEMM[
         static_grid_z: Bool = False,
         fuse_swiglu_mxfp8: Bool = False,
         activation: swiglu_activation_type = swiglu[0.0],
+        c_scales_origin: MutOrigin = MutUntrackedOrigin,
     ](
         c: TileTensor[mut=True, ...],
         a: TileTensor[.uint8, ...],
@@ -669,8 +670,8 @@ struct PreShuffledBGroupedGEMM[
         num_active_experts: Int,
         ctx: DeviceContext,
         grid_m_cap: Int = -1,
-        c_scales_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[
-            UInt8, MutAnyOrigin
+        c_scales_ptr: Pointer[UInt8, c_scales_origin] = Pointer[
+            UInt8, c_scales_origin
         ](unsafe_from_address=16),
         c_scales_max_padded_m: UInt32 = 0,
     ) raises:
@@ -753,7 +754,7 @@ struct PreShuffledBGroupedGEMM[
                 expert_ids,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
-                c_scales_ptr,
+                c_scales_ptr.unsafe_origin_cast[MutUntrackedOrigin](),
                 c_scales_max_padded_m,
                 execution_config=GridBlockLaunchConfig(
                     grid_dim=(Self.total_wg, 1, 1),
@@ -814,7 +815,7 @@ struct PreShuffledBGroupedGEMM[
                 expert_ids,
                 Int32(num_active_experts),
                 Int32(max_padded_M),
-                c_scales_ptr,
+                c_scales_ptr.unsafe_origin_cast[MutUntrackedOrigin](),
                 c_scales_max_padded_m,
                 execution_config=GridBlockLaunchConfig(
                     grid_dim=(
@@ -1266,6 +1267,7 @@ def block_scaled_grouped_matmul_amd_preb[
     fp6_format: Int = 0,
     fuse_swiglu_mxfp8: Bool = False,
     activation: swiglu_activation_type = swiglu[0.0],
+    c_scales_origin: MutOrigin = MutUntrackedOrigin,
 ](
     c: TileTensor[mut=True, ...],
     a: TileTensor[.uint8, ...],
@@ -1280,9 +1282,9 @@ def block_scaled_grouped_matmul_amd_preb[
     estimated_total_m: Int = 0,
     decode_grid_m_cap: Int = -1,
     decode_grid_m_rows: Int = 0,
-    c_scales_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
-        unsafe_from_address=16
-    ),
+    c_scales_ptr: Pointer[UInt8, c_scales_origin] = Pointer[
+        UInt8, c_scales_origin
+    ](unsafe_from_address=16),
     c_scales_max_padded_m: Int = 0,
 ) raises:
     """Launches grouped MXFP4 matmul on AMD CDNA4 with pre-shuffled weights.
@@ -1308,6 +1310,7 @@ def block_scaled_grouped_matmul_amd_preb[
             block scales. Requires the gate_up weight sigma-permuted on N.
         activation: The gated activation the fused epilogue applies, selected
             at compile time (defaults to `swiglu`).
+        c_scales_origin: Origin of `c_scales_ptr` (inferred).
 
     Args:
         c: Output tensor [total_tokens, N].

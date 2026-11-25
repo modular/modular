@@ -496,15 +496,13 @@ def _swiglu_epilogue_gmem[
     tmem_offset: UInt32,
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_stages],
     output_stage_index: UInt32,
-    c_gmem_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    c_gmem_ptr: MutPointer[Scalar[c_type], _],
     c_gmem_stride: UInt32,
     c_m_base: UInt32,
     c_h_base: UInt32,
     M_bound: UInt32,
     H_bound: UInt32,
-    bias_smem_ptr: MutPointer[
-        Scalar[c_type], MutAnyOrigin, address_space=.SHARED
-    ],
+    bias_smem_ptr: MutPointer[Scalar[c_type], _, address_space=.SHARED],
 ):
     """TMEM → FP32 SwiGLU → BF16 GMEM epilogue. No SMEM, no TMA."""
     comptime AB_swapped = config.AB_swapped
@@ -899,14 +897,12 @@ def _swiglu_epilogue_smem_tma[
     mma_output_pipeline: ProducerConsumerPipeline[num_accum_stages],
     output_stage_index: UInt32,
     c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
-    c_out_smem: MutPointer[Scalar[c_type], MutAnyOrigin, address_space=.SHARED],
+    c_out_smem: MutPointer[Scalar[c_type], _, address_space=.SHARED],
     c_m_base: UInt32,
     c_h_base: UInt32,
     M_bound: UInt32,
     H_bound: UInt32,
-    bias_smem_ptr: MutPointer[
-        Scalar[c_type], MutAnyOrigin, address_space=.SHARED
-    ],
+    bias_smem_ptr: MutPointer[Scalar[c_type], _, address_space=.SHARED],
 ):
     """TMEM → FP32 SwiGLU → half SMEM → TMA store epilogue."""
     comptime AB_swapped = config.AB_swapped
@@ -1491,7 +1487,7 @@ struct SwiGLUKernelConstants[
     comptime Bias1DTile = TileTensor[
         Self.c_type,
         type_of(Self.Bias1DTileLayout),
-        ImmutAnyOrigin,
+        ImmUntrackedOrigin,
         Engine=Self.BiasEngine,
     ]
 
@@ -1534,7 +1530,7 @@ def blackwell_swiglu_warp_specialized_kernel[
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
     c_tma_op: TMATensorTile[c_type, c_tile_shape, c_desc_shape],
-    c_gmem_ptr: MutPointer[Scalar[c_type], MutAnyOrigin],
+    c_gmem_ptr: MutPointer[Scalar[c_type], MutUntrackedOrigin],
     c_gmem_stride: UInt32,
     bias_1d_tile: OptionalReg[
         SwiGLUKernelConstants[
@@ -1548,7 +1544,7 @@ def blackwell_swiglu_warp_specialized_kernel[
     ],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
-    workspace: Span[UInt64, MutAnyOrigin],
+    workspace: Span[UInt64, MutUntrackedOrigin],
 ):
     """Fused GEMM+SwiGLU warp-specialized kernel for SM100.
 
@@ -2119,7 +2115,7 @@ def blackwell_swiglu_warp_specialized_kernel[
                         c_h_base,
                         out_M,
                         out_H,
-                        bias_smem_ptr.as_unsafe_any_origin(),
+                        bias_smem_ptr,
                     )
                 else:
                     _swiglu_epilogue_smem_tma[
@@ -2136,12 +2132,12 @@ def blackwell_swiglu_warp_specialized_kernel[
                         mma_output_pipeline,
                         stage_idx,
                         c_tma_op,
-                        c_out_smem.as_unsafe_any_origin(),
+                        c_out_smem,
                         c_m_base,
                         c_h_base,
                         out_M,
                         out_H,
-                        bias_smem_ptr.as_unsafe_any_origin(),
+                        bias_smem_ptr,
                     )
                 _ = epi_load_pl.consumer_mbar(UInt32(epi_stage))[0].arrive()
                 epi_load_pl.consumer_step()
@@ -2183,7 +2179,7 @@ def blackwell_swiglu_warp_specialized_kernel[
                         c_h_base,
                         out_M,
                         out_H,
-                        bias_smem_ptr.as_unsafe_any_origin(),
+                        bias_smem_ptr,
                     )
                 else:
                     _swiglu_epilogue_smem_tma[
@@ -2200,12 +2196,12 @@ def blackwell_swiglu_warp_specialized_kernel[
                         mma_output_pipeline,
                         stage_idx,
                         c_tma_op,
-                        c_out_smem.as_unsafe_any_origin(),
+                        c_out_smem,
                         c_m_base,
                         c_h_base,
                         out_M,
                         out_H,
-                        bias_smem_ptr.as_unsafe_any_origin(),
+                        bias_smem_ptr,
                     )
                 mma_output_pipeline.consumer_step()
 

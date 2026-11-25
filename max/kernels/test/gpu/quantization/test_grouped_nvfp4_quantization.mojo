@@ -327,9 +327,7 @@ def test_grouped_nvfp4_quantization[
             expert_ids_tensor,
             sf_tensor_device,
             ctx,
-            row_indices=TileTensor(dev_slots, row_major(total_tokens))
-            .as_unsafe_any_origin()
-            .as_imm(),
+            row_indices=TileTensor(dev_slots, row_major(total_tokens)).as_imm(),
         )
 
         ctx.enqueue_copy(host_output2, dev_output2)

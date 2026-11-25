@@ -513,25 +513,30 @@ struct RealSwiGLUOutput[
 
     comptime device_type: AnyType = Self
 
-    @__allow_legacy_any_origin_fields
-    var c_packed_ptr: MutPointer[UInt8, MutAnyOrigin]
+    var c_packed_ptr: MutPointer[UInt8, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], MutAnyOrigin]
+    var c_swiglu_scales_ptr: MutPointer[
+        Scalar[Self._sf_dtype], MutUntrackedOrigin
+    ]
 
-    @__allow_legacy_any_origin_fields
-    var c_input_scales_ptr: ImmPointer[Float32, ImmutAnyOrigin]
+    var c_input_scales_ptr: ImmPointer[Float32, ImmUntrackedOrigin]
 
     @inline(.always)
     def __init__(
         out self,
-        c_packed_ptr: MutPointer[UInt8, MutAnyOrigin],
-        c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], MutAnyOrigin],
-        c_input_scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+        c_packed_ptr: MutPointer[UInt8, _],
+        c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], _],
+        c_input_scales_ptr: ImmPointer[Float32, _],
     ):
-        self.c_packed_ptr = c_packed_ptr
-        self.c_swiglu_scales_ptr = c_swiglu_scales_ptr
-        self.c_input_scales_ptr = c_input_scales_ptr
+        self.c_packed_ptr = c_packed_ptr.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
+        self.c_swiglu_scales_ptr = c_swiglu_scales_ptr.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
+        self.c_input_scales_ptr = c_input_scales_ptr.unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
 
     @inline(.always)
     def store_packed_byte(self, m: Int, byte_pos: Int, val: UInt8):

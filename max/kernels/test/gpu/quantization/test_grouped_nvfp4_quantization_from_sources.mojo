@@ -209,9 +209,7 @@ def test_from_sources[
         expert_ids_tensor,
         sf_tensor,
         ctx,
-        row_indices=TileTensor(dev_order, row_major(num_slots))
-        .as_unsafe_any_origin()
-        .as_imm(),
+        row_indices=TileTensor(dev_order, row_major(num_slots)).as_imm(),
     )
     grouped_quantize_dynamic_scaled_fp4_from_sources[top_k=top_k](
         TileTensor(new_output, row_major(output_shape)),

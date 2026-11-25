@@ -245,6 +245,7 @@ def multistage_mma[
     b_next_smem_layout: TensorLayout = b_smem_layout,
     next_op_b_iter_masked: Bool = False,
     k_group_size: Int = 1,
+    next_op_b_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c: TileTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
     a_iter_arg: TileTensorIter[_, a_layout, ...],
@@ -271,10 +272,10 @@ def multistage_mma[
         TileTensorIter[
             b_type,
             b_next_gmem_layout,
-            ImmutAnyOrigin,
+            next_op_b_origin,
             masked=next_op_b_iter_masked,
         ]
-    ] = None,
+    ] = {},
 ):
     """Software-pipelined block MMA over `TileTensorIter` operands.
 

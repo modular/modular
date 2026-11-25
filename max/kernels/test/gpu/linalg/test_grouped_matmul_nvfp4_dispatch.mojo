@@ -156,10 +156,6 @@ def _test_dispatch[
         row_major(num_active_experts),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
-    var expert_scales_tensor = TileTensor(
-        expert_scales_device,
-        row_major(Idx[num_experts]),
-    )
 
     # --- Offsets & expert IDs ---
     var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[.uint32](
@@ -237,7 +233,6 @@ def _test_dispatch[
     rand(b_host.as_span(), min=0, max=255)
 
     var a_scales_tensor_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_tensor_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     # Initialize a_scales to 0, then set valid regions to power-of-2 values
     for i in range(a_scales_host.num_elements()):

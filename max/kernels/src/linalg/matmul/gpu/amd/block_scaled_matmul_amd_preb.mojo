@@ -51,7 +51,14 @@ from max.gpu.sync import s_waitcnt
 from std.sys.intrinsics import llvm_intrinsic
 
 from std.utils.coord import Coord
-from layout import Coord, TensorLayout, TensorEngine, TileTensor
+from layout import (
+    Coord,
+    ImmTileTensor,
+    MutTileTensor,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+)
 from layout.layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 from layout.swizzle import Swizzle
@@ -1071,24 +1078,18 @@ struct BlockScaledMatmulAMD_PreB[
         N: Int,
         K_BYTES: Int,
     ](
-        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
-        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
-        b_pre: TileTensor[
-            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
-        ],
-        sfa: TileTensor[
-            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
-        ],
-        sfb: TileTensor[
-            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
-        ],
+        c: MutTileTensor[out_dtype, c_layout, _, Engine=c_engine],
+        a: ImmTileTensor[.uint8, a_layout, _, Engine=a_engine],
+        b_pre: ImmTileTensor[.uint8, b_pre_layout, _, Engine=b_pre_engine],
+        sfa: ImmTileTensor[.float8_e8m0fnu, sfa_layout, _, Engine=sfa_engine],
+        sfb: ImmTileTensor[.float8_e8m0fnu, sfb_layout, _, Engine=sfb_engine],
         n_tile_idx: Int,
         m_tile_idx: Int,
         # `Pointer` is non-nullable, so unfused instantiations pass a dummy
         # address rather than a null; it is never dereferenced there.
-        sfc_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
-            unsafe_from_address=16
-        ),
+        sfc_ptr: MutPointer[UInt8, MutUntrackedOrigin] = MutPointer[
+            UInt8, MutUntrackedOrigin
+        ](unsafe_from_address=16),
         sfc_row_base: Int = 0,
         sfc_expert_slot: Int = 0,
         # Zero selects plain row-major over the 4D slot layout.
@@ -1129,17 +1130,11 @@ struct BlockScaledMatmulAMD_PreB[
         K_BYTES: Int,
         EpilogueFnType: ElementwiseEpilogueFn,
     ](
-        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
-        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
-        b_pre: TileTensor[
-            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
-        ],
-        sfa: TileTensor[
-            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
-        ],
-        sfb: TileTensor[
-            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
-        ],
+        c: MutTileTensor[out_dtype, c_layout, _, Engine=c_engine],
+        a: ImmTileTensor[.uint8, a_layout, _, Engine=a_engine],
+        b_pre: ImmTileTensor[.uint8, b_pre_layout, _, Engine=b_pre_engine],
+        sfa: ImmTileTensor[.float8_e8m0fnu, sfa_layout, _, Engine=sfa_engine],
+        sfb: ImmTileTensor[.float8_e8m0fnu, sfb_layout, _, Engine=sfb_engine],
         n_tile_idx: Int,
         m_tile_idx: Int,
         epilogue_fn: EpilogueFnType,
@@ -1205,17 +1200,11 @@ struct BlockScaledMatmulAMD_PreB[
         K_BYTES: Int,
         ComputeFnType: ElementwiseComputeFn,
     ](
-        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
-        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
-        b_pre: TileTensor[
-            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
-        ],
-        sfa: TileTensor[
-            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
-        ],
-        sfb: TileTensor[
-            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
-        ],
+        c: MutTileTensor[out_dtype, c_layout, _, Engine=c_engine],
+        a: ImmTileTensor[.uint8, a_layout, _, Engine=a_engine],
+        b_pre: ImmTileTensor[.uint8, b_pre_layout, _, Engine=b_pre_engine],
+        sfa: ImmTileTensor[.float8_e8m0fnu, sfa_layout, _, Engine=sfa_engine],
+        sfb: ImmTileTensor[.float8_e8m0fnu, sfb_layout, _, Engine=sfb_engine],
         n_tile_idx: Int,
         m_tile_idx: Int,
         compute_fn: ComputeFnType,
@@ -1288,24 +1277,18 @@ struct BlockScaledMatmulAMD_PreB[
         has_epilogue_fn: Bool,
         has_compute_fn: Bool,
     ](
-        c: TileTensor[out_dtype, c_layout, MutAnyOrigin, Engine=c_engine],
-        a: TileTensor[.uint8, a_layout, ImmutAnyOrigin, Engine=a_engine],
-        b_pre: TileTensor[
-            .uint8, b_pre_layout, ImmutAnyOrigin, Engine=b_pre_engine
-        ],
-        sfa: TileTensor[
-            .float8_e8m0fnu, sfa_layout, ImmutAnyOrigin, Engine=sfa_engine
-        ],
-        sfb: TileTensor[
-            .float8_e8m0fnu, sfb_layout, ImmutAnyOrigin, Engine=sfb_engine
-        ],
+        c: MutTileTensor[out_dtype, c_layout, _, Engine=c_engine],
+        a: ImmTileTensor[.uint8, a_layout, _, Engine=a_engine],
+        b_pre: ImmTileTensor[.uint8, b_pre_layout, _, Engine=b_pre_engine],
+        sfa: ImmTileTensor[.float8_e8m0fnu, sfa_layout, _, Engine=sfa_engine],
+        sfb: ImmTileTensor[.float8_e8m0fnu, sfb_layout, _, Engine=sfb_engine],
         n_tile_idx: Int,
         m_tile_idx: Int,
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
-        sfc_ptr: Pointer[UInt8, MutAnyOrigin] = Pointer[UInt8, MutAnyOrigin](
-            unsafe_from_address=16
-        ),
+        sfc_ptr: MutPointer[UInt8, MutUntrackedOrigin] = MutPointer[
+            UInt8, MutUntrackedOrigin
+        ](unsafe_from_address=16),
         sfc_row_base: Int = 0,
         sfc_expert_slot: Int = 0,
         sfc_max_padded_m: Int = 0,

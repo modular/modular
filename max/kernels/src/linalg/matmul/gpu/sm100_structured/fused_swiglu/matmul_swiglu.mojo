@@ -51,6 +51,7 @@ def _blackwell_matmul_swiglu[
     pdl_level: PDLLevel = PDLLevel(),
     BiasLayoutType: TensorLayout = RowMajorLayout[Int64],
     BiasEngine: TensorEngine = DefaultEngine[element_width=1],
+    bias_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c_out: TileTensor[...],
     a_device: TileTensor,
@@ -60,10 +61,10 @@ def _blackwell_matmul_swiglu[
         TileTensor[
             config.c_type,
             BiasLayoutType,
-            ImmutAnyOrigin,
+            bias_origin,
             Engine=BiasEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """Launch fused GEMM+SwiGLU kernel on SM100.
 
@@ -164,18 +165,20 @@ def _blackwell_matmul_swiglu[
 
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
-    var workspace = Span[UInt64, MutAnyOrigin]()
+    var workspace = Span[UInt64, MutUntrackedOrigin]()
 
     # c_out is always user-frame [user_M, user_H]; derive H from c_out so
     # this is correct under both AB_swapped values.
-    var c_gmem_ptr = c_out.ptr
+    var c_gmem_ptr = rebind[MutPointer[Scalar[c_type], MutUntrackedOrigin]](
+        c_out.ptr
+    )
     var c_gmem_stride = UInt32(Int(c_out.dim[1]()))
 
     var bias_1d_tile: OptionalReg[KernelType.Bias1DTile]
     comptime if config.use_bias:
         bias_1d_tile = KernelType.Bias1DTile(
             bias_tensor.value()._unsafe_storage_cast[
-                to_origin=ImmutAnyOrigin
+                to_origin=ImmUntrackedOrigin
             ](),
             KernelType.Bias1DTileLayout,
         )

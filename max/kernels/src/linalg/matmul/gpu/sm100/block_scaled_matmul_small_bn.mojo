@@ -1397,7 +1397,7 @@ def blackwell_block_scaled_tma_umma_warp_specialized_kernel[
     sfa_tma_op: TMATensorTile[sfa_tma_dtype, sfa_tile_shape, sfa_desc_shape],
     cluster_dim: StaticTuple[Int32, 3],
     mnk: StaticTuple[UInt32, 3],
-    workspace: Span[UInt64, MutAnyOrigin],
+    workspace: Span[UInt64, MutUntrackedOrigin],
     alpha: Float32,
     sfb_global_ptr: ImmPointer[Scalar[sfb_dtype], ImmutAnyOrigin],
     sfb_batch_stride: Int32,
@@ -2589,7 +2589,7 @@ def _create_tma_and_launch[
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
     # Profiling workspace
-    var workspace: Span[UInt64, MutAnyOrigin]
+    var workspace: Span[UInt64, MutUntrackedOrigin]
 
     comptime if enable_profiling:
         workspace = MatmulWarpSpecializationWorkSpaceManager[

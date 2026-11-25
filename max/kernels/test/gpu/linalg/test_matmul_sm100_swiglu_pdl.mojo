@@ -241,9 +241,7 @@ def _launch_swiglu[
     var c_t = TileTensor(_mut(c), row_major(m, Idx[N // 2]))
     var a_t = TileTensor(a, row_major(m, Idx[K])).as_imm()
     var w_t = TileTensor(w, row_major(Idx[N], Idx[K])).as_imm()
-    var bias_ptr = ImmPointer[BFloat16, ImmutAnyOrigin](
-        unsafe_from_address=Int(bias.unsafe_ptr())
-    )
+    var bias_ptr = bias.unsafe_ptr().as_imm()
     matmul_swiglu_dispatch_sm100[config, pdl_level](
         c_t, a_t, w_t, ctx, OptionalReg(bias_ptr)
     )

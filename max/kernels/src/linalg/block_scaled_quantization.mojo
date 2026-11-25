@@ -1703,6 +1703,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
     row_indices_dtype: DType = .uint32,
     row_index_divisor: Int = 1,
+    row_indices_origin: ImmOrigin = ImmUntrackedOrigin,
     num_threads: Int = 128,
     k_tiles_per_block: Int = 1,
 ](
@@ -1734,10 +1735,10 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         TileTensor[
             row_indices_dtype,
             row_indices_layout,
-            ImmutAnyOrigin,
+            row_indices_origin,
             Engine=RowIndicesEngine,
         ]
-    ] = None,
+    ] = {},
 ):
     """GPU kernel that quantizes per-expert BF16 activation tiles to NVFP4/MXFP4/MXFP8 with TMA-based scale-factor stores.
 
@@ -1783,6 +1784,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
         row_indices_dtype: Integer element type of the `row_indices` tensor.
         row_index_divisor: Divisor applied to each `row_indices` entry to get
             the source row.
+        row_indices_origin: Origin of the `row_indices` tensor.
         num_threads: Number of threads per block in the launch grid
             (defaults to 128).
         k_tiles_per_block: Column tiles handled by one block. Batching them
@@ -2052,6 +2054,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
     RowIndicesEngine: TensorEngine = DefaultEngine[element_width=1],
     row_indices_dtype: DType = .uint32,
     row_index_divisor: Int = 1,
+    row_indices_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     output_tensor: TileTensor[
         mut=True, output_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
@@ -2088,10 +2091,10 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             mut=False,
             row_indices_dtype,
             RowIndicesLayoutType,
-            ImmutAnyOrigin,
+            row_indices_origin,
             Engine=RowIndicesEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """Launches the grouped per-expert quantization kernel for NVFP4/MXFP4/MXFP8 on SM100 hardware.
 
@@ -2118,6 +2121,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
         row_indices_dtype: Integer element type of the `row_indices` tensor.
         row_index_divisor: Divisor applied to each `row_indices` entry to get
             the source row.
+        row_indices_origin: Origin of the `row_indices` tensor (inferred).
     Args:
         output_tensor: Output quantized tensor of packed FP4 `uint8`
             or `float8_e4m3fn` for MXFP8.
@@ -2238,6 +2242,7 @@ def grouped_quantize_dynamic_scaled_fp4_async[
             RowIndicesEngine,
             row_indices_dtype,
             row_index_divisor,
+            row_indices_origin,
             num_threads=BLOCK_THREADS,
             k_tiles_per_block=k_tiles_per_block,
         ]
@@ -2759,6 +2764,7 @@ def grouped_quantize_nvfp4_row_amax_kernel[
     row_indices_dtype: DType = .uint32,
     row_index_divisor: Int = 1,
     rows_per_block: Int = _ROW_AMAX_ROWS_PER_BLOCK,
+    row_indices_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     output_tensor: TileTensor[
         output_dtype, output_layout, MutAnyOrigin, Engine=OutputEngine
@@ -2785,10 +2791,10 @@ def grouped_quantize_nvfp4_row_amax_kernel[
         TileTensor[
             row_indices_dtype,
             row_indices_layout,
-            ImmutAnyOrigin,
+            row_indices_origin,
             Engine=RowIndicesEngine,
         ]
-    ] = None,
+    ] = {},
 ):
     """Quantizes BF16 rows to NVFP4, each with its own global scale.
 
@@ -2840,6 +2846,7 @@ def grouped_quantize_nvfp4_row_amax_kernel[
         row_index_divisor: Divisor applied to each `row_indices` entry to get
             the source row.
         rows_per_block: Rows (one per warp) each block quantizes.
+        row_indices_origin: Origin of the `row_indices` tensor.
 
     Args:
         output_tensor: Packed FP4 output, `[rows, K / 2]`.
@@ -3137,6 +3144,7 @@ def grouped_quantize_nvfp4_row_amax[
     row_indices_dtype: DType = .uint32,
     row_index_divisor: Int = 1,
     rows_per_block: Int = _ROW_AMAX_ROWS_PER_BLOCK,
+    row_indices_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     output_tensor: TileTensor[
         mut=True, output_dtype, address_space=.GENERIC, ..., Engine=OutputEngine
@@ -3170,10 +3178,10 @@ def grouped_quantize_nvfp4_row_amax[
             mut=False,
             row_indices_dtype,
             RowIndicesLayoutType,
-            ImmutAnyOrigin,
+            row_indices_origin,
             Engine=RowIndicesEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """Quantizes grouped BF16 rows to NVFP4, each row with its own scale.
 
@@ -3201,6 +3209,7 @@ def grouped_quantize_nvfp4_row_amax[
         row_index_divisor: Divisor applied to each `row_indices` entry to get
             the source row.
         rows_per_block: Rows (one per warp) each block quantizes.
+        row_indices_origin: Origin of the `row_indices` tensor (inferred).
 
     Args:
         output_tensor: Packed FP4 output, `[rows, K / 2]`.
@@ -3249,6 +3258,7 @@ def grouped_quantize_nvfp4_row_amax[
         row_indices_dtype,
         row_index_divisor,
         rows_per_block,
+        row_indices_origin,
     ]
     # Row blocks, one warp per output row, then one block per scale tile for
     # its padding rows. An empty batch (no rows, so no tiles) has nothing to

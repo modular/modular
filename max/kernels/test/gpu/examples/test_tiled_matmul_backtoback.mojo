@@ -161,11 +161,12 @@ def b2b_gemm[
     d_origin: MutOrigin,
     a_origin: ImmOrigin,
     b_origin: ImmOrigin,
+    c_origin: ImmOrigin,
 ](
     D: TileTensor[d_type, d_layout, d_origin, Engine=d_engine],
     A: TileTensor[in_type, a_layout, a_origin, Engine=a_engine],
     B: TileTensor[in_type, b_layout, b_origin, Engine=b_engine],
-    C: TileTensor[in_type, c_layout, ImmutAnyOrigin, Engine=c_engine],
+    C: TileTensor[in_type, c_layout, c_origin, Engine=c_engine],
 ):
     comptime assert (
         A.dtype in (DType.float32, DType.bfloat16)
@@ -532,6 +533,7 @@ def multistage_b2b_gemm[
             d_origin=D.origin,
             a_origin=ImmOrigin(A.origin),
             b_origin=ImmOrigin(B.origin),
+            c_origin=ImmOrigin(C.origin),
         ]
         var smem_use = config.shared_mem_usage(Int(A.dim[1]()))
         print("smem_use =", smem_use)
@@ -539,7 +541,7 @@ def multistage_b2b_gemm[
             D,
             A.as_imm(),
             B.as_imm(),
-            C.as_imm().as_unsafe_any_origin(),
+            C.as_imm(),
             grid_dim=config.grid_dim(Int(D.dim[0]())),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,

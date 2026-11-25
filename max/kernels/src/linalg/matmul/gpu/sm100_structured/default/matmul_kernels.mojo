@@ -1530,7 +1530,7 @@ struct BlackwellMatmulSM100Kernel[
     comptime Bias1DTile = TileTensor[
         Self.c_type,
         type_of(Self.Bias1DTileLayout),
-        ImmutAnyOrigin,
+        ImmUntrackedOrigin,
         Engine=Self.BiasEngine,
     ]
 
@@ -1729,7 +1729,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         rank_sigs: Optional[
             Array[
                 MutPointer[Signal, MutAnyOrigin],
@@ -1803,7 +1803,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         epilogue_fn: EpilogueFnType,
     ):
         """Kernel entry point for SM100 matmul that stores its output
@@ -1879,7 +1879,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         rank_sigs: Optional[
             Array[
                 MutPointer[Signal, MutAnyOrigin],
@@ -1949,7 +1949,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         rank_sigs: Optional[
             Array[
                 MutPointer[Signal, MutAnyOrigin],
@@ -2538,7 +2538,7 @@ struct BlackwellMatmulSM100Kernel[
         lock_ptr: MutPointer[UInt8, AnyOrigin[mut=True]],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
     ):
         """Split-K kernel entry point for better parallelism on small problems.
 

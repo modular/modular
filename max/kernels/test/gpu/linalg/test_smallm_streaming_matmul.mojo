@@ -70,21 +70,8 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
         transpose_b=True,
     )
 
-    # The production entry points take graph-marshaled AnyOrigin pointers;
-    # rebind the test's concretely-originated buffers to match.
-    var b_shuf_dst = MutPointer[Scalar[dtype], MutAnyOrigin](
-        unsafe_from_address=Int(device_b_shuf.unsafe_ptr())
-    )
-    var b_src = ImmPointer[Scalar[dtype], ImmutAnyOrigin](
-        unsafe_from_address=Int(device_b.unsafe_ptr())
-    )
-    smallm_preshuffle_b[dtype, k_static=K](b_shuf_dst, b_src, N, ctx)
-
-    var b_shuf_src = ImmPointer[Scalar[dtype], ImmutAnyOrigin](
-        unsafe_from_address=Int(device_b_shuf.unsafe_ptr())
-    )
-    var scratch_ptr = MutPointer[Scalar[dtype], MutAnyOrigin](
-        unsafe_from_address=Int(device_scratch.unsafe_ptr())
+    smallm_preshuffle_b[dtype, k_static=K](
+        device_b_shuf.unsafe_ptr(), device_b.unsafe_ptr().as_imm(), N, ctx
     )
 
     ctx.enqueue_memset(device_c, 0)
@@ -93,8 +80,8 @@ def test_smallm_streaming[N: Int, K: Int](m: Int, ctx: DeviceContext) raises:
     smallm_streaming_matmul[k_static=K, max_grid_blocks=8](
         c_tt,
         a_tt.as_imm(),
-        b_shuf_src,
-        scratch_ptr,
+        device_b_shuf.unsafe_ptr().as_imm(),
+        device_scratch.unsafe_ptr(),
         m,
         N,
         ctx,
