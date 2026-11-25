@@ -1067,6 +1067,8 @@ def mgp_buffer_device_to_device[
     src_dev_ctx: DeviceContext,
     dst_dev_ctx: DeviceContext,
 ) raises:
+    if dst_buf.size() == 0:
+        return
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         # The graph emits explicit mgp.device_wait ops around this copy to
         # synchronize the source and destination streams, so the driver must

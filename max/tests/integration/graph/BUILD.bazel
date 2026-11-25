@@ -48,6 +48,7 @@ _SEPARATE_TARGET_TESTS = [
     "test_device_graph_side_stream_reclaim.py",
     "test_device_graph_synthesis.py",
     "test_engine_device_graph.py",
+    "test_engine_device_graph_2gpu.py",
     "test_execution_spans.py",
     "test_graph_error_messages.py",
     "test_graph_pinned.py",
@@ -1001,6 +1002,39 @@ modular_py_test(
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_engine_device_graph_2gpu",
+    size = "small",
+    srcs = [
+        "conftest.py",
+        "test_engine_device_graph_2gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-1": "0",
+        "test.resources:gpu-2": "0.01",
+        "test.resources:gpu-memory": "2",
+    },
+    # HIP rejects the zero-byte copy under capture; CUDA cannot capture a
+    # cross-device move on one stream at all (separate capture sequences).
+    gpu_constraints = [
+        "//:amd_gpu",
+        "//:has_multi_gpu",
+    ],
+    precompile_device_count = 2,
+    precompile_mefs = True,
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
     ],
 )
 
