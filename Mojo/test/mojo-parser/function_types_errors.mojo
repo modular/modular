@@ -51,6 +51,25 @@ def test_nested_origins_read_only_conversion():
     requires_nested_origins_read_only(may_mutate_nested_origins)
 
 
+# expected-note @below {{trait 'NestedOriginsReadOnlyRequirement' declared here}}
+trait NestedOriginsReadOnlyRequirement:
+    @__unsafe_nested_origins_read_only
+    # expected-note @below {{no 'read' candidates have type 'def(self: MissingNestedOriginsReadOnly[origin]) thin -> Int __accesses("__unsafe_nested_origins_read_only")'}}
+    def read(self) -> Int:
+        ...
+
+
+# expected-error @below {{'MissingNestedOriginsReadOnly[origin]' does not implement all requirements for 'NestedOriginsReadOnlyRequirement'}}
+struct MissingNestedOriginsReadOnly[origin: Origin](
+    NestedOriginsReadOnlyRequirement
+):
+    var ptr: Pointer[Int, Self.origin]
+
+    # expected-note @below {{candidate declared here with type}}
+    def read(self) -> Int:
+        return 0
+
+
 # expected-error @below {{unsupported experimental access set "unknown"}}
 def unsupported_access_set(x: Int) __accesses("unknown"):
     pass

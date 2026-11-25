@@ -1694,6 +1694,8 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   else
     ASTType(resultType).print(os, ctx);
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
+  if (fnType.getIsNestedOriginsReadOnly())
+    os << " __accesses(\"__unsafe_nested_origins_read_only\")";
 }
 
 static bool tryPrintParamClosureSourceName(ASTTypePrinterContext ctx,
