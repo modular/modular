@@ -1295,10 +1295,12 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   } else {
     captureOrigins = OriginSetAttr::get({}, originSet);
   }
-  bool isNestedOriginsReadOnly =
-      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
   bool definesInteriorOrigins =
       succeeded(p.parseOptionalKeyword("defines_interior_origins"));
+  bool isUnsafeNestedOriginsReadOnly =
+      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
+  bool isEnforcedNestedOriginsReadOnly =
+      succeeded(p.parseOptionalKeyword("nested_origins_read_only"));
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultValues;
@@ -1351,9 +1353,9 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto pogList = PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                                   defaultValues, origVariadicConvention,
                                   /*bodyConstraints=*/{});
-  auto metadata = FnMetaOriginDataAttr::get(ctx, numOriginDecls, captureOrigins,
-                                            isNestedOriginsReadOnly,
-                                            definesInteriorOrigins);
+  auto metadata = FnMetaOriginDataAttr::get(
+      ctx, numOriginDecls, captureOrigins, definesInteriorOrigins,
+      isUnsafeNestedOriginsReadOnly, isEnforcedNestedOriginsReadOnly);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata, pogList);
@@ -1438,6 +1440,12 @@ bool FuncType::getIsNestedOriginsReadOnly() {
       .getIsNestedOriginsReadOnly();
 }
 
+/// Return whether the checked nested-origin read-only promise is present.
+bool FuncType::getIsEnforcedNestedOriginsReadOnly() {
+  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+      .getIsEnforcedNestedOriginsReadOnly();
+}
+
 bool FuncType::getDefinesInteriorOrigins() {
   return ::cast<FnMetaOriginDataAttr>(getMetadata())
       .getDefinesInteriorOrigins();
@@ -1504,10 +1512,12 @@ FunctionType FuncType::substituteImplicitOriginsIntoValues(
 }
 
 FuncType FuncType::getWithCaptureOrigins(TypedAttr origins) {
+  auto metadata = ::cast<FnMetaOriginDataAttr>(getMetadata());
   return getWithMetadata(
       FnMetaOriginDataAttr::get(getContext(), getNumImplicitOriginDecls(),
-                                origins, getIsNestedOriginsReadOnly(),
-                                getDefinesInteriorOrigins()),
+                                origins, getDefinesInteriorOrigins(),
+                                metadata.getIsUnsafeNestedOriginsReadOnly(),
+                                getIsEnforcedNestedOriginsReadOnly()),
       getArgListAttrs());
 }
 

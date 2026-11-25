@@ -1694,7 +1694,10 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   else
     ASTType(resultType).print(os, ctx);
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
-  if (fnType.getIsNestedOriginsReadOnly())
+  if (fnType.getIsEnforcedNestedOriginsReadOnly())
+    os << " __accesses(\"__nested_origins_read_only\")";
+  else if (cast<FnMetaOriginDataAttr>(fnType.getMetadata())
+               .getIsUnsafeNestedOriginsReadOnly())
     os << " __accesses(\"__unsafe_nested_origins_read_only\")";
 }
 

@@ -81,9 +81,9 @@ def LIT_FnMetaOriginDataAttr : LITAttr<"FnMetaOriginData",
   let description = [{
     The `#lit.fn_meta_origin_data` attribute carries LIT-specific origin and
     lifetime information for a function: the number of implicit origin
-    declarations, the captured origin set, and whether nested-origin
-    exclusivity checking is disabled. The parameter (POG) list lives on
-    [[kgen.func]]'s `argListAttrs` field, not here.
+    declarations, the captured origin set, and the function's nested-origin
+    access promises. The parameter (POG) list lives on [[kgen.func]]'s
+    `argListAttrs` field, not here.
 
     Example:
 
@@ -97,15 +97,18 @@ def LIT_FnMetaOriginDataAttr : LITAttr<"FnMetaOriginData",
   let parameters = (ins
     "size_t":$numImplicitOriginDecls,
     "TypedAttr":$captureOrigins,
+    OptionalParameter<"bool">:$definesInteriorOrigins,
     // TODO: Generalize this to a set of origin parameters that are guaranteed
     // to not be dereferenced.
-    OptionalParameter<"bool">:$isNestedOriginsReadOnly,
-    OptionalParameter<"bool">:$definesInteriorOrigins
+    OptionalParameter<"bool">:$isUnsafeNestedOriginsReadOnly,
+    OptionalParameter<"bool">:$isEnforcedNestedOriginsReadOnly
   );
   let assemblyFormat = [{
     `<` $numImplicitOriginDecls
     `` custom<CaptureOrigins>($captureOrigins)
-    (`,` $isNestedOriginsReadOnly^ (`,` $definesInteriorOrigins^)?)? `>`
+    (`,` $definesInteriorOrigins^
+      (`,` $isUnsafeNestedOriginsReadOnly^
+        (`,` $isEnforcedNestedOriginsReadOnly^)? )? )? `>`
   }];
 
   let skipDefaultBuilders = 1;
@@ -113,11 +116,19 @@ def LIT_FnMetaOriginDataAttr : LITAttr<"FnMetaOriginData",
     AttrBuilder<(ins)>,
     AttrBuilder<(ins "size_t":$numImplicitOriginDecls,
                      "TypedAttr":$captureOrigins,
-                     "bool":$isNestedOriginsReadOnly,
-                     "bool":$definesInteriorOrigins)>,
+                     "bool":$definesInteriorOrigins,
+                     "bool":$isUnsafeNestedOriginsReadOnly,
+                     CArg<"bool", "false">:$isEnforcedNestedOriginsReadOnly)>,
   ];
 
   let extraClassDeclaration = [{
+    /// Return whether either the checked or legacy promise makes nested-origin
+    /// accesses read-only for call-site semantics.
+    bool getIsNestedOriginsReadOnly() const {
+      return getIsUnsafeNestedOriginsReadOnly() ||
+             getIsEnforcedNestedOriginsReadOnly();
+    }
+
     /// Reconstruct the metadata with the union of the current capture origins
     /// with the new capture origins.
     FnMetaOriginDataAttr addCaptureOrigins(TypedAttr origins);

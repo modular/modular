@@ -314,8 +314,9 @@ public:
   /// absence of any abi annotation.
   bool hasExplicitABI = false;
   ExprNode *thrownTypeExpr = nullptr;
-  /// Whether the __unsafe_nested_origins_read_only access promise was
-  /// specified.
+  /// Whether the legacy unchecked nested-origin access promise was specified.
+  bool isUnsafeNestedOriginsReadOnly = false;
+  /// Whether the checked nested-origin access promise was specified.
   bool isNestedOriginsReadOnly = false;
 
   /// Parse an argument list, including the parentheses around them. This also
@@ -403,8 +404,9 @@ public:
   /// This is an optional origin set parameter, representing the origins of
   /// the function captures.
   TypedAttr captureOrigins;
-  /// Whether `@__unsafe_nested_origins_read_only` was specified:
-  /// nested origins are not considered in exclusivity checking.
+  /// Whether `@__unsafe_nested_origins_read_only` was specified.
+  bool isUnsafeNestedOriginsReadOnly = false;
+  /// Whether `@__nested_origins_read_only` was specified.
   /// TODO: Generalize this to mutation sets.
   bool isNestedOriginsReadOnly = false;
   /// Whether the function has an explicitly declared return type containing an

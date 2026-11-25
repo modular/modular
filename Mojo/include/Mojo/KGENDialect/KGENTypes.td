@@ -460,6 +460,9 @@ def KGEN_FuncType : KGENType<"Func", "func", [
     /// Get whether nested lifetimes are excluded from exclusivity checking.
     bool getIsNestedOriginsReadOnly();
 
+    /// Get whether the checked nested-origin read-only promise is present.
+    bool getIsEnforcedNestedOriginsReadOnly();
+
     /// Get whether the function establishes new interior origins.
     bool getDefinesInteriorOrigins();
 

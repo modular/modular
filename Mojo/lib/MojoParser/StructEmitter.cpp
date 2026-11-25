@@ -83,7 +83,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
                Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
                ImplicitLocOpBuilder &builder, FnEffects fnEffects,
                StringRef suffix, bool synthetic, InlineLevel inlineLevel,
-               bool isNestedOriginsReadOnly = false) {
+               bool isUnsafeNestedOriginsReadOnly = false) {
   MLIRContext *ctx = parent.getContext();
   SharedState &shared = parent.getShared();
 
@@ -142,7 +142,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
       argListAttrs.getContext(), numImplicitOriginDecls,
       getOriginsAccessibleByParams(paramListAttrs, params, shared,
                                    /*captureOrigins=*/nullptr),
-      isNestedOriginsReadOnly, /*definesInteriorOrigins=*/false);
+      /*definesInteriorOrigins=*/false, isUnsafeNestedOriginsReadOnly);
   FunctionType functionType =
       builder.getFunctionType(adjustedArgTypes, {adjustedResultType});
   Location location = shared.translateLocation(loc);
@@ -207,11 +207,12 @@ std::pair<FnOp, DefASTDecl *> FunctionEmitter::synthesizeFunction(
     ArrayRef<ArgConvention> argConventions, PogListAttr argListAttrs,
     Type resultType, SpecialFunctionKind specialFnID, SMLoc loc,
     ImplicitLocOpBuilder &builder, FnEffects fnEffects, StringRef suffix,
-    bool synthetic, InlineLevel inlineLevel, bool isNestedOriginsReadOnly) {
-  FnOp funcOp = createFunction(parent, name, params, paramListAttrs, argTypes,
-                               argConventions, argListAttrs, resultType,
-                               specialFnID, loc, builder, fnEffects, suffix,
-                               synthetic, inlineLevel, isNestedOriginsReadOnly);
+    bool synthetic, InlineLevel inlineLevel,
+    bool isUnsafeNestedOriginsReadOnly) {
+  FnOp funcOp = createFunction(
+      parent, name, params, paramListAttrs, argTypes, argConventions,
+      argListAttrs, resultType, specialFnID, loc, builder, fnEffects, suffix,
+      synthetic, inlineLevel, isUnsafeNestedOriginsReadOnly);
 
   // Return null if the function already exists with the same signature.
   if (!funcOp)

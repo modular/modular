@@ -2820,8 +2820,9 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   auto originData = FnMetaOriginDataAttr::get(
       ctx, sig.getFnMetaOriginData().getNumImplicitOriginDecls() + 1,
       sig.getFnMetaOriginData().getCaptureOrigins(),
-      sig.getFnMetaOriginData().getIsNestedOriginsReadOnly(),
-      sig.getFnMetaOriginData().getDefinesInteriorOrigins());
+      sig.getFnMetaOriginData().getDefinesInteriorOrigins(),
+      sig.getFnMetaOriginData().getIsUnsafeNestedOriginsReadOnly(),
+      sig.getFnMetaOriginData().getIsEnforcedNestedOriginsReadOnly());
   SmallVector<ArgConvention> argConventions;
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
   argConventions.push_back(ArgConvention::ImmMem);
@@ -2878,10 +2879,12 @@ IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
       FunctionType::get(ctx, shifter.replace(body.getArguments().drop_front()),
                         shifter.replace(body.getResults())),
       sigWithSelf.getArgConventions().drop_front(), sigWithSelf.getFnEffects(),
-      FnMetaOriginDataAttr::get(ctx, originData.getNumImplicitOriginDecls() - 1,
-                                originData.getCaptureOrigins(),
-                                originData.getIsNestedOriginsReadOnly(),
-                                originData.getDefinesInteriorOrigins()),
+      FnMetaOriginDataAttr::get(
+          ctx, originData.getNumImplicitOriginDecls() - 1,
+          originData.getCaptureOrigins(),
+          originData.getDefinesInteriorOrigins(),
+          originData.getIsUnsafeNestedOriginsReadOnly(),
+          originData.getIsEnforcedNestedOriginsReadOnly()),
       dropFrontPog(sigWithSelf.getParamListAttrs()),
       dropFrontPog(sigWithSelf.getArgListAttrs()));
 }

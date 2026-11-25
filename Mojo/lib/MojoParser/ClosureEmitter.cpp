@@ -468,11 +468,12 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 
   // Closure storage is carried by the inserted self argument, not by FnEffects.
   auto newArgListAttr = argListAttr.cloneWith(argPogs);
-  auto metadata =
-      FnMetaOriginDataAttr::get(ctx, oldFnMetadata.getNumImplicitOriginDecls(),
-                                oldFnMetadata.getCaptureOrigins(),
-                                oldFnMetadata.getIsNestedOriginsReadOnly(),
-                                oldFnMetadata.getDefinesInteriorOrigins());
+  auto metadata = FnMetaOriginDataAttr::get(
+      ctx, oldFnMetadata.getNumImplicitOriginDecls(),
+      oldFnMetadata.getCaptureOrigins(),
+      oldFnMetadata.getDefinesInteriorOrigins(),
+      oldFnMetadata.getIsUnsafeNestedOriginsReadOnly(),
+      oldFnMetadata.getIsEnforcedNestedOriginsReadOnly());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
@@ -929,8 +930,9 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
   FnMetaOriginDataAttr oldMeta = sig.getFnMetaOriginData();
   FnMetaOriginDataAttr newMeta = FnMetaOriginDataAttr::get(
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
-      oldMeta.getCaptureOrigins(), oldMeta.getIsNestedOriginsReadOnly(),
-      oldMeta.getDefinesInteriorOrigins());
+      oldMeta.getCaptureOrigins(), oldMeta.getDefinesInteriorOrigins(),
+      oldMeta.getIsUnsafeNestedOriginsReadOnly(),
+      oldMeta.getIsEnforcedNestedOriginsReadOnly());
   return FnTypeGeneratorType::get(sig.getInputParamTypes(), sig.getValues(),
                                   sig.getArgConventions(), sig.getFnEffects(),
                                   newMeta, sig.getParamListAttrs(),
@@ -1863,7 +1865,7 @@ ClosureEmitter::Closure ClosureEmitter::liftClosure(
       argConventions, PogListAttr::get(ctx, argNames, argPassingKinds),
       NoneType::get(ctx), SpecialFunctionKind::kInit, smLoc, builder,
       /*fnEffects=*/{}, /*suffix=*/"", /*synthetic=*/true,
-      InlineLevel::Automatic, /*isNestedOriginsReadOnly=*/true);
+      InlineLevel::Automatic, /*isUnsafeNestedOriginsReadOnly=*/true);
 
   // Generate the constructor body.
   if (initFnOp) {

@@ -1463,6 +1463,7 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
       internElements<ParsedArgument>(fnSignature.parsedArgs),
       internElements<ParsedArgument>(fnSignature.resultArg)[0],
       fnSignature.effects, fnSignature.isThin, fnSignature.thrownTypeExpr,
+      fnSignature.isUnsafeNestedOriginsReadOnly,
       fnSignature.isNestedOriginsReadOnly, originExpr,
       internElements<ParsedConstraint>(paramList.bodyConstraints), endLoc);
   return success();

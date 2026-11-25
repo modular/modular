@@ -459,12 +459,18 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
     printParamValue(p, metadata.getCaptureOrigins());
     p << ':';
   }
-  if (signature.getIsNestedOriginsReadOnly())
-    p << "no_nested_origin_exclusivity";
-  if (signature.getDefinesInteriorOrigins()) {
-    if (signature.getIsNestedOriginsReadOnly())
-      p << ' ';
+  if (signature.getDefinesInteriorOrigins())
     p << "defines_interior_origins";
+  if (metadata.getIsUnsafeNestedOriginsReadOnly()) {
+    if (signature.getDefinesInteriorOrigins())
+      p << ' ';
+    p << "no_nested_origin_exclusivity";
+  }
+  if (metadata.getIsEnforcedNestedOriginsReadOnly()) {
+    if (signature.getDefinesInteriorOrigins() ||
+        metadata.getIsUnsafeNestedOriginsReadOnly())
+      p << ' ';
+    p << "nested_origins_read_only";
   }
 
   PogListAttr argListAttr = signature.getArgListAttrs();

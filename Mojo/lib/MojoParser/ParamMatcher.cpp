@@ -484,7 +484,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     return error(
         FnMismatch{FnMismatch::EffectsDiffer{actualEffects, expectedEffects}});
 
-  // Verify __unsafe_nested_origins_read_only consistency.
+  // Verify the effective nested-origin read-only promise.
   if (expectedFnTp.getIsNestedOriginsReadOnly() &&
       !actualFnTp.getIsNestedOriginsReadOnly())
     return error(FnMismatch{FnMismatch::NestedOriginsReadOnlyRequired{}});

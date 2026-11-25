@@ -1434,7 +1434,7 @@ struct ExclusivityChecker : public SharedStateUser {
         syntax(syntax), argumentValues(argumentValues),
         builder(emitter.builder), declScope(emitter.declScope) {
 
-    // Handle __unsafe_nested_origins_read_only.
+    // Handle either nested-origin read-only promise.
     originsAccessesAreReadOnly = getCalleeType().getIsNestedOriginsReadOnly();
 
     // Check capture origins first so we know if argument values may overlap.
@@ -1464,8 +1464,8 @@ private:
   std::optional<OpBuilder> builder;
   ASTDecl &declScope;
 
-  /// True if the __unsafe_nested_origins_read_only decorator is
-  /// on the callee. Nested type-embedded origins are treated as read-only.
+  /// True if the callee has either nested-origin read-only promise. Nested
+  /// type-embedded origins are treated as read-only.
   bool originsAccessesAreReadOnly = false;
   /// True if the call accesses AnyOriginAttr.
   bool hasAnyOriginAccess = false;
@@ -1733,9 +1733,9 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
           convention != ArgConvention::Mut)
         forceToImmutOrigin = true;
 
-      // Callees marked `@__unsafe_nested_origins_read_only` promise
-      // not to mutate origins of 'ref' arguments or nested arguments, but still
-      // affect 'mut' and result slots.
+      // Callees with a nested-origin read-only promise do not mutate origins
+      // of 'ref' arguments or nested arguments, but still affect 'mut' and
+      // result slots.
       if (originsAccessesAreReadOnly) {
         if (!isArgOrigin(origin) || convention == ArgConvention::Ref)
           forceToImmutOrigin = true;

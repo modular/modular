@@ -5080,6 +5080,7 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.resultArg = resultArg;
   argList.effects = effects;
   argList.isThin = isThin;
+  argList.isUnsafeNestedOriginsReadOnly = isUnsafeNestedOriginsReadOnly;
   argList.isNestedOriginsReadOnly = isNestedOriginsReadOnly;
   argList.isParsingClosure = !isThin;
   argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);

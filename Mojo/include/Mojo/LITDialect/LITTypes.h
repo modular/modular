@@ -126,6 +126,11 @@ public:
     return getBodyFnType().getIsNestedOriginsReadOnly();
   }
 
+  /// Get whether the checked nested-origin read-only promise is present.
+  bool getIsEnforcedNestedOriginsReadOnly() {
+    return getBodyFnType().getIsEnforcedNestedOriginsReadOnly();
+  }
+
   /// Get whether the function establishes new interior origins.
   bool getDefinesInteriorOrigins() {
     return getBodyFnType().getDefinesInteriorOrigins();

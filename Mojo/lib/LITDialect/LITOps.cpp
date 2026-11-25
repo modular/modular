@@ -693,10 +693,12 @@ static ParseResult parseLITFunctionSignature(
   } else {
     captureOrigins = OriginSetAttr::get({}, originSet);
   }
-  bool isNestedOriginsReadOnly =
-      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
   bool definesInteriorOrigins =
       succeeded(p.parseOptionalKeyword("defines_interior_origins"));
+  bool isUnsafeNestedOriginsReadOnly =
+      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
+  bool isEnforcedNestedOriginsReadOnly =
+      succeeded(p.parseOptionalKeyword("nested_origins_read_only"));
 
   SmallVector<ParamDeclAttr> originDecls;
   auto parseOriginDecl = [&]() -> ParseResult {
@@ -782,7 +784,8 @@ static ParseResult parseLITFunctionSignature(
                        /*bodyConstraints=*/{});
   auto metadata = FnMetaOriginDataAttr::get(
       p.getContext(), originDecls.size(), captureOrigins,
-      isNestedOriginsReadOnly, definesInteriorOrigins);
+      definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
+      isEnforcedNestedOriginsReadOnly);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); }, pogList);
@@ -814,12 +817,19 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     printParamValue(p, signature.getCaptureOrigins());
     p << ':';
   }
-  if (signature.getIsNestedOriginsReadOnly())
-    p << "no_nested_origin_exclusivity";
-  if (signature.getDefinesInteriorOrigins()) {
-    if (signature.getIsNestedOriginsReadOnly())
-      p << ' ';
+  auto originData = signature.getFnMetaOriginData();
+  if (signature.getDefinesInteriorOrigins())
     p << "defines_interior_origins";
+  if (originData.getIsUnsafeNestedOriginsReadOnly()) {
+    if (signature.getDefinesInteriorOrigins())
+      p << ' ';
+    p << "no_nested_origin_exclusivity";
+  }
+  if (originData.getIsEnforcedNestedOriginsReadOnly()) {
+    if (signature.getDefinesInteriorOrigins() ||
+        originData.getIsUnsafeNestedOriginsReadOnly())
+      p << ' ';
+    p << "nested_origins_read_only";
   }
 
   ParameterEvaluator evaluator;

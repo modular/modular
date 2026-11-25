@@ -972,6 +972,10 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
         << "' closures are no longer supported; remove the decorator and "
            "declare the captures in a capture list like '{var}' or '{mut x}'";
   } else if (spelling == "__unsafe_nested_origins_read_only") {
+    applyArgumentless(spelling, callNode, [&]() {
+      tcSignature.isUnsafeNestedOriginsReadOnly = true;
+    });
+  } else if (spelling == "__nested_origins_read_only") {
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.isNestedOriginsReadOnly = true; });
   } else if (spelling == "__allow_legacy_custom_self_type") {
@@ -1879,8 +1883,9 @@ AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
       {},
       FuncType::get(
           functionType,
-          FnMetaOriginDataAttr::get(ctx, 0, OriginSetAttr::get(ctx, {}), false,
-                                    /*definesInteriorOrigins=*/false),
+          FnMetaOriginDataAttr::get(ctx, 0, OriginSetAttr::get(ctx, {}),
+                                    /*definesInteriorOrigins=*/false,
+                                    /*isUnsafeNestedOriginsReadOnly=*/false),
           PogListAttr::get(ctx, argPogs)),
       PogListAttr::get(ctx));
   StringAttr emptyStr = StringAttr::get(ctx, "");

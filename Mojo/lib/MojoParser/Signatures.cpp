@@ -1897,15 +1897,19 @@ ParseResult ParsedArgumentList::parseAccessesIfPresent(ParserBase &p) {
         p.parseToken(Token::r_paren, "expected ')' after access-set string"))
       return failure();
 
-    if (Lexer::getStringLiteralValue(spelling) !=
-        "__unsafe_nested_origins_read_only") {
+    std::string access = Lexer::getStringLiteralValue(spelling);
+    if (access != "__unsafe_nested_origins_read_only" &&
+        access != "__nested_origins_read_only") {
       p.emitError(loc, "unsupported experimental access set ") << spelling;
       continue;
     }
 
-    if (isNestedOriginsReadOnly)
+    if (isUnsafeNestedOriginsReadOnly || isNestedOriginsReadOnly)
       p.emitError(loc, "'__accesses' clause was already specified");
-    isNestedOriginsReadOnly = true;
+    if (access == "__unsafe_nested_origins_read_only")
+      isUnsafeNestedOriginsReadOnly = true;
+    else
+      isNestedOriginsReadOnly = true;
   }
   return success();
 }
@@ -2768,6 +2772,7 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                StringAttr baseName,
                                                bool partial)
     : partial(partial), paramList(paramList), argList(argList),
+      isUnsafeNestedOriginsReadOnly(argList.isUnsafeNestedOriginsReadOnly),
       isNestedOriginsReadOnly(argList.isNestedOriginsReadOnly) {
 
   if (baseName) { // Function pointer types don't have a name.
@@ -3297,7 +3302,8 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
       ctx, implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),
-      isNestedOriginsReadOnly, definesInteriorOrigins);
+      definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
+      isNestedOriginsReadOnly);
 
   /// We shouldn't have internal verifier errors here, but if we do, try to
   /// emit them at some location of merit because something snuck through

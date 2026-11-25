@@ -58,7 +58,7 @@ public:
       ImplicitLocOpBuilder &builder, FnEffects fnEffects = FnEffects(),
       StringRef suffix = "", bool synthetic = true,
       InlineLevel inlineLevel = InlineLevel::Automatic,
-      bool isNestedOriginsReadOnly = false);
+      bool isUnsafeNestedOriginsReadOnly = false);
 };
 
 class StructEmitter : public FunctionEmitter {
