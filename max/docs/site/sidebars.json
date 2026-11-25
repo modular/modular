@@ -1204,6 +1204,7 @@
         "gpu/hardware-compatibility",
         "gpu/architecture",
         "gpu/fundamentals",
+        "gpu/memory",
         "gpu/block-and-warp",
         "gpu/debugging",
         {
