@@ -123,24 +123,27 @@ appear to invalidate references into their storage. The origin model still
 determines which interior origins depend on which storage; the access contract
 determines which of those origins a call might invalidate.
 
-### Making conditional mutation through parametric `ref` explicit
+### Treating parametric `ref` as read-only
 
 A `ref` argument with parametric mutability can bind to either a mutable or an
-immutable origin. Mojo already rejects an unconditional mutation through `ref`
-arguments with parametric mutability because the origin could be immutable.
-However, functions could technically use `comptime if` on the reference
-mutability and mutate the reference only when actually mutable. This is
-something that should be expressible, but isn’t the right default to assume.
+immutable origin. Historically, Mojo modeled a call as potentially mutating the
+referent whenever the supplied origin was mutable. This was conservative but
+unnecessarily restrictive: the function body could not mutate through a
+parametric `ref`, even when a `comptime if` proved that a particular
+specialization received a mutable origin.
 
-Because this is technically possible, today, the caller gets no benefit from
-that restriction. If the supplied origin is mutable, the call is conservatively
-treated as a possible mutation even when the implementation only propagates the
-reference, which is common for parametric accessors that return a reference.
+Mojo now reflects that existing body restriction in the call contract by
+defining a parametric `ref` argument as read-only. The caller can therefore
+preserve live references derived from the borrowed value itself. This guarantee
+does not apply recursively: mutable origins embedded in the value remain
+mutable, and the callee may mutate the storage they describe. A `ref` whose
+origin is statically known to be mutable remains a mutable reference and uses
+the corresponding mutable argument convention.
 
-We propose `imm` as the default access for a `ref` whose mutability is
-parametric. This lets a function propagate the reference without writing through
-it. The rare function that specializes on the origin's mutability and mutates in
-the mutable branch can opt in with `accesses(mut value)`:
+This change establishes `imm` as the default access for a parametric `ref`
+before the general `accesses` syntax is available. Once access clauses are
+implemented, the rare function that conditionally mutates can request that
+capability explicitly with `accesses(mut value)`:
 
 ```mojo
 def maybe_update(ref value: T)
@@ -152,7 +155,7 @@ def maybe_update(ref value: T)
 At the call site, the mutable instantiation permits reads and writes, and the
 immutable instantiation permits reads. The body must still establish that the
 origin is mutable before writing through it. The spelling of the compile-time
-mutability test is illustrative.
+mutability test is illustrative; this opt-in behavior is future work.
 
 ### Expressing an argument that is not accessed
 
@@ -249,15 +252,14 @@ def update_from_y(mut p: Point)
     p.x += p.y
 ```
 
-A `ref` with parametric mutability defaults to `imm` for its referent but can be
-explicitly relaxed to `none` or upgraded to `mut` if the callee needs to. The
-relevant defaults are:
+A `ref` with parametric mutability now defaults to `imm` for its referent. The
+proposed access clauses will allow that default to be explicitly relaxed to
+`none` or upgraded to `mut` if the callee needs to. The relevant defaults are:
 
 - A read-only borrow permits immutable access.
 - A `mut` argument permits mutable (and immutable) access.
 - A `ref` with fixed mutability permits the access implied by that mutability.
-- A `ref` with parametric mutability permits immutable access by default under
-  this proposal.
+- A `ref` with parametric mutability permits immutable access.
 
 Other conventions retain their established access rules. The implementation
 must derive defaults and explicit refinements through one shared mechanism so
@@ -460,12 +462,22 @@ declaration restricting it.
 
 ## Compatibility and staging
 
-Ordinary function refinements are opt-in. The proposed `imm` default for `ref`
-arguments with parametric mutability is technically source breaking, but will be
-very low impact in practice. Existing functions that conditionally mutate
-through it will need to adopt `accesses(mut x)`. We should inventory affected
-standard-library and user patterns and decide whether to stage the new default
-separately from the initial access-clause implementation.
+Ordinary function refinements are opt-in. Mojo has already adopted the `imm`
+default for `ref` arguments with parametric mutability as an incremental step
+toward this design. This does not remove a capability from function bodies:
+mutation through a parametric `ref` was already rejected, including when a
+compile-time condition proved that the instantiated origin was mutable. The
+change makes call-site analysis match that existing restriction, avoiding
+unnecessary invalidation.
+
+The change is memory safe because the callee and caller enforce the same
+contract. Body checking rejects mutation through a parametric `ref`, including
+mutation guarded by a compile-time mutability test. At a call, the immutable
+access does not invalidate references derived from the borrowed value itself.
+Mutable origins embedded in the value retain their declared access, so calls
+can still invalidate references into the storage they describe. A reference
+with statically known mutable origin uses the mutable argument convention
+instead, so direct mutation also continues to invalidate dependent references.
 
 We can validate this is working well by replacing all uses of
 `@__unsafe_nested_origins_read_only`. This swaps out our temporary stop-gap with

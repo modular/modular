@@ -790,7 +790,6 @@ struct LinkedList[ElementType: Movable](
             nn[].value.__hash__(hasher)
             curr = nn[].next()
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def get_nth[
         I: Indexer

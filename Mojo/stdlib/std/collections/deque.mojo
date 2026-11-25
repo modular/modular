@@ -497,7 +497,6 @@ struct Deque[ElementType: Movable](
         """
         return (self._tail - self._head) & (self._capacity - 1)
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, idx: IntLiteral
@@ -516,7 +515,6 @@ struct Deque[ElementType: Movable](
         check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, idx: Int
@@ -532,7 +530,6 @@ struct Deque[ElementType: Movable](
         check_bounds(idx, length=len(self))
         return self._unchecked_get(idx)
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def _unchecked_get(
         ref self, idx: Int

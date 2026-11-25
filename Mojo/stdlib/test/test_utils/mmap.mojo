@@ -72,7 +72,6 @@ struct ZeroedMmap[*, mut: Bool = False]:
     # Without this, a call through a mutable `ref self` counts as a write to
     # the mapping and invalidates the spans already formed from it. This is
     # safe because forming a span changes neither the mapping nor its bytes.
-    @__unsafe_nested_origins_read_only
     def as_bytes[
         origin: Origin[mut=Self.mut], //
     ](ref[origin] self) -> Span[Byte, Self._InteriorOrigin[origin]]:

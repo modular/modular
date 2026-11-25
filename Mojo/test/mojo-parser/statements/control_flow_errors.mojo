@@ -145,6 +145,14 @@ def loop_variable_scoped() raises:
   for ref elt in ListValueStringRef():
     elt = "foo" # ok
 
+# NOTE: This should always be an error, because callers that pass a mutable
+# argument through a parametric ref will assume that this function doesn't
+# actually mutate the argument.
+def conditionally_store_parametric_ref(ref value: Int):
+  comptime if origin_of(value).mut:
+    # expected-error @+1 {{expression must be mutable in assignment}}
+    value = 0
+
 
 ##===----------------------------------------------------------------------===##
 # With

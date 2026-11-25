@@ -511,7 +511,6 @@ struct Optional[T: AnyType](
         """
         return not self
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self,
@@ -632,7 +631,6 @@ struct Optional[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def value(ref self) -> ref[Self._InteriorOrigin[origin_of(self)]] Self.T:
         """Retrieve a reference to the value of the `Optional`.
@@ -726,7 +724,6 @@ struct Optional[T: AnyType](
             ]()[]
         )
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def unsafe_value(
         ref self,

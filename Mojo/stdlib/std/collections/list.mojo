@@ -771,7 +771,6 @@ struct List[T: AnyType, /](
     # Without this, a call through a mutable `ref self` counts as a write to
     # the list and invalidates its existing pointers and views. This is safe
     # because creating an iterator does not change the list or its elements.
-    @__unsafe_nested_origins_read_only
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over elements of the list, returning immutable references.
 
@@ -788,7 +787,6 @@ struct List[T: AnyType, /](
     # the list and invalidates its existing pointers and views. This is safe
     # because creating a reverse iterator does not change the list or its
     # elements.
-    @__unsafe_nested_origins_read_only
     def __reversed__(
         ref self,
     ) -> _ListIter[Self.T, origin_of(self), False] where conforms_to(
@@ -1347,7 +1345,6 @@ struct List[T: AnyType, /](
     # Without this, a call through a mutable `ref self` counts as a write to
     # the list and invalidates its existing pointers and views. This is safe
     # because the search only reads the list and compares its elements.
-    @__unsafe_nested_origins_read_only
     def try_index(
         ref self,
         value: Self.T,
@@ -1399,7 +1396,6 @@ struct List[T: AnyType, /](
     # Without this, a call through a mutable `ref self` counts as a write to
     # the list and invalidates its existing pointers and views. This is safe
     # because the search only reads the list and compares its elements.
-    @__unsafe_nested_origins_read_only
     def index(
         ref self,
         value: Self.T,
@@ -1536,7 +1532,6 @@ struct List[T: AnyType, /](
             ].copy(),
         )
 
-    @__unsafe_nested_origins_read_only
     @stable(since="1.0")
     @inline(.always)
     def __getitem__(
@@ -1574,7 +1569,6 @@ struct List[T: AnyType, /](
             length = end - start,
         }
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, idx: IntLiteral, /
@@ -1596,7 +1590,6 @@ struct List[T: AnyType, /](
         return self.unsafe_get(index(idx))
 
     @stable(since="1.0")
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, idx: Int, /
@@ -1619,7 +1612,6 @@ struct List[T: AnyType, /](
         check_bounds(idx, length=len(self))
         return self.unsafe_get(index(idx))
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, idx: Some[Indexer]
@@ -1642,7 +1634,6 @@ struct List[T: AnyType, /](
         check_bounds(index(idx), length=len(self))
         return self.unsafe_get(index(idx))
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def unsafe_get(
         ref self, idx: Int
@@ -1752,7 +1743,6 @@ struct List[T: AnyType, /](
     # Without this, a call through a mutable `ref self` counts as a write to
     # the list and invalidates its existing pointers and views. This is safe
     # because forming a pointer does not change the list or its elements.
-    @__unsafe_nested_origins_read_only
     def unsafe_ptr[
         origin: Origin,
         //,

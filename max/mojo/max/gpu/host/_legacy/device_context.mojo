@@ -742,7 +742,6 @@ struct LegacyHostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         #   target used by this runtime DeviceContext instance?
         return LegacyDeviceContext(ctx_ptr)
 
-    @__unsafe_nested_origins_read_only
     def as_span[
         origin: Origin, //
     ](ref[origin] self) -> Span[

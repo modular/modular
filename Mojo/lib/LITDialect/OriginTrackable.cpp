@@ -306,8 +306,8 @@ void OperationEffects::analyzeCallOp(Operation &op) {
   /// Argument conventions cause a direct use of the register of pointee, and
   /// handling them specifically allows us to be field sensitive in cases where
   /// the access is directly attributable to a Value.
-  auto getOperandEffectForConvention = [&](ArgConvention conv,
-                                           Type argType) -> OperandEffect {
+  auto getOperandEffectForConvention =
+      [&](ArgConvention conv) -> OperandEffect {
     switch (conv) {
     case ArgConvention::Unresolved:
       llvm_unreachable("unresolved convention in a resolved signature");
@@ -326,14 +326,10 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     case ArgConvention::Mut:
     case ArgConvention::MutRef:
       return OperandEffect::memMut;
-    case ArgConvention::Ref: {
-      // If the reference is guaranteed immutable, then treat it as a load,
-      // otherwise it might be a mutation. If originAccessesAreReadOnly is true,
-      // then we this "ref" argument is treated as read only.
-      bool isImmut = originsAccessesAreReadOnly ||
-                     cast<RefType>(argType).isMutableKnown(false);
-      return isImmut ? OperandEffect::memLoad : OperandEffect::memMut;
-    }
+    case ArgConvention::Ref:
+      // The `ref` convention promises not to mutate the borrowed value,
+      // regardless of the mutability of its origin.
+      return OperandEffect::memLoad;
     case ArgConvention::ByRefError:
     case ArgConvention::ByRefResult:
       return OperandEffect::memStoreOwned;
@@ -345,7 +341,7 @@ void OperationEffects::analyzeCallOp(Operation &op) {
                          bool noIndirect = false) {
     // Get normal argument effect.
     Type argType = arg.getType();
-    auto effect = getOperandEffectForConvention(conv, argType);
+    auto effect = getOperandEffectForConvention(conv);
 
     // If this is a normal register use, and if the value is a reference
     // (whether the argument convention is fancy or if it is an explicitly
@@ -367,8 +363,9 @@ void OperationEffects::analyzeCallOp(Operation &op) {
     argType = RefType::stripRefConvention(argType, conv);
 
     // In addition to the direct (field-sensitive) effect of loading/storing
-    // the bits, the callee may do whatever it wants with origins embedded
-    // in the type.
+    // the bits, the callee may access origins embedded in the type. A `ref`
+    // only makes the directly borrowed value read-only; mutable origins stored
+    // in that value remain mutable.
     for (TypedAttr origin : originFinder.findOriginsIn({argType})) {
       if (originsAccessesAreReadOnly)
         origin = OriginMutCastAttr::get(origin, false);

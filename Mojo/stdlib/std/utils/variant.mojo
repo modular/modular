@@ -639,7 +639,6 @@ struct Variant[*Ts: AnyType](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem_param__[
         T: AnyType
@@ -955,7 +954,6 @@ struct Variant[*Ts: AnyType](
         Self._check[T]()
         return self._storage.isa[T]()
 
-    @__unsafe_nested_origins_read_only
     def unsafe_get[
         T: AnyType
     ](ref self) -> ref[Self._InteriorOrigin[origin_of(self)]] T:

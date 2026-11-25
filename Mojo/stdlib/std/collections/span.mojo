@@ -115,7 +115,6 @@ struct _SpanIter[
     var index: Int
     var src: Span[Self.T, Self.origin]
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
@@ -455,7 +454,6 @@ struct Span[
             0, rebind[Span[downcast[Self.T, Copyable], Self.origin]](self)
         )
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __iter__(
         ref self,

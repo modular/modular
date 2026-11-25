@@ -38,7 +38,6 @@ struct MyList[T: AnyType](Movable where False):
     def access(self): # doesn't invalidate interior origins.
         pass
 
-    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self
     ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
@@ -280,6 +279,14 @@ def mutate_through[o: MutOrigin](p: Pointer[MyList[Int], o]):
 def read_through[o: ImmOrigin](p: Pointer[MyList[Int], o]):
     p[].access()
 
+def inspect_ref(ref list: MyList[Int]):
+    list.access()
+
+def mutate_known_mut_ref[origin: MutOrigin](
+    ref[origin] list: MyList[Int],
+):
+    list.mutate()
+
 def call_closure[F: def() -> None](f: F):
     f()
 
@@ -301,6 +308,19 @@ def test_read_through_mut_pointer():
     var p = Pointer(to=list)
     ref elt = list[]
     p[].access()
+    elt += 4
+
+def test_ref_argument_preserves_interior_origin():
+    var list = MyList[Int]()
+    ref elt = list[]
+    inspect_ref(list)
+    elt += 4
+
+def test_known_mut_ref_argument_invalidates_interior_origin():
+    var list = MyList[Int]()
+    ref elt = list[]
+    mutate_known_mut_ref(list)  # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]'}}
     elt += 4
 
 def test_closure_mut_capture():
@@ -365,6 +385,9 @@ def test_closure_argument_mut_capture():
 struct MyView[origin: MutOrigin]:
     var data: Pointer[MyList[Int], Self.origin]
 
+def inspect_view[o: MutOrigin](ref view: MyView[o]):
+    _ = view.data
+
 def mutate_viewed_element[o: MutOrigin](view: MyView[o]):
     view.data[].mutate()
 
@@ -375,5 +398,14 @@ def test_mut_view_argument():
     var view = MyView(Pointer(to=outer))
     ref elt = outer[]
     mutate_viewed_element(view)   # expected-note {{origin was invalidated here}}
+    # expected-error @+1 {{use of invalidated interior reference 'list["element"]["element"]'}}
+    elt += 4
+
+def test_ref_argument_invalidates_nested_origin():
+    var list = MyList[MyList[Int]]()
+    ref outer = list[]
+    var view = MyView(Pointer(to=outer))
+    ref elt = outer[]
+    inspect_view(view)  # expected-note {{origin was invalidated here}}
     # expected-error @+1 {{use of invalidated interior reference 'list["element"]["element"]'}}
     elt += 4

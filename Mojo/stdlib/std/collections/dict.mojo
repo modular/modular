@@ -888,7 +888,6 @@ struct Dict[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[
@@ -1250,7 +1249,6 @@ struct Dict[
             return Optional[Self.V](None)
         return (self._table._slots.unsafe_offset(slot_idx))[].value.copy()
 
-    @__unsafe_nested_origins_read_only
     def _find_ref(
         ref self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[
@@ -1278,7 +1276,6 @@ struct Dict[
 
         raise DictKeyError[Self.K]()
 
-    @__unsafe_nested_origins_read_only
     def _find_ref_matching(
         ref self, hash: UInt64, key_matches: Some[def(Self.K) -> Bool]
     ) raises DictKeyError[Self.K] -> ref[
@@ -2067,7 +2064,6 @@ struct StringDict[V: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, ref key: Self.key_type
@@ -2085,7 +2081,6 @@ struct StringDict[V: Movable](
         """
         return self._dict[key]
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, key: StringSpan

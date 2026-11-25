@@ -1547,7 +1547,6 @@ struct String(
             .as_imm()
         )
 
-    @__unsafe_nested_origins_read_only
     def as_bytes(
         ref self,
     ) -> Span[Byte, Self._InteriorOrigin[origin_of(self)]]:
@@ -1573,7 +1572,6 @@ struct String(
             length=self.byte_length(),
         )
 
-    @__unsafe_nested_origins_read_only
     def _interior_slice(
         ref self,
     ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:

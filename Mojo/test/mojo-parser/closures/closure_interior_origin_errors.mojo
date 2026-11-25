@@ -26,7 +26,6 @@ struct MyList[T: AnyType](Movable where False):
     def __deinit__(deinit self):
         pass
 
-    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self,
     ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:

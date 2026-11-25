@@ -50,6 +50,16 @@ This version is still a work in progress.
 - `with` statements now no longer copy when passed a reference to a context
   manager like in `with foo: pass`.
 
+- The `ref` argument convention with a parametrically-mutable origin now
+  promises read-only access to the referenced value. Previously, Mojo assumed
+  that such a `ref` could mutate whenever it was instantiated with a mutable
+  origin. In practice though, function bodies were disallowed from mutating such
+  a reference, even when a compile-time condition proved that the instantiated
+  origin was mutable. Call analysis now reflects that existing restriction, so
+  these calls no longer unnecessarily invalidate references derived from the
+  borrowed value. Mutable origins embedded in the value remain mutable and can
+  still invalidate references into the storage they describe.
+
 - `__exit__(self, error: E)` now additionally supports `var self` and
   `deinit self`, similar to the non-error `__exit__`.
 
