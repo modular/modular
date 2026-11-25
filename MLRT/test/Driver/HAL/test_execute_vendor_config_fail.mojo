@@ -15,7 +15,7 @@
 from max._driver import Driver
 from max._driver.max_license.hal.device import DeviceSpec
 from max._driver.max_license.hal.execution_config._nvidia import (
-    _BaseCudaExecutionConfiguration,
+    CudaExecutionConfiguration,
 )
 from max._driver.max_license.hal.queue import Queue
 
@@ -31,9 +31,7 @@ def launch[spec: DeviceSpec](queue: Queue[spec]) raises:
     queue.execute[scale](
         Float32(1),
         MutPointer[Float32, MutUntrackedOrigin](unsafe_from_address=8),
-        execution_config=_BaseCudaExecutionConfiguration(
-            grid_dim=1, block_dim=1
-        ),
+        execution_config=CudaExecutionConfiguration(grid_dim=1, block_dim=1),
     )
 
 
