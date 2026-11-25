@@ -23,7 +23,6 @@ from layout import Coord, CoordLike, Idx
 from max.gpu.host import DeviceContext
 from std.collections import Array
 from std.testing import TestSuite, assert_equal
-from std.utils import IndexList
 
 
 def widest_call[
@@ -94,10 +93,10 @@ def test_limit_with_a_scalar_tail() raises:
 
 
 def test_pow2_divisor_of_dims() raises:
-    assert_equal(pow2_divisor_of_dims(IndexList[3](6, 10, 4)), 2)
-    assert_equal(pow2_divisor_of_dims(IndexList[2](0, 12)), 4)
-    assert_equal(pow2_divisor_of_dims(IndexList[2](24, 40)), 8)
-    assert_equal(pow2_divisor_of_dims(IndexList[2](0, 0)), 0)
+    assert_equal(pow2_divisor_of_dims(Coord(Int(6), Int(10), Int(4))), 2)
+    assert_equal(pow2_divisor_of_dims(Coord(Int(0), Int(12))), 4)
+    assert_equal(pow2_divisor_of_dims(Coord(Idx[24], Int(40))), 8)
+    assert_equal(pow2_divisor_of_dims(Coord(Int(0), Int(0))), 0)
 
 
 def main() raises:

@@ -820,7 +820,7 @@ def MOGG_ShapeInitOp : MOGG_Op<"shape.__init__", [
 ]> {
   let summary = "Construct a mojo shape object";
   let description = [{
-    Builds an IndexList from the static shape attribute and its dynamic
+    Builds a `Coord` from the static shape attribute and its dynamic
     dimensions.
 
     Example:
@@ -1299,7 +1299,7 @@ def MOGG_TensorCreatePrologueOp : MOGG_Op<"tensor.create.prologue", [
     MOGG_Shape:$shape,
     Variadic<MOGG_TensorLike>:$captures,
     // Runtime shapes for a dynamic `mogg.index.reshape` in the body; they
-    // become trailing `IndexList` fields on the fusion functor.
+    // become trailing `Coord` fields on the fusion functor.
     Variadic<MOGG_Shape>:$shapeCaptures,
     StrAttr:$device,
     TypeAttr:$elementType,

@@ -25,7 +25,7 @@
 // CHECK-NEXT: var [[OUT_FIELD:var_+[0-9]+]]: layout.Coord[Int, layout.ComptimeInt[16]]
 // CHECK:      comptime [[STARTS:param_+[0-9]+]] = layout.Coord(layout.Idx[-8], layout.Idx[0])
 // CHECK-NEXT: comptime [[STEPS:param_+[0-9]+]] = layout.Coord(layout.Idx[2], layout.Idx[1])
-// CHECK-NEXT: var {{var_+[0-9]+}} = builtin_primitives.primitives.mogg_index_slice_select[static_starts = [[STARTS]], static_steps = [[STEPS]]]({{var_+[0-9]+}}, self.[[IN_FIELD]], self.[[OUT_FIELD]])
+// CHECK-NEXT: var {{var_+[0-9]+}} = builtin_primitives.primitives.mogg_index_slice_select[static_starts = [[STARTS]], static_steps = [[STEPS]]](idx, self.[[IN_FIELD]], self.[[OUT_FIELD]])
 mo.graph @matmul_window_dynamic<M, H>(%p: !mo.tensor<[M, 8], f32>, %q: !mo.tensor<[8, 16], f32>, %b: !mo.tensor<[M, 16], f32>, %c: !mo.tensor<[M, 16], f32>, %stops: !mo.tensor<[2], si64>) -> (!mo.tensor<[M, 16], f32>, !mo.tensor<[M, 16], f32>, !mo.tensor<[H, 16], f32>) {
   %starts = mo.constant <#M.dense_array<-8, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
   %steps = mo.constant <#M.dense_array<2, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>

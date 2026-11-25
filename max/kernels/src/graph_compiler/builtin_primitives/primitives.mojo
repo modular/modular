@@ -62,7 +62,7 @@ from layout import (
     row_major,
     coord_to_index_list,
 )
-from layout.coord import ComptimeInt
+from layout.coord import ComptimeInt, DynamicCoord
 from layout.tile_io import (
     GenericToLocalTileCopier,
     LocalToGenericTileCopier,
@@ -1987,14 +1987,14 @@ def _reshape_nth_non_one_pos[
 @register_internal("mogg.index.reshape")
 @inline(.always)
 def mogg_index_reshape[
-    from_rank: Int,
-    //,
     to_rank: Int,
 ](
-    index: IndexList[from_rank],
+    index: Coord,
     from_shape: Coord[...],
     to_shape: Coord[...],
-) -> IndexList[to_rank]:
+) -> DynamicCoord[
+    DType.int, to_rank
+]:
     # Reindex `index` (a point in the from-shape) to the point in the to-shape
     # with the same row-major linear offset. Backs `mogg.index.reshape`: the
     # per-index (store-side) counterpart of the whole-tensor
@@ -2007,8 +2007,16 @@ def mogg_index_reshape[
     # check picks the cheapest reindexing the static dims allow, and any path
     # they fully determine reads no runtime extent, so the backend DCEs them
     # down to exactly the static code -- there is no separate primitive.
+    comptime from_rank = type_of(index).rank
+    comptime assert (
+        from_rank == type_of(from_shape).rank
+    ), "index must have from_shape's rank"
+    comptime assert (
+        to_rank == type_of(to_shape).rank
+    ), "to_rank must be to_shape's rank"
     comptime from_types = type_of(from_shape).element_types
     comptime to_types = type_of(to_shape).element_types
+    var out = DynamicCoord[DType.int, to_rank]()
 
     # Fast path: identity -- no remap. Guarded like the unit-shuffle path below:
     # with two or more dynamic non-1 dims, equal STATIC shapes don't imply equal
@@ -2019,7 +2027,9 @@ def mogg_index_reshape[
     comptime if _CoordTypesEqual[from_types, to_types] and (
         _reshape_num_dynamic_non_ones[from_types]() <= 1
     ):
-        return rebind[IndexList[to_rank]](index)
+        comptime for i in range(to_rank):
+            out.replace_dynamic[i](Scalar[DType.int](Int(index[i])))
+        return out
 
     # Fast path: from and to differ only by inserted/removed size-1 dims -- a
     # pure positional remap (the k-th non-1 dim of `to` takes the k-th non-1 dim
@@ -2032,17 +2042,14 @@ def mogg_index_reshape[
     comptime if _reshape_same_dropping_ones[from_types, to_types]() and (
         _reshape_num_dynamic_non_ones[from_types]() <= 1
     ):
-        var squeezed = IndexList[to_rank]()
         comptime for j in range(to_rank):
-            comptime if (
+            comptime if not (
                 to_types[j].is_static_value and to_types[j].static_value == 1
             ):
-                squeezed[j] = 0
-            else:
                 comptime k = _reshape_num_non_ones[to_types, j]()
                 comptime fp = _reshape_nth_non_one_pos[from_types, k]()
-                squeezed[j] = index[fp]
-        return squeezed
+                out.replace_dynamic[j](Scalar[DType.int](Int(index[fp])))
+        return out
 
     # General case, restricted to the DIFFERING middle: a collapse (merge) or
     # expand (split) touches only a contiguous run of dims, so a leading and
@@ -2054,53 +2061,64 @@ def mogg_index_reshape[
     comptime p = _reshape_common_prefix[from_types, to_types]()
     comptime s = _reshape_common_suffix[from_types, to_types, p]()
 
-    var out = IndexList[to_rank]()
     comptime for i in range(p):
-        out[i] = index[i]
+        out.replace_dynamic[i](Scalar[DType.int](Int(index[i])))
     comptime for i in range(s):
-        out[to_rank - 1 - i] = index[from_rank - 1 - i]
+        out.replace_dynamic[to_rank - 1 - i](
+            Scalar[DType.int](Int(index[from_rank - 1 - i]))
+        )
 
-    # Ravel the middle `from` dims to their shared row-major linear offset. The
-    # inner dims scale the stride (static extent where known, else the runtime
-    # one); the outermost middle dim only contributes its index, so its extent --
-    # even if dynamic -- is never read.
-    var linear: Int = 0
-    var from_stride: Int = 1
-    comptime for i in range(from_rank - s - 1, p, -1):
-        linear += index[i] * from_stride
-        comptime if from_types[i].is_static_value:
-            from_stride *= from_types[i].static_value
-        else:
-            from_stride *= Int(from_shape[i])
-    linear += index[p] * from_stride
+    # The prefix and suffix can cover all of one side, as in [4, D] -> [4] with
+    # D == 1 at runtime. The other side's middle dims then all have extent 1:
+    # with no `to` middle there is nothing left to write, and with no `from`
+    # middle the linear offset is 0.
+    comptime if p + s < to_rank:
+        # Ravel the middle `from` dims to their shared row-major linear
+        # offset. The inner dims scale the stride (static extent where known,
+        # else the runtime one); the outermost middle dim only contributes its
+        # index, so its extent -- even if dynamic -- is never read.
+        var linear: Int = 0
+        comptime if p + s < from_rank:
+            var from_stride: Int = 1
+            comptime for i in range(from_rank - s - 1, p, -1):
+                linear += Int(index[i]) * from_stride
+                comptime if from_types[i].is_static_value:
+                    from_stride *= from_types[i].static_value
+                else:
+                    from_stride *= Int(from_shape[i])
+            linear += Int(index[p]) * from_stride
 
-    # Unravel onto the middle `to` dims; the outermost takes the remaining
-    # quotient with no (redundant) modulo, so its extent is never read.
-    var to_stride: Int = 1
-    comptime for j in range(to_rank - s - 1, p, -1):
-        comptime if to_types[j].is_static_value:
-            comptime sd = to_types[j].static_value
-            out[j] = (linear // to_stride) % sd
-            to_stride *= sd
-        else:
-            out[j] = (linear // to_stride) % Int(to_shape[j])
-            to_stride *= Int(to_shape[j])
-    out[p] = linear // to_stride
+        # Unravel onto the middle `to` dims; the outermost takes the remaining
+        # quotient with no (redundant) modulo, so its extent is never read.
+        var to_stride: Int = 1
+        comptime for j in range(to_rank - s - 1, p, -1):
+            comptime if to_types[j].is_static_value:
+                comptime sd = to_types[j].static_value
+                out.replace_dynamic[j](
+                    Scalar[DType.int]((linear // to_stride) % sd)
+                )
+                to_stride *= sd
+            else:
+                out.replace_dynamic[j](
+                    Scalar[DType.int]((linear // to_stride) % Int(to_shape[j]))
+                )
+                to_stride *= Int(to_shape[j])
+        out.replace_dynamic[p](Scalar[DType.int](linear // to_stride))
     return out
 
 
 @register_internal("mogg.index.slice.select")
 @inline(.always)
 def mogg_index_slice_select[
-    rank: Int,
-    //,
     static_starts: Coord,
     static_steps: Coord,
 ](
-    index: IndexList[rank],
+    index: Coord,
     in_shape: Coord[...],
     out_shape: Coord[...],
-) -> Tuple[IndexList[rank], Bool]:
+) -> Tuple[
+    DynamicCoord[DType.int, type_of(index).rank], Bool
+]:
     """Maps an index into a slice's input to the index into its output.
 
     Backs `mogg.index.slice.select`, whose body runs at the returned index
@@ -2112,7 +2130,6 @@ def mogg_index_slice_select[
     unsliced costs nothing.
 
     Parameters:
-        rank: The rank of the slice's input and output.
         static_starts: The slice's start per dim, as written.
         static_steps: The slice's positive step per dim.
 
@@ -2125,9 +2142,15 @@ def mogg_index_slice_select[
         The index into the slice's output, and whether the slice selects
         `index` at all. The index means nothing where it does not.
     """
+    comptime rank = type_of(index).rank
+    comptime assert (
+        type_of(in_shape).rank == rank and type_of(out_shape).rank == rank
+    ), "index, in_shape and out_shape must have the same rank"
     comptime in_types = type_of(in_shape).element_types
     comptime out_types = type_of(out_shape).element_types
-    var result = index
+    var result = rebind[DynamicCoord[DType.int, rank]](
+        index.make_dynamic[DType.int]()
+    )
     var in_slice = True
     comptime for d in range(rank):
         comptime start = (
@@ -2168,35 +2191,25 @@ def mogg_index_slice_select[
                     s = max(start + in_dim, 0)
                 else:
                     s = start + in_dim
-            var offset = index[d] - s
+            var offset = Int(index[d]) - s
             comptime if step != 1:
                 in_slice = in_slice and offset % step == 0
             var j = offset // step
             # Unsigned, a negative index wraps past `out_dim`: one compare.
             in_slice = in_slice and UInt(j) < UInt(out_dim)
-            result[d] = j
+            result.replace_dynamic[d](Scalar[DType.int](j))
     return (result, in_slice)
 
 
 @register_internal("mogg.index.concat.select")
 @inline(.always)
 def mogg_index_concat_select[
-    rank: Int,
-    //,
     dtype: DType,
     width: Int,
-    num_inputs: Int,
     axis: Int,
-    static_sizes: Coord,
     InputsFnType: ImplicitlyCopyable
     & def[input_index: Int](Coord) -> SIMD[dtype, width],
-](
-    index: IndexList[rank],
-    inputs_fn: InputsFnType,
-    sizes: IndexList[num_inputs] = _reshape_types_sentinels[
-        num_inputs, static_sizes.element_types
-    ](),
-) -> SIMD[dtype, width]:
+](index: Coord, inputs_fn: InputsFnType, sizes: Coord) -> SIMD[dtype, width]:
     """Returns the `width` lanes of a concat at `index`, read from its inputs.
 
     Backs `mogg.index.concat.select`: picks the input holding `index`, as the
@@ -2207,53 +2220,41 @@ def mogg_index_concat_select[
     extent.
 
     Parameters:
-        rank: The rank of the concat's output.
         dtype: The element type the inputs yield.
         width: The number of lanes read.
-        num_inputs: The number of concat inputs.
         axis: The concat axis, normalized.
-        static_sizes: The axis extent of every input, where statically
-            known.
         InputsFnType: The type of `inputs_fn`.
 
     Args:
         index: An index into the concat's output.
         inputs_fn: Reads `width` lanes of input `input_index` at an index
             into that input.
-        sizes: The runtime axis extent of every input.
+        sizes: The axis extent of every input, static where known.
 
     Returns:
         The concat's `width` lanes at `index`.
     """
+    comptime rank = type_of(index).rank
+    comptime num_inputs = type_of(sizes).rank
+    comptime assert 0 <= axis < rank, "axis must be a dim of index"
     # Along the innermost axis a vector's lanes run along the concat axis, so
     # all of them must stay inside the input read; along an outer axis they
     # share the coordinate there.
     comptime lanes = width if axis == rank - 1 else 1
-    var k = index[axis]
+    var k = Int(index[axis])
     var offset = 0
     comptime for r in range(num_inputs - 1):
-        var size: Int
-        comptime if static_sizes.element_types[r].is_static_value:
-            size = static_sizes.element_types[r].static_value
-        else:
-            size = sizes[r]
+        var size = Int(sizes[r])
         if k - offset < size:
-            var in_index = index
-            in_index[axis] = k - offset
-            _assert_inside_concat_input[lanes](in_index[axis], size, r)
-            return inputs_fn[r](Coord(in_index))
+            _assert_inside_concat_input[lanes](k - offset, size, r)
+            return inputs_fn[r](
+                index.replace[axis](Scalar[DType.int](k - offset))
+            )
         offset += size
     # The last input holds whatever the others leave.
     comptime last = num_inputs - 1
-    var last_size: Int
-    comptime if static_sizes.element_types[last].is_static_value:
-        last_size = static_sizes.element_types[last].static_value
-    else:
-        last_size = sizes[last]
-    var in_index = index
-    in_index[axis] = k - offset
-    _assert_inside_concat_input[lanes](in_index[axis], last_size, last)
-    return inputs_fn[last](Coord(in_index))
+    _assert_inside_concat_input[lanes](k - offset, Int(sizes[last]), last)
+    return inputs_fn[last](index.replace[axis](Scalar[DType.int](k - offset)))
 
 
 @always_inline
@@ -2621,14 +2622,11 @@ def _graph_blob_foreach[
 
 
 @inline(.always)
-def pow2_divisor_of_dims[rank: Int](dims: IndexList[rank]) -> Int:
+def pow2_divisor_of_dims(dims: Coord) -> Int:
     """Returns the largest power of two dividing every dim in `dims`.
 
     It is the lowest set bit of the dims' OR, which is also that of their
     GCD, without computing the GCD.
-
-    Parameters:
-        rank: The number of dims.
 
     Args:
         dims: The dims, read at run time.
@@ -2637,8 +2635,8 @@ def pow2_divisor_of_dims[rank: Int](dims: IndexList[rank]) -> Int:
         The power of two, or 0 when every dim is 0, which no width limits.
     """
     var bits = 0
-    comptime for i in range(rank):
-        bits |= dims[i]
+    comptime for i in range(type_of(dims).rank):
+        bits |= Int(dims[i])
     return bits & -bits
 
 
@@ -3023,19 +3021,18 @@ def _mogg_broadcast_view_strides[
 def mogg_tensor_create_broadcast[
     dtype: DType,
     in_rank: Int,
-    out_rank: Int,
     //,
     output_static_shape: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
-    output_shape: IndexList[out_rank],
+    output_shape: Coord,
 ) -> ManagedTensorSlice[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_coord_layout[
-        out_rank,
+        output_static_shape.rank,
         output_static_shape,
         _mogg_broadcast_view_strides[
-            out_rank,
+            output_static_shape.rank,
             in_rank,
             input.static_spec.static_layout._shape_types,
             input.static_spec.static_layout._stride_types,
@@ -3052,8 +3049,6 @@ def mogg_tensor_create_broadcast[
     Parameters:
         dtype: The element type of `input`.
         in_rank: The rank of `input`.
-        out_rank: The rank of the broadcast view (and of
-            `output_static_shape`).
         output_static_shape: The view's shape, where known at compile time.
 
     Args:
@@ -3062,9 +3057,10 @@ def mogg_tensor_create_broadcast[
             the rows of `[r, 1] -> [r, 4096]`, is known only here, and a view
             composed on top (a slice) clamps its bounds against it.
     """
+    comptime out_rank = output_static_shape.rank
     comptime assert (
-        out_rank == output_static_shape.rank
-    ), "out_rank must match output_static_shape's own rank"
+        type_of(output_shape).rank == out_rank
+    ), "output_shape must have output_static_shape's rank"
     comptime delta = out_rank - in_rank
     var new_strides = IndexList[out_rank]()
     comptime for i in range(out_rank):
@@ -3075,7 +3071,11 @@ def mogg_tensor_create_broadcast[
                 new_strides[i] = 0
             else:
                 new_strides[i] = input.stride_length[i - delta]()
-    return {input.unsafe_ptr(), output_shape, new_strides}
+    return {
+        input.unsafe_ptr(),
+        rebind[IndexList[out_rank]](coord_to_index_list(output_shape)),
+        new_strides,
+    }
 
 
 def _mogg_collapse_group_start[groups: Coord, g: Int]() -> Int:
@@ -3189,16 +3189,15 @@ def mogg_tensor_create_collapse[
 def mogg_tensor_create_reshape[
     dtype: DType,
     in_rank: Int,
-    out_rank: Int,
     //,
     output_static_shape: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
-    output_shape: IndexList[out_rank],
+    output_shape: Coord,
 ) -> ManagedTensorSlice[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_row_major_coord_layout[
-        out_rank,
+        output_static_shape.rank,
         output_static_shape,
     ](),
 ]:
@@ -3214,16 +3213,9 @@ def mogg_tensor_create_reshape[
     stride to fall back on, so any dim not statically known has to be an
     honest runtime value here or every row past the first comes out wrong.
 
-    `out_rank` is inferred from `output_shape` itself, not from
-    `output_static_shape.rank` -- both name the same rank, but a
-    comptime-parameter argument type can't depend on another comptime
-    parameter's own derived value at inference time the way it can on a
-    plain `Int`.
-
     Parameters:
         dtype: The element type of `input`.
         in_rank: The rank of `input`.
-        out_rank: The rank of the reshaped view (and of `output_static_shape`).
         output_static_shape: The view's shape, where known at compile time
             (a `dyn` placeholder elsewhere); see the op's own MOGG tablegen
             doc for why a dynamic dim can't just be read off this alone.
@@ -3233,10 +3225,11 @@ def mogg_tensor_create_reshape[
         output_shape: The view's shape at runtime -- authoritative for every
             dim, not just the ones `output_static_shape` doesn't know.
     """
+    comptime out_rank = output_static_shape.rank
     comptime assert (
-        out_rank == output_static_shape.rank
-    ), "out_rank must match output_static_shape's own rank"
-    var view = reshape(input.to_tile_tensor[DType.int64](), Coord(output_shape))
+        type_of(output_shape).rank == out_rank
+    ), "output_shape must have output_static_shape's rank"
+    var view = reshape(input.to_tile_tensor[DType.int64](), output_shape)
     return {
         view._storage,
         rebind[IndexList[out_rank]](

@@ -521,9 +521,8 @@ LogicalResult TensorCreateSliceOp::emitMojo(EmitMojoState &state) {
 // Prints a view whose layout comes from its output shape at runtime:
 //
 //   comptime static_shape = Coord(...)                                  (1)
-//   var shape = coord_to_index_list(<$runtimeOutShape>)                 (2)
 //   var view = <primitive>[output_static_shape = static_shape](
-//       <$input>, shape)                                                (3)
+//       <$input>, <$runtimeOutShape>)                                   (2)
 //
 // Mojo infers dtype/rank from $input. A broadcast reads its strides from the
 // input but its runtime dims from `$runtimeOutShape`, which a slice composed on
@@ -538,12 +537,10 @@ static LogicalResult emitShapedView(OpT op, EmitMojoState &state) {
   MojoValue outputStaticShape = state.file->comptime(
       EmitMojoState::getAsCoordMojoValue(op.getStaticOutShape().getIntDims()));
   // (2)
-  MojoValue outputShapeValue = state.file->var(
-      coordToIndexList(state.getMojoValueFor(op.getRuntimeOutShape())));
-  // (3)
   MojoValue result = state.file->var(
       primitive[{kParameterOutputStaticShape.equal(outputStaticShape)}](
-          {state.getMojoValueFor(op.getInput()), outputShapeValue}));
+          {state.getMojoValueFor(op.getInput()),
+           state.getMojoValueFor(op.getRuntimeOutShape())}));
   state.setMojoValueFor(op.getResult(), result);
   return success();
 }
@@ -557,13 +554,12 @@ LogicalResult TensorCreateReshapeOp::emitMojo(EmitMojoState &state) {
 }
 
 LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
-  // Per-index reshape (store side, inside an epilogue functor): convert the
-  // `Coord` index to an `IndexList`, remap it to the output shape preserving
-  // the row-major offset via `mogg.index.reshape`, and wrap it back into a
-  // `Coord` for `mogg.tensor.store`. The from/to shapes ride as runtime
-  // `Coord` args: static dims as `Idx[N]` components, dynamic dims' real
-  // values as epilogue shape captures (`$dynamicShapes`), or an all-static
-  // `Coord` built here when the shape is static.
+  // Per-index reshape (store side, inside an epilogue functor): remap the
+  // `Coord` index to the output shape preserving the row-major offset via
+  // `mogg.index.reshape`. The from/to shapes ride as runtime `Coord` args:
+  // static dims as `Idx[N]` components, dynamic dims' real values as epilogue
+  // shape captures (`$dynamicShapes`), or an all-static `Coord` built here
+  // when the shape is static.
   auto primDecl =
       state.registry.lookupPrimitive(IndexReshapeOp::getOperationName());
   ASSERT_STREAM(primDecl, "Primitive not found for "
@@ -574,14 +570,7 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
   // emitted, as for `TensorLoadOp`/`TensorStoreOp`.
   MojoBuilder &builder = *state.file;
 
-  // The index carries the store method's abstract rank param, which can't
-  // unify with the primitive's concrete from-rank; rebind it (equal at
-  // every instantiation).
-  MojoValue idxList =
-      builder.var(coordToIndexList(state.getMojoValueFor(getIndex()),
-                                   uint64_t(getFromShape().getRankNonZero())));
-
-  SmallVector<MojoValue> primArgs = {idxList};
+  SmallVector<MojoValue> primArgs = {state.getMojoValueFor(getIndex())};
   if (getDynamicShapes().empty()) {
     // A rank-0 shape is emitted as rank-1 extent-1, here as everywhere else,
     // so the ranks must follow: a `to_rank` of 0 contradicts its own shape.
@@ -597,9 +586,8 @@ LogicalResult IndexReshapeOp::emitMojo(EmitMojoState &state) {
     primArgs.push_back(state.getMojoValueFor(getDynamicShapes()[1]));
   }
 
-  MojoValue newIdxList = builder.var(primitive[{MojoValue("to_rank").equal(
+  MojoValue newCoord = builder.var(primitive[{MojoValue("to_rank").equal(
       uint64_t(getToShape().getRankNonZero()))}](primArgs));
-  MojoValue newCoord = builder.var(kStructCoord({newIdxList}));
   state.setMojoValueFor(getResult(), newCoord);
   return success();
 }
@@ -623,13 +611,7 @@ LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
   // emitted.
   MojoBuilder &builder = *state.file;
 
-  // The index carries the store method's abstract rank param, which can't
-  // unify with the primitive's concrete rank; rebind it (equal at every
-  // instantiation).
-  MojoValue idxList =
-      builder.var(coordToIndexList(state.getMojoValueFor(getIndex()),
-                                   uint64_t(getInShape().getRankNonZero())));
-  SmallVector<MojoValue> args = {idxList};
+  SmallVector<MojoValue> args = {state.getMojoValueFor(getIndex())};
   // The shapes are already `Coord` values: functor shape-capture fields, or
   // kernel-scope `!mogg.shape` Coords a foreach closure captures. A static
   // shape (no captures) is built here.
@@ -650,8 +632,7 @@ LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
                  kParameterStaticSteps.equal(comptimeTuple(getStaticStep()))}](
           args));
   Block &body = getBody().front();
-  state.setMojoValueFor(body.getArgument(0),
-                        builder.var(kStructCoord({inverse[uint64_t(0)]})));
+  state.setMojoValueFor(body.getArgument(0), builder.var(inverse[uint64_t(0)]));
   MojoValue inSlice = builder.var(inverse[uint64_t(1)]);
 
   // The body runs on the false edge of `not in_slice`, the branch sense of an
@@ -668,16 +649,15 @@ LogicalResult IndexSliceSelectOp::emitMojo(EmitMojoState &state) {
   return failure(failed);
 }
 
-// Input `r`'s extent on the select's axis: the static one, or the runtime one
-// read from the input's shape, a kernel-scope `Coord`.
+// Input `r`'s extent on the select's axis: the static one as an `Idx`, or the
+// runtime one read from the input's shape, a kernel-scope `Coord`.
 static MojoValue concatExtent(EmitMojoState &state, IndexConcatSelectOp select,
                               unsigned r) {
   int64_t extent = select.getStaticConcatSizes().getIntDims()[r];
   if (!ShapedType::isDynamic(extent))
-    return MojoValue(extent);
+    return EmitMojoState::getComptimeIdx(extent);
   Value shape = select.getDynamicShapes()[r];
-  return MojoValue(kFnCoordToIndexList)(
-      {state.getMojoValueFor(shape)})[MojoValue(uint64_t(select.getAxis()))];
+  return state.getMojoValueFor(shape)[uint64_t(select.getAxis())];
 }
 
 LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
@@ -707,10 +687,6 @@ LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
       cast<SimdType>(getResult().getType()).getElementType());
   ASSERT_STREAM(!dtypeOr.isError(), "the verifier requires a !mogg.simd");
   MojoValue dtype = state.mlirDTypeToMojoType(*dtypeOr);
-
-  // A foreach closure's index is a `Coord` of the loop's own rank.
-  MojoValue idxList = builder.var(
-      MojoValue(kFnCoordToIndexList)({state.getMojoValueFor(getIndex())}));
 
   MojoValue simdType = MojoValue(kStructSIMD)[{dtype, width}];
   bool failed = false;
@@ -753,24 +729,15 @@ LogicalResult IndexConcatSelectOp::emitMojo(EmitMojoState &state) {
   // Every input's extent: the primitive picks the input from all but the
   // last's, and checks a debug build's reads against each. The runtime ones
   // are read only where a static one is unknown.
-  unsigned numInputs = getInputs().size();
-  SmallVector<int64_t> staticSizes(getStaticConcatSizes().getIntDims());
-  SmallVector<MojoValue> args = {idxList, closure};
-  if (!getDynamicShapes().empty()) {
-    SmallVector<MojoValue> extents;
-    for (unsigned r = 0; r < numInputs; ++r)
-      extents.push_back(concatExtent(state, *this, r));
-    args.push_back(builder.var(MojoValue(
-        kStructIndexList)[MojoValue(uint64_t(extents.size()))](extents)));
-  }
+  SmallVector<MojoValue> extents;
+  for (unsigned r = 0, e = getInputs().size(); r < e; ++r)
+    extents.push_back(concatExtent(state, *this, r));
+  MojoValue sizes = builder.var(kStructCoord(extents));
 
   MojoValue result = builder.var(primitive[{
       MojoValue("dtype").equal(dtype), MojoValue("width").equal(width),
-      MojoValue("num_inputs").equal(MojoValue(uint64_t(numInputs))),
-      MojoValue("axis").equal(MojoValue(uint64_t(getAxis()))),
-      MojoValue("static_sizes")
-          .equal(builder.comptime(
-              EmitMojoState::getAsCoordMojoValue(staticSizes)))}](args));
+      MojoValue("axis").equal(MojoValue(uint64_t(getAxis())))}](
+      {state.getMojoValueFor(getIndex()), closure, sizes}));
   state.setMojoValueFor(getResult(), result);
   return success();
 }
@@ -1205,13 +1172,10 @@ static MojoValue simdLoadFromCapture(const FusedTensorArg &arg,
                                      const MojoValue &width,
                                      const MojoValue &alignment,
                                      const MojoValue &coord) {
-  // The pointer-based load wants an `IndexList[rank]`, sized by the capture's
-  // own static spec.
-  MojoValue indices = coordToIndexList(coord, arg.spec.get(kParameterRank));
   return kFnMsSimdLoadFromTensorPointer[{
       kParameterStaticSpec.equal(arg.spec), kParameterSimdWidth.equal(width),
       kParameterElementAlignment.equal(alignment)}](
-      {arg.ptr, arg.shape, arg.strides, indices});
+      {arg.ptr, arg.shape, arg.strides, coord});
 }
 
 LogicalResult TensorLoadOp::emitMojo(EmitMojoState &state) {
@@ -1246,14 +1210,11 @@ LogicalResult TensorStoreOp::emitMojo(EmitMojoState &state) {
   // explicit rebind to the capture spec's own dtype.
   MojoValue rebound = value.rebind(
       kStructSIMD[{arg.spec.get(kParameterDType), parameters.width()}]);
-  // The loop index arrives as a `Coord`; the pointer-based store wants an
-  // `IndexList[rank]`, sized by the capture's own static spec.
-  MojoValue indices = coordToIndexList(idx, arg.spec.get(kParameterRank));
   state.file->call(kFnMsSimdStoreIntoTensorPointer,
                    {kParameterStaticSpec.equal(arg.spec),
                     kParameterSimdWidth.equal(parameters.width()),
                     kParameterElementAlignment.equal(parameters.alignment())},
-                   {arg.ptr, arg.shape, arg.strides, indices, rebound});
+                   {arg.ptr, arg.shape, arg.strides, idx, rebound});
   return success();
 }
 
@@ -1312,8 +1273,8 @@ collectFusedCaptureInfos(EmitMojoState &state, Operation *op,
     // `unsafe_ptr()` erases the origin to `MutAnyOrigin`, matching the
     // functor's pointer field and `simd_*_tensor_pointer`'s `ptr` parameter.
     MojoValue ptr = state.file->var(capRef.unsafePtr());
-    MojoValue shape = state.file->var(capRef.shape());
-    MojoValue strides = state.file->var(capRef.strides());
+    MojoValue shape = state.file->var(capRef.shapeCoord());
+    MojoValue strides = state.file->var(capRef.stridesCoord());
     MojoValue spec = state.file->comptime(capRef.staticSpec());
     infos.push_back({ptr, shape, strides, spec,
                      state.mlirDTypeToMojoType(*capDtypeOr), create.getMut()});
@@ -1444,11 +1405,12 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
           for (unsigned j = 0; j < numCaptures; ++j) {
             FusedCaptureInfo &capture = captureInfos[j];
             selfSpecParams[j] = MojoValue("Self").get(sb.parameters[j]);
-            // Shape/strides fields are sized by the spec's own rank, so they
-            // unify with the runtime `shape()`/`strides()` instance args (both
-            // from the same slice) -- symbolic rank and all.
-            MojoValue indexListType =
-                kStructIndexList[selfSpecParams[j].get(kParameterRank)];
+            // Shape/strides fields are dynamic `Coord`s of the spec's rank;
+            // the spec still carries the static dims. A field typed by the
+            // spec's layout crashes the compiler when a device launch
+            // reflects over the functor's fields.
+            MojoValue coordType =
+                dynamicIntCoord(selfSpecParams[j].get(kParameterRank));
             MojoValue scalarType = scalarOfDType(capture.dtype);
             // A `MutAnyOrigin` pointer field (mutable-any, matching
             // `simd_*_tensor_pointer`'s `ptr` parameter) needs the legacy
@@ -1457,10 +1419,8 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
                 "@__allow_legacy_any_origin_fields");
             selfPtrFields[j] = state.file.declarations().varDecl(
                 kStructPointer[{scalarType, kComptimeMutAnyOrigin}]);
-            selfShapeFields[j] =
-                state.file.declarations().varDecl(indexListType);
-            selfStridesFields[j] =
-                state.file.declarations().varDecl(indexListType);
+            selfShapeFields[j] = state.file.declarations().varDecl(coordType);
+            selfStridesFields[j] = state.file.declarations().varDecl(coordType);
           }
           for (unsigned k = 0; k < numShapeCaptures; ++k)
             shapeCaptureFields[k] =
@@ -1534,7 +1494,7 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
                 }
 
                 // Shape captures follow the tensor captures as trailing block
-                // args; each resolves straight to its own `IndexList` field.
+                // args; each resolves straight to its own `Coord` field.
                 for (unsigned k = 0; k < numShapeCaptures; ++k)
                   state.setMojoValueFor(
                       region.getArgument(captureBase + numCaptures + k),
@@ -1572,12 +1532,13 @@ emitMapFusionFunctor(EmitMojoState &state, Region &region,
   SmallVector<MojoValue> instanceArgs;
   for (const FusedCaptureInfo &capture : captureInfos) {
     comptimeArgs.push_back(capture.spec);
+    MojoValue rank = capture.spec.get(kParameterRank);
     instanceArgs.push_back(capture.ptr);
-    instanceArgs.push_back(capture.shape);
-    instanceArgs.push_back(capture.strides);
+    instanceArgs.push_back(toDynamicIntCoord(capture.shape, rank));
+    instanceArgs.push_back(toDynamicIntCoord(capture.strides, rank));
   }
-  // Shape captures' `IndexList`s follow the (ptr, shape, strides) triples, in
-  // the trailing field order the struct was declared with.
+  // Shape captures' `Coord`s follow the (ptr, shape, strides) triples, in the
+  // trailing field order the struct was declared with.
   for (MojoValue shapeArg : shapeCaptureArgs)
     instanceArgs.push_back(shapeArg);
   return state.file->var(structNameVal[comptimeArgs](instanceArgs));
@@ -1708,8 +1669,8 @@ static void appendMaxSimdWidthArg(SmallVectorImpl<MojoValue> &arguments,
     arguments.push_back(kArgMaxSimdWidth.equal(kAliasIdx[*maxSimdWidth]));
   if (!dynamicMaxSimdWidth)
     return;
-  MojoValue dims = coordToIndexList(state.getMojoValueFor(dynamicMaxSimdWidth));
-  MojoValue divisor = state.file->var(kFnPow2DivisorOfDims({dims}));
+  MojoValue divisor = state.file->var(
+      kFnPow2DivisorOfDims({state.getMojoValueFor(dynamicMaxSimdWidth)}));
   MojoValue scalarInt = scalarOfDType(kStructDType.get(kEnumDTypeInt));
   arguments.push_back(kArgMaxSimdWidth.equal(scalarInt({divisor})));
 }
@@ -3986,7 +3947,7 @@ LogicalResult AsyncErrorOp::emitMojo(EmitMojoState &state) {
 
 LogicalResult ShapeInitOp::emitMojo(EmitMojoState &state) {
   MojoValue shapeValue =
-      state.getShapeAsIndexListMojoValue(getShape(), getDynamicDims());
+      state.getShapeAsCoordMojoValue(getShape(), getDynamicDims());
   state.setMojoValueFor(getResult(), shapeValue);
   return success();
 }

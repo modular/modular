@@ -130,7 +130,7 @@ mo.graph @blob_dim<batch>(%arg0: !mo.tensor<[batch, 2], f32>) -> !mo.tensor<[bat
 // CHECK:          def [[LAMBDA0:lambda_[_0-9]+]][width : Int, element_alignment : Int = 1](idx: layout.Coord) {var}:
 // CHECK:            simd_load_from_tensor_pointer
 // CHECK:            simd_store_into_tensor_pointer
-// CHECK:          var [[DIV:[A-Za-z0-9_]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list([[LIMIT]]))
+// CHECK:          var [[DIV:[A-Za-z0-9_]+]] = builtin_primitives.primitives.pow2_divisor_of_dims([[LIMIT]])
 // CHECK-NEXT:     builtin_primitives.primitives._graph_blob_foreach[dtypes = std.utils.StaticTuple[DType, 1](DType.float32)]([[SHAPE0]], [[LAMBDA0]], max_simd_width = Scalar[DType.int]([[DIV]]))
 // CHECK:          builtin_primitives.primitives._graph_blob_barrier()
 // CHECK:          builtin_primitives.primitives._graph_blob_foreach[dtypes = {{.+}}]({{[A-Za-z0-9_]+}}, {{[A-Za-z0-9_]+}}, max_simd_width = layout.Idx[2])

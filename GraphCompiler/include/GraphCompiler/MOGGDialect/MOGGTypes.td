@@ -47,12 +47,12 @@ def MOGG_ProfileScopeRange : MOGG_Type<"ProfileScopeRange", "profile_scope_range
 def MOGG_Shape : MOGG_Type<"Shape", "shape"> {
   let summary = "A type mapping onto a shape";
   let description = [{
-    A runtime shape value.
+    A runtime shape value, a `Coord` in emit-mojo.
   }];
 }
 
-// TODO(GEX-2729): Reuse !mogg.shape once it carries a rank; it already
-// represents IndexList values in emit-mojo.
+// TODO(GEX-2729): Reuse !mogg.shape once it carries a rank and shape
+// functions return a `Coord`.
 def MOGG_ShapeFuncResult : MOGG_Type<"ShapeFuncResult", "shape_func_result"> {
   let summary = "A type representing the result of a shape function with known rank";
   let description = [{

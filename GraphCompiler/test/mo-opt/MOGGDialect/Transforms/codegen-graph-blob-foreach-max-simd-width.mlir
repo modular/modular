@@ -12,7 +12,7 @@
 
 // CHECK:      def {{execute_device_[_0-9]+}}([[N:[A-Za-z0-9_]+]]: Int64,
 // CHECK:      var [[LIMIT:[A-Za-z0-9_]+]] = layout.Coord(layout.Idx[8], Scalar[DType.int](Int([[N]])))
-// CHECK:      var [[DIV:[A-Za-z0-9_]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list([[LIMIT]]))
+// CHECK:      var [[DIV:[A-Za-z0-9_]+]] = builtin_primitives.primitives.pow2_divisor_of_dims([[LIMIT]])
 // CHECK-NEXT: builtin_primitives.primitives._graph_blob_foreach[dtypes = {{.+}}]({{[^,]+}}, {{[^,]+}}, max_simd_width = Scalar[DType.int]([[DIV]]))
 // CHECK:      builtin_primitives.primitives._graph_blob_barrier()
 // CHECK:      builtin_primitives.primitives._graph_blob_foreach[dtypes = {{.+}}]({{[^,]+}}, {{[^,]+}}, max_simd_width = layout.Idx[2])

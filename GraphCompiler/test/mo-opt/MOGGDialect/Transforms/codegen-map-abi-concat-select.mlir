@@ -17,18 +17,17 @@
 // are not.
 
 // CHECK:      def lambda_{{_+[0-9]+}}[width : Int, element_alignment : Int = 1](idx: layout.Coord) {var}:
-// CHECK-NEXT:   var [[IDX:var_+[0-9]+]] = std.utils.coord.coord_to_index_list(idx)
 // CHECK-NEXT:   @__allow_legacy_any_origin_fields
 // CHECK-NEXT:   @inline(.always)
 // CHECK-NEXT:   def [[INPUTS:concat_inputs_+[0-9]+]][input_index : Int](i: layout.Coord) {var} -> SIMD[DType.float32, width]:
 // CHECK-NEXT:     comptime if input_index == 0:
-// CHECK-NEXT:       var [[X0:var_+[0-9]+]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = width, element_alignment = element_alignment]({{.*}}std.utils.coord.coord_to_index_list(i)))
+// CHECK-NEXT:       var [[X0:var_+[0-9]+]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = width, element_alignment = element_alignment]({{.*}}, i)
 // CHECK-NEXT:       return rebind[SIMD[DType.float32, width]]([[X0]])
 // CHECK:          else:
-// CHECK-NEXT:       var [[X1:var_+[0-9]+]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = width, element_alignment = element_alignment]({{.*}}std.utils.coord.coord_to_index_list(i)))
+// CHECK-NEXT:       var [[X1:var_+[0-9]+]] = managed_tensor_slice.simd_load_from_tensor_pointer[{{.*}}simd_width = width, element_alignment = element_alignment]({{.*}}, i)
 // CHECK-NEXT:       return rebind[SIMD[DType.float32, width]]([[X1]])
-// CHECK:        comptime [[SIZES:param_+[0-9]+]] = layout.Coord(layout.Idx[8], layout.Idx[16])
-// CHECK-NEXT:   var [[V:var_+[0-9]+]] = builtin_primitives.primitives.mogg_index_concat_select[dtype = DType.float32, width = width, num_inputs = 2, axis = 1, static_sizes = [[SIZES]]]([[IDX]], [[INPUTS]])
+// CHECK:        var [[SIZES:var_+[0-9]+]] = layout.Coord(layout.Idx[8], layout.Idx[16])
+// CHECK-NEXT:   var [[V:var_+[0-9]+]] = builtin_primitives.primitives.mogg_index_concat_select[dtype = DType.float32, width = width, axis = 1](idx, [[INPUTS]], [[SIZES]])
 // CHECK-NEXT:   managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}]({{.*}}, rebind[SIMD[{{.*}}, width]]([[V]]))
 // CHECK:      builtin_primitives.primitives._foreach[simd_width = builtin_primitives.primitives.get_simd_width_for_dtypes[{{.*}}]()]({{[^,]+}}, {{[^,]+}}, {{[^,]+}}, max_simd_width = layout.Idx[8])
 mo.graph @concatStatic(%arg0: !mo.tensor<[4, 8], f32>, %arg1: !mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 24], f32> {
@@ -54,10 +53,9 @@ mo.graph @concatStatic(%arg0: !mo.tensor<[4, 8], f32>, %arg1: !mo.tensor<[4, 16]
 // CHECK:      def __{{[a-z_0-9]+}}(arg__0: {{[^,]*}}, arg__1: {{[^,]*}}, arg__2: {{[^,]*}}, [[M:arg__[0-9]+]]: Int, [[N0:arg__[0-9]+]]: Int, [[N1:arg__[0-9]+]]: Int,
 // CHECK:      var [[S0:var__[0-9]+]] = layout.Coord(Scalar[DType.int]([[M]]), Scalar[DType.int]([[N0]]))
 // CHECK:      var [[S1:var__[0-9]+]] = layout.Coord(Scalar[DType.int]([[M]]), Scalar[DType.int]([[N1]]))
-// CHECK:      var [[RT:var_+[0-9]+]] = std.utils.IndexList[2](std.utils.coord.coord_to_index_list([[S0]])[1], std.utils.coord.coord_to_index_list([[S1]])[1])
-// CHECK-NEXT: comptime [[DSIZES:param_+[0-9]+]] = layout.Coord(Int(-1), Int(-1))
-// CHECK-NEXT: var {{var_+[0-9]+}} = builtin_primitives.primitives.mogg_index_concat_select[dtype = DType.float32, width = width, num_inputs = 2, axis = 1, static_sizes = [[DSIZES]]]({{var_+[0-9]+}}, {{concat_inputs_+[0-9]+}}, [[RT]])
-// CHECK:      var [[G:var_+[0-9]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list({{var_+[0-9]+}}))
+// CHECK:      var [[RT:var_+[0-9]+]] = layout.Coord([[S0]][1], [[S1]][1])
+// CHECK-NEXT: var {{var_+[0-9]+}} = builtin_primitives.primitives.mogg_index_concat_select[dtype = DType.float32, width = width, axis = 1](idx, {{concat_inputs_+[0-9]+}}, [[RT]])
+// CHECK:      var [[G:var_+[0-9]+]] = builtin_primitives.primitives.pow2_divisor_of_dims({{var_+[0-9]+}})
 // CHECK-NEXT: builtin_primitives.primitives._foreach[simd_width = {{.*}}]({{.*}}, max_simd_width = Scalar[DType.int]([[G]]))
 mo.graph @concatDynamic<M, N0, N1, P>(%arg0: !mo.tensor<[M, N0], f32>, %arg1: !mo.tensor<[M, N1], f32>) -> !mo.tensor<[M, P], f32> {
   %0 = map.iter.opaque

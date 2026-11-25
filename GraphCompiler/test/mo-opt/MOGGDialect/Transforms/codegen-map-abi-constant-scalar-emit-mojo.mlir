@@ -17,12 +17,12 @@
 // StaticTensorSpec, and accessed through the pointer-based simd load/store -- no
 // TileTensor is materialized.
 // CHECK:   var [[PTR0:.*]] = [[V0]].unsafe_ptr()
-// CHECK:   var [[SH0:.*]] = [[V0]].shape()
-// CHECK:   var [[ST0:.*]] = [[V0]].strides()
+// CHECK:   var [[SH0:.*]] = [[V0]].shape_coord()
+// CHECK:   var [[ST0:.*]] = [[V0]].strides_coord()
 // CHECK:   comptime [[SPEC0:.*]] = [[V0]].static_spec
 // CHECK:   var [[PTR1:.*]] = [[V1]].unsafe_ptr()
-// CHECK:   var [[SH1:.*]] = [[V1]].shape()
-// CHECK:   var [[ST1:.*]] = [[V1]].strides()
+// CHECK:   var [[SH1:.*]] = [[V1]].shape_coord()
+// CHECK:   var [[ST1:.*]] = [[V1]].strides_coord()
 // CHECK:   comptime [[SPEC1:.*]] = [[V1]].static_spec
 // CHECK:   def [[LAMBDA:lambda_____[0-9]+]][width : Int, element_alignment : Int = 1](idx: layout.Coord) {var}:
 // CHECK:     var [[XV:.*]] = {{.*}}simd_load_from_tensor_pointer[static_spec = [[SPEC0]], simd_width = width, element_alignment = element_alignment]([[PTR0]], [[SH0]], [[ST0]], {{.*}})

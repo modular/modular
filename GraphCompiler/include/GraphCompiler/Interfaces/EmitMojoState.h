@@ -364,9 +364,6 @@ public:
     return kStructCoord(dimsAsMojoValues);
   }
 
-  MojoValue getShapeAsIndexListMojoValue(MOSH::ShapeAttr shapeAttr,
-                                         ValueRange dynamicDims = {});
-
   /// Emit the shape as a `Coord`, encoding static dims as compile-time `Idx[N]`
   /// components and dynamic dims as runtime `Int(<dim>)` components.
   MojoValue getShapeAsCoordMojoValue(MOSH::ShapeAttr shapeAttr,

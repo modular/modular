@@ -17,23 +17,22 @@
 // `not` the bit. The whole stores of both adds follow at the functor's index.
 
 // CHECK:      struct OutputStoreFunctor_{{[0-9]+}}
-// CHECK:      var [[IDX_LIST:var_+[0-9]+]] = rebind[std.utils.IndexList[2]](std.utils.coord.coord_to_index_list(idx))
-// CHECK-NEXT: var [[IN:var_+[0-9]+]] = layout.Coord(layout.Idx[8], layout.Idx[16])
+// CHECK:      var [[IN:var_+[0-9]+]] = layout.Coord(layout.Idx[8], layout.Idx[16])
 // CHECK-NEXT: var [[OUT:var_+[0-9]+]] = layout.Coord(layout.Idx[4], layout.Idx[16])
 // CHECK-NEXT: comptime [[STARTS:param_+[0-9]+]] = layout.Coord(layout.Idx[1], layout.Idx[0])
 // CHECK-NEXT: comptime [[STEPS:param_+[0-9]+]] = layout.Coord(layout.Idx[2], layout.Idx[1])
-// CHECK-NEXT: var [[INV:var_+[0-9]+]] = builtin_primitives.primitives.mogg_index_slice_select[static_starts = [[STARTS]], static_steps = [[STEPS]]]([[IDX_LIST]], [[IN]], [[OUT]])
-// CHECK-NEXT: var [[J:var_+[0-9]+]] = layout.Coord([[INV]][0])
+// CHECK-NEXT: var [[INV:var_+[0-9]+]] = builtin_primitives.primitives.mogg_index_slice_select[static_starts = [[STARTS]], static_steps = [[STEPS]]](idx, [[IN]], [[OUT]])
+// CHECK-NEXT: var [[J:var_+[0-9]+]] = [[INV]][0]
 // CHECK-NEXT: var [[SEL:var_+[0-9]+]] = [[INV]][1]
 // CHECK-NEXT: if not [[SEL]]:
 // CHECK-NEXT:   pass
 // CHECK-EMPTY:
 // CHECK-NEXT: else:
 // CHECK-NEXT:   var [[RELU:var_+[0-9]+]] = builtin_kernels.elementwise.ReLU.elementwise[dtype = DType.float32]({{var_+[0-9]+}})
-// CHECK-NEXT:   managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}](std.utils.coord.coord_to_index_list([[J]])), rebind[{{.*}}]([[RELU]]))
+// CHECK-NEXT:   managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}]({{.*}}, [[J]], rebind[{{.*}}]([[RELU]]))
 // CHECK-EMPTY:
-// CHECK-NEXT: managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}](std.utils.coord.coord_to_index_list(idx)), {{.*}}
-// CHECK-NEXT: managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}](std.utils.coord.coord_to_index_list(idx)), {{.*}}
+// CHECK-NEXT: managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}]({{.*}}, idx, {{.*}}
+// CHECK-NEXT: managed_tensor_slice.simd_store_into_tensor_pointer[{{.*}}]({{.*}}, idx, {{.*}}
 mo.graph @matmul_window(%p: !mo.tensor<[8, 8], f32>, %q: !mo.tensor<[8, 16], f32>, %b: !mo.tensor<[8, 16], f32>, %c: !mo.tensor<[8, 16], f32>) -> (!mo.tensor<[8, 16], f32>, !mo.tensor<[8, 16], f32>, !mo.tensor<[4, 16], f32>) {
   %starts = mo.constant <#M.dense_array<1, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
   %stops = mo.constant <#M.dense_array<8, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>

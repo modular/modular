@@ -856,15 +856,15 @@ def simd_store_into_tensor_pointer[
     element_alignment: Int = 1,
 ](
     ptr: MutPointer[Scalar[dtype], _],
-    shape: IndexList[rank],
-    strides: IndexList[rank],
-    indices: IndexList[rank],
+    shape: Coord,
+    strides: Coord,
+    indices: Coord,
     value: SIMD[dtype, simd_width],
 ):
     """Store a SIMD vector to raw tensor components.
 
     This function is GPU-safe because it only takes trivial types (pointer,
-    IndexList) that can be properly captured in GPU kernel closures. Use this
+    `Coord`) that can be properly captured in GPU kernel closures. Use this
     instead of simd_store_into_managed_tensor_slice when generating code for
     GPU kernels.
 
@@ -877,16 +877,20 @@ def simd_store_into_tensor_pointer[
 
     Args:
         ptr: The raw pointer to tensor data.
-        shape: The runtime shape of the tensor.
-        strides: The runtime strides of the tensor.
+        shape: The runtime shape of the tensor; `static_spec` carries its
+            static dims.
+        strides: The runtime strides of the tensor; `static_spec` carries
+            its static strides.
         indices: The indices to store into.
         value: The value to store.
     """
     var tensor = OutputTensor[dtype=dtype, rank=rank, static_spec=static_spec](
-        ptr, shape, strides
+        ptr,
+        rebind[IndexList[rank]](coord_to_index_list(shape)),
+        rebind[IndexList[rank]](coord_to_index_list(strides)),
     )
     simd_store_into_managed_tensor_slice[element_alignment=element_alignment](
-        tensor, indices, value
+        tensor, rebind[IndexList[rank]](coord_to_index_list(indices)), value
     )
 
 
@@ -904,14 +908,14 @@ def simd_load_from_tensor_pointer[
     element_alignment: Int = 1,
 ](
     ptr: MutPointer[Scalar[dtype], _],
-    shape: IndexList[rank],
-    strides: IndexList[rank],
-    indices: IndexList[rank],
+    shape: Coord,
+    strides: Coord,
+    indices: Coord,
 ) -> SIMD[dtype, simd_width]:
     """Load a SIMD vector from raw tensor components.
 
     This function is GPU-safe because it only takes trivial types (pointer,
-    IndexList) that can be properly captured in GPU kernel closures. Use this
+    `Coord`) that can be properly captured in GPU kernel closures. Use this
     instead of simd_load_from_managed_tensor_slice when generating code for
     GPU kernels.
 
@@ -924,19 +928,23 @@ def simd_load_from_tensor_pointer[
 
     Args:
         ptr: The raw pointer to tensor data.
-        shape: The runtime shape of the tensor.
-        strides: The runtime strides of the tensor.
+        shape: The runtime shape of the tensor; `static_spec` carries its
+            static dims.
+        strides: The runtime strides of the tensor; `static_spec` carries
+            its static strides.
         indices: The indices to load from.
 
     Returns:
         A SIMD vector with the loaded values.
     """
     var tensor = InputTensor[dtype=dtype, rank=rank, static_spec=static_spec](
-        ptr, shape, strides
+        ptr,
+        rebind[IndexList[rank]](coord_to_index_list(shape)),
+        rebind[IndexList[rank]](coord_to_index_list(strides)),
     )
     return simd_load_from_managed_tensor_slice[
         simd_width=simd_width, element_alignment=element_alignment
-    ](tensor, indices)
+    ](tensor, rebind[IndexList[rank]](coord_to_index_list(indices)))
 
 
 def _strided_lanes_mask[width: Int, stride: Int]() -> Array[SIMDLength, width]:

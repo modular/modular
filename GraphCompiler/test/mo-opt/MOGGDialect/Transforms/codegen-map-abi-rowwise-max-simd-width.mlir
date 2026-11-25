@@ -18,7 +18,7 @@
 // map.iter.reduce verifies its monoid resolves to a mogg.kernel.decl.
 mogg.kernel.decl @builtin_kernels.monoids.ReduceSum registration = "mo.reduce.add" reduction = <<"dtype": !DType, "W": !Int>, "W", [#mogg.kernel_reduction_output<"acc", #kgen.param.decl.ref<"dtype"> : !DType>]> struct_params = [#kgen<param.decl dtype : !DType>, #kgen<param.decl W : !Int>] is_user_defined = false
 
-// CHECK:      var [[DIV:var_+[0-9]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list({{var_+[0-9]+}}))
+// CHECK:      var [[DIV:var_+[0-9]+]] = builtin_primitives.primitives.pow2_divisor_of_dims({{var_+[0-9]+}})
 // CHECK:      builtin_primitives.primitives._rowwise[{{.*}}]({{.*}}, max_simd_width = Scalar[DType.int]([[DIV]]))
 mo.graph @dynamic<N>(%x: !mo.tensor<[N, 32], f32>) -> !mo.tensor<[N, 1], f32> {
   %s = map.iter.opaque

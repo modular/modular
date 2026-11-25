@@ -339,9 +339,6 @@ constexpr MojoStaticValue kFnMsSimdStoreIntoTensorPointer =
 /// Returns a tile kernel's `(rows, cols)` tile shape.
 constexpr MojoStaticValue kFnGetKernelTileShape =
     "managed_tensor_slice.get_kernel_tile_shape";
-/// Fully qualified because `std.utils` does not re-export `coord`.
-constexpr MojoStaticValue kFnCoordToIndexList =
-    "std.utils.coord.coord_to_index_list";
 constexpr MojoStaticValue kStructRowwiseRow = "algorithm.rowwise.Row";
 constexpr MojoStaticValue kStructRowwiseContextParams =
     "algorithm.rowwise_types.ContextParams";
@@ -537,8 +534,8 @@ public:
   explicit ManagedTensorSliceRef(MojoValue v) : value(std::move(v)) {}
 
   static constexpr MojoStaticValue kUnsafePtr = "unsafe_ptr";
-  static constexpr MojoStaticValue kShape = "shape";
-  static constexpr MojoStaticValue kStrides = "strides";
+  static constexpr MojoStaticValue kShapeCoord = "shape_coord";
+  static constexpr MojoStaticValue kStridesCoord = "strides_coord";
   static constexpr MojoStaticValue kToTileTensor = "to_tile_tensor";
   static constexpr MojoStaticValue kStaticSpec = "static_spec";
   static constexpr MojoStaticValue kStaticShapeTuple = "_static_shape_tuple";
@@ -557,8 +554,8 @@ public:
   MojoValue rawPtr() const { return value.get(kPtr); }
 
   MojoValue unsafePtr() const { return value.get(kUnsafePtr)(); }
-  MojoValue shape() const { return value.get(kShape)(); }
-  MojoValue strides() const { return value.get(kStrides)(); }
+  MojoValue shapeCoord() const { return value.get(kShapeCoord)(); }
+  MojoValue stridesCoord() const { return value.get(kStridesCoord)(); }
   MojoValue toTileTensor() const { return value.get(kToTileTensor)(); }
 
   MojoValue value;
@@ -849,12 +846,17 @@ inline MojoValue rowMajorLayout(const MojoValue &shape) {
   return kFnRowMajor({shape});
 }
 
-/// `coord_to_index_list(<coord>)`, optionally rebound to `IndexList[rank]`.
-inline MojoValue
-coordToIndexList(const MojoValue &coord,
-                 std::optional<MojoValue> rank = std::nullopt) {
-  MojoValue list = kFnCoordToIndexList({coord});
-  return rank ? list.rebind(kStructIndexList[*rank]) : list;
+/// `DynamicCoord[DType.int, <rank>]`.
+inline MojoValue dynamicIntCoord(const MojoValue &rank) {
+  return kAliasDynamicCoord[{kStructDType.get(kEnumDTypeInt), rank}];
+}
+
+/// `<coord>` with every element a runtime `Scalar[DType.int]`, typed as
+/// `DynamicCoord[DType.int, <rank>]`.
+inline MojoValue toDynamicIntCoord(const MojoValue &coord,
+                                   const MojoValue &rank) {
+  return coord.get(MojoValue("make_dynamic"))[kStructDType.get(kEnumDTypeInt)]()
+      .rebind(dynamicIntCoord(rank));
 }
 
 /// `Scalar[<dtype>]`.

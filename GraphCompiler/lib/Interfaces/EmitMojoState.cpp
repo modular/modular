@@ -137,28 +137,6 @@ LogicalResult EmitMojoState::lowerOpToMojo(Operation *op) {
             "a supported 'index' or 'pop' dialect operation either";
 }
 
-MojoValue EmitMojoState::getShapeAsIndexListMojoValue(MOSH::ShapeAttr shapeAttr,
-                                                      ValueRange dynamicDims) {
-  SmallVector<MojoValue> mojoDims;
-  unsigned nextDymDim = 0;
-  for (TypedAttr dim : shapeAttr.getValues()) {
-    if (auto staticDim = MOSH::ShapeAttr::getStaticDim(dim)) {
-      mojoDims.push_back(*staticDim);
-    } else {
-      ASSERT_STREAM(nextDymDim < dynamicDims.size(),
-                    "Missing dynamic dimension");
-      mojoDims.push_back(getMojoValueFor(dynamicDims[nextDymDim++]));
-    }
-  }
-  if (mojoDims.empty())
-    mojoDims.push_back(static_cast<int64_t>(1));
-
-  MojoValue rankParam =
-      MojoValue(shapeAttr.getRank() == 0 ? 1 : shapeAttr.getRank());
-
-  return kStructIndexList[{rankParam}](mojoDims);
-}
-
 MojoValue EmitMojoState::getShapeAsCoordMojoValue(MOSH::ShapeAttr shapeAttr,
                                                   ValueRange dynamicDims) {
   SmallVector<MojoValue> coordElems;
