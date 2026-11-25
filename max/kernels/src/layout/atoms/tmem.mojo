@@ -20,20 +20,19 @@ the address: the TMEM map fixes lane, warp and value bits, and nothing free
 may reach the two lane bits the warp picks. The register side is `cols`
 registers in each of the warp's 32 threads.
 
-Neither atom waits, and neither completion holds a wait. Their completions
-are counters: `TMemLoadWait` describes the `tcgen05.ld` family and
-`TMemStoreWait` the `tcgen05.st` family, and the building block waits on
-each with `layout.building_blocks.wait_issues`, which emits
-`tcgen05.wait::ld` or `tcgen05.wait::st` for all of this thread's
-outstanding loads or stores. As with `TMemEngine.copy_to_async` and
-`copy_from_async`, the register operand must be a register tile, a loaded
-fragment is valid only after the load wait, and a stored fragment must not
-change before the store wait.
+Neither atom waits. Each runs on an async engine with a `Counted` route:
+`Tcgen05LdEngine`'s wait is `tcgen05.wait::ld` and `Tcgen05StEngine`'s is
+`tcgen05.wait::st`, each of which waits for all of this thread's outstanding
+loads or stores. As with
+`TMemEngine.copy_to_async` and `copy_from_async`, the register operand must
+be a register tile, a loaded fragment is valid only after the load wait, and
+a stored fragment must not change before the store wait.
 
 You can import these APIs from the `layout.atoms.tmem` module:
 
 ```mojo
-from layout.atoms.tmem import TMemLoad, TMemLoadWait, TMemStore, TMemStoreWait
+from layout.atoms.tmem import TMemLoad, TMemStore
+from layout.atoms.tmem import Tcgen05LdEngine, Tcgen05StEngine
 ```
 """
 
@@ -45,8 +44,9 @@ from layout.atoms import (
     TMEM_COLUMN,
     TMEM_LANE,
     AddressEncoding,
-    CompletionFamily,
-    CounterCompletion,
+    Counted,
+    CounterWaitAtom,
+    HasCount,
     LoadAtom,
     OperandMap,
     registers_map,
@@ -57,6 +57,8 @@ from layout.bit_layout import BitLayout, bits
 from layout.tensor_engine import TensorEngine
 from layout.layout import TensorLayout
 from layout.tmem_engine import TMemEngine
+
+from max.gpu.compute.arch.tcgen05 import tcgen05_load_wait, tcgen05_store_wait
 
 from std.bit import count_trailing_zeros
 
@@ -87,28 +89,80 @@ def tmem_32x32b_map(cols: Int) -> OperandMap:
     }
 
 
-struct TMemLoadWait(CounterCompletion):
-    """The completion of `tcgen05.ld`: a counter of this thread's TMEM
-    loads, which `tcgen05.wait::ld` drains."""
+@fieldwise_init
+struct TMemLoadWait(CounterWaitAtom):
+    """`tcgen05.wait::ld`: waits for all of this thread's TMEM loads."""
 
-    comptime Result = NoneType
-    """Nothing: a `tcgen05.ld` returns no handle."""
-    comptime family = CompletionFamily.tensor_memory_load
-    """Every `TMemLoad`, whatever its width."""
     comptime max_pending = 0
     """None: the wait covers every outstanding load."""
 
+    @always_inline
+    def __call__[pending: Int = 0](self):
+        """Blocks until this thread's TMEM loads are done.
 
-struct TMemStoreWait(CounterCompletion):
-    """The completion of `tcgen05.st`: a counter of this thread's TMEM
-    stores, which `tcgen05.wait::st` drains."""
+        Parameters:
+            pending: Must be 0; the instruction waits for all of them.
+        """
+        comptime assert (
+            0 <= pending <= Self.max_pending
+        ), "tcgen05.wait::ld waits for all loads"
+        tcgen05_load_wait()
 
-    comptime Result = NoneType
-    """Nothing: a `tcgen05.st` returns no handle."""
-    comptime family = CompletionFamily.tensor_memory_store
-    """Every `TMemStore`, whatever its width."""
+
+@fieldwise_init
+struct TMemStoreWait(CounterWaitAtom):
+    """`tcgen05.wait::st`: waits for all of this thread's TMEM stores."""
+
     comptime max_pending = 0
     """None: the wait covers every outstanding store."""
+
+    @always_inline
+    def __call__[pending: Int = 0](self):
+        """Blocks until this thread's TMEM stores are done.
+
+        Parameters:
+            pending: Must be 0; the instruction waits for all of them.
+        """
+        comptime assert (
+            0 <= pending <= Self.max_pending
+        ), "tcgen05.wait::st waits for all stores"
+        tcgen05_store_wait()
+
+
+struct TMemLoads(Counted):
+    """`tcgen05.ld` issues: only the issuing thread waits, for all of them."""
+
+    comptime Wait = TMemLoadWait
+    """`tcgen05.wait::ld`."""
+
+
+struct TMemStores(Counted):
+    """`tcgen05.st` issues: only the issuing thread waits, for all of them."""
+
+    comptime Wait = TMemStoreWait
+    """`tcgen05.wait::st`."""
+
+
+struct Tcgen05LdEngine(HasCount):
+    """The unit that runs `tcgen05.ld`. Its loads complete out of order, and
+    only the issuing thread waits on them."""
+
+    comptime in_order = False
+    """Loads may complete in any order."""
+
+    comptime Count = TMemLoads
+    """Wait for the thread's loads."""
+
+
+struct Tcgen05StEngine(HasCount):
+    """The unit that runs `tcgen05.st`. Its stores complete out of order,
+    and only the issuing thread waits on them."""
+
+    comptime in_order = False
+    """Stores may complete in any order."""
+
+    comptime Count = TMemStores
+    """Wait for the thread's stores."""
 
 
 @fieldwise_init
@@ -127,7 +181,7 @@ struct TMemLoad[dt: DType, cols: Int](LoadAtom):
     """One issue covers 32 lanes by `cols` columns."""
     comptime dtype = Self.dt
     """The element type the instruction moves."""
-    comptime Completion = TMemLoadWait
+    comptime AsyncEngine = Tcgen05LdEngine
     """`tcgen05.wait::ld` waits for the thread's TMEM loads."""
     comptime Engine = TMemEngine
     """The engine of the memory the instruction reads."""
@@ -148,8 +202,7 @@ struct TMemLoad[dt: DType, cols: Int](LoadAtom):
         dst: MutTileTensor[T, LR, Engine=ER, ...],
         src: ImmTileTensor[T, LM, Engine=EM, ...],
     ):
-        """Issues the load without waiting for it; the building block waits
-        on `TMemLoadWait`.
+        """Issues the load without waiting for it.
 
         Parameters:
             T: The operands' element type.
@@ -203,7 +256,7 @@ struct TMemStore[dt: DType, cols: Int](StoreAtom):
     """One issue covers 32 lanes by `cols` columns."""
     comptime dtype = Self.dt
     """The element type the instruction moves."""
-    comptime Completion = TMemStoreWait
+    comptime AsyncEngine = Tcgen05StEngine
     """`tcgen05.wait::st` waits for the thread's TMEM stores."""
     comptime Engine = TMemEngine
     """The engine of the memory the instruction writes."""
@@ -224,8 +277,7 @@ struct TMemStore[dt: DType, cols: Int](StoreAtom):
         dst: MutTileTensor[T, LM, Engine=EM, ...],
         src: ImmTileTensor[T, LR, Engine=ER, ...],
     ):
-        """Issues the store without waiting for it; the building block waits
-        on `TMemStoreWait`.
+        """Issues the store without waiting for it.
 
         Parameters:
             T: The operands' element type.

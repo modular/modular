@@ -12,5 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Defines atoms for instructions specific to NVIDIA B200 GPUs.
 
-`layout.atoms.b200.cp_async` holds the `cp.async.bulk` transfer atom.
+`layout.atoms.b200.cp_async` holds the `cp.async.bulk` transfer atom and the
+TMA engine that runs it.
 """

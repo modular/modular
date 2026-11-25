@@ -10,11 +10,17 @@ _FILECHECK_TESTS = [
 ]
 
 _LIT_TESTS = [
+    "test_atom_async_engine_not_an_engine_fail.mojo",
+    "test_atom_missing_route_fail.mojo",
     "test_bit_tensor_layout_bad_extent_fail.mojo",
     "test_bit_tensor_layout_dependent_images_fail.mojo",
+    "test_commit_atom_unissued_fail.mojo",
     "test_gpu_storage_non_compact_layout_fail.mojo",
+    "test_sealing_atom_dropped_token_fail.mojo",
     "test_tile_tensor_copy_from_mismatched_total_elements_fail.mojo",
     "test_tile_tensor_split_static_non_divisible_fail.mojo",
+    "test_tileops_load_grouped_engine_fail.mojo",
+    "test_tileops_load_routeless_engine_fail.mojo",
     "test_two_level_layout_bad_box_fail.mojo",
 ]
 

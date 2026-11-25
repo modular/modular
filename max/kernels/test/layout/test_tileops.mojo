@@ -19,9 +19,9 @@ from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from layout import TileTensor, col_major, coord, row_major
 from layout.coord import ComptimeInt, Coord
 from layout.atoms.pointer import PointerLoad, PointerStore
+from layout.atoms import wait_issues
 from layout.atoms.tmem import TMemLoad, TMemStore
 from layout.bit_layout import is_bit_linear, placement
-from layout.building_blocks import wait_issues
 from layout.owned_tensor import OwnedGPUTensor
 from layout.bit_layout import BitLayout
 from layout.two_level_layout import (
@@ -364,11 +364,11 @@ def tmem_tileop_kernel(addr: UInt32):
         tiled_load[threads=128](
             TMemLoad[.float32, 16](), TileTensor(regs), tile, Int(thread_idx.x)
         )
-        wait_issues[TMemLoad[.float32, 16].Completion]()
+        wait_issues[TMemLoad[.float32, 16].AsyncEngine]()
         tiled_store[threads=128](
             TMemStore[.float32, 16](), tile, TileTensor(regs), Int(thread_idx.x)
         )
-        wait_issues[TMemStore[.float32, 16].Completion]()
+        wait_issues[TMemStore[.float32, 16].AsyncEngine]()
 
 
 def tmem_tileop_issue_kernel(addr: UInt32):

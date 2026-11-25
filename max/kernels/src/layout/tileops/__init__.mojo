@@ -48,12 +48,13 @@ bits and this thread's lane and warp bits select. Lanes the instruction adds
 itself, as `tcgen05.ld` does, are left out of that start, and the atom adds
 the value offsets.
 
-A TileOp contains no synchronization of any kind: no wait, commit, fence,
-barrier arrival or barrier wait. `tiled_load` and `tiled_store` issue their
-atoms and return; the building block that called them waits on the atom's
-completion with `layout.building_blocks`, such as
-`wait_issues[A.Completion]()`, when it needs the registers or the memory,
-so that other work can run while the issues are in flight.
+Data atoms and TileOps never issue sync; sync atoms are issued by a
+building block, or by Moka on its behalf. `tiled_load` and `tiled_store`
+issue their atoms and return. The caller issues the wait of a route of the
+atom's async engine when it needs the registers or the memory, through
+`layout.atoms.wait_issues[A.AsyncEngine]()` or the route's sync atom,
+`A.AsyncEngine.Count.Wait()()`. Other work can run while the issues are in
+flight, and several TileOps can share one wait.
 
 You can import these APIs from the `layout.tileops` package:
 
@@ -74,12 +75,12 @@ from layout.atoms import (
     TMEM_COLUMN,
     TMEM_LANE,
     AddressEncoding,
-    BarrierCompletion,
-    BatchCompletion,
-    HandleCompletion,
+    AsyncEngine,
+    HasCount,
     LoadAtom,
     OperandMap,
     StoreAtom,
+    Synchronous,
     same_engine,
 )
 from layout.bit_layout import BitLayout, bit, bits, is_bit_linear, placement
@@ -440,12 +441,14 @@ def _at[
     return {t._offset_storage(Scalar[t.linear_idx_type](offset)), layout}
 
 
-def _check_completion[C: AnyType]():
-    comptime assert not (
-        conforms_to(C, BarrierCompletion)
-        or conforms_to(C, BatchCompletion)
-        or conforms_to(C, HandleCompletion)
-    ), "per-thread TileOps support synchronous and counter completions"
+def _check_engine[E: AsyncEngine]():
+    # A Synchronous engine needs no wait. Among engines that do, only a
+    # count route lets the caller wait once for every issue without a seal
+    # the TileOp would have to place.
+    comptime assert E == Synchronous or conforms_to(E, HasCount), (
+        "per-thread TileOps take an atom whose async engine is Synchronous"
+        " or has a count route"
+    )
 
 
 comptime _IssueLayout[values: Int, stride: Int] = Layout[
@@ -493,14 +496,14 @@ def tiled_load[
             `threads / 32`.
 
     Constraints:
-        `can_tiled_load[A, LR, LM, EM, threads=threads]()`, and `A`'s
-        completion is synchronous or a counter. `tiled_load` does not wait:
-        for a counter, the building block waits with
-        `layout.building_blocks.wait_issues[A.Completion]()` before it reads
-        the registers.
+        `can_tiled_load[A, LR, LM, EM, threads=threads]()`, and `A`'s async
+        engine is `Synchronous` or has a count route. `tiled_load` does not
+        wait: for a count route, the caller issues its wait, with
+        `layout.atoms.wait_issues[A.AsyncEngine]()` or
+        `A.AsyncEngine.Count.Wait()()`, before it reads the registers.
     """
     comptime assert T == A.dtype, "tiled_load: operand dtype"
-    _check_completion[A.Completion]()
+    _check_engine[A.AsyncEngine]()
     comptime plan = _plan[
         A.mem_map, A.reg_map, LM, LR, EM, size_of[A.dtype](), threads
     ]()
@@ -513,7 +516,7 @@ def tiled_load[
     )
     var w = _thread_bits(plan, thread)
     comptime for j in range(1 << Int(pop_count(plan.free_mem))):
-        _ = atom(
+        atom(
             _at(dst, _offset_of(dst, _deposit(j, plan.free_reg)), IssueR()),
             _at(src, _offset_of(src, _deposit(j, plan.free_mem) | w), IssueM()),
         )
@@ -557,14 +560,14 @@ def tiled_store[
             `threads / 32`.
 
     Constraints:
-        `can_tiled_store[A, LM, EM, LR, threads=threads]()`, and `A`'s
-        completion is synchronous or a counter. `tiled_store` does not wait:
-        for a counter, the building block waits with
-        `layout.building_blocks.wait_issues[A.Completion]()` before it
-        reuses the registers.
+        `can_tiled_store[A, LM, EM, LR, threads=threads]()`, and `A`'s async
+        engine is `Synchronous` or has a count route. `tiled_store` does not
+        wait: for a count route, the caller issues its wait, with
+        `layout.atoms.wait_issues[A.AsyncEngine]()` or
+        `A.AsyncEngine.Count.Wait()()`, before it reuses the registers.
     """
     comptime assert T == A.dtype, "tiled_store: operand dtype"
-    _check_completion[A.Completion]()
+    _check_engine[A.AsyncEngine]()
     comptime plan = _plan[
         A.mem_map, A.reg_map, LM, LR, EM, size_of[A.dtype](), threads
     ]()
@@ -577,7 +580,7 @@ def tiled_store[
     )
     var w = _thread_bits(plan, thread)
     comptime for j in range(1 << Int(pop_count(plan.free_mem))):
-        _ = atom(
+        atom(
             _at(dst, _offset_of(dst, _deposit(j, plan.free_mem) | w), IssueM()),
             _at(src, _offset_of(src, _deposit(j, plan.free_reg)), IssueR()),
         )

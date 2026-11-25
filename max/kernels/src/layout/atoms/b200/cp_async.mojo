@@ -11,48 +11,57 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """Defines the B200 bulk transfer atom: `cp.async.bulk` from global to
-shared memory, completing on an mbarrier.
+shared memory, completing on an mbarrier, and the TMA engine that runs it.
 
 `CpAsyncBulk` wraps
 `cp.async.bulk.shared::cta.global.mbarrier::complete_tx::bytes`: one thread
-copies a contiguous run of bytes, and the copy completes on the mbarrier
-the atom is built with, as transaction bytes the caller expects on it. The
-atom never arms or waits on the barrier: the building block that owns the
-barrier does both.
+copies a contiguous run of bytes, and the copy arrives on the mbarrier the
+atom is built with, as transaction bytes. `TmaEngine`'s `Barrier` route
+arms a phase with `mbarrier.arrive.expect_tx` and waits on it with
+`mbarrier.try_wait.parity`.
 
 You can import these APIs from the `layout.atoms.b200.cp_async` module:
 
 ```mojo
-from layout.atoms.b200.cp_async import CpAsyncBulk, MBarrierTransactions
+from layout.atoms.b200.cp_async import CpAsyncBulk, TmaEngine
 ```
 """
 
 from layout import ImmTileTensor, MutTileTensor
-from layout.atoms import (
-    BarrierCompletion,
-    CompletionFamily,
-    TransferAtom,
-    vector_map,
+from layout.atoms import Arrives, HasBarrier, TransferAtom, vector_map
+from layout.atoms.mbarrier import (
+    MBarrierExpectTx,
+    MBarrierRef,
+    MBarrierTryWait,
 )
 from layout.tensor_engine import DefaultEngine, TensorEngine
 from layout.layout import TensorLayout
-from layout.tma_async import SharedMemBarrier
 
 from max.gpu.memory import cp_async_bulk_shared_cluster_global
 
 from std.sys import size_of
 
 
-struct MBarrierTransactions(BarrierCompletion):
-    """An mbarrier counting transaction bytes: a copy completes when its
-    bytes have arrived on the barrier the atom was built with."""
+struct TmaArrivals(Arrives):
+    """Each bulk copy arrives on its atom's mbarrier as transaction bytes;
+    an arm sets the bytes a phase expects."""
 
-    comptime Result = NoneType
-    """Nothing: the copy signals the barrier."""
-    comptime family = CompletionFamily.barrier_bytes
-    """Every copy that completes transaction bytes on an mbarrier."""
-    comptime Barrier = SharedMemBarrier
-    """The barrier the atom is built with."""
+    comptime Arm = MBarrierExpectTx
+    """`mbarrier.arrive.expect_tx`."""
+
+    comptime Wait = MBarrierTryWait
+    """`mbarrier.try_wait.parity`."""
+
+
+struct TmaEngine(HasBarrier):
+    """The Tensor Memory Accelerator, which runs bulk copies. Its copies
+    complete out of order, as transaction bytes on an mbarrier."""
+
+    comptime in_order = False
+    """Copies may complete in any order."""
+
+    comptime Barrier = TmaArrivals
+    """Every copy arrives on its atom's mbarrier."""
 
 
 @fieldwise_init
@@ -74,7 +83,7 @@ struct CpAsyncBulk[dt: DType, bytes: Int, barrier_origin: MutOrigin](
         Self.bytes // size_of[Self.dt]()
     ]().values
     """One issue moves a run of `bytes` bytes of elements."""
-    comptime Completion = MBarrierTransactions
+    comptime AsyncEngine = TmaEngine
     """The copy's bytes arrive on the atom's mbarrier."""
     comptime dtype = Self.dt
     """The element type the instruction moves."""
@@ -91,9 +100,7 @@ struct CpAsyncBulk[dt: DType, bytes: Int, barrier_origin: MutOrigin](
     )
     """Where each index writes the destination."""
 
-    var barrier: Pointer[
-        SharedMemBarrier, Self.barrier_origin, address_space=.SHARED
-    ]
+    var barrier: MBarrierRef[Self.barrier_origin]
     """The mbarrier the copy's bytes arrive on."""
 
     @always_inline

@@ -10,17 +10,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines atoms: wrappers for single hardware intrinsics as typed
-operations on `TileTensor` operands.
+"""Defines atoms: wrappers for single hardware instructions, typed on
+`TileTensor` operands.
 
-An atom issues one instruction and describes its operands so that code
-above it can check and arrange them. Each operand has an engine, the kind
-of storage it lives in, and an `OperandMap`: the part of the instruction's
-index map that the hardware fixes, from index bits to address bits in the
-operand's `AddressEncoding`. The index bits encode one element of one issue
-as the threads that issue it see it: bits from `INDEX_VALUE` pick the
-element within one thread's part, bits from `INDEX_LANE` the thread within
-its warp, and bits from `INDEX_WARP` the warp.
+An atom issues one instruction. A data atom moves or computes elements and
+describes its operands so that code above it can check and arrange them.
+Each operand has an engine, the kind of storage it lives in, and an
+`OperandMap`: the part of the instruction's index map that the hardware
+fixes, from index bits to address bits in the operand's `AddressEncoding`.
+The index bits encode one element of one issue as the threads that issue it
+see it: bits from `INDEX_VALUE` pick the element within one thread's part,
+bits from `INDEX_LANE` the thread within its warp, and bits from
+`INDEX_WARP` the warp.
 
 An operand map says nothing about the tensor in that storage. A tensor's
 layout places logical coordinates at addresses; combining that placement
@@ -30,34 +31,43 @@ caller's addresses decide where they go, as long as they keep clear of the
 map's `avoid` bits.
 
 Orchestration is not an atom's job: tiling operands into issues, choosing
-which threads issue, partitioning tiles among them, and waiting on
+which threads issue, partitioning tiles among them, and completing
 asynchronous instructions belong to the libraries built on top.
 
-An atom contains no synchronization of any kind: no wait, commit, fence,
-barrier arrival or barrier wait. It only describes how its results
-complete, through its `Completion` type, a description with no
-instructions of its own. The instructions that wait on or commit a
-completion are the building block's, in `layout.building_blocks`, the only
-layer that synchronizes. A completion is one of:
+Data atoms and TileOps never synchronize; sync atoms are issued by a
+building block, or by Moka on its behalf. A data atom returns nothing and
+names the `AsyncEngine` that runs it. The async engine states whether it
+runs in order and whether its reads can complete alone, and conforms to a
+capability trait for each route its completions can take:
 
-- `Synchronous`: the results are ready when the call returns.
-- A `BarrierCompletion`: the atom is built with a caller's barrier, such as
-  an mbarrier for a TMA load, and the instruction itself signals it as part
-  of its one issue; the building block arms the barrier and waits on it.
-- A `HandleCompletion`: the instruction produces a handle, such as a DMA
-  id, which the call returns as its `Result`; the building block passes it
-  to the target's wait instruction.
-- A `CounterCompletion`: the family's wait instruction is tied to the
-  instruction type rather than to one call, such as `tcgen05.wait::ld` or
-  `cp.async.wait_group`, and waits for all of this thread's outstanding
-  issues or all but a given number.
-- A `BatchCompletion`: issues join a batch the building block opens,
-  without naming it; the building block commits the batch and waits on it,
-  as with `cp.async.bulk.commit_group` and `cp.async.bulk.wait_group`.
+- `HasCount`, a `Counted` route: only the issuing thread waits, on a count
+  of its issues, as with `tcgen05.wait::ld`.
+- `HasGroups`, a `Grouped` route: only the issuing thread waits. `Commit`
+  closes a group of its issues, as `cp.async.commit_group` does, and `Wait`
+  counts groups.
+- `HasBarrier`, a `BarrierRoute`: completions arrive on a barrier, and any
+  thread waits on it. Under `Arrives`, each issue arrives on the barrier
+  its atom was built with, and `Arm` arrives once and sets the amount a
+  phase expects. Under `SealsToBarrier`, a `Seal` built with a barrier
+  arrives on it once the thread's earlier issues have completed.
+- `HasHandles`, a `Handled` route: a sealing variant of the data atom
+  returns a handle, and the issuing thread waits by consuming it.
 
-An instruction family shares one completion type, whose `family`, a
-`CompletionFamily`, names it, so code that waits can tell which issues one
-wait covers.
+`Synchronous` has no routes: its results are ready when the call returns,
+so nothing needs to wait for them.
+
+Each wait, commit, seal and arm a route names is a sync atom that issues
+one instruction. Code that waits picks a route by name, such as
+`A.AsyncEngine.Count.Wait()()`, or calls `wait_issues`, `commit_batch` or
+`wait_batches` on the engine. Generic code requires the capability it
+uses, such as `E: HasGroups`, so an engine without that route fails to
+compile. Where to seal is the caller's choice, since only the caller knows
+which issue is the last before a handoff.
+
+An engine whose seal is a mode of the data instruction, not a separate
+instruction, has data atoms that conform to `SealsOnLastIssue`: their
+sealing variants issue the last piece of a batch and return a `Token`, the
+only value an atom returns.
 
 Operand dtypes and engines are checked rather than pinned in signatures. A
 view's engine is its parent's `OffsetResultType`, and an atom's associated
@@ -67,14 +77,21 @@ generic code.
 
 Each instruction family is a submodule: `layout.atoms.pointer` for plain
 pointer loads and stores, `layout.atoms.cp_async` for `cp.async`,
-`layout.atoms.b200.cp_async` for the B200 bulk copy `cp.async.bulk`, and
-`layout.atoms.tmem` for Blackwell Tensor Memory.
+`layout.atoms.b200.cp_async` for the B200 bulk copy `cp.async.bulk`,
+`layout.atoms.tmem` for Blackwell Tensor Memory, and `layout.atoms.mbarrier`
+for the mbarrier waits and arms that barrier routes share.
 
 You can import these APIs from the `layout.atoms` package:
 
 ```mojo
 from layout.atoms import CastAtom, LoadAtom, MmaAtom, StoreAtom, TransferAtom
-from layout.atoms import CompletionFamily, OperandMap, Synchronous, same_engine
+from layout.atoms import SealingTransferAtom, SealsOnLastIssue
+from layout.atoms import AsyncEngine, HasBarrier, HasCount, HasGroups
+from layout.atoms import HasHandles, HandleValue
+from layout.atoms import Arrives, Counted, Grouped, Handled, SealsToBarrier
+from layout.atoms import BarrierPhase
+from layout.atoms import commit_batch, wait_batches, wait_issues
+from layout.atoms import OperandMap, Synchronous, same_engine
 from layout.atoms import AddressEncoding, registers_map, vector_map
 ```
 """
@@ -246,117 +263,324 @@ def vector_map(values: Int, element_bytes: Int) -> OperandMap:
     }
 
 
-__enum CompletionFamily(Equatable, ImplicitlyCopyable, Writable):
-    """Names what completes together: the issues one wait covers.
+trait Atom:
+    """Wraps one hardware instruction.
 
-    A family says what completes, not which instruction waits for it; each
-    target's wait or commit for a family is in `layout.building_blocks`.
+    A call issues the instruction and nothing else. A data atom names the
+    `AsyncEngine` that runs it; the engine's routes name the sync atoms that
+    complete it, and placing them is the caller's job.
+
+    `Atom` is not `TrivialRegisterPassable`, so that commit atoms can be
+    linear. Every other atom trait requires it.
     """
-
-    case synchronous
-    """No family: the results are ready when the call returns."""
-    case tensor_memory_load
-    """Loads from tensor memory, drained together; on SM100, `tcgen05.ld`,
-    which `tcgen05.wait::ld` drains."""
-    case tensor_memory_store
-    """Stores to tensor memory, drained together; on SM100, `tcgen05.st`,
-    which `tcgen05.wait::st` drains."""
-    case async_copy_group
-    """Copies collected into groups that are committed and waited on; on
-    SM100, `cp.async` with `cp.async.commit_group` and `wait_group`."""
-    case barrier_bytes
-    """Copies that complete by their bytes arriving on a barrier; on SM100,
-    `cp.async.bulk` completing transaction bytes on an mbarrier."""
-
-    def __eq__(self, other: Self) -> Bool:
-        """Returns whether two families are the same.
-
-        Args:
-            other: The family to compare with.
-
-        Returns:
-            True when they are the same family.
-        """
-        return self._get_enum_discriminant() == other._get_enum_discriminant()
-
-
-trait AtomCompletion:
-    """Describes how an instruction family's results complete.
-
-    A completion is a description only: it has no methods that issue
-    instructions. The building block that issued the atoms waits on, commits
-    or fences the completion with `layout.building_blocks`, keyed by
-    `family`.
-    """
-
-    comptime Result: Movable & Deinitable
-    """What each call returns: the instruction's handle for a
-    `HandleCompletion`, else `NoneType`."""
-
-    comptime family: CompletionFamily
-    """The instruction family whose issues one wait covers. Atoms of one
-    family share one completion type."""
-
-
-struct Synchronous(AtomCompletion):
-    """The results are ready when the call returns."""
-
-    comptime Result = NoneType
-    """Nothing: the call returns no handle."""
-    comptime family = CompletionFamily.synchronous
-    """No family: nothing is left to wait on."""
-
-
-trait BarrierCompletion(AtomCompletion):
-    """The atom is built with a caller's barrier, and the instruction
-    signals it when its results are ready; the building block arms the
-    barrier and any thread may wait on it."""
-
-    comptime Barrier: AnyType
-    """The barrier type the atom takes from its caller."""
-
-
-trait HandleCompletion(AtomCompletion):
-    """The instruction produces a handle, which the call returns as its
-    `Result`; the building block passes it to the target's wait
-    instruction."""
 
     pass
 
 
-trait CounterCompletion(AtomCompletion):
-    """The family's wait instruction is tied to the instruction type, not to
-    a call: it waits until at most a given number of this thread's issues
-    of the family are outstanding. `layout.building_blocks.wait_issues`
-    emits it."""
+trait CounterWaitAtom(Atom, Defaultable, TrivialRegisterPassable):
+    """Waits until at most a given number of this thread's issues on an
+    engine are outstanding, counted in issues or in committed groups.
 
-    comptime max_pending: Int
-    """The largest number a wait can leave outstanding; 0 when the family
-    can only wait for all of its issues."""
-
-
-trait BatchCompletion(AtomCompletion):
-    """Issues join the batch the building block opened, without naming it;
-    the building block commits the batch and waits on it, with
-    `layout.building_blocks.commit_batch` and `wait_batches`."""
-
-    comptime max_pending: Int
-    """The largest number of committed batches a wait can leave
-    outstanding; 0 when it can only wait for all of them."""
-
-
-trait Atom(TrivialRegisterPassable):
-    """Wraps one hardware intrinsic issued on `TileTensor` operands.
-
-    A call issues the intrinsic and nothing else, and returns what the
-    instruction produces: `Completion.Result`, which is `NoneType` unless
-    the instruction yields a handle. An atom never synchronizes: waiting for
-    an asynchronous atom is the building block's job, with
-    `layout.building_blocks`.
+    Each wait checks at compile time that `pending` is in
+    `[0, max_pending]`, so a direct call is checked as well as one through
+    `wait_issues` or `wait_batches`.
     """
 
-    comptime Completion: AtomCompletion
-    """How the atom's results complete."""
+    comptime max_pending: Int
+    """The largest number the wait can leave outstanding; 0 when it can
+    only wait for all of them."""
+
+    def __call__[pending: Int = 0](self):
+        """Blocks until at most `pending` are outstanding.
+
+        Parameters:
+            pending: The issues or groups that may stay outstanding, at most
+                `max_pending`.
+        """
+        ...
+
+
+trait CommitAtom(Atom, Movable):
+    """Seals what this thread has issued on an engine since its last seal.
+
+    A group commit takes no operands. A seal onto a barrier is built with
+    the barrier, so generic code takes one its caller built.
+
+    A commit atom must not be `Deinitable`, and its call consumes it, so
+    one that is built must be issued. Mojo cannot express a negative bound,
+    so the tests enforce it.
+    """
+
+    def __call__(deinit self):
+        """Seals this thread's open issues."""
+        ...
+
+
+trait BarrierPhase(TrivialRegisterPassable):
+    """Names a phase of a barrier, so that generic code can start at a
+    barrier's first phase and advance one phase at a time.
+
+    Each target picks how many phases it tells apart: an NVIDIA mbarrier
+    needs only the parity, and another barrier can count more phases.
+    """
+
+    comptime start: Self
+    """The phase a newly initialized barrier is in."""
+
+    def next(self) -> Self:
+        """Returns the phase after this one.
+
+        Returns:
+            The phase the barrier is in once this one completes.
+        """
+        ...
+
+
+trait BarrierWaitAtom(Atom, Defaultable, TrivialRegisterPassable):
+    """Waits for a phase of a barrier to complete.
+
+    Barrier routes are not specific to one target: an NVIDIA mbarrier in
+    shared memory is one barrier, and a DMA multicast that completes on a
+    syncpoint other cores wait on is another. Only the operands differ, so
+    each target binds the barrier reference and the phase.
+    """
+
+    comptime Ref[origin: MutOrigin]: TrivialRegisterPassable
+    """A reference to the barrier the wait reads.
+
+    Parameters:
+        origin: The barrier's origin. A target whose barriers are not
+            memory ignores it.
+    """
+
+    comptime Phase: BarrierPhase
+    """What names the phase to wait for, such as a parity."""
+
+    def __call__[
+        origin: MutOrigin, //
+    ](self, barrier: Self.Ref[origin], phase: Self.Phase):
+        """Blocks until the barrier completes `phase`.
+
+        Parameters:
+            origin: The barrier's origin.
+
+        Args:
+            barrier: The barrier.
+            phase: The phase to wait for.
+        """
+        ...
+
+
+trait ArmAtom(Atom, Defaultable, TrivialRegisterPassable):
+    """Arrives once on a barrier and sets how much its current phase
+    expects. The arm is one of the phase's arrivals, so the arming thread
+    does not arrive again.
+
+    As for `BarrierWaitAtom`, each target binds the barrier reference and
+    the amount.
+    """
+
+    comptime Ref[origin: MutOrigin]: TrivialRegisterPassable
+    """A reference to the barrier the arm updates.
+
+    Parameters:
+        origin: The barrier's origin. A target whose barriers are not
+            memory ignores it.
+    """
+
+    comptime Amount: TrivialRegisterPassable
+    """What the phase expects to arrive, such as a byte count."""
+
+    def __call__[
+        origin: MutOrigin, //
+    ](self, barrier: Self.Ref[origin], amount: Self.Amount):
+        """Arrives once on the barrier and expects `amount` more in its
+        current phase.
+
+        Parameters:
+            origin: The barrier's origin.
+
+        Args:
+            barrier: The barrier.
+            amount: What the phase expects.
+        """
+        ...
+
+
+trait HandleValue(Movable):
+    """A handle a sealing variant returns: it covers what the variant
+    seals."""
+
+    pass
+
+
+trait HandleWaitAtom(Atom, Defaultable, TrivialRegisterPassable):
+    """Waits for what a handle covers, consuming the handle."""
+
+    comptime Handle: HandleValue
+    """The handle the wait consumes."""
+
+    def __call__(self, var handle: Self.Handle):
+        """Blocks until everything the handle covers has completed.
+
+        Args:
+            handle: The handle.
+        """
+        ...
+
+
+trait Counted:
+    """Only the issuing thread waits, on a count of its issues. Nothing
+    seals."""
+
+    comptime Wait: CounterWaitAtom
+    """The wait."""
+
+
+trait Grouped:
+    """Only the issuing thread waits. `Commit` closes a group of the
+    thread's issues, and `Wait` counts groups."""
+
+    comptime Commit: CommitAtom & Defaultable
+    """Closes the thread's open group."""
+
+    comptime Wait: CounterWaitAtom
+    """Waits on committed groups."""
+
+
+trait BarrierRoute:
+    """Completions arrive on a barrier, and any thread waits on it. A
+    consumer waits the same way whether the producer armed the phase or
+    sealed it."""
+
+    comptime Wait: BarrierWaitAtom
+    """The wait, which also types the barrier reference."""
+
+
+trait Arrives(BarrierRoute):
+    """Each issue arrives on the barrier its atom was built with, and an
+    arm sets how much a phase expects."""
+
+    comptime Arm: ArmAtom
+    """Arrives once and sets how much a phase expects, on the barrier
+    `Wait` reads."""
+
+
+trait SealsToBarrier(BarrierRoute):
+    """A seal built with a barrier arrives on it once everything this
+    thread issued on the engine before the seal has completed."""
+
+    comptime Seal[origin: MutOrigin]: CommitAtom
+    """The seal, built with a reference to the barrier `Wait` reads.
+
+    Parameters:
+        origin: The barrier reference's origin.
+    """
+
+
+trait Handled:
+    """A sealing variant of the data atom returns a handle, and only the
+    issuing thread waits, consuming the handle."""
+
+    comptime Wait: HandleWaitAtom
+    """The wait."""
+
+
+trait AsyncEngine:
+    """The hardware unit that runs a data atom: its facts, and through the
+    capability traits, the routes its completions can take.
+
+    Whether only the issuing thread observes completion follows from the
+    routes: it does unless the engine conforms to `HasBarrier`.
+    """
+
+    comptime in_order: Bool
+    """Whether one agent's operations read before any later operation
+    writes, and operations on one location run in issue order."""
+
+    comptime partial: Bool = False
+    """Whether the issuer can wait for an operation's reads alone."""
+
+
+trait HasCount(AsyncEngine):
+    """The engine has a `Counted` route."""
+
+    comptime Count: Counted
+    """The route."""
+
+
+trait HasGroups(AsyncEngine):
+    """The engine has a `Grouped` route."""
+
+    comptime Groups: Grouped
+    """The route."""
+
+
+trait HasBarrier(AsyncEngine):
+    """The engine has a barrier route."""
+
+    comptime Barrier: BarrierRoute
+    """The route."""
+
+
+trait HasHandles(AsyncEngine):
+    """The engine has a `Handled` route."""
+
+    comptime Handles: Handled
+    """The route."""
+
+
+@always_inline
+def wait_issues[E: HasCount, pending: Int = 0]():
+    """Blocks until at most `pending` of this thread's issues on `E` are
+    outstanding, with the wait of `E`'s count route.
+
+    Parameters:
+        E: The async engine of the atoms to wait for.
+        pending: The issues that may stay outstanding, at most
+            `E.Count.Wait.max_pending`.
+    """
+    E.Count.Wait().__call__[pending]()
+
+
+@always_inline
+def commit_batch[E: HasGroups]():
+    """Closes this thread's open group of issues on `E`, with the commit of
+    `E`'s group route.
+
+    Parameters:
+        E: The async engine of the atoms the group collects.
+    """
+    E.Groups.Commit()()
+
+
+@always_inline
+def wait_batches[E: HasGroups, pending: Int = 0]():
+    """Blocks until at most `pending` of this thread's committed groups on
+    `E` are outstanding, with the wait of `E`'s group route.
+
+    Parameters:
+        E: The async engine of the atoms the groups collect.
+        pending: The groups that may stay outstanding, at most
+            `E.Groups.Wait.max_pending`.
+    """
+    E.Groups.Wait().__call__[pending]()
+
+
+struct Synchronous(AsyncEngine):
+    """No routes: the results are ready when the atom returns."""
+
+    comptime in_order = True
+    """Each operation completes before the next issues."""
+
+
+trait DataAtom(Atom, TrivialRegisterPassable):
+    """Wraps one hardware instruction that moves or computes elements of
+    `TileTensor` operands. A call returns nothing."""
+
+    comptime AsyncEngine: AsyncEngine
+    """The unit that runs the instruction. Its routes say how the results
+    can complete."""
 
     # The trait cannot require `ParameterList[type=Int, ...]` of an atom: a
     # wildcard list never unifies with a concrete one. Atoms set the list's
@@ -371,7 +595,7 @@ trait Atom(TrivialRegisterPassable):
     `tcgen05.ld.32x32b.x16` or `(m, n, k)` for an MMA."""
 
 
-trait LoadAtom(Atom):
+trait LoadAtom(DataAtom):
     """Describes an instruction that loads elements from memory into
     registers."""
 
@@ -397,7 +621,7 @@ trait LoadAtom(Atom):
         self,
         dst: MutTileTensor[T, LR, Engine=ER, ...],
         src: ImmTileTensor[T, LM, Engine=EM, ...],
-    ) -> Self.Completion.Result:
+    ):
         """Issues the instruction once.
 
         Parameters:
@@ -410,15 +634,11 @@ trait LoadAtom(Atom):
         Args:
             dst: The registers `reg_map` describes.
             src: The memory `mem_map` describes.
-
-        Returns:
-            The instruction's handle for a `HandleCompletion`, else
-            nothing.
         """
         ...
 
 
-trait StoreAtom(Atom):
+trait StoreAtom(DataAtom):
     """Describes an instruction that stores elements from registers into
     memory."""
 
@@ -444,7 +664,7 @@ trait StoreAtom(Atom):
         self,
         dst: MutTileTensor[T, LM, Engine=EM, ...],
         src: ImmTileTensor[T, LR, Engine=ER, ...],
-    ) -> Self.Completion.Result:
+    ):
         """Issues the instruction once.
 
         Parameters:
@@ -457,15 +677,11 @@ trait StoreAtom(Atom):
         Args:
             dst: The memory `mem_map` describes.
             src: The registers `reg_map` describes.
-
-        Returns:
-            The instruction's handle for a `HandleCompletion`, else
-            nothing.
         """
         ...
 
 
-trait TransferAtom(Atom):
+trait TransferAtom(DataAtom):
     """Describes an instruction that moves elements from memory to memory,
     such as a DMA submit or `cp.async.bulk`, without passing through the
     issuer's registers."""
@@ -495,7 +711,7 @@ trait TransferAtom(Atom):
         self,
         dst: MutTileTensor[T, LD, Engine=ED, ...],
         src: ImmTileTensor[T, LS, Engine=ES, ...],
-    ) -> Self.Completion.Result:
+    ):
         """Issues the instruction once.
 
         Parameters:
@@ -508,15 +724,93 @@ trait TransferAtom(Atom):
         Args:
             dst: The memory `dst_map` describes.
             src: The memory `src_map` describes.
-
-        Returns:
-            The instruction's handle for a `HandleCompletion`, else
-            nothing.
         """
         ...
 
 
-trait CastAtom(Atom):
+trait SealingTransferAtom(Atom, TrivialRegisterPassable):
+    """A variant of a transfer instruction that also seals: the only kind of
+    atom that returns something to wait on."""
+
+    comptime Token: HandleValue
+    """What the call returns, covering what the variant seals. The engine's
+    `Handled` route waits on it.
+
+    A token must not be `Deinitable`, so that it cannot be dropped without
+    its wait. Mojo cannot express a negative bound, so the tests enforce
+    it."""
+
+    def __call__[
+        T: DType,
+        LD: TensorLayout,
+        ED: TensorEngine,
+        LS: TensorLayout,
+        ES: TensorEngine,
+    ](
+        self,
+        dst: MutTileTensor[T, LD, Engine=ED, ...],
+        src: ImmTileTensor[T, LS, Engine=ES, ...],
+    ) -> Self.Token:
+        """Issues the instruction once and seals.
+
+        Parameters:
+            T: The operands' element type.
+            LD: The destination view's layout.
+            ED: The destination view's engine.
+            LS: The source view's layout.
+            ES: The source view's engine.
+
+        Args:
+            dst: The memory the transfer atom's `dst_map` describes.
+            src: The memory the transfer atom's `src_map` describes.
+
+        Returns:
+            The token that covers what the variant seals.
+        """
+        ...
+
+
+trait SealsOnLastIssue(TransferAtom):
+    """The engine has no standalone seal: the last issue of a batch seals
+    it, through a variant of this instruction.
+
+    The variant is ordered or unordered. A copy split into several pieces
+    seals its last piece ordered: the piece starts only after this thread's
+    earlier issues on the engine complete, so its token covers them too. A
+    copy of one piece has nothing earlier to order behind, so it seals
+    unordered and its token covers that issue alone, without the stall.
+    """
+
+    # A DMA queue that seals this way marks a descriptor as ordered with an
+    # attribute bit: earlier DMAs complete before that descriptor starts.
+    # The queue rejects a zero-length descriptor, so the seal rides on a
+    # piece that moves data; there is no zero-byte marker. Moka's DMA
+    # backend and the copy building blocks set the bit only on the last
+    # descriptor of a copy of more than one piece. One parametric variant
+    # rather than two named ones lets a copy pick the form from its piece
+    # count, as `sealing[ordered = pieces > 1]()`.
+    comptime Sealing[ordered: Bool]: SealingTransferAtom
+    """The variant that seals.
+
+    Parameters:
+        ordered: Whether its token also covers this thread's earlier issues
+            on the engine.
+    """
+
+    def sealing[ordered: Bool](self) -> Self.Sealing[ordered]:
+        """Returns a sealing variant of this atom.
+
+        Parameters:
+            ordered: Whether the variant waits for this thread's earlier
+                issues on the engine, so that its token covers them.
+
+        Returns:
+            The variant.
+        """
+        ...
+
+
+trait CastAtom(DataAtom):
     """Describes an instruction that converts elements from a source element
     type to a destination element type."""
 
@@ -549,7 +843,7 @@ trait CastAtom(Atom):
         self,
         dst: MutTileTensor[TD, LD, Engine=ED, ...],
         src: ImmTileTensor[TS, LS, Engine=ES, ...],
-    ) -> Self.Completion.Result:
+    ):
         """Issues the instruction once.
 
         Parameters:
@@ -563,15 +857,11 @@ trait CastAtom(Atom):
         Args:
             dst: The operand `dst_map` describes.
             src: The operand `src_map` describes.
-
-        Returns:
-            The instruction's handle for a `HandleCompletion`, else
-            nothing.
         """
         ...
 
 
-trait MmaAtom(Atom):
+trait MmaAtom(DataAtom):
     """Describes a matrix multiply-accumulate instruction, `C += A @ B`.
 
     The accumulator is read and written in place, as UMMA and WGMMA do; an
@@ -623,7 +913,7 @@ trait MmaAtom(Atom):
         c: MutTileTensor[TC, LC, Engine=EC, ...],
         a: ImmTileTensor[TA, LA, Engine=EA, ...],
         b: ImmTileTensor[TB, LB, Engine=EB, ...],
-    ) -> Self.Completion.Result:
+    ):
         """Issues the instruction once.
 
         Parameters:
@@ -641,10 +931,6 @@ trait MmaAtom(Atom):
             c: The operand `c_map` describes.
             a: The operand `a_map` describes.
             b: The operand `b_map` describes.
-
-        Returns:
-            The instruction's handle for a `HandleCompletion`, else
-            nothing.
         """
         ...
 

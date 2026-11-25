@@ -10,14 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Defines the transfer atom for NVIDIA's `cp.async` global-to-shared copy.
+"""Defines the transfer atom for NVIDIA's `cp.async` global-to-shared copy,
+and the async engine that runs it.
 
 `CpAsync` wraps `cp.async`: each thread copies 4, 8 or 16 bytes from global
-to shared memory, and completes in batches: issues join the open
-`cp.async` group. Closing a group with `cp.async.commit_group` and waiting
-with `cp.async.wait_group` are the building block's, through
-`layout.building_blocks.commit_batch` and `wait_batches`; this module
-issues neither.
+to shared memory. `CpAsyncEngine` completes the copies two ways. Its
+`Groups` route is `cp.async.commit_group`, which closes a group of the
+thread's copies, and `cp.async.wait_group`, which waits until at most a
+given number of groups are outstanding. Its `Barrier` route is
+`cp.async.mbarrier.arrive`, which seals the thread's copies onto an
+mbarrier that any thread can wait on.
 
 The bulk copy, `cp.async.bulk`, is B200-specific and lives in
 `layout.atoms.b200.cp_async`.
@@ -25,35 +27,126 @@ The bulk copy, `cp.async.bulk`, is B200-specific and lives in
 You can import these APIs from the `layout.atoms.cp_async` module:
 
 ```mojo
-from layout.atoms.cp_async import CpAsync, CpAsyncGroups
+from layout.atoms.cp_async import CpAsync, CpAsyncEngine
 ```
 """
 
 from layout import ImmTileTensor, MutTileTensor
 from layout.atoms import (
-    BatchCompletion,
-    CompletionFamily,
+    CommitAtom,
+    CounterWaitAtom,
+    Grouped,
+    HasBarrier,
+    HasGroups,
+    SealsToBarrier,
     TransferAtom,
     vector_map,
 )
+from layout.atoms.mbarrier import MBarrierRef, MBarrierTryWait
 from layout.tensor_engine import DefaultEngine, TensorEngine
 from layout.layout import TensorLayout
 
-from max.gpu.memory import async_copy
+from max.gpu.memory import (
+    async_copy,
+    async_copy_commit_group,
+    async_copy_wait_all,
+    async_copy_wait_group,
+)
+from max.gpu.sync import async_copy_arrive
 
 from std.sys import size_of
 
 
-struct CpAsyncGroups(BatchCompletion):
-    """The completion of `cp.async`: issues join the open group, which
-    `cp.async.commit_group` closes and `cp.async.wait_group` waits on."""
+@fieldwise_init
+struct CpAsyncCommitGroup(CommitAtom, Defaultable, not Deinitable):
+    """`cp.async.commit_group`: closes the thread's open `cp.async` group."""
 
-    comptime Result = NoneType
-    """Nothing: a `cp.async` returns no handle."""
-    comptime family = CompletionFamily.async_copy_group
-    """Every `CpAsync`, whatever its width."""
+    @always_inline
+    def __call__(deinit self):
+        """Closes the open group."""
+        async_copy_commit_group()
+
+
+@fieldwise_init
+struct CpAsyncWaitGroup(CounterWaitAtom):
+    """`cp.async.wait_group`: waits on the thread's committed `cp.async`
+    groups."""
+
     comptime max_pending = Int.MAX
     """Any number of committed groups can stay outstanding."""
+
+    @always_inline
+    def __call__[pending: Int = 0](self):
+        """Blocks until at most `pending` committed groups are outstanding,
+        with `cp.async.wait_all` when `pending` is 0.
+
+        Parameters:
+            pending: The groups that may stay outstanding.
+        """
+        comptime assert (
+            0 <= pending <= Self.max_pending
+        ), "cp.async.wait_group: pending is out of range"
+        comptime if pending == 0:
+            async_copy_wait_all()
+        else:
+            async_copy_wait_group(Int32(pending))
+
+
+struct CpAsyncGroups(Grouped):
+    """`cp.async` groups: the issuing thread commits a group and waits on
+    committed groups."""
+
+    comptime Commit = CpAsyncCommitGroup
+    """`cp.async.commit_group`."""
+
+    comptime Wait = CpAsyncWaitGroup
+    """`cp.async.wait_group`."""
+
+
+@fieldwise_init
+struct CpAsyncMBarrierArrive[origin: MutOrigin](CommitAtom, not Deinitable):
+    """`cp.async.mbarrier.arrive`: arrives on an mbarrier once every
+    `cp.async` the thread issued before it has completed.
+
+    Parameters:
+        origin: The origin of the barrier.
+    """
+
+    var barrier: MBarrierRef[Self.origin]
+    """The mbarrier the seal arrives on."""
+
+    @always_inline
+    def __call__(deinit self):
+        """Seals the thread's earlier copies onto `barrier`."""
+        async_copy_arrive(self.barrier)
+
+
+struct CpAsyncArrivals(SealsToBarrier):
+    """`cp.async` copies sealed onto an mbarrier: any thread waits on it."""
+
+    comptime Seal[origin: MutOrigin] = CpAsyncMBarrierArrive[origin]
+    """`cp.async.mbarrier.arrive`, built with its barrier.
+
+    Parameters:
+        origin: The barrier's origin.
+    """
+
+    comptime Wait = MBarrierTryWait
+    """`mbarrier.try_wait.parity`."""
+
+
+struct CpAsyncEngine(HasBarrier, HasGroups):
+    """The unit that runs `cp.async`. Its copies complete out of order, as
+    groups or sealed onto an mbarrier."""
+
+    comptime in_order = False
+    """Copies may complete in any order."""
+
+    comptime Groups = CpAsyncGroups
+    """Commit and wait on groups of the thread's copies."""
+
+    comptime Barrier = CpAsyncArrivals
+    """Seal the thread's copies onto an mbarrier."""
 
 
 @fieldwise_init
@@ -70,8 +163,8 @@ struct CpAsync[dt: DType, bytes: Int](TransferAtom):
         Self.bytes // size_of[Self.dt]()
     ]().values
     """One issue moves `bytes` bytes of elements."""
-    comptime Completion = CpAsyncGroups
-    """Issues join the open `cp.async` group."""
+    comptime AsyncEngine = CpAsyncEngine
+    """The copy completes through a `cp.async` group or an mbarrier."""
     comptime dtype = Self.dt
     """The element type the instruction moves."""
     comptime SrcEngine = DefaultEngine[element_width=1]
@@ -99,7 +192,7 @@ struct CpAsync[dt: DType, bytes: Int](TransferAtom):
         dst: MutTileTensor[T, LD, Engine=ED, ...],
         src: ImmTileTensor[T, LS, Engine=ES, ...],
     ):
-        """Issues the copy; it joins the open `cp.async` group.
+        """Issues the copy without waiting for it.
 
         Parameters:
             T: The operands' element type.

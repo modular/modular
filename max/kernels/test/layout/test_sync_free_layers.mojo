@@ -10,14 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Gates the layering rule: atoms and TileOps contain no synchronization.
+"""Gates the layering rule: data atoms and TileOps never issue sync; sync
+atoms are issued by a building block, or by Moka on its behalf.
 
-Each kernel issues one atom, or one TileOp over atoms, compiled for sm_100a,
-and its PTX must hold no synchronization instruction: no barrier, mbarrier
-operation, fence, completion wait or commit, and no issuer election. Only
-building blocks may emit those, through `layout.building_blocks`. The
-planted kernels add a building block's wait or commit to the same issues
-and must be caught, so the gate cannot pass vacuously.
+Each sync-free kernel issues one data atom, or one TileOp over data atoms,
+compiled for sm_100a, and its PTX must hold no synchronization instruction:
+no barrier, mbarrier operation, fence, completion wait or commit, and no
+issuer election. Each planted kernel adds one sync atom of an engine's
+route to the same issues, as a building block would, and must be caught as
+exactly that instruction. There is one for every wait, commit, seal and arm
+the layout atoms define, so the gate cannot pass vacuously.
 """
 
 from std.memory import unsafe_stack_allocation
@@ -25,11 +27,11 @@ from std.sys.info import _is_sm_100x_or_newer
 from std.testing import assert_equal, assert_true, TestSuite
 
 from layout import TileTensor, coord, row_major
+from layout.atoms import commit_batch, wait_batches, wait_issues
 from layout.atoms.b200.cp_async import CpAsyncBulk
 from layout.atoms.cp_async import CpAsync
 from layout.atoms.pointer import PointerLoad, PointerStore
 from layout.atoms.tmem import TMemLoad, TMemStore
-from layout.building_blocks import commit_batch, wait_batches, wait_issues
 from layout.layout import Layout as TileLayout
 from layout.owned_tensor import OwnedGPUTensor
 from layout.tileops import tiled_load, tiled_store
@@ -46,8 +48,8 @@ comptime AccumLayout = TileLayout(
 
 
 __enum SyncInstruction(Equatable, ImplicitlyCopyable, Writable):
-    """A PTX instruction that synchronizes or elects an issuer: what only a
-    building block may issue."""
+    """A PTX instruction that synchronizes or elects an issuer: what no data
+    atom or TileOp may issue."""
 
     case bar
     case barrier
@@ -174,16 +176,6 @@ def cp_async_atom_kernel(
     )
 
 
-def cp_async_committed_kernel(
-    src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
-):
-    var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 4]())
-    comptime A = CpAsync[.float32, 16]
-    A()(TileTensor(smem), TileTensor(src, row_major[1, 4]()))
-    commit_batch[A.Completion]()
-    wait_batches[A.Completion]()
-
-
 def cp_async_bulk_atom_kernel(
     src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
 ):
@@ -201,6 +193,7 @@ def cp_async_bulk_atom_kernel(
 
 def tmem_tileops_kernel(addr: UInt32):
     comptime if _is_sm_100x_or_newer():
+        # Engine is a defaulted parameter, so a TMemStorage cannot infer it.
         var tile = TileTensor[Engine=TMemEngine](
             TMemStorage[.float32, MutUntrackedOrigin](addr), AccumLayout
         )
@@ -213,7 +206,7 @@ def tmem_tileops_kernel(addr: UInt32):
         )
 
 
-def tmem_waited_kernel(addr: UInt32):
+def tmem_load_waited_kernel(addr: UInt32):
     comptime if _is_sm_100x_or_newer():
         var tile = TileTensor[Engine=TMemEngine](
             TMemStorage[.float32, MutUntrackedOrigin](addr), AccumLayout
@@ -221,7 +214,84 @@ def tmem_waited_kernel(addr: UInt32):
         var regs = OwnedGPUTensor[.float32, .LOCAL](row_major[1, 32]())
         comptime A = TMemLoad[.float32, 16]
         tiled_load[threads=128](A(), TileTensor(regs), tile, Int(thread_idx.x))
-        wait_issues[A.Completion]()
+        wait_issues[A.AsyncEngine]()
+
+
+def tmem_store_waited_kernel(addr: UInt32):
+    comptime if _is_sm_100x_or_newer():
+        var tile = TileTensor[Engine=TMemEngine](
+            TMemStorage[.float32, MutUntrackedOrigin](addr), AccumLayout
+        )
+        var regs = OwnedGPUTensor[.float32, .LOCAL](row_major[1, 32]())
+        comptime A = TMemStore[.float32, 16]
+        tiled_store[threads=128](A(), tile, TileTensor(regs), Int(thread_idx.x))
+        A.AsyncEngine.Count.Wait()()
+
+
+def cp_async_committed_kernel(
+    src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
+):
+    var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 4]())
+    comptime A = CpAsync[.float32, 16]
+    A()(TileTensor(smem), TileTensor(src, row_major[1, 4]()))
+    commit_batch[A.AsyncEngine]()
+
+
+def cp_async_waited_all_kernel(
+    src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
+):
+    var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 4]())
+    comptime A = CpAsync[.float32, 16]
+    A()(TileTensor(smem), TileTensor(src, row_major[1, 4]()))
+    wait_batches[A.AsyncEngine]()
+
+
+def cp_async_waited_group_kernel(
+    src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
+):
+    var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 4]())
+    comptime A = CpAsync[.float32, 16]
+    A()(TileTensor(smem), TileTensor(src, row_major[1, 4]()))
+    wait_batches[A.AsyncEngine, 1]()
+
+
+def cp_async_sealed_kernel(
+    src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
+):
+    comptime if _is_sm_100x_or_newer():
+        var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 4]())
+        var barrier = unsafe_stack_allocation[
+            1, SharedMemBarrier, address_space=.SHARED
+        ]()
+        comptime A = CpAsync[.float32, 16]
+        A()(TileTensor(smem), TileTensor(src, row_major[1, 4]()))
+        A.AsyncEngine.Barrier.Seal[MutUntrackedOrigin](barrier)()
+
+
+def cp_async_bulk_armed_kernel(
+    src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
+):
+    comptime if _is_sm_100x_or_newer():
+        var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 64]())
+        var barrier = unsafe_stack_allocation[
+            1, SharedMemBarrier, address_space=.SHARED
+        ]()
+        comptime A = CpAsyncBulk[.float32, 256, MutUntrackedOrigin]
+        A.AsyncEngine.Barrier.Arm()(barrier, 256)
+        A(barrier)(TileTensor(smem), TileTensor(src, row_major[1, 64]()))
+
+
+def cp_async_bulk_waited_kernel(
+    src: Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
+):
+    comptime if _is_sm_100x_or_newer():
+        var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 64]())
+        var barrier = unsafe_stack_allocation[
+            1, SharedMemBarrier, address_space=.SHARED
+        ]()
+        comptime A = CpAsyncBulk[.float32, 256, MutUntrackedOrigin]
+        A(barrier)(TileTensor(smem), TileTensor(src, row_major[1, 64]()))
+        A.AsyncEngine.Barrier.Wait()(barrier, .even)
 
 
 def test_pointer_tileops_are_sync_free() raises:
@@ -262,23 +332,66 @@ def test_tmem_tileops_are_sync_free() raises:
     _assert_sync_free(asm, "tiled_load and tiled_store over TMEM atoms")
 
 
-def test_gate_catches_a_building_block_wait() raises:
-    var asm = _compile_code[
-        tmem_waited_kernel, target=get_gpu_target["sm_100a"]()
-    ]().asm
-    var found = _sync_issued(asm)
+def _assert_caught[
+    kernel: def(UInt32) thin -> None
+](expected: SyncInstruction) raises:
+    var found = _sync_issued(
+        _compile_code[kernel, target=get_gpu_target["sm_100a"]()]().asm
+    )
     assert_equal(len(found), 1)
-    assert_equal(found[0], SyncInstruction.tcgen05_wait)
+    assert_equal(found[0], expected)
 
 
-def test_gate_catches_a_building_block_commit() raises:
-    var asm = _compile_code[
-        cp_async_committed_kernel, target=get_gpu_target["sm_100a"]()
-    ]().asm
-    var found = _sync_issued(asm)
-    assert_equal(len(found), 2)
-    assert_equal(found[0], SyncInstruction.cp_async_commit_group)
-    assert_equal(found[1], SyncInstruction.cp_async_wait_all)
+def _assert_caught_copy[
+    kernel: def(
+        Pointer[Float32, ImmUntrackedOrigin, address_space=.GLOBAL]
+    ) thin -> None
+](expected: SyncInstruction) raises:
+    var found = _sync_issued(
+        _compile_code[kernel, target=get_gpu_target["sm_100a"]()]().asm
+    )
+    assert_equal(len(found), 1)
+    assert_equal(found[0], expected)
+
+
+def test_gate_catches_the_tcgen05_load_wait() raises:
+    _assert_caught[tmem_load_waited_kernel](SyncInstruction.tcgen05_wait)
+
+
+def test_gate_catches_the_tcgen05_store_wait() raises:
+    _assert_caught[tmem_store_waited_kernel](SyncInstruction.tcgen05_wait)
+
+
+def test_gate_catches_the_cp_async_commit() raises:
+    _assert_caught_copy[cp_async_committed_kernel](
+        SyncInstruction.cp_async_commit_group
+    )
+
+
+def test_gate_catches_the_cp_async_wait_all() raises:
+    _assert_caught_copy[cp_async_waited_all_kernel](
+        SyncInstruction.cp_async_wait_all
+    )
+
+
+def test_gate_catches_the_cp_async_wait_group() raises:
+    _assert_caught_copy[cp_async_waited_group_kernel](
+        SyncInstruction.cp_async_wait_group
+    )
+
+
+def test_gate_catches_the_cp_async_seal() raises:
+    _assert_caught_copy[cp_async_sealed_kernel](
+        SyncInstruction.cp_async_mbarrier_arrive
+    )
+
+
+def test_gate_catches_the_mbarrier_arm() raises:
+    _assert_caught_copy[cp_async_bulk_armed_kernel](SyncInstruction.mbarrier)
+
+
+def test_gate_catches_the_mbarrier_wait() raises:
+    _assert_caught_copy[cp_async_bulk_waited_kernel](SyncInstruction.mbarrier)
 
 
 def test_every_sync_instruction_is_scanned() raises:
