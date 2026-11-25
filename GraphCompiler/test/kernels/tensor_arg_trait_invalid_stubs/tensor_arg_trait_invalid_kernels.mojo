@@ -43,6 +43,7 @@ from extensibility import (
     Tensor,
     TensorTuple,
     TileTensorable,
+    Workspace,
     _LegacyComputable,
     _LegacyComputeOutput,
 )
@@ -84,6 +85,23 @@ struct TraitForeign:
     def execute[
         Z: Output & TileTensorable & Copyable,
     ](z: Z, ctx: DeviceContext) raises:
+        pass
+
+
+# `Workspace` is an argument kind of its own, and no tensor-argument trait.
+@extensibility.register("trait_workspace_tensor")
+struct TraitWorkspaceTensor:
+    @staticmethod
+    def workspace_size(x: Some[Tensor]) -> Int:
+        return 0
+
+    @staticmethod
+    def execute(
+        z: Some[Output & TileTensorable],
+        x: Some[Input & TileTensorable],
+        workspace: Some[Workspace & TileTensorable],
+        ctx: DeviceContext,
+    ) raises:
         pass
 
 

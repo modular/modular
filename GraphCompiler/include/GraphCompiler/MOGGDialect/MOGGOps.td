@@ -912,6 +912,10 @@ def MOGG_KernelDeclOp
     compiler writes the launch itself. A kernel has either `execute` or
     `execute_device`.
 
+    `workspace_size` is a host function over the tensor inputs of `execute` or
+    `execute_device`, returning the size in bytes of the workspace buffer that
+    entry point takes as its `Workspace` argument.
+
     `reduction` marks a `ReduceOp` monoid (see `#mogg.kernel_reduction`).
 
     `supports_unfused_execute` records a second `execute` overload that takes
@@ -932,6 +936,7 @@ def MOGG_KernelDeclOp
     OptionalAttr<MOGG_KernelFunctionAttr>:$build_graph,
     OptionalAttr<MOGG_KernelFunctionAttr>:$execute_device,
     OptionalAttr<MOGG_KernelFunctionAttr>:$execute_configuration,
+    OptionalAttr<MOGG_KernelFunctionAttr>:$workspace_size,
     OptionalAttr<MOGG_KernelReductionAttr>:$reduction,
     ArrayAttr:$struct_params,
     BoolAttr:$is_user_defined,
@@ -949,6 +954,7 @@ def MOGG_KernelDeclOp
     (`build_graph` `=` $build_graph^)?
     (`execute_device` `=` $execute_device^)?
     (`execute_configuration` `=` $execute_configuration^)?
+    (`workspace_size` `=` $workspace_size^)?
     (`reduction` `=` $reduction^)?
     `struct_params` `=` $struct_params
     `is_user_defined` `=` $is_user_defined

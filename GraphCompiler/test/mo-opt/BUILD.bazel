@@ -21,6 +21,8 @@ lit_tests(
         "%legacy_tile_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/legacy_tile_invalid_stubs:LegacyTileInvalidStubs)",
         "%kernel_api_test_pkg": "$(rlocationpath //GraphCompiler/test/kernels:testing_kernels)",
         "%reduction_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/reduction_invalid_stubs:ReductionInvalidStubs)",
+        "%workspace_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/workspace_invalid_stubs:WorkspaceInvalidStubs)",
+        "%workspace_pkg": "$(rlocationpath //GraphCompiler/test/kernels/workspace_stubs:WorkspaceStubs)",
         "%tensor_arg_trait_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/tensor_arg_trait_invalid_stubs:TensorArgTraitInvalidStubs)",
         "%tensor_arg_trait_pkg": "$(rlocationpath //GraphCompiler/test/kernels/tensor_arg_trait_stubs:TensorArgTraitStubs)",
         "%unfused_execute_invalid_pkg": "$(rlocationpath //GraphCompiler/test/kernels/unfused_execute_invalid_stubs:UnfusedExecuteInvalidStubs)",
@@ -41,6 +43,8 @@ lit_tests(
         "//GraphCompiler/test/kernels/tensor_arg_trait_stubs:TensorArgTraitStubs",
         "//GraphCompiler/test/kernels/unfused_execute_invalid_stubs:UnfusedExecuteInvalidStubs",
         "//GraphCompiler/test/kernels/view_kernel_stubs:ViewKernelStubs",
+        "//GraphCompiler/test/kernels/workspace_invalid_stubs:WorkspaceInvalidStubs",
+        "//GraphCompiler/test/kernels/workspace_stubs:WorkspaceStubs",
     ],
     mojo_deps = [
         "//max:builtin_kernels",

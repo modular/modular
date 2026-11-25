@@ -166,6 +166,24 @@ resolveTraitContract(mlir::Type argType, mlir::Attribute bakedEntry,
   return recoverTraitArgContract(argType);
 }
 
+/// Whether `argType` is bound by the `Workspace` trait of the extensibility
+/// package, as in `workspace: Some[Workspace]`.
+static bool isWorkspaceArgType(mlir::Type argType) {
+  if (auto ref = KGEN::sugarDynCast<KGEN::LIT::RefType>(argType))
+    argType = ref.getElementType();
+  auto paramType = KGEN::sugarDynCast<KGEN::ParamType>(argType);
+  if (!paramType)
+    return false;
+  auto traitType = mlir::dyn_cast_if_present<KGEN::LIT::TraitType>(
+      KGEN::getCanonicalType(paramType.getMetaType()));
+  if (!traitType)
+    return false;
+  return llvm::any_of(traitType.getSymbols(), [](TraitSymbolAttr trait) {
+    return symbolMatchesRootAndLeaf(trait.getSymbol(), kPackageExtensibility,
+                                    kLeafWorkspace);
+  });
+}
+
 /// Classify a single argument type into a KernelDeclOperandVariant by
 /// introspecting the LIT StructType symbol and parameter values.
 ///
@@ -181,6 +199,8 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
     // A trait-bound tensor argument is non-struct; classify it as a tensor
     // adaptor with its contract's role/mut so it joins operand mapping and the
     // DPS-output split. Other non-struct args are unsupported.
+    if (isWorkspaceArgType(argType))
+      return KernelDeclWorkspaceAdaptor{};
     if (std::optional<TensorArgContract> contract =
             resolveTraitContract(argType, bakedEntry, hasBakedArray))
       return traitContractToTensorAdaptor(*contract);
@@ -663,6 +683,9 @@ KernelDeclAdaptor::KernelDeclAdaptor(KernelDeclOp decl) {
   executeConfigurationFunction = buildFn(
       decl.getExecuteConfiguration(),
       stringifyKernelFunctionKind(KernelFunctionKind::ExecuteConfiguration));
+  workspaceSizeFunction =
+      buildFn(decl.getWorkspaceSize(),
+              stringifyKernelFunctionKind(KernelFunctionKind::WorkspaceSize));
 
   if (executeDeviceFunction)
     executeFunction = executeDeviceFunction;
@@ -699,6 +722,8 @@ KernelDeclAdaptor::getFunction(KernelFunctionKind kind) const {
     return get(executeDeviceFunction);
   case KernelFunctionKind::ExecuteConfiguration:
     return get(executeConfigurationFunction);
+  case KernelFunctionKind::WorkspaceSize:
+    return get(workspaceSizeFunction);
   case KernelFunctionKind::Shape:
     return nullptr;
   }

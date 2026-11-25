@@ -30,6 +30,7 @@ from .stable_addr_engine import *
 from .tensor_arg_traits import *
 from .tensor_tuple import *
 from .tile_tensor_adapters import *
+from .workspace import *
 
 # Underscore-prefixed names are skipped by `import *`, but the kernels and
 # kv_cache packages reference them by name. Re-export them explicitly.

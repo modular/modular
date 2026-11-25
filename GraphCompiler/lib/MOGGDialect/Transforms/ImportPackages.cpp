@@ -359,6 +359,7 @@ struct ScannedKernel {
   KGEN::LIT::FnOp buildGraphFn;           // may be null
   KGEN::LIT::FnOp executeDeviceFn;        // device code, may be null
   KGEN::LIT::FnOp executeConfigurationFn; // launch config, may be null
+  KGEN::LIT::FnOp workspaceSizeFn;        // workspace byte count, may be null
   MOGG::KernelReductionAttr reduction;    // null unless a `ReduceOp` monoid
 };
 
@@ -681,6 +682,9 @@ static mlir::LogicalResult scanForKernelDecls(
       else if (srcName == stringifyKernelFunctionKind(
                               KernelFunctionKind::ExecuteConfiguration))
         kernel.executeConfigurationFn = func;
+      else if (srcName ==
+               stringifyKernelFunctionKind(KernelFunctionKind::WorkspaceSize))
+        kernel.workspaceSizeFn = func;
       else
         recognized = false;
       if (recognized && !func.getIsStatic()) {
@@ -1170,6 +1174,7 @@ struct ImportPackagesPass
       addFnLocs(KernelFunctionKind::ExecuteDevice, kernel.executeDeviceFn);
       addFnLocs(KernelFunctionKind::ExecuteConfiguration,
                 kernel.executeConfigurationFn);
+      addFnLocs(KernelFunctionKind::WorkspaceSize, kernel.workspaceSizeFn);
 
       // execute / build_graph may return user-defined parameterised opaque
       // structs (e.g. `SIMDPair[P0, P1]`) that `inferOpaqueParameters` needs,
@@ -1197,9 +1202,15 @@ struct ImportPackagesPass
           kernel.executeConfigurationFn, /*computeResultParams=*/true,
           /*strictResultParams=*/false, /*distillTraitArgs=*/true,
           /*isShapeFunc=*/true);
+      // `workspace_size` reads only shapes too.
+      auto workspaceSizeAttr = buildFunctionAttr(
+          kernel.workspaceSizeFn, /*computeResultParams=*/true,
+          /*strictResultParams=*/false, /*distillTraitArgs=*/true,
+          /*isShapeFunc=*/true);
       if (failed(executeAttr) || failed(elementwiseAttr) ||
           failed(tileElementwiseAttr) || failed(buildGraphAttr) ||
-          failed(executeDeviceAttr) || failed(executeConfigurationAttr)) {
+          failed(executeDeviceAttr) || failed(executeConfigurationAttr) ||
+          failed(workspaceSizeAttr)) {
         // Diagnostics already emitted; keep going so every kernel is reported
         // rather than aborting on the first invalid one.
         sawFailure = true;
@@ -1226,8 +1237,9 @@ struct ImportPackagesPass
           builder, mlir::FusedLoc::get(ctx, fnLocs), kernel.mojoName,
           kernel.registration, kernel.platformExpr, *executeAttr,
           *elementwiseAttr, *tileElementwiseAttr, *buildGraphAttr,
-          *executeDeviceAttr, *executeConfigurationAttr, kernel.reduction,
-          structParams, mlir::BoolAttr::get(ctx, isUserDefined),
+          *executeDeviceAttr, *executeConfigurationAttr, *workspaceSizeAttr,
+          kernel.reduction, structParams,
+          mlir::BoolAttr::get(ctx, isUserDefined),
           /*supports_unfused_execute=*/
           kernel.supportsUnfusedExecute ? mlir::UnitAttr::get(ctx)
                                         : mlir::UnitAttr(),

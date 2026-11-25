@@ -111,6 +111,7 @@ using KGEN::kLeafManagedTensorSlice;
 constexpr MojoStaticValue kLeafVariadicTensors = "VariadicTensors";
 constexpr MojoStaticValue kLeafVariadicPack = "VariadicPack";
 constexpr MojoStaticValue kLeafTensorTuple = "TensorTuple";
+constexpr MojoStaticValue kLeafWorkspace = "Workspace";
 constexpr MojoStaticValue kLeafFusedInputVariadicTensors =
     "_FusedInputVariadicTensors";
 constexpr MojoStaticValue kLeafFusedOutputVariadicTensors =

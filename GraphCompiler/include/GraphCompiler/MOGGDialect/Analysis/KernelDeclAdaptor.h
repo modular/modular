@@ -304,6 +304,10 @@ struct KernelDeclGraphBuilderAdaptor {
   bool operator==(const KernelDeclGraphBuilderAdaptor &) const { return true; }
 };
 
+struct KernelDeclWorkspaceAdaptor {
+  bool operator==(const KernelDeclWorkspaceAdaptor &) const { return true; }
+};
+
 struct KernelDeclUnsupportedAdaptor {
   bool operator==(const KernelDeclUnsupportedAdaptor &) const { return false; }
 };
@@ -324,7 +328,7 @@ using KernelDeclOperandVariant =
                  KernelDeclScalarAdaptor, KernelDeclTileTensorAdaptor,
                  KernelDeclOpaqueAdaptor, KernelDeclContextAdaptor,
                  KernelDeclContextArrayAdaptor, KernelDeclGraphBuilderAdaptor,
-                 KernelDeclUnsupportedAdaptor>;
+                 KernelDeclWorkspaceAdaptor, KernelDeclUnsupportedAdaptor>;
 
 /// One argument decoded from a kernel's stored LIT signature.
 struct KernelDeclOperandAdaptor {
@@ -440,10 +444,19 @@ struct KernelDeclOperandAdaptor {
         underlyingType);
   }
 
+  bool isWorkspaceType() const {
+    return std::holds_alternative<KernelDeclWorkspaceAdaptor>(underlyingType);
+  }
+
   /// The trailing "where to run" argument (a DeviceContext[Array], or a
   /// DeviceGraphBuilder for `build_graph`). Must appear last and is skipped
   /// when aligning inputs across function variants.
   bool isLaunchArgument() const { return isContextType() || isBuilderType(); }
+
+  /// Whether the argument takes one of the op's operands. The graph compiler
+  /// supplies a launch argument and a workspace buffer itself, so they are
+  /// skipped when aligning inputs across function variants.
+  bool isOperand() const { return !isLaunchArgument() && !isWorkspaceType(); }
 
   bool isUnsupportedType() const {
     return std::holds_alternative<KernelDeclUnsupportedAdaptor>(underlyingType);
@@ -539,6 +552,7 @@ struct KernelDeclAdaptor {
   std::optional<KernelDeclFunctionAdaptor> buildGraphFunction;
   std::optional<KernelDeclFunctionAdaptor> executeDeviceFunction;
   std::optional<KernelDeclFunctionAdaptor> executeConfigurationFunction;
+  std::optional<KernelDeclFunctionAdaptor> workspaceSizeFunction;
   /// Set for a `ReduceOp` monoid.
   std::optional<KernelReductionAttr> reduction;
   /// Struct-level ParamDeclAttrs shared by all functions (e.g. `dtype`).
@@ -602,6 +616,8 @@ StreamType &operator<<(StreamType &os, const KernelDeclOperandVariant &var) {
           os << "*Context";
         } else if constexpr (std::is_same_v<T, KernelDeclGraphBuilderAdaptor>) {
           os << "GraphBuilder";
+        } else if constexpr (std::is_same_v<T, KernelDeclWorkspaceAdaptor>) {
+          os << "Workspace";
         } else if constexpr (std::is_same_v<T, KernelDeclUnsupportedAdaptor>) {
           os << "Unsupported";
         }

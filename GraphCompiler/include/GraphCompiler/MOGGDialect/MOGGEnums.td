@@ -144,6 +144,7 @@ def MOGG_KernelFunctionKind
         I32EnumCase<"BuildGraph", 4, "build_graph">,
         I32EnumCase<"ExecuteDevice", 5, "execute_device">,
         I32EnumCase<"ExecuteConfiguration", 6, "execute_configuration">,
+        I32EnumCase<"WorkspaceSize", 7, "workspace_size">,
       ]> {
   let cppNamespace = "::M::MOGG";
 }

@@ -81,6 +81,10 @@
 // (stdlib) trait in the bound.
 // CHECK-DAG: references 'Copyable', which is not a tensor-argument trait
 
+// `Workspace & TileTensorable` (kernel `trait_workspace_tensor`). A workspace
+// is not a tensor argument, so it composes with no tensor-argument trait.
+// CHECK-DAG: references 'Workspace', which is not a tensor-argument trait
+
 // `TensorTuple[*Ts]` with `Ts: TypeList[Trait=Input & TileTensorable & Movable, ...]`
 // (kernel `trait_tensor_tuple_movable`). The tuple puts no bound on its
 // elements, so `Movable` is as foreign in its list bound as anywhere else.
