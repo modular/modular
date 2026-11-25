@@ -4696,4 +4696,5 @@ class TCSchemaEnforcement(BaseScenario):
             ),
             validate=validate,
             max_tokens=4096,
+            temperature=0,
         )
