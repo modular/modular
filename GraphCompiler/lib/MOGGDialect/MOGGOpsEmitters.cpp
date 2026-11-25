@@ -408,8 +408,8 @@ LogicalResult FuncOp::emitMojoMOGGABI(EmitMojoState &state) {
   state.file->def(
       getSymNameAttr().str(), /*parameters=*/{}, inputTypes, returnType,
       /*exported=*/false,
-      /*raises=*/isThrows(), /*isAlwaysInline=*/false,
-      [&](const MOGG::FunctionBody &functionBody) {
+      /*raises=*/isThrows(state.moduleSymbolTable),
+      /*isAlwaysInline=*/false, [&](const MOGG::FunctionBody &functionBody) {
         for (auto &&[mlirArg, mojoArg] :
              llvm::zip(getBody().getArguments(), functionBody.arguments))
           state.setMojoValueFor(mlirArg, mojoArg.resolvedName);
@@ -3417,7 +3417,7 @@ LogicalResult CallAsyncOp::emitMojo(EmitMojoState &state) {
 
   // 2. Create async wrapper closure that calls the stub
   SmallVector<MojoValue> stubArgs = getStubCallOperands(state, getOperands());
-  MojoValue stubFunc(getCallee().getSymNameAttr().str());
+  MojoValue stubFunc(getName().str());
 
   // TODO(MOCO-5158): an async closure whose captures are all
   // register-passable is invoked with a pointer to a by-value context.

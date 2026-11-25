@@ -17,6 +17,11 @@
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 
+#include "mlir/Analysis/SymbolTableAnalysis.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Threading.h"
+
 using namespace M;
 
 namespace M::MOGG {
@@ -35,7 +40,15 @@ struct AddTryExceptBlocks
   using AddTryExceptBlocksBase::AddTryExceptBlocksBase;
 
   void runOnOperation() override {
-    auto kernelOp = getOperation();
+    mlir::SymbolTable &symbolTable =
+        getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable();
+    mlir::parallelForEach(
+        getOperation()->getContext(), getOperation().getOps<MOGG::FuncOp>(),
+        [&](MOGG::FuncOp kernelOp) { addTryExcept(kernelOp, symbolTable); });
+  }
+
+  static void addTryExcept(MOGG::FuncOp kernelOp,
+                           mlir::SymbolTable &symbolTable) {
     OpBuilder builder(kernelOp->getContext());
     auto &kernelBody = kernelOp.getBodyBlock();
     auto terminator = kernelBody.getTerminator();
@@ -67,7 +80,8 @@ struct AddTryExceptBlocks
       return;
     }
 
-    if (kernelOp.getAbi() != MOGG::ABIKind::MGP || !kernelOp.isThrows())
+    if (kernelOp.getAbi() != MOGG::ABIKind::MGP ||
+        !kernelOp.isThrows(symbolTable))
       return;
 
     // Local destructors still run during unwinding, so cleanup needs no

@@ -564,7 +564,7 @@ LogicalResult IntGetCachedOp::emitMojo(MOGG::EmitMojoState &state) {
 // AssertOp
 //===----------------------------------------------------------------------===//
 
-bool AssertOp::isThrows() { return true; }
+bool AssertOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult AssertOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
@@ -777,7 +777,7 @@ bool TensorCreateOp::extendsLifetime(size_t operandIndex, size_t resultIndex) {
 // TensorSliceOp
 //===----------------------------------------------------------------------===//
 
-bool TensorSliceOp::isThrows() { return true; }
+bool TensorSliceOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult TensorSliceOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -902,7 +902,7 @@ CallOp::verifySymbolUses(mlir::SymbolTableCollection &symbolTable) {
 // DebugPrintOp
 //===----------------------------------------------------------------------===//
 
-bool DebugPrintOp::isThrows() { return true; }
+bool DebugPrintOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult DebugPrintOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());

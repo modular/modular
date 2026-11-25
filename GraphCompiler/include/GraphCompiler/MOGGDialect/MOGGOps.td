@@ -201,10 +201,6 @@ def MOGG_CallOp : MOGG_Op<"call", [
     $name ($inputs^ `:` type($inputs))? (`->` type($outputs)^)?
     (`affinity_device_id` `=` $affinity_device_id^)? attr-dict
   }];
-
-  let extraClassDeclaration = [{
-    FuncOp getCallee();
-  }];
 }
 
 def MOGG_CallAsyncOp : MOGG_Op<"call.async", [
@@ -227,10 +223,6 @@ def MOGG_CallAsyncOp : MOGG_Op<"call.async", [
   let assemblyFormat = [{
     $name (`(` $inputs^ `:` type($inputs) `)`)?
     (`affinity_device_id` `=` $affinity_device_id^)? attr-dict
-  }];
-
-  let extraClassDeclaration = [{
-    FuncOp getCallee();
   }];
 }
 

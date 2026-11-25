@@ -22,6 +22,7 @@
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/ToolOutputFile.h"
 
+#include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/Dialect/Index/IR/IndexOps.h"
 
 #include <filesystem>
@@ -150,9 +151,11 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
     auto loc = moduleOp->getLoc();
     OpBuilder builder(ctx);
     MojoRegistry registry(moduleOp);
-    MOGG::EmitMojoState state(registry, enableOpTraceComments,
-                              enableComputeLambdas,
-                              moggDebugDumpFusedTensorSpecs);
+    MOGG::EmitMojoState state(
+        registry,
+        getAnalysis<mlir::SymbolTableAnalysis>().getTopLevelSymbolTable(),
+        enableOpTraceComments, enableComputeLambdas,
+        moggDebugDumpFusedTensorSpecs);
 
     // Import mojo stdlib packages and compiler directives.
     for (auto [package, as] : MOGG::kPackagesToImport) {

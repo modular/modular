@@ -26,6 +26,8 @@
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Support/AssertStream.h"
 
+#include "mlir/IR/SymbolTable.h"
+
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -57,10 +59,12 @@ struct FusedTensorArg {
 
 /// State for lowering MOGG operations to Mojo text.
 struct EmitMojoState {
-  EmitMojoState(MojoRegistry &registry, bool enableOpTraceComments = false,
+  EmitMojoState(MojoRegistry &registry, mlir::SymbolTable &moduleSymbolTable,
+                bool enableOpTraceComments = false,
                 bool enableComputeLambdas = false,
                 bool enableDebugDumpFusedTensorSpecs = false)
-      : registry(registry), enableComputeLambdas(enableComputeLambdas),
+      : registry(registry), moduleSymbolTable(moduleSymbolTable),
+        enableComputeLambdas(enableComputeLambdas),
         enableOpTraceComments(enableOpTraceComments),
         enableDebugDumpFusedTensorSpecs(enableDebugDumpFusedTensorSpecs) {}
 
@@ -92,6 +96,10 @@ struct EmitMojoState {
   SmallVector<std::tuple<MojoValue, MojoValue>> mojoConstantResources;
 
   MojoRegistry &registry;
+
+  /// Looks up the functions backing call-like operations, so a walk over a
+  /// whole body shares one table.
+  mlir::SymbolTable &moduleSymbolTable;
 
   /// Values kept alive with `_ = someVar` at function end, where the Mojo
   /// compiler misjudges lifetimes (mostly lambdas, until the new closures).

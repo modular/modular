@@ -179,7 +179,7 @@ def WrapFuncsWithTrace: Pass<"mogg-wrap-funcs-with-trace", "MOGG::FuncOp"> {
   let dependentDialects = ["MOGG::MOGGDialect"];
 }
 
-def AddTryExceptBlocks: Pass<"mogg-add-try-except-blocks", "MOGG::FuncOp"> {
+def AddTryExceptBlocks: Pass<"mogg-add-try-except-blocks", "ModuleOp"> {
   let summary = "Adds a try-except block to raising kernels";
   let description = [{
     Runs after sequence fusion and before Mojo codegen, so emitted Mojo for
