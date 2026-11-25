@@ -23,7 +23,11 @@ from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
 import huggingface_hub
-from max._kv_cache_ops import MLASparseKVForm
+from max._kv_cache_ops import (
+    ATTN_DISPATCH_UNSET,
+    AttnDispatchDesc,
+    MLASparseKVForm,
+)
 from max.driver import CPU, Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -86,6 +90,7 @@ from .engine_config import (
 )
 from .format_spec import FormatSpec
 from .kv_cache import (
+    CacheDispatch,
     ContextParallel,
     KVCache,
     KVCacheLayout,
@@ -910,6 +915,24 @@ def pipeline_kv_cache(
     return KVCacheLayout(page_size=params.page_size, caches=caches)
 
 
+def _dispatch(desc: AttnDispatchDesc) -> CacheDispatch:
+    def field(value: int) -> int | None:
+        return None if value == ATTN_DISPATCH_UNSET else int(value)
+
+    return CacheDispatch(
+        kind=desc.kind,
+        num_q_heads=field(desc.num_q_heads),
+        num_kv_heads=field(desc.num_kv_heads),
+        head_dim=field(desc.head_dim),
+        page_size=field(desc.page_size),
+        window_size=field(desc.window_size),
+        sparse_indices_stride=field(desc.sparse_indices_stride),
+        kv_dtype=field(desc.kv_dtype),
+        kv_form=field(desc.kv_form),
+        flags=int(desc.flags),
+    )
+
+
 _MHA_RECORDS: dict[type[CacheLeafParamInterface], type[MHAKVCache]] = {
     MHAKVCacheParams: MHAKVCache,
     MSAKVCacheParams: MSAKVCache,
@@ -948,6 +971,7 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             num_draft_tokens=params.num_draft_tokens,
             leaves=leaves,
             context_parallel=_context_parallel(params),
+            dispatch=_dispatch(params.dispatch_desc),
         )
     elif type(params) is MLAKVCacheParams:
         assert isinstance(params, MLAKVCacheParams)
@@ -971,6 +995,7 @@ def _caches(params: CacheLeafParamInterface, path: str) -> Iterator[KVCache]:
             if params.sparse_indices_stride is None
             else _SPARSE_KV_FORMS[params.resolved_sparse_kv_form],
             context_parallel=_context_parallel(params),
+            dispatch=_dispatch(params.dispatch_desc),
         )
     elif type(params) is RecurrentStateParams:
         assert isinstance(params, RecurrentStateParams)

@@ -47,6 +47,7 @@ from max._artifact.engine_config import (
 )
 from max._artifact.format_spec import FormatSpec
 from max._artifact.kv_cache import (
+    CacheDispatch,
     ContextParallel,
     KVCacheLayout,
     KVPoolLeaf,
@@ -1051,6 +1052,9 @@ KV_CACHE = KVCacheLayout(
             dispatch_unread=True,
             sparse_kv_form="plain",
             context_parallel=ContextParallel(degree=4, interleave=128),
+            dispatch=CacheDispatch(
+                kind="mla", num_q_heads=8, head_dim=576, kv_dtype=1, flags=2
+            ),
         ),
         RecurrentStateCache(
             name="state",
@@ -1122,8 +1126,17 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
             }
         ],
         "context_parallel": None,
+        "dispatch": None,
     }
     assert caches[2]["context_parallel"] == {"degree": 4, "interleave": 128}
+    # A field the attention kind does not set is left out.
+    assert caches[2]["dispatch"] == {
+        "kind": "mla",
+        "num_q_heads": 8,
+        "head_dim": 576,
+        "kv_dtype": 1,
+        "flags": 2,
+    }
     assert deserialize(dest).kv_cache == KV_CACHE
 
 
@@ -1139,6 +1152,7 @@ def test_kv_cache_round_trip(tmp_path: Path) -> None:
         lambda section: section["caches"][3]["regions"][0].pop("row_shape"),
         lambda section: section["caches"][2]["context_parallel"].pop("degree"),
         lambda section: section["caches"][1].pop("context_parallel"),
+        lambda section: section["caches"][1].pop("dispatch"),
     ],
 )
 def test_malformed_kv_cache_rejected(

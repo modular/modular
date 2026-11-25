@@ -63,6 +63,7 @@ from max._artifact.export import (
     vision_preprocess_modules,
 )
 from max._artifact.kv_cache import (
+    CacheDispatch,
     ContextParallel,
     KVCacheLayout,
     KVCacheQuantization,
@@ -1587,6 +1588,14 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
                 stride_alignment=None,
             ),
         ),
+        # What the params' own descriptor sets, and nothing else.
+        dispatch=CacheDispatch(
+            kind="mha",
+            num_kv_heads=4,
+            head_dim=64,
+            page_size=128,
+            window_size=1024,
+        ),
     )
     full = layout.caches[1]
     assert isinstance(full, MHAKVCache)
@@ -1626,6 +1635,7 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         speculative_method=None,
         num_draft_tokens=0,
         leaves=(full_leaf("indexer"),),
+        dispatch=CacheDispatch(kind="msa_index"),
     )
     assert layout.caches[4] == MLAKVCache(
         name="latent",
@@ -1645,6 +1655,17 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
         leaves=(full_leaf("latent"),),
         # An unscaled BF16 latent.
         sparse_kv_form="plain",
+        dispatch=CacheDispatch(
+            kind="mla",
+            num_q_heads=16,
+            head_dim=576,
+            page_size=128,
+            sparse_indices_stride=64,
+            # Not FP8, the plain sparse form, and a fixed top-k.
+            kv_dtype=0,
+            kv_form=0,
+            flags=2,
+        ),
     )
     assert layout.caches[5] == RecurrentStateCache(
         name="state",

@@ -20,12 +20,13 @@ from dataclasses import dataclass
 from .codec import ref_from_dict, ref_to_dict
 from .value_types import ArtifactError, HuggingFaceRef, JsonValue
 
-ARTIFACT_VERSION = 2
+ARTIFACT_VERSION = 3
 """The artifact format version written at export and required at load.
 
 Version 2 records the parallel layout, the capture limits and the
 speculative facts in ``engine_config``, and stores the overlap helpers as
-``model`` roles. An artifact of another version is re-exported, not read.
+``model`` roles. Version 3 adds each KV cache's dispatch descriptor, which an
+engine needs to boot. An artifact of another version is re-exported, not read.
 """
 
 
