@@ -501,6 +501,131 @@ polymorphic access sets, and callback APIs that preserve or parameterize over
 the effects of supplied functions. These are not required for the initial
 implementation.
 
+### Forwarding access sets through generic wrappers
+
+Generic forwarding functions need a dependent access contract. For example,
+the access set of `len(value)` should be the access set of the `__len__()`
+implementation selected for `T`, after substituting `value` for that method's
+`self` argument:
+
+```mojo
+trait Sized:
+    def __len__(self) -> Int:
+        ...
+
+def len[T: Sized](value: T) -> Int:
+    return value.__len__()
+```
+
+No single fixed contract on `len()` is correct for every conformance. A
+container might compute its length entirely from inline metadata and use
+`accesses(none self.origin)`. Another type might compute its length by scanning
+storage and require `accesses(imm self.origin)`. Giving `len()` the conservative
+default loses the precision of the selected method, while declaring the
+narrower contract is unsound for conformances that access storage.
+
+This is not ordinary access inference. The result remains symbolic while
+`len()` is type checked and becomes concrete only after selecting a conformance
+for `T`. The compiler must preserve that dependency in generic function types,
+substitute the selected method's origins at an instantiation or call site, and
+then apply the normal access-set inclusion checks. This means that generic code
+will have to be conservative, but users can use a concrete code of
+`len(someSpan)` without thinking the origin within the span is accessed.
+
+Several designs are worth investigating:
+
+- **Explicit access projection**: Allow a forwarding function to project the
+  contract of a resolved call. An illustrative spelling is
+  `accesses(forward value.__len__())`. The expression would not execute; it
+  would resolve the method, obtain its access set, substitute `value` for
+  `self`, and expose that result as the contract of `len()`. This is the most
+  direct and predictable model for public wrappers and separate compilation.
+- **Access-set parameters or associated effects**: Let a trait requirement
+  carry a symbolic access-set member that each conformance supplies. Both
+  `__len__()` and `len()` could refer to that member. This makes the dependency
+  explicit in the trait witness and may generalize well to higher-order APIs,
+  but it introduces a new kind of compile-time value and more surface syntax.
+
+Explicit projection is the best initial direction because it keeps exported
+contracts reviewable and does not require general effect inference. The
+underlying IR should nevertheless represent projected access sets symbolically
+so that later inference can produce the same representation instead of creating
+a second mechanism.
+
+### Scoped unsafe access widening
+
+Checking an access contract creates a practical need for an explicit escape
+hatch. Low-level code sometimes knows a fact that the origin model cannot
+express, such as two spans with the same origin covering disjoint ranges, or a
+mutation preserving every outstanding interior reference. Such a function
+might promise read-only nested origins and perform one carefully audited
+mutation that the checker would otherwise reject.
+
+This cannot be an ordinary helper function. Transitive access checking would
+correctly observe the helper's mutation and reject the caller. The escape hatch
+must therefore have compiler-recognized semantics, either directly or through a
+capability represented in IR.
+
+An unsafe escape does not change the function's externally visible contract.
+The caller continues to rely on that contract for exclusivity and invalidation.
+The programmer is responsible for proving that the hidden access does not break
+those assumptions. If the mutation is part of the function's ordinary
+observable behavior and callers must account for it, the function should
+declare a wider access set instead of using an escape hatch.
+
+Several designs are worth considering:
+
+- **An unchecked value or origin cast**: Existing unsafe origin casts can erase
+  the connection between a local view and the function's tracked input origins.
+  For example, code that has separately established that three spans do not
+  overlap can reconstruct local views with an untracked mutable origin:
+
+  ```mojo
+  var unsafe_input = input.unsafe_origin_cast[MutUntrackedOrigin]()
+  var unsafe_output = output.unsafe_origin_cast[MutUntrackedOrigin]()
+  ```
+
+  Normal operations on these local views no longer appear to access the
+  enclosing function's tracked origins. This works with the existing origin
+  model, makes the unsafe boundary explicit, and requires no closure or new
+  control-flow syntax. It is therefore a practical implementation bridge.
+
+  The cast also erases useful lifetime and exclusivity information. Its result
+  can be returned, stored, or passed elsewhere, accidentally laundering the
+  unchecked authority. Code should create the untracked view immediately
+  before the operation that needs it, keep it local, and retain the original
+  tracked value for all other work. A dedicated cast could enforce that its
+  result is lexical and non-escaping, making this approach substantially safer
+  than an ordinary first-class `MutUntrackedOrigin` value.
+
+- **A scoped closure intrinsic**: A compiler-known function could accept an
+  explicit access list and a non-escaping closure:
+
+  ```mojo
+  __unsafe_with_accesses(
+      mut span1.origin,
+      mut span2.origin,
+      mut result.origin,
+      body=merge_body,
+  )
+  ```
+
+  `CheckLifetimes` would verify the closure against the widened local set while
+  continuing to verify the rest of the enclosing function normally. The
+  intrinsic must guarantee that the closure does not escape and that lowering
+  introduces no runtime call or allocation. This is implementable without new
+  surface syntax and makes each exception easy to find, but closure capture
+  inference and diagnostics could make simple low-level code cumbersome.
+
+The recommended short-term bridge is a small, explicit untracked-origin cast at
+each existing low-level use site. The preferred language design remains
+`unsafe accesses`, potentially prototyped first as a compiler-known scoped
+closure intrinsic. Both scoped forms should require an explicit list of widened
+origins and access modes; a blanket "disable access checking" operation would
+hide unrelated mistakes in the same scope. Longer term, disjoint-range proofs,
+pointer-stability guarantees, and other safe abstractions should replace common
+uses of every escape hatch.
+
 ### Broader effects
 
 Access refinement resembles a small, concrete effect system for memory. Other
