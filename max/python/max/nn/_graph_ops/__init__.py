@@ -11243,10 +11243,11 @@ def amd_mega_ffn_workspace_words(
 
     For each decode launch grid, one padded counter slot per possible 16-row
     block (each expert adds at most one partial block) and per workgroup of
-    the launch (at most 1024), plus the two parity ticket words; then the
-    prefill MegaFFN's region, laid out the same way with a slot per 128-row
-    block of the dispatch buffer (``mega_prefill_region_words`` in
-    ``mega_ffn_amd_prefill.mojo``).
+    the launch (at most 1024); the decode kernel keeps its tail ticket
+    cursors in the padding of the first slots, so a region holds nothing past
+    them. Then the prefill MegaFFN's region, laid out the same way with a slot
+    per 128-row block of the dispatch buffer (``mega_prefill_region_words`` in
+    ``mega_ffn_amd_prefill.mojo``), plus its own two parity ticket words.
 
     Args:
         num_experts: Expert slots of the FFN.
@@ -11263,11 +11264,7 @@ def amd_mega_ffn_workspace_words(
     pad = 32  # u32 words of a counter slot: mega_ffn_amd_decode.PAD
     blocks = num_experts + -(-max_rows // 16)
     prefill_blocks = num_experts + -(-dispatch_rows // 128)
-    return (
-        grids * (max(blocks, 1024) * pad + 2)
-        + max(prefill_blocks, 1024) * pad
-        + 2
-    )
+    return grids * max(blocks, 1024) * pad + max(prefill_blocks, 1024) * pad + 2
 
 
 def amd_mega_ffn_tp_scratch_bytes(
