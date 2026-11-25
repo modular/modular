@@ -21,6 +21,7 @@ engine therefore needs no code per attention family.
 
 from max.gpu.host import DeviceContext
 
+from nn.attention.gpu.mla_index_fp8 import indexer_max_keys
 from nn.attention.gpu.mha_decode_partition_heuristic import (
     amd_mla_decode_dispatch_scalars,
     mha_decoding_num_partitions,
@@ -33,6 +34,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLA_SPARSE_KV_FORM_PLAIN,
     compute_mla_dispatch_key_runtime,
 )
+from nn.topk_bitonic import persistent_topk_is_single_block
 
 comptime ATTN_DISPATCH_UNSET = -1
 """Value of a descriptor field its attention family does not set.
@@ -74,7 +76,8 @@ struct AttnDispatchDesc(Copyable, Movable):
     """
 
     var kind: String
-    """The attention family: `"mha"`, `"mla"`, `"msa"`, `"msa_index"`."""
+    """The attention family: `"mha"`, `"mla"`, `"msa"`, `"msa_index"`,
+    `"dsa_indexer"`."""
     var num_q_heads: Int
     """Query heads on one device."""
     var num_kv_heads: Int
@@ -418,6 +421,40 @@ struct MSAIndexDispatchPolicy(AttnDispatchPolicy):
         return _resolve_msa(batch_size, max_cache_valid_length)
 
 
+struct DSAIndexerDispatchPolicy(AttnDispatchPolicy):
+    """The unpooled DSA indexer: the key is its top-k select.
+
+    No indexer kernel reads a dispatch record: each sizes its launch from
+    the host cache bound. A captured graph freezes that launch, and the
+    top-k's two selects may keep different columns among tied scores, so the
+    key holds which select the bound takes. It does not tell the selects past
+    one block apart, nor the scorer's launches: those differ in their grids,
+    not in the rows they select.
+
+    TODO(MXSERV-1069): key a pooled or context-parallel indexer, whose key
+    count needs the pooling factor and the rank's share in the descriptor.
+    """
+
+    @staticmethod
+    def kind() -> StaticString:
+        return "dsa_indexer"
+
+    @staticmethod
+    def resolve(
+        ctx: DeviceContext,
+        desc: AttnDispatchDesc,
+        batch_size: Int,
+        q_max_seq_len: Int,
+        max_cache_valid_length: Int,
+    ) raises -> AttnDispatch:
+        var single_block = persistent_topk_is_single_block(
+            indexer_max_keys(max_cache_valid_length, q_max_seq_len, 1)
+        )
+        return AttnDispatch(
+            key=[1 if single_block else 0], metadata=List[Int]()
+        )
+
+
 def _resolve_with[
     Policy: AttnDispatchPolicy
 ](
@@ -493,6 +530,10 @@ def attn_dispatch_resolve(
         )
     if desc.kind == MSAIndexDispatchPolicy.kind():
         return _resolve_with[MSAIndexDispatchPolicy](
+            ctx, desc, batch_size, q_max_seq_len, max_cache_valid_length
+        )
+    if desc.kind == DSAIndexerDispatchPolicy.kind():
+        return _resolve_with[DSAIndexerDispatchPolicy](
             ctx, desc, batch_size, q_max_seq_len, max_cache_valid_length
         )
     raise Error("unknown attention dispatch kind '" + desc.kind + "'")

@@ -26,6 +26,7 @@ from max.nn.common_layers.quant_ops import is_fp8_block_quantized
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
+    MLAKVCacheParams,
     MultiKVCacheParams,
 )
 from max.nn.quant_config import QuantConfig
@@ -282,6 +283,10 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
             speculative_method=speculative_method,
             num_draft_tokens=num_draft_tokens,
         )
+        assert isinstance(indexer, MLAKVCacheParams)
+        # The indexer's top-k picks its select from the host cache bound, so
+        # a capture keys on the select.
+        indexer = replace(indexer, dispatch_kind="dsa_indexer")
         return MultiKVCacheParams.from_params({"mla": mla, "indexer": indexer})
 
     @override

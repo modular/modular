@@ -2813,6 +2813,12 @@ class MLAKVCacheParams(KVCacheParams):
     cache's head dimension. An indexer leaf joining an MLA capture identity
     copies that MLA leaf's width."""
 
+    dispatch_kind: str = "mla"
+    """The attention kind whose kernel policy resolves this cache's decode
+    dispatch. An indexer cache whose kernels size their own launches from the
+    host cache bound names its indexer's kind here, so that a capture keys on
+    the launch those kernels pick."""
+
     def __post_init__(self) -> None:
         super().__post_init__()
         if self.has_split_head_dims:
@@ -2911,6 +2917,9 @@ class MLAKVCacheParams(KVCacheParams):
             flags |= AttnDispatchFlag.PHYSICAL_INDICES
         if self.sparse_row_invariant_verify:
             flags |= AttnDispatchFlag.ROW_INVARIANT_VERIFY
+        if self.dispatch_kind != "mla":
+            # Such a policy reads only the step shape and the device.
+            return AttnDispatchDesc(kind=self.dispatch_kind)
         return AttnDispatchDesc(
             kind="mla",
             num_q_heads=self.num_q_heads_per_device,
@@ -2952,6 +2961,15 @@ class MLAKVCacheParams(KVCacheParams):
                 batch_size=batch_size,
                 max_prompt_length=max_prompt_length,
                 num_partitions=1,
+            )
+        if not dispatch.metadata:
+            # No kernel reads this cache's record, so only the key holds the
+            # launch. Such a policy's key is one scalar, kept as the variant.
+            return MLAAttnKey(
+                batch_size=batch_size,
+                max_prompt_length=max_prompt_length,
+                num_partitions=1,
+                kernel_variant=dispatch.key[0] if dispatch.key else 0,
             )
         # The dispatch may adjust the batch size and the query width along
         # with the partition count; the record carries the adjusted values.

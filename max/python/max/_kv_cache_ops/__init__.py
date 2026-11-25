@@ -72,7 +72,8 @@ class AttnDispatchDesc:
     """
 
     kind: str
-    """The attention family: ``"mha"``, ``"mla"``, ``"msa"``, ``"msa_index"``."""
+    """The attention family: ``"mha"``, ``"mla"``, ``"msa"``,
+    ``"msa_index"`` or ``"dsa_indexer"``."""
     num_q_heads: int = ATTN_DISPATCH_UNSET
     """Query heads on one device."""
     num_kv_heads: int = ATTN_DISPATCH_UNSET

@@ -180,6 +180,25 @@ struct RowBoundsPtr(RowBound):
 # means changing all of them.
 comptime PERSISTENT_TOPK_MAX_N: Int = 2048
 
+
+def persistent_topk_is_single_block(N: Int) -> Bool:
+    """Returns whether a top-k over `N` score columns selects with one block
+    per row.
+
+    `persistent_topk_block_split` and `filtered_topk_block_split` take their
+    other selects only past this, and a row's selection among tied scores is
+    the select's own. A captured device graph freezes the select, so a caller
+    that keys its captures keys on this.
+
+    Args:
+        N: Score columns per row, the row stride.
+
+    Returns:
+        True when the single-block select holds every column.
+    """
+    return N <= PERSISTENT_TOPK_MAX_N
+
+
 comptime _PTOPK_BLOCK: Int = 512
 comptime _PTOPK_ITEMS: Int = 4
 comptime _PTOPK_TOTAL: Int = _PTOPK_BLOCK * _PTOPK_ITEMS
@@ -5085,7 +5104,7 @@ def persistent_topk_block_split[
             histogram-select family) and on the 2048 single-block path.
     """
     _assert_scores_16b_aligned(in_scores, N, total_seq_len)
-    if N <= PERSISTENT_TOPK_MAX_N:
+    if persistent_topk_is_single_block(N):
         persistent_topk_block[RB=RB](
             ctx, in_scores, out_idxs, N, K, total_seq_len, row_bounds
         )

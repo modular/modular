@@ -274,6 +274,28 @@ def _check_msa(ctx: DeviceContext) raises:
     assert_equal(index.metadata[1], 4096)
 
 
+def _check_dsa_indexer(ctx: DeviceContext) raises:
+    # The key moves where the cache bound and the query rows pass the
+    # single-block top-k's 2,048 columns, and nowhere else.
+    var desc = _desc("dsa_indexer")
+    var cases = [
+        (1, 1, 1),
+        (2047, 1, 1),
+        (2048, 1, 0),
+        (2044, 4, 1),
+        (2045, 4, 0),
+        (1000000, 1, 0),
+    ]
+    for shape in cases:
+        for batch_size in _batch_sizes():
+            var got = attn_dispatch_resolve(
+                ctx, desc, batch_size, shape[1], shape[0]
+            )
+            assert_equal(len(got.key), 1)
+            assert_equal(got.key[0], shape[2])
+            assert_equal(len(got.metadata), 0)
+
+
 def _check_errors(ctx: DeviceContext) raises:
     with assert_raises(contains="unknown attention dispatch kind"):
         _ = attn_dispatch_resolve(ctx, _desc("mamba"), 1, 1, 128)
@@ -304,6 +326,7 @@ def main() raises:
     with DeviceContext() as ctx:
         _check_mha(ctx)
         _check_msa(ctx)
+        _check_dsa_indexer(ctx)
         _check_errors(ctx)
         _check_split_ladder()
         var api = ctx.api()

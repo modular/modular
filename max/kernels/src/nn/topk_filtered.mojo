@@ -65,6 +65,7 @@ from structured_kernels.trace_buf import NullTrace
 from nn.attention.gpu.mla_index_fp8 import IndexerTopk
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
+    persistent_topk_is_single_block,
     RowBound,
     TopkSink,
     _HSEL_BINS,
@@ -818,7 +819,7 @@ def filtered_topk_block_split[
     if rows == 0:
         return
     comptime if default_accelerator().is_nvidia_gpu():
-        if N > PERSISTENT_TOPK_MAX_N and N > FILTER_MIN_RATIO * K:
+        if not persistent_topk_is_single_block(N) and N > FILTER_MIN_RATIO * K:
             var sm_count = ctx.device().multiprocessor_count()
             if rows >= sm_count:
                 var fallback = ctx.enqueue_create_buffer[.uint8](rows)
