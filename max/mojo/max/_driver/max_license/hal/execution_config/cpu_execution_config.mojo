@@ -16,7 +16,7 @@ from max.gpu.host import (
     ExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
-from .. import (
+from . import (
     CoresExecutionConfig,
     ParticularCoresExecutionConfig,
     ThreadsPerCoreExecutionConfig,

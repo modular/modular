@@ -28,7 +28,7 @@ from ..stream import Stream
 
 from .._machine import DeviceRef
 from max.gpu.host import ExecutionConfig
-from ..execution_config.cpu import CPUExecutionConfiguration
+from ..execution_config.cpu_execution_config import CPUExecutionConfiguration
 from ..extensions.cpu import CPUHALExtensions
 from ..extensions.traits import DefaultHALExtensions, HALExtensions
 
