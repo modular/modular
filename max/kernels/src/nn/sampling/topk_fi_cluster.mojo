@@ -897,9 +897,9 @@ def _sampling_rejection_loop_cluster[
         vec_end: One past the last vector of the slice.
     """
     var tx = thread_idx.x
-    var sampled_id_sram = unsafe_stack_allocation[
-        1, Int, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var sampled_id_sram_storage = Array[Int, 1](uninitialized=True)
+    var sampled_id_sram = sampled_id_sram_storage.unsafe_ptr()
 
     # Publish slots for this loop's combines, sized for the widest (the
     # rank gather) and used in turn: three combines per trial, so consecutive

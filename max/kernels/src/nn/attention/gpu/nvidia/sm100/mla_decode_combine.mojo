@@ -42,7 +42,6 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
 )
 from layout import TileTensor
-from std.memory import unsafe_stack_allocation
 from std.sys import get_defined_int, size_of
 from std.utils.numerics import min_or_neg_inf
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
@@ -826,21 +825,17 @@ def mla_combine_kernel_split_parallel[
     # Shared memory for tree reduction.
     # Layout: smem_result[warp][elem], smem_m[warp], smem_l[warp]
     # =========================================================================
-    var smem_result = unsafe_stack_allocation[
-        NUM_WARPS * head_dim,
-        DType.float32,
-        address_space=.SHARED,
-    ]()
-    var smem_m = unsafe_stack_allocation[
-        NUM_WARPS,
-        DType.float32,
-        address_space=.SHARED,
-    ]()
-    var smem_l = unsafe_stack_allocation[
-        NUM_WARPS,
-        DType.float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var smem_result_storage = Array[Float32, NUM_WARPS * head_dim](
+        uninitialized=True
+    )
+    var smem_result = smem_result_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var smem_m_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var smem_m = smem_m_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var smem_l_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var smem_l = smem_l_storage.unsafe_ptr()
 
     # =========================================================================
     # Step 1: Determine this warp's split range (runtime).

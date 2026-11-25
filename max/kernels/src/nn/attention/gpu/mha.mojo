@@ -5993,12 +5993,12 @@ def mha_splitk_reduce[
     var qk_max = warp.lane_group_max[WARP_SIZE](l)
 
     # since _num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
+    @__address_space(.SHARED)
+    var exp_sums_storage = Array[Scalar[accum_type], WARP_SIZE](
+        uninitialized=True
+    )
     var exp_sums = TileTensor(
-        unsafe_stack_allocation[
-            WARP_SIZE,
-            Scalar[accum_type],
-            address_space=.SHARED,
-        ](),
+        exp_sums_storage.unsafe_ptr(),
         row_major[WARP_SIZE](),
     )
 

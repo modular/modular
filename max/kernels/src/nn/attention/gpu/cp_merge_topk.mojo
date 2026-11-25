@@ -34,7 +34,7 @@ scale row with its value row, so both halves come out compacted the same way.
 """
 
 from std.atomic import Atomic, Ordering
-from std.memory import bitcast, unsafe_stack_allocation
+from std.memory import bitcast
 from std.utils.static_tuple import StaticTuple
 
 from layout import TensorLayout
@@ -151,10 +151,18 @@ def _cp_merge_topk_kernel[
     var tid = thread_idx.x
     var row = block_idx.x
 
-    var keys = unsafe_stack_allocation[N, UInt16, address_space=.SHARED]()
-    var hist = unsafe_stack_allocation[_BINS, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var keys_storage = Array[UInt16, N](uninitialized=True)
+    var keys = keys_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var hist_storage = Array[UInt32, _BINS](uninitialized=True)
+    var hist = hist_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
+    ]()
     # [0] digit, [1] keys still needed at that digit.
-    var ctl = unsafe_stack_allocation[2, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var ctl_storage = Array[UInt32, 2](uninitialized=True)
+    var ctl = ctl_storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
 
     with PDL():
         var rank = Int(cp_rank[0])

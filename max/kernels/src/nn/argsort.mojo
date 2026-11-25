@@ -32,7 +32,6 @@ from max.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
 )
-from std.memory import unsafe_stack_allocation
 from layout import (
     DefaultEngine,
     TensorLayout,
@@ -153,16 +152,16 @@ def _bitonic_local_sort_kernel[
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
-    var shared_vals = unsafe_stack_allocation[
-        BLOCK_SIZE,
-        Scalar[input_dtype],
-        address_space=.SHARED,
-    ]()
-    var shared_idxs = unsafe_stack_allocation[
-        BLOCK_SIZE,
-        Scalar[indices_dtype],
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var shared_vals_storage = Array[Scalar[input_dtype], BLOCK_SIZE](
+        uninitialized=True
+    )
+    var shared_vals = shared_vals_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var shared_idxs_storage = Array[Scalar[indices_dtype], BLOCK_SIZE](
+        uninitialized=True
+    )
+    var shared_idxs = shared_idxs_storage.unsafe_ptr()
 
     with PDL():
         if gid < _n_arg:
@@ -249,16 +248,16 @@ def _bitonic_merge_local_kernel[
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
     var gid: Int = block_idx.x * BLOCK_SIZE + tid
-    var shared_vals = unsafe_stack_allocation[
-        BLOCK_SIZE,
-        Scalar[input_dtype],
-        address_space=.SHARED,
-    ]()
-    var shared_idxs = unsafe_stack_allocation[
-        BLOCK_SIZE,
-        Scalar[indices_dtype],
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var shared_vals_storage = Array[Scalar[input_dtype], BLOCK_SIZE](
+        uninitialized=True
+    )
+    var shared_vals = shared_vals_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var shared_idxs_storage = Array[Scalar[indices_dtype], BLOCK_SIZE](
+        uninitialized=True
+    )
+    var shared_idxs = shared_idxs_storage.unsafe_ptr()
 
     with PDL():
         shared_vals.unsafe_store(tid, input_arg.load[width=1]((gid,)))

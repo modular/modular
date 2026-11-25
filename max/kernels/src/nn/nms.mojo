@@ -14,7 +14,6 @@
 
 from std.math import iota
 
-from std.memory import unsafe_stack_allocation
 
 from layout import (
     Coord,
@@ -525,12 +524,18 @@ def _nms_greedy_kernel[
     var n_classes = Int(num_classes)
     var cap = Int(max_output_per_class)
 
-    var sh_score = unsafe_stack_allocation[
-        PAD, Scalar[dtype], address_space=.SHARED
-    ]()
-    var sh_index = unsafe_stack_allocation[PAD, Int32, address_space=.SHARED]()
-    var sh_alive = unsafe_stack_allocation[PAD, Bool, address_space=.SHARED]()
-    var sh_row = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var sh_score_storage = Array[Scalar[dtype], PAD](uninitialized=True)
+    var sh_score = sh_score_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var sh_index_storage = Array[Int32, PAD](uninitialized=True)
+    var sh_index = sh_index_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var sh_alive_storage = Array[Bool, PAD](uninitialized=True)
+    var sh_alive = sh_alive_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var sh_row_storage = Array[Int64, 1](uninitialized=True)
+    var sh_row = sh_row_storage.unsafe_ptr()
 
     if tid == 0:
         sh_row[0] = 0

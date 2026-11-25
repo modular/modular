@@ -15,7 +15,6 @@
 from std.bit import log2_floor
 from std.collections import Array
 from std.math import ceildiv, clamp
-from std.memory import unsafe_stack_allocation
 from std.utils.index import StaticTuple
 from layout import TileTensor
 from max.gpu import (
@@ -91,9 +90,9 @@ def _expand[
                     last = max(last, candidate)
         count = block.sum[block_size=128](count)
         last = block.max[block_size=128](last)
-        var shared = unsafe_stack_allocation[
-            capacity, Int32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var shared_storage = Array[Int32, capacity](uninitialized=True)
+        var shared = shared_storage.unsafe_ptr()
         # Register pairs and warp shuffles avoid a block barrier at every sort step.
         comptime for level in range(1, log2_floor(capacity) + 1):
             comptime stage = 1 << level

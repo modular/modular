@@ -39,7 +39,7 @@ of `Kernels/test/gpu/Moka/kernels/norm/gated_split_plan.mojo`.
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections.optional import OptionalReg
 from std.math import ceildiv, fma, max, rsqrt, sqrt
-from std.memory import bitcast, unsafe_stack_allocation
+from std.memory import bitcast
 from std.sys import inlined_assembly
 from std.utils import StaticTuple
 
@@ -493,17 +493,23 @@ def _gated_residual_split[scale: Bool](a: GatedResidualArgs):
     var t = block_idx.x // SPLIT
     var c = (rank * SPLIT_THREADS + thread_idx.x) * VEC
     var at = rank * (WIDE_WARPS // SPLIT) + warp_id()
-    var bars = unsafe_stack_allocation[
-        4, SharedMemBarrier, address_space=.SHARED
+    @__address_space(.SHARED)
+    var bars_storage = Array[SharedMemBarrier, 4](uninitialized=True)
+    var bars = bars_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var mail1 = unsafe_stack_allocation[
-        WIDE_WARPS, Float32, address_space=.SHARED
-    ]()
-    var mail2 = unsafe_stack_allocation[
-        WIDE_WARPS, Float32, address_space=.SHARED
-    ]()
-    var tot1 = unsafe_stack_allocation[1, Float32, address_space=.SHARED]()
-    var tot2 = unsafe_stack_allocation[1, Float32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var mail1_storage = Array[Float32, WIDE_WARPS](uninitialized=True)
+    var mail1 = mail1_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var mail2_storage = Array[Float32, WIDE_WARPS](uninitialized=True)
+    var mail2 = mail2_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var tot1_storage = Array[Float32, 1](uninitialized=True)
+    var tot1 = tot1_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var tot2_storage = Array[Float32, 1](uninitialized=True)
+    var tot2 = tot2_storage.unsafe_ptr()
     if thread_idx.x == 0:
         bars[unsafe_offset=0].init(SPLIT)
         bars[unsafe_offset=1].init(1)

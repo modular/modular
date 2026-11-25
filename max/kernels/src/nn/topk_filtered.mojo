@@ -57,7 +57,7 @@ from max.gpu.host import (
     FuncAttribute,
     default_accelerator,
 )
-from std.memory import bitcast, unsafe_stack_allocation
+from std.memory import bitcast
 from std.math import sqrt
 from std.utils.static_tuple import StaticTuple
 from structured_kernels.trace_buf import NullTrace
@@ -388,7 +388,9 @@ def _filtered_select[
     # [0] split bin, [1] keys strictly above it, [2] keys in it, [3] kept-key
     # cursor, [4] output cursor, [5] tie-list cursor, [6] threshold column,
     # [7] ties taken per step.
-    var ctl = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var ctl_storage = Array[UInt32, 8](uninitialized=True)
+    var ctl = ctl_storage.unsafe_ptr()
 
     # The bound: the m-th largest score of a strided sample, m five standard
     # deviations above the sample's expected count above the K-th score. Its

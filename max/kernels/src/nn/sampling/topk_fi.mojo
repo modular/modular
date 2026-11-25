@@ -267,16 +267,16 @@ def _block_reduce_value_count[
     comptime value_width = simd_width_of[Scalar[T]]()
     comptime count_width = simd_width_of[DType.int32]()
 
-    var value_sram = unsafe_stack_allocation[
-        (MAX_BLOCK_SIZE // WARP_SIZE) * value_width,
-        Scalar[T],
-        address_space=.SHARED,
-    ]()
-    var count_sram = unsafe_stack_allocation[
-        (MAX_BLOCK_SIZE // WARP_SIZE) * count_width,
-        Int32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var value_sram_storage = Array[
+        Scalar[T], (MAX_BLOCK_SIZE // WARP_SIZE) * value_width
+    ](uninitialized=True)
+    var value_sram = value_sram_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var count_sram_storage = Array[
+        Int32, (MAX_BLOCK_SIZE // WARP_SIZE) * count_width
+    ](uninitialized=True)
+    var count_sram = count_sram_storage.unsafe_ptr()
 
     var warp = warp_id()
     comptime num_warps_needed = MAX_BLOCK_SIZE // WARP_SIZE
@@ -647,9 +647,9 @@ def _sampling_rejection_loop_coop[
     on the same branch and barrier sequence.
     """
     var tx = thread_idx.x
-    var sampled_id_sram = unsafe_stack_allocation[
-        1, Int, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var sampled_id_sram_storage = Array[Int, 1](uninitialized=True)
+    var sampled_id_sram = sampled_id_sram_storage.unsafe_ptr()
 
     var sampled_id = 0
     var low = Float32(0)
@@ -1485,12 +1485,12 @@ def TopKTopPSamplingFromProbKernel[
             # threads merely hit the per-iteration barrier.
             comptime MAX_ITERS = 64
 
-            var done_sram = unsafe_stack_allocation[
-                1, Int32, address_space=.SHARED
-            ]()
-            var out_id_sram = unsafe_stack_allocation[
-                1, Int, address_space=.SHARED
-            ]()
+            @__address_space(.SHARED)
+            var done_sram_storage = Array[Int32, 1](uninitialized=True)
+            var done_sram = done_sram_storage.unsafe_ptr()
+            @__address_space(.SHARED)
+            var out_id_sram_storage = Array[Int, 1](uninitialized=True)
+            var out_id_sram = out_id_sram_storage.unsafe_ptr()
 
             # Initialize control once, uniformly.
             if tx == 0:
@@ -1639,12 +1639,14 @@ def TopKTopPSamplingFromProbKernel[
                     out_dist.unsafe_value().unsafe_offset(bx * _d),
                     row_major(Idx[1], _d),
                 )
-                var sampled_id_sram = unsafe_stack_allocation[
-                    1, Int, address_space=.SHARED
-                ]()
-                var last_valid_id_sram = unsafe_stack_allocation[
-                    1, Int, address_space=.SHARED
-                ]()
+                @__address_space(.SHARED)
+                var sampled_id_sram_storage = Array[Int, 1](uninitialized=True)
+                var sampled_id_sram = sampled_id_sram_storage.unsafe_ptr()
+                @__address_space(.SHARED)
+                var last_valid_id_sram_storage = Array[Int, 1](
+                    uninitialized=True
+                )
+                var last_valid_id_sram = last_valid_id_sram_storage.unsafe_ptr()
                 sampled_id = 0
                 if live:
                     var u = generator.step_uniform()[0] * kept_mass
@@ -1730,12 +1732,18 @@ def TopKTopPSamplingFromProbKernel[
                     )
                     sampled_id = drawn[0]
                 else:
-                    var sampled_id_sram = unsafe_stack_allocation[
-                        1, Int, address_space=.SHARED
-                    ]()
-                    var last_valid_id_sram = unsafe_stack_allocation[
-                        1, Int, address_space=.SHARED
-                    ]()
+                    @__address_space(.SHARED)
+                    var sampled_id_sram_storage = Array[Int, 1](
+                        uninitialized=True
+                    )
+                    var sampled_id_sram = sampled_id_sram_storage.unsafe_ptr()
+                    @__address_space(.SHARED)
+                    var last_valid_id_sram_storage = Array[Int, 1](
+                        uninitialized=True
+                    )
+                    var last_valid_id_sram = (
+                        last_valid_id_sram_storage.unsafe_ptr()
+                    )
 
                     var probs_vec: SIMD[.float32, vec_size]
                     var q: Float32 = z

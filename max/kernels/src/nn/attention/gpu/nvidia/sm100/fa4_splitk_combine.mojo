@@ -111,7 +111,6 @@ from max.gpu.primitives.grid_controls import (
     pdl_launch_attributes,
     wait_on_dependent_grids,
 )
-from std.memory import unsafe_stack_allocation
 from std.sys import align_of, get_defined_int, size_of
 from std.utils.numerics import min_or_neg_inf
 from nn.attention.gpu.nvidia.sm100.attention import MHA_PDL_LEVEL
@@ -330,9 +329,11 @@ def _fa4_splitk_combine_kernel[
 
     # Per-warp partial sums; the scales are already globally normalized, so
     # the cross-warp reduction is a plain sum.
-    var smem = unsafe_stack_allocation[
-        _COMBINE_WARPS * ov_depth, _ACC, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[Scalar[_ACC], _COMBINE_WARPS * ov_depth](
+        uninitialized=True
+    )
+    var smem = smem_storage.unsafe_ptr()
     var smem_warp = smem.unsafe_offset(warp_idx * ov_depth)
 
     # Scale-weighted accumulation across partitions, then store. `full_vec`

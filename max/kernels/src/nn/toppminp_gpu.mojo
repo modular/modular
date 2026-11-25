@@ -29,7 +29,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, GridBlockLaunchConfig
 from max.gpu.host import Dim
 from std.random import Random
 from layout import Coord, TileTensor, row_major
-from std.memory import bitcast, unsafe_stack_allocation
+from std.memory import bitcast
 from nn.softmax import _softmax_gpu
 from nn.topk import (
     TopK_2,
@@ -98,11 +98,11 @@ def topk_wrapper[
     var _in_buffer = in_buffer.unsafe_offset(batch_id * _num_elements)
 
     # # Allocate shared memory for the values and indices
-    var topk_sram = unsafe_stack_allocation[
-        block_size,
-        TopK_2[input_type, largest],
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var topk_sram_storage = Array[TopK_2[input_type, largest], block_size](
+        uninitialized=True
+    )
+    var topk_sram = topk_sram_storage.unsafe_ptr()
 
     # Pack the topk_vals and topk_idxs into shared memory
     var block_offset = block_lane * block_size
@@ -332,31 +332,32 @@ def radix_sort_pairs_kernel[
             return
 
         # Shared mem declarations
-        var s_counts = unsafe_stack_allocation[
-            BLOCK_SIZE * NUM_BUCKETS,
-            Int32,
-            address_space=.SHARED,
-        ]()
-        var total_counts = unsafe_stack_allocation[
-            NUM_BUCKETS,
-            Int32,
-            address_space=.SHARED,
-        ]()
-        var total_offsets = unsafe_stack_allocation[
-            (NUM_BUCKETS + 1),  # +1 extended size for descending
-            Int32,
-            address_space=.SHARED,
-        ]()
-        var total_offsets_descending = unsafe_stack_allocation[
-            NUM_BUCKETS,
-            Int32,
-            address_space=.SHARED,
-        ]()
-        var s_thread_offsets = unsafe_stack_allocation[
-            BLOCK_SIZE * NUM_BUCKETS,
-            Int32,
-            address_space=.SHARED,
-        ]()
+        @__address_space(.SHARED)
+        var s_counts_storage = Array[Int32, BLOCK_SIZE * NUM_BUCKETS](
+            uninitialized=True
+        )
+        var s_counts = s_counts_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var total_counts_storage = Array[Int32, NUM_BUCKETS](uninitialized=True)
+        var total_counts = total_counts_storage.unsafe_ptr()
+        # +1 extended size for descending
+        @__address_space(.SHARED)
+        var total_offsets_storage = Array[Int32, NUM_BUCKETS + 1](
+            uninitialized=True
+        )
+        var total_offsets = total_offsets_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var total_offsets_descending_storage = Array[Int32, NUM_BUCKETS](
+            uninitialized=True
+        )
+        var total_offsets_descending = (
+            total_offsets_descending_storage.unsafe_ptr()
+        )
+        @__address_space(.SHARED)
+        var s_thread_offsets_storage = Array[Int32, BLOCK_SIZE * NUM_BUCKETS](
+            uninitialized=True
+        )
+        var s_thread_offsets = s_thread_offsets_storage.unsafe_ptr()
 
         # Initialize counts[NUM_BUCKETS]
         var counts_stack = Array[Int32, NUM_BUCKETS](fill=0)

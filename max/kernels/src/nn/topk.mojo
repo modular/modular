@@ -1176,16 +1176,16 @@ def _block_reduce_topk[
     comptime u_width = simd_width_of[Scalar[T]]()
 
     # Allocate shared memory for indices and values
-    var p_sram = unsafe_stack_allocation[
-        (MAX_BLOCK_SIZE // WARP_SIZE) * p_width,
-        Int,
-        address_space=.SHARED,
-    ]()
-    var u_sram = unsafe_stack_allocation[
-        (MAX_BLOCK_SIZE // WARP_SIZE) * u_width,
-        Scalar[T],
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var p_sram_storage = Array[Int, (MAX_BLOCK_SIZE // WARP_SIZE) * p_width](
+        uninitialized=True
+    )
+    var p_sram = p_sram_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var u_sram_storage = Array[
+        Scalar[T], (MAX_BLOCK_SIZE // WARP_SIZE) * u_width
+    ](uninitialized=True)
+    var u_sram = u_sram_storage.unsafe_ptr()
 
     # Calculate warp id and thread information
     var warp = warp_id()
@@ -1412,7 +1412,9 @@ def _topk_stage1_inplace[
 
     # Shared memory to broadcast the winner index so the owning thread can
     # retire it (better L1 locality than thread 0).
-    var winner_sram = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var winner_sram_storage = Array[Int, 1](uninitialized=True)
+    var winner_sram = winner_sram_storage.unsafe_ptr()
 
     comptime HEAP_SIZE = _TOPK_HEAP_SIZE
 
@@ -1599,7 +1601,9 @@ def _topk_stage1[
 
     # Shared memory to broadcast the winner index so the owning thread
     # can write the dead value (better L1 locality than thread 0).
-    var winner_sram = unsafe_stack_allocation[1, Int, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var winner_sram_storage = Array[Int, 1](uninitialized=True)
+    var winner_sram = winner_sram_storage.unsafe_ptr()
 
     comptime HEAP_SIZE = _TOPK_HEAP_SIZE
 
@@ -1902,9 +1906,9 @@ def _topk_stage2[
             # The 2* below is for warp align safety
             s_val2 = s_id.unsafe_offset(2 * k_batch).unsafe_bitcast[Scalar[T]]()
 
-        var s_sum = unsafe_stack_allocation[
-            1, Scalar[T], address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var s_sum_storage = Array[Scalar[T], 1](uninitialized=True)
+        var s_sum = s_sum_storage.unsafe_ptr()
         s_sum[0] = Scalar[T](0)
         var max_logit = Scalar[T](0)
 
@@ -2137,11 +2141,9 @@ def _topk_warp[
     # `debug_assert` was tried and reverted: its failure path costs the kernel
     # a private (scratch) segment in assertion builds, which is worse than the
     # check is worth for a private kernel with one call site.
-    var scratch = unsafe_stack_allocation[
-        _TOPK_WARP_MAX_N,
-        Scalar[T],
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var scratch_storage = Array[Scalar[T], _TOPK_WARP_MAX_N](uninitialized=True)
+    var scratch = scratch_storage.unsafe_ptr()
 
     var dead_val = _topk_dead_val[T, largest]()
 
@@ -3387,9 +3389,9 @@ def _gumbel_argmax_fused_kernel[
         var out_idxs_flat = out_idxs.reshape(row_major(out_idxs.num_elements()))
 
         comptime if multi_block:
-            var is_last = unsafe_stack_allocation[
-                1, Bool, address_space=.SHARED
-            ]()
+            @__address_space(.SHARED)
+            var is_last_storage = Array[Bool, 1](uninitialized=True)
+            var is_last = is_last_storage.unsafe_ptr()
             if tid == 0:
                 var slot = batch_id * blocks_per_row_int + block_in_row
                 var slot_ptr = partials.unsafe_value().unsafe_offset(
