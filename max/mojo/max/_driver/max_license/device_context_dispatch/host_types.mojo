@@ -68,7 +68,6 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     _DispatchEnqueuer,
 )
 from ._hal_launch import (
-    _hal_check_config,
     _hal_enqueue_compiled,
     _hal_enqueue_external,
 )
@@ -521,9 +520,6 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
                 DeviceContext[Self.target].FunctionWrapper,
                 target=Self.target,
             ](self._impl._ctx)
-            _hal_check_config[Self.target, "DeviceStream.enqueue_function"](
-                execution_config, call_location()
-            )
             gpu_f._do_call_with_pack_checked(
                 self._hal_stream(),
                 execution_config,

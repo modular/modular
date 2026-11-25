@@ -47,8 +47,6 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     _DispatchEnqueuer,
 )
 from ._hal_launch import (
-    _hal_check_config,
-    _hal_check_grid_block,
     _hal_enqueue_compiled,
     _hal_enqueue_external,
 )
@@ -571,13 +569,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 ClusterAttributeLaunchConfig if Self._plugin_has_clusters else GridBlockAttributeLaunchConfig
             ) if Self._plugin_has_attributes else (
                 ClusterLaunchConfig if Self._plugin_has_clusters else (
-                    Self._PluginExecutionConfigType if (
-                        Self._HALHooks.Launcher.launches_config
-                        and not conforms_to(
-                            Self._PluginExecutionConfigType,
-                            GridBlockExecutionConfig,
-                        )
-                    ) else GridBlockLaunchConfig
+                    GridBlockLaunchConfig if conforms_to(
+                        Self._PluginExecutionConfigType,
+                        GridBlockExecutionConfig,
+                    ) else Self._PluginExecutionConfigType
                 )
             )
         )
@@ -587,8 +582,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     On NVIDIA targets it carries launch attributes, and from sm_90 on also
     thread block clusters. When the plugin's own configuration isn't
-    grid/block shaped and the plugin's launcher takes it, it's that
-    configuration.
+    grid/block shaped, it's that configuration.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -2839,9 +2833,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], launch, *encoded_args, host_args=host_args
             )
         else:
-            _hal_check_grid_block[
-                Self.target, "DeviceContext.enqueue_function"
-            ](grid_dim, block_dim, call_location())
             var gpu_kernel = self.compile_function[func](
                 func_attribute=func_attribute
             )
@@ -2978,9 +2969,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
         else:
             var gpu_kernel = self.compile_function[func]()
-            _hal_check_config[Self.target, "DeviceContext.enqueue_function"](
-                execution_config, call_location()
-            )
             comptime for idx in range(HostArgs.length):
                 type_of(gpu_kernel)._check_trailing_host[
                     HostArgs[idx], encoded_types.length + idx
@@ -3308,9 +3296,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], launch, func
             )
         else:
-            _hal_check_grid_block[
-                Self.target, "DeviceContext.enqueue_function"
-            ](grid_dim, block_dim, call_location())
             var gpu_kernel = DeviceFunction[
                 FuncType.__call__, target=Self.target
             ](self, func_attribute=func_attribute)
@@ -3365,10 +3350,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 self._hal_stream()[], execution_config, func
             )
         else:
-            _hal_check_config[Self.target, "DeviceContext.enqueue_function"](
-                execution_config, call_location()
-            )
-
             var gpu_kernel = DeviceFunction[
                 FuncType.__call__, target=Self.target
             ](self)

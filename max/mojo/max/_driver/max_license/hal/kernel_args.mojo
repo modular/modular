@@ -342,6 +342,8 @@ struct DenseKernelArgs[
             If a handle's device address can't be resolved.
         """
         comptime assert ArgTs.length == Self.Ts.length
+        comptime for i in range(ArgTs.length):
+            comptime assert ArgTs[i] == Self.Ts[i]
         comptime assert (
             Self.Ts.length + Self.HostArgs.length
             == Self.declared_arg_types.length

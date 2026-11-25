@@ -22,92 +22,118 @@ from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from ..device import DeviceSpec
 from ..kernel_args import DenseArgPacker, HalArgPacker, HalKernelArgs
 from ..plugins import FunctionHandle
-from ..status import STATUS_UNSUPPORTED, HALError
+from ..status import STATUS_INVALID_ARG, HALError
 from ..queue import Queue
 from ..stream import Stream
 
 from .._machine import DeviceRef
-from max.gpu.host import ExecutionConfig
+from std.builtin.rebind import downcast
+from max.gpu.host import ExecutionConfig, GridBlockExecutionConfig
 from ..execution_config.cpu_execution_config import CPUExecutionConfiguration
 from ..extensions.cpu import CPUHALExtensions
 from ..extensions.traits import DefaultHALExtensions, HALExtensions
 
 
 trait HalLauncher:
-    """Launches kernels for a plugin whose launches aren't grid/block shaped.
+    """Launches a kernel with arguments packed by the plugin's `ArgPacker`.
 
-    The HAL DeviceContext and a typed `Queue.execute` pack a launch's
-    arguments with the plugin's `ArgPacker` and hand the packed arguments to
-    the launcher, which reads their slots and launches. A launch from the
-    plugin's own execution config goes to `enqueue` when `launches_config` is
-    set, and a grid/block launch goes to `enqueue_grid_block` when
-    `overrides_grid_block` is set. Both launch on a queue; a stream orders
-    the launch after its earlier work before handing its queue over. The
-    caller keeps the packed arguments alive until the hook returns.
+    `DefaultHalLauncher` launches grid/block configs. A plugin with its own
+    launch ABI supplies a launcher that launches the configs it supports, can
+    forward grid/block configs to `DefaultHalLauncher.enqueue`, and rejects
+    any other config. The launcher also decides which grid and block
+    dimensions are valid.
+
+    The caller keeps the packed arguments alive until `enqueue` returns.
     """
-
-    comptime launches_config: Bool = False
-    """Whether `enqueue` launches execution configs that aren't grid/block
-    shaped, such as the plugin's own `ExecutionConfigType`."""
 
     @staticmethod
     def enqueue[
         spec: DeviceSpec,
         ExecutionConfigType: ExecutionConfig,
         Args: HalKernelArgs,
+        o: ImmOrigin,
         //,
     ](
         queue: Queue[spec],
         func: FunctionHandle,
         args: Args,
         execution_config: ExecutionConfigType,
+        attributes: Span[LaunchAttribute, o],
     ) raises HALError:
         """Launches `func` on `queue` with the packed `args` as
-        `execution_config` describes."""
-        raise HALError(
-            STATUS_UNSUPPORTED,
-            message="the active HAL plugin has no execution config launcher",
-        )
-
-    comptime overrides_grid_block: Bool
-    """Whether `enqueue_grid_block` replaces grid/block launches."""
-
-    @staticmethod
-    def enqueue_grid_block[
-        spec: DeviceSpec,
-        Args: HalKernelArgs,
-        //,
-    ](
-        queue: Queue[spec],
-        func: FunctionHandle,
-        args: Args,
-        grid_dim: Dim,
-        block_dim: Dim,
-    ) raises HALError:
-        """Launches `func` on `queue` with the packed `args`."""
+        `execution_config` describes, applying the caller's launch
+        `attributes`, such as a cluster dimension or programmatic dependent
+        launch. A launcher that can't apply them raises."""
         ...
 
 
 struct DefaultHalLauncher(HalLauncher):
-    """Leaves grid/block launches to the HAL DeviceContext."""
+    """Launches grid/block configs with the packed argument slots.
 
-    comptime overrides_grid_block = False
+    A launch whose grid or block has a component outside `[1, Int32.MAX]`
+    raises. Any other kind of config fails to compile.
+    """
 
     @staticmethod
-    def enqueue_grid_block[
+    def enqueue[
         spec: DeviceSpec,
+        ExecutionConfigType: ExecutionConfig,
         Args: HalKernelArgs,
+        o: ImmOrigin,
         //,
     ](
         queue: Queue[spec],
         func: FunctionHandle,
         args: Args,
-        grid_dim: Dim,
-        block_dim: Dim,
+        execution_config: ExecutionConfigType,
+        attributes: Span[LaunchAttribute, o],
     ) raises HALError:
+        comptime assert conforms_to(
+            ExecutionConfigType, GridBlockExecutionConfig
+        ), "the active HAL plugin's launcher only takes grid/block configs"
+        ref config = rebind[
+            downcast[ExecutionConfigType, GridBlockExecutionConfig]
+        ](execution_config)
+        _check_dims_in_range(config.get_grid_dim(), "grid_dim")
+        _check_dims_in_range(config.get_block_dim(), "block_dim")
+        var slots = args.slots()
+        var attribute_ptr = OptionalReg[OpaquePointer[MutUntrackedOrigin]](None)
+        if len(attributes) != 0:
+            attribute_ptr = (
+                attributes.unsafe_ptr()
+                .unsafe_bitcast[NoneType]()
+                .unsafe_mut_cast[True]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+        queue.execute(
+            func,
+            config,
+            args=slots.addrs.unsafe_ptr(),
+            arg_sizes=slots.sizes.unsafe_ptr(),
+            num_args=UInt32(args.num_slots()),
+            attributes=attribute_ptr,
+            num_attributes=UInt32(len(attributes)),
+        )
+        _ = slots^
+
+
+def _check_dims_in_range(dim: Dim, name: StaticString) raises HALError:
+    # Drivers take launch dims as 32-bit values, so a larger one would be
+    # truncated.
+    _check_dim_in_range(dim.x(), name, "x")
+    _check_dim_in_range(dim.y(), name, "y")
+    _check_dim_in_range(dim.z(), name, "z")
+
+
+def _check_dim_in_range(
+    value: Int, name: StaticString, axis: StaticString
+) raises HALError:
+    if value <= 0 or value > Int(Int32.MAX):
         raise HALError(
-            STATUS_UNSUPPORTED,
-            message="the active HAL plugin has no grid/block launcher",
+            STATUS_INVALID_ARG,
+            message=String(
+                name, ".", axis, " must be in [1, Int32.MAX], but it is ", value
+            ),
         )
 
 
@@ -285,7 +311,7 @@ trait HalPluginHooks:
     comptime extensions: HALExtensions = DefaultHALExtensions
 
     comptime Launcher: HalLauncher = DefaultHalLauncher
-    """Launches `enqueue_function` calls the plugin takes over."""
+    """Launches every typed launch once its arguments are packed."""
 
     comptime ArgPacker: HalArgPacker = DenseArgPacker
     """Packs a launch's arguments into the slots the plugin's runtime reads,

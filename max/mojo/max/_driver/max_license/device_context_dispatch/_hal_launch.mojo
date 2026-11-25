@@ -13,8 +13,9 @@
 """The HAL launch path shared by `DeviceContext` and `DeviceStream`.
 
 Each helper takes the target whose plugin hooks apply, and either hands the
-launch to the plugin's `Enqueuer` or checks the launch dims and launches on the
-enqueuer's stream.
+launch to the plugin's `Enqueuer` or launches on the enqueuer's stream. A
+compiled launch goes through the plugin's `Launcher`, which checks its dims; an
+external launch checks them here.
 """
 
 from std.builtin.device_passable import DevicePassable
@@ -28,7 +29,6 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     _DispatchEnqueuer,
     _HALDeviceExternalFunction,
     _HALDeviceFunction,
-    _check_config_dims,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     use_legacy_backend,
@@ -51,35 +51,6 @@ def _check_grid_block_dims[
 ](grid_dim: Dim, block_dim: Dim, location: SourceLocation) raises:
     _check_dim_in_range[func_name, "grid_dim"](grid_dim, location=location)
     _check_dim_in_range[func_name, "block_dim"](block_dim, location=location)
-
-
-@inline(.always)
-def _hal_check_grid_block[
-    target: CompilationTarget, func_name: StringLiteral
-](grid_dim: Dim, block_dim: Dim, location: SourceLocation) raises:
-    """Checks the dims of a compiled launch.
-
-    A plugin whose launcher replaces grid/block launches reads the dims itself,
-    so they are not checked against the GPU limits.
-    """
-    comptime if not MaxPluginForTarget[
-        target
-    ].HalHooks.Launcher.overrides_grid_block:
-        _check_grid_block_dims[func_name](grid_dim, block_dim, location)
-
-
-@inline(.always)
-def _hal_check_config[
-    target: CompilationTarget,
-    func_name: StringLiteral,
-    ExecutionConfigType: ExecutionConfig,
-](execution_config: ExecutionConfigType, location: SourceLocation) raises:
-    """Checks the dims of a compiled launch from an execution config, as
-    `_hal_check_grid_block` does."""
-    comptime if not MaxPluginForTarget[
-        target
-    ].HalHooks.Launcher.overrides_grid_block:
-        _check_config_dims[func_name](execution_config, location=location)
 
 
 @inline(.always)
@@ -118,7 +89,6 @@ def _hal_enqueue_compiled[
             hal_f.Wrapper, hal_f.declared_arg_types
         ](enqueuer._hal_stream()[], hal_f._inner[]._func_handle, launch, *args)
     else:
-        _hal_check_grid_block[target, func_name](grid_dim, block_dim, location)
         f._call_with_pack_checked(
             enqueuer,
             *args,
@@ -160,7 +130,6 @@ def _hal_enqueue_compiled[
             *args,
         )
     else:
-        _hal_check_config[target, func_name](execution_config, location)
         f._do_call_with_pack_checked(
             enqueuer._hal_stream(),
             execution_config,

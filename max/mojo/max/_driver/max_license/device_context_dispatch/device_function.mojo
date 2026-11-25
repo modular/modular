@@ -43,7 +43,6 @@ from max.gpu.host import (
     ExecutionConfig,
     LaunchAttributeID,
 )
-from max.gpu.host._driver_common import _check_dim_in_range
 from max.gpu.host.compile import _compile_code
 from max.gpu.host.nvidia import LaunchAttributeHolderExecutionConfig
 from max._driver.max_license.hal import (
@@ -107,20 +106,6 @@ def _check_exec_config_launch_support[
     check_config_fields_launchable[
         ExecutionConfigType, "HAL DeviceContext.enqueue_function"
     ]()
-
-
-def _check_config_dims[
-    func_name_for_msg: StringLiteral,
-    ExecutionConfigType: ExecutionConfig,
-](execution_config: ExecutionConfigType, *, location: SourceLocation) raises:
-    """Checks a grid/block config's dims; any other config has none."""
-    comptime if conforms_to(ExecutionConfigType, GridBlockExecutionConfig):
-        _check_dim_in_range[func_name_for_msg, "grid_dim"](
-            execution_config.get_grid_dim(), location=location
-        )
-        _check_dim_in_range[func_name_for_msg, "block_dim"](
-            execution_config.get_block_dim(), location=location
-        )
 
 
 trait _DispatchEnqueuer:

@@ -447,6 +447,7 @@ lit_tests(
     srcs = [
         "test_execute_arg_count_fail.mojo",
         "test_execute_int_arg_fail.mojo",
+        "test_execute_launch_attributes_fail.mojo",
         "test_execute_non_passable_arg_fail.mojo",
         "test_execute_vendor_config_fail.mojo",
     ],
