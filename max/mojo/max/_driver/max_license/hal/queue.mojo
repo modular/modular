@@ -20,6 +20,7 @@ from .plugin import (
 )
 from max._plugin import MaxPluginForTarget
 from ._machine import DeviceRef
+from ._plugin._trait import HalPluginHooks
 from .buffer import Buffer, BufferView
 from .context import Context
 from .memory import _enqueue_copy
@@ -223,6 +224,7 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
 
         try:
             self._launch[
+                Self._HALHooks,
                 Self._FunctionWrapper,
                 declared_arg_types,
                 "HAL `Queue.execute`",
@@ -237,7 +239,13 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
     @inline(.always)
     def _launch[
         ExecutionConfigType: ExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
+        # TODO(DRIV-4): Get the hooks from `Self.device_spec`. Until each
+        # device has its own spec, a CPU context's queue has device 0's spec,
+        # which names the accelerator's plugin, so the caller passes the hooks
+        # of its own target.
+        Hooks: HalPluginHooks,
         Wrapper: DeviceFunctionWrapper,
         declared_arg_types: TypeList[Trait=AnyType, ...],
         api_name: StringLiteral,
@@ -247,6 +255,8 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
         func: FunctionHandle,
         execution_config: ExecutionConfigType,
         *args: *Ts,
+        host_args: Tuple[*HostArgs] = (),
+        var attributes: List[LaunchAttribute] = [],
     ) raises HALError:
         """Packs `args` with the plugin's `ArgPacker` and launches `func` as
         `execution_config` describes.
@@ -257,6 +267,9 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
 
         Parameters:
             ExecutionConfigType: The type of `execution_config`.
+            HostArgs: The types of the host-layout arguments.
+            Hooks: The plugin hooks of the target the launch was compiled
+                for.
             Wrapper: The wrapper `func`'s kernel was compiled behind.
             declared_arg_types: The kernel's declared argument types.
             api_name: The launch API, for error messages.
@@ -266,13 +279,16 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
             func: The loaded function.
             execution_config: How to launch it.
             args: The kernel's arguments.
+            host_args: Arguments that follow `args`, passed with their host
+                layout, such as a capturing closure.
+            attributes: Launch attributes to apply, such as a cluster
+                dimension.
 
         Raises:
-            If an argument can't be packed, the config asks for shared memory,
-            launch attributes or clusters the plugin's grid/block launcher
-            can't grant, or the launch fails.
+            If an argument can't be packed, the launch asks for shared memory,
+            launch attributes or clusters the plugin's launcher can't grant,
+            or the launch fails.
         """
-        comptime Hooks = Self._HALHooks
         comptime is_grid_block = conforms_to(
             ExecutionConfigType, GridBlockExecutionConfig
         )
@@ -294,8 +310,19 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
             ), "cluster launch is not supported on this device"
 
         var packed = Hooks.ArgPacker.pack[Wrapper, declared_arg_types](
-            self._context[], *args
+            self._context[], *args, host_args=host_args
         )
+        # Only the default grid/block launch applies the caller's attributes;
+        # a plugin's own launcher would drop them.
+        comptime if not is_grid_block or Hooks.Launcher.overrides_grid_block:
+            if len(attributes) != 0:
+                raise HALError(
+                    STATUS_UNSUPPORTED,
+                    message=(
+                        "the active HAL plugin's launcher doesn't take cluster"
+                        " dims or launch attributes"
+                    ),
+                )
         comptime if not is_grid_block:
             Hooks.Launcher.enqueue(
                 self, func, packed, execution_config=execution_config
@@ -355,17 +382,29 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
                 )
             else:
                 var slots = packed.slots()
+                var attribute_ptr = OptionalReg[
+                    OpaquePointer[MutUntrackedOrigin]
+                ](None)
+                if len(attributes) != 0:
+                    attribute_ptr = (
+                        attributes.unsafe_ptr()
+                        .unsafe_bitcast[NoneType]()
+                        .unsafe_origin_cast[MutUntrackedOrigin]()
+                    )
                 self.execute(
                     func,
                     config,
                     args=slots.addrs.unsafe_ptr(),
                     arg_sizes=slots.sizes.unsafe_ptr(),
                     num_args=UInt32(packed.num_slots()),
+                    attributes=attribute_ptr,
+                    num_attributes=UInt32(len(attributes)),
                 )
                 _ = slots^
         # The launcher may only have queued the launch; keep the packed
-        # bytes alive until it returns.
+        # bytes and attributes alive until it returns.
         _ = packed^
+        _ = attributes^
 
     @doc_hidden
     def execute[

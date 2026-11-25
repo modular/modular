@@ -28,7 +28,6 @@ from std.collections.optional import OptionalReg
 from std.compile.compile import CompiledFunctionInfo
 from std.memory import ArcPointer, Pointer
 from std.builtin.rebind import downcast
-from std.math import align_up
 from std.reflection import SourceLocation, reflect
 from std.sys import get_defined_bool, size_of
 from std.sys.info import CompilationTarget
@@ -43,8 +42,6 @@ from max.gpu.host import (
     ClusterExecutionConfig,
     ExecutionConfig,
     LaunchAttributeID,
-    NearComputeGeneralPurposeScratchpadExecutionConfig,
-    _launch_args,
 )
 from max.gpu.host._driver_common import _check_dim_in_range
 from max.gpu.host.compile import _compile_code
@@ -65,7 +62,6 @@ from max.gpu.host._launch_args import (
     _IdentityWrapper,
 )
 from max.gpu.host._legacy.device_context import (
-    DefaultDeviceTypeEncoder,
     LegacyDeviceExternalFunction,
     LegacyDeviceFunction,
     _FunctionEnqueuer,
@@ -575,205 +571,33 @@ struct DeviceFunction[
         var attributes: List[LaunchAttribute] = [],
         location: Optional[SourceLocation] = None,
     ) raises where not use_legacy_backend():
-        # Every launch, from a DeviceContext or a DeviceStream, ends up here,
-        # so this is the one place the plugin's launcher has to be honored.
-        comptime _HALHooks = MaxPluginForTarget[Self.target].HalHooks
+        # Every launch, from a DeviceContext or a DeviceStream, ends up here
+        # and goes to the stream's queue, where the packer and launcher of the
+        # context's own target take it.
+        comptime Hooks = MaxPluginForTarget[Self.target].HalHooks
         _check_exec_config_launch_support[ExecutionConfigType, Self.target]()
-        comptime is_grid_block = conforms_to(
-            ExecutionConfigType, GridBlockExecutionConfig
-        )
-        comptime launcher_takes_config = (
-            not is_grid_block and _HALHooks.Launcher.launches_config
-        )
-        comptime launcher_takes_grid_block = (
-            is_grid_block and _HALHooks.Launcher.overrides_grid_block
-        )
-        comptime if launcher_takes_config or launcher_takes_grid_block:
-            comptime if HostArgs.length != 0:
-                raise Error(
-                    "the active HAL plugin's launcher doesn't take host-only"
-                    " arguments"
-                )
-            # It only gets its own config or the grid and block, so refuse
-            # anything else rather than drop it.
-            var num_attributes = len(attributes)
-            comptime if conforms_to(
-                ExecutionConfigType, LaunchAttributeHolderExecutionConfig
-            ):
-                num_attributes += len(execution_config.get_launch_attributes())
-            var clustered = False
-            comptime if conforms_to(
-                ExecutionConfigType, ClusterExecutionConfig
-            ):
-                var cluster_dim = execution_config.get_cluster_dim()
-                clustered = (
-                    cluster_dim.x() != 1
-                    or cluster_dim.y() != 1
-                    or cluster_dim.z() != 1
-                )
-            if num_attributes != 0 or clustered:
-                raise Error(
-                    "the active HAL plugin's launcher doesn't take cluster"
-                    " dims or launch attributes"
-                )
-            stream[]._launch[
-                Self.Wrapper,
-                Self.declared_arg_types,
-                "HAL DeviceContext.enqueue_function",
-            ](self._impl._inner[]._func_handle, execution_config, *args)
-        elif is_grid_block:
-            self._do_call_grid_block_with_pack_checked(
-                stream,
-                rebind[downcast[ExecutionConfigType, GridBlockExecutionConfig]](
-                    execution_config
-                ),
-                *args,
-                host_args=host_args,
-                attributes=attributes^,
-                location=location,
-            )
-        else:
-            comptime assert False, (
-                "the active HAL plugin's launcher doesn't take this execution"
-                " config"
-            )
-
-    @inline(.always)
-    def _do_call_grid_block_with_pack_checked[
-        ExecutionConfigType: GridBlockExecutionConfig,
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        //,
-        *Ts: DevicePassable,
-    ](
-        self,
-        stream: ArcPointer[Stream[get_device_spec[0]()]],
-        execution_config: ExecutionConfigType,
-        *args: *Ts,
-        host_args: Tuple[*HostArgs],
-        var attributes: List[LaunchAttribute],
-        location: Optional[SourceLocation],
-    ) raises where not use_legacy_backend():
-        comptime extra_host_count = HostArgs.length
-
         self._check_pdl_wait(Span(attributes))
         comptime if conforms_to(
             ExecutionConfigType, LaunchAttributeHolderExecutionConfig
         ):
             self._check_pdl_wait(execution_config.get_launch_attributes())
-
-        var shared_mem_bytes: Int = 0
-
-        comptime if conforms_to(
-            ExecutionConfigType,
-            NearComputeGeneralPurposeScratchpadExecutionConfig,
-        ):
-            shared_mem_bytes = (
-                execution_config.get_near_compute_scratchpad_usage()
+        try:
+            stream[]._launch[
+                Hooks,
+                Self.Wrapper,
+                Self.declared_arg_types,
+                "HAL DeviceContext.enqueue_function",
+            ](
+                self._impl._inner[]._func_handle,
+                execution_config,
+                *args,
+                host_args=host_args,
+                attributes=attributes^,
             )
-
-        debug_assert(
-            shared_mem_bytes >= 0,
-            "shared_mem_bytes must be non-negative",
-        )
-
-        comptime num_encoded = Ts.length
-        comptime num_passed_args = num_encoded + extra_host_count
-        var validated_args = _launch_args._validate_encodable_arguments[
-            Self._HAL._target,
-            DeclaredArgTypes=Self.declared_arg_types,
-            ActualArgTypes=Ts,
-            host_args_count=extra_host_count,
-        ]()
-
-        var num_translated_args = validated_args[0]
-        comptime for i in range(extra_host_count):
-            comptime size = size_of[HostArgs[i]]()
-            # Skip zero-sized types (ZSTs).
-            comptime if size != 0:
-                num_translated_args += 1
-
-        var translated_arg_offsets = validated_args[1].copy()
-
-        def calculate_args_size() -> Int:
-            var tmp_args_size = 8  # reserve 8 extra bytes for alignment
-            comptime for i in range(num_encoded):
-                comptime actual_arg_type = Ts[i]
-                tmp_args_size += align_up(
-                    size_of[actual_arg_type.device_type](), 8
-                )
-            return tmp_args_size
-
-        comptime args_size = calculate_args_size()
-
-        var translated_args = Array[Byte, args_size](uninitialized=True)
-        var start_addr = Int(translated_args.unsafe_ptr())
-        var extra_align = align_up(start_addr, 8) - start_addr
-
-        # Allocation made at function scope to outlive the enqueue, otherwise
-        # the stack bytes are free to be reused immediately. A kernel may take
-        # no arguments; keep the arrays non-empty.
-        var dense_args = DenseArgs[ImmutAnyOrigin, max(num_passed_args, 1)]()
-
-        var translated_arg_idx = 0
-
-        var device_type_encoder = DefaultDeviceTypeEncoder()
-
-        comptime for i in range(num_encoded):
-            var translated_arg_offset = translated_arg_offsets[i]
-            if translated_arg_offset >= 0:
-                comptime actual_arg_type = Ts[i]
-                var first_word_addr = Pointer(
-                    to=translated_args.unsafe_ptr()[
-                        unsafe_offset=translated_arg_offset + extra_align
-                    ]
-                ).unsafe_bitcast[NoneType]()
-                args[i]._to_device_type(device_type_encoder, first_word_addr)
-                dense_args.addrs.unsafe_get(
-                    translated_arg_idx
-                ) = first_word_addr.as_unsafe_any_origin()
-                dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(
-                    size_of[
-                        actual_arg_type.device_type,
-                        target=device_type_encoder.target(),
-                    ]()
-                )
-                translated_arg_idx += 1
-
-        comptime for i in range(extra_host_count):
-            comptime size = size_of[HostArgs[i]]()
-            # Skip zero-sized types (ZSTs).
-            if size == 0:
-                continue
-
-            var addr = (
-                Pointer(to=host_args[i])
-                .unsafe_bitcast[NoneType]()
-                .as_unsafe_any_origin()
-            )
-
-            dense_args.addrs.unsafe_get(translated_arg_idx) = addr
-            dense_args.sizes.unsafe_get(translated_arg_idx) = UInt64(size)
-            translated_arg_idx += 1
-
-        # Kernels that use `with PDL()` emit `griddepcontrol` instructions and
-        # require the launch to be configured with the matching attribute;
-        # dropping it faults the launch.
-        var attr_ptr = _launch_attributes_ptr(attributes)
-
-        stream[].execute(
-            self._impl._inner[]._func_handle,
-            execution_config,
-            args=dense_args.addrs.unsafe_ptr(),
-            arg_sizes=dense_args.sizes.unsafe_ptr(),
-            num_args=UInt32(num_translated_args),
-            attributes=attr_ptr,
-            num_attributes=UInt32(len(attributes)),
-        )
-
-        # Keep these alive until the plugin has read them.
-        _ = attributes^
-        _ = translated_args^
-        _ = dense_args^
+        except e:
+            if location:
+                raise Error(location.value().prefix(String(e)))
+            raise e
 
     # ===-------------------------------------------------------------------===#
     # Escape hatches

@@ -455,3 +455,13 @@ lit_tests(
         "@mojo//:std",
     ],
 )
+
+lit_tests(
+    name = "lit_hal_device_context",
+    size = "small",
+    srcs = ["test_device_context_arg_count_fail.mojo"],
+    mojo_deps = [
+        "//max/mojo/max/_driver/max_license:max",
+        "@mojo//:std",
+    ],
+)

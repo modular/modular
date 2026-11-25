@@ -13,6 +13,7 @@
 
 from .plugin import OpaquePointer, FunctionHandle, OutParam, ContextHandle
 from max._plugin import MaxPluginForTarget
+from ._plugin._trait import HalPluginHooks
 from std.collections import OptionalReg
 from .buffer import Buffer, BufferView
 from .context import Context
@@ -31,7 +32,11 @@ from std.memory import (
 )
 from std.memory.arc_pointer import WeakPointer
 from std.reflection import SourceLocation, call_location
-from max.gpu.host import ExecutionConfig, GridBlockExecutionConfig
+from max.gpu.host import (
+    ExecutionConfig,
+    GridBlockExecutionConfig,
+    LaunchAttribute,
+)
 from max.gpu.host._launch_args import DeviceFunctionWrapper
 
 
@@ -123,7 +128,11 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
     @inline(.always)
     def _launch[
         ExecutionConfigType: ExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
+        # TODO(DRIV-4): Get the hooks from `Self.device_spec`, as
+        # `Queue._launch` explains.
+        Hooks: HalPluginHooks,
         Wrapper: DeviceFunctionWrapper,
         declared_arg_types: TypeList[Trait=AnyType, ...],
         api_name: StringLiteral,
@@ -133,12 +142,18 @@ struct Stream[device_spec: DeviceSpec](Deinitable, Movable):
         func: FunctionHandle,
         execution_config: ExecutionConfigType,
         *args: *Ts,
+        host_args: Tuple[*HostArgs] = (),
+        var attributes: List[LaunchAttribute] = [],
     ) raises HALError:
         """Packs and launches as `Queue._launch` does, after all previous
         Stream ops."""
         self._chain_wait()
-        self._queue[]._launch[Wrapper, declared_arg_types, api_name](
-            func, execution_config, *args
+        self._queue[]._launch[Hooks, Wrapper, declared_arg_types, api_name](
+            func,
+            execution_config,
+            *args,
+            host_args=host_args,
+            attributes=attributes^,
         )
         self._chain_signal()
 

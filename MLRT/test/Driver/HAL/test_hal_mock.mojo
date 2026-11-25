@@ -187,13 +187,18 @@ def _layout_kernel(
 def _pack[
     spec: DeviceSpec,
     declared: TypeList[Trait=AnyType, ...],
+    HostArgs: TypeList[Trait=RegisterPassable, ...],
     //,
     kernel: def(*args: *declared) thin -> None,
     *Ts: AnyType,
-](context: Context[spec], *args: *Ts) raises -> DenseArgPacker.Packed[
-    spec, _IdentityWrapper, declared, Ts
+](
+    context: Context[spec], *args: *Ts, host_args: Tuple[*HostArgs] = ()
+) raises -> DenseArgPacker.Packed[
+    spec, _IdentityWrapper, declared, Ts, HostArgs
 ]:
-    return DenseArgPacker.pack[_IdentityWrapper, declared](context, *args)
+    return DenseArgPacker.pack[_IdentityWrapper, declared](
+        context, *args, host_args=host_args
+    )
 
 
 def _slot[T: TrivialRegisterPassable](address: ImmOpaquePointer[_]) -> T:
