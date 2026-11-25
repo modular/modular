@@ -17,8 +17,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
-from dataclasses import replace
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -78,7 +77,6 @@ from max.tensor.sharding import BufferLayout, TensorLayout
 from .batch_processor import BatchProcessorDims
 from .block_diffusion import BlockDiffusionMetadata
 from .engine_config import (
-    CaptureCacheBound,
     CapturedHostInput,
     EngineCaptureConfig,
     EngineConfig,
@@ -703,7 +701,6 @@ def pipeline_engine_config(
     prefix_caching: bool = True,
     prefill_token_budget: int | None = None,
     prefill_capture_tokens: int = 0,
-    capture_cache_bound: CaptureCacheBound = "aligned",
     context_parallel: ContextParallel | None = None,
     prefill_context_parallel: EnginePrefillContextParallel | None = None,
     host_inputs: Mapping[str, CapturedHostInput] | None = None,
@@ -734,8 +731,6 @@ def pipeline_engine_config(
         prefill_capture_tokens: The most tokens a captured prefill step
             holds, capped at the prefill tokens a step takes; 0 captures
             no prefill step.
-        capture_cache_bound: The host cache bound a replayed step keeps,
-            as the architecture declares it.
         context_parallel: How the caches split token positions across a
             decode context parallel group, or ``None`` when no cache splits
             them. It sets ``parallel.dcp`` and ``parallel.dcp_interleave``.
@@ -791,7 +786,6 @@ def pipeline_engine_config(
             max_batch_size=max_batch_size,
             prefill_max_tokens=min(prefill_capture_tokens, prefill_tokens),
             host_inputs=dict(host_inputs or {}),
-            cache_bound=capture_cache_bound,
         ),
         sampling=EngineSamplingConfig(
             needs_bitmask_constraints=pipeline_config.needs_bitmask_constraints,
@@ -880,9 +874,7 @@ _SPARSE_KV_FORMS: dict[MLASparseKVForm, SparseKVForm] = {
 }
 
 
-def pipeline_kv_cache(
-    params: CacheLeafParamInterface, unread_dispatch: Collection[str] = ()
-) -> KVCacheLayout:
+def pipeline_kv_cache(params: CacheLeafParamInterface) -> KVCacheLayout:
     """Returns the KV cache a pipeline's graphs are built for, for its artifact.
 
     Each cache in the tree is recorded with every parameter its graphs are
@@ -891,8 +883,6 @@ def pipeline_kv_cache(
 
     Args:
         params: The pipeline's KV cache parameters.
-        unread_dispatch: The last path keys of the MLA caches whose kernels
-            never read their dispatch record.
 
     Returns:
         The artifact's ``kv_cache`` component.
@@ -901,13 +891,7 @@ def pipeline_kv_cache(
         ArtifactError: If the tree holds a cache of a type the component
             doesn't record.
     """
-    caches = tuple(
-        replace(cache, dispatch_unread=True)
-        if isinstance(cache, MLAKVCache)
-        and cache.name.rpartition(".")[2] in unread_dispatch
-        else cache
-        for cache in _caches(params, "")
-    )
+    caches = tuple(_caches(params, ""))
     recorded = {leaf.leaf_id for cache in caches for leaf in cache.leaves}
     assert recorded == set(params.leaves()), (
         "each cache's pool leaves must be the tree's"
@@ -1351,13 +1335,7 @@ def export_pipeline(
             time.monotonic() - started,
         )
         model = PipelineModules({**model.roles, **helpers})
-    kv_cache = (
-        pipeline_kv_cache(
-            kv_params, arch.unread_dispatch_caches if arch is not None else ()
-        )
-        if kv_params is not None
-        else None
-    )
+    kv_cache = pipeline_kv_cache(kv_params) if kv_params is not None else None
     _warn_unhonored_context_parallel(pipeline_config, architecture, kv_cache)
     artifact = model_artifact(
         model,
@@ -1370,9 +1348,6 @@ def export_pipeline(
             prefix_caching=serves_prefix_caching(checkpoint_arch),
             prefill_token_budget=prefill_token_budget,
             prefill_capture_tokens=prefill_capture_tokens,
-            capture_cache_bound=arch.capture_cache_bound
-            if arch is not None
-            else "aligned",
             context_parallel=_position_split(kv_cache),
             prefill_context_parallel=_prefill_context_parallel(
                 pipeline_config, kv_cache

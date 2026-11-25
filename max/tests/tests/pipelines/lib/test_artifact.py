@@ -651,7 +651,6 @@ ENGINE_CONFIG = EngineConfig(
             "paged_kv.max_cache_length": CapturedHostInput("shape"),
             "spec_decode.max_k": CapturedHostInput("pinned", -1),
         },
-        cache_bound="bucketed",
     ),
     sampling=EngineSamplingConfig(
         needs_bitmask_constraints=True,
@@ -694,7 +693,6 @@ def test_engine_config_round_trip(tmp_path: Path) -> None:
                     "spec_decode.max_k": {"mode": "pinned", "value": -1},
                     "spec_decode.min_top_p": {"mode": "pinned", "value": 0.0},
                 },
-                "cache_bound": "bucketed",
             },
             "sampling": {
                 "needs_bitmask_constraints": True,
@@ -835,7 +833,6 @@ def test_a_plain_pipeline_records_no_speculative_facts(tmp_path: Path) -> None:
         "max_batch_size": 0,
         "prefill_max_tokens": 0,
         "host_inputs": {},
-        "cache_bound": "aligned",
     }
     assert deserialize(dest).engine_config == config
 
@@ -963,8 +960,6 @@ def test_prefill_capture_needs_decode_capture() -> None:
             {"a.b": {"mode": "shape"}}
         ),
         lambda section: section["capture"].update(max_batch_size=True),
-        lambda section: section["capture"].pop("cache_bound"),
-        lambda section: section["capture"].update(cache_bound="sometimes"),
         lambda section: section["sampling"].update(enable_penalties=1),
         lambda section: section["devices"].append({"type": "tpu", "id": 0}),
         lambda section: section["speculative"].update(
@@ -1049,7 +1044,6 @@ KV_CACHE = KVCacheLayout(
             **_attention_fields("latent", "full_group"),
             num_q_heads=16,
             sparse_indices_stride=2048,
-            dispatch_unread=True,
             sparse_kv_form="plain",
             context_parallel=ContextParallel(degree=4, interleave=128),
             dispatch=CacheDispatch(
@@ -1166,11 +1160,10 @@ def test_malformed_kv_cache_rejected(
         deserialize(dest)
 
 
-@pytest.mark.parametrize("field", ["sparse_kv_form", "dispatch_unread"])
-def test_a_cache_field_is_required(tmp_path: Path, field: str) -> None:
+def test_the_sparse_kv_form_is_required(tmp_path: Path) -> None:
     dest = serialize(ModelArtifact(kv_cache=KV_CACHE), tmp_path / "a")
     sections = json.loads((dest / "artifact.json").read_text())
-    del sections["kv_cache"]["caches"][2][field]
+    del sections["kv_cache"]["caches"][2]["sparse_kv_form"]
     _rewrite_sections(dest, sections)
     with pytest.raises(ArtifactError, match="component 'kv_cache'"):
         deserialize(dest)

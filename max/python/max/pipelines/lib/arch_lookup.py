@@ -28,7 +28,7 @@ import sys
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Protocol, TypeAlias
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias
 
 from max.nn import Module
 from max.nn.legacy.layer import Module as GraphApiModule
@@ -563,24 +563,6 @@ class SupportedArchitecture:
     """The names an engine looks the fused graph up by, under the draft's
     architecture name or the speculative method. A pairing not listed is named
     ``unified_{method}``."""
-
-    capture_cache_bound: Literal["aligned", "bucketed"] = "aligned"
-    """The host cache bound a replayed decode step keeps.
-
-    ``aligned`` stages the step's cache length aligned up to a probed one,
-    as MAX Serve's capture runner does. ``bucketed`` stages the next power
-    of two over the bound plus the step's query rows, less those rows, and
-    keys the capture on it, for kernels that pick their launch arm from the
-    bound. ``max export`` records it in the pipeline artifact.
-    """
-
-    unread_dispatch_caches: tuple[str, ...] = ()
-    """The keys, in the KV cache tree, of the MLA caches whose kernels never
-    read their dispatch record.
-
-    ``max export`` records them in the pipeline artifact, so an engine keys a
-    capture only on the dispatch records a kernel reads.
-    """
 
     supports_overlap_scheduler: bool = True
     """Whether this architecture supports auto-enabling the overlap scheduler.

@@ -1055,18 +1055,6 @@ def test_a_prefill_budget_past_the_input_capacity_is_refused() -> None:
         pipeline_engine_config(config, _PLAN, prefill_token_budget=4096)
 
 
-def test_engine_config_records_the_capture_cache_bound() -> None:
-    config = _pipeline_config(sampling=SamplingConfig.model_construct())
-    assert pipeline_engine_config(
-        config, _PLAN, capture_cache_bound="bucketed"
-    ).capture == EngineCaptureConfig(
-        max_batch_size=8, prefill_max_tokens=0, cache_bound="bucketed"
-    )
-    assert pipeline_engine_config(config, _PLAN).capture.cache_bound == (
-        "aligned"
-    )
-
-
 @pytest.mark.parametrize("greedy", [False, True])
 def test_engine_config_copies_the_speculative_settings(greedy: bool) -> None:
     config = _pipeline_config(
@@ -1688,36 +1676,6 @@ def test_kv_cache_records_every_cache_in_graph_order() -> None:
             ),
         ),
     )
-
-
-def test_kv_cache_records_the_unread_dispatch_of_named_mla_caches() -> None:
-    mla = MLAKVCacheParams(
-        dtype=DType.bfloat16,
-        head_dim=576,
-        num_layers=1,
-        devices=[DeviceRef.CPU()],
-        num_q_heads=16,
-    )
-    params = MultiKVCacheParams.from_params(
-        {
-            "target": MultiKVCacheParams.from_params(
-                {"mla": mla, "indexer": mla}
-            ),
-            "draft": MultiKVCacheParams.from_params(
-                {"mla": mla, "indexer": mla}
-            ),
-        }
-    )
-    layout = pipeline_kv_cache(params, ("indexer",))
-    assert [
-        (cache.name, isinstance(cache, MLAKVCache) and cache.dispatch_unread)
-        for cache in layout.caches
-    ] == [
-        ("target.mla", False),
-        ("target.indexer", True),
-        ("draft.mla", False),
-        ("draft.indexer", True),
-    ]
 
 
 class _CustomKVCacheParams(MHAKVCacheParams):

@@ -61,11 +61,6 @@ capture unless the graph reads it through a stable buffer:
   pins the fused sampler's batch bounds at capture.
 """
 
-CaptureCacheBound: TypeAlias = Literal["aligned", "bucketed"]
-"""The host cache bound a captured step bakes in: its cache length aligned
-up to a probed one, or the power-of-two bucket of the bound and its query
-rows, which the capture key carries."""
-
 
 @dataclass(frozen=True)
 class EngineSamplingConfig:
@@ -193,20 +188,11 @@ class EngineCaptureConfig:
             read every step, keyed ``<group kind>.<field>``. A serving engine
             refuses to capture a graph that reads a host input listed here
             under no mode.
-        cache_bound: The host cache bound a replayed step keeps, for graphs
-            whose kernels size their launches from it. ``aligned``: the
-            step's cache length aligned up to a probed one, as MAX Serve's
-            capture runner stages it. ``bucketed``: the next power of two
-            over the bound plus the step's query rows, at least 256, less
-            those rows and capped at the context limit, with the bucket in
-            the capture key, so a replay keeps the launch arm eager takes
-            at the bound.
     """
 
     max_batch_size: int
     prefill_max_tokens: int
     host_inputs: Mapping[str, CapturedHostInput] = field(default_factory=dict)
-    cache_bound: CaptureCacheBound = "aligned"
 
     def __post_init__(self) -> None:
         if self.max_batch_size < 0 or self.prefill_max_tokens < 0:
@@ -472,7 +458,6 @@ class EngineConfig:
                     name: {"mode": how.mode, "value": how.value}
                     for name, how in sorted(self.capture.host_inputs.items())
                 },
-                "cache_bound": self.capture.cache_bound,
             },
             "sampling": {
                 "needs_bitmask_constraints": (
@@ -599,18 +584,7 @@ def _capture(value: ArtifactType) -> EngineCaptureConfig:
             name: _host_input(how)
             for name, how in expect(obj["host_inputs"], dict).items()
         },
-        cache_bound=_cache_bound(obj["cache_bound"]),
     )
-
-
-def _cache_bound(value: ArtifactType) -> CaptureCacheBound:
-    match expect(value, str):
-        case "aligned":
-            return "aligned"
-        case "bucketed":
-            return "bucketed"
-        case other:
-            raise ValueError(f"unknown capture cache bound {other!r}")
 
 
 def _host_input(value: ArtifactType) -> CapturedHostInput:
