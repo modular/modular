@@ -59,6 +59,7 @@ from eval_runner import (
 )
 from inference_server_harness import RunningServer, start_server
 from pydantic import BaseModel, ConfigDict, Field
+from reasoning_parser_selection import get_reasoning_parser_arg
 from requests.structures import CaseInsensitiveDict
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
@@ -535,6 +536,9 @@ def get_server_cmd(
         "--limit-mm-per-prompt.audio",
         "0",
     ]
+    if parser := get_reasoning_parser_arg(framework, model):
+        server_args = VLLM if framework == "vllm" else SGLANG
+        server_args += ["--reasoning-parser", parser]
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]

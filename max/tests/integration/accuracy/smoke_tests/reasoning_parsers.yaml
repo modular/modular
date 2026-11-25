@@ -1,0 +1,32 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+# --reasoning-parser values for NIGHTLY models served by vLLM/SGLang.
+# Exact model overrides take precedence over architecture defaults.
+# SGLang uses auto unless specified.
+architectures:
+  BeamForCausalLM: {vllm: beam}
+  DeepseekV41ForCausalLM: {vllm: deepseek_v41}
+  Gemma4ForConditionalGeneration: {vllm: gemma4}
+  HYV4ForCausalLM: {vllm: hy_v4}
+  # SGLang 0.5.23 auto misses Inkling's typed thinking blocks.
+  InklingForConditionalGeneration: {vllm: inkling, sglang: inkling}
+  KimiK25ForConditionalGeneration: {vllm: kimi_k2}
+  KimiK3ForConditionalGeneration: {vllm: kimi_k3}
+  LagunaForCausalLM: {vllm: poolside_v1}
+  MiniMaxM3SparseForConditionalGeneration: {vllm: minimax_m3}
+  # SGLang 0.5.23 cannot auto-detect this model's reasoning format.
+  MuseGlimmerForConditionalGeneration: {vllm: muse_glimmer, sglang: muse}
+  Qwen3_5ForConditionalGeneration: {vllm: qwen3}
+
+models: {}

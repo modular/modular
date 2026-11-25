@@ -62,7 +62,8 @@ MACH = {"MACH"}
 # To add a model, trigger the smoke test with it first:
 # https://github.com/modularml/modular/actions/workflows/serveSmokeTest.yaml
 # then list it below with the HW it passed on. VLMs also go in is_vision_model
-# in smoke_test.py.
+# in smoke_test.py. A NIGHTLY model with a new reasoning architecture also goes
+# in reasoning_parsers.yaml.
 # Every entry is exactly one line, sorted by key, with tags in the order
 # NIGHTLY, VARIANT, PRIVATE, MACH, HW. The only comment allowed is an existing
 # Linear ticket at the end of the line, as `# TODO(PROJ-1234)`.

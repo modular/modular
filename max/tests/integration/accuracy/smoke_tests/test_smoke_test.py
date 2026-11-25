@@ -12,9 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
+import reasoning_parser_selection
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
 from smoke_tests.smoke_test import MODEL_RECIPES
+
+
+@pytest.fixture(autouse=True)
+def _no_checkpoint_downloads(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        reasoning_parser_selection, "_hf_architectures", lambda model: []
+    )
+
+
+def test_reasoning_parser_selection(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        reasoning_parser_selection, "_hf_architectures", lambda model: [model]
+    )
+    get_parser = reasoning_parser_selection.get_reasoning_parser_arg
+    arch = "MuseGlimmerForConditionalGeneration"
+    assert get_parser("vllm", arch) == "muse_glimmer"
+    assert get_parser("sglang", arch) == "muse"
+    assert get_parser("sglang", "UnknownArchitecture") == "auto"
+    assert get_parser("vllm", "UnknownArchitecture") is None
 
 
 def test_variants_contain_exactly_one_double_underscore() -> None:
