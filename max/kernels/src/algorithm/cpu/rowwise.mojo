@@ -47,7 +47,7 @@ from std.memory import unsafe_memset_zero
 from std.memory.alloc import unsafe_alloc
 from std.sys import size_of
 
-from std.utils.coord import Coord, coord_to_index_list
+from std.utils.coord import Coord
 
 from algorithm.rowwise_types import (
     Context,
@@ -658,9 +658,8 @@ def launch[
     comptime rank = shape.rank
     comptime effective_simd = simd_width
 
-    var shape_il = coord_to_index_list(shape)
-    var axis_size = shape_il[axis]
-    var total_size = shape_il.flattened_length()
+    var axis_size = Int(shape[axis])
+    var total_size = Int(shape.product())
     # `num_outputs` is the product of every dim other than `axis`, so it
     # stays well-defined when the reduce axis itself is empty
     # (`axis_size == 0`) — unlike `total_size // axis_size`, which is a
@@ -745,7 +744,7 @@ def launch[
                     }:
                         var row_idx, split_idx = divmod(w, num_splits)
                         var row_coords = _get_nd_indices_from_flat_index(
-                            row_idx, shape_il, axis
+                            row_idx, shape, axis
                         )
                         var ctx = Context[params_phased](
                             partials_base=phased_buf,
@@ -758,9 +757,7 @@ def launch[
                             is_last_block=False,
                             phase=Int32(phase),
                         )
-                        body[params_phased](
-                            Coord(row_coords.canonicalize()), ctx
-                        )
+                        body[params_phased](row_coords, ctx)
 
                     sync_parallelize(phase_worker, total_workers)
                 phased_buf.unsafe_free()
@@ -812,7 +809,7 @@ def launch[
             }:
                 var row_idx, split_idx = divmod(w, num_splits)
                 var row_coords = _get_nd_indices_from_flat_index(
-                    row_idx, shape_il, axis
+                    row_idx, shape, axis
                 )
                 var ctx = Context[params_splitk](
                     partials_base=partials_buf,
@@ -822,7 +819,7 @@ def launch[
                     row_idx=Int32(row_idx),
                     is_last_block=False,
                 )
-                body[params_splitk](Coord(row_coords.canonicalize()), ctx)
+                body[params_splitk](row_coords, ctx)
 
             sync_parallelize(split_worker, total_workers)
             partials_buf.unsafe_free()
@@ -848,9 +845,9 @@ def launch[
                     var ctx = Context[params].empty()
                     for flat_idx in range(start, end):
                         var row_coords = _get_nd_indices_from_flat_index(
-                            flat_idx, shape_il, axis
+                            flat_idx, shape, axis
                         )
-                        body[params](Coord(row_coords.canonicalize()), ctx)
+                        body[params](row_coords, ctx)
 
                 sync_parallelize(row_worker, actual_workers)
 
@@ -883,7 +880,7 @@ def launch[
             run_coop[params_scalar]()
     else:
         comptime inner_axis = rank - 1
-        var inner_dim = shape_il[inner_axis]
+        var inner_dim = Int(shape[inner_axis])
         # `num_outputs // inner_dim` rather than `total_size // (axis_size *
         # inner_dim)`: the latter is `0 // 0` when `axis_size == 0`.
         # `inner_dim` is one of the dims `num_outputs` multiplies over (it
@@ -938,22 +935,26 @@ def launch[
                 # the legacy outer-dim reducer: `flat = s * inner_dim` with
                 # skip_dim=axis decodes to `coords[axis] = 0`,
                 # `coords[inner_axis] = 0`, other dims from the slice.
-                var slice_coords = _get_nd_indices_from_flat_index(
-                    s * inner_dim, shape_il, axis
-                ).canonicalize()
+                var slice_coords = _get_nd_indices_from_flat_index[
+                    out_dtype=DType.int
+                ](s * inner_dim, shape, axis)
                 var k = 0
                 comptime if supports_tiled and W > 1:
                     var ctx_tiled = Context[params_tiled].empty()
                     var bulk = align_down(inner_dim, W)
                     while k < bulk:
-                        slice_coords[inner_axis] = k
-                        body[params_tiled](Coord(slice_coords), ctx_tiled)
+                        slice_coords.replace_dynamic[inner_axis](
+                            Scalar[DType.int](k)
+                        )
+                        body[params_tiled](slice_coords, ctx_tiled)
                         k += W
                 # Scalar tail: the odd `inner_dim % W` remainder, or every
                 # column when the tiled tier is comptime-disabled.
                 while k < inner_dim:
-                    slice_coords[inner_axis] = k
-                    body[params_scalar_strided](Coord(slice_coords), ctx_scalar)
+                    slice_coords.replace_dynamic[inner_axis](
+                        Scalar[DType.int](k)
+                    )
+                    body[params_scalar_strided](slice_coords, ctx_scalar)
                     k += 1
 
         sync_parallelize(slice_worker, num_workers)

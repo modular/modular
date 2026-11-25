@@ -27,7 +27,7 @@ from std.math.math import max as _max, min as _min
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 
-from std.utils.index import IndexList, StaticTuple
+from std.utils.index import StaticTuple
 from std.utils.coord import Coord, CoordLike, DynamicCoord
 
 from std._plugin import CurrentPlugin
@@ -121,32 +121,6 @@ def _get_nd_indices_from_flat_index[
             res[i] = rebind[Result.element_types[i]](remainder)
 
     return res
-
-
-@inline(.always)
-def _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
-):
-    """Converts a flat index into ND indices but skip over one of the dimensions.
-
-    This overload forwards to the `Coord` implementation. See it for details.
-
-    Args:
-        flat_index: The flat index to convert.
-        shape: The shape of the ND space we are converting into.
-        skip_dim: The dimension to skip over. This represents the dimension
-                  which is being iterated across.
-    Returns:
-        Constructed ND-index.
-    """
-    comptime dtype = type_of(shape).element_type
-    var coords = _get_nd_indices_from_flat_index[out_dtype=dtype](
-        flat_index, Coord(shape), skip_dim
-    )
-
-    res = {}
-    comptime for i in range(type_of(shape).size):
-        res.data[i] = rebind[type_of(shape)._int_type](coords[i].value())
 
 
 # ===-----------------------------------------------------------------------===#

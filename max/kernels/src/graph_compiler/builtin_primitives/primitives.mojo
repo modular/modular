@@ -2603,21 +2603,20 @@ def _graph_blob_foreach[
     comptime assert (
         simd_width & (simd_width - 1) == 0
     ), "simd_width must be a power of two"
-    var extents = rebind[IndexList[shape.rank]](coord_to_index_list(shape))
     # TODO(GEX-4610): A copy of `_foreach`'s width selection; share it.
     comptime if MaxSimdWidth.is_static_value:
         comptime limit = MaxSimdWidth.static_value
         comptime width = simd_width if limit == 0 else min(
             simd_width, limit & -limit
         )
-        CurrentMaxPlugin.elementwise_device_fn[width](func, extents)
+        CurrentMaxPlugin.elementwise_device_fn[width](func, shape)
     else:
         var limit = Int(max_simd_width.value())
         comptime steps = Int(bit_width(Scalar[DType.int](simd_width)))
         comptime for step in range(steps):
             comptime width = simd_width >> step
             if width == 1 or limit % width == 0:
-                CurrentMaxPlugin.elementwise_device_fn[width](func, extents)
+                CurrentMaxPlugin.elementwise_device_fn[width](func, shape)
                 return
 
 

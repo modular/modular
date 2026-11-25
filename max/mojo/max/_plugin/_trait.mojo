@@ -17,7 +17,6 @@ from std.collections import OptionalReg
 from std.collections.string.string_span import _get_kgen_string
 from std.reflection import SourceLocation
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 from std._gpu import lane_id
 from std._gpu.host.info import (
     NoGPU,
@@ -510,10 +509,10 @@ trait MaxPluginHooks:
 
     @staticmethod
     def elementwise_device_fn[
-        rank: Int, //, simd_width: Int
+        simd_width: Int
     ](
         func: Some[def[width: Int, alignment: Int = 1](Coord) -> None],
-        extents: IndexList[rank],
+        extents: Coord,
     ):
         """Per-target plugin hook for the graph blob loop primitive,
         `_graph_blob_foreach`: runs the calling thread's share of an
@@ -521,7 +520,6 @@ trait MaxPluginHooks:
         it.
 
         Parameters:
-            rank: The rank of `extents`.
             simd_width: The width of a full-width call to `func`.
 
         Args:
