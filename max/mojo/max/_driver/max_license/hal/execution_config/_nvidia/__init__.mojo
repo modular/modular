@@ -23,21 +23,8 @@ from .. import ConstantMemoryMappingExecutionConfig
 from std.collections.type_dict import TypeDict
 from max.gpu.host import ConstantMemoryMapping, Dim, LaunchAttribute
 
-from .maxwell_consumer import MaxwellConsumerExecutionConfiguration
-from .tesla_p100 import TeslaP100ExecutionConfiguration
-from .pascal_consumer import PascalConsumerExecutionConfiguration
-from .pascal_workstation import PascalWorkstationExecutionConfiguration
-from .turing_consumer import TuringConsumerExecutionConfiguration
-from .a100 import A100ExecutionConfiguration
-from .ampere_consumer import AmpereConsumerExecutionConfiguration
-from .a10 import A10ExecutionConfiguration
-from .ada_consumer import AdaConsumerExecutionConfiguration
 from .hopper_datacenter import HopperDatacenterExecutionConfiguration
-from .orin_nano import OrinNanoExecutionConfiguration
-from .l4 import L4ExecutionConfiguration
 from .blackwell_datacenter import BlackwellDatacenterExecutionConfiguration
-from .blackwell_consumer import BlackwellConsumerExecutionConfiguration
-from .dgx_spark import DgxSparkExecutionConfiguration
 from .jetson_thor import JetsonThorExecutionConfiguration
 
 comptime _ExecutionConfigDictForTarget = TypeDict[
@@ -63,24 +50,24 @@ comptime _ExecutionConfigDictForTarget = TypeDict[
         "nvidia:sm_103a",
         "nvidia:sm_121",
     ],
-    MaxwellConsumerExecutionConfiguration,
-    TeslaP100ExecutionConfiguration,
-    PascalConsumerExecutionConfiguration,
-    PascalWorkstationExecutionConfiguration,
-    TuringConsumerExecutionConfiguration,
-    A100ExecutionConfiguration,
-    AmpereConsumerExecutionConfiguration,
-    A10ExecutionConfiguration,
-    AdaConsumerExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
     HopperDatacenterExecutionConfiguration,
-    OrinNanoExecutionConfiguration,
-    L4ExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
     BlackwellDatacenterExecutionConfiguration,
-    BlackwellConsumerExecutionConfiguration,
-    DgxSparkExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
     JetsonThorExecutionConfiguration,
     BlackwellDatacenterExecutionConfiguration,
-    DgxSparkExecutionConfiguration,
+    _BaseCudaExecutionConfiguration,
 ]
 
 comptime ExecutionConfigForTarget[
