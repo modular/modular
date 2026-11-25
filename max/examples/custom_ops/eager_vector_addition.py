@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# DOC: develop/build-custom-ops.mdx
+
 from pathlib import Path
 
 from max import functional as F

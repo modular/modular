@@ -19,7 +19,14 @@ from std.math import ceildiv
 
 from max.gpu import block_dim, block_idx, thread_idx
 
-from extensibility import Input, Output, Tensor, TileTensorable
+from extensibility import (
+    ACCELERATOR,
+    CPU,
+    Input,
+    Output,
+    Tensor,
+    TileTensorable,
+)
 from layout import TileTensor
 
 from std.utils.coord import Coord
@@ -115,3 +122,47 @@ struct VectorAddition:
             _vector_addition_gpu(output_tile, lhs_tile, rhs_tile, ctx)
         else:
             raise Error("No known target:", ctx.target.device_kind_label())
+
+
+# The same op written as one kernel per platform. The graph compiler picks the
+# registration whose platform matches the device the op runs on.
+@extensibility.register("vector_addition_by_platform", CPU)
+struct VectorAdditionCPU:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        lhs: Some[Input & Tensor],
+        rhs: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lhs), TileTensorable)
+        comptime assert conforms_to(type_of(rhs), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        _vector_addition_cpu(
+            output.to_tile_tensor[dtype](),
+            lhs.to_tile_tensor[dtype]().as_imm(),
+            rhs.to_tile_tensor[dtype]().as_imm(),
+            ctx,
+        )
+
+
+@extensibility.register("vector_addition_by_platform", ACCELERATOR)
+struct VectorAdditionAccelerator:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        lhs: Some[Input & Tensor],
+        rhs: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lhs), TileTensorable)
+        comptime assert conforms_to(type_of(rhs), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        _vector_addition_gpu(
+            output.to_tile_tensor[dtype](),
+            lhs.to_tile_tensor[dtype]().as_imm(),
+            rhs.to_tile_tensor[dtype]().as_imm(),
+            ctx,
+        )

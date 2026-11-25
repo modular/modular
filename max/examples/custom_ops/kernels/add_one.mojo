@@ -30,7 +30,6 @@ from extensibility import (
 )
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 
 @extensibility.register("add_one")
@@ -65,15 +64,6 @@ struct AddOne:
         elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
             elementwise_add_one, output.shape(), ctx
         )
-
-
-# You only need to implement this if you do not manually annotate
-# output shapes in the graph.
-@extensibility.register_shape_function("add_one")
-def add_one_shape(
-    x: Some[Tensor],
-) raises -> IndexList[type_of(x).rank]:
-    raise Error("NotImplemented")
 
 
 # The graph compiler can fuse this op with the ops around it.

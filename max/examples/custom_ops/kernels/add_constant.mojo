@@ -27,7 +27,6 @@ from extensibility import (
 )
 
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 
 @extensibility.register("add_constant")
@@ -60,12 +59,3 @@ struct AddConstant[value: Int]:
         elementwise[simd_width=get_kernel_simd_width[dtype, ctx.target]()](
             add_constant, output.shape(), ctx
         )
-
-
-# You only need to implement this if you do not manually annotate
-# output shapes in the graph.
-@extensibility.register_shape_function("add_constant")
-def add_constant_shape(
-    x: Some[Tensor],
-) raises -> IndexList[type_of(x).rank]:
-    raise Error("NotImplemented")
