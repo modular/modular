@@ -172,8 +172,9 @@ Engine::Context::getOrCreateMaxContext(const M::Engine::Config &config) {
   Init::Options options;
   std::string profileFilename =
       llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
-  options.withCPUDeviceOptions(
-      getOrCreateCPUDeviceOptions(config, profileFilename));
+  CPUDeviceOptions rtOptions =
+      getOrCreateCPUDeviceOptions(config, profileFilename);
+  options.withCPUDeviceOptions(rtOptions);
   options.withForceDisableCrashReporting(!config.isCrashLogEnabled());
   return Init::getOrCreateContext("max-engine", options);
 }
