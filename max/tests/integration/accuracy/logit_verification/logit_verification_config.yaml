@@ -243,19 +243,6 @@ logit_verification_pipelines:
     cos_dist_threshold: 3.8e-04
     kl_div_threshold: 1.6e-01
 
-  meta-llama/Llama-3.2-1B-bfloat16:
-    config_params_override: {"prefer_module_v3": false}
-    pre_submit_agents: []
-    pipeline: "meta-llama/Llama-3.2-1B"
-    compatible_with: [gpu]
-    encoding: bfloat16
-    tags: [nvidia-only]
-    pregenerated_torch_goldens:
-      tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_llama3.2-1b_bfloat16_golden/1/f77876a9612aba6f0df1ab1bd9f3819656f962a46e2b3133d11a4290c936de3a/torch_llama3.2-1b_bfloat16_golden.tar.gz"
-      json_file: "torch_llama3.2-1b_bfloat16_golden.json"
-    cos_dist_threshold: 6.0e-03
-    kl_div_threshold: 1.5e-02
-
   Qwen/Qwen3-VL-30B-A3B-Instruct:
     pre_submit_agents: []
     pipeline: "Qwen/Qwen3-VL-30B-A3B-Instruct"

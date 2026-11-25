@@ -795,7 +795,7 @@ def smoke_test(
     lm_eval_metadata: str | None,
 ) -> None:
     """
-    Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
+    Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.1-8B-Instruct
 
     This command asks 320 questions against the model behind the given hf_model_path.
     It runs the provided framework (defaulting to MAX serve) in the background,

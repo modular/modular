@@ -1287,13 +1287,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float8_e4m3fn"],
         },
     ),
-    "meta-llama/Llama-3.2-1B": GenericOracle(
-        model_path="meta-llama/Llama-3.2-1B",
-        config_params={"max_length": 512},
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-        },
-    ),
     "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-30B-A3B-Instruct"
     ),
