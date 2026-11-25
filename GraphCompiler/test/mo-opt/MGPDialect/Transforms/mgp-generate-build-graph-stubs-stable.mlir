@@ -20,7 +20,7 @@
 // CHECK-DAG: %[[A:.*]] = mogg.trait.create(%{{.*}}) contract = <{role = input, fused = false, access = none, capabilities = none, stable = true}>
 // CHECK-DAG: %[[B:.*]] = mogg.trait.create(%{{.*}}) contract = <{role = input, fused = false, access = none, capabilities = none, stable = true}>
 // CHECK: mogg.tuple.create(%[[A]], %[[B]]) variadic_abi = <tensor_tuple>
-// CHECK: mogg.call.build_graph["testing_kernels.testing_kernels.StableBuildGraph"]
+// CHECK: mogg.call.build_graph @testing_kernels.testing_kernels.StableBuildGraph
 mogg.func @stub_1 private dispatch(deferred) (%p0: !mogg.pointer, %p1: !mogg.pointer, %po: !mogg.pointer, %ctx: !mogg.context) attributes {abi = #mogg.abi<MOGG>, constantResources = [], device = "gpu", fusionInfo = #mogg.fusion<#mogg.fusion_leaf<"imposter_stable_build_graph">>} {
   %s = mogg.shape.create() <shape = #mosh<ape[4]> : !mosh.ape>
   %a = mogg.tensor.create(%p0, %s) <device = "gpu", elementType = f32, io = Input, mut = false, shapeAttr = #mosh<ape[4]> : !mosh.ape> : !mogg.tensor

@@ -15,6 +15,6 @@ mogg.func @consume_single_build_graph_cpu private dispatch(deferred) (%px: !mogg
   %out = mogg.tensor.create(%po, %s) <device = "cpu", elementType = f32, io = Output, mut = true, shapeAttr = #mosh<ape[4]> : !mosh.ape> : !mogg.tensor
   %x1 = mogg.trait.create(%x) contract = <{role = input, fused = false, access = none, capabilities = none, stable = true}>, device = "cpu" : (!mogg.tensor) -> !mogg.tensor
   %out1 = mogg.trait.create(%out) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "cpu" : (!mogg.tensor) -> !mogg.tensor
-  mogg.call.build_graph["testing_kernels.testing_kernels.StableSingleBuildGraph"] inputs(%x1 : !mogg.tensor) outputs(%out1 : !mogg.tensor) builder(%builder) moOpName = "imposter_stable_single_build_graph"
+  mogg.call.build_graph @testing_kernels.testing_kernels.StableSingleBuildGraph inputs(%x1 : !mogg.tensor) outputs(%out1 : !mogg.tensor) builder(%builder)
   mogg.output
 }

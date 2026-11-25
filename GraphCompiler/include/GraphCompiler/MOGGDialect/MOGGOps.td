@@ -235,6 +235,7 @@ def MOGG_CallAsyncOp : MOGG_Op<"call.async", [
 }
 
 def MOGG_CallBuildGraphOp : MOGG_Op<"call.build_graph", [
+  MOGG_CallLike,
   AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
   DeclareOpInterfaceMethods<MOGG_KernelCallInterface>,
@@ -255,7 +256,7 @@ def MOGG_CallBuildGraphOp : MOGG_Op<"call.build_graph", [
 
     Example:
     ```mlir
-    mogg.call.build_graph["linalg_kernels.__init__.Matmul"]
+    mogg.call.build_graph @linalg_kernels.__init__.Matmul
         inputs(%in, %wt : !mo.tensor<...>, !mo.tensor<...>)
         outputs(%out : !mo.tensor<...>)
         builder(%builder)
@@ -266,9 +267,7 @@ def MOGG_CallBuildGraphOp : MOGG_Op<"call.build_graph", [
   }];
 
   let arguments = (ins
-    StrAttr:$kernelSymName,
-    StrAttr:$moOpName,
-    UnitAttr:$isThrows,
+    FlatSymbolRefAttr:$callee,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar, MOGG_Tuple,
                         MO_Opaque]>>:$inputs,
     Variadic<AnyTypeOf<[MOGG_Tensor, MOGG_Buffer, MOGG_Scalar, MOGG_Tuple,
@@ -279,12 +278,10 @@ def MOGG_CallBuildGraphOp : MOGG_Op<"call.build_graph", [
   );
 
   let assemblyFormat = [{
-    `[` $kernelSymName `]` `` custom<OptionalKernelParams>($kernel_param)
+    $callee `` custom<OptionalKernelParams>($kernel_param)
     (`inputs` `(` $inputs^ `:` qualified(type($inputs)) `)`)?
     (`outputs` `(` $outputs^ `:` qualified(type($outputs)) `)`)?
     `builder` `(` $graphBuilder `)`
-    (`isThrows` $isThrows^)?
-    `moOpName` `=` $moOpName
     (`hasEpilogueFusion` `=` $hasEpilogueFusion^)?
     attr-dict
   }];
@@ -1336,6 +1333,8 @@ def MOGG_CallOpaqueOp : MOGG_Op<"call.opaque", [
   MOGG_CallLike,
   AttrSizedOperandSegments,
   DeclareOpInterfaceMethods<EmitsMojoInterface, ["isThrows"]>,
+  DeclareOpInterfaceMethods<MOGG_KernelCallInterface>,
+  DeclareOpInterfaceMethods<SymbolUserOpInterface>,
 ]> {
   let summary = "Call a registered opaque kernel's execute function.";
   let description = [{
@@ -2219,17 +2218,6 @@ def MOGG_CallElementwiseOp : MOGG_Op<"call.elementwise", [
     $callee `` custom<OptionalKernelParams>($kernel_param) ``
     `(` $inputs (`,` $index^)? `)` `moOpName` `=` $moOpName
     attr-dict `:` type($inputs) (`,` type($index)^)? `->` type($outputs)
-  }];
-
-  // `KernelCallInterface::getKernelSymNameAttr` must hand back the leaf
-  // `StringAttr` (the same interned attr the kernel decl's `sym_name` carries,
-  // so symbol-liveness set membership still works); the callee is stored as a
-  // `FlatSymbolRefAttr` here rather than a bare string the way `call.opaque`
-  // does.
-  let extraClassDeclaration = [{
-    mlir::StringAttr getKernelSymNameAttr() {
-      return getCalleeAttr().getLeafReference();
-    }
   }];
 }
 

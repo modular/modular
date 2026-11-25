@@ -1440,7 +1440,7 @@ struct StripKernelDeclsPass
     // Collect every kernel sym_name still referenced in the module.
     llvm::DenseSet<mlir::StringAttr> usedSymNames;
     module.walk([&](KernelCallInterface op) {
-      usedSymNames.insert(op.getKernelSymNameAttr());
+      usedSymNames.insert(op.getKernelCallee().getLeafReference());
     });
 
     for (auto decl : llvm::make_early_inc_range(module.getOps<KernelDeclOp>()))

@@ -70,7 +70,20 @@ Value RoutineOp::getOutputChain() {
   return isa<MO::ChainType>(last.getType()) ? last : Value();
 }
 
-bool CallBuildGraphOp::isThrows() { return getIsThrows(); }
+bool CallBuildGraphOp::isThrows() {
+  // Raises iff the callee's `build_graph` signature does, as in
+  // `CallOpaqueOp::isThrows`.
+  auto decl = mlir::SymbolTable::lookupNearestSymbolFrom<KernelDeclOp>(
+      *this, getCalleeAttr());
+  if (!decl)
+    return false;
+  KernelDeclAdaptor adaptor(decl);
+  if (!adaptor.buildGraphFunction || !adaptor.buildGraphFunction->attr)
+    return false;
+  // `isThrows` is non-const on the signature; copy it to a local to call it.
+  auto sig = adaptor.buildGraphFunction->attr.getSignature();
+  return sig.isThrows();
+}
 
 //===----------------------------------------------------------------------===//
 // FuncOp

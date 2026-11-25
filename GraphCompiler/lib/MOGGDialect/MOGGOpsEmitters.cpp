@@ -107,12 +107,12 @@ LogicalResult CallBuildGraphOp::emitMojo(EmitMojoState &state) {
   // of the device context), and captures the recorded node handle as the op's
   // result.
   KernelDeclOp buildGraphKernelDecl =
-      state.registry.lookupKernelBySymName(getKernelSymName());
+      state.registry.lookupKernelBySymName(getCallee());
 
   KernelDeclAdaptor buildGraphAdaptor(buildGraphKernelDecl);
   if (!buildGraphAdaptor.buildGraphFunction)
     return emitOpError("kernel '")
-           << getKernelSymName() << "' has no 'build_graph' function";
+           << getCallee() << "' has no 'build_graph' function";
 
   // Collect kernel I/Os: DPS outputs, then inputs (mirroring `execute`).
   auto kernelOperands = llvm::map_to_vector(

@@ -67,11 +67,11 @@ using namespace MOGG;
 static LogicalResult verifySymbolUsesForKernelDeclCall(
     KernelCallInterface op, SymbolTableCollection &symbolTable,
     llvm::function_ref<LogicalResult(KernelDeclOp)> check) {
-  auto symAttr = op.getKernelSymNameAttr();
-  auto decl = symbolTable.lookupNearestSymbolFrom<KernelDeclOp>(op, symAttr);
+  auto callee = op.getKernelCallee();
+  auto decl = symbolTable.lookupNearestSymbolFrom<KernelDeclOp>(op, callee);
   if (!decl)
     return op->emitOpError("'")
-           << symAttr.getValue() << "' does not refer to a kernel.decl op";
+           << callee.getValue() << "' does not refer to a kernel.decl op";
   return check(decl);
 }
 
@@ -208,9 +208,21 @@ CallBuildGraphOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
       *this, symbolTable, [this](KernelDeclOp decl) -> LogicalResult {
         if (!decl.getBuildGraph())
           return emitOpError("kernel '")
-                 << getKernelSymName() << "' has no 'build_graph' function";
+                 << getCallee() << "' has no 'build_graph' function";
         return success();
       });
+}
+
+//===----------------------------------------------------------------------===//
+// CallOpaqueOp
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+CallOpaqueOp::verifySymbolUses(SymbolTableCollection &symbolTable) {
+  // Symbol resolution only: `VerifyKernels` owns whether the decl it names has
+  // an entry point this call can reach.
+  return verifySymbolUsesForKernelDeclCall(
+      *this, symbolTable, [](KernelDeclOp) { return success(); });
 }
 
 LogicalResult FuncOp::verify() {
