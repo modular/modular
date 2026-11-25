@@ -2675,6 +2675,79 @@ struct QuantizeDynamicScaledFloat8GroupedMx:
         )
 
 
+@extensibility.register(
+    "quantization.quantize_dynamic_scaled_float8.grouped_mx_gather"
+)
+struct QuantizeDynamicScaledFloat8GroupedMxGather:
+    """Registers the `quantization.quantize_dynamic_scaled_float8.grouped_mx_gather` graph op.
+
+    `quantization.quantize_dynamic_scaled_float8.grouped_mx` of `input`
+    gathered by `row_index` (row `m` quantizes `input[row_index[m]]`),
+    without materializing the gathered rows.
+    """
+
+    @inline(.always)
+    @staticmethod
+    def execute[
+        amax_floor: Float32 = 0,
+    ](
+        output: Some[Output & Tensor],
+        scales: Some[Output & Tensor],
+        input: Some[Input & Fused & LoadAccess & Tensor],
+        row_index: Some[Input & Tensor],
+        group_starts: Some[Input & Tensor],
+        scale_offsets: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(scales), TileTensorable)
+        comptime assert conforms_to(type_of(row_index), TileTensorable)
+        comptime assert conforms_to(type_of(group_starts), TileTensorable)
+        comptime assert conforms_to(type_of(scale_offsets), TileTensorable)
+        comptime input_type = type_of(input).dtype
+        comptime assert type_of(output).rank == 2
+        comptime assert type_of(scales).rank == 5
+        comptime assert type_of(input).rank == 2
+        comptime assert type_of(row_index).rank == 1
+        comptime assert type_of(group_starts).rank == 1
+        comptime assert type_of(scale_offsets).rank == 1
+
+        # Project the host proxy to its access-enabled view so the closure can
+        # load on the GPU lane.
+        comptime assert conforms_to(type_of(input), UnsafeFusedView)
+        var input_view = unsafe_fused_view(input)
+        comptime assert conforms_to(type_of(input_view), Loadable)
+        var rows = row_index.to_tile_tensor[.int32]()
+
+        comptime assert ctx.target.is_gpu(), "only valid on GPUs"
+
+        @inline(.always)
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) {var input_view, var rows} -> SIMD[
+            input_type, width
+        ]:
+            var src_row = Int(rows.load[width=1](Coord(row)))
+            return rebind[SIMD[input_type, width]](
+                input_view.load[width=width, element_alignment=alignment](
+                    Coord(src_row, col)
+                )
+            )
+
+        quantize_dynamic_scaled_fp8_grouped_mx[
+            num_cols=type_of(input)._shape_types[1].static_value,
+        ](
+            input_fn,
+            output.to_tile_tensor(),
+            scales.to_tile_tensor(),
+            group_starts.to_tile_tensor[.uint32]().as_imm(),
+            scale_offsets.to_tile_tensor[.uint32]().as_imm(),
+            ctx,
+            num_rows=Int(row_index.shape()[0].value()),
+            amax_floor=amax_floor,
+        )
+
+
 @extensibility.register("mo.composite.quantize_dynamic_scaled_fp8")
 struct QuantizeDynamicScaledFloat8:
     """Registers the `mo.composite.quantize_dynamic_scaled_fp8` graph op with the graph compiler.

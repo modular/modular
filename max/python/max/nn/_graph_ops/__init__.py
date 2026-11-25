@@ -14521,6 +14521,90 @@ def quantize_dynamic_scaled_float8_grouped_mx(
     return result[0].tensor, result[1].tensor
 
 
+def quantize_dynamic_scaled_float8_grouped_mx_gather(
+    input: TensorValue,
+    row_index: TensorValue,
+    group_starts: TensorValue,
+    scale_offsets: TensorValue,
+    num_scale_rows: DimLike,
+    amax_floor: float = 0.0,
+) -> tuple[TensorValue, TensorValue]:
+    """Quantizes ``input`` rows gathered by ``row_index`` into MX scale tiles.
+
+    :func:`quantize_dynamic_scaled_float8_grouped_mx` of ``input[row_index]``,
+    bit for bit, without materializing the gathered rows.
+
+    Args:
+        input: ``[T, K]`` activations; ``K`` must be static and a multiple
+            of 128.
+        row_index: ``[rows]`` int32; output row ``m`` quantizes
+            ``input[row_index[m]]``.
+        group_starts: As :func:`quantize_dynamic_scaled_float8_grouped_mx`.
+        scale_offsets: As :func:`quantize_dynamic_scaled_float8_grouped_mx`.
+        num_scale_rows: As :func:`quantize_dynamic_scaled_float8_grouped_mx`.
+        amax_floor: As :func:`quantize_dynamic_scaled_float8_grouped_mx`.
+
+    Returns:
+        The ``[rows, K]`` ``float8_e4m3fn`` codes and the
+        ``[ceildiv(num_scale_rows, 128), K / 128, 32, 4, 4]``
+        ``float8_e8m0fnu`` scales.
+    """
+    if input.rank != 2:
+        raise ValueError("input must be rank 2 tensor")
+    if not isinstance(input.shape[1], StaticDim):
+        raise ValueError(
+            "input.shape[1] must be a statically known dimension. Input shape"
+            f" received: {input.shape}"
+        )
+    k = int(input.shape[1])
+    if k % 128:
+        raise ValueError(f"K={k} is not a multiple of 128")
+    _check_rank(
+        1,
+        row_index=row_index,
+        group_starts=group_starts,
+        scale_offsets=scale_offsets,
+    )
+    _check_dtype(DType.int32, row_index=row_index)
+    _check_dtype(
+        DType.uint32, group_starts=group_starts, scale_offsets=scale_offsets
+    )
+    if not math.isfinite(amax_floor) or amax_floor < 0.0:
+        raise ValueError(
+            f"amax_floor must be finite and non-negative, got {amax_floor}"
+        )
+
+    parameters: dict[str, bool | int | float | str | DType] = {}
+    if amax_floor > 0.0:
+        parameters["amax_floor"] = amax_floor
+
+    result = ops.custom(
+        "quantization.quantize_dynamic_scaled_float8.grouped_mx_gather",
+        device=input.device,
+        values=[input, row_index, group_starts, scale_offsets],
+        out_types=[
+            TensorType(
+                dtype=DType.float8_e4m3fn,
+                shape=[row_index.shape[0], k],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=DType.float8_e8m0fnu,
+                shape=[
+                    ceildiv(Dim(num_scale_rows), Dim(128)),
+                    k // 128,
+                    32,
+                    4,
+                    4,
+                ],
+                device=input.device,
+            ),
+        ],
+        parameters=parameters,
+    )
+    return result[0].tensor, result[1].tensor
+
+
 def dynamic_scaled_matmul(
     a: TensorValue,
     b: TensorValue,

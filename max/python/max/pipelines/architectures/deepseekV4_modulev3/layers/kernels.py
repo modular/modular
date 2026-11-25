@@ -52,6 +52,7 @@ __all__ = [
     "moe_create_indices_with_slots",
     "moe_router_group_limited",
     "quantize_dynamic_scaled_float8_grouped_mx",
+    "quantize_dynamic_scaled_float8_grouped_mx_gather",
     "replicated_rule",
     "rope_quantize_dynamic_block_scaled",
     "rope_ragged",
@@ -172,6 +173,10 @@ moe_create_indices_with_slots = F.functional(
 # Inside the routed body, on each device's own slots.
 quantize_dynamic_scaled_float8_grouped_mx = F.functional(
     kernels.quantize_dynamic_scaled_float8_grouped_mx, rule=replicated_rule(2)
+)
+quantize_dynamic_scaled_float8_grouped_mx_gather = F.functional(
+    kernels.quantize_dynamic_scaled_float8_grouped_mx_gather,
+    rule=replicated_rule(2),
 )
 # Every device routes the same replicated scores to the same experts.
 moe_router_group_limited = F.functional(
