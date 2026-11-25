@@ -307,7 +307,7 @@ private:
   /// `verifiedBindings`, when provided, are the bindings already inferred
   /// against `fnDecl`'s signature under this set's contextual type.
   PValue getCallee(ASTDecl *fnDecl,
-                   const VerifiedParamBindings &verifiedBindings) const;
+                   VerifiedParamBindings &verifiedBindings) const;
   PValue getCallee(ASTDecl *fnDecl) const;
 };
 

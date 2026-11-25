@@ -120,7 +120,7 @@ static bool diagnoseReferenceFromOwnFnBody(ASTDecl &fnDecl, SharedState &shared,
 
 TypedAttr LIT::getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
                                          StructTypeGenerator ctxGen,
-                                         const VerifiedParamBindings &verified,
+                                         VerifiedParamBindings &verified,
                                          ASTDecl &useScope, SMLoc useLoc) {
   if (diagnoseReferenceFromOwnFnBody(fnDecl, shared, useScope, useLoc))
     return {};
@@ -151,18 +151,20 @@ TypedAttr LIT::getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   auto ctxBoundFn = GeneratorAttr::get(signature.getInputParamTypes(), body,
                                        signature.getParamListAttrs());
 
+  FailureOr<ParamsBindingArrayAttr> bindings = verified.materializeBinding();
+  if (failed(bindings))
+    return {};
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       ctxBoundFn.getContext(), verified.getDischargedBodyConstraints());
-  return BindParamsAttr::get(ctxBoundFn.getContext(), ctxBoundFn,
-                             verified.getBindings(), discharged,
-                             /*resultType=*/{}, &evalContext);
+  return BindParamsAttr::get(ctxBoundFn.getContext(), ctxBoundFn, *bindings,
+                             discharged, /*resultType=*/{}, &evalContext);
 }
 
 /// Utility function to perform substitutions of the bindings into the symbol
 /// for the given function declaration. It returns the resultant
 /// function reference or produces an error message and returns null.
 TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                                      const VerifiedParamBindings &verified,
+                                      VerifiedParamBindings &verified,
                                       ASTDecl &useScope, SMLoc useLoc) {
   if (auto *defDecl = dyn_cast<DefASTDecl>(&fnDecl); defDecl) {
     FnOp funcOp = defDecl->getOp();
@@ -171,8 +173,11 @@ TypedAttr LIT::getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
 
     assert(!isa<TraitDeclOp>(funcOp->getParentOp()) &&
            "trait witness should always retrieved from a witness entry");
+    FailureOr<ParamsBindingArrayAttr> bindings = verified.materializeBinding();
+    if (failed(bindings))
+      return {};
     return funcOp.getFuncLiteralGenerator(
-        shared.getEvaluationContext(), verified.getBindings(),
+        shared.getEvaluationContext(), *bindings,
         verified.getDischargedBodyConstraints());
   }
 

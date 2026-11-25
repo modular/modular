@@ -153,6 +153,9 @@ private:
   /// concrete real value).
   llvm::BitVector explicitlyUnboundParams;
 
+  // A list of parameter that need to be re-emitted.
+  ParamToReEmitList paramsNeedReEmissionList;
+
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
   bool isInferForStruct = false;

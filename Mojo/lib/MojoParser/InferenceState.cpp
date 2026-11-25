@@ -18,6 +18,8 @@
 #include "Mojo/MojoParser/SharedState.h"
 #include "Mojo/lib/MojoParser/ExprNodes.h"
 #include "Mojo/lib/MojoParser/IREmitter.h"
+#include "Mojo/lib/MojoParser/ParserEvaluationContext.h"
+#include "llvm/ADT/ScopeExit.h"
 
 using namespace M;
 using namespace M::KGEN;
@@ -217,6 +219,47 @@ LogicalResult InferenceState::checkBodyConstraints(
     if (provenConstraints[i])
       dischargedBodyConstraints.set(idx);
 
+  return success();
+}
+
+LogicalResult VerifiedParamBindings::reEmitIfNecessary() {
+  if (paramsNeedReEmission.empty())
+    return success();
+
+  // If the binding has been reset, but re-emission is not resolved, we already
+  // hit a re-emission failure.
+  if (!bindings)
+    return failure();
+
+  IREmitter emitter(*declScope, EC_ParameterList);
+  SmallVector<TypedAttr> values = bindings.getDenseBindingArray();
+  for (auto [info, binding] : paramsNeedReEmission) {
+    size_t paramIdx = info.operandIdx;
+    // Inference bound an `UnknownAttr` of the fully concretized expected type
+    // as a placeholder.
+    Type expectedType = values[paramIdx].getType();
+
+    if (info.isNeedingOrigins()) {
+      if (info.getNeedingOrigins().argConvention != ArgConvention::OwnedMem)
+        binding.ir = PMBValue::getFromPValue(binding.ir.getIfPValue());
+      else
+        binding.ir = PMRValue::getFromPValue(binding.ir.getIfPValue());
+    }
+
+    // Issue the conversion with a comptime.origin ref.
+    PValue value = emitter.emitPValue({binding.ir, binding.expr},
+                                      EC_ParameterList, expectedType);
+    if (!value) {
+      // Record a failure
+      bindings = nullptr;
+      return failure();
+    }
+    values[paramIdx] = value.get();
+  }
+
+  // Mark as resolved.
+  paramsNeedReEmission.clear();
+  bindings = ParamsBindingArrayAttr::get(bindings.getContext(), values);
   return success();
 }
 

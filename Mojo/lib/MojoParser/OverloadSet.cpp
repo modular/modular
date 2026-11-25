@@ -179,12 +179,12 @@ static SMLoc getAttributeNameLoc(const ExprNode *expr) {
 }
 
 PValue OverloadSet::getCallee(ASTDecl *fnDecl) const {
-  return getCallee(fnDecl, VerifiedParamBindings());
+  VerifiedParamBindings emptyBindings;
+  return getCallee(fnDecl, emptyBindings);
 }
 
-PValue
-OverloadSet::getCallee(ASTDecl *fnDecl,
-                       const VerifiedParamBindings &verifiedBindings) const {
+PValue OverloadSet::getCallee(ASTDecl *fnDecl,
+                              VerifiedParamBindings &verifiedBindings) const {
   ParamBindings paramBindings = getParamBindings(fnDecl);
   // Check deprecation and stability warnings for the resolved function.
   // For method calls (instance or static via attribute access), compute the
@@ -1092,8 +1092,8 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
                        /*declIfDirect=*/nullptr,
                        /*discardError=*/true, additionalAssumptions);
     VerifiedParamBindings newBindings = inference.inferForStruct();
-    if (!newBindings)
-      return {{}, nullptr}; // If there is an error, return the problem.
+    if (!newBindings) // On error, return the problem.
+      return {VerifiedParamBindings(), nullptr};
 
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
@@ -1591,12 +1591,18 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
         operands.dest.resetForError(*this);
         return {};
       }
-      const VerifiedParamBindings &paramBindings = fitness.getParamBindings();
+      VerifiedParamBindings &paramBindings = fitness.getParamBindings();
+      FailureOr<ParamsBindingArrayAttr> bindings =
+          paramBindings.materializeBinding();
+      if (failed(bindings)) {
+        operands.dest.resetForError(*this);
+        return {};
+      }
       auto discharged = KGEN::getDenseBoolArrayAttr(
           getContext(), paramBindings.getDischargedBodyConstraints());
       Location loc = translateLocation(callExpr->getLoc());
-      auto bindOp = BindParamsOp::create(
-          *builder, loc, calleeVal, paramBindings.getBindings(), discharged);
+      auto bindOp =
+          BindParamsOp::create(*builder, loc, calleeVal, *bindings, discharged);
       boundCalleeRV = SRValue(bindOp.getResult());
     }
   }

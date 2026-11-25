@@ -283,7 +283,12 @@ struct OperandNeedingReEmission {
     ArgConvention argConvention;
   };
 
-  SmartVariant<NeedingOrigins> storage;
+  struct Lambda {
+    FnTypeGeneratorType ctxSig;
+    bool isThin;
+  };
+
+  SmartVariant<NeedingOrigins, Lambda> storage;
 
   static OperandNeedingReEmission
   getNeedingOrigin(size_t operandIdx, ASTType expectedArgType,
@@ -291,10 +296,18 @@ struct OperandNeedingReEmission {
     return {operandIdx, NeedingOrigins{expectedArgType, argConvention}};
   }
 
+  static OperandNeedingReEmission
+  getLambda(size_t operandIdx, FnTypeGeneratorType ctxSig, bool isThin) {
+    return {operandIdx, Lambda{ctxSig, isThin}};
+  }
+
   bool isNeedingOrigins() const { return isa<NeedingOrigins>(storage); }
   const NeedingOrigins &getNeedingOrigins() const {
     return cast<NeedingOrigins>(storage);
   }
+
+  bool isLambdas() const { return isa<Lambda>(storage); }
+  const Lambda &getLambdas() const { return cast<Lambda>(storage); }
 };
 
 using OperandsNeedingReEmissionList = std::vector<OperandNeedingReEmission>;

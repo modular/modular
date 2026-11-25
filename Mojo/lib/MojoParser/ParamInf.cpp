@@ -242,8 +242,7 @@ FailureOr<SmartVariant<CValue, ASTType>> ParamInf::inferCValue(
     }();
 
     if (!ctxSig) {
-      // TODO: we can try implicit conversion if allowed before concluding
-      // unmatchable.
+      // TODO: we should try implicit conversion before concluding unmatchable.
       emitWrongTypeDiag(expectedType);
       // TODO: better message.
       return failure();
@@ -264,16 +263,43 @@ FailureOr<SmartVariant<CValue, ASTType>> ParamInf::inferCValue(
                          /*allowImplicitConversion=*/false);
     ParamMatcher::FailableScope lambdaMatchingScope(matcher);
     // This is the contextual type.
+    auto expectedSig = ctxSig->first;
     auto partialSig = lambdaUVal.getPartialSignature();
-    if (failed(matcher.matchFunctionTypes(partialSig, ctxSig->first, true))) {
+    if (failed(matcher.matchFunctionTypes(partialSig, expectedSig, true))) {
       auto &diag = emitWrongTypeDiag(expectedType);
       matcher.failureReason->addExplanation(diag);
-
       lambdaMatchingScope.revert();
       return failure();
     }
 
-    // TODO: Handle emission up on a successful match
+    // Matching above might have made progress on inference, at this point if
+    // contextual sig is still not concrete, emit a error.
+    expectedSig =
+        cast<FnTypeGeneratorType>(evaluator.getReboundType(expectedSig));
+    if (auto unresolved = findOneReference(expectedSig)) {
+      auto &diag = emitWrongTypeDiag(expectedType);
+      MatchFailure(MatchFailure::DependsOnUnresolved(*unresolved))
+          .addExplanation(diag);
+      return failure();
+    }
+
+    // Similar to how we handle operands that need origins, we need to lazily
+    // emit a closure struct for the lambda since we are uncertain that the
+    // candidate being inferences here will be selected. Given it a
+    // `UnknownAttr` as a place holder at the moment but register the lambda in
+    // the re-emission list s.t. the UValue will be turned into a CValue only
+    // when the candidate is picked.
+    if (failed(matcher.matchParams(
+            UnknownAttr::get(expectedType.extractMetaType()),
+            PValue(expectedType)))) {
+      auto &diag = emitWrongTypeDiag(expectedType);
+      matcher.failureReason->addExplanation(diag);
+      lambdaMatchingScope.revert();
+    }
+    // We need to a re
+    assert(forwardedNeedingReEmission);
+    // TODO: emit a error
+    // return failure();
     llvm_unreachable("Not implemented!");
   }
 
@@ -653,13 +679,37 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
     return TypedAttr(); // Deferred
   }
 
-  // If we have a UValue or something else, convert it to a PValue.
+  // If the parameter emission need to be deferred (i.e., Refining a
+  // LambdaUValue would require synthesizing a closure struct), we only want to
+  // do it if we are sure that the parameter binding is going to be used.
+  auto deferReEmissions = [&](OperandsNeedingReEmissionList &forwarded,
+                              Type expectedType) -> TypedAttr {
+    if (forwarded.empty()) // nothing to be re-emit.
+      return TypedAttr();
+
+    assertLegalForwardedReEmission(forwarded);
+    auto &toReEmitted = forwarded.front();
+    toReEmitted.operandIdx = paramIdx;
+
+    this->paramsNeedReEmissionList.emplace_back(toReEmitted, binding);
+    expectedType = evaluator.getReboundType(expectedType);
+    assert(!hasReferences(expectedType));
+    return UnknownAttr::get(expectedType);
+  };
+
+  // If we have a UValue or something else, convert it to a PValue.  We don't
+  // eagerly convert lambda to a concrete PValue, since that would require
+  // synthesizing a closure struct.
   if (!binding.ir.getIfPValue()) {
-    FailureOr<SmartVariant<CValue, ASTType>> cvOr =
-        inferCValue(binding, paramIdx, declaredParamPogs,
-                    CallSyntax::kParamBindings, expectedType);
+    OperandsNeedingReEmissionList paramNeedingReEmission;
+    FailureOr<SmartVariant<CValue, ASTType>> cvOr = inferCValue(
+        binding, paramIdx, declaredParamPogs, CallSyntax::kParamBindings,
+        expectedType, &paramNeedingReEmission);
     if (failed(cvOr))
       return failure();
+
+    if (auto deferred = deferReEmissions(paramNeedingReEmission, expectedType))
+      return deferred;
 
     CValue argVal = dyn_cast<CValue>(*cvOr);
     // If we had an initializer list this will succeed but not actually create
@@ -696,27 +746,10 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
                                &paramNeedingReEmission)))
       return failure();
 
-    // inferFromRVType above might have refined the expected type.
     expectedType = evaluator.getReboundType(expectedType);
-    if (!paramNeedingReEmission.empty()) {
-      assertLegalForwardedReEmission(paramNeedingReEmission);
-      // If we take the implicit conversion path and need to turn the value into
-      // a reference. The expected type must have be fully concretized in order
-      // for conversion to be successful.
-      assert(!hasReferences(expectedType));
 
-      if (paramNeedingReEmission.front().getNeedingOrigins().argConvention !=
-          ArgConvention::OwnedMem)
-        binding.ir = PMBValue::getFromPValue(binding.ir.getIfPValue());
-      else
-        binding.ir = PMRValue::getFromPValue(binding.ir.getIfPValue());
-
-      // Eagerly issue the conversion right away with a comptime.origin ref.
-      return emitter
-          .emitPValue({binding.ir, binding.expr}, EC_ParameterList,
-                      expectedType)
-          .get();
-    }
+    if (auto deferred = deferReEmissions(paramNeedingReEmission, expectedType))
+      return deferred;
   }
 
   if (hasReferences(expectedType)) {
@@ -1059,7 +1092,8 @@ VerifiedParamBindings ParamInf::inferForStruct() {
                                                  evaluator.getIndexBindings());
   return VerifiedParamBindings(rawBindings,
                                std::move(dischargedBodyConstraints),
-                               evaluator.getEvaluationContext());
+                               shared.getEvaluationContext(), getDeclScope(),
+                               std::move(paramsNeedReEmissionList));
 }
 
 // Infer any missing parameter from defaulted value (this is supposed to be
@@ -2479,5 +2513,6 @@ VerifiedParamBindings CallParamInf::inferForCall() {
                                                  evaluator.getIndexBindings());
   return VerifiedParamBindings(rawBindings,
                                std::move(dischargedBodyConstraints),
-                               evaluator.getEvaluationContext());
+                               shared.getEvaluationContext(), getDeclScope(),
+                               std::move(paramsNeedReEmissionList));
 }

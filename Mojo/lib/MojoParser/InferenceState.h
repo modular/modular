@@ -21,6 +21,7 @@
 #include "DeferredTypingContext.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/ParameterEvaluator.h"
+#include "Mojo/MojoParser/CallOperands.h"
 #include "Mojo/MojoParser/Constraints.h"
 #include "Mojo/MojoParser/MojoDiags.h"
 #include "llvm/Support/SaveAndRestore.h"
@@ -39,6 +40,7 @@ class ParamInf;
 class ParamMatcher;
 class SharedState;
 class StructDeclOp;
+class ParserEvaluationContext;
 
 //===----------------------------------------------------------------------===//
 // VerifiedParamBindings
@@ -52,9 +54,17 @@ class StructDeclOp;
 /// A default-constructed (or null) value represents failed inference; users
 /// should check the truthiness of the value before invoking any specialization
 /// method.
+
+using ParamToReEmit = std::pair<OperandNeedingReEmission, ASTExprAnd<AnyValue>>;
+using ParamToReEmitList = std::vector<ParamToReEmit>;
+
 class VerifiedParamBindings {
 public:
   VerifiedParamBindings() = default;
+  VerifiedParamBindings(const VerifiedParamBindings &) = delete;
+  VerifiedParamBindings &operator=(const VerifiedParamBindings &) = delete;
+  VerifiedParamBindings(VerifiedParamBindings &&) = default;
+  VerifiedParamBindings &operator=(VerifiedParamBindings &&) = default;
 
   /// Truthiness reflects whether inference succeeded (i.e. the underlying
   /// `ParamsBindingArrayAttr` is non-null). Note that a successful inference
@@ -64,9 +74,16 @@ public:
   bool empty() const { return size() == 0; }
   size_t size() const { return bindings ? bindings.size() : 0; }
 
-  /// Return the bindings, with one entry per parameter of the verified
-  /// signature.
-  ParamsBindingArrayAttr getBindings() const { return bindings; }
+  /// Materialize the bindings, with one entry per parameter of the verified
+  /// signature, or failure if emitting a deferred binding failed.
+  FailureOr<ParamsBindingArrayAttr> materializeBinding() {
+    // Null `bindings` with nothing to re-emit means "no bindings" (e.g. a
+    // plain function reference), which is not a failure.
+    if (failed(reEmitIfNecessary()))
+      return failure();
+    assert(paramsNeedReEmission.empty());
+    return bindings;
+  }
 
   /// Return one value per parameter, null where the parameter is unbound.
   SmallVector<TypedAttr> getDenseBindingArray() const {
@@ -96,14 +113,24 @@ public:
 private:
   VerifiedParamBindings(ParamsBindingArrayAttr bindings,
                         llvm::BitVector dischargedBodyConstraints,
-                        ParameterEvaluationContext *evaluationContext)
+                        ParserEvaluationContext &evaluationContext,
+                        ASTDecl &declScope,
+                        ParamToReEmitList &&paramsNeedReEmission)
       : bindings(bindings),
         dischargedBodyConstraints(std::move(dischargedBodyConstraints)),
-        evaluationContext(evaluationContext) {}
+        evaluationContext(&evaluationContext), declScope(&declScope),
+        paramsNeedReEmission(std::move(paramsNeedReEmission)) {}
 
   ParamsBindingArrayAttr bindings;
   llvm::BitVector dischargedBodyConstraints;
-  ParameterEvaluationContext *evaluationContext = nullptr;
+  ParserEvaluationContext *evaluationContext = nullptr;
+
+  ASTDecl *declScope = nullptr;
+  ParamToReEmitList paramsNeedReEmission;
+
+  /// Emit the deferred parameter bindings and replace their placeholders in
+  /// `bindings`, set bindings to nullptr when failed
+  LogicalResult reEmitIfNecessary();
 
   friend class CallParamInf;
   friend class ParamInf;

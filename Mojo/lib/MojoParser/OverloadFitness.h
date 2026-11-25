@@ -42,8 +42,7 @@ public:
       takeDiag().abandon();
   }
 
-  /// Return the parameter bindings if the candidate is valid.
-  const VerifiedParamBindings &getParamBindings() const {
+  VerifiedParamBindings &getParamBindings() {
     assert(getValidity() >= Validity::kFunctionConstraintInconclusive);
     return paramBindings;
   }

@@ -154,7 +154,7 @@ void emitUnprovableConstraintsFromFitness(
 /// for the given function declaration. It returns the resultant
 /// function reference or produces an error message and returns null.
 TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                                 const VerifiedParamBindings &verifiedBindings,
+                                 VerifiedParamBindings &verifiedBindings,
                                  ASTDecl &useScope, SMLoc useLoc);
 
 /// Like `getBoundConstAttrForFn`, for a struct method looked up through a
@@ -164,11 +164,10 @@ TypedAttr getBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
 /// the generator's inputs rather than the struct's parameters, so the callee
 /// is first partially bound to `ctxGen` and the bindings are applied
 /// to that.
-TypedAttr
-getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
-                          StructTypeGenerator ctxGen,
-                          const VerifiedParamBindings &verifiedBindings,
-                          ASTDecl &useScope, SMLoc useLoc);
+TypedAttr getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
+                                    StructTypeGenerator ctxGen,
+                                    VerifiedParamBindings &verifiedBindings,
+                                    ASTDecl &useScope, SMLoc useLoc);
 
 } // namespace M::KGEN::LIT
 
