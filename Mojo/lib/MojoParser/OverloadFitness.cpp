@@ -273,7 +273,7 @@ OverloadFitness::evaluateDirectCall(ASTDecl *candidate,
 
   OverloadFitness fitness(
       std::move(bindings),
-      /*noArgsNeedingOrigins*/ OperandsNeedingOriginsList());
+      /*noArgsNeedingReEmission*/ OperandsNeedingReEmissionList());
   fitness.unprovableConstraints =
       std::move(inference.bodyUnprovableConstraints);
   return fitness;
@@ -410,12 +410,12 @@ OverloadFitness OverloadFitness::evaluateImpl(
     return std::move(*stagedDiag);
 
   // Check that the signature can be rebound with this set of bindings.
-  OperandsNeedingOriginsList operandsNeedingOrigins;
+  OperandsNeedingReEmissionList operandsNeedingReEmission;
   CallParamInf inference(
       paramBindings, signature.getInputParamTypes(),
       signature.getParamListAttrs(), allowImplicitConversions, funcIfDirect,
       /*discardError=*/false, signature, operands, pogAssignment,
-      operandsNeedingOrigins, additionalAssumptions);
+      operandsNeedingReEmission, additionalAssumptions);
   VerifiedParamBindings verifiedBindings = inference.inferForCall();
   if (!verifiedBindings) {
     // Failed inference must have emitted a diagnostic.
@@ -432,7 +432,7 @@ OverloadFitness OverloadFitness::evaluateImpl(
 
   // This is the result we will return if we succeed.
   OverloadFitness result(std::move(verifiedBindings),
-                         std::move(operandsNeedingOrigins));
+                         std::move(operandsNeedingReEmission));
   result.unprovableConstraints = std::move(inference.bodyUnprovableConstraints);
 
   // Get the overload ranking metrics.

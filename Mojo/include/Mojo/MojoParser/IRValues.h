@@ -475,6 +475,10 @@ public:
 
   CValue emitAsCValue(IREmitter &emitter, ExprDest &dest);
 
+  bool mightBeThin() const {
+    return !getCaptureAllByConvention().has_value() && getCaptures().empty();
+  }
+
 private:
   struct LambdaWrapper;
   LambdaUValue(RCRef<LambdaWrapper> storage);

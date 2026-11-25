@@ -72,31 +72,27 @@ def use_decorated_struct(s: DecoratedStruct):
     pass
 
 
-# expected-note @below {{candidate not viable: missing required argument: 'move'}}
-# expected-note @below {{def __init__(out self, *, deinit move: Self)    # note - generated function}}
 struct SharedOnly:
     var x: Int
 
-    # expected-note @below {{candidate not viable: cannot initialize a value in address space '0' with an initializer for address space '2'}}
-    # expected-note @below {{candidate not viable: cannot initialize a value in address space '4' with an initializer for address space '2'}}
-    # expected-note @below {{candidate not viable: cannot initialize a value in address space 'addr_space' with an initializer for address space '2'}}
+    # expected-note @below {{function declared here}}
     def __init__(out[AddressSpace.SHARED] self):
         self.x = 0
 
 
 def wrong_address_space_for_initializer[addr_space: AddressSpace]():
-    var a = SharedOnly()  # expected-error {{no matching function in initialization}}
+    var a = SharedOnly()  # expected-error {{invalid initialization: cannot initialize a value in address space '0' with an initializer for address space '2'}}
 
     @__address_space(.LOCAL)
-    var b = SharedOnly()  # expected-error {{no matching function in initialization}}
+    var b = SharedOnly()  # expected-error {{invalid initialization: cannot initialize a value in address space '4' with an initializer for address space '2'}}
 
     @__address_space(addr_space)
-    var c = SharedOnly()  # expected-error {{no matching function in initialization}}
+    var c = SharedOnly()  # expected-error {{invalid initialization: cannot initialize a value in address space 'addr_space' with an initializer for address space '2'}}
 
 
 def match_on_constructed_subject():
     # The subject is a temporary in the default address space.
-    match SharedOnly():  # expected-error {{no matching function in initialization}}
+    match SharedOnly():  # expected-error {{invalid initialization: cannot initialize a value in address space '0' with an initializer for address space '2'}}
         case var y:
             _ = y.x
 

@@ -71,17 +71,24 @@ static Type inferInitializerType(ASTDecl &declScope, InitializerUValue &init,
       .getUserResultType();
 }
 
-static void assertLegalForwardedOperandOrigins(
-    [[maybe_unused]] const OperandsNeedingOriginsList &needingOrigins) {
+/// Returns the convention a spilled operand for `argIdx` of `signature` is
+/// bound with. A variadic argument binds each element with its variadic
+/// convention.
+static ArgConvention getSpillConvention(FnTypeGeneratorType signature,
+                                        size_t argIdx) {
+  if (signature.isPosVarArg(argIdx) || signature.isPack(argIdx))
+    return signature.getVariadicConvention(argIdx);
+  return signature.getArgConvention(argIdx);
+}
+
+static void assertLegalForwardedReEmission(
+    [[maybe_unused]] const OperandsNeedingReEmissionList &needingReEmission) {
   // Since we must have picked a single argument implicit conversion, make sure
   // nothing surprising happened...
-  assert(needingOrigins.size() == 1 &&
+  assert(needingReEmission.size() == 1 &&
          "implicit conversion must spill exactly one operand");
-  // must be an __init__(ref ..., out self).
-  assert(needingOrigins.front().argIdx == 0 &&
-         "the spilled operand must be the ctor's first argument");
-  assert(needingOrigins.front().operandIdx !=
-             OperandNeedingOrigin::kExprDestOperandIdx &&
+  assert(needingReEmission.front().operandIdx !=
+             OperandNeedingReEmission::kExprDestOperandIdx &&
          "the spilled operand must be a real operand, not the ExprDest");
 }
 
@@ -132,11 +139,10 @@ void emitWrongTypeDiag(MojoInflightDiag &diag, ASTExprAnd<AnyValue> operand,
 /// do so if that would require generating dynamic logic (e.g. creating an
 /// instance of a value due to an initializer list).  In that case it returns
 /// the inferred type of the result.
-FailureOr<SmartVariant<CValue, ASTType>>
-ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
-                      PogListAttr argPogs, CallSyntax syntax,
-                      ASTType expectedType,
-                      OperandsNeedingOriginsList *forwardedNeedingOrigins) {
+FailureOr<SmartVariant<CValue, ASTType>> ParamInf::inferCValue(
+    ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
+    CallSyntax syntax, ASTType expectedType,
+    OperandsNeedingReEmissionList *forwardedNeedingReEmission) {
   // If this is already a CValue then we're done.
   if (auto cv = operand.ir.getIfCValue())
     return SmartVariant<CValue, ASTType>(cv);
@@ -192,7 +198,7 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
                                 EC_OverloadResolution, {operand});
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
           expectedType.extractAndRelinkParamRef(getShared()), callOperands,
-          getDeclScope(), forwardedNeedingOrigins);
+          getDeclScope(), forwardedNeedingReEmission);
 
       // If we found one, we succeed if the returned type is compatible with the
       // expected type.  Infer the parameters of this overload candidate against
@@ -224,25 +230,53 @@ ParamInf::inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx,
   }
 
   if (auto lambdaUVal = operand.ir.getIfLambda()) {
-    if (auto expectedTrait =
-            dyn_cast<TraitType>(expectedType.extractMetaType())) {
-      if (auto expected = extractClosureSymbol(shared, expectedTrait)) {
-        // We don't allow implicit conversion when matching against a partially
-        // typed lambda.
-        ParamMatcher matcher(operand.expr, *this,
-                             /*allowImplicitConversion=*/false);
-        ParamMatcher::FailableScope lambdaMatchingScope(matcher);
-        // This is the contextual type.
-        auto partialSig = lambdaUVal.getPartialSignature();
-        auto expectedSig = shared.getClosureFnSigWithoutSelf(expected);
-        if (failed(matcher.matchFunctionTypes(partialSig, expectedSig, true))) {
-          lambdaMatchingScope.revert();
-          return failure();
-        }
-        llvm_unreachable("Not implemented!");
+    auto ctxSig = [&]() -> std::optional<std::pair<FnTypeGeneratorType, bool>> {
+      if (auto trait = dyn_cast<TraitType>(expectedType.extractMetaType())) {
+        if (auto expected = extractClosureSymbol(shared, trait))
+          return std::make_pair(shared.getClosureFnSigWithoutSelf(expected),
+                                /*isThin=*/false);
+      } else if (auto sig = dyn_cast<FnTypeGeneratorType>(expectedType)) {
+        return std::make_pair(sig, /*isThin=*/true);
       }
+      return std::nullopt;
+    }();
+
+    if (!ctxSig) {
+      // TODO: we can try implicit conversion if allowed before concluding
+      // unmatchable.
+      emitWrongTypeDiag(expectedType);
+      // TODO: better message.
+      return failure();
     }
+
+    // If this contextual type is thin, but lambda has a explicit capture
+    // list, we can not match.
+    if (ctxSig->second && !lambdaUVal.mightBeThin()) {
+      auto &diag = emitWrongTypeDiag(expectedType);
+      diag << ", lambda operand has captures but expected type requires no "
+              "captures.";
+      return failure();
+    }
+
+    // We don't allow implicit conversion when matching against a partially
+    // typed lambda.
+    ParamMatcher matcher(operand.expr, *this,
+                         /*allowImplicitConversion=*/false);
+    ParamMatcher::FailableScope lambdaMatchingScope(matcher);
+    // This is the contextual type.
+    auto partialSig = lambdaUVal.getPartialSignature();
+    if (failed(matcher.matchFunctionTypes(partialSig, ctxSig->first, true))) {
+      auto &diag = emitWrongTypeDiag(expectedType);
+      matcher.failureReason->addExplanation(diag);
+
+      lambdaMatchingScope.revert();
+      return failure();
+    }
+
+    // TODO: Handle emission up on a successful match
+    llvm_unreachable("Not implemented!");
   }
+
   auto orValue = operand.ir.getIfOverloadSet();
   assert(orValue && "Unknown UValue!");
 
@@ -305,11 +339,10 @@ static bool isSelfArg(ASTDecl *declIfKnown, size_t argIdx, CallSyntax syntax,
 /// while 'OverloadFitness::scoreOperandFitness' computes fitness metrics
 /// after inference is complete. They serve different phases of overload
 /// resolution and should remain separate.
-LogicalResult
-ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
-                          ASTType expectedType, PogListAttr argPogs,
-                          CallSyntax syntax,
-                          OperandsNeedingOriginsList *forwardedNeedingOrigins) {
+LogicalResult ParamInf::inferFromRVType(
+    ASTExprAnd<AnyValue> operand, size_t argIdx, ASTType expectedType,
+    PogListAttr argPogs, CallSyntax syntax,
+    OperandsNeedingReEmissionList *forwardedNeedingReEmission) {
   // Make sure the diagnostic machinery knows about our getDeclScope() so
   // parameter names get emitted correctly.
   DeclResolver::DiagnosticDeclContextChanger x(declIfKnown);
@@ -326,8 +359,9 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
   // Okay, we got a normal value argument convention and stripped off any
   // ArgConvention-related !lit.ref from the expected type.  See if we can
   // resolve the argument to a CValue.
-  FailureOr<SmartVariant<CValue, ASTType>> argValOr = inferCValue(
-      operand, argIdx, argPogs, syntax, expectedType, forwardedNeedingOrigins);
+  FailureOr<SmartVariant<CValue, ASTType>> argValOr =
+      inferCValue(operand, argIdx, argPogs, syntax, expectedType,
+                  forwardedNeedingReEmission);
   if (failed(argValOr))
     return failure();
   CValue argVal = dyn_cast<CValue>(*argValOr);
@@ -460,12 +494,13 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
     // contain unbound parameters into inputs of a generator, so inference can
     // find them.
     auto getImplicitConvertTarget =
-        [&](CValue argVal, OperandsNeedingOriginsList *needingOrigins) -> Type {
+        [&](CValue argVal,
+            OperandsNeedingReEmissionList *needingReEmission) -> Type {
       CallOperands ctorOperands(CallSyntax::kImplicitConvert, operand.expr,
                                 EC_TypeParamValue, {{argVal, operand.expr}});
       auto nonParamType = expectedType.extractAndRelinkParamRef(getShared());
       FailureOr<CalleeResult> pValue = OverloadSet::canConstructType(
-          nonParamType, ctorOperands, getDeclScope(), needingOrigins);
+          nonParamType, ctorOperands, getDeclScope(), needingReEmission);
       if (failed(pValue) || !pValue->isYes())
         return {};
 
@@ -477,21 +512,23 @@ ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand, size_t argIdx,
       return initSig.getUserResultType();
     };
 
-    Type targetType = getImplicitConvertTarget(argVal, forwardedNeedingOrigins);
+    Type targetType =
+        getImplicitConvertTarget(argVal, forwardedNeedingReEmission);
     if (syntax == CallSyntax::kParamBindings && targetType &&
-        forwardedNeedingOrigins && !forwardedNeedingOrigins->empty()) {
+        forwardedNeedingReEmission && !forwardedNeedingReEmission->empty()) {
       // The implicit ctor picked during `inferFromRVType` must only take one
       // argument, so the spill can only be for its first argument.
-      assertLegalForwardedOperandOrigins(*forwardedNeedingOrigins);
-      OperandNeedingOrigin forwarded = forwardedNeedingOrigins->front();
+      assertLegalForwardedReEmission(*forwardedNeedingReEmission);
+      OperandNeedingReEmission forwarded = forwardedNeedingReEmission->front();
       // Do the inference with a comptime.origin right away, we don't have to
       // wait till emission time for origin refinement PValues.
       CValue newVal;
-      if (forwarded.getArgConvention() != ArgConvention::OwnedMem)
+      if (forwarded.getNeedingOrigins().argConvention !=
+          ArgConvention::OwnedMem)
         newVal = PMBValue::getFromPValue(argVal.getIfPValue());
       else
         newVal = PMRValue::getFromPValue(argVal.getIfPValue());
-      targetType = getImplicitConvertTarget(newVal, forwardedNeedingOrigins);
+      targetType = getImplicitConvertTarget(newVal, forwardedNeedingReEmission);
       // Must succeed because the target type is already checked in the previous
       // call to `getImplicitConvertTarget`.
       assert(targetType);
@@ -653,22 +690,23 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   // from the value directly, but also inferring as a result of implicit
   // conversions.
   if (hasReferences(expectedType)) {
-    OperandsNeedingOriginsList paramOrigins;
+    OperandsNeedingReEmissionList paramNeedingReEmission;
     if (failed(inferFromRVType(binding, paramIdx, expectedType,
                                declaredParamPogs, CallSyntax::kParamBindings,
-                               &paramOrigins)))
+                               &paramNeedingReEmission)))
       return failure();
 
     // inferFromRVType above might have refined the expected type.
     expectedType = evaluator.getReboundType(expectedType);
-    if (!paramOrigins.empty()) {
-      assertLegalForwardedOperandOrigins(paramOrigins);
+    if (!paramNeedingReEmission.empty()) {
+      assertLegalForwardedReEmission(paramNeedingReEmission);
       // If we take the implicit conversion path and need to turn the value into
       // a reference. The expected type must have be fully concretized in order
       // for conversion to be successful.
       assert(!hasReferences(expectedType));
 
-      if (paramOrigins.front().getArgConvention() != ArgConvention::OwnedMem)
+      if (paramNeedingReEmission.front().getNeedingOrigins().argConvention !=
+          ArgConvention::OwnedMem)
         binding.ir = PMBValue::getFromPValue(binding.ir.getIfPValue());
       else
         binding.ir = PMRValue::getFromPValue(binding.ir.getIfPValue());
@@ -1425,22 +1463,20 @@ LogicalResult ParamInf::finalizeWithUnbound() {
 // CallParamInf Implementation
 //===----------------------------------------------------------------------===//
 
-CallParamInf::CallParamInf(const ParamBindings &paramBinding,
-                           ArrayRef<Type> declaredParamTypes,
-                           PogListAttr declaredParamPogs,
-                           bool allowImplicitConversions, ASTDecl *declIfDirect,
-                           bool discardError,
-                           FnTypeGeneratorType calleeSignature,
-                           const CallOperands &callOperands,
-                           const CallOperands::PogAssignment &pogAssignment,
-                           OperandsNeedingOriginsList &operandsNeedingOrigins,
-                           TypedAttr additionalAssumptions)
+CallParamInf::CallParamInf(
+    const ParamBindings &paramBinding, ArrayRef<Type> declaredParamTypes,
+    PogListAttr declaredParamPogs, bool allowImplicitConversions,
+    ASTDecl *declIfDirect, bool discardError,
+    FnTypeGeneratorType calleeSignature, const CallOperands &callOperands,
+    const CallOperands::PogAssignment &pogAssignment,
+    OperandsNeedingReEmissionList &operandsNeedingReEmission,
+    TypedAttr additionalAssumptions)
     : ParamInf(paramBinding, declaredParamTypes, declaredParamPogs,
                allowImplicitConversions, declIfDirect, discardError,
                additionalAssumptions),
       calleeSignature(calleeSignature), callOperands(callOperands),
       pogAssignment(pogAssignment),
-      operandsNeedingOrigins(operandsNeedingOrigins) {}
+      operandsNeedingReEmission(operandsNeedingReEmission) {}
 
 /// Check the expected type against the provided operand. This identifies any
 /// problems with the operand type, which it handled by emitting a diagnostic
@@ -1638,23 +1674,23 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   }
 
   // Call the core matching logic after handling the convention.
-  OperandsNeedingOriginsList forwardedNeedingOrigins;
+  OperandsNeedingReEmissionList forwardedNeedingReEmission;
   if (failed(inferFromRVType(operand, argIdx, expectedRVType, argPogs,
-                             callOperands.syntax, &forwardedNeedingOrigins)))
+                             callOperands.syntax, &forwardedNeedingReEmission)))
     return failure();
 
   // TODO: We can potentially generalize beyond `operand.ir.getIfCValue()`?
-  if (!needsArgInMemory && !forwardedNeedingOrigins.empty()) {
+  if (!needsArgInMemory && !forwardedNeedingReEmission.empty()) {
     // In order to construct the current argument, we need to to invoke a
     // implicit conversion that turns the argument into a memory value.  Keep
     // the conversion's signature and argument index, since the spill has to
     // satisfy the constructor rather than this call.
-    OperandNeedingOrigin forwarded = forwardedNeedingOrigins.front();
-    assertLegalForwardedOperandOrigins(forwardedNeedingOrigins);
+    OperandNeedingReEmission forwarded = forwardedNeedingReEmission.front();
+    assertLegalForwardedReEmission(forwardedNeedingReEmission);
 
     // Adjust the operand idx.
     forwarded.operandIdx = operandIdx;
-    operandsNeedingOrigins.push_back(forwarded);
+    operandsNeedingReEmission.push_back(forwarded);
   }
 
   // We may have refined expectedRVType.
@@ -1665,8 +1701,10 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   // selected from the overload set, but with the argument in a temporary
   // vardecl.
   if (needsArgInMemory)
-    operandsNeedingOrigins.push_back(
-        {operandIdx, argIdx, expectedRVType, calleeSignature});
+    operandsNeedingReEmission.push_back(
+        OperandNeedingReEmission::getNeedingOrigin(
+            operandIdx, expectedRVType,
+            getSpillConvention(calleeSignature, argIdx)));
 
   // If a register-passable type is being passed in-memory, remember this.
   if (expectedConvention != ArgConvention::ImmReg &&
@@ -1730,9 +1768,11 @@ LogicalResult CallParamInf::inferResultSlot(RefType expectedRef, size_t argIdx,
     // need the caller to spill the result into a temporary (the result slot)
     // and reinfer us. Until then, bind it as AnyOrigin to avoid failing to
     // infer the parameters.
-    operandsNeedingOrigins.push_back({OperandNeedingOrigin::kExprDestOperandIdx,
-                                      argIdx, expectedRef.getElementType(),
-                                      calleeSignature});
+    operandsNeedingReEmission.push_back(
+        OperandNeedingReEmission::getNeedingOrigin(
+            OperandNeedingReEmission::kExprDestOperandIdx,
+            expectedRef.getElementType(),
+            getSpillConvention(calleeSignature, argIdx)));
 
     if (needsOrigin)
       actualRef = expectedRef.getWithOrigin(
@@ -2010,9 +2050,10 @@ VerifiedParamBindings CallParamInf::inferForCall() {
       // The value isn't in memory (or isn't usable in memory) yet.  We will
       // tell call emission that it needs to dump it in memory and try again
       // to use this callee.  Until then, we use AnyOrigin as a placeholder.
-      operandsNeedingOrigins.push_back({operandIdx, argIdx,
-                                        evaluator.getReboundType(expectedType),
-                                        calleeSignature});
+      operandsNeedingReEmission.push_back(
+          OperandNeedingReEmission::getNeedingOrigin(
+              operandIdx, evaluator.getReboundType(expectedType),
+              getSpillConvention(calleeSignature, argIdx)));
       return AnyOriginAttr::get(expectedOriginType);
     };
 
