@@ -22,6 +22,14 @@ This version is still a work in progress.
   remain in scope on the normal path. This is analogous to features in Rust and
   Swift, and also supports `comptime guard`.
 
+- Added compile-time verification for the experimental
+  `@__nested_origins_read_only` decorator and
+  `__accesses("__nested_origins_read_only")` function-type clause. Mojo rejects
+  functions that claim read-only access but mutate or consume caller-provided
+  storage through parameters, aliases, embedded origins, or captures. The
+  legacy `@__unsafe_nested_origins_read_only` decorator remains unchecked
+  during migration.
+
 - `try` blocks now unify heterogeneous raised error types rather than selecting
   the first raised type. Mojo selects a common type when one exists, otherwise
   uses `Error`. It emits a compile-time error when the raised types cannot be

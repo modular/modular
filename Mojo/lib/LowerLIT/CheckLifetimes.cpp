@@ -187,6 +187,22 @@ insertDebugVariableForArg(OpBuilder &builder, FnOp func, BlockArgument arg,
   return varAttr;
 }
 
+// Render an origin to a string for use in diagnostics.
+static std::string getOriginStr(TypedAttr origin) {
+  std::string originStr;
+  llvm::raw_string_ostream originOs(originStr);
+  OriginPrinter().print(originOs, origin, /*elideOriginOf=*/true);
+  originOs.flush();
+
+  // We often end up look at the MLIR !lit.origin type but we want to complain
+  // about the user type for tidiness. Strip off a "._mlir_origin" suffix if
+  // present.
+  constexpr StringLiteral mlirOriginSuffix = "._mlir_origin";
+  if (StringRef(originStr).ends_with(mlirOriginSuffix))
+    originStr.resize(originStr.size() - mlirOriginSuffix.size());
+  return originStr;
+}
+
 //===----------------------------------------------------------------------===//
 // WholeProgramState
 //===----------------------------------------------------------------------===//
@@ -1104,6 +1120,10 @@ struct ValueSet {
   /// Return the function/closure we're analyzing.
   FnOp getFunc() const { return func; }
 
+  /// Diagnose a disallowed mutable access to an origin. Returns true if it
+  /// emitted a diagnostic.
+  void checkDisallowedOriginAccess(TypedAttr origin, Operation &op);
+
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
   ValueInfo &getValueInfo(size_t idx) { return valueInfos[idx]; }
@@ -1230,6 +1250,9 @@ private:
   /// This is a mapping of origin attrs to the value index that defines them,
   /// these origins have sugar canonicalized away.
   DenseMap<TypedAttr, unsigned> originToValueIndex;
+  /// Origins reachable through arguments and captures when this function
+  /// promises to access nested origins read-only.
+  SmallPtrSet<Attribute, 8> readOnlyInputOrigins;
 
   /// Add a value to the set that we are tracking.  This includes:
   ///  * the MLIR representation for the value itself
@@ -1239,6 +1262,45 @@ private:
                 DebugInfo::DILocalVariableAttr debugVariable);
 };
 } // namespace
+
+/// Return argument types after removing ABI conventions and closure capture
+/// reference wrappers. This ignores return and error slots.
+static SmallVector<Type> getUserArgTypes(FnOp func,
+                                         TypeDeclInfo &typeDeclInfo) {
+  SmallVector<Type> argTypes;
+  auto signature = func.getFuncTypeGenerator();
+  for (auto [argument, convention] :
+       llvm::zip(func.getArguments(), signature.getArgConventions())) {
+    if (isResultSlot(convention))
+      continue;
+
+    Type argumentType =
+        RefType::stripRefConvention(argument.getType(), convention);
+
+    // A closure's synthetic self stores reference captures in ref-typed
+    // fields. Their direct origins retain the capture convention, while
+    // origins nested in the captured values are read-only.
+    if (func.isSynthetic() && argument.getArgNumber() == 0) {
+      if (auto structType = sugarDynCast<LIT::StructType>(argumentType)) {
+        StructInfo structInfo = typeDeclInfo.getStructInfoForType(structType);
+        if (structInfo.decl.isSynthetic()) {
+          ParameterEvaluator evaluator = typeDeclInfo.getParameterEvaluator(
+              structInfo.decl.getInputParams(), structType.getParamValues());
+          for (StructFieldOp field : structInfo.decl.getFieldDecls()) {
+            Type fieldType = evaluator.getReboundType(field.getType());
+            if (auto refType = sugarDynCast<RefType>(fieldType))
+              fieldType = refType.getElementType();
+            argTypes.push_back(fieldType);
+          }
+          continue;
+        }
+      }
+    }
+
+    argTypes.push_back(argumentType);
+  }
+  return argTypes;
+}
 
 /// Initialize the value set with one entry, so index #0 is always invalid and
 /// can be used as a sentinel, and so a null Value is always treated as
@@ -1300,6 +1362,69 @@ ValueSet::ValueSet(PerThreadCache &perThreadCache, FnOp func,
                                                 pogList, funcSpAttr);
     if (auto trackable = OriginTrackable(arg))
       addValue(arg, trackable, debugVariable);
+  }
+
+  // If this functions has the @__nested_origins_read_only decorator, we collect
+  // any nested origins that we need to disable mutable accesses to.
+  if (!func.getFuncTypeGenerator().getIsEnforcedNestedOriginsReadOnly())
+    return;
+
+  auto signature = func.getFuncTypeGenerator();
+  SmallVector<Type> argTypes =
+      getUserArgTypes(func, perThreadCache.typeDeclInfo);
+  for (TypedAttr origin : getOriginFinder().findOriginsIn(
+           argTypes, signature.getCaptureOrigins())) {
+    SmallVector<TypedAttr> worklist{origin};
+    while (!worklist.empty()) {
+      origin = getCanonicalAttr(worklist.pop_back_val());
+      if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
+        llvm::append_range(worklist, unionAttr.getOperands());
+        continue;
+      }
+
+      origin = OriginMutCastAttr::strip(origin);
+      readOnlyInputOrigins.insert(origin);
+      if (auto field = dyn_cast<OriginFieldAttr>(origin))
+        worklist.push_back(field.getBase());
+      else if (auto interior = dyn_cast<InteriorOriginAttr>(origin))
+        worklist.push_back(interior.getBase());
+      else if (auto subtree = dyn_cast<OriginSubtreeAttr>(origin))
+        worklist.push_back(subtree.getBase());
+    }
+  }
+}
+
+/// Diagnose a disallowed mutable access to an origin.
+void ValueSet::checkDisallowedOriginAccess(TypedAttr origin, Operation &op) {
+  // If we have no origins with customized access, we can exit early.
+  if (readOnlyInputOrigins.empty() ||
+      // Read-only accesses or accesses to parametrically mutable origins are
+      // fine because the callee could not mutate them.
+      !OriginType::isMutableKnown(origin, /*value=*/true))
+    return;
+
+  SmallVector<TypedAttr> worklist{origin};
+  while (!worklist.empty()) {
+    TypedAttr candidate = getCanonicalAttr(worklist.pop_back_val());
+    if (auto unionAttr = dyn_cast<OriginUnionAttr>(candidate)) {
+      llvm::append_range(worklist, unionAttr.getOperands());
+      continue;
+    }
+    candidate = OriginMutCastAttr::strip(candidate);
+    if (readOnlyInputOrigins.contains(candidate)) {
+      emitError(op.getLoc())
+          << "function marked '__nested_origins_read_only' may not mutably "
+             "access origin '"
+          << getOriginStr(origin) << "'";
+      markErrorEmitted();
+      return;
+    }
+    if (auto field = dyn_cast<OriginFieldAttr>(candidate))
+      worklist.push_back(field.getBase());
+    else if (auto interior = dyn_cast<InteriorOriginAttr>(candidate))
+      worklist.push_back(interior.getBase());
+    else if (auto subtree = dyn_cast<OriginSubtreeAttr>(candidate))
+      worklist.push_back(subtree.getBase());
   }
 }
 
@@ -2492,6 +2617,12 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
   // Verify that any accessed interior origins are also live.
   for (auto origin : interiorOrigins)
     checkInteriorOriginUsage(origin, value, op);
+
+  // Check to see if we're accessing an origin marked inaccessible.  If so,
+  // generate an error about the invalid access.
+  if (isDeref)
+    valueSet.checkDisallowedOriginAccess(
+        cast<RefType>(value.getType()).getOrigin(), op);
 }
 
 /// One of the specified fields is missing, so emit an error about it.  This is
@@ -2558,6 +2689,12 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
+  // Check that we're not storing to a mutable origin marked read only by a
+  // @__nested_origins_read_only decorator.
+  if (isDeref)
+    valueSet.checkDisallowedOriginAccess(
+        cast<RefType>(value.getType()).getOrigin(), op);
+
   // Invalidate any interior origins derived from the defined value.
   invalidateInteriorOriginsForOperand(value, isDeref, op);
 
@@ -2590,6 +2727,13 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
 
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
                                           bool isDeref) {
+  // Check to see if we're mutating a mutable origin marked read only by a
+  // @__nested_origins_read_only decorator.  If so, generate an error about the
+  // invalid access.
+  if (isDeref)
+    valueSet.checkDisallowedOriginAccess(
+        cast<RefType>(value.getType()).getOrigin(), op);
+
   ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   if (!valueRef) {
     // We cannot consume an indirect value (unless it is untracked).
@@ -2625,6 +2769,12 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
 /// a value only, but not its fields.  It marks the final aggregate as
 /// uninitialized.
 void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
+  // Check to see if we're mutating a mutable origin marked read only by a
+  // @__nested_origins_read_only decorator.  If so, generate an error about the
+  // invalid access.
+  valueSet.checkDisallowedOriginAccess(
+      cast<RefType>(value.getType()).getOrigin(), op);
+
   ValueRef access = valueSet.getDirectValueRef(value, /*isDeref=*/true);
   ValueInfo &valueInfo = valueSet.getValueInfo(access.valueId);
   if (!access) {
@@ -2732,13 +2882,6 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
   }
 }
 
-static std::string getOriginStr(InteriorOriginAttr origin) {
-  std::string originStr;
-  llvm::raw_string_ostream originOs(originStr);
-  OriginPrinter().print(originOs, origin, /*elideOriginOf=*/true);
-  return originStr;
-}
-
 void UninitializedValueScan::checkInteriorOriginUsage(
     InteriorOriginAttr interior, Value operand, Operation &op) {
 
@@ -2790,7 +2933,7 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   //     list.append(4) # Could reallocate the memory 'r1' points to.
   //     ref r2 = list[j] # Def #2
   //     use(r2)  # This is clearly fine.
-  //     use(r)   # This is invalid because 'r' was invalidated.
+  //     use(r1)  # This is invalid because 'list' was invalidated.
   //
   // To handle this, we look at the operation in the interior origin entry,
   // which is the first operation that defined the interior origin.  If that
@@ -2860,6 +3003,10 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
   // Verify that any accessed interior origins are also live.
   for (auto origin : interiorOrigins)
     checkInteriorOriginUsage(origin, operand, op);
+
+  // If this operation is accessing an mutable origin marked read only by a
+  // @__nested_origins_read_only decorator, generate an error.
+  valueSet.checkDisallowedOriginAccess(origin, op);
 }
 
 /// This function is called when an operation uses a #lit.any.origin origin.
@@ -3009,7 +3156,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
   for (Operation &op : block) {
     definedOrigins.clear();
     auto overall = opEffects.analyze(op);
-    /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
       // op.dump();

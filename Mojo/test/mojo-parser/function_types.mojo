@@ -274,10 +274,22 @@ def decorated_nested_origins_read_only(x: Int):
     pass
 
 
+@__nested_origins_read_only
+def checked_nested_origins_read_only(x: Int):
+    pass
+
+
 # CHECK-LABEL: lit.fn @"explicit_nested_origins_read_only
 # CHECK-SAME: no_nested_origin_exclusivity
 def explicit_nested_origins_read_only(x: Int)
     __accesses("__unsafe_nested_origins_read_only"):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"explicit_checked_nested_origins_read_only
+# CHECK-SAME: nested_origins_read_only
+def explicit_checked_nested_origins_read_only(x: Int)
+    __accesses("__nested_origins_read_only"):
     pass
 
 
@@ -304,6 +316,13 @@ def test_nested_origins_read_only_function_conversions():
     comptime explicit: def(Int) thin __accesses(
         "__unsafe_nested_origins_read_only"
     ) = explicit_nested_origins_read_only
+    # Either promise satisfies a function type requiring read-only accesses.
+    comptime checked_from_legacy: def(Int) thin __accesses(
+        "__nested_origins_read_only"
+    ) = decorated_nested_origins_read_only
+    comptime legacy_from_checked: def(Int) thin __accesses(
+        "__unsafe_nested_origins_read_only"
+    ) = checked_nested_origins_read_only
 
 
 # // -----

@@ -51,6 +51,30 @@ def test_nested_origins_read_only_conversion():
     requires_nested_origins_read_only(may_mutate_nested_origins)
 
 
+@__unsafe_nested_origins_read_only
+def legacy_nested_origins_read_only(x: Int):
+    pass
+
+
+@__nested_origins_read_only
+def checked_nested_origins_read_only(x: Int):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def requires_checked_nested_origins_read_only(
+    f: def(Int) thin __accesses("__nested_origins_read_only"),
+):
+    pass
+
+
+def test_checked_nested_origins_read_only_conversion():
+    # expected-error @below {{function may mutate nested origins}}
+    requires_checked_nested_origins_read_only(may_mutate_nested_origins)
+    requires_checked_nested_origins_read_only(legacy_nested_origins_read_only)
+    requires_checked_nested_origins_read_only(checked_nested_origins_read_only)
+
+
 # expected-note @below {{trait 'NestedOriginsReadOnlyRequirement' declared here}}
 trait NestedOriginsReadOnlyRequirement:
     @__unsafe_nested_origins_read_only
@@ -62,6 +86,25 @@ trait NestedOriginsReadOnlyRequirement:
 # expected-error @below {{'MissingNestedOriginsReadOnly[origin]' does not implement all requirements for 'NestedOriginsReadOnlyRequirement'}}
 struct MissingNestedOriginsReadOnly[origin: Origin](
     NestedOriginsReadOnlyRequirement
+):
+    var ptr: Pointer[Int, Self.origin]
+
+    # expected-note @below {{candidate declared here with type}}
+    def read(self) -> Int:
+        return 0
+
+
+# expected-note @below {{trait 'CheckedNestedOriginsReadOnlyRequirement' declared here}}
+trait CheckedNestedOriginsReadOnlyRequirement:
+    @__nested_origins_read_only
+    # expected-note @below {{no 'read' candidates have type 'def(self: MissingCheckedNestedOriginsReadOnly[origin]) thin -> Int __accesses("__nested_origins_read_only")'}}
+    def read(self) -> Int:
+        ...
+
+
+# expected-error @below {{'MissingCheckedNestedOriginsReadOnly[origin]' does not implement all requirements for 'CheckedNestedOriginsReadOnlyRequirement'}}
+struct MissingCheckedNestedOriginsReadOnly[origin: Origin](
+    CheckedNestedOriginsReadOnlyRequirement
 ):
     var ptr: Pointer[Int, Self.origin]
 
