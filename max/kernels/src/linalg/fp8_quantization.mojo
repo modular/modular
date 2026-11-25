@@ -1008,11 +1008,14 @@ struct _QuantizeFp8GroupedMxKernel[
         var seg = lane // lanes
         var sub = lane - seg * lanes
         var first = Int(block_idx.y) * passes_per_warp
-        var sf_row, pad_end = self._scale_row(row)
         # Each scale fills one SF-atom column: 4 contiguous e8m0 bytes.
         var words = self.scales_mx.ptr.unsafe_bitcast[UInt32]()
 
         with PDL():
+            # Under PDL this grid may start before its predecessor has
+            # finished: nothing a predecessor wrote (`group_starts`,
+            # `scale_offsets`, the input) may be read before the wait above.
+            var sf_row, pad_end = self._scale_row(row)
             for p in range(first, first + passes_per_warp):
                 var group_idx = p * per_pass + seg
                 var live = group_idx < self.sf_cols
