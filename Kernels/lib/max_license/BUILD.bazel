@@ -9,6 +9,7 @@ package_group(
     packages = [
         "//GraphCompiler/...",
         "//Kernels/...",
+        "//mach/...",
         "//max/...",
     ],
 )
@@ -32,6 +33,30 @@ modular_cc_library(
         ":weights_registry_c_api",
         "//Support:SymbolExport",
     ],
+)
+
+kgen_kernel(
+    name = "attn_dispatch_c_api",
+    src = "AttnDispatch/attn_dispatch_c_api.mojo",
+    deps = [
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+modular_cc_library(
+    name = "AttnDispatch",
+    srcs = glob(["AttnDispatch/*.cpp"]),
+    hdrs = ["AttnDispatch/include/Kernels/AttnDispatch.h"],
+    # A real directory, not an include prefix, so that a build outside bazel
+    # (the bindgen of mach's max-sys crate under cargo) finds the header too.
+    includes = ["AttnDispatch/include"],
+    deps = [
+        ":attn_dispatch_c_api",
+    ],
+    # Nothing inside libmax calls the entry points, so without always linking
+    # it drops the archive member and exports neither of them.
+    alwayslink = True,
 )
 
 kgen_kernel(
