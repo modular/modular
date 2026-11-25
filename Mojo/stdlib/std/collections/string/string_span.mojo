@@ -1039,12 +1039,7 @@ struct StringSpan[origin: ImmOrigin](
             A StringSpan merged with the other origin.
         """
         return {
-            unsafe_from_utf8 = Span[Byte, result.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_origin_cast[
-                    result.origin
-                ](),
-                length=self.byte_length(),
-            )
+            unsafe_from_utf8 = self._slice.unsafe_origin_cast[result.origin]()
         }
 
     # ===------------------------------------------------------------------===#

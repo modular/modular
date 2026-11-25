@@ -256,16 +256,13 @@ def _quicksort[
 
 # This is being passed mutable origins that are taken from the same memory
 # object, so of course they alias.  The caller guarantees they don't overlap.
-@__unsafe_nested_origins_read_only
 def _merge[
     T: Copyable,
-    span_origin: MutOrigin,
-    result_origin: MutOrigin,
     //,
 ](
-    span1: Span[T, span_origin],
-    span2: Span[T, span_origin],
-    result: Span[T, result_origin],
+    span1: Span[T, MutUntrackedOrigin],
+    span2: Span[T, MutUntrackedOrigin],
+    result: MutSpan[T, _],
     cmp_fn: Some[def(T, T) -> Bool],
 ):
     """Merge span1 and span2 into result using the given cmp_fn. The function
@@ -275,8 +272,6 @@ def _merge[
 
     Parameters:
         T: Type of the spans.
-        span_origin: Origin of the input spans.
-        result_origin: Origin of the result Span.
 
     Args:
         span1: The first span to be merged.
@@ -326,15 +321,17 @@ def _merge[
 
 
 def _stable_sort_impl[
-    T: Copyable,
-    span_life: MutOrigin,
-    tmp_life: MutOrigin,
-    //,
+    T: Copyable
 ](
-    span: Span[T, span_life],
-    temp_buff: Span[T, tmp_life],
+    in_span: MutSpan[T, _],
+    temp_buff: MutSpan[T, _],
     cmp_fn: Some[def(T, T) -> Bool],
 ):
+    # Remove the origin from the span so code below this can form multiple
+    # slices into the same mutable span without exclusivity violations. We know
+    # that the aliases formed are non-overlapping.
+    var span = in_span.unsafe_origin_cast[MutUntrackedOrigin]()
+
     var size = len(span)
     if size <= 1:
         return
@@ -366,10 +363,8 @@ def _stable_sort_impl[
 
 
 def _stable_sort[
-    T: Copyable,
-    origin: MutOrigin,
-    //,
-](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
+    T: Copyable
+](span: MutSpan[T, _], cmp_fn: Some[def(T, T) -> Bool]):
     var layout = Layout[T](length=len(span))
     var temp_buff = alloc(layout)
     var temp_buff_span = temp_buff.unsafe_span()
@@ -385,9 +380,8 @@ def _stable_sort[
 @inline(.always)
 def _partition[
     T: Copyable,
-    origin: MutOrigin,
     //,
-](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]) -> Int:
+](span: MutSpan[T, _], cmp_fn: Some[def(T, T) -> Bool]) -> Int:
     var size = len(span)
     if size <= 1:
         return 0
@@ -416,9 +410,8 @@ def _partition[
 
 def _partition[
     T: Copyable,
-    origin: MutOrigin,
     //,
-](var span: Span[T, origin], var k: Int, cmp_fn: Some[def(T, T) -> Bool]):
+](var span: MutSpan[T, _], var k: Int, cmp_fn: Some[def(T, T) -> Bool]):
     while True:
         var pivot = _partition(span, cmp_fn)
         if pivot == k:
@@ -433,16 +426,14 @@ def _partition[
 
 def partition[
     T: Copyable,
-    origin: MutOrigin,
     //,
-](span: Span[T, origin], k: Int, cmp_fn: Some[def(T, T) -> Bool]):
+](span: MutSpan[T, _], k: Int, cmp_fn: Some[def(T, T) -> Bool]):
     """Partition the input buffer inplace such that first k elements are the
     largest (or smallest if cmp_fn is < operator) elements.
     The ordering of the first k elements is undefined.
 
     Parameters:
         T: Type of the underlying data.
-        origin: Origin of span.
 
     Args:
         span: Input buffer.
@@ -484,11 +475,10 @@ def _sort[
 
 def sort[
     T: Copyable,
-    origin: MutOrigin,
     //,
     *,
     stable: Bool = False,
-](span: Span[T, origin], cmp_fn: Some[def(T, T) -> Bool]):
+](span: MutSpan[T, _], cmp_fn: Some[def(T, T) -> Bool]):
     """Sorts a span in place using a custom comparison function.
 
     The comparison function defines the sort order. It receives two elements,
@@ -497,7 +487,6 @@ def sort[
 
     Parameters:
         T: The element type of the span.
-        origin: The origin of the span.
         stable: Whether to preserve the relative order of equal elements
             (defaults to `False`, elements that compare as equal can end
             up in a different relative order than they started in).
@@ -529,11 +518,10 @@ def sort[
 
 def sort[
     T: Copyable & Comparable,
-    origin: MutOrigin,
     //,
     *,
     stable: Bool = False,
-](span: Span[T, origin]):
+](span: MutSpan[T, _]):
     """Sorts a span of comparable elements in place in ascending order.
 
     Elements are ordered using the `<` operator, so the smallest element ends
@@ -544,7 +532,6 @@ def sort[
     Parameters:
         T: The element type of the span. Must conform to `Copyable` and
             `Comparable`.
-        origin: The origin of the span.
         stable: Whether to preserve the relative order of equal elements
             (defaults to `False`, elements that compare as equal can end
             up in a different relative order than they started in).

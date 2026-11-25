@@ -669,6 +669,35 @@ struct Span[
         """
         return rebind[Self.Immutable](self)
 
+    comptime _OriginCastType[target_origin: Origin[mut=Self.mut]] = Span[
+        Self.T, target_origin, address_space=Self.address_space
+    ]
+
+    @__unsafe_nested_origins_read_only
+    @always_inline("builtin")
+    def unsafe_origin_cast[
+        target_origin: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[target_origin]:
+        """Changes the origin of a span.
+
+        Parameters:
+            target_origin: Origin of the destination span.
+
+        Returns:
+            A span with the same element type, mutability, address space, and
+            length as the original span, but with the specified origin.
+
+        Safety:
+            Casting the origin of a span is inherently unsafe. Improper usage
+            can lead to undefined behavior or unexpected variable destruction.
+            Consider parameterizing the origin at the function level to avoid
+            unnecessary casts.
+        """
+        return {
+            unsafe_ptr = self._data.unsafe_origin_cast[target_origin](),
+            length = self._len,
+        }
+
     @__unsafe_nested_origins_read_only
     @inline(.always)
     def unsafe_get(
