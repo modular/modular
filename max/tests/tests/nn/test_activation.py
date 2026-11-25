@@ -96,10 +96,16 @@ def test_gated_activation_swigluoai_needs_constants() -> None:
         GatedActivation("swigluoai", alpha=1.702)
 
 
+def test_gated_activation_silu_post_clamp_needs_limit() -> None:
+    with pytest.raises(ValueError, match="non-zero limit"):
+        GatedActivation("silu_post_clamp")
+
+
 @pytest.mark.parametrize(
     "activation",
     [
         GatedActivation("silu", limit=7.0),
+        GatedActivation("silu_post_clamp", limit=7.0),
         GatedActivation("gelu_tanh"),
     ],
 )

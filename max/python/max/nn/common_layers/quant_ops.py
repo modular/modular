@@ -1905,7 +1905,7 @@ def grouped_silu(
             input_spec,
             weight_spec,
             block_k,
-            swiglu_limit,
+            activation or GatedActivation(),
         )
         return FP8BlockActivation(
             data=data.rebind_mapping(x.mapping),

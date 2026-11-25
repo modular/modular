@@ -159,3 +159,15 @@ def test_gated_activation_ops_rejects_activations_without_a_graph_form() -> (
             _gated_activation_ops(
                 x.tensor, GatedActivation("situ", alpha=4.0, limit=25.0)
             )
+
+
+def test_gated_activation_ops_rejects_a_graph_fn() -> None:
+    """A custom graph-op activation must not fall through to SiLU."""
+    spec = TensorType(DType.float32, shape=(2, 8), device=DeviceRef.CPU())
+    activation = GatedActivation(
+        gated_activation_fn=lambda gate_up, moe_dim: gate_up
+    )
+    with Graph("graph_fn_unsupported", input_types=[spec]) as graph:
+        (x,) = graph.inputs
+        with pytest.raises(ValueError, match="not supported"):
+            _gated_activation_ops(x.tensor, activation)

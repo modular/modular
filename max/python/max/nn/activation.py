@@ -21,6 +21,7 @@ from max.graph import TensorValue
 # The constants each fused activation reads; the others must stay 0.
 _FUSED_ACTIVATION_CONSTANTS: dict[str, tuple[str, ...]] = {
     "silu": ("limit",),
+    "silu_post_clamp": ("limit",),
     "swigluoai": ("alpha", "limit"),
     "situ": ("alpha", "limit"),
     "gelu_tanh": (),
@@ -36,6 +37,8 @@ class GatedActivation:
 
     - ``"silu"``: ``silu(gate) * up``. A non-zero ``limit`` first clamps the
       inputs to ``min(gate, limit)`` and ``clamp(up, -limit, limit)``.
+    - ``"silu_post_clamp"``: ``min(silu(gate), limit) * clamp(up, -limit,
+      limit)``.
     - ``"swigluoai"``: ``g * sigmoid(alpha * g) * (u + 1)`` with
       ``g = min(gate, limit)`` and ``u = clamp(up, -limit, limit)``.
     - ``"gelu_tanh"``: ``gelu(gate) * up`` with the tanh approximation
@@ -63,8 +66,8 @@ class GatedActivation:
     ``beta`` of ``"situ"`` (non-zero there); must be 0 for the others."""
 
     limit: float = 0.0
-    """The clamp bound of ``"swigluoai"`` and ``"silu"`` (0 leaves
-    ``"silu"`` unclamped), and the up half's soft saturation
+    """The clamp bound of ``"swigluoai"``, ``"silu_post_clamp"`` and ``"silu"``
+    (0 leaves ``"silu"`` unclamped), and the up half's soft saturation
     ``linear_beta`` of ``"situ"`` (0 passes ``up`` through); must be 0 for
     ``"gelu_tanh"``."""
 
@@ -94,6 +97,8 @@ class GatedActivation:
             raise ValueError("swigluoai needs a non-zero alpha and limit")
         if name == "situ" and self.alpha == 0.0:
             raise ValueError("situ needs a non-zero alpha (beta)")
+        if name == "silu_post_clamp" and self.limit == 0.0:
+            raise ValueError("silu_post_clamp needs a non-zero limit")
         if self.round_to_bf16 and name not in ("silu", "swigluoai"):
             raise ValueError(f"{name} does not take round_to_bf16")
         if self.gated_activation_fn is not None and (

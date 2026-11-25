@@ -93,7 +93,9 @@ from max.nn._graph_ops import (
 from max.nn._graph_ops import (
     rms_norm_quantize_dynamic_scaled_float8_dual as _rms_norm_quantize_dynamic_scaled_float8_dual,
 )
+from max.nn._graph_ops.moe_quant import _gated_activation_ops
 from max.nn._graph_ops.quant import quantized_matmul as _quantized_matmul
+from max.nn.activation import GatedActivation
 from max.nn.quant_config import InputScaleSpec, WeightScaleSpec
 from max.tensor.sharding.action import AxisAssignment
 from max.tensor.sharding.cost import P, R
@@ -495,20 +497,15 @@ def _silu_quantize_fp8(
     input_spec: InputScaleSpec,
     weight_spec: WeightScaleSpec,
     block_k: int,
-    swiglu_limit: float = 0.0,
+    activation: GatedActivation,
 ) -> tuple[TensorValue, TensorValue]:
-    """Gated SiLU of a ``[gate | up]`` grouped matmul output, FP8 block-quantized.
+    """Gated activation of a grouped ``[gate | up]``, FP8 block-quantized.
 
     The graph compiler fuses the activation into the row-bounded quantize, so
     the rows past ``row_offsets[-1]`` of the EP receive buffer are neither
     activated nor quantized.
     """
-    moe_dim = int(x.shape[1]) // 2
-    gate, up = x[:, :moe_dim], x[:, moe_dim:]
-    if swiglu_limit:
-        gate = ops.min(gate, swiglu_limit)
-        up = ops.min(ops.max(up, -swiglu_limit), swiglu_limit)
-    activated = ops.silu(gate) * up
+    activated = _gated_activation_ops(x, activation)
     return _quantize_dynamic_scaled_float8(
         activated,
         input_spec,
