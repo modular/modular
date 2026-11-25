@@ -13,13 +13,24 @@
 
 from .._trait import HalPluginHooks
 from ..._machine import DeviceRef
-from ...execution_config._nvidia import ExecutionConfigForTarget
+from ...execution_config.gpu_execution_config import GPUExecutionConfiguration
 from ...extensions.cuda import CUDAHALExtensions
 
 
+# Hopper, datacenter Blackwell and Thor support thread block clusters.
+comptime _CLUSTER_TARGETS: List[StaticString] = [
+    "nvidia:sm_90a",
+    "nvidia:sm_100a",
+    "nvidia:sm_103a",
+    "nvidia:sm_110a",
+]
+
+
 struct CudaHalPluginHooks(HalPluginHooks):
-    comptime ExecutionConfigType[device: DeviceRef] = ExecutionConfigForTarget[
-        device.spec.name
+    comptime ExecutionConfigType[device: DeviceRef] = GPUExecutionConfiguration[
+        has_cluster_dim=device.spec.name in _CLUSTER_TARGETS,
+        has_launch_attributes=True,
+        has_constant_memory=True,
     ]
     """Returns the execution configuration for the given device."""
 
