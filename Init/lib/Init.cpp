@@ -41,14 +41,14 @@ namespace {
 ErrorOr<ContextRef> createContextImpl(StringRef programName,
                                       const Init::Options &options,
                                       StringRef subCommand) {
-  // Create the top-level context.
-  ContextRef ctx = ContextRef::create();
-
   // Create the settings object.
   auto settingsOr = Config::open();
   if (settingsOr.isError())
     return settingsOr.takeError();
   Config settings = std::move(*settingsOr);
+
+  // Create the top-level context.
+  ContextRef ctx = ContextRef::create();
 
   bool crashReportingEnabled = Telemetry::isCrashReportingEnabled(settings);
 
