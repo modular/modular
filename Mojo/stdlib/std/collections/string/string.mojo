@@ -1775,11 +1775,6 @@ struct String(
         """
         return StringSpan(self).is_ascii_whitespace()
 
-    @doc_hidden
-    @deprecated(use=is_ascii_whitespace)
-    def isspace(self) -> Bool:
-        return self.is_ascii_whitespace()
-
     @inline(.always)
     def split(
         self, sep: StringSpan

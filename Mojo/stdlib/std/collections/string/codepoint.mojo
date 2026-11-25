@@ -537,7 +537,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         This only respects the default "C" locale, i.e. returns True only if the
         character specified is one of " \\t\\n\\v\\f\\r". For semantics similar
-        to Python, use `String.isspace()`.
+        to Python, use `String.is_ascii_whitespace()`.
 
         Returns:
             True iff the character is one of the whitespace characters listed

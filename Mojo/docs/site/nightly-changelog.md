@@ -677,6 +677,19 @@ Most code that no longer compiles matches one of these patterns:
     `std.builtin.value`. These traits live in `std.traits` and are still
     exported from the prelude.
 
+- Removed APIs that were deprecated in Mojo 1.2. Use the replacement in each
+  case:
+
+  - The `std.sys.info` functions `is_triple()`, `is_little_endian()`, and
+    `is_big_endian()`. Use `CompilationTarget.is_triple()`, and compare
+    `Endian.native()` with `.little` or `.big`.
+
+  - The pointer-and-length `hash()` overload. Use `hash_bytes()`, which takes
+    an `ImmSpan[Byte]`.
+
+  - `String.isspace()` and `StringSpan.isspace()`. Use
+    `is_ascii_whitespace()`.
+
 ## Fixed
 
 - The compiler now rejects a call that passes a container immutably along with

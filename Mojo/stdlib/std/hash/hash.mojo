@@ -27,7 +27,6 @@ There are a few main tools in this module:
 from std.builtin.constrained import _field_conforms_to_error
 from std.builtin.enum_like import EnumLike
 from std.builtin.variadics import ParameterList, TypeList
-from std.collections import Span
 from std.os import abort
 from std.reflection import reflect
 
@@ -187,22 +186,3 @@ def hash_bytes[
     hasher.update(bytes)
     var value = hasher.finish()
     return value
-
-
-@deprecated("Use `hash_bytes()` instead")
-def hash[
-    HasherType: Hasher & Defaultable & Deinitable = default_hasher
-](bytes: ImmPointer[UInt8, _], n: Int) -> UInt64:
-    """Hash a sequence of bytes using the specified hasher.
-
-    Parameters:
-        HasherType: Type of the hasher to use for hashing (default: `AHasher`).
-
-    Args:
-        bytes: Pointer to the byte sequence to hash.
-        n: The number of bytes to hash.
-
-    Returns:
-        A 64-bit integer hash value.
-    """
-    return hash_bytes[HasherType](Span(unsafe_ptr=bytes, length=n))

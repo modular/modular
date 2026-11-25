@@ -1213,7 +1213,7 @@ struct StringSpan[origin: ImmOrigin](
         var r_idx = self.byte_length()
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
         # for s in self.__reversed__():
-        #     if not s.isspace():
+        #     if not s.is_ascii_whitespace():
         #         break
         #     r_idx -= 1
         while (
@@ -1259,7 +1259,7 @@ struct StringSpan[origin: ImmOrigin](
         var l_idx = 0
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
         # for s in self:
-        #     if not s.isspace():
+        #     if not s.is_ascii_whitespace():
         #         break
         #     l_idx += 1
         while (
@@ -1929,11 +1929,6 @@ struct StringSpan[origin: ImmOrigin](
         ) else:
             return None
         return Int(loc) - Int(self.unsafe_ptr())
-
-    @doc_hidden
-    @deprecated(use=is_ascii_whitespace)
-    def isspace[single_character: Bool = False](self) -> Bool:
-        return self.is_ascii_whitespace[single_character=single_character]()
 
     def is_ascii_whitespace[single_character: Bool = False](self) -> Bool:
         """Determines whether every character in the given StringSpan is a
