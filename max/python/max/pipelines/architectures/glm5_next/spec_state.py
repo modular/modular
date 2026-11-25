@@ -58,13 +58,22 @@ from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.pipelines.speculative.gated_delta_rollback import (
     accepted_lengths,
     accepted_row_plan,
+    replica_accept_inputs,
 )
 from max.pipelines.speculative.ragged_token_merger import shape_to_scalar
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 from max.tensor.sharding.action import PerShard
 
-from .glm5_next import Glm5Next, Glm5NextTextModel, replicate, state_leaf
+from .glm5_next import (
+    Glm5Next,
+    Glm5NextTextModel,
+    cast_per_device,
+    is_data_parallel,
+    replica_mapping,
+    replicate,
+    state_leaf,
+)
 from .layers.indexer import PooledIndexer, TailDeferral
 from .layers.indexer_inputs import KpoolTailReplayInputs
 from .layers.kda import KdaVerify, KimiDeltaAttention, verify_width_operand
@@ -82,6 +91,7 @@ __all__ = [
     "deferred_seed_offsets",
     "fold_kda_state_pools",
     "replay_tail_seeds",
+    "seed_tails",
 ]
 
 _StateInputs = Sequence[RecurrentStateInputsPerDevice[TensorValue, BufferValue]]
@@ -158,17 +168,22 @@ def fold_kda_state_pools(
         conv_rows: ``[num_layers, batch_size]`` conv rows.
         captures: Per-device, per-layer inputs the verify recorded; the fold
             reads each layer's ``qkv_window``.
-        fold_accepted: ``[batch]`` records to fold, on one device.
+        fold_accepted: ``[batch]`` records to fold, on one device, or
+            already on the pools' mesh: one replica's records per device
+            under data parallelism.
         row_offsets: ``[batch + 1]`` offsets of the verified window, which
             bound each row's fold.
         verify_width: The verify's width operand.
     """
+    if fold_accepted.mesh != recurrent_pool.mesh:
+        fold_accepted = replicate(fold_accepted, recurrent_pool.mesh)
+    fold_accepted = cast_per_device(fold_accepted, DType.uint32)
     kda_state_fold(
         recurrent_pool,
         ring_pool,
         recurrent_rows,
         ring_rows,
-        replicate(fold_accepted.cast(DType.uint32), recurrent_pool.mesh),
+        fold_accepted,
         row_offsets,
         verify_width,
         conv_pool=conv_pool,
@@ -201,7 +216,25 @@ def replay_tail_seeds(
     """
     has_drafts = (num_draft_tokens > 0).cast(replay_offsets.dtype)
     offsets = replicate((replay_offsets * has_drafts).cast(DType.uint32), mesh)
-    rows = replicate(row_indices, mesh)
+    seed_tails(captures, replicate(row_indices, mesh), offsets, mesh)
+
+
+def seed_tails(
+    captures: Sequence[Sequence[KpoolTailReplayInputs]],
+    rows: Tensor,
+    offsets: Tensor,
+    mesh: DeviceMesh,
+) -> None:
+    """Seeds each device's indexer tail rings from its own replay plan.
+
+    Args:
+        captures: Per-device, per-layer inputs the verify's indexers recorded.
+        rows: Rows of each device's verify tensors the replay consumes, on
+            ``mesh``.
+        offsets: ``[batch + 1]`` uint32 ragged offsets over ``rows`` on
+            ``mesh``, all zero where the verify drafted nothing.
+        mesh: The mesh the captures were recorded on.
+    """
 
     def seed(
         layer_captures: Sequence[KpoolTailReplayInputs],
@@ -250,10 +283,11 @@ class Glm5NextSpecState:
         Both must read the same one: a forward that lands a window the
         rollback then replays or folds advances the state twice.
         """
-        self._plan: tuple[Tensor, Tensor, Tensor] | None = None
-        """The accepted rows, their offsets and ``K`` on the plan's device,
+        self._plan: tuple[Tensor, Tensor] | None = None
+        """The accepted rows and their seed offsets on the target's mesh,
         which :meth:`roll_forward` builds and :meth:`replay_draft_tail`
-        reuses."""
+        reuses. Each device holds its own replica's under data
+        parallelism."""
 
     @property
     def language_model(self) -> Glm5NextTextModel:
@@ -266,6 +300,17 @@ class Glm5NextSpecState:
         mesh = self.language_model.mesh
         assert mesh is not None
         return mesh
+
+    @property
+    def rows(self) -> DeviceMapping:
+        """The placement of the per-request state rows and plans.
+
+        The same on every device under tensor parallelism; each replica's
+        own under data parallelism.
+        """
+        if is_data_parallel(self.mesh):
+            return replica_mapping(self.mesh)
+        return DeviceMapping.replicated(self.mesh)
 
     @contextmanager
     def capturing(
@@ -282,8 +327,9 @@ class Glm5NextSpecState:
         Args:
             state: Per-device state leaves, the verify ring included.
             num_draft_tokens: The verify's draft width ``K``.
-            row_offsets: The verified window's offsets, replicated on the
-                target's mesh.
+            row_offsets: The verified window's offsets on the target's
+                mesh: the whole batch's on every device, or each replica's
+                own under data parallelism.
 
         Raises:
             ValueError: If the cache declares no verify ring.
@@ -297,16 +343,13 @@ class Glm5NextSpecState:
         self._start_verify(num_draft_tokens)
         assert self.verify_width is not None
         ring_pool, ring_rows = state_leaf(
-            list(state),
-            VERIFY_RING_LEAF_ID,
-            row_offsets.mapping,
-            head_sharded=True,
+            list(state), VERIFY_RING_LEAF_ID, self.rows, head_sharded=True
         )
         kda = KdaVerify(
             ring_pool=ring_pool,
             # The ring reads int32 rows: one cast of the table here, rather
             # than one per layer.
-            ring_rows=ring_rows.cast(DType.int32),
+            ring_rows=cast_per_device(ring_rows, DType.int32),
             verify_width=self.verify_width,
             captures=self.kda_captures,
         )
@@ -345,8 +388,8 @@ class Glm5NextSpecState:
 
         Args:
             indexer: The draft layer's indexer.
-            row_offsets: The verified window's offsets, replicated on the
-                target's mesh.
+            row_offsets: The verified window's offsets, as :meth:`capturing`
+                takes them.
         """
         assert self.num_draft_tokens is not None, "draft before verify"
         self.draft_tail_captures = [[] for _ in range(self.mesh.num_devices)]
@@ -377,6 +420,7 @@ class Glm5NextSpecState:
         merged_offsets_per_dev: Sequence[TensorValue],
         num_accepted: TensorValue,
         device: DeviceRef,
+        data_parallel_splits: TensorValue | None = None,
     ) -> None:
         """Lands the target's state leaves on the accepted prefix.
 
@@ -389,10 +433,60 @@ class Glm5NextSpecState:
             merged_offsets_per_dev: ``merged_offsets`` on each device.
             num_accepted: ``[batch]`` accepted draft tokens per request.
             device: The device the batch-wide tensors live on.
+            data_parallel_splits: The first request of each replica, then the
+                batch size, on the host; given under data parallelism, where
+                each device rolls back only its own replica's requests.
         """
         assert self.verify_width is not None, "roll_forward before capturing"
         assert self.num_draft_tokens is not None
         assert all(map(has_verify_ring, state)), "the cache declares no ring"
+        if data_parallel_splits is None:
+            fold_accepted, row_offsets = self._plan_batch(
+                merged_offsets, merged_offsets_per_dev, num_accepted, device
+            )
+        else:
+            fold_accepted, row_offsets = self._plan_replicas(
+                merged_offsets_per_dev, num_accepted, data_parallel_splits
+            )
+        rows = self.rows
+        conv_pool, conv_rows = state_leaf(
+            list(state), CONV_LEAF_ID, rows, head_sharded=True
+        )
+        recurrent_pool, recurrent_rows = state_leaf(
+            list(state), RECURRENT_LEAF_ID, rows, head_sharded=True
+        )
+        ring_pool, ring_rows = state_leaf(
+            list(state), VERIFY_RING_LEAF_ID, rows, head_sharded=True
+        )
+        fold_kda_state_pools(
+            recurrent_pool,
+            recurrent_rows,
+            ring_pool,
+            ring_rows,
+            conv_pool,
+            conv_rows,
+            self.kda_captures,
+            fold_accepted,
+            row_offsets,
+            self.verify_width,
+        )
+        assert self._plan is not None
+        seed_tails(self.tail_captures, *self._plan, self.mesh)
+
+    def _plan_batch(
+        self,
+        merged_offsets: TensorValue,
+        merged_offsets_per_dev: Sequence[TensorValue],
+        num_accepted: TensorValue,
+        device: DeviceRef,
+    ) -> tuple[Tensor, Tensor]:
+        """Plans the rollback of the whole batch, which every device holds.
+
+        Returns:
+            The records to fold, on ``device``, and the verify's offsets on
+            the mesh; it keeps the tail-seed plan for the draft's ring too.
+        """
+        assert self.num_draft_tokens is not None
         num_draft_tokens = shape_to_scalar(self.num_draft_tokens, device)
         window = self.kda_captures[0][0].qkv_window
         assert window is not None
@@ -405,36 +499,89 @@ class Glm5NextSpecState:
             window.shape[0],
             device,
         )
+        has_drafts = (num_draft_tokens > 0).cast(replay_offsets.dtype)
         self._plan = (
-            Tensor.from_graph_value(row_indices),
-            Tensor.from_graph_value(replay_offsets),
-            Tensor.from_graph_value(num_draft_tokens),
+            replicate(Tensor.from_graph_value(row_indices), self.mesh),
+            replicate(
+                Tensor.from_graph_value(
+                    (replay_offsets * has_drafts).cast(DType.uint32)
+                ),
+                self.mesh,
+            ),
         )
         replicated = DeviceMapping.replicated(self.mesh)
-        conv_pool, conv_rows = state_leaf(
-            list(state), CONV_LEAF_ID, replicated, head_sharded=True
-        )
-        recurrent_pool, recurrent_rows = state_leaf(
-            list(state), RECURRENT_LEAF_ID, replicated, head_sharded=True
-        )
-        ring_pool, ring_rows = state_leaf(
-            list(state), VERIFY_RING_LEAF_ID, replicated, head_sharded=True
-        )
-        fold_kda_state_pools(
-            recurrent_pool,
-            recurrent_rows,
-            ring_pool,
-            ring_rows,
-            conv_pool,
-            conv_rows,
-            self.kda_captures,
+        return (
             Tensor.from_graph_value(
                 accepted_lengths(merged_offsets, num_accepted, num_draft_tokens)
             ),
             Tensor.from_shard_values(merged_offsets_per_dev, replicated),
-            self.verify_width,
         )
-        replay_tail_seeds(self.tail_captures, *self._plan, self.mesh)
+
+    def _plan_replicas(
+        self,
+        merged_offsets_per_dev: Sequence[TensorValue],
+        num_accepted: TensorValue,
+        data_parallel_splits: TensorValue,
+    ) -> tuple[Tensor, Tensor]:
+        """Plans each data-parallel replica's rollback on its own device.
+
+        Each device verified only its replica's rows, so each folds and
+        seeds from its own share of the accept, in its own row frame.
+
+        Returns:
+            Each replica's records to fold and its verify offsets, one shard
+            per device; it keeps the tail-seed plan for the draft's ring too.
+        """
+        assert self.num_draft_tokens is not None
+        # Broadcast, not copied device to device: a peer copy merges the
+        # devices' capture sequences under device graph capture.
+        accepted_per_dev = replicate(
+            Tensor.from_graph_value(num_accepted), self.mesh
+        ).local_shards
+        replicas = replica_accept_inputs(
+            merged_offsets_per_dev,
+            [TensorValue(shard) for shard in accepted_per_dev],
+            self.num_draft_tokens,
+            data_parallel_splits,
+            prefix="glm5_next_rollback",
+        )
+        fold_accepted, row_offsets, seed_rows, seed_offsets = [], [], [], []
+        for replica, captures in zip(replicas, self.kda_captures, strict=True):
+            window = captures[0].qkv_window
+            assert window is not None
+            row_indices, replay_offsets = accepted_row_plan(
+                replica.merged_offsets,
+                replica.num_accepted,
+                replica.num_draft_tokens,
+                window.shape[0],
+                replica.device,
+                batch_dim=replica.batch_dim,
+            )
+            has_drafts = (replica.num_draft_tokens > 0).cast(
+                replay_offsets.dtype
+            )
+            fold_accepted.append(
+                accepted_lengths(
+                    replica.merged_offsets,
+                    replica.num_accepted,
+                    replica.num_draft_tokens,
+                    batch_dim=replica.batch_dim,
+                )
+            )
+            row_offsets.append(replica.merged_offsets)
+            seed_rows.append(row_indices)
+            seed_offsets.append(
+                (replay_offsets * has_drafts).cast(DType.uint32)
+            )
+        rows = self.rows
+        self._plan = (
+            Tensor.from_shard_values(seed_rows, rows),
+            Tensor.from_shard_values(seed_offsets, rows),
+        )
+        return (
+            Tensor.from_shard_values(fold_accepted, rows),
+            Tensor.from_shard_values(row_offsets, rows),
+        )
 
     def replay_draft_tail(self) -> None:
         """Seeds the draft's tail ring with the verify's accepted rows.
@@ -442,4 +589,4 @@ class Glm5NextSpecState:
         Must run after :meth:`roll_forward` and after the draft's first step.
         """
         assert self._plan is not None, "draft tail replay before roll_forward"
-        replay_tail_seeds(self.draft_tail_captures, *self._plan, self.mesh)
+        seed_tails(self.draft_tail_captures, *self._plan, self.mesh)

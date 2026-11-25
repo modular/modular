@@ -29,7 +29,6 @@ from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.ep import EPBuffers
 from max.nn.ep_config import EPConfig
 from max.tensor import Tensor, default_dtype
-from max.tensor.sharding import DeviceMapping
 
 from .layers.decoder import feed_forward
 from .layers.indexer import KPoolTail
@@ -90,8 +89,9 @@ class Glm5NextMTPLayer(Module[..., tuple[Tensor, Tensor]]):
             prev_selection=prev_selection,
             selection_lag=selection_lag,
         )
-        # The attention output is a sum of per-device partials.
-        h = x + y.to(DeviceMapping.replicated(x.mesh))
+        # The attention output is a sum of per-device partials under tensor
+        # parallelism; under data parallelism each replica's is its own.
+        h = x + y.to(x.mapping)
         y = feed_forward(self.mlp, self.post_attention_layernorm(h), ep)
         return h + y, selection
 

@@ -590,17 +590,6 @@ class Glm5NextConfig(
             vision_config = Glm5NextVisionConfig.initialize_from_config(
                 hf_vision_config, dtype=declared_dtype or DType.bfloat16
             )
-        if (
-            model_config.data_parallel_degree > 1
-            and pipeline_config.speculative
-        ):
-            # The fused verify graph and the MTP draft build replicated
-            # tensor-parallel batches.
-            raise ValueError(
-                "GLM-5.3-Flash does not run speculative decoding under data "
-                "parallelism yet: drop --speculative-method or set "
-                "--data-parallel-degree 1."
-            )
         # With the cache off, a step's encoder rows cover only the images in
         # its window while the scatter indices cover every image, so a prompt
         # that spans steps gets rows on the wrong placeholders.

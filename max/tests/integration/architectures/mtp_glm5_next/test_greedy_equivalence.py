@@ -29,6 +29,11 @@ token must be the tensor-parallel build's greedy choice for its prefix, to
 the same near-tie tolerance. Each replica runs whole KDA and sparse-MLA heads
 on its own rows and keeps its own caches and KDA state, so a row that reads
 another replica's state or offsets moves its logits past it.
+
+Data-parallel MTP runs the first check over those two replicas: each replica
+verifies, rolls back and drafts its own requests, so a rollback that folds
+another replica's accepted count, or seeds its tail ring from another
+replica's rows, moves that row's logits past the tolerance.
 """
 
 from __future__ import annotations
@@ -588,6 +593,7 @@ def _pipeline(
     speculative: bool,
     data_parallel_degree: int = 1,
     device_memory_utilization: float | None = None,
+    device_graph_capture: bool | None = None,
 ) -> Pipeline:
     # A speculative config rewrites the cached HF config in place.
     monkeypatch.setattr(_hf_config, "_config_cache", {})
@@ -617,7 +623,11 @@ def _pipeline(
                 ep_size=NUM_DEVICES,
                 prefer_module_v3=True,
                 max_batch_size=len(PROMPT_LENGTHS),
-                device_graph_capture=speculative,
+                device_graph_capture=(
+                    speculative
+                    if device_graph_capture is None
+                    else device_graph_capture
+                ),
                 # The plain run reports the logits behind each token.
                 disable_overlap=not speculative,
             ),
@@ -657,15 +667,18 @@ class _CountingReplay:
 
 
 def _generate_with_mtp(
-    pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch
+    pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch, capture: bool
 ) -> tuple[list[list[int]], list[list[int]], int]:
     """Returns each row's new tokens, how many each step added per row, and
-    how many steps replayed a captured graph."""
-    pipeline.warmup_graph_capture()
-    runner = pipeline._graph_capture_runner
-    assert runner is not None
-    replays = _CountingReplay(runner.replay)
-    monkeypatch.setattr(runner, "replay", replays)
+    how many steps replayed a captured graph (0 for a pipeline that captures
+    none)."""
+    replays: _CountingReplay | None = None
+    if capture:
+        pipeline.warmup_graph_capture()
+        runner = pipeline._graph_capture_runner
+        assert runner is not None
+        replays = _CountingReplay(runner.replay)
+        monkeypatch.setattr(runner, "replay", replays)
     prompts = _prompts()
     per_step: list[list[int]] = [[] for _ in prompts]
     with GenerateIterator(
@@ -680,7 +693,7 @@ def _generate_with_mtp(
             for sequence, prompt in zip(batch.sequences, prompts, strict=True)
         ]
     monkeypatch.undo()
-    return generated, per_step, replays.calls
+    return generated, per_step, replays.calls if replays is not None else 0
 
 
 def _greedy(
@@ -739,17 +752,34 @@ def _divergences(
     return found
 
 
+@pytest.mark.parametrize(
+    "data_parallel_degree", [1, NUM_DEVICES], ids=["tp", "dp"]
+)
 def test_mtp_decodes_the_plain_models_greedy_tokens(
-    checkpoint: Path, monkeypatch: pytest.MonkeyPatch
+    checkpoint: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    data_parallel_degree: int,
 ) -> None:
     # Both pipelines are built before either runs, so the precompile record,
-    # which stops at the first device execution, compiles both on CPU.
-    mtp_pipeline = _pipeline(checkpoint, monkeypatch, speculative=True)
+    # which stops at the first device execution, compiles both on CPU. Under
+    # data parallelism the reference is still the tensor-parallel build, and
+    # the run is eager: generate() does not pad the replicas to equal rows,
+    # which replaying a captured graph needs.
+    capture = data_parallel_degree == 1
+    mtp_pipeline = _pipeline(
+        checkpoint,
+        monkeypatch,
+        speculative=True,
+        data_parallel_degree=data_parallel_degree,
+        device_graph_capture=capture,
+    )
     pipeline = _pipeline(checkpoint, monkeypatch, speculative=False)
-    generated, per_step, replays = _generate_with_mtp(mtp_pipeline, monkeypatch)
+    generated, per_step, replays = _generate_with_mtp(
+        mtp_pipeline, monkeypatch, capture
+    )
     del mtp_pipeline
     gc.collect()
-    assert replays > 0, "no step replayed a captured graph"
+    assert replays > 0 or not capture, "no step replayed a captured graph"
     assert all(len(tokens) == MAX_NEW_TOKENS for tokens in generated)
 
     # The first step is the prefill's one token; every later step but the

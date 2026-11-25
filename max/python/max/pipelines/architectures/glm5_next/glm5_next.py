@@ -105,6 +105,18 @@ def replica_mapping(mesh: DeviceMesh) -> DeviceMapping:
     )
 
 
+def cast_per_device(value: Tensor, dtype: DType) -> Tensor:
+    """Casts each device's shard of ``value``, keeping its placement.
+
+    A replica placement (:func:`replica_mapping`) says nothing about how the
+    shards relate, so the elementwise rule refuses it; each device casts its
+    own instead.
+    """
+    return F.call_on_mesh(
+        lambda shard: shard.cast(dtype), value.mesh, out_specs=value.mapping
+    )(value)
+
+
 def replicate(value: Tensor, mesh: DeviceMesh) -> Tensor:
     """Places a single-device tensor on every device of ``mesh``.
 
@@ -330,49 +342,6 @@ class Glm5NextTextModel(Module[..., Tensor]):
             ),
         )
 
-    def hidden_states(
-        self,
-        tokens: Tensor,
-        input_row_offsets: Tensor,
-        mla: PagedCacheValues,
-        indexer: PagedCacheValues,
-        state: list[RecurrentStateInputsPerDevice[TensorValue, BufferValue]],
-        ep: EPBuffers | None,
-        *,
-        vision: VisionInputs[Tensor] | None = None,
-        subgraphs: bool = True,
-    ) -> Tensor:
-        """Returns every token's collapsed residual, before the final norm.
-
-        A tensor-parallel batch only: the speculative verify calls it, and
-        it does not run data-parallel. See :meth:`embed` for the vision
-        merge.
-
-        Args:
-            tokens: The batch's token ids, ragged by ``input_row_offsets``.
-            input_row_offsets: Offsets of each request's rows.
-            mla: The sparse layers' latent cache.
-            indexer: The sparse layers' indexer key cache.
-            state: Each device's recurrent-state leaves.
-            ep: The exchange's buffers, or ``None`` without expert
-                parallelism.
-            vision: The batch's image rows and their token positions, when
-                the checkpoint ships a vision tower.
-            subgraphs: Whether layers of one kind share a subgraph. A
-                speculative verify turns it off: its rollback reads what each
-                layer captures, which cannot leave a subgraph.
-        """
-        h, input_row_offsets = self.embed(tokens, input_row_offsets, vision)
-        return self.run_layers(
-            h,
-            input_row_offsets,
-            mla,
-            indexer,
-            state,
-            ep,
-            subgraphs=subgraphs,
-        )
-
     def run_layers(
         self,
         h: Tensor,
@@ -405,7 +374,7 @@ class Glm5NextTextModel(Module[..., Tensor]):
             # The recurrence reads int32 rows. Cast once here, every layer's
             # row is a static slice of the table, which costs no kernel; a
             # per-layer cast costs one each.
-            recurrent_rows = recurrent_rows.cast(DType.int32)
+            recurrent_rows = cast_per_device(recurrent_rows, DType.int32)
         tail_pool, tail_rows = state_leaf(
             state, TAIL_RING_LEAF_ID, mapping, head_sharded=False
         )

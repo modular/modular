@@ -35,10 +35,12 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DimLike, TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.common_layers.mesh_axis import DP
 from max.nn.ep import init as ep_init
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.lib.utils import split_replicated_batch
 from max.pipelines.speculative.block_driver import BlockBatch
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.driver import (
@@ -55,9 +57,9 @@ from max.pipelines.speculative.driver import (
 from max.pipelines.speculative.spec_adapters.target_adapter import TargetAdapter
 from max.pipelines.speculative.spec_target import DistributedVerify, Verified
 from max.tensor import Tensor
-from max.tensor.sharding import DeviceMapping
+from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
-from .glm5_next import Glm5Next, replicate, state_leaf
+from .glm5_next import DataParallelBatch, Glm5Next, replicate, state_leaf
 from .layers.indexer import KPoolTail, PooledIndexer
 from .logits import gather_last_tokens, project_to_logits
 from .modules import Glm5NextDecoder
@@ -148,6 +150,7 @@ def _verify(
     mesh = language_model.mesh
     assert mesh is not None
     replicated = DeviceMapping.replicated(mesh)
+    rows = state.rows
     assert state.target.ep_config is None or batch.ep_inputs is not None
     ep = ep_init.flat_buffers(
         state.target.ep_config,
@@ -172,38 +175,80 @@ def _verify(
         if batch.vision_embeddings
         else None
     )
+    # Under data parallelism the target cuts each replica's rows out of the
+    # merged window, as it does serving alone, and every device verifies its
+    # own replica's requests.
+    h, offsets = language_model.embed(
+        replicate(Tensor.from_graph_value(batch.merged_tokens), mesh),
+        offsets,
+        vision,
+        _data_parallel_batch(
+            batch,
+            batch.distributed.host_merged_offsets
+            if batch.distributed is not None
+            else None,
+        ),
+    )
     state_inputs = _state(batch)
     with state.capturing(state_inputs, batch.num_draft_tokens, offsets):
-        h = language_model.hidden_states(
-            replicate(Tensor.from_graph_value(batch.merged_tokens), mesh),
+        h = language_model.run_layers(
+            h,
             offsets,
-            PagedCacheValues.from_upstream(batch.kv_collections, replicated),
+            PagedCacheValues.from_upstream(batch.kv_collections, rows),
             PagedCacheValues.from_upstream(
-                batch.passthrough_kv[INDEXER_CACHE_KEY], replicated
+                batch.passthrough_kv[INDEXER_CACHE_KEY], rows
             ),
             state_inputs,
             ep,
-            vision=vision,
+            # The rollback reads what each layer captures, which cannot
+            # leave a subgraph.
             subgraphs=False,
         )
     # The verify reads only the logits over its window, so it skips the
-    # last-token projection, a vocab-wide matmul per step.
-    rows, _ = gather_variable_rows(
-        h, offsets, Tensor.from_graph_value(batch.return_n_logits), mesh
+    # last-token projection, a vocab-wide matmul per step. Under data
+    # parallelism only the gathered rows join the whole batch.
+    gathered, _ = gather_variable_rows(
+        h,
+        offsets,
+        Tensor.from_graph_value(batch.return_n_logits),
+        mesh,
+        data_parallel_degree=batch.data_parallel_degree,
     )
     logits = project_to_logits(
-        rows,
+        gathered,
         language_model.norm,
         language_model.lm_head,
         mesh,
         language_model.config.vocab_size,
         None,
     )
+    # Under data parallelism each device's shard is its replica's rows, the
+    # layout the proposer's first step reads.
     hidden = language_model.norm(h)
     return Verified(
         logits=TensorValue(logits),
         hidden=[TensorValue(shard) for shard in hidden.local_shards],
         roll_forward=partial(_roll_forward, state),
+    )
+
+
+def _data_parallel_batch(
+    batch: SequentialBatch[Any, Any, Any], host_offsets: TensorValue | None
+) -> DataParallelBatch | None:
+    """Returns what splits a call's rows over the replicas, if there are any.
+
+    Args:
+        batch: The iteration's batch.
+        host_offsets: The call's row offsets on the host.
+    """
+    if batch.data_parallel_degree == 1:
+        return None
+    assert batch.distributed is not None and host_offsets is not None
+    return DataParallelBatch(
+        host_input_row_offsets=Tensor.from_graph_value(host_offsets).cast(
+            DType.int64
+        ),
+        splits=Tensor.from_graph_value(batch.distributed.data_parallel_splits),
     )
 
 
@@ -215,6 +260,11 @@ def _roll_forward(state: Glm5NextSpecState, batch: SequentialBatch) -> None:
         merged_offsets_per_dev=batch.merged_offsets_per_dev,
         num_accepted=batch.num_accepted,
         device=batch.device0,
+        data_parallel_splits=(
+            batch.distributed.data_parallel_splits
+            if batch.data_parallel_degree > 1 and batch.distributed is not None
+            else None
+        ),
     )
 
 
@@ -268,9 +318,21 @@ class Glm5NextMTPProposer(TensorAdapter):
             dim=draft.selection_width, split_prefix="mtp_topk"
         )
 
-    @property
-    def _replicated(self) -> DeviceMapping:
-        return DeviceMapping.replicated(self.mesh)
+    def _rows(self, batch: _Batch) -> DeviceMapping:
+        """The placement of a per-row tensor the driver hands in shards.
+
+        Every device holds the whole batch under tensor parallelism, and only
+        its replica's rows under data parallelism.
+        """
+        if batch.data_parallel_degree == 1:
+            return DeviceMapping.replicated(self.mesh)
+        return DeviceMapping(
+            self.mesh,
+            tuple(
+                Sharded(0) if name == DP else Replicated()
+                for name in self.mesh.axis_names
+            ),
+        )
 
     def prefill(
         self, batch: _Batch, tokens: Tensor, target_hidden: list[Tensor]
@@ -278,21 +340,22 @@ class Glm5NextMTPProposer(TensorAdapter):
         """Drafts the first token from the verified window."""
         indexer = self.draft.indexer
         assert isinstance(indexer, PooledIndexer)
-        with self.state.capturing_draft(
-            indexer,
-            Tensor.from_shard_values(
-                batch.merged_offsets_per_dev, self._replicated
-            ),
-        ):
-            h, selection, offsets = self._decode(
-                batch, tokens, target_hidden, None
+        embedded, offsets = self._embed(batch, tokens, "mtp_prefill")
+        with self.state.capturing_draft(indexer, offsets):
+            h, selection = self._decode(
+                batch, embedded, offsets, target_hidden, None
             )
         self.state.replay_draft_tail()
         # Every row's hidden state and the logits of each request's last
         # ``return_n_logits`` rows, which the driver gathers at the accepted
-        # position.
+        # position. Under data parallelism the hidden states and selection
+        # stay with their replica, and only the logit rows join the batch.
         rows, _ = gather_variable_rows(
-            h, offsets, batch.return_n_logits, self.mesh
+            h,
+            offsets,
+            batch.return_n_logits,
+            self.mesh,
+            data_parallel_degree=batch.data_parallel_degree,
         )
         return Proposed(
             logits=self._project(rows),
@@ -307,18 +370,26 @@ class Glm5NextMTPProposer(TensorAdapter):
         # ``hnorm`` expects the post-``shared_head_norm`` hidden state, which
         # is row-wise, so normalizing the one carried row here is equivalent.
         hidden = self.draft.shared_head_norm(
-            Tensor.from_shard_values(draft_input.hidden, self._replicated)
+            Tensor.from_shard_values(draft_input.hidden, self._rows(batch))
+        )
+        embedded, offsets = self._embed(
+            batch, draft_input.tokens, f"mtp_step_{index}"
         )
         # Every step reuses step 0's selection, made for the token one
         # position before step 1's.
-        h, _, offsets = self._decode(
+        h, _ = self._decode(
             batch,
-            draft_input.tokens,
+            embedded,
+            offsets,
             hidden,
             draft_input.reuse,
             selection_lag=index,
         )
         last = gather_last_tokens(h, offsets)
+        if batch.data_parallel_degree > 1:
+            # LAST_PER_DEVICE hands the driver the whole batch on every
+            # device, which it slices back to each replica's rows.
+            last = F.allgather(last, tensor_axis=0)
         return Proposed(
             logits=self._project(last), hidden=list(last.local_shards)
         )
@@ -333,43 +404,67 @@ class Glm5NextMTPProposer(TensorAdapter):
             None,
         )
 
-    def _decode(
-        self,
-        batch: _Batch,
-        tokens: Tensor,
-        hidden: list[Tensor] | Tensor,
-        reuse: list[Tensor] | None,
-        selection_lag: int = 0,
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """Runs the draft layer.
+    def _embed(
+        self, batch: _Batch, tokens: Tensor, split_prefix: str
+    ) -> tuple[Tensor, Tensor]:
+        """Embeds a draft call's query, and returns it with its offsets.
 
-        Returns:
-            Its output, its token selection and the query offsets.
+        Under data parallelism each device keeps its replica's rows, rebased
+        to zero. ``split_prefix`` names the call's per-replica row dims; every
+        call that splits needs its own, since dims that share a name share
+        one runtime extent.
         """
-        replicated = self._replicated
         embedded = self.language_model.embed_tokens(
             replicate(tokens, self.mesh)
         )
-        if isinstance(hidden, list):
-            hidden = Tensor.from_shard_values(hidden, replicated)
         offsets = Tensor.from_shard_values(
-            batch.query_offsets_per_dev, replicated
+            batch.query_offsets_per_dev, DeviceMapping.replicated(self.mesh)
         )
+        if batch.data_parallel_degree == 1:
+            return embedded, offsets
+        assert batch.distributed is not None
+        return split_replicated_batch(
+            embedded,
+            offsets,
+            batch.distributed.host_query_offsets.cast(DType.int64),
+            batch.distributed.data_parallel_splits,
+            self._rows(batch),
+            prefix=split_prefix,
+        )
+
+    def _decode(
+        self,
+        batch: _Batch,
+        embedded: Tensor,
+        offsets: Tensor,
+        hidden: list[Tensor] | Tensor,
+        reuse: list[Tensor] | None,
+        selection_lag: int = 0,
+    ) -> tuple[Tensor, Tensor]:
+        """Runs the draft layer over the embedded query.
+
+        Returns:
+            Its output and its token selection.
+        """
+        rows = self._rows(batch)
+        state_rows = self.state.rows
+        if isinstance(hidden, list):
+            hidden = Tensor.from_shard_values(hidden, rows)
         tail_pool, tail_rows = state_leaf(
-            _state(batch), TAIL_RING_LEAF_ID, replicated, head_sharded=False
+            _state(batch), TAIL_RING_LEAF_ID, state_rows, head_sharded=False
         )
         assert self.draft.ep_config is None or batch.ep_inputs is not None
         ep = ep_init.flat_buffers(
             self.draft.ep_config, batch.ep_inputs or (), self.mesh
         )
-        h, selection = self.draft(
+        return self.draft(
             embedded,
             hidden,
             PagedCacheValues.from_upstream(
-                batch.draft_kv_collections, replicated
+                batch.draft_kv_collections, state_rows
             ),
             PagedCacheValues.from_upstream(
-                batch.passthrough_kv[INDEXER_CACHE_KEY], replicated
+                batch.passthrough_kv[INDEXER_CACHE_KEY], state_rows
             ),
             KPoolTail(
                 pool=tail_pool,
@@ -383,12 +478,11 @@ class Glm5NextMTPProposer(TensorAdapter):
                 self.mesh
             ),
             ep,
-            Tensor.from_shard_values(reuse, replicated)
+            Tensor.from_shard_values(reuse, rows)
             if reuse is not None
             else None,
             selection_lag,
         )
-        return h, selection, offsets
 
 
 def ep_input_tree(target: Any) -> object | None:
