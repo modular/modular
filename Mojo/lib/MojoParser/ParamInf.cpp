@@ -282,25 +282,36 @@ FailureOr<SmartVariant<CValue, ASTType>> ParamInf::inferCValue(
           .addExplanation(diag);
       return failure();
     }
-
+    expectedType = evaluator.getReboundType(expectedType);
     // Similar to how we handle operands that need origins, we need to lazily
     // emit a closure struct for the lambda since we are uncertain that the
     // candidate being inferences here will be selected. Given it a
     // `UnknownAttr` as a place holder at the moment but register the lambda in
     // the re-emission list s.t. the UValue will be turned into a CValue only
     // when the candidate is picked.
-    if (failed(matcher.matchParams(
-            UnknownAttr::get(expectedType.extractMetaType()),
-            PValue(expectedType)))) {
-      auto &diag = emitWrongTypeDiag(expectedType);
-      matcher.failureReason->addExplanation(diag);
-      lambdaMatchingScope.revert();
+    SmartVariant<CValue, ASTType> ret;
+    if (ctxSig->second) {
+      // Thin, we are inferring a function pointer value
+      ret = CValue(UnknownAttr::get(expectedSig));
+    } else {
+      // else we are inferring a anonymous struct type that implements the
+      // closure trait.
+      auto fakeTypeVal = UnknownAttr::get(expectedType.extractMetaType());
+      if (failed(matcher.matchParams(fakeTypeVal, PValue(expectedType)))) {
+        auto &diag = emitWrongTypeDiag(expectedType);
+        matcher.failureReason->addExplanation(diag);
+        lambdaMatchingScope.revert();
+        return failure();
+      }
+      ret = ASTType(fakeTypeVal);
     }
-    // We need to a re
-    assert(forwardedNeedingReEmission);
-    // TODO: emit a error
-    // return failure();
-    llvm_unreachable("Not implemented!");
+
+    assert(forwardedNeedingReEmission &&
+           "set up re-emission list to emit lambda");
+    forwardedNeedingReEmission->push_back(OperandNeedingReEmission::getLambda(
+        argIdx, expectedSig, /*isThin=*/ctxSig->second));
+    // The shape matches; the closure value itself is emitted on re-emission.
+    return ret;
   }
 
   auto orValue = operand.ir.getIfOverloadSet();

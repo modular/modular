@@ -244,11 +244,20 @@ LogicalResult VerifiedParamBindings::reEmitIfNecessary() {
         binding.ir = PMBValue::getFromPValue(binding.ir.getIfPValue());
       else
         binding.ir = PMRValue::getFromPValue(binding.ir.getIfPValue());
+    } else if (info.isLambdas()) {
+      auto ctx = info.getLambdas();
+      LambdaUValue lambdaUValue = binding.ir.getIfLambda();
+      binding.ir = lambdaUValue.emitAsCValue(emitter, ctx.ctxSig, ctx.isThin);
+    } else {
+      llvm_unreachable("unrecognized re-emission kind");
     }
 
-    // Issue the conversion with a comptime.origin ref.
-    PValue value = emitter.emitPValue({binding.ir, binding.expr},
-                                      EC_ParameterList, expectedType);
+    PValue value;
+    if (binding.ir) {
+      // Issue the conversion with a comptime.origin ref.
+      value = emitter.emitPValue({binding.ir, binding.expr}, EC_ParameterList,
+                                 expectedType);
+    }
     if (!value) {
       // Record a failure
       bindings = nullptr;

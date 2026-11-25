@@ -1830,6 +1830,7 @@ static void finalizeResolvedFnOp(SharedState &shared, FnOp funcOp,
 ///                [effects] [capture_list] ["->" expression] ":" expression
 AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
                                                FnTypeGeneratorType ctxSig,
+                                               bool requireThin,
                                                IREmitter &emitter) {
   // Check ctxSig is fully resolved if present
   assert(!ctxSig || !ctxSig.hasUnresolvedEntry());
@@ -1838,6 +1839,21 @@ AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
          "signature must have the lambda's parameters and arguments");
   // Build the synthetic anonymous `def` the lambda desugars to.
   SMLoc lambdaLoc = lambda.getLoc();
+  // TODO: check context sig is compatible with the Value here as well. It is
+  // possible that we have a unverified context signature provided by user
+  // (though unlikely) as in:
+  //
+  // var x : def (Int) thin -> Int = lambda () : return
+  //
+  // which we should reject.
+  if (requireThin && !lambda.mightBeThin()) {
+    // TODO: better error message.
+    emitter.emitError(lambdaLoc,
+                      "lambda expression has explicit captures, can not be "
+                      "converted to a thin function pointer.");
+    return {};
+  }
+
   ArrayRef<LambdaUValue::Capture> captures = lambda.getCaptures();
   std::optional<CaptureConvention> captureAllByConvention =
       lambda.getCaptureAllByConvention();
@@ -1925,7 +1941,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
   }
   if (captureAllByConvention)
     shared.setDefaultCaptureForScope(decl, *captureAllByConvention);
-  else if (!lambda.hasExplicitCaptureList()) // FIXME: we should not allow this.
+  else if (!lambda.hasExplicitCaptureList() && !requireThin)
     // An omitted capture list defaults to capturing free variables by `imm`;
     // a body that captures nothing then yields a thin closure (empty storage).
     shared.setDefaultCaptureForScope(decl, CaptureConvention::kConventionRead);
@@ -2086,10 +2102,12 @@ AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
   // Fold a thin lambda to the promoted function's literal -- the value a named
   // `def` yields -- so it decays and rebinds like one. The singleton test is
   // the one a reference to a named `def` applies to itself, so the two agree.
-  bool isThin = bodyCaptures.values.empty() && captures.empty() &&
-                !captureAllByConvention;
+  bool promoteToThin =
+      requireThin || (bodyCaptures.values.empty() && captures.empty() &&
+                      !captureAllByConvention);
   if (insideParamContext ||
-      (isThin && llvm::all_of(ctxSig.getInputParamTypes(), [&](Type type) {
+      (promoteToThin &&
+       llvm::all_of(ctxSig.getInputParamTypes(), [&](Type type) {
          return ASTType(type).isSingleton(shared);
        }))) {
     resolveAllWithin(decl);

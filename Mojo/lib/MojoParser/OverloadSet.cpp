@@ -566,6 +566,98 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   return {};
 }
 
+/// Spill the operand at `operandIdx`, or the result slot for
+/// `kExprDestOperandIdx`, to memory so that it exposes an origin.
+static LogicalResult emitOperandNeedingOrigins(
+    const OperandNeedingReEmission::NeedingOrigins &needingOrigins,
+    size_t operandIdx, CallOperands &operands, IREmitter &emitter) {
+  ASTType expectedArgType = needingOrigins.expectedArgType;
+  // Handle the result slot if we have to materialize it into memory. If the
+  // destination can supply memory, for example a 'var' pattern, resolve it
+  // so that inference can use it. Otherwise make a temporary. Do not
+  // replace the destination: the call result must still go to it as an
+  // owned value.
+  if (operandIdx == OperandNeedingReEmission::kExprDestOperandIdx) {
+    if (operands.dest.getDefinedMLValueIfExists(expectedArgType, emitter))
+      return success();
+    ExprDest temporary(operands.dest.getContext());
+    operands.resultSlot = temporary.getMLValueForResult(
+        operands.getExprLoc(), expectedArgType, emitter);
+    if (!operands.resultSlot)
+      return failure();
+    return success();
+  }
+
+  // This is the implicit constructor's convention when the operand is
+  // spilled to feed a conversion rather than the call itself.
+  ArgConvention argConvention = needingOrigins.argConvention;
+
+  // If the argument is a DLValue, then we might have a getter/setter pair,
+  // but we are only going to use the getter.  In the case when the getter
+  // returns a reference, we can directly use that. Reference arguments
+  // cannot support writeback anyway.
+  //
+  // TODO: Explicit handling of DLValues shouldn't be needed here -
+  // emitMBValue (et al) already do this. The problem is that the code below
+  // isn't handling all the arg conventions correctly, notably ref and mut
+  // can bind to a mutable ref returned by getitem. We should generalize
+  // "needsRValue" to a full ArgConvention.
+  if (auto lv = operands[operandIdx].ir.getIfDLValue()) {
+    ExprDest loadDest(EC_RefBinding);
+    auto loaded = lv->emitLoad(loadDest, emitter);
+    if (!loaded)
+      return failure(); // Failed to emit the PValue/SValue to an MRValue.
+    operands.values[operandIdx].ir = loaded;
+
+    // If the getter returned a reference, then use that value, otherwise
+    // drop an RValue into a temporary and bind an immutable ref.
+    if (operands[operandIdx].ir.isMValue())
+      return success();
+  }
+
+  // Ref convention isn't supported, so if we still have something in the
+  // wrong address space, we need to emit a copy.
+  if (operands[operandIdx].ir.isMValue() &&
+      !operands[operandIdx].ir.getMValueType().isDefaultAddrSpace()) {
+    operands.values[operandIdx].ir = emitter.emitCopyFromNonDefaultAddressSpace(
+        operands[operandIdx], EC_CallArgValue);
+    if (!operands[operandIdx].ir)
+      return failure();
+  }
+
+  AnyValue newVal;
+  if (emitter.builder) {
+    // We emit this as an MBValue instead of an MRValue specifically so
+    // 'ref' arguments do not infer mutability from the temporary.
+    if (argConvention != ArgConvention::OwnedMem) {
+      newVal =
+          emitter.emitMBValue({operands[operandIdx]},
+                              ExprContext::EC_CallRefArgValue, expectedArgType);
+    } else {
+      // "var" variadic list arguments need ot turn into RValues though.
+      newVal =
+          emitter.emitMRValue({operands[operandIdx]},
+                              ExprContext::EC_CallRefArgValue, expectedArgType);
+    }
+    if (!newVal)
+      return failure(); // Failed to emit the PValue/SValue to an MBValue.
+
+  } else {
+    // In a comptime context, convert to expected type then drop in
+    // memory.
+    auto convertedArg = emitter.emitPValue(
+        operands[operandIdx], ExprContext::EC_CallRefArgValue, expectedArgType);
+    if (!convertedArg)
+      return failure(); // Failed to emit the PValue/SValue to an MRValue.
+    if (argConvention != ArgConvention::OwnedMem)
+      newVal = PMBValue::getFromPValue(convertedArg);
+    else
+      newVal = PMRValue::getFromPValue(convertedArg);
+  }
+  operands.values[operandIdx].ir = newVal;
+  return success();
+}
+
 /// This method is called when we have selected an overload candidate that
 /// matches the operand list, but some argument requires an origin and the
 /// argument doesn't have it. This could be because the argument is a computed
@@ -585,9 +677,8 @@ static LogicalResult emitOperandsNeedingReEmission(
 
   // Emit each of the arguments that needs a origin to an MValue.
   for (const OperandNeedingReEmission &info : operandsNeedingReEmission) {
-    const auto &needingReEmission = info.getNeedingOrigins();
     auto operandIdx = info.operandIdx;
-    auto expectedArgType = needingReEmission.expectedArgType;
+
     // If the operand is a positional argument it will be in the normal
     // operand list, otherwise it will be in the kwargs list.
     assert((operandIdx < operands.size() ||
@@ -597,90 +688,19 @@ static LogicalResult emitOperandsNeedingReEmission(
     if (!operandsAlreadySpilled.insert(operandIdx).second)
       continue; // Ignore duplicates.
 
-    // Handle the result slot if we have to materialize it into memory. If the
-    // destination can supply memory, for example a 'var' pattern, resolve it
-    // so that inference can use it. Otherwise make a temporary. Do not replace
-    // the destination: the call result must still go to it as an owned value.
-    if (operandIdx == OperandNeedingReEmission::kExprDestOperandIdx) {
-      if (operands.dest.getDefinedMLValueIfExists(expectedArgType, emitter))
-        continue;
-      ExprDest temporary(operands.dest.getContext());
-      operands.resultSlot = temporary.getMLValueForResult(
-          operands.getExprLoc(), expectedArgType, emitter);
-      if (!operands.resultSlot)
-        return failure();
-      continue;
-    }
-
-    // This is the implicit constructor's convention when the operand is
-    // spilled to feed a conversion rather than the call itself.
-    ArgConvention argConvention = needingReEmission.argConvention;
-
-    // If the argument is a DLValue, then we might have a getter/setter pair,
-    // but we are only going to use the getter.  In the case when the getter
-    // returns a reference, we can directly use that. Reference arguments cannot
-    // support writeback anyway.
-    //
-    // TODO: Explicit handling of DLValues shouldn't be needed here -
-    // emitMBValue (et al) already do this. The problem is that the code below
-    // isn't handling all the arg conventions correctly, notably ref and mut can
-    // bind to a mutable ref returned by getitem.
-    // We should generalize "needsRValue" to a full ArgConvention.
-    if (auto lv = operands[operandIdx].ir.getIfDLValue()) {
-      ExprDest loadDest(EC_RefBinding);
-      auto newVal = lv->emitLoad(loadDest, emitter);
-      if (!newVal)
-        return failure(); // Failed to emit the PValue/SValue to an MRValue.
-      operands.values[operandIdx].ir = newVal;
-
-      // If the getter returned a reference, then use that value, otherwise drop
-      // an RValue into a temporary and bind an immutable ref.
-      if (operands[operandIdx].ir.isMValue())
-        continue;
-    }
-
-    // Ref convention isn't supported, so if we still have something in the
-    // wrong address space, we need to emit a copy.
-    if (operands[operandIdx].ir.isMValue() &&
-        !operands[operandIdx].ir.getMValueType().isDefaultAddrSpace()) {
+    if (info.isLambdas()) {
+      assert(operandIdx != OperandNeedingReEmission::kExprDestOperandIdx);
+      auto ctx = info.getLambdas();
+      LambdaUValue lambdaUValue = operands[operandIdx].ir.getIfLambda();
       operands.values[operandIdx].ir =
-          emitter.emitCopyFromNonDefaultAddressSpace(operands[operandIdx],
-                                                     EC_CallArgValue);
-      if (!operands[operandIdx].ir)
+          lambdaUValue.emitAsCValue(emitter, ctx.ctxSig, ctx.isThin);
+    } else if (info.isNeedingOrigins()) {
+      if (failed(emitOperandNeedingOrigins(info.getNeedingOrigins(), operandIdx,
+                                           operands, emitter)))
         return failure();
-    }
-
-    AnyValue newVal;
-    if (emitter.builder) {
-      // We emit this as an MBValue instead of an MRValue specifically so
-      // 'ref' arguments do not infer mutability from the temporary.
-      if (argConvention != ArgConvention::OwnedMem) {
-        newVal = emitter.emitMBValue({operands[operandIdx]},
-                                     ExprContext::EC_CallRefArgValue,
-                                     expectedArgType);
-      } else {
-        // "var" variadic list arguments need ot turn into RValues though.
-        newVal = emitter.emitMRValue({operands[operandIdx]},
-                                     ExprContext::EC_CallRefArgValue,
-                                     expectedArgType);
-      }
-      if (!newVal)
-        return failure(); // Failed to emit the PValue/SValue to an MBValue.
-
     } else {
-      // In a comptime context, convert to expected type then drop in
-      // memory.
-      auto convertedArg =
-          emitter.emitPValue(operands[operandIdx],
-                             ExprContext::EC_CallRefArgValue, expectedArgType);
-      if (!convertedArg)
-        return failure(); // Failed to emit the PValue/SValue to an MRValue.
-      if (argConvention != ArgConvention::OwnedMem)
-        newVal = PMBValue::getFromPValue(convertedArg);
-      else
-        newVal = PMRValue::getFromPValue(convertedArg);
+      llvm_unreachable("unrecognized remission kind");
     }
-    operands.values[operandIdx].ir = newVal;
   }
   return success();
 }

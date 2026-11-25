@@ -272,13 +272,15 @@ public:
 
   /// Build the closure value for a `lambda` expression at emit time, by
   /// resolving the synthetic anonymous `def` it desugars to. `signature` is
-  /// the contextual signature for `lambda`'s partial signature
+  /// the contextual signature for `lambda`'s partial signature. `isThin`
+  /// says whether the context requires a thin function; `std::nullopt` makes
+  /// the lambda thin exactly when its body captures nothing.
   ///
   /// This will be the LambdaUValue::emitIR eventually, with signature being
   /// optional.
   AnyValue resolveAnonymousClosure(LambdaUValue lambda,
                                    FnTypeGeneratorType signature,
-                                   IREmitter &emitter);
+                                   bool requireThin, IREmitter &emitter);
 
   /// DeclResolution is an inherently recursive process - this return the
   /// current declaration that is being worked on.

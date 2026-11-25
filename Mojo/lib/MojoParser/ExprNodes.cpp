@@ -63,6 +63,7 @@
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <Support/LLVMForwardDecls.h>
 
@@ -5013,8 +5014,10 @@ AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   auto &signatureDecl = emitter.getDeclResolver().createFunctionTypeDecl(
       getLoc(), emitter.declScope);
   signatureDecl.setExplicitParamScope();
-  // TODO: toggle this after fully migrated.
-  constexpr bool doPartialParsing = false;
+  // TODO: Remove the environment toggle after lambdas are fully migrated to
+  // partial parsing.
+  static const bool doPartialParsing =
+      llvm::sys::Process::GetEnv("MOJO_LAMBDA_PARTIAL_PARSING") == "1";
 
   ParsedParamList parsedParamList;
   parsedParamList.params = llvm::to_vector(parsedParams);
@@ -5045,7 +5048,7 @@ AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
 
-  if constexpr (doPartialParsing) {
+  if (doPartialParsing) {
     return LambdaUValue::create(getLoc(), signature, parsedParams, parsedArgs,
                                 body, captures, hasExplicitCaptureList,
                                 captureAllByConvention);
@@ -5053,7 +5056,9 @@ AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
     auto lambda = LambdaUValue::create(
         getLoc(), signature, parsedParams, parsedArgs, body, captures,
         hasExplicitCaptureList, captureAllByConvention);
-    return lambda.emitAsCValue(emitter, dest);
+    return emitter.emitResult(
+        lambda.emitAsCValue(emitter, lambda.getPartialSignature(), false),
+        lambda.getBodyExpr(), dest);
   }
 }
 

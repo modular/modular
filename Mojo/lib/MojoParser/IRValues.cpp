@@ -816,14 +816,11 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   return {};
 }
 
-CValue LambdaUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
-  // TODO: The partial signature is fully resolved for now, use it as the
-  // contextual type, will be replaced to a actual contextual type later.
-  auto ctxSig = getPartialSignature();
-  return emitter
-      .emitResult(emitter.getDeclResolver().resolveAnonymousClosure(
-                      *this, ctxSig, emitter),
-                  getBodyExpr(), dest)
+CValue LambdaUValue::emitAsCValue(IREmitter &emitter,
+                                  FnTypeGeneratorType ctxSig,
+                                  bool requireThin) {
+  return emitter.getDeclResolver()
+      .resolveAnonymousClosure(*this, ctxSig, requireThin, emitter)
       .getIfCValue();
 }
 //===----------------------------------------------------------------------===//

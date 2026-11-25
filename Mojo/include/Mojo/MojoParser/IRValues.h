@@ -473,7 +473,8 @@ public:
   bool hasExplicitCaptureList() const;
   std::optional<CaptureConvention> getCaptureAllByConvention() const;
 
-  CValue emitAsCValue(IREmitter &emitter, ExprDest &dest);
+  CValue emitAsCValue(IREmitter &emitter, FnTypeGeneratorType ctxSig,
+                      bool requireThin);
 
   bool mightBeThin() const {
     return !getCaptureAllByConvention().has_value() && getCaptures().empty();
