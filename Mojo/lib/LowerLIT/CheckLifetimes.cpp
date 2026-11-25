@@ -1109,6 +1109,16 @@ struct ValueSet {
   ValueInfo &getValueInfo(size_t idx) { return valueInfos[idx]; }
   const ValueInfo &getValueInfo(size_t idx) const { return valueInfos[idx]; }
 
+  /// Record that an error not associated with a ValueInfo was emitted.
+  void markErrorEmitted() { errorEmitted = true; }
+
+  /// Return whether an error associated with this function was emitted.
+  bool hadAnyErrors() const {
+    return errorEmitted || llvm::any_of(valueInfos, [](const ValueInfo &info) {
+             return info.hasErrorDiagnosed;
+           });
+  }
+
   /// Remove a tracked value from the valueset maps, and reset its ValueEntry to
   /// have a null Value.
   void eraseValueInfo(Value value);
@@ -1211,6 +1221,8 @@ struct ValueSet {
 private:
   /// This is the function we're analyzing.
   FnOp func;
+  /// Whether an error not associated with a ValueInfo was emitted.
+  bool errorEmitted = false;
   /// These are all of the value infos, indexed by ID #.
   SmallVector<ValueInfo> valueInfos;
   /// This is a lookup from SSA values to the thing they are referencing.
@@ -1306,6 +1318,7 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
     // This should be an assertion, but check softly to help IR clients.
     auto refType = dyn_cast<RefType>(val.getType());
     if (!refType) {
+      markErrorEmitted();
       mlir::emitError(val.getLoc())
           << "INTERNAL ERROR: trackable IR value of type " << val.getType()
           << " should have type '!lit.ref': " << val;
@@ -6060,9 +6073,5 @@ LogicalResult CheckLifetimes::processFunction(FnOp func,
     varDecl->erase();
   }
 
-  // Return failure if we generated errors for any of the tracked values.
-  hadErrors |= llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
-    return info.hasErrorDiagnosed;
-  });
-  return failure(hadErrors);
+  return failure(hadErrors || valueSet.hadAnyErrors());
 }
