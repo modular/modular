@@ -4604,7 +4604,7 @@ def gated_delta_conv1d_fwd_shape(
     conv_state: Some[Tensor],
     slot_idx: Some[Tensor],
     input_row_offsets: Some[Tensor],
-) -> IndexList[2]:
+) -> type_of(qkv_input_ragged.shape()):
     """Computes the output shape for the `gated_delta_conv1d_fwd` graph op.
 
     Args:
@@ -4638,7 +4638,7 @@ def gated_delta_conv1d_fwd_shape(
         type_of(input_row_offsets).dtype == .uint32
     ), "input_row_offsets dtype must be uint32"
     # conv_output_ragged has same shape as qkv_input_ragged
-    return rebind[IndexList[2]](coord_to_index_list(qkv_input_ragged.shape()))
+    return qkv_input_ragged.shape()
 
 
 @extensibility.register("gated_delta_conv1d_verify_fwd")
@@ -6108,7 +6108,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
     cache_indices: Some[Tensor],
     update_state: Some[Tensor],
     xbc: Some[Tensor],
-) -> IndexList[3]:
+) -> type_of(x.shape()):
     """Computes the output shape for the `mamba2_ssd_chunk_scan_varlen_fwd_inplace` graph op.
 
     Args:
@@ -6185,7 +6185,7 @@ def mamba2_ssd_chunk_scan_varlen_fwd_inplace_shape(
         and type_of(dt_bias).dtype == type_of(x).dtype
     ), "x, dt, A, B, C, D, and dt_bias must share a dtype"
     # y has the same shape as x: (total_len, nheads, head_dim).
-    return rebind[IndexList[3]](coord_to_index_list(x.shape()))
+    return x.shape()
 
 
 @extensibility.register("mamba2_replay_fold")
@@ -6735,7 +6735,7 @@ def causal_conv1d_varlen_fwd_shape(
     cache_indices: Some[Tensor],
     has_initial_state: Some[Tensor],
     update_state: Some[Tensor],
-) -> IndexList[2]:
+) -> type_of(x.shape()):
     """Computes the output shape for the `causal_conv1d_varlen_fwd` graph op.
 
     Args:
@@ -6785,7 +6785,7 @@ def causal_conv1d_varlen_fwd_shape(
     comptime assert (
         type_of(update_state).dtype == .bool
     ), "update_state dtype must be bool"
-    return rebind[IndexList[2]](coord_to_index_list(x.shape()))
+    return x.shape()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -6906,14 +6906,14 @@ def gated_group_rmsnorm_shape(
     gate: Some[Tensor],
     weight: Some[Tensor],
     eps: Float32,
-) -> IndexList[2]:
+) -> type_of(y.shape()):
     comptime assert type_of(y).rank == 2, "y must be rank 2"
     comptime assert type_of(gate).rank == 2, "gate must be rank 2"
     comptime assert type_of(weight).rank == 1, "weight must be rank 1"
     comptime assert (
         type_of(weight).dtype == .float32
     ), "weight dtype must be float32"
-    return rebind[IndexList[2]](coord_to_index_list(y.shape()))
+    return y.shape()
 
 
 # ===-----------------------------------------------------------------------===#

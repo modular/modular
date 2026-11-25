@@ -217,7 +217,7 @@ def composite_matmul_fused_partial_rms_norm_shape(
     input: Some[Tensor],
     weight: Some[Tensor],
     gamma: Some[Tensor],
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     """Computes the output shape for the `mo.composite.matmul_fused_partial_rms_norm` graph op.
 
     Args:
@@ -238,9 +238,7 @@ def composite_matmul_fused_partial_rms_norm_shape(
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
     # Return the input shape for normed output
     # The actual shape split is handled by the op semantics
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 @extensibility.register("mo.matmul", extensibility.CPU)

@@ -720,12 +720,12 @@ struct VroomQ40RepackWeights:
 @extensibility.register_shape_function("vroom_q4_0_repack_weights")
 def vroom_q4_0_repack_weights_shape(
     b: Some[Tensor],
-) -> IndexList[type_of(b).rank]:
+) -> type_of(b.shape()):
     """Computes the output shape for the `vroom_q4_0_repack_weights` graph op.
     """
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
+    return b.shape()
 
 
 @extensibility.register("ggml_q4_k_dequantize")
@@ -830,12 +830,12 @@ struct VroomQ4KRepackWeights:
 @extensibility.register_shape_function("vroom_q4_k_repack_weights")
 def vroom_q4_k_repack_weights_shape(
     b: Some[Tensor],
-) -> IndexList[type_of(b).rank]:
+) -> type_of(b.shape()):
     """Computes the output shape for the `vroom_q4_k_repack_weights` graph op.
     """
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
+    return b.shape()
 
 
 @extensibility.register("ggml_q6_k_dequantize")
@@ -944,12 +944,12 @@ struct VroomQ6KRepackWeights:
 @extensibility.register_shape_function("vroom_q6_k_repack_weights")
 def vroom_q6_k_repack_weights_shape(
     b: Some[Tensor],
-) -> IndexList[type_of(b).rank]:
+) -> type_of(b.shape()):
     """Computes the output shape for the `vroom_q6_k_repack_weights` graph op.
     """
     comptime assert type_of(b).dtype == .uint8, "b must be uint8"
     comptime assert type_of(b).rank == 2, "b must be rank 2"
-    return rebind[IndexList[type_of(b).rank]](coord_to_index_list(b.shape()))
+    return b.shape()
 
 
 @extensibility.register("qmatmul_b4_g128")

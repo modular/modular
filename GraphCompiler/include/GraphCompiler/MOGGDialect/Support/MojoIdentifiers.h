@@ -310,6 +310,8 @@ constexpr MojoStaticValue kFnGetSimdWidthForDtypes =
     "builtin_primitives.primitives.get_simd_width_for_dtypes";
 constexpr MojoStaticValue kFnPow2DivisorOfDims =
     "builtin_primitives.primitives.pow2_divisor_of_dims";
+constexpr MojoStaticValue kFnShapeFuncResult =
+    "builtin_primitives.primitives.shape_func_result";
 constexpr MojoStaticValue kFnUnpackBufferRef =
     "builtin_primitives.primitives.unpack_buffer_ref";
 constexpr MojoStaticValue kFnUnpackDeviceCtx =

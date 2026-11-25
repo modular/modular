@@ -669,7 +669,7 @@ def reduce_layer_norm_shape(
     gamma: Some[Tensor],
     beta: Some[Tensor],
     epsilon: Float32,
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     """Computes the output shape for the `mo.reduce.layer_norm` graph op.
 
     Args:
@@ -690,9 +690,7 @@ def reduce_layer_norm_shape(
     ), "beta dtype must match input dtype"
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
     comptime assert type_of(beta).rank == 1, "beta must be rank 1"
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 @extensibility.register("mo.composite.layer_norm_rope_ragged")
@@ -824,7 +822,7 @@ def composite_layer_norm_rope_ragged_shape(
     input_row_offsets: Some[Tensor],
     start_pos: Some[Tensor],
     freqs_cis: Some[Tensor],
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     """Computes the output shape for the `mo.composite.layer_norm_rope_ragged` graph op.
 
     Args:
@@ -861,9 +859,7 @@ def composite_layer_norm_rope_ragged_shape(
     ), "start_pos must be uint32"
     comptime assert type_of(start_pos).rank == 1, "start_pos must be rank 1"
     comptime assert type_of(freqs_cis).rank == 2, "freqs_cis must be rank 2"
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 @extensibility.register("mo.reduce.group_norm")
@@ -958,7 +954,7 @@ def reduce_group_norm_shape(
     beta: Some[Tensor],
     epsilon: Float32,
     num_groups: Int32,
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     """Computes the output shape for the `mo.reduce.group_norm` graph op.
 
     Args:
@@ -981,9 +977,7 @@ def reduce_group_norm_shape(
     ), "beta dtype must match input dtype"
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
     comptime assert type_of(beta).rank == 1, "beta must be rank 1"
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 @extensibility.register("mo.reduce.reduce_min_and_max")
@@ -1263,7 +1257,7 @@ def composite_rms_norm_residual_add_shape(
     input: Some[Tensor],
     residual_input: Some[Tensor],
     gamma: Some[Tensor],
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     comptime assert (
         type_of(residual_input).dtype == type_of(input).dtype
     ), "residual_input dtype must match input dtype"
@@ -1274,9 +1268,7 @@ def composite_rms_norm_residual_add_shape(
         type_of(gamma).dtype == type_of(input).dtype
     ), "gamma dtype must match input dtype"
     comptime assert type_of(gamma).rank == 1, "gamma must be rank 1"
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 @extensibility.register("mo.bottom_k")

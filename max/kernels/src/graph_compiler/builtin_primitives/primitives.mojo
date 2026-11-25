@@ -3643,3 +3643,49 @@ def view_copy_impl[
         ](x, idx)
 
     foreach[_trace_name=_trace_name](func, z, ctx)
+
+
+@inline(.always)
+def shape_func_result(
+    shape: Coord,
+) -> DynamicCoord[DType.int, type_of(shape).rank]:
+    """Returns a shape function's output shape as the graph compiler holds it.
+
+    The compiler types a shape function's result by its rank alone, so static
+    dims become runtime dims. The compiler takes the static dims from the
+    graph's own tensor types, not from this result.
+
+    Args:
+        shape: The shape the shape function returned.
+
+    Returns:
+        The dims of `shape`, each a runtime `Scalar[DType.int]`.
+    """
+    return rebind[DynamicCoord[DType.int, type_of(shape).rank]](
+        shape.make_dynamic[DType.int]()
+    )
+
+
+# TODO(GPUA-325): Remove this overload once no shape function returns an
+# `IndexList`.
+@inline(.always)
+def shape_func_result[
+    rank: Int, dtype: DType, //
+](shape: IndexList[rank, element_type=dtype]) -> DynamicCoord[DType.int, rank]:
+    """Returns a shape function's output shape as the graph compiler holds it.
+
+    This overload takes the `IndexList` a legacy shape function returns.
+
+    Parameters:
+        rank: The rank of `shape`.
+        dtype: The element type of `shape`.
+
+    Args:
+        shape: The shape the shape function returned.
+
+    Returns:
+        The dims of `shape`, each a runtime `Scalar[DType.int]`.
+    """
+    return rebind[DynamicCoord[DType.int, rank]](
+        shape_func_result(Coord(shape))
+    )

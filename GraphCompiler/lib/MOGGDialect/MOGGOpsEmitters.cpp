@@ -3579,11 +3579,14 @@ LogicalResult CallShapeOp::emitMojo(EmitMojoState &state) {
     return emitError() << "Failed to infer all the kernel parameters: "
                        << maybeParams.takeError();
 
+  // A shape function returns a `Coord` or a legacy `IndexList`;
+  // `shape_func_result` gives either the `!mogg.shape_func_result` form.
   MojoValue shapeFn(getCallee());
-  state.setMojoValueFor(
-      getResult(), state.file->var(shapeFn[maybeParams->structParameters]
-                                          [maybeParams->functionParameters](
-                                              kernelOperands)));
+  MojoValue shape =
+      shapeFn[maybeParams->structParameters][maybeParams->functionParameters](
+          kernelOperands);
+  state.setMojoValueFor(getResult(),
+                        state.file->var(kFnShapeFuncResult({shape})));
   state.genAllKeepAliveStatements();
   return success();
 }
@@ -3593,7 +3596,7 @@ LogicalResult ShapeResultGetItemOp::emitMojo(EmitMojoState &state) {
   int64_t index = getIndex().getValue().getSExtValue();
 
   MojoValue indexValue = std::to_string(index);
-  state.setMojoValueFor(getResult(), shapeValue[{indexValue}]);
+  state.setMojoValueFor(getResult(), kStructInt({shapeValue[{indexValue}]}));
 
   return success();
 }

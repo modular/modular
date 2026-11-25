@@ -104,16 +104,14 @@ struct ConvertE4M3FNToE4M3FNUZ:
 )
 def convert_e4m3fn_to_e4m3fnuz_shape(
     input: Some[Tensor],
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     """Computes the output shape for the `quantization.convert_e4m3fn_to_e4m3fnuz` graph op.
     """
     comptime assert (
         type_of(input).dtype == .float8_e4m3fn
     ), "input dtype must be float8_e4m3fn"
     comptime assert type_of(input).rank == 2, "input must be rank 2"
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 @extensibility.register("mo.avg_pool")
@@ -995,16 +993,14 @@ def conv2d_residual_add_shape(
     filter: Some[Tensor],
     source: Some[Tensor],
     bias: Some[Tensor],
-) raises -> IndexList[type_of(source).rank]:
+) raises -> type_of(source.shape()):
     """Computes the output shape for the `conv2d_residual_add` graph op."""
     comptime assert type_of(input).rank == 4, "input must be rank 4"
     comptime assert type_of(filter).rank == 4, "filter must be rank 4"
     comptime assert type_of(source).rank == 4, "source must be rank 4"
     comptime assert type_of(bias).rank == 1, "bias must be rank 1"
     # Output shape is the same as source shape (residual tensor).
-    return rebind[IndexList[type_of(source).rank]](
-        coord_to_index_list(source.shape())
-    )
+    return source.shape()
 
 
 def _check_conv_transpose_attrs[

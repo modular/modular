@@ -407,6 +407,12 @@ This version is still a work in progress.
 
 ## Kernels and GPU programming
 
+- A custom op's shape function, registered with
+  `@extensibility.register_shape_function`, can now return its output shape
+  as a `Coord` as well as an `IndexList`. A shape function that passes an
+  input's shape through can return `input.shape()` directly, declared as
+  `-> type_of(input.shape())`, without converting it to an `IndexList`.
+
 - A custom op's `elementwise` function that reads the element's position now
   takes it as a trailing `Coord` argument. A trailing `IndexList` argument is
   no longer recognized as the position; change its type to `Coord`.

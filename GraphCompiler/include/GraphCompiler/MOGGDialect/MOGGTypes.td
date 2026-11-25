@@ -56,7 +56,7 @@ def MOGG_Shape : MOGG_Type<"Shape", "shape"> {
 def MOGG_ShapeFuncResult : MOGG_Type<"ShapeFuncResult", "shape_func_result"> {
   let summary = "A type representing the result of a shape function with known rank";
   let description = [{
-    Lowers to an IndexList of the given rank in emit-mojo.
+    Lowers to a `DynamicCoord[DType.int, rank]` in emit-mojo.
 
     Example:
     ```mlir

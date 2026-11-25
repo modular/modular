@@ -1016,8 +1016,8 @@ def MOGG_ShapeFunctionDeclOp
   let description = [{
     At most one per registration (e.g. `"mo.avg_pool"`); import errors on
     duplicates. For a struct `shape` method, `sym_name` is
-    `"<struct_sym>.shape"`. `result_params` is always populated, since shape
-    functions return stdlib `IndexList`.
+    `"<struct_sym>.shape"`. A shape function returns an `IndexList` or a
+    `Coord`; nothing reads its `result_params`.
   }];
 
   let arguments = (ins

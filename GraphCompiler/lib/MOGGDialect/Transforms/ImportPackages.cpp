@@ -64,8 +64,9 @@ namespace {
 /// must match `LIT::StructType::getParamValues()` in length, or
 /// `computeValueParams` asserts.
 ///
-/// Extend this when a `shape`/`elementwise` function returns another
-/// parameterised stdlib struct (today `SIMD` and `IndexList`).
+/// Extend this when an `elementwise` function returns another parameterised
+/// stdlib struct (today `SIMD`). Shape functions don't need an entry: their
+/// result mapping is never read.
 static llvm::ArrayRef<llvm::StringRef>
 getStdlibStructParamNames(mlir::SymbolRefAttr symbol) {
   // Slot names and order must match `getParamValues()` exactly, including
@@ -100,8 +101,8 @@ getStdlibStructParamNames(mlir::SymbolRefAttr symbol) {
 /// Non-struct types and parameterless structs get a UnitAttr placeholder.
 ///
 /// `strict` controls parameterised structs that fit neither path:
-///   - `true`: emit an error at `loc` and return null. For `shape` /
-///     `elementwise` result types, whose mapping is always consumed.
+///   - `true`: emit an error at `loc` and return null. For `elementwise`
+///     result types, whose mapping is always consumed.
 ///   - `false`: fall back to a UnitAttr placeholder. For argument types, where
 ///     opaque-parameter inference only reads MO::OpaqueType entries, so tensor
 ///     and device-context types fall through harmlessly.
@@ -1246,9 +1247,11 @@ struct ImportPackagesPass
       }
       // Trait-bound shape-function tensor arguments distill with
       // `isShapeFunc=true`: no io-role, bound by `Tensor` or `TileTensorable`.
+      // Nothing reads a shape function's result params, so a result type with
+      // no slot-name mapping, such as `Coord`, is accepted.
       auto sfFunctionAttr = buildFunctionAttr(
           sf.func, /*computeResultParams=*/true,
-          /*strictResultParams=*/true, /*distillTraitArgs=*/true,
+          /*strictResultParams=*/false, /*distillTraitArgs=*/true,
           /*isShapeFunc=*/true);
       if (failed(sfFunctionAttr)) {
         sawFailure = true;

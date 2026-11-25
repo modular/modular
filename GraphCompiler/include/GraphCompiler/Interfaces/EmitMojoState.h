@@ -295,7 +295,8 @@ public:
       return kStructInt;
     } else if (auto shapeResultType = dyn_cast<ShapeFuncResultType>(mlirType)) {
       MOGG::MojoValue rankParam = shapeResultType.getRank();
-      return MOGG::kStructIndexList[rankParam];
+      return MOGG::kAliasDynamicCoord[{
+          MOGG::kStructDType.get(MOGG::kEnumDTypeInt), rankParam}];
     } else if (isa<MGP::OpaqueType, MO::OpaqueType>(mlirType)) {
       return kComptimeOpaquePointer;
     } else {
