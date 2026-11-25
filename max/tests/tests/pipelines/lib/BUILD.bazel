@@ -29,6 +29,7 @@ modular_py_test(
             "test_chat_encoder.py",
             "test_reasoning.py",
             "test_graph_specs.py",
+            "test_sampler_specs.py",
             "test_hf_dynamic_modules.py",
             "test_module_registration.py",
             "test_input_binding.py",
@@ -181,6 +182,17 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn/kv_cache",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_sampler_specs",
+    srcs = ["test_sampler_specs.py"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/pipelines/sampling",
     ],
 )
 

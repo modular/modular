@@ -237,6 +237,18 @@ def compile_roles_separately() -> Iterator[None]:
         _compile_roles_separately.reset(token)
 
 
+def roles_compile_separately() -> bool:
+    """Whether groups are being ignored, so every role compiles on its own.
+
+    A caller that names a group needs this to know whether the group will
+    actually form, since a name only has to be unique inside one that does.
+
+    Returns:
+        True while :func:`compile_roles_separately` is active.
+    """
+    return _compile_roles_separately.get()
+
+
 def compile_and_init_graphs(
     session: InferenceSession,
     specs: Mapping[str, GraphSpec],
@@ -304,11 +316,16 @@ def compile_and_init_graphs(
             traced_graph = GraphModule()
             graphs = {role: specs[role].trace(traced_graph) for role in members}
             # A graph carries its own extensions; a module of graphs does not.
-            extensions = [
-                path
-                for role in members
-                for path in specs[role].custom_extensions
-            ]
+            # Deduplicated because members commonly share one: the compile and
+            # the digest taken for it both read this list, and neither drops a
+            # repeat.
+            extensions = list(
+                dict.fromkeys(
+                    path
+                    for role in members
+                    for path in specs[role].custom_extensions
+                )
+            )
         output_trees = {
             role: graph.output_tree for role, graph in graphs.items()
         }
