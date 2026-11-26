@@ -939,7 +939,7 @@ struct String(
         _ = check_slice_bounds(byte, self.byte_length(), call_location())
         return self._interior_slice()[byte=byte]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __getitem__[
         I: Indexer, //
     ](self, *, codepoint: I) -> StringSpan[
@@ -974,7 +974,7 @@ struct String(
         """
         return self._interior_slice()[codepoint=codepoint]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, *, grapheme: Some[Indexer]

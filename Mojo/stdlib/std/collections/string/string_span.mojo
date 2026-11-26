@@ -570,7 +570,7 @@ struct StringSpan[origin: ImmOrigin](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __eq__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSpan` is equal to another `StringSpan` with the
         same origin.
@@ -609,7 +609,7 @@ struct StringSpan[origin: ImmOrigin](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __eq__(self, rhs: StringSpan) -> Bool:
         """Verify if a `StringSpan` is equal to another `StringSpan`.
 
@@ -630,7 +630,7 @@ struct StringSpan[origin: ImmOrigin](
             return True
         return unsafe_memcmp(s_ptr, rhs_ptr, s_len) == 0
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSpan` is not equal to another `StringSpan` with
         the same origin.
@@ -644,7 +644,7 @@ struct StringSpan[origin: ImmOrigin](
         """
         return Self.__ne__(self, rhs=rhs_same)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __ne__(self, rhs: StringSpan) -> Bool:
         """Verify if span is not equal to another `StringSpan`.

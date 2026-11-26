@@ -119,12 +119,12 @@ struct _SpanIter[
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __next__(
         mut self,
@@ -142,7 +142,7 @@ struct _SpanIter[
             self.index -= 1
             return self.src._data[unsafe_offset=self.index]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __len__(self) -> Int:
         """Returns the number of elements remaining in this iterator.
@@ -155,7 +155,7 @@ struct _SpanIter[
         else:
             return self.index
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         """Returns bounds `[lower, upper]` for the remaining iterator length.
@@ -366,7 +366,7 @@ struct Span[
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @stable(since="1.0")
     @inline(.always)
     def __getitem__(
@@ -383,7 +383,7 @@ struct Span[
         check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, idx: Some[Indexer]
@@ -399,7 +399,7 @@ struct Span[
         check_bounds(index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, idx: IntLiteral
@@ -419,7 +419,7 @@ struct Span[
         check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     @stable(since="1.3")
     def __getitem__(self, slice: ContiguousSlice) -> Self:
@@ -438,7 +438,7 @@ struct Span[
         var start, end = check_slice_bounds(slice, len(self))
         return self._unchecked_subspan(start=start, end=end)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType where Self._is_generic_as:
         """Consume the span and return an iterator over its elements.
@@ -469,7 +469,7 @@ struct Span[
             0, rebind[Span[downcast[Self.T, Copyable], Self.origin]](self)
         )
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __reversed__(
         self,
@@ -493,7 +493,7 @@ struct Span[
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @always_inline("builtin")
     @stable(since="1.3")
     def __len__(self) -> Int:
@@ -504,7 +504,7 @@ struct Span[
         """
         return self._len
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @__allow_legacy_custom_self_type
     @stable(since="1.0")
     def __contains__[
@@ -656,7 +656,7 @@ struct Span[
     # Methods
     # ===------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def as_imm(self) -> Self.Immutable:
         """Return an immutable version of this `Span`.
@@ -670,7 +670,7 @@ struct Span[
         Self.T, target_origin, address_space=Self.address_space
     ]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @always_inline("builtin")
     def unsafe_origin_cast[
         target_origin: Origin[mut=Self.mut]
@@ -695,7 +695,7 @@ struct Span[
             length = self._len,
         }
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def unsafe_get(
         self, idx: Some[Indexer]
@@ -717,7 +717,7 @@ struct Span[
         check_bounds[cpu_default=False](index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @always_inline("builtin")
     def unsafe_ptr(
         self,
@@ -733,7 +733,7 @@ struct Span[
         """
         return self._data
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def as_ref(
         self,
@@ -775,7 +775,7 @@ struct Span[
             for i in range(len(self)):
                 self[i] = other[i].copy()
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __bool__(self) -> Bool:
         """Check if a span is non-empty.
 
@@ -790,7 +790,7 @@ struct Span[
     # TODO: We require these first two overload of `__eq/ne__` to conform to the
     # `Equatable` trait as the `__eq/ne__` signature must match exactly. Ideally
     # we don't need overloads to have origins work correctly.
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __eq__(
         self, rhs_same: Self
@@ -807,7 +807,7 @@ struct Span[
         comptime Generic = Span[Self.T, Self.origin]
         return rebind[Generic](self).__eq__(rhs=rebind[Generic](rhs_same))
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __ne__(
         self, rhs_same: Self
@@ -828,7 +828,7 @@ struct Span[
     # can compare `Span`s with different origins. Ideally we'd only need a
     # single eq/ne method that handles origins and conforms to the `Equatable`
     # trait properly.
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @__allow_legacy_custom_self_type
     def __eq__(
         self: Span[Self.T, _], rhs: Span[Self.T, _]
@@ -856,7 +856,7 @@ struct Span[
 
     @inline(.always)
     @__allow_legacy_custom_self_type
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __ne__(
         self: Span[Self.T, _], rhs: Span[Self.T, _]
     ) -> Bool where conforms_to(Self.T, Equatable):
@@ -1192,7 +1192,7 @@ struct Span[
             func, lambda (mask: SIMD[.bool, _]) -> Int: mask.reduce_bit_count()
         )
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
         """Returns a subspan of the current span.

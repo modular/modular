@@ -334,7 +334,7 @@ struct DevicePointer[
     # Comparison
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __eq__(self, other: Self) -> Bool:
         """Returns whether both pointers refer to the same element.
 
@@ -349,7 +349,7 @@ struct DevicePointer[
             and self._offset == other._offset
         )
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __eq__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
         """Returns whether both pointers refer to the same element.
 
@@ -364,7 +364,7 @@ struct DevicePointer[
             and self._offset == other._offset
         )
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __ne__(self, other: Self) -> Bool:
         """Returns whether the pointers refer to different elements.
 
@@ -376,7 +376,7 @@ struct DevicePointer[
         """
         return not (self == other)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __ne__(self, other: DevicePointer[Self.dtype, _]) -> Bool:
         """Returns whether the pointers refer to different elements.
 
@@ -388,7 +388,7 @@ struct DevicePointer[
         """
         return not (self == other)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __lt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns whether this pointer is before `other` in the same buffer.
 
@@ -408,7 +408,7 @@ struct DevicePointer[
             )
         return self._offset < other._offset
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns whether this pointer is at or before `other`.
 
@@ -428,7 +428,7 @@ struct DevicePointer[
             )
         return self._offset <= other._offset
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns whether this pointer is after `other` in the same buffer.
 
@@ -448,7 +448,7 @@ struct DevicePointer[
             )
         return self._offset > other._offset
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
         """Returns whether this pointer is at or after `other`.
 
