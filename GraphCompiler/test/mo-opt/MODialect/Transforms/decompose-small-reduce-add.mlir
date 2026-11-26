@@ -6,6 +6,10 @@
 // the decompose is speculative (slices + adds with nothing to fuse into), so
 // the reduce.add is left as a dedicated kernel.
 
+// The residual-add fusion after the decompose needs a kernel for its composite.
+#kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
+mogg.kernel.decl @rms_norm_residual_add registration = "mo.composite.rms_norm_residual_add" execute = #kf struct_params = [] is_user_defined = false
+
 // -----------------------------------------------------------------------------
 // Positive cases: result feeds rms_norm -> decompose.
 // -----------------------------------------------------------------------------

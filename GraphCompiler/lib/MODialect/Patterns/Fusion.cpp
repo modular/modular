@@ -16,6 +16,7 @@
 #include "GraphCompiler/MODialect/MOAttrs.h"
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MODialect/MOOps.h"
+#include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/MOGGDialect/Support/SplitSlicePatterns.h"
@@ -1158,12 +1159,16 @@ struct LayerNormPattern
 // `mo.composite.rms_norm_residual_add`, emitting both the normalized output and
 // the `a + b` intermediate so the carried residual needs no separate add. The
 // double-norm topology `rms_norm(rms_norm(x) + r)` is left to MAP fusion,
-// which makes it one rowwise kernel.
+// which makes it one rowwise kernel. Fuses only where a kernel for the
+// composite resolves on the norm's device: a composite with no kernel can't
+// lower.
 struct RMSNormResidualAddPattern
     : public MO::DeviceAwareRewritePattern<OpRewritePattern,
                                            MO::Composite::ReduceRMSNormOp> {
-  RMSNormResidualAddPattern(MLIRContext *ctx)
-      : DeviceAwareRewritePattern(ctx, 2) {}
+  const MOGG::MojoRegistry &registry;
+  RMSNormResidualAddPattern(MLIRContext *ctx,
+                            const MOGG::MojoRegistry &registry)
+      : DeviceAwareRewritePattern(ctx, 2), registry(registry) {}
 
   LogicalResult
   deviceAwareMatchAndRewrite(MO::Composite::ReduceRMSNormOp op,
@@ -1182,6 +1187,11 @@ struct RMSNormResidualAddPattern
         rhs.getDefiningOp<MO::Composite::ReduceRMSNormOp>())
       return rewriter.notifyMatchFailure(op,
                                          "double-norm topology fused by MAP");
+
+    if (!registry.resolvesKernel(
+            MO::Composite::RMSNormResidualAddOp::getOperationName(),
+            MOGG::MojoRegistry::getDeviceRefForOp(op)))
+      return rewriter.notifyMatchFailure(op, "no fused kernel for this device");
 
     if (!rewriter.addOps({addOp}))
       return rewriter.notifyMatchFailure(
@@ -3347,7 +3357,8 @@ void applyFuseParallelBundledAllReduceAddRMSNormQuantFP8(
 void populateFusionPatterns(mlir::RewritePatternSet &patterns,
                             PackParamCache &cache,
                             M::DeviceRefAttr targetDeviceRef,
-                            const DeviceInfoMapping &deviceInfoMapping) {
+                            const DeviceInfoMapping &deviceInfoMapping,
+                            const MOGG::MojoRegistry &registry) {
   mlir::MLIRContext *ctx = patterns.getContext();
 
   patterns.add<MatmulConstBPattern>(ctx, cache, targetDeviceRef);
@@ -3357,8 +3368,9 @@ void populateFusionPatterns(mlir::RewritePatternSet &patterns,
   patterns.add<GatherSumPattern, DecomposeSmallReduceAddPattern,
                MatmulTranspBPattern, ConcatZeroAxisPattern,
                ConvTransposeConstFilterPattern, SplitZeroAxisPattern,
-               LayerNormPattern, RMSNormResidualAddPattern,
-               ReduceLayerNormRopeRaggedPattern, RopeRaggedSplitConcatPattern,
+               LayerNormPattern>(ctx);
+  patterns.add<RMSNormResidualAddPattern>(ctx, registry);
+  patterns.add<ReduceLayerNormRopeRaggedPattern, RopeRaggedSplitConcatPattern,
                MatmulFusedPartialRMSNormPattern, BatchMatmulAdjBPattern>(ctx);
 
   patterns.add<ForceMatmulTransposeBForGPU,

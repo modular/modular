@@ -14,6 +14,7 @@
 #include "GraphCompiler/MODialect/MODevices.h"
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MODialect/Patterns/Fusion.h"
+#include "GraphCompiler/MOGGDialect/Analysis/MojoRegistry.h"
 #include "GraphCompiler/MOGGDialect/MOGGDialect.h"
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "GraphCompiler/MOGGDialect/Support/SplitSlicePatterns.h"
@@ -44,6 +45,8 @@ struct PatternFusionPass : public impl::PatternFusionBase<PatternFusionPass> {
         targetDevice == "" ? nullptr
                            : M::DeviceRefAttr::get(ctx, targetDevice.getValue(),
                                                    targetDeviceId.getValue());
+
+    MojoRegistry registry(getOperation()->getParentOfType<mlir::ModuleOp>());
 
     llvm::SmallVector<MO::AllReduceSumOp> allReduceOps;
     getOperation()->walk([&](MO::AllReduceSumOp allReduceSumOp) {
@@ -85,7 +88,7 @@ struct PatternFusionPass : public impl::PatternFusionBase<PatternFusionPass> {
     RewritePatternSet patterns{ctx};
     // Register SwiGLU before the split-to-slice lowering below.
     MO::populateFusionPatterns(patterns, cache, targetDeviceRef,
-                               deviceInfoMapping);
+                               deviceInfoMapping, registry);
 
     if (failed(applyPatternsGreedily(graphOp, std::move(patterns))))
       return signalPassFailure();

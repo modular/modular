@@ -16,6 +16,10 @@
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "mlir/IR/PatternMatch.h"
 
+namespace M::MOGG {
+class MojoRegistry;
+} // namespace M::MOGG
+
 namespace M::MO {
 
 class DeviceInfoMapping;
@@ -49,11 +53,13 @@ void applyFuseParallelBundledAllReduceAddRMSNormQuantFP8(
     MO::BundledAllReduceSumOp bundledAllReduceOp);
 
 /// Adds the main fusion rewrite patterns (LayerNorm, RMSNorm fusions,
-/// Matmul folds, RoPE, Conv-const, etc.).
+/// Matmul folds, RoPE, Conv-const, etc.). `registry` must outlive the
+/// patterns.
 void populateFusionPatterns(mlir::RewritePatternSet &patterns,
                             PackParamCache &cache,
                             M::DeviceRefAttr targetDeviceRef,
-                            const DeviceInfoMapping &deviceInfoMapping);
+                            const DeviceInfoMapping &deviceInfoMapping,
+                            const MOGG::MojoRegistry &registry);
 
 /// Adds `MatmulAddPattern`, which the driver pass enables only on SM100-class
 /// GPUs.
