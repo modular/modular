@@ -36,6 +36,7 @@ from std.math import isclose
 from std.reflection import call_location, SourceLocation
 from std.python import PythonObject
 from std.utils._ansi import Color, Text
+from std.builtin.error import Error, _AnyError
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -523,7 +524,9 @@ def _assert_cmp_error[
     return _assert_error(err, loc)
 
 
-struct assert_raises[T: Deinitable = String](not Movable):
+struct assert_raises[
+    T: Movable & Deinitable & Writable & Equatable = _AnyError
+](not Movable):
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
@@ -655,20 +658,15 @@ struct assert_raises[T: Deinitable = String](not Movable):
             CaughtError, Writable
         ), "assert_raises(contains=...) requires a Writable error type"
 
-        # `assert_raises[error-type](error=error-instance())
+        # assert_raises(error=error-instance())
         if self.error:
-            comptime assert conforms_to(Self.T, Equatable & Writable), (
-                "assert_raises[ErrorType](error=...) requires an Equatable and"
-                " Writable Error type"
+            return (Self.T == CaughtError or Self.T == _AnyError) and (
+                String(self.error) == String(error)
             )
-
-            # this checks the error types and the content of the error
-            comptime error_types_match = CaughtError == Self.T
-            var error_values_match = String(self.error.value()) in String(error)
-            return error_types_match and error_values_match
-
-        # if not error type is provided, then first lets check if a message was passed
-        # if not, like in `assert_raises():` case, we just return True.
-        guard case .Some(message_contains) = self.message_contains else:
-            return True
-        return message_contains in String(error)
+        elif case .Some(message_contains) = self.message_contains:
+            # if not error type is provided, then first lets check if a message was passed
+            # if not, like in `assert_raises():` case, we just return True.
+            return message_contains in String(error)
+        else:
+            # `assert_raises()` matches anything; `assert_raises[T]()` matches T.
+            return Self.T == CaughtError or Self.T == _AnyError
