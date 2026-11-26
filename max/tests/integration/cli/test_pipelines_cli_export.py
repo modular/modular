@@ -129,6 +129,25 @@ def test_export_names_the_decoder_inputs_and_bounds_each_step(
     assert deserialize(dest).batch_processor == BatchProcessorDims(dims)
 
 
+def test_export_leaves_the_kv_dims_symbolic(tmp_path: Path) -> None:
+    """A dynamic export keeps the KV block count and lookup width symbolic,
+    so a serving engine plans its pool from the memory budget."""
+    result = CliRunner().invoke(
+        pipelines.main,
+        _export_args(tmp_path / "dynamic"),
+        catch_exceptions=False,
+    )
+    assert result.exit_code == 0, result.output
+    sections = json.loads(
+        ((tmp_path / "dynamic.m") / "artifact.json").read_text()
+    )
+    layouts = sections["model"]["decoder"]["in_layouts"]
+    # The paged-KV record's blocks and lookup table, after the batch's
+    # tokens, in declaration order.
+    assert layouts[1]["shape"][0] == "total_num_pages"
+    assert layouts[3]["shape"][1] == "replica_0_max_num_pages"
+
+
 def test_export_stores_the_format_spec_it_is_given(tmp_path: Path) -> None:
     document = tmp_path / "spec.json"
     document.write_text('{"format": "formatspec.spec", "spec_version": 1}\n')
