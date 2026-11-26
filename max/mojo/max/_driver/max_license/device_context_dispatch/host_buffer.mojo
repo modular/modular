@@ -278,7 +278,6 @@ struct HostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
             Scalar[Self.dtype]
         ]()
 
-    @__unsafe_nested_origins_read_only
     def as_span[
         origin: Origin, //
     ](ref[origin] self) -> Span[

@@ -817,6 +817,23 @@ static bool trySetLinkageName(SMLoc loc, DefASTDecl &decl,
   return false;
 }
 
+// Remove the whole decorator line, including its trailing newline and the
+// indentation of the following line, so the declaration remains well-formed.
+static FixIt getFixItToRemoveDecorator(const ExprNode *decorator) {
+  const char *start = decorator->getRangeStart().getPointer();
+  while (*start != '@')
+    --start;
+  const char *end = decorator->getRangeEnd().getPointer();
+  while (*end != '\n' && *end != '\0')
+    ++end;
+  if (*end == '\n')
+    ++end;
+  while (*end == ' ' || *end == '\t')
+    ++end;
+  return FixIt(SourceRange::getByteLevel(SMLoc::getFromPointer(start),
+                                         SMLoc::getFromPointer(end)),
+               "");
+}
 namespace {
 struct FnSigDecorators : public SharedStateUser {
   FnSigDecorators(DefASTDecl &decl, ASTDecl &sigDecl, SharedState &shared,
@@ -839,6 +856,8 @@ private:
                        IREmitter &emitter);
   void applyAlwaysInline(SMLoc decoratorLoc, const CallNode *node);
   void applyInline(SMLoc decoratorLoc, const CallNode *node);
+  void applyNestedOriginsReadOnly(bool isUnsafe, ExprNode *decorator,
+                                  const CallNode *callNode);
 
   /// Set the function's inline spec, diagnosing a second inline decorator that
   /// disagrees with the one already applied.
@@ -972,12 +991,9 @@ LogicalResult FnSigDecorators::applyOne(ExprNode *decorator) {
         << "' closures are no longer supported; remove the decorator and "
            "declare the captures in a capture list like '{var}' or '{mut x}'";
   } else if (spelling == "__unsafe_nested_origins_read_only") {
-    applyArgumentless(spelling, callNode, [&]() {
-      tcSignature.isUnsafeNestedOriginsReadOnly = true;
-    });
+    applyNestedOriginsReadOnly(true, decorator, callNode);
   } else if (spelling == "__nested_origins_read_only") {
-    applyArgumentless(spelling, callNode,
-                      [&]() { tcSignature.isNestedOriginsReadOnly = true; });
+    applyNestedOriginsReadOnly(false, decorator, callNode);
   } else if (spelling == "__allow_legacy_custom_self_type") {
     applyArgumentless(spelling, callNode,
                       [&]() { tcSignature.allowCustomSelfType = true; });
@@ -1395,6 +1411,62 @@ void FnSigDecorators::applyArgumentless(StringRef spelling,
     return applyImpl();
   emitError(callNode->getLoc()) << "'@" << spelling << "' cannot have arguments"
                                 << FixIt::remove(callNode->getRange());
+}
+
+// Handle the @__unsafe_nested_origins_read_only decorator.
+void FnSigDecorators::applyNestedOriginsReadOnly(bool isUnsafe,
+                                                 ExprNode *decorator,
+                                                 const CallNode *callNode) {
+  StringRef spelling = isUnsafe ? "__unsafe_nested_origins_read_only"
+                                : "__nested_origins_read_only";
+  applyArgumentless(spelling, callNode, [&]() {
+    if (isUnsafe)
+      tcSignature.isUnsafeNestedOriginsReadOnly = true;
+    else
+      tcSignature.isNestedOriginsReadOnly = true;
+
+    // Traits do not expose a concrete Self layout, so a conforming type may
+    // have nested origins even when the trait signature does not show any.
+    TypeScopeASTDecl *parent = decl.tryGetMethodParentDecl();
+    if (!parent || isa<TraitASTDecl>(parent))
+      return;
+
+    // A type parameter can be bound to a type whose trait methods mutate
+    // nested origins, even if the parameter's constraint mentions none.
+    auto containsGenericType = [](Type type) {
+      return getCanonicalType(type)
+          .walk([](ParamDeclRefAttr ref) {
+            return isa<TraitType, TypeType, NonStructTypeType>(ref.getType())
+                       ? WalkResult::interrupt()
+                       : WalkResult::advance();
+          })
+          .wasInterrupted();
+    };
+    bool hasGenericTypeArgument =
+        llvm::any_of(tcSignature.argTypes, containsGenericType) ||
+        llvm::any_of(tcSignature.paramList.paramDeclAttrs,
+                     [&](ParamDeclAttr param) {
+                       return containsGenericType(param.getType());
+                     });
+    if (hasGenericTypeArgument)
+      return;
+
+    // `argTypes` retains user-visible argument types without ABI reference
+    // wrappers, so this finds origins nested in an argument but not the direct
+    // origin of a `ref` argument.
+    SmallVector<TypedAttr> origins =
+        tcSignature.captureOrigins
+            ? shared.cachedOriginFinder.findOriginsIn(
+                  tcSignature.argTypes, tcSignature.captureOrigins)
+            : shared.cachedOriginFinder.findOriginsIn(tcSignature.argTypes);
+    if (!origins.empty())
+      return;
+
+    auto diag = emitWarning(decorator->getLoc())
+                << "nested-origins read-only decorator has no effect because "
+                   "this method has no nested origins; remove the decorator";
+    diag.addFixIt(getFixItToRemoveDecorator(decorator));
+  });
 }
 
 /// Return AliasDeclOp that corresponds to the value's name by looking at all

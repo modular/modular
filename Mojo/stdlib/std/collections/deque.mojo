@@ -586,7 +586,7 @@ struct Deque[ElementType: Movable](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def append(
         mut self, var value: Self.ElementType
     ) where conforms_to(Self.ElementType, Deinitable):
@@ -610,7 +610,7 @@ struct Deque[ElementType: Movable](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def appendleft(
         mut self, var value: Self.ElementType
     ) where conforms_to(Self.ElementType, Deinitable):
@@ -772,7 +772,7 @@ struct Deque[ElementType: Movable](
                 return idx
         raise "ValueError: Given element is not in deque"
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def insert(
         mut self, idx: Int, var value: Self.ElementType

@@ -74,6 +74,41 @@ def test_checked_nested_origins_read_only_conversion():
     requires_checked_nested_origins_read_only(legacy_nested_origins_read_only)
     requires_checked_nested_origins_read_only(checked_nested_origins_read_only)
 
+# A nested-origins decorator has no effect when the method's type has no
+# nested origins to refine.
+struct NoNestedOrigins:
+    # expected-warning @below {{nested-origins read-only decorator has no effect because this method has no nested origins; remove the decorator}}
+    @__nested_origins_read_only
+    def example1(self):
+        pass
+
+    # expected-warning @below {{nested-origins read-only decorator has no effect because this method has no nested origins; remove the decorator}}
+    @__unsafe_nested_origins_read_only
+    def example2(self):
+        pass
+
+    # expected-warning @below {{nested-origins read-only decorator has no effect because this method has no nested origins; remove the decorator}}
+    @__unsafe_nested_origins_read_only
+    def example3[o: Origin](ref self, ref [o] arg: Int):
+        pass
+
+    # No warning, there is a nested origin in the pointer.
+    @__unsafe_nested_origins_read_only
+    def example4[o: Origin](ref self, arg: Pointer[Int, o]):
+        pass
+
+    # No warning, `T` may have trait methods that mutate nested origins.
+    @__nested_origins_read_only
+    def example5[T: AnyType](self, arg: T):
+        pass
+
+
+struct GenericNoNestedOrigins[T: AnyType]:
+    # No warning, `T` may have trait methods that mutate nested origins.
+    @__nested_origins_read_only
+    def example(self, arg: Self.T):
+        pass
+
 
 # expected-note @below {{trait 'NestedOriginsReadOnlyRequirement' declared here}}
 trait NestedOriginsReadOnlyRequirement:

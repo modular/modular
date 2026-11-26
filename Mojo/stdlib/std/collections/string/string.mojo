@@ -843,7 +843,6 @@ struct String(
     def __len__(self) -> Int:
         ...
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, *, byte: Int
@@ -866,7 +865,6 @@ struct String(
         string_slice._check_valid_index(idx)
         return string_slice._unchecked_get_byte(idx)
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__[
         I: Indexer, //
@@ -892,7 +890,6 @@ struct String(
         string_slice._check_valid_index(idx)
         return string_slice._unchecked_get_byte(idx)
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, *, byte: IntLiteral
@@ -918,7 +915,6 @@ struct String(
         string_slice._check_valid_index(byte)
         return string_slice._unchecked_get_byte(byte)
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, *, byte: ContiguousSlice
@@ -963,7 +959,6 @@ struct String(
         """
         return self._interior_slice()[codepoint=codepoint]
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, *, codepoint: ContiguousSlice
@@ -1481,7 +1476,6 @@ struct String(
             ]()
 
     @inline(.nodebug)
-    @__unsafe_nested_origins_read_only
     def unsafe_ptr(
         self,
     ) -> Pointer[Byte, Self._InteriorOrigin[origin_of(self)]]:
@@ -1580,7 +1574,6 @@ struct String(
         # are invalidated when the string is mutated.
         return StringSpan(unsafe_from_utf8=self.as_bytes())
 
-    @__unsafe_nested_origins_read_only
     def unsafe_as_bytes_mut(
         mut self,
     ) -> Span[Byte, Self._InteriorOrigin[origin_of(self)]]:

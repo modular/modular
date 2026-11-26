@@ -309,7 +309,6 @@ struct Span[
     # Without this, building a mutable span counts as a write to the list and
     # invalidates its existing pointers and views. This is safe because
     # forming a span does not change the list or its elements.
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     @stable(since="1.3")
     @implicit
