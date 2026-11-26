@@ -13,7 +13,8 @@
 """MMA warp logic for FA4 (SM100 Flash Attention)."""
 
 from std.math import align_up, ceildiv
-from std.sys import size_of, get_defined_bool
+from std.sys import size_of, get_defined_bool, get_defined_int
+from std.time import sleep
 from max.gpu.compute.arch.mma_nvidia_sm100 import (
     MMASmemDescriptorPair,
     UMMAKind,
@@ -321,6 +322,9 @@ def fa4_mma[
     # from the OTHER stage's S columns (TMEM_P{wg}). Shared-KV path only (the
     # headline config); split-KV is rejected at compile time.
     comptime CrossP = crossp_effective and type_of(mbars).CrossP_enabled
+    comptime FA4_TEST_DELAY_LAST_PV1_NS = get_defined_int[
+        "FA4_TEST_DELAY_LAST_PV1_NS", 0
+    ]()
 
     # Called after consumer_s[*].wait(phase), which orders the vote write
     # (softmax) before this read. Peel writes no vote -> reads 0 -> never skips.
@@ -1978,6 +1982,12 @@ def fa4_mma[
                     rel_slot = (
                         0 if rel_slot == UInt32(last_stage) else rel_slot + 1
                     )
+
+                    # Test-only: stall the MMA warp before the last PV1 so the
+                    # softmax warps run ahead, as a descheduled MMA warp would.
+                    comptime if FA4_TEST_DELAY_LAST_PV1_NS > 0:
+                        if iter_count == 0:
+                            sleep(Float64(FA4_TEST_DELAY_LAST_PV1_NS) * 1e-9)
 
                     # PV1(n-1): P1(n-1) * V_{n-1} -> O1 (cross p1_tmem in S0
                     # window; JIT-protected -- softmax stored P1(n-1) after

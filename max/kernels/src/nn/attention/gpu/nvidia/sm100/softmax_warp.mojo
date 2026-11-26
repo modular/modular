@@ -4446,8 +4446,20 @@ def fa4_softmax[
 
     # Cross-stage P JIT-P1 drain: WG0-only extra s0_p1 commit that balances
     # the WG1 seed above, consumed by WG1's final P store.
+    #
+    # WG1 stores P1(n) into the S0 columns that PV1(n-1) reads P1(n-1) from.
+    # For every block but the last, the peer token orders the two: it follows
+    # QK0(n+1), which follows PV1(n-1) on the MMA. The drain has no QK0 behind
+    # it, so hold it until PV1(n-1) has completed. Otherwise a late MMA warp
+    # reads P1(n) in place of P1(n-1), or waits on an S1 consumer phase that
+    # WG1 has already lapped.
     comptime if CrossP:
         if warp_group_idx == UInt32(0):
+            var main_iters: UInt32 = 0
+            comptime for i in range(num_sets):
+                main_iters += mask_iters[i]
+            if main_iters != 0:
+                o_prod_mbar[1].wait(o_phase ^ UInt32(1))
             inplace_prod.commit()
 
     # Do the final correction and write.

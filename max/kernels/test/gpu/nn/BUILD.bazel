@@ -605,6 +605,11 @@ _EXTRA_CONSTRAINTS = {
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    # SM100 FA4 cross-stage P (2Q, non-WS) is a B200 kernel.
+    "attention/test_mha_sm100_crossp_last_block.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     # SM100 FA4 tile configs for a 192-wide key with a 128-wide value.
     "attention/test_mha_sm100_split_kv_config.mojo": select({
         "//:b200_gpu": [],
@@ -821,6 +826,7 @@ _GPU_MEMORY = {
     # The bs22 x 35k-context case needs ~3 GiB beyond the 4 GiB default.
     "attention/test_mha_sm100_1q_sink.mojo": "3",
     "attention/test_mha_sm100_d256_pack_gqa.mojo": "7",
+    "attention/test_mha_sm100_crossp_last_block.mojo": "3",
     "attention/test_mha_sm100_depth512_sink.mojo": "4",
     "attention/test_mha_sm100_qkv_fp8_d256_prefill.mojo": "3",
     "attention/test_mha_sm100_qkv_fp8_d512_prefill.mojo": "3",
@@ -1133,6 +1139,36 @@ mojo_test(
     enable_assertions = True,
     exec_properties = {
         "test.resources:gpu-memory": "2",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:testdata",
+        "@mojo//:std",
+    ],
+)
+
+# SM100 FA4 cross-stage P, last KV block, with the MMA warp stalled 20 us before
+# the last PV1 so the softmax warps run ahead of it. Without the O1 wait in
+# `fa4_softmax` this reads P1(n) in place of P1(n-1) or hangs. The plain
+# variant of the same source comes from the glob comprehension. B200-only.
+mojo_test(
+    name = "attention/test_mha_sm100_crossp_last_block_delay.mojo.test",
+    size = "large",
+    srcs = ["attention/test_mha_sm100_crossp_last_block.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+        "-D",
+        "FA4_TEST_DELAY_LAST_PV1_NS=20000",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "3",
     },
     tags = ["gpu"],
     target_compatible_with = ["//:has_gpu"] + select({
