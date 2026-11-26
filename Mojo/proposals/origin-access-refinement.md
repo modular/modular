@@ -552,6 +552,145 @@ underlying IR should nevertheless represent projected access sets symbolically
 so that later inference can produce the same representation instead of creating
 a second mechanism.
 
+### Trait requirements, generic storage, and downcasts
+
+Generic collections expose another important interaction between access
+contracts and traits. Consider appending a mutable pointer to a list. The
+pointer passed as `value` can carry the same mutable origin as a pointer already
+stored in `self`:
+
+```mojo
+var element = 0
+var values = List[MutPointer[Int, origin_of(element)]]()
+values.append(Pointer(to=element))
+```
+
+The conservative model sees the origin of `element` through both `self` and
+`value`. Because both arguments otherwise permit mutation, it reports an
+exclusivity conflict. However, `append()` only changes the list representation,
+moves the pointer value into storage, and perhaps moves existing elements while
+growing the allocation. None of those operations need to mutate the pointee.
+This is not a special property of `Pointer`; it should follow from the
+operations that `append()` is allowed to perform on an arbitrary `T`.
+
+The relevant operation is the move constructor required by `Movable`.
+`Movable` should require move construction not to mutate origins nested in the
+value. The existing checked decorator illustrates the initial form of this
+requirement:
+
+```mojo
+trait Movable:
+    @__nested_origins_read_only
+    def __init__(out self, *, deinit move: Self):
+        ...
+```
+
+The move constructor can still modify the immediate storage of `move` and
+initialize `self`. It can move a pointer, span, or other reference-carrying
+field without mutating the memory described by that field. It may read nested
+origins if its declared contract permits immutable access. A move constructor
+that dereferences a stored mutable pointer and modifies its pointee does not
+satisfy this `Movable` requirement, even if the concrete type could otherwise
+declare a wider contract on an unrelated method.
+
+This is a requirement on the trait witness, not an inferred fact about common
+conforming types. Every explicit conformance must be checked against the
+requirement using the same function-conversion rule as any other trait method:
+an implementation can provide a narrower access set, but not a wider one.
+Synthesized move constructors satisfy the requirement compositionally when the
+move operations selected for their fields satisfy it.
+
+This guarantee lets `List.append()` make the same checked promise:
+
+```mojo
+@__nested_origins_read_only
+def append[T: AnyType](mut self: List[T], var value: T)
+  where conforms_to(T, Movable):
+    ...
+```
+
+The body can mutate `self`'s length, capacity, allocation, and element slots.
+It can also invoke the `Movable` witness for `T`. The witness contract ensures
+that moving `value` or relocating existing elements does not mutate origins
+nested in those values. The same reasoning applies to operations such as
+`Deque.append()` and `LinkedList.append()`.
+
+The guarantee is operation-specific. Storing a `T` does not permanently hide
+its nested origins, and a collection is not generally read-only with respect to
+its elements. An indexing operation can project an element and expose its
+origins. A method constrained by another trait can invoke that trait's
+requirements. Copy construction and destruction need their own contracts;
+they do not inherit the `Movable` guarantee merely because they operate on the
+same type.
+
+Generic types are also not intrinsically opaque. A generic method can test for
+an additional conformance and downcast `T` to that trait:
+
+```mojo
+trait MayMutateNestedOrigins:
+    def update(mut self):
+        ...
+
+@__nested_origins_read_only
+def update_if_supported[T: Movable](mut value: T):
+    comptime if conforms_to(T, MayMutateNestedOrigins):
+        rebind[downcast[T, MayMutateNestedOrigins]](value).update()
+```
+
+This function must be rejected for the instantiations that enter the branch.
+The downcast makes the requirements of `MayMutateNestedOrigins` available, but
+it does not erase their access effects. Because `update()` has the conservative
+default contract, it can mutate origins nested in `value`, which exceeds the
+enclosing read-only promise.
+
+More generally, checking a generic body must use the capabilities of the
+current static view:
+
+- An operation selected through a declared bound uses the contract of that
+  trait requirement.
+- A trait downcast adds the contracts of the target trait. Calls through the
+  downcast are checked against those contracts.
+- A rebind or compile-time branch that reveals an exact concrete type uses the
+  selected concrete operation's contract.
+- The enclosing function's contract remains an upper bound after substituting
+  the concrete type and resolving compile-time control flow.
+
+Ideally, the compiler diagnoses an incompatible downcast while checking the
+generic definition whenever the target trait's requirement is already known to
+be too broad. At minimum, it must reject every specialization that makes the
+incompatible path reachable. Separate compilation favors definition-time
+checking because callers should not discover that a public generic function
+violates its own signature only for a particular conforming type.
+
+The general `accesses` syntax also needs a way to quantify over origins nested
+in an otherwise opaque generic value. A generic type can contain any number of
+origin-carrying fields, so `append()` cannot name those origins individually.
+The eventual spelling should distinguish access to the immediate value storage
+from access through every origin reachable inside that value. Conceptually,
+`append()` needs mutable access to the list and value slots but only immutable
+access through nested origins. The exact quantified-origin syntax is left for a
+follow-up proposal; the checked `@__nested_origins_read_only` decorator can
+serve as the implementation bridge.
+
+This direction can be implemented incrementally:
+
+1. Put the checked nested-origin contract on the `Movable` move requirement and
+   verify it on explicit and synthesized conformances.
+2. Propagate trait-requirement contracts through witness calls, conditional
+   conformance checks, and downcasts. Diagnose a call whose target requirement
+   exceeds the enclosing contract.
+3. Convert generic collection mutators from the unsafe decorator to the checked
+   decorator once all operations they invoke have checked requirements.
+4. Add an `accesses` form that quantifies over nested origins and use it to
+   replace the checked decorator with ordinary function-type semantics.
+5. Add symbolic definition-time checking for generic branches whose access
+   sets depend on conformance selection, building on access projection for
+   generic wrappers.
+
+These steps deliberately avoid a `Pointer` or collection special case. The
+precision comes from checked contracts on trait requirements and from retaining
+those contracts when generic code narrows a type.
+
 ### Scoped unsafe access widening
 
 Checking an access contract creates a practical need for an explicit escape
