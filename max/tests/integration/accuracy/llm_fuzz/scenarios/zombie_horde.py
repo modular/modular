@@ -241,22 +241,18 @@ class ZombieHorde(BaseScenario):
                 ]
 
                 # Enforce the remaining wall-clock budget for this wave.
-                try:
-                    wave_outcomes = await asyncio.wait_for(
-                        asyncio.gather(*tasks),
-                        timeout=remaining_sec,
-                    )
-                except asyncio.TimeoutError:
-                    for task in tasks:
-                        if not task.done():
-                            task.cancel()
-                    await asyncio.gather(*tasks, return_exceptions=True)
+                _, pending = await asyncio.wait(tasks, timeout=remaining_sec)
+                for task in pending:
+                    task.cancel()
+                await asyncio.gather(*pending, return_exceptions=True)
+                wave_ms = (time.perf_counter() - wave_t0) * 1000
 
-                    wave_ms = (time.perf_counter() - wave_t0) * 1000
-                    elapsed_so_far = (time.perf_counter() - horde_t0) * 1000
-
-                    for cls in wave:
-                        results.append(
+                # A scenario that finished before the timeout keeps its own
+                # results.
+                wave_results = []
+                for cls, task in zip(wave, tasks, strict=True):
+                    if task in pending:
+                        wave_results.append(
                             self.make_result(
                                 self.name,
                                 f"{cls.name}__horde_timeout",
@@ -269,7 +265,14 @@ class ZombieHorde(BaseScenario):
                                 ),
                             )
                         )
+                    else:
+                        wave_results.extend(
+                            self._horde_results(cls.name, *task.result())
+                        )
+                results.extend(wave_results)
 
+                if pending:
+                    elapsed_so_far = (time.perf_counter() - horde_t0) * 1000
                     results.append(
                         self.make_result(
                             self.name,
@@ -284,39 +287,6 @@ class ZombieHorde(BaseScenario):
                         )
                     )
                     break
-
-                wave_ms = (time.perf_counter() - wave_t0) * 1000
-
-                # Collect results from each scenario.
-                wave_results = []
-                for cls, (scenario_results, error) in zip(
-                    wave, wave_outcomes, strict=False
-                ):
-                    if error:
-                        wave_results.append(
-                            self.make_result(
-                                self.name,
-                                f"{cls.name}__scenario_crashed",
-                                Verdict.ERROR,
-                                error=error,
-                                detail=f"Scenario {cls.name!r} threw during the horde",
-                            )
-                        )
-                    else:
-                        for r in scenario_results:
-                            wave_results.append(
-                                self.make_result(
-                                    self.name,
-                                    f"{r.scenario_name}__{r.test_name}",
-                                    r.verdict,
-                                    status_code=r.status_code,
-                                    elapsed_ms=r.elapsed_ms,
-                                    detail=r.detail,
-                                    response_body=r.response_body,
-                                    error=r.error,
-                                )
-                            )
-                results.extend(wave_results)
 
                 # Wave summary.
                 wave_passes = sum(
@@ -413,6 +383,37 @@ class ZombieHorde(BaseScenario):
         )
 
         return results
+
+    def _horde_results(
+        self,
+        scenario: str,
+        scenario_results: list[ScenarioResult],
+        error: str | None,
+    ) -> list[ScenarioResult]:
+        """Re-labels one scenario's results as horde results."""
+        if error:
+            return [
+                self.make_result(
+                    self.name,
+                    f"{scenario}__scenario_crashed",
+                    Verdict.ERROR,
+                    error=error,
+                    detail=f"Scenario {scenario!r} threw during the horde",
+                )
+            ]
+        return [
+            self.make_result(
+                self.name,
+                f"{r.scenario_name}__{r.test_name}",
+                r.verdict,
+                status_code=r.status_code,
+                elapsed_ms=r.elapsed_ms,
+                detail=r.detail,
+                response_body=r.response_body,
+                error=r.error,
+            )
+            for r in scenario_results
+        ]
 
     @staticmethod
     async def _run_one(
