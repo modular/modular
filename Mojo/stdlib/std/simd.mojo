@@ -4303,8 +4303,11 @@ def _floor(x: SIMD) -> type_of(x):
     var e = ((bits & BitsType(mask)) >> BitsType(mantissa_width)) - BitsType(
         bias
     )
+    # `select` evaluates both branches, so keep the shift amount in range even
+    # for lanes that take the second branch (`e >= shift_factor`).
+    var shift = (BitsType(shift_factor) - e).clamp(0, BitsType(shift_factor))
     bits = e.lt(BitsType(shift_factor)).select(
-        bits & type_of(bits)(~((1 << (BitsType(shift_factor) - e)) - 1)),
+        bits & type_of(bits)(~((1 << shift) - 1)),
         bits,
     )
     return type_of(x)(from_bits=bits)
