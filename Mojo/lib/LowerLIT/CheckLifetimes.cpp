@@ -5528,6 +5528,12 @@ void DestructorInsertion::checkUse(Value value, bool isDeref,
   }
 }
 
+static std::pair<SmallVector<StructFieldOp>, ValueRef>
+computeAccessPathForMaxUnconsumedField(ValueRef use,
+                                       const BitVector &consumedValues,
+                                       const ValueInfo &valueInfo,
+                                       TypeDeclInfo &typeDeclInfo);
+
 /// This operation defines the specified value.  If the value is dead on
 /// arrival, emit a destructor of the value.
 void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
@@ -5539,6 +5545,25 @@ void DestructorInsertion::checkDef(Value value, Operation &op, bool isDeref,
   //   ...
   //   aggregate.field1 = newValue  <<-- we are here
   if (ValueRef direct = valueSet.getDirectValueRef(value, isDeref)) {
+    // Defining a field leaves the rest of the aggregate live, so this is also
+    // a use of the aggregate.  When inserting destructors, scheduleNeededDtors
+    // models that by destroying the maximal unconsumed value containing the
+    // field (here, or at a later use of just this field) and marking all of it
+    // as used.  A dry run only marks the field, which is cleared below, so mark
+    // that same containing value here to keep the two in sync.  Otherwise a
+    // loop whose body only stores to (and maybe reads) a field of a value
+    // computes a continue set without the value, and destroys it on every
+    // iteration.  Later uses of the field itself don't matter since it is
+    // redefined here, so drop them first.  This is a no-op when defining the
+    // whole value, or when the containing value is used later.
+    if (dryRun && !valueSet.getValueInfo(direct.valueId).hasErrorDiagnosed) {
+      direct.markBits(consumedValues, false);
+      computeAccessPathForMaxUnconsumedField(
+          direct, consumedValues, valueSet.getValueInfo(direct.valueId),
+          valueSet.getTypeDeclInfo())
+          .second.markBits(consumedValues, true);
+    }
+
     bool isFullUseDestroy = scheduleNeededDtors(direct, dtorInserter, value);
 
     // Emit a lifetime start for the value if this is a var decl. Look through

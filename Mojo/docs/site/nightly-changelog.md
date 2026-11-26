@@ -804,3 +804,10 @@ Most code that no longer compiles matches one of these patterns:
 - Fixed the lifetime checker to now invalidate uses of an interior reference
   after its owner was mutated through a type holding the origin as a parameter.
   This includes closures which capture `mut` data.
+
+- [#7759](https://github.com/modular/modular/issues/7759) - A variable whose
+  last use in a loop is an assignment to one of its fields (`v.field = x`) is
+  now destroyed once, after the loop. Previously it was destroyed at the end of
+  every iteration and again after the loop, so later iterations wrote into a
+  destroyed value, and a struct that owns memory, such as one with a `List`
+  field, was freed more than once.
