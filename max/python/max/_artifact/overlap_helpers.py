@@ -356,27 +356,27 @@ def _advance_positions(
 def _advance_packed_positions(
     dest_positions: BufferValue,
     increments: TensorValue,
-    token_offsets: TensorValue,
+    window_starts: TensorValue,
     width: Dim,
 ) -> None:
     """Advances each fed row's window of 3-axis positions in a mixed step.
 
     A mixed step packs a prompt row's whole chunk beside the verify rows'
     ``k + 1`` windows, so the windows are not equal and a row index does not
-    say where one starts. Each previous row's verify window starts at the
-    token offset its bonus token lands at and spans ``width`` positions::
+    say where one starts. Each previous row's verify window starts where the
+    caller says and spans ``width`` positions::
 
-        dest_positions[:, offsets[p] : offsets[p] + width] += increments[p]
+        dest_positions[:, starts[p] : starts[p] + width] += increments[p]
 
-    A row with no current match carries the skip sentinel, the token count,
-    so its whole window is out of range and skipped; a prompt row is never
-    fed and keeps the positions the host staged.
+    A row with no current match starts at or past the end, so its whole
+    window is out of range and skipped; a prompt row is never fed and keeps
+    the positions the host staged.
     """
     current = ops.buffer_load(dest_positions)
     tokens = current.shape[1]
-    device = token_offsets.device
+    device = window_starts.device
     steps = ops.range(0, width, 1, out_dim=width, dtype=_TOK, device=device)
-    window_offsets = ops.unsqueeze(token_offsets, -1) + ops.unsqueeze(steps, 0)
+    window_offsets = ops.unsqueeze(window_starts, -1) + ops.unsqueeze(steps, 0)
     window_increments = ops.broadcast_to(
         ops.unsqueeze(increments, -1), ["prev_batch", width]
     )
@@ -391,6 +391,20 @@ def _advance_packed_positions(
     ops.buffer_store(dest_positions, current + ops.unsqueeze(per_token, 0))
 
 
+def _dim_on_device(dim: Dim, device: DeviceRef) -> TensorValue:
+    """Returns ``dim`` as an int64 scalar on ``device``."""
+    # A Dim-typed multiply lowers to a CPU constant, which mismatches the
+    # device; the range trick keeps the scalar on-device.
+    dim_cpu = ops.shape_to_tensor([dim])
+    return ops.range(
+        start=dim_cpu[0],
+        stop=dim_cpu[0] + 1,
+        out_dim=1,
+        dtype=DType.int64,
+        device=device,
+    )[0]
+
+
 def _feed_flat(
     dest: BufferValue,
     prev_scores: TensorValue,
@@ -403,16 +417,6 @@ def _feed_flat(
     the flat indices keep the store's vector accesses aligned whatever k
     is. The source stays 2-D so a wider previous step trims to k.
     """
-    # A Dim-typed multiply lowers to a CPU constant, which mismatches the
-    # mapping's device; the range trick keeps the scalar on-device.
-    width_cpu = ops.shape_to_tensor([width])
-    k_on_device = ops.range(
-        start=width_cpu[0],
-        stop=width_cpu[0] + 1,
-        out_dim=1,
-        dtype=DType.int64,
-        device=mapping.device,
-    )[0]
     cols = ops.range(
         start=0,
         stop=width,
@@ -420,7 +424,9 @@ def _feed_flat(
         device=mapping.device,
         dtype=DType.int64,
     )
-    flat = ops.reshape(mapping[:, None] * k_on_device + cols, [-1])
+    flat = ops.reshape(
+        mapping[:, None] * _dim_on_device(width, mapping.device) + cols, [-1]
+    )
     curr = ops.buffer_load(dest)
     ops.buffer_store(
         dest,
@@ -618,10 +624,10 @@ def _build_spec_realize_inplace_dp(
 
     With ``positions`` the step also takes ``[3, merged_seq_len]`` position
     ids (M-RoPE) after the cache destinations, each row's window advanced by
-    its increment, as in :func:`_build_spec_realize_inplace`. The mixed build
-    finds each verify row's window at its token offset
-    (:func:`_advance_packed_positions`), since prompt chunks make the windows
-    unequal. ``name``
+    its increment, as in :func:`_build_spec_realize_inplace`. The positions
+    hold each row's drafts after its tokens and the token offsets do not, so
+    the mixed build starts a row's window ``k`` positions later for each row
+    ahead of it (:func:`_advance_packed_positions`). ``name``
     replaces the geometry's name for an engine that requires another.
 
     Input order: ``dest_tokens``, ``dest_draft``, ``dest_cache`` (group-major,
@@ -788,13 +794,18 @@ def _build_spec_realize_inplace_dp(
                 )
                 ops.buffer_store(dest, bumped)
         if positions and packed_token_offsets:
-            # The verify rows' windows are `k + 1` wide, beside prompt
-            # chunks of any length.
+            # Each current row ahead of a fed row, a prompt row too, puts its
+            # k drafts between the token offset and the row's window, which
+            # starts at the row's one fed token. An unmatched row's start is
+            # the merged length only while the engine's two skip sentinels are
+            # the token count and the current row count.
+            k = dest_draft.shape[1]
             _advance_packed_positions(
                 graph.inputs[first_cache + n_cache].buffer,
                 prev_num_accepted + one,
-                graph.inputs[n_dest + 4 + int(draft_scores)].tensor,
-                dest_draft.shape[1] + 1,
+                graph.inputs[n_dest + 4 + int(draft_scores)].tensor
+                + prev_to_curr_map * _dim_on_device(k, dev0),
+                k + 1,
             )
         elif positions:
             _advance_positions(

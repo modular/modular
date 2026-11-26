@@ -51,6 +51,7 @@ from max.pipelines.speculative.driver import (
 )
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
+    always_takes_prefill_rows,
     verify_lengths,
 )
 from max.pipelines.speculative.spec_target import Verified
@@ -134,6 +135,8 @@ class HYV4VLBlockTarget:
             offsets,
             _batch_context_length(batch),
             positions,
+            # The engine keeps every row with images out of a verify step, so
+            # the scatter indices hold in the merged window.
             VisionInputs(
                 embeddings=_replicated(batch.vision_embeddings, mesh),
                 scatter_indices=_replicated(batch.vision_scatter_indices, mesh),
@@ -348,4 +351,8 @@ ADAPTER = TargetAdapter(
     trailing_input_tree=_position_tree,
     extra=_position_extra,
     trailing_buffers=_position_buffers,
+    # A prompt chunk is one more ragged row: attention routes per batch, the
+    # block reads each row's last committed position, and the config refuses
+    # data parallelism.
+    verify_takes_prefill_rows=always_takes_prefill_rows,
 )

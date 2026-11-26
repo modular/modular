@@ -147,9 +147,10 @@ def _executed(graph: object, *buffers: np.ndarray) -> None:
 
 
 def test_the_mixed_feed_lands_each_row_at_its_token_offset() -> None:
-    """The mixed feed lands each bonus token at its packed offset, widens
-    int32 drafts, and advances only the verify row's position window, which
-    a longer prompt chunk ahead of it moves off the equal split."""
+    """The mixed feed lands each bonus token at its token offset, widens
+    int32 drafts, and advances each verify row's position window, which
+    starts k positions later than its token offset for each row ahead. A
+    departed row changes nothing."""
     feed = SpecFeed(
         tp=1, kv_groups=1, dp=1, next_draft_dtype=DType.int32, positions=True
     )
@@ -159,30 +160,35 @@ def test_the_mixed_feed_lands_each_row_at_its_token_offset() -> None:
         if helper.name == HelperRole.SPEC_REALIZE_MIXED_INPLACE.value
     ]
     graph = mixed.build([DeviceRef.from_device(CPU())])
-    # Row 0 prefills a 5-token chunk plus its 2 drafts; row 1 verifies its
-    # bonus token and 2 drafts from token offset 7.
-    tokens = np.zeros(10, dtype=np.int64)
-    drafts = np.zeros((2, 2), dtype=np.int64)
-    cache = np.full(2, 10, dtype=np.uint32)
-    positions = np.tile(np.arange(10, dtype=np.int64), (3, 1))
+    # As the engine stages a mixed step: row 0 prefills 5 tokens, rows 1 and
+    # 2 verify one token each. The tokens hold no drafts; the positions hold
+    # each row's 2 drafts after its tokens, so rows 1 and 2 start at 7 and 10.
+    # The third previous row has left; the engine stages it at the skip
+    # sentinels, the token count and the current row count.
+    tokens = np.zeros(7, dtype=np.int64)
+    drafts = np.zeros((3, 2), dtype=np.int64)
+    cache = np.full(3, 10, dtype=np.uint32)
+    staged = np.arange(13, dtype=np.int64)
+    positions = np.tile(staged, (3, 1))
     _executed(
         graph,
         tokens,
         drafts,
         cache,
         positions,
-        np.array([1, 0], dtype=np.int64),  # accepted
-        np.array([7, 8], dtype=np.int64),  # next tokens
-        np.array([[1, 2], [3, 4]], dtype=np.int32),  # next drafts
-        np.array([1, 2], dtype=np.int64),  # previous row -> current row
-        np.array([7, 10], dtype=np.int64),  # token offsets; 10 is the skip
-        np.array([0, 2], dtype=np.int64),  # replica bounds
+        np.array([1, 0, 0], dtype=np.int64),  # accepted
+        np.array([7, 8, 9], dtype=np.int64),  # next tokens
+        np.array([[1, 2], [3, 4], [5, 6]], dtype=np.int32),  # next drafts
+        np.array([1, 2, 3], dtype=np.int64),  # previous row -> current row
+        np.array([5, 6, 7], dtype=np.int64),  # token offsets
+        np.array([0, 3], dtype=np.int64),  # replica bounds
     )
-    np.testing.assert_array_equal(tokens, [0] * 7 + [7, 0, 0])
-    np.testing.assert_array_equal(drafts, [[0, 0], [1, 2]])
-    np.testing.assert_array_equal(cache, [10, 12])
-    expected = np.arange(10, dtype=np.int64)
-    expected[7:] += 2
+    np.testing.assert_array_equal(tokens, [0] * 5 + [7, 8])
+    np.testing.assert_array_equal(drafts, [[0, 0], [1, 2], [3, 4]])
+    np.testing.assert_array_equal(cache, [10, 12, 11])
+    expected = staged.copy()
+    expected[7:10] += 2
+    expected[10:13] += 1
     np.testing.assert_array_equal(positions, np.tile(expected, (3, 1)))
 
 
