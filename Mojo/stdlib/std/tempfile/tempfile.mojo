@@ -30,7 +30,6 @@ import std.os
 from std.format._utils import _FlushingWriteBuffer
 from std.pathlib import Path
 from std.random import random_ui64
-from std.stat import S_ISDIR
 from std.utils._nicheable import _FieldNicheable
 
 from std.collections import Span
