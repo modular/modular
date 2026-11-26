@@ -318,6 +318,10 @@ public:
   /// specified.
   bool isNestedOriginsReadOnly = false;
 
+  /// Location of the closing `)` of the argument list, if parenthesized. Used
+  /// to anchor fix-its that insert effects such as `thin` after the arguments.
+  SMLoc rParenLoc;
+
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
   ParseResult parseArgumentListAndEffects(ParserBase &p, ArgListKind kind);

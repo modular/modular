@@ -807,13 +807,14 @@ struct FunctionTypeNode final : public ExprNode {
                    bool isThin, const ExprNode *thrownTypeExpr,
                    bool isNestedOriginsReadOnly, const ExprNode *originExpr,
 
-                   ArrayRef<ParsedConstraint> parsedConstraints, SMLoc endLoc)
+                   ArrayRef<ParsedConstraint> parsedConstraints, SMLoc endLoc,
+                   SMLoc argsRParenLoc)
       : ExprNode(kFunctionType), baseLoc(baseLoc), parsedParams(parsedParams),
         parsedArgs(parsedArgs), resultArg(resultArg), effects(effects),
         isThin(isThin), thrownTypeExpr(thrownTypeExpr),
         isNestedOriginsReadOnly(isNestedOriginsReadOnly),
         originExpr(originExpr), parsedConstraints(parsedConstraints),
-        endLoc(endLoc) {}
+        endLoc(endLoc), argsRParenLoc(argsRParenLoc) {}
 
   SMLoc baseLoc;
   ArrayRef<ParsedArgument> parsedParams; // Parameter list
@@ -826,6 +827,9 @@ struct FunctionTypeNode final : public ExprNode {
   const ExprNode *originExpr;
   ArrayRef<ParsedConstraint> parsedConstraints; // Trailing body constraints
   SMLoc endLoc;
+  /// Location of the `)` closing the argument list; effects like `thin` are
+  /// written right after it.
+  SMLoc argsRParenLoc;
 
   static bool classof(const ExprNode *node) {
     return node->kind == kFunctionType;
