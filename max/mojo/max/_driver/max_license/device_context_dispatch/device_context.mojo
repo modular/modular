@@ -67,7 +67,6 @@ from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 from max._driver.max_license.hal.extensions.traits import (
     SupportsCompletionFlagResetV1,
 )
-from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
 from max._driver.max_license.hal.plugin_spec import (
     DriverPluginEntry,
     parse_driver_plugins,
@@ -2819,35 +2818,21 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 )
             return
 
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                func_attribute,
-            )
-            Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[], launch, *encoded_args, host_args=host_args
-            )
-        else:
-            var gpu_kernel = self.compile_function[func](
-                func_attribute=func_attribute
-            )
-            gpu_kernel._call_with_pack_checked(
-                self,
-                *encoded_args,
-                host_args=host_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        var gpu_kernel = self.compile_function[func](
+            func_attribute=func_attribute
+        )
+        gpu_kernel._call_with_pack_checked(
+            self,
+            *encoded_args,
+            host_args=host_args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -2960,26 +2945,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
             return
 
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[],
-                execution_config,
-                *encoded_args,
-                host_args=host_args,
-            )
-        else:
-            var gpu_kernel = self.compile_function[func]()
-            comptime for idx in range(HostArgs.length):
-                type_of(gpu_kernel)._check_trailing_host[
-                    HostArgs[idx], encoded_types.length + idx
-                ]()
-            gpu_kernel._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *encoded_args,
-                host_args=host_args,
-                location=location.or_else(call_location()),
-            )
+        var gpu_kernel = self.compile_function[func]()
+        comptime for idx in range(HostArgs.length):
+            type_of(gpu_kernel)._check_trailing_host[
+                HostArgs[idx], encoded_types.length + idx
+            ]()
+        gpu_kernel._do_call_with_pack_checked(
+            self._hal_stream(),
+            execution_config,
+            *encoded_args,
+            host_args=host_args,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_closure[
@@ -3282,34 +3259,20 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         func_attribute: OptionalReg[FuncAttribute],
         location: Optional[SourceLocation],
     ) raises where not use_legacy_backend():
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                func_attribute,
-            )
-            Self._HALHooks.Enqueuer.enqueue_closure(
-                self._hal_stream()[], launch, func
-            )
-        else:
-            var gpu_kernel = DeviceFunction[
-                FuncType.__call__, target=Self.target
-            ](self, func_attribute=func_attribute)
-            gpu_kernel._call_closure_checked(
-                self,
-                func,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        var gpu_kernel = DeviceFunction[FuncType.__call__, target=Self.target](
+            self, func_attribute=func_attribute
+        )
+        gpu_kernel._call_closure_checked(
+            self,
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_closure[
@@ -3345,21 +3308,16 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config and a closure is only"
             " available on the HAL DeviceContext"
         )
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_closure(
-                self._hal_stream()[], execution_config, func
-            )
-        else:
-            var gpu_kernel = DeviceFunction[
-                FuncType.__call__, target=Self.target
-            ](self)
+        var gpu_kernel = DeviceFunction[FuncType.__call__, target=Self.target](
+            self
+        )
 
-            gpu_kernel._do_call_closure_checked(
-                self._hal_stream(),
-                execution_config,
-                func,
-                location=location.or_else(call_location()),
-            )
+        gpu_kernel._do_call_closure_checked(
+            self._hal_stream(),
+            execution_config,
+            func,
+            location=location.or_else(call_location()),
+        )
 
     def execution_time[
         FuncType: def(Self) raises -> None,

@@ -510,22 +510,17 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceStream"
         )
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[], execution_config, *args, host_args=()
-            )
-        else:
-            var gpu_f = DeviceFunction[
-                func,
-                DeviceContext[Self.target].FunctionWrapper,
-                target=Self.target,
-            ](self._impl._ctx)
-            gpu_f._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        var gpu_f = DeviceFunction[
+            func,
+            DeviceContext[Self.target].FunctionWrapper,
+            target=Self.target,
+        ](self._impl._ctx)
+        gpu_f._do_call_with_pack_checked(
+            self._hal_stream(),
+            execution_config,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[

@@ -12,10 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """The HAL launch path shared by `DeviceContext` and `DeviceStream`.
 
-Each helper takes the target whose plugin hooks apply, and either hands the
-launch to the plugin's `Enqueuer` or launches on the enqueuer's stream. A
-compiled launch goes through the plugin's `Launcher`, which checks its dims; an
-external launch checks them here.
+A compiled launch goes through the plugin's `Launcher`, which checks its dims;
+an external launch goes to the enqueuer's stream directly and checks them here.
 """
 
 from std.builtin.device_passable import DevicePassable
@@ -27,14 +25,10 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,
-    _HALDeviceExternalFunction,
-    _HALDeviceFunction,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     use_legacy_backend,
 )
-from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
-from max._plugin import MaxPluginForTarget
 from max.gpu.host._driver_common import _check_dim_in_range
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.dim import Dim
@@ -73,33 +67,17 @@ def _hal_enqueue_compiled[
     location: SourceLocation,
 ) raises where not use_legacy_backend():
     """Launches a compiled function with grid/block dims on `enqueuer`."""
-    comptime Hooks = MaxPluginForTarget[target].HalHooks
-    var hal_f: _HALDeviceFunction[...] = f._impl
-    comptime if Hooks.Enqueuer.overrides:
-        var launch = HalLaunchOptions(
-            grid_dim,
-            block_dim,
-            cluster_dim,
-            shared_mem_bytes,
-            attributes^,
-            constant_memory^,
-            None,
-        )
-        Hooks.Enqueuer.enqueue_compiled[
-            hal_f.Wrapper, hal_f.declared_arg_types
-        ](enqueuer._hal_stream()[], hal_f._inner[]._func_handle, launch, *args)
-    else:
-        f._call_with_pack_checked(
-            enqueuer,
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location,
-        )
+    f._call_with_pack_checked(
+        enqueuer,
+        *args,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        cluster_dim=cluster_dim,
+        shared_mem_bytes=shared_mem_bytes,
+        attributes=attributes^,
+        constant_memory=constant_memory^,
+        location=location,
+    )
 
 
 @inline(.always)
@@ -118,24 +96,12 @@ def _hal_enqueue_compiled[
     location: SourceLocation,
 ) raises where not use_legacy_backend():
     """Launches a compiled function with an execution config on `enqueuer`."""
-    comptime Hooks = MaxPluginForTarget[target].HalHooks
-    var hal_f: _HALDeviceFunction[...] = f._impl
-    comptime if Hooks.Enqueuer.overrides:
-        Hooks.Enqueuer.enqueue_compiled[
-            hal_f.Wrapper, hal_f.declared_arg_types
-        ](
-            enqueuer._hal_stream()[],
-            hal_f._inner[]._func_handle,
-            execution_config,
-            *args,
-        )
-    else:
-        f._do_call_with_pack_checked(
-            enqueuer._hal_stream(),
-            execution_config,
-            *args,
-            location=location,
-        )
+    f._do_call_with_pack_checked(
+        enqueuer._hal_stream(),
+        execution_config,
+        *args,
+        location=location,
+    )
 
 
 @inline(.always)
@@ -162,34 +128,18 @@ def _hal_enqueue_external[
     An external launch goes to the stream directly, never to the plugin's
     launcher, so its dims are always checked.
     """
-    comptime Hooks = MaxPluginForTarget[target].HalHooks
-    var hal_f: _HALDeviceExternalFunction = f._impl
-    comptime if Hooks.Enqueuer.overrides:
-        var launch = HalLaunchOptions(
-            grid_dim,
-            block_dim,
-            cluster_dim,
-            shared_mem_bytes,
-            attributes^,
-            constant_memory^,
-            None,
-        )
-        Hooks.Enqueuer.enqueue_external(
-            enqueuer._hal_stream()[], hal_f._inner[]._func_handle, launch, *args
-        )
-    else:
-        _check_grid_block_dims[func_name](grid_dim, block_dim, location)
-        f._call_with_pack(
-            enqueuer._hal_stream(),
-            *args,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            constant_memory=constant_memory^,
-            location=location,
-        )
+    _check_grid_block_dims[func_name](grid_dim, block_dim, location)
+    f._call_with_pack(
+        enqueuer._hal_stream(),
+        *args,
+        grid_dim=grid_dim,
+        block_dim=block_dim,
+        cluster_dim=cluster_dim,
+        shared_mem_bytes=shared_mem_bytes,
+        attributes=attributes^,
+        constant_memory=constant_memory^,
+        location=location,
+    )
 
 
 @inline(.always)
@@ -209,24 +159,14 @@ def _hal_enqueue_external[
 ) raises where not use_legacy_backend():
     """Launches an external function with an execution config on `enqueuer`,
     as the grid/block overload does."""
-    comptime Hooks = MaxPluginForTarget[target].HalHooks
-    var hal_f: _HALDeviceExternalFunction = f._impl
-    comptime if Hooks.Enqueuer.overrides:
-        Hooks.Enqueuer.enqueue_external(
-            enqueuer._hal_stream()[],
-            hal_f._inner[]._func_handle,
-            execution_config,
-            *args,
-        )
-    else:
-        _check_grid_block_dims[func_name](
-            execution_config.get_grid_dim(),
-            execution_config.get_block_dim(),
-            location,
-        )
-        f._call_with_pack(
-            enqueuer._hal_stream(),
-            execution_config,
-            *args,
-            location=location,
-        )
+    _check_grid_block_dims[func_name](
+        execution_config.get_grid_dim(),
+        execution_config.get_block_dim(),
+        location,
+    )
+    f._call_with_pack(
+        enqueuer._hal_stream(),
+        execution_config,
+        *args,
+        location=location,
+    )

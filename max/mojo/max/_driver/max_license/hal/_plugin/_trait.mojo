@@ -14,9 +14,7 @@
 from std.collections import OptionalReg
 
 from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
-from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.dim import Dim
-from max.gpu.host._legacy.func_attribute import FuncAttribute
 from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 
 from ..device import DeviceSpec
@@ -24,7 +22,6 @@ from ..kernel_args import DenseArgPacker, HalArgPacker, HalKernelArgs
 from ..plugins import FunctionHandle
 from ..status import STATUS_INVALID_ARG, HALError
 from ..queue import Queue
-from ..stream import Stream
 
 from .._machine import DeviceRef
 from std.builtin.rebind import downcast
@@ -137,161 +134,6 @@ def _check_dim_in_range(
         )
 
 
-@fieldwise_init
-struct HalLaunchOptions(Movable):
-    """The launch arguments of a grid/block `enqueue_function` call."""
-
-    var grid_dim: Dim
-    var block_dim: Dim
-    var cluster_dim: OptionalReg[Dim]
-    var shared_mem_bytes: OptionalReg[Int]
-    var attributes: List[LaunchAttribute]
-    var constant_memory: List[ConstantMemoryMapping]
-    var func_attribute: OptionalReg[FuncAttribute]
-
-
-trait HalEnqueuer:
-    """Takes over `enqueue_function` entirely.
-
-    When `overrides` is set, every `enqueue_function` on a HAL DeviceContext
-    or DeviceStream hands its inputs to the matching method here before doing
-    anything itself, so nothing is compiled, checked or packed unless the
-    plugin does it. `launch` is the caller's execution config, or a
-    `HalLaunchOptions` holding its grid/block arguments.
-
-    Its hooks take the caller's stream rather than a queue, as
-    `HalLauncher`'s do: only a DeviceContext or DeviceStream reaches them,
-    always with a stream, and an enqueuer that issues more than one
-    operation for a call can order all of them after the stream's earlier
-    work through it.
-    """
-
-    comptime overrides: Bool
-    """Whether this enqueuer replaces `enqueue_function`."""
-
-    @staticmethod
-    def enqueue_function[
-        spec: DeviceSpec,
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        LaunchT: AnyType,
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *Ts: AnyType,
-    ](
-        mut stream: Stream[spec],
-        launch: LaunchT,
-        *args: *Ts,
-        host_args: Tuple[*HostArgs],
-    ) raises:
-        """Compiles and launches `func`, as `enqueue_function[func]` does."""
-        ...
-
-    @staticmethod
-    def enqueue_closure[
-        spec: DeviceSpec,
-        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
-        LaunchT: AnyType,
-        //,
-    ](mut stream: Stream[spec], launch: LaunchT, closure: FuncType) raises:
-        """Compiles and launches `closure`."""
-        ...
-
-    @staticmethod
-    def enqueue_compiled[
-        spec: DeviceSpec,
-        LaunchT: AnyType,
-        //,
-        Wrapper: DeviceFunctionWrapper,
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        *Ts: AnyType,
-    ](
-        mut stream: Stream[spec],
-        func: FunctionHandle,
-        launch: LaunchT,
-        *args: *Ts,
-    ) raises:
-        """Launches a function `compile_function` already compiled."""
-        ...
-
-    @staticmethod
-    def enqueue_external[
-        spec: DeviceSpec,
-        LaunchT: AnyType,
-        //,
-        *Ts: AnyType,
-    ](
-        mut stream: Stream[spec],
-        func: FunctionHandle,
-        launch: LaunchT,
-        *args: *Ts,
-    ) raises:
-        """Launches an externally loaded function."""
-        ...
-
-
-struct DefaultHalEnqueuer(HalEnqueuer):
-    """Leaves `enqueue_function` to the HAL DeviceContext."""
-
-    comptime overrides = False
-
-    @staticmethod
-    def enqueue_function[
-        spec: DeviceSpec,
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        LaunchT: AnyType,
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *Ts: AnyType,
-    ](
-        mut stream: Stream[spec],
-        launch: LaunchT,
-        *args: *Ts,
-        host_args: Tuple[*HostArgs],
-    ) raises:
-        raise Error("the active HAL plugin has no enqueuer")
-
-    @staticmethod
-    def enqueue_closure[
-        spec: DeviceSpec,
-        FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
-        LaunchT: AnyType,
-        //,
-    ](mut stream: Stream[spec], launch: LaunchT, closure: FuncType) raises:
-        raise Error("the active HAL plugin has no enqueuer")
-
-    @staticmethod
-    def enqueue_compiled[
-        spec: DeviceSpec,
-        LaunchT: AnyType,
-        //,
-        Wrapper: DeviceFunctionWrapper,
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        *Ts: AnyType,
-    ](
-        mut stream: Stream[spec],
-        func: FunctionHandle,
-        launch: LaunchT,
-        *args: *Ts,
-    ) raises:
-        raise Error("the active HAL plugin has no enqueuer")
-
-    @staticmethod
-    def enqueue_external[
-        spec: DeviceSpec,
-        LaunchT: AnyType,
-        //,
-        *Ts: AnyType,
-    ](
-        mut stream: Stream[spec],
-        func: FunctionHandle,
-        launch: LaunchT,
-        *args: *Ts,
-    ) raises:
-        raise Error("the active HAL plugin has no enqueuer")
-
-
 trait HalPluginHooks:
     """Compile-time hook interface for pluggable stdlib behavior.
 
@@ -315,10 +157,7 @@ trait HalPluginHooks:
 
     comptime ArgPacker: HalArgPacker = DenseArgPacker
     """Packs a launch's arguments into the slots the plugin's runtime reads,
-    for a typed `Queue.execute` and for every launch the `Launcher` takes."""
-
-    comptime Enqueuer: HalEnqueuer = DefaultHalEnqueuer
-    """Replaces `enqueue_function` outright, before anything is compiled."""
+    before the `Launcher` launches them."""
 
 
 # ===-----------------------------------------------------------------------===#
