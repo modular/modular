@@ -2509,7 +2509,7 @@ struct TileTensor[
                     dst_ptr.unsafe_offset(swizzled_idx),
                 )
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def _distance(
         self,
         other: TileTensor[
@@ -3803,6 +3803,27 @@ struct TileTensor[
         mut: Whether the result tensor is mutable.
         origin: The origin for the result tensor.
     """
+
+    @inline(.nodebug)
+    def unsafe_origin_cast[
+        target_origin: Origin[mut=Self.mut]
+    ](self) -> Self.OriginCastType[target_origin]:
+        """Casts this tensor to another origin with the same mutability.
+
+        Parameters:
+            target_origin: The origin for the result tensor.
+
+        Returns:
+            A tensor with `target_origin` and the same storage and layout.
+
+        Safety:
+            The caller must ensure that replacing the tracked origin does not
+            violate the source storage's lifetime or exclusivity requirements.
+        """
+        return {
+            self._unsafe_storage_cast[to_origin=target_origin](),
+            self.layout,
+        }
 
     @inline(.nodebug)
     def as_unsafe_any_origin(

@@ -174,15 +174,19 @@ def bench_rms_norm_gpu[
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
+    # FIXME: RMS normalization reads and writes this buffer in phases that
+    # origin tracking cannot express, so hide the input closure's alias.
+    var data_buf_untracked = data_buf.unsafe_origin_cast[MutUntrackedOrigin]()
+
     # `rms_norm_gpu` migrated to a `Coord` shape boundary (softmax PR #88203).
     @inline(.always)
     def input_fn[
         width: Int
-    ](coords: Coord) {var data_buf} -> SIMD[dtype, width]:
+    ](coords: Coord) {var data_buf_untracked} -> SIMD[dtype, width]:
         # Match the MOGG lambda contract (reductions.mojo passes
         # `element_alignment=width` to `_lambda_load`): vector loads are
         # aligned to the full SIMD width.
-        return data_buf.load[
+        return data_buf_untracked.load[
             width=width, alignment=align_of[SIMD[dtype, width]]()
         ](coords)
 

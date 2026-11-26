@@ -114,10 +114,12 @@ def run_attention[
         UInt32(context_len),
     )
 
+    # FIXME: K/V are disjoint views of one allocation, but origin tracking
+    # cannot express that attention only reads both views.
     flash_attention_kv_cache(
         q.as_imm(),
-        kv_collection.get_key_cache(0),
-        kv_collection.get_value_cache(0),
+        kv_collection.get_key_cache(0).unsafe_origin_cast(),
+        kv_collection.get_value_cache(0).unsafe_origin_cast(),
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
         output,

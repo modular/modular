@@ -6219,16 +6219,20 @@ def mha_gpu_naive[
         attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
+    # FIXME: Softmax reads and writes this buffer in place, but origin tracking
+    # cannot express that each row is read before it is written.
+    var p_buffer_untracked = p_buffer.unsafe_origin_cast[MutUntrackedOrigin]()
+
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) {var p_buffer} -> SIMD[p_type, _simd_width]:
-        comptime assert p_buffer.flat_rank >= coords.flat_rank
-        return p_buffer.load[width=_simd_width](coords)
+    ](coords: Coord) {var p_buffer_untracked} -> SIMD[p_type, _simd_width]:
+        comptime assert p_buffer_untracked.flat_rank >= coords.flat_rank
+        return p_buffer_untracked.load[width=_simd_width](coords)
 
     _softmax_gpu[p_type, 1, sink=sink](
         input_fn_device,
         Coord(batch_size * num_heads, max_prompt_len, num_keys),
-        p_buffer,
+        p_buffer_untracked,
         2,
         ctx,
         sink_weights=sink_weights,

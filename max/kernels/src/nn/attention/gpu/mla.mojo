@@ -2339,14 +2339,7 @@ struct LegacyNVMLA(MLAKernels):
         )
 
 
-# entrypoint for MLA decoding kernels
-# Disable nested-origin exclusivity checking: MLA decode reads (does not write)
-# the paged KV cache, but the cache's buffer views and the mutable `output`
-# carry tracked origins the exclusivity checker cannot prove disjoint, so it
-# rejects them as separately-writable arguments. They are distinct allocations,
-# so the check is a false positive here (proper fix: give the cache views
-# provably-disjoint origins instead of sharing the collection's).
-@__unsafe_nested_origins_read_only
+# Entry point for MLA decoding kernels.
 @inline(.always)
 def flare_mla_decoding[
     rank: Int,

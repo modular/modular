@@ -286,10 +286,7 @@ def _reduce_generator[
 # ===-----------------------------------------------------------------------===#
 
 
-# `input_gen_fn` and `output_fn` may read and write the same buffer, which
-# is safe and the expected pattern here.
 @inline(.always)
-@__unsafe_nested_origins_read_only
 def map_reduce[
     InputGenFnType: def[dtype: DType, width: Int](Int) -> SIMD[dtype, width],
     ReduceVecToVecFnType: def[acc_type: DType, dtype: DType, width: SIMDLength](

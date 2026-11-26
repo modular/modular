@@ -215,8 +215,10 @@ def execute_ragged_flash_attention[
         UInt32(max_context_length),
     )
 
-    var k_cache = kv_collection.get_key_cache(layer_idx)
-    var v_cache = kv_collection.get_value_cache(layer_idx)
+    # FIXME: K/V are disjoint views of one allocation, but origin tracking
+    # cannot express that attention only reads both views.
+    var k_cache = kv_collection.get_key_cache(layer_idx).unsafe_origin_cast()
+    var v_cache = kv_collection.get_value_cache(layer_idx).unsafe_origin_cast()
 
     # ragged execution
     flash_attention_kv_cache(

@@ -560,12 +560,18 @@ def _latent_sparse_attention_sm100[
         attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
-    var comp_view = _flat_row_view(
-        comp_cache, row_lengths_ptr, num_rows
-    ).get_key_cache(0)
-    var swa_view = _flat_row_view(
-        swa_cache, row_lengths_ptr, num_rows
-    ).get_key_cache(0)
+    # FIXME: These views are disjoint cache leaves, but origin tracking cannot
+    # express that fact when both are passed to MLA decode.
+    var comp_view = (
+        _flat_row_view(comp_cache, row_lengths_ptr, num_rows)
+        .get_key_cache(0)
+        .unsafe_origin_cast()
+    )
+    var swa_view = (
+        _flat_row_view(swa_cache, row_lengths_ptr, num_rows)
+        .get_key_cache(0)
+        .unsafe_origin_cast()
+    )
 
     flare_mla_decoding[
         rank=3,

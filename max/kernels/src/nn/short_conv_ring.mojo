@@ -303,11 +303,6 @@ def short_conv_ring[
         )
 
 
-# HACK: the kernel closure stores through both `k_cache` and `v_cache`, the
-# disjoint halves of one `blocks` buffer that share the collection's mutable
-# origins, which the exclusivity checker cannot tell apart. Same stopgap as
-# `_rope_split_store_ragged_impl`; the proper fix is disjoint k/v origins.
-@__unsafe_nested_origins_read_only
 def _launch_fused_qk_rms_norm_short_conv[
     dtype: DType,
     ring_dtype: DType,
@@ -608,6 +603,15 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     if qkvr.dim[0]() == 0:
         return
 
+    # FIXME: K/V are disjoint planes of one allocation, but origin tracking
+    # cannot express that fact.
+    var k_cache = kv_collection.get_key_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
+    var v_cache = kv_collection.get_value_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
+
     with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_qk_rms_norm_short_conv_ragged_paged.kv_nhead_{params.num_heads}.hdim_{head_dim}"
@@ -622,8 +626,8 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
             commit=commit,
         ](
             qkvr,
-            kv_collection.get_key_cache(Int(layer_idx)),
-            kv_collection.get_value_cache(Int(layer_idx)),
+            k_cache,
+            v_cache,
             q_gamma,
             k_gamma,
             k_weight,

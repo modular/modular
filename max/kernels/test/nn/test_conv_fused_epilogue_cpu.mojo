@@ -77,7 +77,9 @@ def test_conv_nhwc_direct_fused() raises:
 
     comptime conv_attr = ConvInfoStatic[rank]()
 
-    var out_ptr = fused_tt.ptr
+    # FIXME: The epilogue captures output while the convolution also takes it
+    # mutably; each row is read only after convolution writes it.
+    var out_ptr = fused_tt.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     var col_stride = F
     var row_stride = output_dims[1] * F
     var plane_stride = output_dims[0] * row_stride
@@ -238,7 +240,9 @@ def test_conv_transposed_cpu_fused() raises:
         fused_ptr, row_major(extend_shape(Coord(output_dims), N, F))
     )
 
-    var out_ptr = fused_tt.ptr
+    # FIXME: The epilogue captures output while the convolution also takes it
+    # mutably; each row is read only after convolution writes it.
+    var out_ptr = fused_tt.ptr.unsafe_origin_cast[MutUntrackedOrigin]()
     var col_stride = F
     var row_stride = output_dims[1] * F
     var plane_stride = output_dims[0] * row_stride

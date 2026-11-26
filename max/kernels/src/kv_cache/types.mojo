@@ -2097,6 +2097,16 @@ struct ContinuousBatchingKVCache[
         Self.blocks_origin,
         Engine=Self.blocks_engine,
     ]
+    comptime UntrackedOriginType = ContinuousBatchingKVCache[
+        Self.dtype,
+        Self.kv_params,
+        MutUntrackedOrigin,
+        Self.blocks_engine,
+        Self.cache_lengths_origin,
+        Self.cache_lengths_engine,
+        Self.lookup_table_origin,
+        Self.lookup_table_engine,
+    ]
     comptime Engine: TensorEngine = Self.blocks_engine
     comptime cache_lengths_engine: TensorEngine = Self.cache_lengths_engine_
 
@@ -2211,6 +2221,23 @@ struct ContinuousBatchingKVCache[
         ](lookup_table)
         self.max_seq_length = max_seq_length
         self.max_cache_length = max_cache_length
+
+    def unsafe_origin_cast(self) -> Self.UntrackedOriginType:
+        """Returns a cache view whose writable buffer has an untracked origin.
+
+        The caller must ensure that accesses through the returned view do not
+        violate the lifetime or exclusivity requirements of the original
+        cache.
+        """
+        # FIXME: The cache cannot yet project a replacement origin through its
+        # writable nested buffer, so rebuild the view with an untracked origin.
+        return Self.UntrackedOriginType(
+            self.blocks.unsafe_origin_cast[MutUntrackedOrigin](),
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+        )
 
     @inline(.always)
     def _batch_size(self) -> Int:
@@ -2905,6 +2932,21 @@ struct PagedKVCache[
         Self.scales_origin,
         Engine=Self.scales_engine,
     ]
+    comptime UntrackedOriginType = PagedKVCache[
+        Self.dtype,
+        Self.kv_params,
+        Self.page_size,
+        MutUntrackedOrigin,
+        Self.blocks_engine,
+        Self.cache_lengths_origin,
+        Self.cache_lengths_engine,
+        Self.lookup_table_origin,
+        Self.lookup_table_engine,
+        MutUntrackedOrigin,
+        Self.scales_engine,
+        scale_dtype_=Self.scale_dtype_,
+        quantization_granularity_=Self.quantization_granularity,
+    ]
 
     # KV Cache quantization scales
     var scales: OptionalReg[Self.scales_tt_type]
@@ -2983,6 +3025,31 @@ struct PagedKVCache[
             self.scales_lookup_table = scales_lookup_table
         else:
             self.scales_lookup_table = self.lookup_table
+
+    def unsafe_origin_cast(self) -> Self.UntrackedOriginType:
+        """Returns a cache view whose writable buffers have untracked origins.
+
+        The caller must ensure that accesses through the returned view do not
+        violate the lifetime or exclusivity requirements of the original
+        cache.
+        """
+        # FIXME: Origin projection cannot yet rebind both writable nested
+        # origins together, so this must rebuild the cache view field by field.
+        var scales: OptionalReg[Self.UntrackedOriginType.scales_tt_type] = None
+        if case .Some(value) = self.scales:
+            scales = value.unsafe_origin_cast[MutUntrackedOrigin]()
+
+        return Self.UntrackedOriginType(
+            self.blocks.unsafe_origin_cast[MutUntrackedOrigin](),
+            self.cache_lengths,
+            self.lookup_table,
+            self.max_seq_length,
+            self.max_cache_length,
+            scales=scales,
+            scales_lookup_table=OptionalReg[
+                Self.UntrackedOriginType.lookup_table_tt_type
+            ](self.scales_lookup_table),
+        )
 
     @staticmethod
     def max_tile_size() -> Int:

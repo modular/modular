@@ -1088,12 +1088,15 @@ def _conv_transpose_cpu[
         pad_h = Index(pads[2], pads[3])
         pad_w = Index(pads[4], pads[5])
 
+    # FIXME: The fused epilogue captures output while the convolution also
+    # takes it mutably; each row is read only after convolution writes it.
+    var output_untracked = output.unsafe_origin_cast[MutUntrackedOrigin]()
     conv_transposed_cpu[
         filter_layout == "FRSCf" or filter_layout == "FQRSCf",
         filter_layout == "CFRS",
         has_epilogue_fusion,
     ](
-        output,
+        output_untracked,
         input,
         filter,
         Coord(_index_list[spatial_rank](strides)),

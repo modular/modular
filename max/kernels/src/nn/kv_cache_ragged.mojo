@@ -2723,8 +2723,14 @@ def _matmul_kv_cache_ragged[
         context: Pointer containing the runtime context for the target device.
     """
     var layer_idx_cast = Int(layer_idx)
-    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
-    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    # FIXME: K/V are disjoint planes of one allocation, but origin tracking
+    # cannot express that fact.
+    var k_cache = kv_collection.get_key_cache(
+        layer_idx_cast
+    ).unsafe_origin_cast()
+    var v_cache = kv_collection.get_value_cache(
+        layer_idx_cast
+    ).unsafe_origin_cast()
 
     _matmul_kv_cache_ragged_impl(
         hidden_state,
@@ -2736,14 +2742,6 @@ def _matmul_kv_cache_ragged[
     )
 
 
-# HACK: `k_cache` and `v_cache` are the key/value regions (kv_idx 0 vs 1) of the
-# same `blocks` buffer, so they share the collection's mutable `blocks_origin`
-# (and `scales_origin`). They are only ever stored to at disjoint offsets, but
-# the exclusivity checker cannot prove that and rejects passing both as
-# separately-writable arguments to this call. Disabling the nested-origin
-# exclusivity check is a stopgap workaround; the proper fix is to give the k/v
-# views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_nested_origins_read_only
 @inline(.always)
 def _matmul_kv_cache_ragged_impl[
     dtype: DType,
@@ -3298,20 +3296,26 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     context: DeviceContext,
 ) raises:
     var layer_idx_cast = Int(layer_idx)
-    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
-    var v_cache = kv_collection.get_value_cache(layer_idx_cast)
+    # FIXME: K/V are disjoint planes of one allocation, but origin tracking
+    # cannot express that fact.
+    var k_cache = kv_collection.get_key_cache(
+        layer_idx_cast
+    ).unsafe_origin_cast()
+    var v_cache = kv_collection.get_value_cache(
+        layer_idx_cast
+    ).unsafe_origin_cast()
 
     comptime cache_t = PagedKVCache[
         DType.float32,
         kv_collection.kv_params,
         kv_collection.page_size,
-        kv_collection.blocks_origin,
+        MutUntrackedOrigin,
         kv_collection.blocks_tt_type.Engine,
         kv_collection.cache_lengths_origin,
         kv_collection.CacheType.cache_lengths_engine,
         kv_collection.lookup_table_origin,
         kv_collection.CacheType.lookup_table_engine,
-        kv_collection.scales_origin,
+        MutUntrackedOrigin,
         kv_collection.CacheType.scales_engine,
     ]
     var k_cache_reg = rebind[cache_t](k_cache)
@@ -3334,14 +3338,6 @@ def _unfused_qkv_matmul_ragged_paged_gguf_quantized_impl[
     )
 
 
-# HACK: `k_cache` and `v_cache` are the key/value regions (kv_idx 0 vs 1) of the
-# same `blocks` buffer, so they share the collection's mutable `blocks_origin`
-# (and `scales_origin`). They are only ever stored to at disjoint offsets, but
-# the exclusivity checker cannot prove that and rejects passing both as
-# separately-writable arguments to this call. Disabling the nested-origin
-# exclusivity check is a stopgap workaround; the proper fix is to give the k/v
-# views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_nested_origins_read_only
 @inline(.always)
 def _matmul_kv_cache_ragged_gguf_quantized_impl[
     cache_t: KVCacheT,

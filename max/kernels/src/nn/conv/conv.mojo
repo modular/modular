@@ -569,7 +569,6 @@ struct ConvDirectNHWC[
     # `epilogue_fn` reads back the rows of `output` that `run` writes, which
     # is safe: each row is read only after it has been fully written.
     @staticmethod
-    @__unsafe_nested_origins_read_only
     def run(
         output: TileTensor[
             Self.output_type, Self.output_layout, Self.output_origin
@@ -3499,9 +3498,6 @@ def conv_shape[
     return output_shape
 
 
-# `elementwise_lambda` may read and write `output`, which is safe: it is
-# applied to each output row only after that row has been fully written.
-@__unsafe_nested_origins_read_only
 def conv_nhwc_direct[
     conv_info_rank: Int,
     EpilogueFnType: ConvSimdEpilogueFn,
@@ -3572,7 +3568,11 @@ def conv_nhwc_direct[
     # `ConvDirectNHWC` is declared with.
     var input_tt = TileTensor(input.ptr, input.layout)
     var filter_tt = TileTensor(filter.ptr, filter.layout)
-    var output_tt = TileTensor(output.ptr, output.layout)
+    # FIXME: The epilogue captures output while the convolution also takes it
+    # mutably; each row is read only after convolution writes it.
+    var output_tt = TileTensor(
+        output.ptr.unsafe_origin_cast[MutUntrackedOrigin](), output.layout
+    )
 
     @inline(.always)
     def description_fn() {imm} -> String:
@@ -3610,16 +3610,11 @@ def conv_nhwc_direct[
             comptime simd_size = simd_width_of[output_type]()
 
             @inline(.always)
-            def body[width: Int](idx: Int) {coords, output, imm}:
+            def body[width: Int](idx: Int) {coords, output_tt, imm}:
                 comptime last = input.rank - 1
                 var curr_coords = coords
                 curr_coords.replace_dynamic[last](Int(coords[last]) + idx)
-
-                # Read through the parameter, not the local `output_tt`
-                # view: this closure outlives the last explicit use of the
-                # locals in this frame, and the parameter is alive for the
-                # whole call.
-                var vec = output.load[width=width](curr_coords)
+                var vec = output_tt.load[width=width](curr_coords)
                 elementwise_lambda(curr_coords, vec)
 
             vectorize[simd_size](f_size, body)

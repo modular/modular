@@ -787,9 +787,6 @@ def _softmax_warp_kernel[
                 output.store(coords, out_val)
 
 
-# Attention runs softmax in place: `input_fn` may read the buffer passed as
-# `output`. Each row is fully read into the reduction before it is written.
-@__unsafe_nested_origins_read_only
 def _softmax_gpu[
     dtype: DType,
     simd_width: Int,
@@ -1035,9 +1032,6 @@ def _softmax_gpu[
         )
 
 
-# Callers may run softmax in place: `input_fn` may read the buffer passed
-# as `output`. Each row is fully read into the reduction before it is written.
-@__unsafe_nested_origins_read_only
 def softmax_inline[
     dtype: DType,
     simd_width: Int,
@@ -1077,6 +1071,9 @@ def softmax_inline[
     def trace_information() {imm} -> String:
         return trace_arg("input", shape, dtype)
 
+    # FIXME: Input closures may read output in place, but origin tracking
+    # cannot express that each row is fully read before it is written.
+    var output_untracked = output.unsafe_origin_cast[MutUntrackedOrigin]()
     with Trace[TraceLevel.OP, target=context.T.target.device_kind_label()](
         "softmax",
         Trace[TraceLevel.OP]._get_detail_str(trace_information),
@@ -1087,7 +1084,7 @@ def softmax_inline[
         comptime if context.T.target.is_cpu():
             var cpu_ctx = DeviceContext._map_assert_cpu_target(context)
             _softmax_cpu[dtype, simd_width, logsoftmax=logsoftmax](
-                input_fn, shape, output, axis, cpu_ctx
+                input_fn, shape, output_untracked, axis, cpu_ctx
             )
         elif context.T.target.is_gpu():
             _softmax_gpu[
@@ -1098,7 +1095,7 @@ def softmax_inline[
             ](
                 input_fn,
                 shape,
-                output,
+                output_untracked,
                 axis,
                 context.value(),
             )

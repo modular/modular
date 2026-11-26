@@ -1708,11 +1708,18 @@ def _rms_norm_heads[
     row into `dst` at `dst_col`.
     """
 
+    # FIXME: The generic tensor types lose the proof that these buffers are
+    # disjoint, although every caller allocates separate source and output.
+    var src_untracked = src.unsafe_origin_cast[ImmUntrackedOrigin]()
+    var dst_untracked = dst.unsafe_origin_cast[MutUntrackedOrigin]()
+
     @inline(.always)
     def input_fn[
         width: Int, alignment: Int
-    ](coords: Coord) {var src, var src_col} -> SIMD[dtype, width]:
-        return src.load[width=width, alignment=alignment * size_of[dtype]()](
+    ](coords: Coord) {var src_untracked, var src_col} -> SIMD[dtype, width]:
+        return src_untracked.load[
+            width=width, alignment=alignment * size_of[dtype]()
+        ](
             (
                 Int(coords[0]),
                 src_col + Int(coords[1]) * head_size + Int(coords[2]),
@@ -1722,8 +1729,8 @@ def _rms_norm_heads[
     @inline(.always)
     def output_fn[
         width: SIMDLength, alignment: Int
-    ](coords: Coord, val: SIMD[dtype, width]) {var dst, var dst_col}:
-        dst.store[alignment=alignment * size_of[dtype]()](
+    ](coords: Coord, val: SIMD[dtype, width]) {var dst_untracked, var dst_col}:
+        dst_untracked.store[alignment=alignment * size_of[dtype]()](
             (
                 Int(coords[0]),
                 dst_col + Int(coords[1]) * head_size + Int(coords[2]),

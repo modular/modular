@@ -836,10 +836,6 @@ def rms_norm_gpu_block[
         )
 
 
-# `input_fn` and `output_fn` run on the device, so they must copy (`{var}`)
-# what they capture. Callers may norm in place, with both callbacks capturing
-# the same buffer: every element is read before the thread reading it writes it.
-@__unsafe_nested_origins_read_only
 def rms_norm_gpu[
     dtype: DType,
     InputFnType: ImplicitlyCopyable
@@ -1410,9 +1406,6 @@ def _rms_norm_input_alignment[
         return align_of[SIMD[dtype, width]]()
 
 
-# The KV cache norms run in place: `input_0_fn` and `output_fn` may capture
-# the same cache. Every element is read before the thread reading it writes it.
-@__unsafe_nested_origins_read_only
 @inline(.always)
 def _rms_norm_impl[
     dtype: DType,

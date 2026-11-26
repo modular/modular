@@ -496,7 +496,6 @@ struct ConvTransposedPacked[
     # `epilogue_fn` reads back the rows of `output` that `run` writes, which
     # is safe: each row is read only after it has been fully written.
     @staticmethod
-    @__unsafe_nested_origins_read_only
     def run(
         output: TileTensor[
             mut=True,
@@ -1562,9 +1561,6 @@ def pack_filter(
 # ===----------------------------------------------------------------------=== #
 
 
-# `elementwise_lambda` may read and write `output`, which is safe: it is
-# applied to each output row only after that row has been fully written.
-@__unsafe_nested_origins_read_only
 def conv_transposed_cpu[
     EpilogueFnType: ConvSimdEpilogueFn,
     //,
@@ -1677,6 +1673,10 @@ def conv_transposed_cpu[
             1,
         )
 
+        # FIXME: The epilogue captures output while the convolution also takes
+        # it mutably; each row is read only after convolution writes it.
+        var output_untracked = output.unsafe_origin_cast[MutUntrackedOrigin]()
+
         # The closure updates a row segment of the output.
         @inline(.always)
         def elementwise_epilogue(coords: Coord, f_size: Int) {imm}:
@@ -1685,14 +1685,14 @@ def conv_transposed_cpu[
             comptime assert coords.rank == input_rank
 
             @inline(.always)
-            def body[width: Int](idx: Int) {coords, output, imm}:
+            def body[width: Int](idx: Int) {coords, output_untracked, imm}:
                 # Coordinates of the current index.
                 var curr_coords = coords
                 curr_coords.replace_dynamic[input_rank - 1](
                     Int(coords[input_rank - 1]) + idx
                 )
 
-                var vec = output.load[
+                var vec = output_untracked.load[
                     width=width, alignment=align_of[output.dtype]()
                 ](curr_coords)
                 elementwise_lambda(curr_coords, vec)
@@ -1702,7 +1702,7 @@ def conv_transposed_cpu[
         ConvTransposedPacked[
             input.origin,
             packed_filter.origin,
-            output.origin,
+            output_untracked.origin,
             input.dtype,
             filter.dtype,
             output.dtype,
@@ -1710,7 +1710,12 @@ def conv_transposed_cpu[
             has_epilogue_fusion,
             type_of(elementwise_epilogue),
         ].run(
-            output, input, packed_filter, conv_shape, elementwise_epilogue, ctx
+            output_untracked,
+            input,
+            packed_filter,
+            conv_shape,
+            elementwise_epilogue,
+            ctx,
         )
 
         comptime if not filter_packed:
