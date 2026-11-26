@@ -433,7 +433,7 @@ origin/lifetime constraints remain independently enforced.
 
 The parser and type checker parse, preserve, resolve the declared access
 specifiers, reject invalid overlaps, and store the information in
-`FnMetaOriginDataAttr`, which is part of function types. The parser does not
+`FnOriginMetadataAttr`, which is part of function types. The parser does not
 need to enforce every memory access in the body of the function during ordinary
 type checking. Enforcement belongs primarily in `CheckLifetimes` in its initial
 “uninit pass,” which already processes every access.

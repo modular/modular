@@ -221,10 +221,10 @@ static TriBool canConvertGeneratorTypes(ASTExprAnd<CValue> valueExpr,
 /// affect its representation, so signature comparisons that only care about
 /// representation compare the metadata with them cleared.
 static FnMetadataAttr withoutCaptureOrigins(FnMetadataAttr metadata) {
-  auto originData = cast_or_null<FnMetaOriginDataAttr>(metadata.getMetadata());
+  auto originData = cast_or_null<FnOriginMetadataAttr>(metadata.getMetadata());
   if (!originData)
     return metadata;
-  return metadata.getWithMetadata(FnMetaOriginDataAttr::get(
+  return metadata.getWithMetadata(FnOriginMetadataAttr::get(
       metadata.getContext(), originData.getNumImplicitOriginDecls(),
       /*captureOrigins=*/{}, originData.getDefinesInteriorOrigins(),
       originData.getIsUnsafeNestedOriginsReadOnly(),
@@ -732,13 +732,13 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   // The thunk metadata and function type will mostly look like `expected`,
   // except for the thunk param types (which also includes clarifying
   // parameters, see TAPCPTTT).
-  auto thunkMetadata = FnMetaOriginDataAttr::get(
+  auto thunkMetadata = FnOriginMetadataAttr::get(
       ctx, reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getDefinesInteriorOrigins(),
-      reducedExpected.getFnMetaOriginData().getIsUnsafeNestedOriginsReadOnly(),
+      reducedExpected.getFnOriginMetadata().getIsUnsafeNestedOriginsReadOnly(),
       reducedExpected.getIsEnforcedNestedOriginsReadOnly(),
-      reducedExpected.getFnMetaOriginData().getRefinedArgs());
+      reducedExpected.getFnOriginMetadata().getRefinedArgs());
   auto thunkFuncType = sugarCast<FunctionType>(
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
   SmallVector<ConstraintAttr> thunkBodyConstraints;

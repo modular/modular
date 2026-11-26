@@ -111,15 +111,15 @@ def LIT_RefinedArgAccessAttr
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetaOriginDataAttr
+// FnOriginMetadataAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_FnMetaOriginDataAttr : LITAttr<"FnMetaOriginData",
-    "fn_meta_origin_data",
+def LIT_FnOriginMetadataAttr : LITAttr<"FnOriginMetadata",
+    "fn_origin_metadata",
     [DeclareAttrInterfaceMethods<FnMetadataAttrInterface>]> {
   let summary = "Function origin/lifetime metadata.";
   let description = [{
-    The `#lit.fn_meta_origin_data` attribute carries LIT-specific origin and
+    The `#lit.fn_origin_metadata` attribute carries LIT-specific origin and
     lifetime information for a function: the number of implicit origin
     declarations, the captured origin set, refined argument accesses, and the
     function's nested-origin access promises. The parameter (POG) list lives on
@@ -130,7 +130,7 @@ def LIT_FnMetaOriginDataAttr : LITAttr<"FnMetaOriginData",
     ```mlir
     // Metadata for a function with two implicit origin declarations and
     // no captured origins.
-    #lit.fn_meta_origin_data<2>
+    #lit.fn_origin_metadata<2>
     ```
   }];
 
@@ -175,7 +175,7 @@ def LIT_FnMetaOriginDataAttr : LITAttr<"FnMetaOriginData",
 
     /// Reconstruct the metadata with the union of the current capture origins
     /// with the new capture origins.
-    FnMetaOriginDataAttr addCaptureOrigins(TypedAttr origins);
+    FnOriginMetadataAttr addCaptureOrigins(TypedAttr origins);
   }];
 }
 

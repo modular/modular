@@ -139,7 +139,7 @@ def RefinedArgAccessAttr : DialectAttribute<(attr
   ConcreteAttrArray<"OriginAccessAttr">:$rules
 )>;
 
-def FnMetaOriginDataAttr : DialectAttribute<(attr
+def FnOriginMetadataAttr : DialectAttribute<(attr
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
   Bool:$definesInteriorOrigins,
@@ -312,7 +312,7 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
     OriginAccessAttr,
     RefinedArgAccessAttr,
     EllipsisAttr,
-    FnMetaOriginDataAttr,
+    FnOriginMetadataAttr,
     DocStringAttr,
     UnboundMLIROperationAttr,
     UnpackedAttr,

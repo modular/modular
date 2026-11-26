@@ -5533,7 +5533,7 @@ ParseResult StmtParser::parseDefFnStmt(LexerCursor startCursor,
       numInputs,
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   auto pogList = PogListAttr::get(ctx, argPogs);
-  auto metadata = FnMetaOriginDataAttr::get(
+  auto metadata = FnOriginMetadataAttr::get(
       ctx, /*numImplicitOriginDecls=*/0, OriginSetAttr::get(ctx, {}),
       /*definesInteriorOrigins=*/false,
       /*isUnsafeNestedOriginsReadOnly=*/false);

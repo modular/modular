@@ -22,9 +22,9 @@
 
 // The metadata is the only optional component, and is dialect-specific.
 // CHECK-LABEL: "fn_metadata.metadata"
-// CHECK-SAME: aux = #kgen.fn_metadata<[imm, mut], "throws", #lit.fn_meta_origin_data<2>> : !kgen.non_struct_type
+// CHECK-SAME: aux = #kgen.fn_metadata<[imm, mut], "throws", #lit.fn_origin_metadata<2>> : !kgen.non_struct_type
 "fn_metadata.metadata"() {
-  aux = #kgen.fn_metadata<[imm, mut], "throws", #lit.fn_meta_origin_data<2>>
+  aux = #kgen.fn_metadata<[imm, mut], "throws", #lit.fn_origin_metadata<2>>
 } : () -> ()
 
 // An explicitly typed attribute parses to the same attribute as the elided

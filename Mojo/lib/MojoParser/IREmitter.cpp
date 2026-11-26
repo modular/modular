@@ -2818,18 +2818,18 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // cannot build a parameter expression on the metadata when constructing the
   // alias decl op in the closure trait.
   SmallVector<RefinedArgAccessAttr> refinedArgs;
-  refinedArgs.reserve(sig.getFnMetaOriginData().getRefinedArgs().size());
-  for (auto refinedArg : sig.getFnMetaOriginData().getRefinedArgs()) {
+  refinedArgs.reserve(sig.getFnOriginMetadata().getRefinedArgs().size());
+  for (auto refinedArg : sig.getFnOriginMetadata().getRefinedArgs()) {
     auto shifted = cast<RefinedArgAccessAttr>(shifter.replace(refinedArg));
     refinedArgs.push_back(RefinedArgAccessAttr::get(
         ctx, shifted.getArgumentIndex() + 1, shifted.getRules()));
   }
-  auto originData = FnMetaOriginDataAttr::get(
-      ctx, sig.getFnMetaOriginData().getNumImplicitOriginDecls() + 1,
-      sig.getFnMetaOriginData().getCaptureOrigins(),
-      sig.getFnMetaOriginData().getDefinesInteriorOrigins(),
-      sig.getFnMetaOriginData().getIsUnsafeNestedOriginsReadOnly(),
-      sig.getFnMetaOriginData().getIsEnforcedNestedOriginsReadOnly(),
+  auto originData = FnOriginMetadataAttr::get(
+      ctx, sig.getFnOriginMetadata().getNumImplicitOriginDecls() + 1,
+      sig.getFnOriginMetadata().getCaptureOrigins(),
+      sig.getFnOriginMetadata().getDefinesInteriorOrigins(),
+      sig.getFnOriginMetadata().getIsUnsafeNestedOriginsReadOnly(),
+      sig.getFnOriginMetadata().getIsEnforcedNestedOriginsReadOnly(),
       refinedArgs);
   SmallVector<ArgConvention> argConventions;
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
@@ -2876,7 +2876,7 @@ IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
 
   MLIRContext *ctx = sigWithSelf.getContext();
   FuncType body = sigWithSelf.getBody();
-  FnMetaOriginDataAttr originData = sigWithSelf.getFnMetaOriginData();
+  FnOriginMetadataAttr originData = sigWithSelf.getFnOriginMetadata();
   assert(!sigWithSelf.getInputParamTypes().empty() &&
          originData.getNumImplicitOriginDecls() != 0 &&
          "expected a signature carrying the closure trait's `Self`");
@@ -2896,7 +2896,7 @@ IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
       FunctionType::get(ctx, shifter.replace(body.getArguments().drop_front()),
                         shifter.replace(body.getResults())),
       sigWithSelf.getArgConventions().drop_front(), sigWithSelf.getFnEffects(),
-      FnMetaOriginDataAttr::get(ctx, originData.getNumImplicitOriginDecls() - 1,
+      FnOriginMetadataAttr::get(ctx, originData.getNumImplicitOriginDecls() - 1,
                                 originData.getCaptureOrigins(),
                                 originData.getDefinesInteriorOrigins(),
                                 originData.getIsUnsafeNestedOriginsReadOnly(),

@@ -1359,7 +1359,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto pogList = PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                                   defaultValues, origVariadicConvention,
                                   /*bodyConstraints=*/{});
-  auto metadata = FnMetaOriginDataAttr::get(
+  auto metadata = FnOriginMetadataAttr::get(
       ctx, numOriginDecls, captureOrigins, definesInteriorOrigins,
       isUnsafeNestedOriginsReadOnly, isEnforcedNestedOriginsReadOnly,
       refinedArgs);
@@ -1439,27 +1439,27 @@ void LITDialect::printType(Type type, DialectAsmPrinter &p) const {
 //===----------------------------------------------------------------------===//
 
 TypedAttr FuncType::getCaptureOrigins() {
-  return ::cast<FnMetaOriginDataAttr>(getMetadata()).getCaptureOrigins();
+  return ::cast<FnOriginMetadataAttr>(getMetadata()).getCaptureOrigins();
 }
 
 bool FuncType::getIsNestedOriginsReadOnly() {
-  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+  return ::cast<FnOriginMetadataAttr>(getMetadata())
       .getIsNestedOriginsReadOnly();
 }
 
 /// Return whether the checked nested-origin read-only promise is present.
 bool FuncType::getIsEnforcedNestedOriginsReadOnly() {
-  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+  return ::cast<FnOriginMetadataAttr>(getMetadata())
       .getIsEnforcedNestedOriginsReadOnly();
 }
 
 bool FuncType::getDefinesInteriorOrigins() {
-  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+  return ::cast<FnOriginMetadataAttr>(getMetadata())
       .getDefinesInteriorOrigins();
 }
 
 size_t FuncType::getNumImplicitOriginDecls() {
-  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+  return ::cast<FnOriginMetadataAttr>(getMetadata())
       .getNumImplicitOriginDecls();
 }
 
@@ -1519,9 +1519,9 @@ FunctionType FuncType::substituteImplicitOriginsIntoValues(
 }
 
 FuncType FuncType::getWithCaptureOrigins(TypedAttr origins) {
-  auto metadata = ::cast<FnMetaOriginDataAttr>(getMetadata());
+  auto metadata = ::cast<FnOriginMetadataAttr>(getMetadata());
   return getWithMetadata(
-      FnMetaOriginDataAttr::get(getContext(), getNumImplicitOriginDecls(),
+      FnOriginMetadataAttr::get(getContext(), getNumImplicitOriginDecls(),
                                 origins, getDefinesInteriorOrigins(),
                                 metadata.getIsUnsafeNestedOriginsReadOnly(),
                                 getIsEnforcedNestedOriginsReadOnly(),

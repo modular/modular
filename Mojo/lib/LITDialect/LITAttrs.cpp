@@ -68,7 +68,7 @@ RefinedArgAccessAttr::verify(function_ref<InFlightDiagnostic()> emitError,
 }
 
 //===----------------------------------------------------------------------===//
-// FnMetaOriginDataAttr
+// FnOriginMetadataAttr
 //===----------------------------------------------------------------------===//
 
 static ParseResult parseCaptureOrigins(AsmParser &p, TypedAttr &origins) {
@@ -87,8 +87,8 @@ static void printCaptureOrigins(AsmPrinter &p, TypedAttr origins) {
   printParamValue(p, origins);
 }
 
-FnMetaOriginDataAttr FnMetaOriginDataAttr::get(MLIRContext *context) {
-  return FnMetaOriginDataAttr::get(
+FnOriginMetadataAttr FnOriginMetadataAttr::get(MLIRContext *context) {
+  return FnOriginMetadataAttr::get(
       context, /*numImplicitOriginDecls=*/0,
       /*captureOrigins=*/OriginSetAttr::get(context, {}),
       /*definesInteriorOrigins=*/false,
@@ -97,8 +97,8 @@ FnMetaOriginDataAttr FnMetaOriginDataAttr::get(MLIRContext *context) {
       /*refinedArgs=*/{});
 }
 
-FnMetaOriginDataAttr
-FnMetaOriginDataAttr::get(MLIRContext *ctx, size_t numImplicitOriginDecls,
+FnOriginMetadataAttr
+FnOriginMetadataAttr::get(MLIRContext *ctx, size_t numImplicitOriginDecls,
                           TypedAttr captureOrigins, bool definesInteriorOrigins,
                           bool isUnsafeNestedOriginsReadOnly,
                           bool isEnforcedNestedOriginsReadOnly,
@@ -135,7 +135,7 @@ LIT::getContextualVariadicParams(ArrayRef<Operation *> ops) {
   return variadics;
 }
 
-LogicalResult FnMetaOriginDataAttr::verifyFuncType(
+LogicalResult FnOriginMetadataAttr::verifyFuncType(
     function_ref<InFlightDiagnostic()> emitError, FunctionType values,
     ArrayRef<ArgConvention> argConventions, FnEffects effects) const {
   // Verify input conventions.
@@ -174,8 +174,8 @@ LogicalResult FnMetaOriginDataAttr::verifyFuncType(
   return success();
 }
 
-FnMetaOriginDataAttr
-FnMetaOriginDataAttr::addCaptureOrigins(TypedAttr origins) {
+FnOriginMetadataAttr
+FnOriginMetadataAttr::addCaptureOrigins(TypedAttr origins) {
   auto type = OriginType::get(getContext(), /*isMutable=*/true);
   SmallVector<TypedAttr> originUnion{
       OriginSetUnionAttr::get(getCaptureOrigins(), type),
@@ -186,7 +186,7 @@ FnMetaOriginDataAttr::addCaptureOrigins(TypedAttr origins) {
              getIsEnforcedNestedOriginsReadOnly(), getRefinedArgs());
 }
 
-void FnMetaOriginDataAttr::printFuncTypeBody(AsmPrinter &p,
+void FnOriginMetadataAttr::printFuncTypeBody(AsmPrinter &p,
                                              FuncType sig) const {
 
   p << '<';
@@ -194,18 +194,18 @@ void FnMetaOriginDataAttr::printFuncTypeBody(AsmPrinter &p,
   p << '>';
 }
 
-void FnMetaOriginDataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
+void FnOriginMetadataAttr::printFuncType(AsmPrinter &p, FuncType sig) const {
   p << "!lit.fn";
   printFuncTypeBody(p, sig);
 }
 
-void FnMetaOriginDataAttr::printFuncTypeInline(AsmPrinter &p,
+void FnOriginMetadataAttr::printFuncTypeInline(AsmPrinter &p,
                                                FuncType sig) const {
   printFnType(p, sig);
 }
 
-bool FnMetaOriginDataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
-  auto other = ::dyn_cast<FnMetaOriginDataAttr>(otherMetadata);
+bool FnOriginMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
+  auto other = ::dyn_cast<FnOriginMetadataAttr>(otherMetadata);
   if (!other)
     return false;
 

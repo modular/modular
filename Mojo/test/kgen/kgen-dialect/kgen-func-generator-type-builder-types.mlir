@@ -14,7 +14,7 @@
   #kgen.param_list<> : !kgen.param_list<!kgen.type>,
   #kgen.param_list<#kgen.quote<!lit.ref<index, imm #lit.implicit.origin.ref<0, 0>>>> : !kgen.param_list<!kgen.type>,
   #kgen.quote<#kgen.type<index>>,
-  #kgen.fn_metadata<[imm, imm], "throws", #lit.fn_meta_origin_data<1>>,
+  #kgen.fn_metadata<[imm, imm], "throws", #lit.fn_origin_metadata<1>>,
   #kgen.pog_list<[]>,
   #kgen.pog_list<[]>>
 

@@ -3298,7 +3298,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
   PogListAttr paramListAttr = paramList.getParamListAttr();
   auto argListAttrs = PogListAttr::get(ctx, argPogs, /*bodyConstraints=*/{},
                                        argVariadicOrigConvention);
-  auto metadata = FnMetaOriginDataAttr::get(
+  auto metadata = FnOriginMetadataAttr::get(
       ctx, implicitOriginDecls.size(),
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),

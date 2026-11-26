@@ -103,8 +103,8 @@ public:
   }
 
   /// Get the signature metadata.
-  FnMetaOriginDataAttr getFnMetaOriginData() {
-    return cast<FnMetaOriginDataAttr>(
+  FnOriginMetadataAttr getFnOriginMetadata() {
+    return cast<FnOriginMetadataAttr>(
         getBodyFnType().getMetadataAttr().getMetadata());
   }
 

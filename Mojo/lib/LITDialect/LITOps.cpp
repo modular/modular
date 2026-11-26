@@ -788,7 +788,7 @@ static ParseResult parseLITFunctionSignature(
       PogListAttr::get(p.getContext(), argNames, argPassingKinds, argVariadics,
                        defaults, origVariadicConvention,
                        /*bodyConstraints=*/{});
-  auto metadata = FnMetaOriginDataAttr::get(
+  auto metadata = FnOriginMetadataAttr::get(
       p.getContext(), originDecls.size(), captureOrigins,
       definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
       isEnforcedNestedOriginsReadOnly, refinedArgs);
@@ -823,7 +823,7 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
     printParamValue(p, signature.getCaptureOrigins());
     p << ':';
   }
-  auto originData = signature.getFnMetaOriginData();
+  auto originData = signature.getFnOriginMetadata();
   if (signature.getDefinesInteriorOrigins())
     p << "defines_interior_origins";
   if (originData.getIsUnsafeNestedOriginsReadOnly()) {

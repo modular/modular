@@ -138,7 +138,7 @@ createFunction(ASTDecl &parent, StringRef name, ArrayRef<ParamDeclAttr> params,
   Type adjustedResultType = indexReplacer.replace(resultType);
   size_t numImplicitOriginDecls = indexReplacer.getNewOriginParamDecls().size();
 
-  auto metadata = FnMetaOriginDataAttr::get(
+  auto metadata = FnOriginMetadataAttr::get(
       argListAttrs.getContext(), numImplicitOriginDecls,
       getOriginsAccessibleByParams(paramListAttrs, params, shared,
                                    /*captureOrigins=*/nullptr),

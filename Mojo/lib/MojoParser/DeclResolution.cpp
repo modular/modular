@@ -1971,7 +1971,7 @@ AnyValue DeclResolver::resolveAnonymousClosure(LambdaUValue lambda,
       {},
       FuncType::get(
           functionType,
-          FnMetaOriginDataAttr::get(ctx, 0, OriginSetAttr::get(ctx, {}),
+          FnOriginMetadataAttr::get(ctx, 0, OriginSetAttr::get(ctx, {}),
                                     /*definesInteriorOrigins=*/false,
                                     /*isUnsafeNestedOriginsReadOnly=*/false),
           PogListAttr::get(ctx, argPogs)),
@@ -2349,7 +2349,7 @@ LogicalResult DefASTDecl::resolveSignature(Lexer &lexer) {
     funcOp.setFuncTypeGenerator(FnTypeGeneratorType::get(
         provisionalSig.getInputParamTypes(), provisionalSig.getValues(),
         provisionalSig.getArgConventions(), fnSignature.effects,
-        provisionalSig.getFnMetaOriginData(),
+        provisionalSig.getFnOriginMetadata(),
         provisionalSig.getParamListAttrs(), provisionalSig.getArgListAttrs()));
   }
 

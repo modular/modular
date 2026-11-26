@@ -3068,7 +3068,7 @@ def KGEN_FnMetadataAttr : KGENAttr<"FnMetadata", "fn_metadata", [
     describes on top of its value signature: the calling convention of each
     input argument, the effects of the function, and the dialect-specific
     metadata implementing `FnMetadataAttrInterface` (for example
-    `#lit.fn_meta_origin_data`).
+    `#lit.fn_origin_metadata`).
 
     Every `!kgen.func` type carries exactly one of these, so it is not printed
     on its own in the sugared function type syntax.

@@ -451,7 +451,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   argPogs.emplace_back(
       PogMetadataAttr::get(StringAttr::get(ctx), PassingKind::PosOnly));
   // Add the rest of the arguments.
-  FnMetaOriginDataAttr oldFnMetadata = sig.getFnMetaOriginData();
+  FnOriginMetadataAttr oldFnMetadata = sig.getFnOriginMetadata();
   PogListAttr argListAttr = sig.getArgListAttrs();
   llvm::append_range(signatureInputs, sig.getArguments());
   llvm::append_range(argConventions, sig.getArgConventions());
@@ -473,7 +473,7 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
   for (auto refinedArg : oldFnMetadata.getRefinedArgs())
     refinedArgs.push_back(RefinedArgAccessAttr::get(
         ctx, refinedArg.getArgumentIndex() + 1, refinedArg.getRules()));
-  auto metadata = FnMetaOriginDataAttr::get(
+  auto metadata = FnOriginMetadataAttr::get(
       ctx, oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
       oldFnMetadata.getDefinesInteriorOrigins(),
@@ -925,8 +925,8 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
     }
   } shifter;
   sig = cast<FnTypeGeneratorType>(shifter.replace(sig));
-  FnMetaOriginDataAttr oldMeta = sig.getFnMetaOriginData();
-  FnMetaOriginDataAttr newMeta = FnMetaOriginDataAttr::get(
+  FnOriginMetadataAttr oldMeta = sig.getFnOriginMetadata();
+  FnOriginMetadataAttr newMeta = FnOriginMetadataAttr::get(
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
       oldMeta.getCaptureOrigins(), oldMeta.getDefinesInteriorOrigins(),
       oldMeta.getIsUnsafeNestedOriginsReadOnly(),
@@ -951,7 +951,7 @@ static PromotedSignature buildPromotedSignature(
     std::optional<ClosureEmitter::PromotedClosureSelfArg> selfArg) {
   MLIRContext *ctx = shared.getContext();
   size_t oldNumImplicitOrigins =
-      sig.getFnMetaOriginData().getNumImplicitOriginDecls();
+      sig.getFnOriginMetadata().getNumImplicitOriginDecls();
   assert(oldNumImplicitOrigins <= params.size());
 
   // Step 1: prepend a new origin slot for self and collect origin decls.
@@ -1000,7 +1000,7 @@ static PromotedSignature buildPromotedSignature(
 
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       sig.getInputParamTypes(), sig.getValues(), sig.getArgConventions(),
-      sig.getFnEffects(), sig.getFnMetaOriginData(), sig.getParamListAttrs(),
+      sig.getFnEffects(), sig.getFnOriginMetadata(), sig.getParamListAttrs(),
       sig.getArgListAttrs());
 
   Type selfRuntimeArgType;
