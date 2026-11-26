@@ -14,7 +14,6 @@
 # Tests that using a non-`thin` `def(...)` closure trait where a type is
 # expected explains the mistake and offers a fix-it inserting `thin` after the
 # argument list. Uses JSON diagnostic format to verify the exact fix-it position.
-# See https://github.com/modular/modular/issues/7610.
 
 # RUN: not %parse-mojo-isolated --diagnostic-format json --use-mlir-diagnostics=false %s -o /dev/null 2>&1 | FileCheck %s
 

@@ -741,7 +741,10 @@ ParamInf::inferAndEmitOneParam(ASTExprAnd<AnyValue> binding,
   if (fnTypeExpr && !fnTypeExpr->isThin && anyTraitTy) {
     diag << "value is the closure trait " << anyTraitTy.getTraitType()
          << ", not a type" << binding.expr->getRange();
-    diag.attachNote(fnTypeExpr->getLoc())
+    // Anchor the note where `thin` gets inserted (just past the `)`), so the
+    // caret lines up with the fix-it text.
+    diag.attachNote(
+        SMLoc::getFromPointer(fnTypeExpr->argsRParenLoc.getPointer() + 1))
         << "a 'def' type without 'thin' is a closure trait; add 'thin' after "
            "the argument list to make it a function pointer type"
         << FixIt::insertAfterToken(fnTypeExpr->argsRParenLoc, " thin",
