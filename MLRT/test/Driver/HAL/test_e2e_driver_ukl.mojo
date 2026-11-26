@@ -111,6 +111,32 @@ def matmul[
         output[unsafe_offset=i] = acc
 
 
+def matmul_buffers[
+    dtype: DType
+](
+    a: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+    b: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+    output: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    m: Int32,
+    k: Int32,
+    n: Int32,
+):
+    """Writes the product of `a` (`m x k`) and `b` (`k x n`), all three dense
+    row-major."""
+    var depth = Int(k)
+    var cols = Int(n)
+    for i in range(first_item(), Int(m) * cols, item_stride()):
+        var row = i // cols
+        var col = i % cols
+        var acc = Scalar[dtype](0)
+        for step in range(depth):
+            acc += (
+                a[unsafe_offset=row * depth + step]
+                * b[unsafe_offset=step * cols + col]
+            )
+        output[unsafe_offset=i] = acc
+
+
 # ===-----------------------------------------------------------------------===#
 # Helpers
 # ===-----------------------------------------------------------------------===#
@@ -246,6 +272,28 @@ def test_matmul[
     ctx.free_sync(a^)
 
 
+def test_matmul_buffers[
+    dtype: DType, spec: DeviceSpec
+](ctx: Context[spec], queue: Queue[spec]) raises:
+    """Fills the matrix pointers with `Buffer`s and a `BufferView`, and passes
+    the shape at run time as `Int32`s."""
+    print("matmul via buffers", dtype)
+    var a_host = _ramp[dtype](M * K, 7)
+    var b_host = _ramp[dtype](K * N, 5)
+    var a = upload(ctx, queue, a_host)
+    var b = upload(ctx, queue, b_host)
+    var out = alloc_zeroed[dtype](ctx, queue, M * N)
+
+    launch[matmul_buffers[dtype]](
+        queue, M * N, a, b.view(), out, Int32(M), Int32(K), Int32(N)
+    )
+
+    _expect(queue, out, _matmul_expected(a_host, b_host), "matmul via buffers")
+    ctx.free_sync(out^)
+    ctx.free_sync(b^)
+    ctx.free_sync(a^)
+
+
 def test_matmul_dynamic_shape[
     spec: DeviceSpec
 ](ctx: Context[spec], queue: Queue[spec]) raises:
@@ -330,6 +378,7 @@ def test_every_kernel[
     test_axpy[dtype](ctx, queue)
     test_add[dtype](ctx, queue)
     test_matmul[dtype](ctx, queue)
+    test_matmul_buffers[dtype](ctx, queue)
 
 
 def main() raises:
