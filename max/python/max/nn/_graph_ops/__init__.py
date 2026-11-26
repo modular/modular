@@ -6088,26 +6088,34 @@ def masked_flash_attention_gpu(
     q: TensorValue,
     k: TensorValue,
     v: TensorValue,
-    mask: TensorValue,
+    mask: TensorValue | None,
     scale: float,
+    *,
+    causal: bool = False,
 ) -> TensorValue:
     """Computes flash attention using a materialized additive mask.
 
     Args:
         q: Query tensor of shape [batch, q_seq_len, num_heads, head_dim]
-        k: Key tensor of shape [batch, kv_seq_len, num_heads, head_dim]
-        v: Value tensor of shape [batch, kv_seq_len, num_heads, head_dim]
+        k: Key tensor of shape [batch, kv_seq_len, kv_heads, head_dim]. The
+            kernel groups kv_heads over q heads, so the caller repeats no
+            keys or values.
+        v: Value tensor of shape [batch, kv_seq_len, kv_heads, head_dim].
         mask: Additive mask tensor. Rank 3 of shape
             [batch, q_seq_len, kv_seq_len] broadcasts across attention
             heads. Rank 4 of shape [batch, num_heads, q_seq_len,
-            kv_seq_len] applies a per-head bias.
+            kv_seq_len] applies a per-head bias. ``None`` masks nothing;
+            with ``causal=True`` it is the lower-triangular causal mask
+            instead.
         scale: Scaling factor for attention scores.
+        causal: Derive the causal mask arithmetically in the kernel instead
+            of reading one. Ignored when ``mask`` is given.
 
     Returns:
         Output tensor of shape [batch, q_seq_len, num_heads, head_dim]
     """
     _validate_dense_attention(q, k, v, mask)
-    return _dense_attention(q, k, v, scale, mask)
+    return _dense_attention(q, k, v, scale, mask, causal=causal)
 
 
 def flash_attention(
@@ -6249,6 +6257,8 @@ def _dense_attention(
     v: TensorValue,
     scale: float,
     mask: TensorValue | None,
+    *,
+    causal: bool = False,
 ) -> TensorValue:
     values = [
         q,
@@ -6261,6 +6271,9 @@ def _dense_attention(
         # The additive mask's operand trails the op's own.
         values.append(mask)
         parameters = {"mask_str": "additive"}
+    elif causal:
+        # The kernel derives the lower triangle; no mask is read.
+        parameters = {"mask_str": "causal"}
     return ops.custom(
         "attention.mha.no_cache",
         device=q.device,

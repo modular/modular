@@ -141,8 +141,14 @@ class Qwen3TextEncoderModel(ComponentModel):
         """
         state_dict = self._state_dict()
 
+        # The prompt path carries no padding, so its attention derives the
+        # causal mask in the kernel: the graph takes tokens alone and no
+        # ``[S, S]`` mask is built, uploaded or read. A caller that passes a
+        # token mask gets the additive-mask graph, compiled on first use.
         with F.lazy():
-            model = Qwen3TextEncoderTransformer(self.config)
+            model = Qwen3TextEncoderTransformer(
+                self.config, use_attention_bias=False
+            )
             model.to(self.devices[0])
 
         self.model = model.compile(
@@ -150,7 +156,24 @@ class Qwen3TextEncoderModel(ComponentModel):
             weights=state_dict,
             auto_cast=auto_cast_weights_from_env(),
         )
+        self._weights_for_bias = state_dict
+        self._model_with_bias: Callable[..., Any] | None = None
         return self.model
+
+    def _additive_model(self) -> Callable[..., Any]:
+        """Compiles the additive-mask graph on first padded request."""
+        if self._model_with_bias is None:
+            with F.lazy():
+                model = Qwen3TextEncoderTransformer(
+                    self.config, use_attention_bias=True
+                )
+                model.to(self.devices[0])
+            self._model_with_bias = model.compile(
+                *model.input_types(),
+                weights=self._weights_for_bias,
+                auto_cast=auto_cast_weights_from_env(),
+            )
+        return self._model_with_bias
 
     @staticmethod
     def attention_bias_from_attention_mask_array(
@@ -194,23 +217,18 @@ class Qwen3TextEncoderModel(ComponentModel):
                 )
             tokens = tokens[0]
 
-        if attention_mask is not None:
+        if attention_mask is None:
+            outputs = self.model(tokens)
+        else:
             attention_mask_np = np.asarray(attention_mask)
             attention_bias_np = self.attention_bias_from_attention_mask_array(
                 attention_mask_np,
                 expected_seq_len=int(tokens.shape[0]),
             )
-        else:
-            attention_bias_np = self.attention_bias_from_attention_mask_array(
-                np.ones((int(tokens.shape[0]),), dtype=np.bool_),
-                expected_seq_len=int(tokens.shape[0]),
+            attention_bias = Tensor(
+                storage=Buffer.from_numpy(attention_bias_np).to(self.devices[0])
             )
-
-        attention_bias = Tensor(
-            storage=Buffer.from_numpy(attention_bias_np).to(self.devices[0])
-        )
-
-        outputs = self.model(tokens, attention_bias)
+            outputs = self._additive_model()(tokens, attention_bias)
 
         if hidden_state_index is None:
             if isinstance(outputs, tuple) and len(outputs) == 1:

@@ -59,42 +59,21 @@ class EncoderAttention(Module[..., Tensor]):
         self.q_norm = RMSNorm(head_dim, eps=rms_norm_eps)
         self.k_norm = RMSNorm(head_dim, eps=rms_norm_eps)
 
-    def _repeat_kv(self, x: Tensor, n_rep: int) -> Tensor:
-        """Repeat KV heads for GQA (Grouped Query Attention).
-
-        Args:
-            x: Input tensor with shape [seq_len, n_kv_heads, head_dim]
-            n_rep: Number of times to repeat each head
-
-        Returns:
-            Tensor with shape [seq_len, n_kv_heads * n_rep, head_dim]
-        """
-        if n_rep == 1:
-            return x
-
-        seq_len = x.shape[0]
-        n_kv_heads = x.shape[1]
-        head_dim = x.shape[2]
-
-        # [S, H_kv, D] -> [S, H_kv, 1, D] -> [S, H_kv, n_rep, D] -> [S, H, D]
-        x = F.unsqueeze(x, 2)
-        x = F.tile(x, [1, 1, n_rep, 1])
-        x = F.reshape(x, (seq_len, n_kv_heads * n_rep, head_dim))
-
-        return x
-
     def forward(
         self,
         x: Tensor,
         rope: RotaryEmbedding,
-        attention_bias: Tensor,
+        attention_bias: Tensor | None = None,
     ) -> Tensor:
         """Forward pass computing causal self-attention.
 
         Args:
             x: Input tensor with shape [total_seq_len, hidden_dim]
             rope: RotaryEmbedding module
-            attention_bias: The additive causal mask.
+            attention_bias: The additive causal mask, or ``None`` to have
+                the kernel derive the causal mask arithmetically. The
+                arithmetic path reads no mask, which saves an
+                ``[S, S]`` mask upload and its per-layer reads.
 
         Returns:
             Output tensor with shape [total_seq_len, hidden_dim]
@@ -117,21 +96,24 @@ class EncoderAttention(Module[..., Tensor]):
         q = F.squeeze(rope(F.unsqueeze(q, 0)), 0)
         k = F.squeeze(rope(F.unsqueeze(k, 0)), 0)
 
-        # GQA: expand K, V if needed
-        if self.n_kv_heads != self.n_heads:
-            n_rep = self.n_heads // self.n_kv_heads
-            k = self._repeat_kv(k, n_rep)
-            v = self._repeat_kv(v, n_rep)
-
+        # GQA is the kernel's: K and V stay at n_kv_heads [B, S, H_kv, D]
+        # heads and the kernel groups them over the query heads. Repeating
+        # them here would materialize a second copy of K and V per layer.
         q = F.unsqueeze(q, 0)
         k = F.unsqueeze(k, 0)
         v = F.unsqueeze(v, 0)
+        mask = (
+            None
+            if attention_bias is None
+            else F.squeeze(attention_bias, axis=1)
+        )
         attn_out = masked_flash_attention_gpu(
             q,
             k,
             v,
-            mask=F.squeeze(attention_bias, axis=1),
+            mask=mask,
             scale=self.scale,
+            causal=attention_bias is None,
         )
         attn_out = F.squeeze(attn_out, 0)
         attn_out = F.reshape(attn_out, (total_seq_len, -1))

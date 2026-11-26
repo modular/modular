@@ -45,7 +45,6 @@ from .model_config import (
     IMAGE_POSITION_OFFSET,
     LLM_TOKEN_INDICATOR,
     OUTPUT_IMAGE_INDICATOR,
-    QWEN3_VL_ACTIVATION_LAYERS,
 )
 from .text_encoder import Ideogram4TextEncoderModel
 from .vae import Ideogram4VAEModel
@@ -231,16 +230,10 @@ class Ideogram4Pipeline(DiffusionPipeline):
             text_feats = F.unsqueeze(text_feats, 0)
         text_feats = text_feats.cast(dtype)
 
-        # The dense Qwen3 encoder concatenates the selected layers tap-major
-        # (``[block0_dims][block1_dims]...``). The Ideogram reference (and thus
-        # the DiT input projection) expects interleaved (hidden-major) order
-        # ``[dim0_taps][dim1_taps]...``. Re-order: [1, S, L*D] -> [1, S, D*L].
-        seq = int(text_feats.shape[1])
-        num_layers = len(QWEN3_VL_ACTIVATION_LAYERS)
-        hidden = int(text_feats.shape[-1]) // num_layers
-        text_feats = F.reshape(text_feats, (1, seq, num_layers, hidden))
-        text_feats = F.permute(text_feats, (0, 1, 3, 2))
-        text_feats = F.reshape(text_feats, (1, seq, hidden * num_layers))
+        # The encoder interleaves the selected layers hidden-major
+        # (``[dim0_taps][dim1_taps]...``), which is the order the Ideogram
+        # reference and its DiT input projection expect, so the features go
+        # straight through.
         feat_dim = int(text_feats.shape[-1])
 
         image_feat_zeros = F.constant(

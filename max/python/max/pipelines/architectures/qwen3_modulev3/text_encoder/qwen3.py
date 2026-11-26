@@ -82,14 +82,15 @@ class EncoderTransformerBlock(Module[..., Tensor]):
         self,
         x: Tensor,
         rope: RotaryEmbedding,
-        attention_bias: Tensor,
+        attention_bias: Tensor | None = None,
     ) -> Tensor:
         """Forward pass without KV cache.
 
         Args:
             x: Input hidden states [seq_len, hidden_dim]
             rope: RoPE embedding module
-            attention_bias: The additive causal mask.
+            attention_bias: The additive causal mask, or ``None`` to have
+                attention derive the causal mask in the kernel.
 
         Returns:
             Output hidden states [seq_len, hidden_dim]
@@ -118,9 +119,21 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
     merging the layer/hidden dimensions.
     """
 
-    def __init__(self, config: Qwen3TextEncoderConfig) -> None:
+    def __init__(
+        self, config: Qwen3TextEncoderConfig, *, use_attention_bias: bool = True
+    ) -> None:
+        """Builds the encoder.
+
+        Args:
+            config: Encoder configuration.
+            use_attention_bias: Whether the graph takes an additive
+                attention mask as its second input. ``False`` compiles the
+                single-input graph whose attention derives the causal mask
+                in the kernel, which is the unpadded prompt path.
+        """
         super().__init__()
 
+        self.use_attention_bias = use_attention_bias
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.device = config.device
@@ -163,12 +176,15 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
 
     def input_types(self) -> tuple[TensorType, ...]:
         """Define input tensor types for compilation."""
+        tokens = TensorType(
+            DType.int64,
+            shape=["total_seq_len"],
+            device=self.device,
+        )
+        if not self.use_attention_bias:
+            return (tokens,)
         return (
-            TensorType(
-                DType.int64,
-                shape=["total_seq_len"],
-                device=self.device,
-            ),
+            tokens,
             TensorType(
                 DType.float32,
                 shape=[1, 1, "total_seq_len", "total_seq_len"],
@@ -179,17 +195,23 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
     def forward(
         self,
         tokens: Tensor,
-        attention_bias: Tensor,
+        attention_bias: Tensor | None = None,
     ) -> tuple[Tensor, ...]:
         """Forward pass returning fused prompt embeddings.
 
         Args:
             tokens: Input token IDs [total_seq_len]
             attention_bias: Additive causal+padding mask bias with shape
-                [1, 1, seq_len, seq_len].
+                [1, 1, seq_len, seq_len], or ``None`` when the graph was
+                built without a bias input (causal derived in the kernel).
 
         Returns:
-            Tuple containing one tensor shaped [1, seq_len, num_layers * hidden_dim].
+            Tuple containing one tensor shaped [1, seq_len, hidden_dim *
+            num_layers], interleaved per hidden unit: token ``s`` holds, for
+            each hidden unit ``d``, that unit's value at every selected tap
+            back to back. Consumers such as the Ideogram transformer's input
+            projection read this order directly, so the encoder pays one
+            transpose rather than one here and another at the consumer.
         """
         h = self.embed_tokens(tokens)
 
@@ -215,7 +237,7 @@ class Qwen3TextEncoderTransformer(Module[..., tuple[Tensor, ...]]):
 
         stacked = F.stack(hidden_states, axis=0)  # [L, S, D]
         stacked = F.unsqueeze(stacked, axis=0)  # [1, L, S, D]
-        stacked = F.permute(stacked, [0, 2, 1, 3])  # [1, S, L, D]
+        stacked = F.permute(stacked, [0, 2, 3, 1])  # [1, S, D, L]
         seq_len = stacked.shape[1]
         return (
             F.reshape(

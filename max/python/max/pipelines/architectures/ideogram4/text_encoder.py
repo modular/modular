@@ -14,7 +14,9 @@
 
 Ideogram 4 uses Qwen3-VL-8B in *text-only* mode and concatenates the hidden
 states of 13 evenly-spaced layers into a ``13 * 4096 = 53248`` feature vector
-that conditions the DiT.
+that conditions the DiT. The encoder emits it interleaved per hidden unit
+(``[dim0_taps][dim1_taps]...``), the order the DiT's input projection reads,
+so the pipeline does no reorder of its own.
 
 The dense Qwen3 text-encoder component already implements multi-layer
 hidden-state selection and concatenation (see
