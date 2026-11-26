@@ -2161,3 +2161,10 @@ def main() raises:
             run_nvfp4_cp_owned_rows[2, PAGE_SIZE, heads=16](
                 ctx, [2, 3], cache_len=250
             )
+            # In-flight batching sends prefill rows through the decode
+            # step; this row runs past the fold bound beside a decode row.
+            run_bf16_cp_owned_rows[4, 1](ctx, [1, 40, 4], cache_len=250)
+            run_nvfp4_cp_owned_rows[8, 1](ctx, [1, 40, 4], cache_len=300)
+            # A step can give the `.cp` branch zero tokens; it must
+            # return at its guard and leave the cache unchanged.
+            run_fused_cp_store[2, 1](ctx, [0], cache_len=250)
