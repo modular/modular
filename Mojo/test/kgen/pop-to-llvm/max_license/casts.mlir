@@ -245,28 +245,34 @@ module attributes {M.target_info = #M.target<triple = "nvptx-nvidia-cuda", arch=
     // CHECK-DAG:    %[[THREE:.+]] = llvm.mlir.constant(3 : i32) : i32
     // CHECK-DAG:    %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
     // CHECK-DAG:    %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
-    // CHECK-DAG:    %[[UNDEF_F8:.+]] = llvm.mlir.undef : vector<2xi16>
-    // CHECK-DAG:    %[[VAL_F8E4_1:.+]] = llvm.extractelement %arg0[%[[ONE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[UNDEF_F8:.+]] = llvm.mlir.undef : vector<1xi32>
     // CHECK-DAG:    %[[VAL_F8E4_0:.+]] = llvm.extractelement %arg0[%[[ZERO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[F8x2_01:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e4m3x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E4_1]], %[[VAL_F8E4_0]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E4_RES_01:.+]] = llvm.insertelement %[[F8x2_01]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VAL_F8E4_3:.+]] = llvm.extractelement %arg0[%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[VAL_F8E4_1:.+]] = llvm.extractelement %arg0[%[[ONE]] : i32] : vector<4xf32>
     // CHECK-DAG:    %[[VAL_F8E4_2:.+]] = llvm.extractelement %arg0[%[[TWO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[VEC_F8E4_RES_23:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e4m3x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E4_3]], %[[VAL_F8E4_2]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E4_RES_0123:.+]] = llvm.insertelement %[[VEC_F8E4_RES_23]], %[[VEC_F8E4_RES_01]][%[[ONE]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VEC_F8E4_RES:.+]] = llvm.bitcast %[[VEC_F8E4_RES_0123]] : vector<2xi16> to vector<4xi8>
+    // CHECK-DAG:    %[[VAL_F8E4_3:.+]] = llvm.extractelement %arg0[%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[F8E4x4:.+]] = llvm.inline_asm asm_dialect = att "{{.*}}cvt.rn.satfinite.e4m3x2.f32 lo, $2, $1;{{.*}}cvt.rn.satfinite.e4m3x2.f32 hi, $4, $3;{{.*}}mov.b32 $0, {lo, hi};{{.*}}", "=r,f,f,f,f" %[[VAL_F8E4_0]], %[[VAL_F8E4_1]], %[[VAL_F8E4_2]], %[[VAL_F8E4_3]] : (f32, f32, f32, f32) -> i32
+    // CHECK-DAG:    %[[VEC_F8E4_RES_0123:.+]] = llvm.insertelement %[[F8E4x4]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<1xi32>
+    // CHECK-DAG:    %[[VEC_F8E4_RES:.+]] = llvm.bitcast %[[VEC_F8E4_RES_0123]] : vector<1xi32> to vector<4xi8>
     %0 = pop.cast %f32 : !kgen.simd<4, f32> to !kgen.simd<4, f8e4m3fn>
-    // CHECK-DAG:    %[[VAL_F8E5_1:.+]] = llvm.extractelement %arg0[%[[ONE]] : i32] : vector<4xf32>
     // CHECK-DAG:    %[[VAL_F8E5_0:.+]] = llvm.extractelement %arg0[%[[ZERO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[F8x2_01:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e5m2x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E5_1]], %[[VAL_F8E5_0]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E5_RES_01:.+]] = llvm.insertelement %[[F8x2_01]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VAL_F8E5_3:.+]] = llvm.extractelement %arg0[%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[VAL_F8E5_1:.+]] = llvm.extractelement %arg0[%[[ONE]] : i32] : vector<4xf32>
     // CHECK-DAG:    %[[VAL_F8E5_2:.+]] = llvm.extractelement %arg0[%[[TWO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[VEC_F8E5_RES_23:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e5m2x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E5_3]], %[[VAL_F8E5_2]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E5_RES_0123:.+]] = llvm.insertelement %[[VEC_F8E5_RES_23]], %[[VEC_F8E5_RES_01]][%[[ONE]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VEC_F8E5_RES:.+]] = llvm.bitcast %[[VEC_F8E5_RES_0123]] : vector<2xi16> to vector<4xi8>
+    // CHECK-DAG:    %[[VAL_F8E5_3:.+]] = llvm.extractelement %arg0[%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[F8E5x4:.+]] = llvm.inline_asm asm_dialect = att "{{.*}}cvt.rn.satfinite.e5m2x2.f32 lo, $2, $1;{{.*}}cvt.rn.satfinite.e5m2x2.f32 hi, $4, $3;{{.*}}mov.b32 $0, {lo, hi};{{.*}}", "=r,f,f,f,f" %[[VAL_F8E5_0]], %[[VAL_F8E5_1]], %[[VAL_F8E5_2]], %[[VAL_F8E5_3]] : (f32, f32, f32, f32) -> i32
+    // CHECK-DAG:    %[[VEC_F8E5_RES_0123:.+]] = llvm.insertelement %[[F8E5x4]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<1xi32>
+    // CHECK-DAG:    %[[VEC_F8E5_RES:.+]] = llvm.bitcast %[[VEC_F8E5_RES_0123]] : vector<1xi32> to vector<4xi8>
     %1 = pop.cast %f32 : !kgen.simd<4, f32> to !kgen.simd<4, f8e5m2>
     hlcf.return %0, %1: !kgen.simd<4, f8e4m3fn>, !kgen.simd<4, f8e5m2>
+  }
+
+  // A wider vector still packs one word at a time.
+  // CHECK-LABEL: simd8_cast_f32_to_f8
+  kgen.func @simd8_cast_f32_to_f8(%f32: !kgen.simd<8, f32>) -> !kgen.simd<8, f8e4m3fn> {
+    // CHECK-DAG:    %[[UNDEF_F8:.+]] = llvm.mlir.undef : vector<2xi32>
+    // CHECK-COUNT-2: llvm.inline_asm asm_dialect = att "{{.*}}cvt.rn.satfinite.e4m3x2.f32 lo, $2, $1;{{.*}}cvt.rn.satfinite.e4m3x2.f32 hi, $4, $3;{{.*}}mov.b32 $0, {lo, hi};{{.*}}", "=r,f,f,f,f"
+    // CHECK-DAG:    %[[VEC_F8E4_RES:.+]] = llvm.bitcast {{.*}} : vector<2xi32> to vector<8xi8>
+    %0 = pop.cast %f32 : !kgen.simd<8, f32> to !kgen.simd<8, f8e4m3fn>
+    hlcf.return %0 : !kgen.simd<8, f8e4m3fn>
   }
 
   // CHECK-LABEL: simd_cast_f8_to_f16
@@ -428,28 +434,24 @@ module attributes {M.target_info = #M.target<triple = "nvptx-nvidia-cuda", arch=
     // CHECK-DAG:    %[[THREE:.+]] = llvm.mlir.constant(3 : i32) : i32
     // CHECK-DAG:    %[[ZERO:.+]] = llvm.mlir.constant(0 : i32) : i32
     // CHECK-DAG:    %[[ONE:.+]] = llvm.mlir.constant(1 : i32) : i32
-    // CHECK-DAG:    %[[UNDEF_F8:.+]] = llvm.mlir.undef : vector<2xi16>
+    // CHECK-DAG:    %[[UNDEF_F8:.+]] = llvm.mlir.undef : vector<1xi32>
     // CHECK-DAG:    %[[FP32x2_0:.+]] = llvm.fpext %arg0 : vector<4xbf16> to vector<4xf32>
-    // CHECK-DAG:    %[[VAL_F8E4_1:.+]] = llvm.extractelement %[[FP32x2_0]][%[[ONE]] : i32] : vector<4xf32>
     // CHECK-DAG:    %[[VAL_F8E4_0:.+]] = llvm.extractelement %[[FP32x2_0]][%[[ZERO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[F8x2_01:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e4m3x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E4_1]], %[[VAL_F8E4_0]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E4_RES_01:.+]] = llvm.insertelement %[[F8x2_01]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VAL_F8E4_3:.+]] = llvm.extractelement %[[FP32x2_0]][%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[VAL_F8E4_1:.+]] = llvm.extractelement %[[FP32x2_0]][%[[ONE]] : i32] : vector<4xf32>
     // CHECK-DAG:    %[[VAL_F8E4_2:.+]] = llvm.extractelement %[[FP32x2_0]][%[[TWO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[VEC_F8E4_RES_23:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e4m3x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E4_3]], %[[VAL_F8E4_2]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E4_RES_0123:.+]] = llvm.insertelement %[[VEC_F8E4_RES_23]], %[[VEC_F8E4_RES_01]][%[[ONE]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VEC_F8E4_RES:.+]] = llvm.bitcast %[[VEC_F8E4_RES_0123]] : vector<2xi16> to vector<4xi8>
+    // CHECK-DAG:    %[[VAL_F8E4_3:.+]] = llvm.extractelement %[[FP32x2_0]][%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[F8E4x4:.+]] = llvm.inline_asm asm_dialect = att "{{.*}}cvt.rn.satfinite.e4m3x2.f32 lo, $2, $1;{{.*}}cvt.rn.satfinite.e4m3x2.f32 hi, $4, $3;{{.*}}mov.b32 $0, {lo, hi};{{.*}}", "=r,f,f,f,f" %[[VAL_F8E4_0]], %[[VAL_F8E4_1]], %[[VAL_F8E4_2]], %[[VAL_F8E4_3]] : (f32, f32, f32, f32) -> i32
+    // CHECK-DAG:    %[[VEC_F8E4_RES_0123:.+]] = llvm.insertelement %[[F8E4x4]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<1xi32>
+    // CHECK-DAG:    %[[VEC_F8E4_RES:.+]] = llvm.bitcast %[[VEC_F8E4_RES_0123]] : vector<1xi32> to vector<4xi8>
     %0 = pop.cast %bf16 : !kgen.simd<4, bf16> to !kgen.simd<4, f8e4m3fn>
     // CHECK-DAG:    %[[FP32x2_1:.+]] = llvm.fpext %arg0 : vector<4xbf16> to vector<4xf32>
-    // CHECK-DAG:    %[[VAL_F8E5_1:.+]] = llvm.extractelement %[[FP32x2_1]][%[[ONE]] : i32] : vector<4xf32>
     // CHECK-DAG:    %[[VAL_F8E5_0:.+]] = llvm.extractelement %[[FP32x2_1]][%[[ZERO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[F8x2_01:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e5m2x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E5_1]], %[[VAL_F8E5_0]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E5_RES_01:.+]] = llvm.insertelement %[[F8x2_01]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VAL_F8E5_3:.+]] = llvm.extractelement %[[FP32x2_1]][%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[VAL_F8E5_1:.+]] = llvm.extractelement %[[FP32x2_1]][%[[ONE]] : i32] : vector<4xf32>
     // CHECK-DAG:    %[[VAL_F8E5_2:.+]] = llvm.extractelement %[[FP32x2_1]][%[[TWO]] : i32] : vector<4xf32>
-    // CHECK-DAG:    %[[VEC_F8E5_RES_23:.+]] = llvm.inline_asm asm_dialect = att "cvt.rn.satfinite.e5m2x2.f32 $0, $1, $2;", "=h,f,f" %[[VAL_F8E5_3]], %[[VAL_F8E5_2]] : (f32, f32) -> i16
-    // CHECK-DAG:    %[[VEC_F8E5_RES_0123:.+]] = llvm.insertelement %[[VEC_F8E5_RES_23]], %[[VEC_F8E5_RES_01]][%[[ONE]] : i32] : vector<2xi16>
-    // CHECK-DAG:    %[[VEC_F8E5_RES:.+]] = llvm.bitcast %[[VEC_F8E5_RES_0123]] : vector<2xi16> to vector<4xi8>
+    // CHECK-DAG:    %[[VAL_F8E5_3:.+]] = llvm.extractelement %[[FP32x2_1]][%[[THREE]] : i32] : vector<4xf32>
+    // CHECK-DAG:    %[[F8E5x4:.+]] = llvm.inline_asm asm_dialect = att "{{.*}}cvt.rn.satfinite.e5m2x2.f32 lo, $2, $1;{{.*}}cvt.rn.satfinite.e5m2x2.f32 hi, $4, $3;{{.*}}mov.b32 $0, {lo, hi};{{.*}}", "=r,f,f,f,f" %[[VAL_F8E5_0]], %[[VAL_F8E5_1]], %[[VAL_F8E5_2]], %[[VAL_F8E5_3]] : (f32, f32, f32, f32) -> i32
+    // CHECK-DAG:    %[[VEC_F8E5_RES_0123:.+]] = llvm.insertelement %[[F8E5x4]], %[[UNDEF_F8]][%[[ZERO]] : i32] : vector<1xi32>
+    // CHECK-DAG:    %[[VEC_F8E5_RES:.+]] = llvm.bitcast %[[VEC_F8E5_RES_0123]] : vector<1xi32> to vector<4xi8>
     %1 = pop.cast %bf16 : !kgen.simd<4, bf16> to !kgen.simd<4, f8e5m2>
     hlcf.return %0, %1: !kgen.simd<4, f8e4m3fn>, !kgen.simd<4, f8e5m2>
   }

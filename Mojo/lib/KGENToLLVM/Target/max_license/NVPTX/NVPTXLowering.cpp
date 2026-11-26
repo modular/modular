@@ -40,6 +40,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/TargetParser/Triple.h"
+#include <string>
 
 using namespace mlir;
 
@@ -184,28 +185,46 @@ private:
             : "cvt.rn.satfinite.e5m2x2.f32";
 
     assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
-    if (size > 1) {
-      Value res = LLVM::UndefOp::create(
-          rewriter, op.getLoc(),
-          VectorType::get(size / 2, rewriter.getIntegerType(16)));
-      for (uint64_t i = 0; i < size; i += 2) {
-        Value firstFp = extractElement(rewriter, loc, f32Type, value, i + 1);
-        Value secondFp = extractElement(rewriter, loc, f32Type, value, i);
-        Value converted =
-            createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
-                            "=h,f,f", rewriter.getIntegerType(16),
-                            {firstFp, secondFp})
-                .getResult(0);
+    Type i16Type = rewriter.getIntegerType(16);
+    Type i32Type = rewriter.getIntegerType(32);
+    if (size >= 4) {
+      // Pack four values per 32-bit word with two `cvt`s and a `mov.b32`
+      // merge. Inserting the two 16-bit halves into a vector instead leaves
+      // ptxas to join them into the store word with byte permutes, which
+      // compete with the converts for the ALU pipe.
+      std::string asmStr4 = "{\n.reg .b16 lo, hi;\n";
+      asmStr4 += asmStr.str();
+      asmStr4 += " lo, $2, $1;\n";
+      asmStr4 += asmStr.str();
+      asmStr4 += " hi, $4, $3;\nmov.b32 $0, {lo, hi};\n}";
+      Value res = LLVM::UndefOp::create(rewriter, op.getLoc(),
+                                        VectorType::get(size / 4, i32Type));
+      for (uint64_t i = 0; i < size; i += 4) {
+        Value v0 = extractElement(rewriter, loc, f32Type, value, i);
+        Value v1 = extractElement(rewriter, loc, f32Type, value, i + 1);
+        Value v2 = extractElement(rewriter, loc, f32Type, value, i + 2);
+        Value v3 = extractElement(rewriter, loc, f32Type, value, i + 3);
+        Value converted = createInlineAsm(rewriter, loc, asmStr4, "=r,f,f,f,f",
+                                          i32Type, {v0, v1, v2, v3})
+                              .getResult(0);
         res = LLVM::InsertElementOp::create(
             rewriter, loc, res, converted,
-            createConstant<uint32_t>(rewriter, loc, i / 2));
+            createConstant<uint32_t>(rewriter, loc, i / 4));
       }
 
       rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, res);
+    } else if (size == 2) {
+      Value converted =
+          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
+                          "=h,f,f", i16Type,
+                          {extractElement(rewriter, loc, f32Type, value, 1),
+                           extractElement(rewriter, loc, f32Type, value, 0)})
+              .getResult(0);
+      rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, converted);
     } else {
       Value converted =
           createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
-                          "=h,f,f", rewriter.getIntegerType(16),
+                          "=h,f,f", i16Type,
                           {createConstant(rewriter, loc, APFloat(0.0f)), value})
               .getResult(0);
       rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, f8Type, converted);
