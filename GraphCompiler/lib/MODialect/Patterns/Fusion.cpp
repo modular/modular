@@ -30,8 +30,10 @@
 #include "Support/DeviceSpecs.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "llvm/ADT/APFloat.h"
+#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/MathExtras.h"
 
 #include <limits>
@@ -1373,6 +1375,345 @@ static TensorType makeUnwrittenScaleType(TensorType normTy) {
   dims.back() = MOSH::ShapeAttr::getDim(normTy.getContext(), 1);
   return normTy.cloneWith(dims).cloneWith(DType::f32);
 }
+
+// Strips a broadcast/rebind chain off `v` and returns the value it broadcasts,
+// if that value holds exactly one element. Returns null otherwise.
+static Value getBroadcastScalarSource(Value v) {
+  while (Operation *def = v.getDefiningOp()) {
+    Value next =
+        llvm::TypeSwitch<Operation *, Value>(def)
+            .Case<MO::BroadcastToOp, MO::Static::BroadcastToOp, MO::RebindOp>(
+                [](auto op) { return op.getInput(); })
+            .Default(Value());
+    if (!next)
+      break;
+    v = next;
+  }
+  auto ty = dyn_cast<MO::TensorType>(v.getType());
+  if (!ty || !ty.hasRank())
+    return nullptr;
+  int64_t elems = 1;
+  for (int64_t d : ty.getIntDims()) {
+    if (d == ShapedType::kDynamic)
+      return nullptr;
+    elems *= d;
+  }
+  return elems == 1 ? v : nullptr;
+}
+
+// The one user of `v`, or null unless `v` has exactly one user and it is an
+// `OpT`. The fused op no longer materializes the value, so a second user would
+// lose its input.
+template <typename OpT>
+static OpT getSoleUser(Value v) {
+  OpT found;
+  for (Operation *user : v.getUsers()) {
+    auto typed = dyn_cast<OpT>(user);
+    if (!typed || found)
+      return nullptr;
+    found = typed;
+  }
+  return found;
+}
+
+/// Reads the single scalar of a rank-0 float elements attribute, such as a
+/// norm's epsilon or weight_offset, or nullopt if it holds no float.
+static std::optional<APFloat> getConstantScalarFloat(ElementsAttr elements) {
+  if (!elements || elements.getNumElements() != 1)
+    return std::nullopt;
+  auto values = elements.tryGetValues<Attribute>();
+  if (!values)
+    return std::nullopt;
+  auto floatAttr = dyn_cast<FloatAttr>(*values->begin());
+  if (!floatAttr)
+    return std::nullopt;
+  return floatAttr.getValue();
+}
+
+static std::optional<float> toFloat(std::optional<APFloat> value) {
+  if (!value)
+    return std::nullopt;
+  return value->convertToFloat();
+}
+
+// Pulls an allreduce into the sandwich-norm boundary after it, scaled or not:
+//
+//   summed       = allreduce_sum(inputs)
+//   intermediate = rms_norm(summed, gamma1) + residual
+//   output       = rms_norm(intermediate, gamma2)                 -- unscaled
+//   output       = rms_norm(intermediate * scale, gamma2)         -- scaled
+//
+// where `scale` is a one-element value broadcast to the activation's shape.
+// One op carries every device's operands, so every device's chain has to
+// match, in the same form, before any of it is rewritten.
+struct FuseAllReduceRMSNormFusedResidualAddMatcher {
+public:
+  FuseAllReduceRMSNormFusedResidualAddMatcher(
+      MO::AllReduceSumOp allReduceOp, const MOGG::MojoRegistry &registry)
+      : allReduceOp(allReduceOp), registry(registry),
+        builder(allReduceOp->getContext()) {}
+
+  void apply() {
+    unsigned devicesCount = allReduceOp.getOutputs().size();
+    if (devicesCount == 0)
+      return;
+    // The composite has no group concept, so a grouped allreduce must not
+    // fuse.
+    int64_t groupSize = allReduceOp.getGroupSizeAttr().getInt();
+    if (groupSize != 0 && groupSize != static_cast<int64_t>(devicesCount))
+      return;
+    for (Value out : allReduceOp.getOutputs())
+      if (!cast<TensorValue>(out).getType().getDeviceRef())
+        return;
+    // Matching can move operands above the collective, so it runs only where
+    // a kernel for one of the two composites resolves.
+    bool unscaledResolves = resolvesOnEveryDevice(
+        MO::Composite::AllReduceRMSNormFusedResidualAddOp::getOperationName());
+    bool scaledResolves = resolvesOnEveryDevice(
+        MO::Composite::AllReduceRMSNormFusedScaledResidualAddOp::
+            getOperationName());
+    if (!unscaledResolves && !scaledResolves)
+      return;
+    for (Value out : allReduceOp.getOutputs())
+      if (!matchBoundary(cast<TensorValue>(out)))
+        return;
+    if (outerNormOps.size() != devicesCount)
+      return;
+    if (!(scaled ? scaledResolves : unscaledResolves))
+      return;
+
+    builder.setInsertionPointAfter(allReduceOp);
+
+    llvm::SmallVector<Type> outputTypes, outResidualTypes;
+    llvm::SmallVector<Value> residualOperands, gamma1Operands, gamma2Operands,
+        scaleOperands;
+    for (Value out : allReduceOp.getOutputs()) {
+      DeviceRefAttr device = cast<TensorValue>(out).getType().getDeviceRef();
+      MO::Composite::ReduceRMSNormOp innerNorm = innerNormOps.at(device);
+      MO::Composite::ReduceRMSNormOp outerNorm = outerNormOps.at(device);
+      outputTypes.push_back(outerNorm.getResult().getType());
+      outResidualTypes.push_back(getPreOuter(device).getType());
+      residualOperands.push_back(residualValues.at(device));
+      gamma1Operands.push_back(innerNorm.getWeight());
+      gamma2Operands.push_back(outerNorm.getWeight());
+      if (scaled)
+        scaleOperands.push_back(scaleValues.at(device));
+    }
+
+    // Both composites have the results `output`, `outResidual` and
+    // `outChain`, so the rewiring is shared.
+    auto rewireAndErase = [&](Value outChain, ValueRange outResidual,
+                              ValueRange output) {
+      allReduceOp.getOutChain().replaceAllUsesWith(outChain);
+      for (auto [i, out] : llvm::enumerate(allReduceOp.getOutputs())) {
+        DeviceRefAttr device = cast<TensorValue>(out).getType().getDeviceRef();
+        getPreOuter(device).replaceAllUsesExcept(outResidual[i],
+                                                 outerNormOps.at(device));
+        outerNormOps.at(device).getResult().replaceAllUsesWith(output[i]);
+      }
+
+      // The collective writes its signal buffers, so DCE would keep it and
+      // run the allreduce twice. Erase innermost first, so each op is dead
+      // when it goes.
+      for (Value out : allReduceOp.getOutputs()) {
+        DeviceRefAttr device = cast<TensorValue>(out).getType().getDeviceRef();
+        outerNormOps.at(device).erase();
+        if (scaled)
+          mulOps.at(device).erase();
+        addOps.at(device).erase();
+        innerNormOps.at(device).erase();
+      }
+      allReduceOp.erase();
+    };
+
+    if (scaled) {
+      auto fusedOp =
+          MO::Composite::AllReduceRMSNormFusedScaledResidualAddOp::create(
+              builder, allReduceOp.getLoc(),
+              /*output=*/outputTypes,
+              /*outResidual=*/outResidualTypes,
+              /*outChain=*/allReduceOp.getOutChain().getType(),
+              /*inputs=*/allReduceOp.getInputs(),
+              /*signalBuffers=*/allReduceOp.getSignalBuffers(),
+              /*residual=*/residualOperands,
+              /*gamma1=*/gamma1Operands,
+              /*gamma2=*/gamma2Operands,
+              /*scale=*/scaleOperands,
+              /*epsilon=*/builder.getF32FloatAttr(epsilon),
+              /*weight_offset=*/builder.getF32FloatAttr(weightOffset),
+              /*multiply_before_cast=*/
+              outerNormOps.begin()->second.getMultiplyBeforeCastAttr(),
+              /*inChain=*/allReduceOp.getInChain());
+      rewireAndErase(fusedOp.getOutChain(), fusedOp.getOutResidual(),
+                     fusedOp.getOutput());
+      return;
+    }
+
+    auto fusedOp = MO::Composite::AllReduceRMSNormFusedResidualAddOp::create(
+        builder, allReduceOp.getLoc(),
+        /*output=*/outputTypes,
+        /*outResidual=*/outResidualTypes,
+        /*outChain=*/allReduceOp.getOutChain().getType(),
+        /*inputs=*/allReduceOp.getInputs(),
+        /*signalBuffers=*/allReduceOp.getSignalBuffers(),
+        /*residual=*/residualOperands,
+        /*gamma1=*/gamma1Operands,
+        /*gamma2=*/gamma2Operands,
+        /*epsilon=*/builder.getF32FloatAttr(epsilon),
+        /*weight_offset=*/builder.getF32FloatAttr(weightOffset),
+        /*multiply_before_cast=*/
+        outerNormOps.begin()->second.getMultiplyBeforeCastAttr(),
+        /*inChain=*/allReduceOp.getInChain());
+    rewireAndErase(fusedOp.getOutChain(), fusedOp.getOutResidual(),
+                   fusedOp.getOutput());
+  }
+
+private:
+  bool resolvesOnEveryDevice(StringRef compositeName) {
+    return llvm::all_of(allReduceOp.getOutputs(), [&](Value out) {
+      return registry.resolvesKernel(
+          compositeName, cast<TensorValue>(out).getType().getDeviceRef());
+    });
+  }
+
+  // The value the outer norm reads: the multiply on the scaled boundary, the
+  // add otherwise.
+  Value getPreOuter(DeviceRefAttr device) {
+    return scaled ? Value(mulOps.at(device).getResult())
+                  : Value(addOps.at(device).getResult());
+  }
+
+  bool matchBoundary(TensorValue out) {
+    DeviceRefAttr device = out.getType().getDeviceRef();
+    auto innerNorm = getSoleUser<MO::Composite::ReduceRMSNormOp>(out);
+    if (!innerNorm)
+      return false;
+    auto addOp = getSoleUser<MO::AddOp>(innerNorm.getResult());
+    if (!addOp || addOp.getOperands().size() != 2)
+      return false;
+    Value residual = addOp.getOperand(0) == innerNorm.getResult()
+                         ? addOp.getOperand(1)
+                         : addOp.getOperand(0);
+    // In `add(n, n)` the residual is an op this rewrite erases.
+    if (residual == innerNorm.getResult())
+      return false;
+
+    // A sole `mul` of the add by a broadcast scalar makes this the scaled
+    // boundary. Every device has to agree.
+    MO::MulOp mulOp = getSoleUser<MO::MulOp>(addOp.getResult());
+    Value scale;
+    if (mulOp && mulOp.getOperands().size() == 2)
+      scale = mulOp.getOperand(0) == addOp.getResult()
+                  ? getBroadcastScalarSource(mulOp.getOperand(1))
+                  : getBroadcastScalarSource(mulOp.getOperand(0));
+    bool thisScaled = mulOp && static_cast<bool>(scale);
+    if (!innerNormOps.empty() && thisScaled != scaled)
+      return false;
+    Value normInput = thisScaled ? Value(mulOp.getResult()) : addOp.getResult();
+
+    // The intermediate can have other users, normalizations among them. The
+    // op absorbs the earliest norm it can carry, and every other user reads
+    // the intermediate from `outResidual`.
+    MO::Composite::ReduceRMSNormOp outerNorm;
+    for (Operation *user : normInput.getUsers()) {
+      auto candidate = dyn_cast<MO::Composite::ReduceRMSNormOp>(user);
+      if (!candidate || candidate.getInput() != normInput)
+        continue;
+      if (candidate.getMultiplyBeforeCast() !=
+          innerNorm.getMultiplyBeforeCast())
+        continue;
+      if (!dominatesAllReduce(candidate.getWeight()))
+        continue;
+      if (!outerNorm || candidate->isBeforeInBlock(outerNorm))
+        outerNorm = candidate;
+    }
+    if (!outerNorm)
+      return false;
+
+    // The op has one epsilon and one weight_offset for both norms on every
+    // device, so all of them have to be equal constants.
+    std::optional<float> e1 =
+        toFloat(getConstantScalarFloat(innerNorm.getEpsilon()));
+    std::optional<float> e2 =
+        toFloat(getConstantScalarFloat(outerNorm.getEpsilon()));
+    std::optional<float> w1 =
+        toFloat(getConstantScalarFloat(innerNorm.getWeightOffset()));
+    std::optional<float> w2 =
+        toFloat(getConstantScalarFloat(outerNorm.getWeightOffset()));
+    if (!e1 || !e2 || !w1 || !w2 || *e1 != *e2 || *w1 != *w2)
+      return false;
+    if (scalarsSeen && (*e1 != epsilon || *w1 != weightOffset))
+      return false;
+    epsilon = *e1;
+    weightOffset = *w1;
+    scalarsSeen = true;
+
+    // The fused op goes where the collective is, so the operands it takes
+    // from further down the chain have to be available there.
+    if (!makeAvailableBeforeAllReduce(residual) ||
+        !makeAvailableBeforeAllReduce(innerNorm.getWeight()))
+      return false;
+    if (thisScaled && !makeAvailableBeforeAllReduce(scale))
+      return false;
+
+    innerNormOps[device] = innerNorm;
+    outerNormOps[device] = outerNorm;
+    addOps[device] = addOp;
+    residualValues[device] = residual;
+    if (thisScaled) {
+      mulOps[device] = mulOp;
+      scaleValues[device] = scale;
+    }
+    scaled = thisScaled;
+    return true;
+  }
+
+  bool dominatesAllReduce(Value v) const {
+    Operation *def = v.getDefiningOp();
+    if (!def)
+      return true;
+    return def->getBlock() == allReduceOp->getBlock() &&
+           def->isBeforeInBlock(allReduceOp);
+  }
+
+  // Makes `v` available before the collective, moving its producer and the
+  // effect-free ops that producer reads above the collective when needed.
+  // Fails when `v` reads the collective's result, or when a producer has
+  // effects or sits in another block. Moving such a producer earlier doesn't
+  // change what it computes, so a later failed match can leave it moved.
+  bool makeAvailableBeforeAllReduce(Value v) {
+    Operation *def = v.getDefiningOp();
+    if (!def)
+      return true;
+    if (def->getBlock() != allReduceOp->getBlock())
+      return false;
+    if (def->isBeforeInBlock(allReduceOp))
+      return true;
+    if (def == allReduceOp || !mlir::isMemoryEffectFree(def))
+      return false;
+    for (Value operand : def->getOperands())
+      if (!makeAvailableBeforeAllReduce(operand))
+        return false;
+    def->moveBefore(allReduceOp);
+    return true;
+  }
+
+  MO::AllReduceSumOp allReduceOp;
+  const MOGG::MojoRegistry &registry;
+  OpBuilder builder;
+  llvm::DenseMap<DeviceRefAttr, MO::Composite::ReduceRMSNormOp> innerNormOps;
+  llvm::DenseMap<DeviceRefAttr, MO::Composite::ReduceRMSNormOp> outerNormOps;
+  llvm::DenseMap<DeviceRefAttr, MO::MulOp> mulOps;
+  llvm::DenseMap<DeviceRefAttr, MO::AddOp> addOps;
+  llvm::DenseMap<DeviceRefAttr, Value> residualValues;
+  llvm::DenseMap<DeviceRefAttr, Value> scaleValues;
+  float epsilon = 0.0f;
+  float weightOffset = 0.0f;
+  bool scalarsSeen = false;
+  // Set by the first device's match. A later device that disagrees fails the
+  // match.
+  bool scaled = false;
+};
 
 struct FuseAllReduceAddRMSNormQuantFP8PatternMatcher {
 public:
@@ -3345,6 +3686,11 @@ void applyFuseAllReduceAddRMSNormQuantFP8(MO::AllReduceSumOp allReduceOp,
   FuseAllReduceAddRMSNormQuantFP8PatternMatcher fuser(allReduceOp,
                                                       targetDeviceRef);
   fuser.apply();
+}
+
+void applyFuseAllReduceRMSNormFusedResidualAdd(
+    MO::AllReduceSumOp allReduceOp, const MOGG::MojoRegistry &registry) {
+  FuseAllReduceRMSNormFusedResidualAddMatcher(allReduceOp, registry).apply();
 }
 
 void applyFuseParallelBundledAllReduceAddRMSNormQuantFP8(

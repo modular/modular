@@ -411,6 +411,98 @@ def MOComposite_AllReduceAddRMSNormQuantFP8Op : MO_DistributedOp<"composite.dist
 }
 
 //===----------------------------------------------------------------------===//
+// AllReduceRMSNormFusedScaledResidualAddOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_AllReduceRMSNormFusedScaledResidualAddOp : MO_DistributedOp<"composite.distributed.allreduce_rms_norm_fused_scaled_residual_add", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused AllreduceSum + scaled sandwich norm across N devices.";
+  let description = [{
+    Sum-reduces same-shaped per-device inputs, then on every device:
+
+      intermediate = (rms_norm(summed, gamma1) + residual) * scale
+      output       = rms_norm(intermediate, gamma2)
+
+    `scale` holds one element, broadcast over `intermediate`. Returns `output`
+    and, as `outResidual`, `intermediate`.
+
+    Both norms take `epsilon`, `weight_offset` and `multiply_before_cast` as
+    `mo.composite.reduce.rms_norm` defines them.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$residual,
+    Variadic<MO_Tensor>:$gamma1,
+    Variadic<MO_Tensor>:$gamma2,
+    Variadic<MO_Tensor>:$scale,
+    F32Attr:$epsilon,
+    F32Attr:$weight_offset,
+    BoolAttr:$multiply_before_cast,
+    MO_Chain:$inChain
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$output,
+    Variadic<MO_Tensor>:$outResidual,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// AllReduceRMSNormFusedResidualAddOp
+//===----------------------------------------------------------------------===//
+
+def MOComposite_AllReduceRMSNormFusedResidualAddOp : MO_DistributedOp<"composite.distributed.allreduce_rms_norm_fused_residual_add", [
+  MO_MultiDevice,
+  MO_CompositeOpTrait
+]> {
+  string cppNamespace = MODialect.cppNamespace # "::Composite";
+  let summary = "Fused AllreduceSum + sandwich norm across N devices.";
+  let description = [{
+    Sum-reduces same-shaped per-device inputs, then on every device:
+
+      intermediate = rms_norm(summed, gamma1) + residual
+      output       = rms_norm(intermediate, gamma2)
+
+    Returns `output` and, as `outResidual`, `intermediate`.
+
+    Both norms take `epsilon`, `weight_offset` and `multiply_before_cast` as
+    `mo.composite.reduce.rms_norm` defines them.
+  }];
+  let arguments = (ins
+    Variadic<MO_Tensor>:$inputs,
+    Variadic<MO_Buffer>:$signalBuffers,
+    Variadic<MO_Tensor>:$residual,
+    Variadic<MO_Tensor>:$gamma1,
+    Variadic<MO_Tensor>:$gamma2,
+    F32Attr:$epsilon,
+    F32Attr:$weight_offset,
+    BoolAttr:$multiply_before_cast,
+    MO_Chain:$inChain
+  );
+  let results = (outs
+    Variadic<MO_Tensor>:$output,
+    Variadic<MO_Tensor>:$outResidual,
+    MO_Chain:$outChain
+  );
+  let assemblyFormat = [{
+    `(` operands `)`
+    `{` `epsilon` `=` $epsilon `,` `weight_offset` `=` $weight_offset `,`
+    `multiply_before_cast` `=` $multiply_before_cast `}` attr-dict `:`
+    functional-type(operands, results)
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // BundledAllReduceAddRMSNormQuantFP8Op
 //===----------------------------------------------------------------------===//
 

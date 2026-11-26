@@ -46,6 +46,14 @@ private:
 void applyFuseAllReduceAddRMSNormQuantFP8(MO::AllReduceSumOp allReduceOp,
                                           M::DeviceRefAttr targetDeviceRef);
 
+/// Fuses `mo.allreduce.sum` and the sandwich-norm boundary after it,
+/// `rms_norm(add(rms_norm(summed), r))` or its scaled form
+/// `rms_norm(mul(add(rms_norm(summed), r), s))`, into a single op; no-op if
+/// the chain does not match, or if no kernel for the op resolves on every
+/// device.
+void applyFuseAllReduceRMSNormFusedResidualAdd(
+    MO::AllReduceSumOp allReduceOp, const MOGG::MojoRegistry &registry);
+
 /// Cross-boundary fuser for `mo.parallel { mo.bundled.allreduce.sum }`
 /// followed by per-device add + rms_norm + quantize_fp8 chains outside
 /// the parallel.

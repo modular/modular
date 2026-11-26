@@ -795,6 +795,30 @@ void Composite::AllReduceAddRMSNormQuantFP8Op::getEffects(
 }
 
 //===----------------------------------------------------------------------===//
+// AllReduceRMSNormFusedScaledResidualAddOp
+//===----------------------------------------------------------------------===//
+
+void Composite::AllReduceRMSNormFusedScaledResidualAddOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
+// AllReduceRMSNormFusedResidualAddOp
+//===----------------------------------------------------------------------===//
+
+void Composite::AllReduceRMSNormFusedResidualAddOp::getEffects(
+    SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
+  MutableOperandRange signalBuffers = getSignalBuffersMutable();
+
+  for (auto &sig : signalBuffers)
+    effects.emplace_back(mlir::MemoryEffects::Write::get(), &sig);
+}
+
+//===----------------------------------------------------------------------===//
 // DistributedReduceScatterRMSNormOp
 //===----------------------------------------------------------------------===//
 

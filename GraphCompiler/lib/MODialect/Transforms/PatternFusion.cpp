@@ -52,8 +52,10 @@ struct PatternFusionPass : public impl::PatternFusionBase<PatternFusionPass> {
     getOperation()->walk([&](MO::AllReduceSumOp allReduceSumOp) {
       allReduceOps.push_back(allReduceSumOp);
     });
-    for (auto allReduceOp : allReduceOps)
+    for (auto allReduceOp : allReduceOps) {
       MO::applyFuseAllReduceAddRMSNormQuantFP8(allReduceOp, targetDeviceRef);
+      MO::applyFuseAllReduceRMSNormFusedResidualAdd(allReduceOp, registry);
+    }
 
     // Parallel-region analog: fuse `mo.parallel { mo.bundled.allreduce.sum }`
     // and the per-device add + rms_norm + quantize_fp8 chains after it.
