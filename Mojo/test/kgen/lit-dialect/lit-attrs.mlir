@@ -38,17 +38,17 @@ kgen.generator @origin_access_attrs<
       none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
   } : () -> ()
 
-  // CHECK: #lit.refined_arg_access<1 : [<imm, #kgen.param.decl.ref<"x"> : !lit.origin<false>>, <mut, #kgen.param.decl.ref<"y"> : !lit.origin<true>>]>
+  // CHECK: #lit.refined_arg_access<1 : [<readonly, #kgen.param.decl.ref<"x"> : !lit.origin<false>>, <readwrite, #kgen.param.decl.ref<"y"> : !lit.origin<true>>]>
   "refined.arg"() {
     accesses = #lit.refined_arg_access<1: [
       #lit.origin_access<
-        imm, #kgen.param.decl.ref<"x"> : !lit.origin<false>>,
+        readonly, #kgen.param.decl.ref<"x"> : !lit.origin<false>>,
       #lit.origin_access<
-        mut, #kgen.param.decl.ref<"y"> : !lit.origin<true>>
+        readwrite, #kgen.param.decl.ref<"y"> : !lit.origin<true>>
     ]>
   } : () -> ()
 
-  // CHECK: #lit.fn_meta_origin_data<2 : accesses = [<0 : [<none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>]>, <1 : [<imm, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "field"> : !lit.origin<true>>]>]>
+  // CHECK: #lit.fn_meta_origin_data<2 : accesses = [<0 : [<none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>]>, <1 : [<readonly, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "field"> : !lit.origin<true>>]>]>
   "metadata.accesses"() {
     metadata = #lit.fn_meta_origin_data<2: accesses = [
       #lit.refined_arg_access<0: [
@@ -57,7 +57,7 @@ kgen.generator @origin_access_attrs<
       ]>,
       #lit.refined_arg_access<1: [
         #lit.origin_access<
-          imm,
+          readonly,
           #lit.origin.field<
             #kgen.param.decl.ref<"y"> : !lit.origin<true>,
             "field"> : !lit.origin<true>>

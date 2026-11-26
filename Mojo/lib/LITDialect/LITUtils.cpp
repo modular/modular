@@ -441,6 +441,8 @@ void LIT::printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
   p << '}';
 }
 
+// Parse an optional refined-access list, for example:
+//   accesses[0: [readonly mut #lit.any.origin]]
 OptionalParseResult LIT::parseOptionalRefinedArgAccesses(
     AsmParser &p, SmallVectorImpl<RefinedArgAccessAttr> &refinedArgs) {
   if (failed(p.parseOptionalKeyword("accesses")))
@@ -461,12 +463,12 @@ OptionalParseResult LIT::parseOptionalRefinedArgAccesses(
       OriginAccessKind kind;
       if (spelling == "none")
         kind = OriginAccessKind::None;
-      else if (spelling == "imm")
-        kind = OriginAccessKind::Immutable;
-      else if (spelling == "mut")
-        kind = OriginAccessKind::Mutable;
+      else if (spelling == "readonly")
+        kind = OriginAccessKind::ReadOnly;
+      else if (spelling == "readwrite")
+        kind = OriginAccessKind::ReadWrite;
       else
-        return p.emitError(loc, "expected 'none', 'imm', or 'mut'");
+        return p.emitError(loc, "expected 'none', 'readonly', or 'readwrite'");
 
       TypedAttr origin;
       if (parseOriginParamValue(p, origin))
