@@ -217,6 +217,12 @@ lit.fn @different_param_name<["a"]param, |>() {
   hlcf.return
 }
 
+// CHECK-LABEL: lit.fn @refined_accesses(%arg: index)
+// CHECK-SAME: accesses[0: [imm mut #lit.any.origin]]
+lit.fn @refined_accesses(%arg: index) accesses[0: [imm mut #lit.any.origin]] {
+  hlcf.return
+}
+
 // CHECK-LABEL: lit.fn @lifetime_set
 lit.fn @lifetime_set<set: origin.set>[mut lt]() {
   // CHECK-NEXT: f0: !lit.generator<:set:() -> ()> = <*?>

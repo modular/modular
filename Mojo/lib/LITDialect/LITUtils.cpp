@@ -441,6 +441,66 @@ void LIT::printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
   p << '}';
 }
 
+OptionalParseResult LIT::parseOptionalRefinedArgAccesses(
+    AsmParser &p, SmallVectorImpl<RefinedArgAccessAttr> &refinedArgs) {
+  if (failed(p.parseOptionalKeyword("accesses")))
+    return std::nullopt;
+
+  auto parseRefinedArg = [&]() -> ParseResult {
+    size_t argumentIndex;
+    if (p.parseInteger(argumentIndex) || p.parseColon())
+      return failure();
+
+    SmallVector<OriginAccessAttr> rules;
+    auto parseRule = [&]() -> ParseResult {
+      llvm::SMLoc loc;
+      StringRef spelling;
+      if (p.getCurrentLocation(&loc) || p.parseKeyword(&spelling))
+        return failure();
+
+      OriginAccessKind kind;
+      if (spelling == "none")
+        kind = OriginAccessKind::None;
+      else if (spelling == "imm")
+        kind = OriginAccessKind::Immutable;
+      else if (spelling == "mut")
+        kind = OriginAccessKind::Mutable;
+      else
+        return p.emitError(loc, "expected 'none', 'imm', or 'mut'");
+
+      TypedAttr origin;
+      if (parseOriginParamValue(p, origin))
+        return failure();
+      rules.push_back(OriginAccessAttr::get(p.getContext(), kind, origin));
+      return success();
+    };
+
+    if (p.parseCommaSeparatedList(AsmParser::Delimiter::Square, parseRule))
+      return failure();
+    refinedArgs.push_back(
+        RefinedArgAccessAttr::get(p.getContext(), argumentIndex, rules));
+    return success();
+  };
+
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Square, parseRefinedArg))
+    return failure();
+  return mlir::success();
+}
+
+void LIT::printRefinedArgAccesses(AsmPrinter &p,
+                                  ArrayRef<RefinedArgAccessAttr> refinedArgs) {
+  p << "accesses[";
+  llvm::interleaveComma(refinedArgs, p, [&](RefinedArgAccessAttr refinedArg) {
+    p << refinedArg.getArgumentIndex() << ": [";
+    llvm::interleaveComma(refinedArg.getRules(), p, [&](OriginAccessAttr rule) {
+      p << stringifyEnum(rule.getKind()) << ' ';
+      printOriginParamValue(p, rule.getOrigin());
+    });
+    p << ']';
+  });
+  p << ']';
+}
+
 bool LIT::isEmptyOriginSet(TypedAttr attr) {
   if (!attr)
     return true;
@@ -506,6 +566,10 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
   printSignatureValues(p, printElt, signature.getValues(),
                        signature.getArgConventions(), signature.getFnEffects(),
                        /*optionalResultList=*/false);
+  if (!metadata.getRefinedArgs().empty()) {
+    p << ' ';
+    printRefinedArgAccesses(p, metadata.getRefinedArgs());
+  }
   assert(argListAttr.getBodyConstraints().empty());
 }
 

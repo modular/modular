@@ -44,6 +44,30 @@ void LITDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
+// OriginAccessAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+OriginAccessAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                         OriginAccessKind, TypedAttr origin) {
+  if (!isa<OriginType>(origin.getType()))
+    return emitError() << "origin must have `!lit.origin` type";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
+// RefinedArgAccessAttr
+//===----------------------------------------------------------------------===//
+
+LogicalResult
+RefinedArgAccessAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                             size_t, ArrayRef<OriginAccessAttr> rules) {
+  if (rules.empty())
+    return emitError() << "refined argument access must contain a rule";
+  return success();
+}
+
+//===----------------------------------------------------------------------===//
 // FnMetaOriginDataAttr
 //===----------------------------------------------------------------------===//
 
@@ -69,19 +93,21 @@ FnMetaOriginDataAttr FnMetaOriginDataAttr::get(MLIRContext *context) {
       /*captureOrigins=*/OriginSetAttr::get(context, {}),
       /*definesInteriorOrigins=*/false,
       /*isUnsafeNestedOriginsReadOnly=*/false,
-      /*isEnforcedNestedOriginsReadOnly=*/false);
+      /*isEnforcedNestedOriginsReadOnly=*/false,
+      /*refinedArgs=*/{});
 }
 
 FnMetaOriginDataAttr
 FnMetaOriginDataAttr::get(MLIRContext *ctx, size_t numImplicitOriginDecls,
                           TypedAttr captureOrigins, bool definesInteriorOrigins,
                           bool isUnsafeNestedOriginsReadOnly,
-                          bool isEnforcedNestedOriginsReadOnly) {
+                          bool isEnforcedNestedOriginsReadOnly,
+                          ArrayRef<RefinedArgAccessAttr> refinedArgs) {
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
   return Base::get(ctx, numImplicitOriginDecls, captureOrigins,
                    definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
-                   isEnforcedNestedOriginsReadOnly);
+                   isEnforcedNestedOriginsReadOnly, refinedArgs);
 }
 
 SmallVector<VariadicKind>
@@ -157,7 +183,7 @@ FnMetaOriginDataAttr::addCaptureOrigins(TypedAttr origins) {
   return get(getContext(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
              getDefinesInteriorOrigins(), getIsUnsafeNestedOriginsReadOnly(),
-             getIsEnforcedNestedOriginsReadOnly());
+             getIsEnforcedNestedOriginsReadOnly(), getRefinedArgs());
 }
 
 void FnMetaOriginDataAttr::printFuncTypeBody(AsmPrinter &p,
@@ -189,7 +215,8 @@ bool FnMetaOriginDataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
              other.getIsUnsafeNestedOriginsReadOnly() &&
          getDefinesInteriorOrigins() == other.getDefinesInteriorOrigins() &&
          getIsEnforcedNestedOriginsReadOnly() ==
-             other.getIsEnforcedNestedOriginsReadOnly();
+             other.getIsEnforcedNestedOriginsReadOnly() &&
+         getRefinedArgs() == other.getRefinedArgs();
 }
 
 //===----------------------------------------------------------------------===//

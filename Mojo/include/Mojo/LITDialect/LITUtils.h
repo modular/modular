@@ -166,6 +166,12 @@ OptionalParseResult
 parseOptionalOriginSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
 void printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
 
+/// Parse and print refined argument access specifications.
+OptionalParseResult parseOptionalRefinedArgAccesses(
+    AsmParser &p, SmallVectorImpl<RefinedArgAccessAttr> &refinedArgs);
+void printRefinedArgAccesses(AsmPrinter &p,
+                             ArrayRef<RefinedArgAccessAttr> refinedArgs);
+
 /// Return true if the origin set parameter is an empty set.
 bool isEmptyOriginSet(TypedAttr attr);
 

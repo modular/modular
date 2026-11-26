@@ -228,7 +228,8 @@ static FnMetadataAttr withoutCaptureOrigins(FnMetadataAttr metadata) {
       metadata.getContext(), originData.getNumImplicitOriginDecls(),
       /*captureOrigins=*/{}, originData.getDefinesInteriorOrigins(),
       originData.getIsUnsafeNestedOriginsReadOnly(),
-      originData.getIsEnforcedNestedOriginsReadOnly()));
+      originData.getIsEnforcedNestedOriginsReadOnly(),
+      originData.getRefinedArgs()));
 }
 
 // Strip out irrelevant details of a function that can be rebound away to make
@@ -736,7 +737,8 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       reducedExpected.getCaptureOrigins(),
       reducedExpected.getDefinesInteriorOrigins(),
       reducedExpected.getFnMetaOriginData().getIsUnsafeNestedOriginsReadOnly(),
-      reducedExpected.getIsEnforcedNestedOriginsReadOnly());
+      reducedExpected.getIsEnforcedNestedOriginsReadOnly(),
+      reducedExpected.getFnMetaOriginData().getRefinedArgs());
   auto thunkFuncType = sugarCast<FunctionType>(
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
   SmallVector<ConstraintAttr> thunkBodyConstraints;

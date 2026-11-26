@@ -2817,12 +2817,20 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // convention and one implicit origin decl); we can only do it here since we
   // cannot build a parameter expression on the metadata when constructing the
   // alias decl op in the closure trait.
+  SmallVector<RefinedArgAccessAttr> refinedArgs;
+  refinedArgs.reserve(sig.getFnMetaOriginData().getRefinedArgs().size());
+  for (auto refinedArg : sig.getFnMetaOriginData().getRefinedArgs()) {
+    auto shifted = cast<RefinedArgAccessAttr>(shifter.replace(refinedArg));
+    refinedArgs.push_back(RefinedArgAccessAttr::get(
+        ctx, shifted.getArgumentIndex() + 1, shifted.getRules()));
+  }
   auto originData = FnMetaOriginDataAttr::get(
       ctx, sig.getFnMetaOriginData().getNumImplicitOriginDecls() + 1,
       sig.getFnMetaOriginData().getCaptureOrigins(),
       sig.getFnMetaOriginData().getDefinesInteriorOrigins(),
       sig.getFnMetaOriginData().getIsUnsafeNestedOriginsReadOnly(),
-      sig.getFnMetaOriginData().getIsEnforcedNestedOriginsReadOnly());
+      sig.getFnMetaOriginData().getIsEnforcedNestedOriginsReadOnly(),
+      refinedArgs);
   SmallVector<ArgConvention> argConventions;
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
   argConventions.push_back(ArgConvention::ImmMem);
@@ -2874,17 +2882,26 @@ IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
          "expected a signature carrying the closure trait's `Self`");
 
   SelfSlotShifter shifter(/*prepend=*/false);
+  SmallVector<RefinedArgAccessAttr> refinedArgs;
+  refinedArgs.reserve(originData.getRefinedArgs().size());
+  for (auto refinedArg : originData.getRefinedArgs()) {
+    assert(refinedArg.getArgumentIndex() != 0 &&
+           "closure self cannot have a refined access");
+    auto shifted = cast<RefinedArgAccessAttr>(shifter.replace(refinedArg));
+    refinedArgs.push_back(RefinedArgAccessAttr::get(
+        ctx, shifted.getArgumentIndex() - 1, shifted.getRules()));
+  }
   return FnTypeGeneratorType::get(
       shifter.replace(sigWithSelf.getInputParamTypes().drop_front()),
       FunctionType::get(ctx, shifter.replace(body.getArguments().drop_front()),
                         shifter.replace(body.getResults())),
       sigWithSelf.getArgConventions().drop_front(), sigWithSelf.getFnEffects(),
-      FnMetaOriginDataAttr::get(
-          ctx, originData.getNumImplicitOriginDecls() - 1,
-          originData.getCaptureOrigins(),
-          originData.getDefinesInteriorOrigins(),
-          originData.getIsUnsafeNestedOriginsReadOnly(),
-          originData.getIsEnforcedNestedOriginsReadOnly()),
+      FnMetaOriginDataAttr::get(ctx, originData.getNumImplicitOriginDecls() - 1,
+                                originData.getCaptureOrigins(),
+                                originData.getDefinesInteriorOrigins(),
+                                originData.getIsUnsafeNestedOriginsReadOnly(),
+                                originData.getIsEnforcedNestedOriginsReadOnly(),
+                                refinedArgs),
       dropFrontPog(sigWithSelf.getParamListAttrs()),
       dropFrontPog(sigWithSelf.getArgListAttrs()));
 }

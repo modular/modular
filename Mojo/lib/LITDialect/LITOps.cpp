@@ -775,6 +775,12 @@ static ParseResult parseLITFunctionSignature(
                                   /*optionalResultList=*/true)))
     return failure();
 
+  SmallVector<RefinedArgAccessAttr> refinedArgs;
+  if (OptionalParseResult result =
+          parseOptionalRefinedArgAccesses(p, refinedArgs);
+      result.has_value() && failed(*result))
+    return failure();
+
   SmallVector<PassingKind> argPassingKinds;
   passingKindParser.populatePassingKinds(argPassingKinds);
 
@@ -785,7 +791,7 @@ static ParseResult parseLITFunctionSignature(
   auto metadata = FnMetaOriginDataAttr::get(
       p.getContext(), originDecls.size(), captureOrigins,
       definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
-      isEnforcedNestedOriginsReadOnly);
+      isEnforcedNestedOriginsReadOnly, refinedArgs);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); }, pogList);
@@ -902,6 +908,10 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   printSignatureValues(p, printElt, functionType, signature.getArgConventions(),
                        signature.getFnEffects(),
                        /*optionalResultList=*/true);
+  if (!originData.getRefinedArgs().empty()) {
+    p << ' ';
+    printRefinedArgAccesses(p, originData.getRefinedArgs());
+  }
 }
 
 /// Parses a LIT Generator.

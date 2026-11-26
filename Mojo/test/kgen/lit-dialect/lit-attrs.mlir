@@ -29,6 +29,45 @@
 // CHECK-SAME: #lit.fn_meta_origin_data<2, false, true>
 "some.metadata5"() {metadata = #lit.fn_meta_origin_data<2, false, true>} : () -> ()
 
+// CHECK-LABEL: kgen.generator @origin_access_attrs
+kgen.generator @origin_access_attrs<
+    x: !lit.origin<false>, y: !lit.origin<true>>() {
+  // CHECK: #lit.origin_access<none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
+  "none.access"() {
+    access = #lit.origin_access<
+      none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
+  } : () -> ()
+
+  // CHECK: #lit.refined_arg_access<1 : [<imm, #kgen.param.decl.ref<"x"> : !lit.origin<false>>, <mut, #kgen.param.decl.ref<"y"> : !lit.origin<true>>]>
+  "refined.arg"() {
+    accesses = #lit.refined_arg_access<1: [
+      #lit.origin_access<
+        imm, #kgen.param.decl.ref<"x"> : !lit.origin<false>>,
+      #lit.origin_access<
+        mut, #kgen.param.decl.ref<"y"> : !lit.origin<true>>
+    ]>
+  } : () -> ()
+
+  // CHECK: #lit.fn_meta_origin_data<2 : accesses = [<0 : [<none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>]>, <1 : [<imm, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "field"> : !lit.origin<true>>]>]>
+  "metadata.accesses"() {
+    metadata = #lit.fn_meta_origin_data<2: accesses = [
+      #lit.refined_arg_access<0: [
+        #lit.origin_access<
+          none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
+      ]>,
+      #lit.refined_arg_access<1: [
+        #lit.origin_access<
+          imm,
+          #lit.origin.field<
+            #kgen.param.decl.ref<"y"> : !lit.origin<true>,
+            "field"> : !lit.origin<true>>
+      ]>
+    ]>
+  } : () -> ()
+
+  hlcf.return
+}
+
 // CHECK-LABEL: "none.type"
 // CHECK-SAME: #kgen.none : !kgen.none
 "none.type"() {a = #kgen.none : !kgen.none} : () -> ()

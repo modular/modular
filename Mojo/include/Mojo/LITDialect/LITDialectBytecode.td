@@ -129,12 +129,23 @@ def SymbolAttr : DialectAttribute<(attr
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
+def OriginAccessAttr : DialectAttribute<(attr
+  EnumAttr<"OriginAccessKind">:$kind,
+  TypedAttr:$origin
+)>;
+
+def RefinedArgAccessAttr : DialectAttribute<(attr
+  VarInt:$argumentIndex,
+  ConcreteAttrArray<"OriginAccessAttr">:$rules
+)>;
+
 def FnMetaOriginDataAttr : DialectAttribute<(attr
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
   Bool:$definesInteriorOrigins,
   Bool:$isUnsafeNestedOriginsReadOnly,
-  Bool:$isEnforcedNestedOriginsReadOnly
+  Bool:$isEnforcedNestedOriginsReadOnly,
+  ConcreteAttrArray<"RefinedArgAccessAttr">:$refinedArgs
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
@@ -298,6 +309,8 @@ def LITDialectAttributes : DialectAttributes<"lit"> {
   let elems = [
     DenseResourceElementsArrayAttr,
     SymbolAttr,
+    OriginAccessAttr,
+    RefinedArgAccessAttr,
     EllipsisAttr,
     FnMetaOriginDataAttr,
     DocStringAttr,
