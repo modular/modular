@@ -35,6 +35,7 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Support/Process.h"
 
 #include <algorithm>
 #include <cstring>
@@ -1263,6 +1264,35 @@ M_DriverStatus M_DriverBufferIsHost(const M_DriverBuffer *buffer, bool *out) {
     return fail(M_DRIVER_INVALID_ARGUMENT, "buffer or out is null");
   *out = buffer->buffer->isHost();
   return succeed();
+}
+
+M_DriverStatus M_DriverBufferExportDmaBuf(const M_DriverBuffer *buffer,
+                                          int *fd) {
+  if (buffer == nullptr || fd == nullptr || !buffer->buffer.getPointer())
+    return fail(M_DRIVER_INVALID_ARGUMENT, "buffer or fd is null");
+  *fd = -1;
+#if MODULAR_HAL_DEVICE_CONTEXT
+  return fail(M_DRIVER_NOT_SUPPORTED,
+              "M_DriverBufferExportDmaBuf is not available in a HAL device "
+              "context build");
+#else
+  DeviceBuffer &memory = *buffer->buffer;
+  const uintptr_t page = llvm::sys::Process::getPageSizeEstimate();
+  if (memory.isHost() || reinterpret_cast<uintptr_t>(memory.ptr()) % page ||
+      memory.byteSize() % page)
+    return fail(M_DRIVER_INVALID_ARGUMENT,
+                "M_DriverBufferExportDmaBuf: the buffer must be device memory "
+                "that starts and ends on page boundaries");
+  ErrorOr<std::optional<int>> exported = memory.context().exportDmaBuf(memory);
+  if (exported.isError())
+    return fail(exported, "M_DriverBufferExportDmaBuf");
+  if (!exported.get().has_value())
+    return fail(M_DRIVER_NOT_SUPPORTED,
+                "M_DriverBufferExportDmaBuf: this device cannot export "
+                "dma-bufs");
+  *fd = *exported.get();
+  return succeed();
+#endif
 }
 
 M_DriverStatus M_DriverMemoryRegister(const M_DriverDevice *device,

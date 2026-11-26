@@ -91,7 +91,7 @@ extern "C" {
 /// does not know, so it treats an unknown status as a failure and an unknown
 /// enum value as unsupported rather than ignoring it.
 #define M_DRIVER_CAPI_VERSION_MAJOR 2
-#define M_DRIVER_CAPI_VERSION_MINOR 1
+#define M_DRIVER_CAPI_VERSION_MINOR 2
 #define M_DRIVER_CAPI_VERSION_PATCH 0
 
 /// Returns the interface version the library implements, packed as
@@ -899,6 +899,17 @@ M_DRIVER_API M_DriverStatus M_DriverBufferByteSize(const M_DriverBuffer *buffer,
 /// `*out`.
 M_DRIVER_API M_DriverStatus M_DriverBufferIsHost(const M_DriverBuffer *buffer,
                                                  bool *out);
+
+/// Exports the buffer as a dma-buf, which another driver imports to access the
+/// memory directly, for example `ibv_reg_dmabuf_mr` with an RDMA NIC. Writes
+/// the fd, which the caller owns and closes, to `*fd`. The dma-buf covers
+/// exactly the buffer, so keep the memory alive while the importer uses it.
+///
+/// The buffer must be device memory that starts and ends on host page
+/// boundaries; anything else is `M_DRIVER_INVALID_ARGUMENT`. A device or
+/// platform that cannot export dma-bufs returns `M_DRIVER_NOT_SUPPORTED`.
+M_DRIVER_API M_DriverStatus
+M_DriverBufferExportDmaBuf(const M_DriverBuffer *buffer, int *fd);
 
 /// A host range the caller owns that has been made device-accessible for DMA,
 /// for example a `MAP_SHARED` mapping of a memory file descriptor that a

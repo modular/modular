@@ -1040,6 +1040,15 @@ public:
   /// CUDA, HIP and Metal only. Rejected while recording a device graph.
   ErrorOr<DeviceBufferRef> wrapHostMemory(void *ptr, size_t byteSize);
 
+  /// Exports `buffer`, device memory that starts and ends on host page
+  /// boundaries, as a dma-buf for another driver to import, for example with
+  /// `ibv_reg_dmabuf_mr`. Returns the fd, which the caller owns, or nothing
+  /// where the device cannot export. Keep `buffer` alive while the importer
+  /// uses it.
+  virtual ErrorOr<std::optional<int>> exportDmaBuf(const DeviceBuffer &buffer) {
+    return std::nullopt;
+  }
+
   /// Allocates a `CompletionFlag` holding 0. CUDA, HIP and Metal only.
   virtual ErrorOr<CompletionFlagRef> allocateCompletionFlag() {
     return Error("allocateCompletionFlag is not supported on this device");

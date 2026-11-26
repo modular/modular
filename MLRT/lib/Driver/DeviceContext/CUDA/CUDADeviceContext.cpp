@@ -1901,6 +1901,38 @@ ErrorOrSuccess CUDADeviceContext::memWrap(void **devPtr, void *hostPtr,
   return success();
 }
 
+ErrorOr<std::optional<int>>
+CUDADeviceContext::exportDmaBuf(const DeviceBuffer &buffer) {
+  M_PROFILE_SPAN("CUDADeviceContext::exportDmaBuf", M_PROFILE_COLOR_PURPLE);
+  CUDA_WITH_CTX_ERR(*this);
+  int supported = 0;
+  if (driver_.cuDeviceGetAttribute(
+          &supported, CUdevice_attribute::DMA_BUF_SUPPORTED,
+          CUDADevice::cast(device()).cudaDevice()) != CUDADriver::SUCCESS ||
+      !supported)
+    return std::nullopt;
+  // The export covers exactly this range, so no other buffer reaches the
+  // importer.
+  const uintptr_t page = llvm::sys::Process::getPageSizeEstimate();
+  const auto begin = reinterpret_cast<uintptr_t>(buffer.ptr());
+  if (buffer.isHost() || buffer.byteSize() == 0 || begin % page ||
+      buffer.byteSize() % page)
+    RETURN_ERROR("exportDmaBuf: the buffer must be device memory that starts "
+                 "and ends on page boundaries");
+  int fd = -1;
+  // CU_MEM_RANGE_FLAG_DMA_BUF_MAPPING_TYPE_PCIE (0x1): importers such as NICs
+  // reach the pages over PCIe even where the GPU also has a C2C link. Drivers
+  // that predate the flag reject it, so retry without it.
+  auto base = reinterpret_cast<CUdeviceptr>(begin);
+  CUDADriver::Result result = driver_.cuMemGetHandleForAddressRange(
+      &fd, base, buffer.byteSize(), CUmemRangeHandleType::DMA_BUF_FD, 0x1);
+  if (result != CUDADriver::SUCCESS)
+    result = driver_.cuMemGetHandleForAddressRange(
+        &fd, base, buffer.byteSize(), CUmemRangeHandleType::DMA_BUF_FD, 0);
+  CUDA_CHECK_ERR(result);
+  return fd;
+}
+
 ErrorOrSuccess CUDADeviceContext::memFree(void *ptr, Device::FreeKind kind) {
   M_PROFILE_SPAN("CUDADeviceContext::memFree", M_PROFILE_COLOR_PURPLE);
 

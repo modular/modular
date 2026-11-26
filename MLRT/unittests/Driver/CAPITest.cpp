@@ -41,6 +41,7 @@
 #include <vector>
 
 #include <dlfcn.h>
+#include <unistd.h>
 
 // The build defines this only under the HAL device context, and the test is
 // compiled with every undefined macro in an #if treated as an error, so the
@@ -109,7 +110,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 2u);
-  EXPECT_EQ((version >> 16) & 0xffu, 1u);
+  EXPECT_EQ((version >> 16) & 0xffu, 2u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -604,6 +605,87 @@ TEST(DriverCApi, BorrowedBufferWrapsCallerMemoryWithoutOwningIt) {
       << lastError();
   ASSERT_EQ(M_DriverStreamSynchronize(stream.get()), M_DRIVER_OK);
   EXPECT_EQ(scratch, source);
+}
+
+TEST(DriverCApi, BufferExportsAPageAlignedRangeAsADmaBuf) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
+      << lastError();
+  const uintptr_t page = sysconf(_SC_PAGESIZE);
+  BufferHandle allocation;
+  ASSERT_EQ(M_DriverBufferAllocate(device.get(), 3 * page,
+                                   /*pinned_host=*/false, allocation.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  void *address = nullptr;
+  ASSERT_EQ(M_DriverBufferPointer(allocation.get(), &address), M_DRIVER_OK);
+  const uintptr_t aligned =
+      (reinterpret_cast<uintptr_t>(address) + page - 1) & ~(page - 1);
+
+  BufferHandle range;
+  ASSERT_EQ(M_DriverBufferFromPointer(device.get(),
+                                      reinterpret_cast<void *>(aligned), page,
+                                      /*is_host=*/false, range.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  int fd = -1;
+  const M_DriverStatus status = M_DriverBufferExportDmaBuf(range.get(), &fd);
+  if (status == M_DRIVER_NOT_SUPPORTED)
+    GTEST_SKIP() << lastError();
+  ASSERT_EQ(status, M_DRIVER_OK) << lastError();
+  ASSERT_GE(fd, 0);
+  // A dma-buf reports its size through lseek(SEEK_END).
+  EXPECT_EQ(lseek(fd, 0, SEEK_END), static_cast<off_t>(page));
+  EXPECT_EQ(close(fd), 0);
+
+  BufferHandle misaligned;
+  ASSERT_EQ(M_DriverBufferFromPointer(
+                device.get(), reinterpret_cast<void *>(aligned + 256), page,
+                /*is_host=*/false, misaligned.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverBufferExportDmaBuf(misaligned.get(), &fd),
+            M_DRIVER_INVALID_ARGUMENT);
+  EXPECT_EQ(fd, -1);
+}
+
+TEST(DriverCApi, BufferExportRefusesWhatItCannotExport) {
+  EXPECT_EQ(M_DriverBufferExportDmaBuf(nullptr, nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+  const uint64_t page = sysconf(_SC_PAGESIZE);
+  int fd = -1;
+
+  DeviceHandle cpu;
+  ASSERT_TRUE(makeCpuDevice(cpu));
+  BufferHandle cpuBuffer;
+  ASSERT_EQ(M_DriverBufferAllocate(cpu.get(), page, /*pinned_host=*/false,
+                                   cpuBuffer.receive()),
+            M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(M_DriverBufferExportDmaBuf(cpuBuffer.get(), &fd),
+            M_DRIVER_NOT_SUPPORTED);
+  EXPECT_EQ(fd, -1);
+
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
+      << lastError();
+  BufferHandle pinned;
+  ASSERT_EQ(M_DriverBufferAllocate(device.get(), page, /*pinned_host=*/true,
+                                   pinned.receive()),
+            M_DRIVER_OK)
+      << lastError();
+#if MODULAR_HAL_DEVICE_CONTEXT
+  EXPECT_EQ(M_DriverBufferExportDmaBuf(pinned.get(), &fd),
+            M_DRIVER_NOT_SUPPORTED);
+#else
+  EXPECT_EQ(M_DriverBufferExportDmaBuf(pinned.get(), &fd),
+            M_DRIVER_INVALID_ARGUMENT);
+#endif
+  EXPECT_EQ(fd, -1);
 }
 
 TEST(DriverCApi, BorrowedBufferNeverFreesTheCallersMemory) {

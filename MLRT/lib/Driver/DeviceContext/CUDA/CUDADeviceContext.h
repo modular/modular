@@ -504,6 +504,7 @@ public:
 
   bool isGraphCapturing() const override;
 
+  ErrorOr<std::optional<int>> exportDmaBuf(const DeviceBuffer &buffer) override;
   ErrorOr<CompletionFlagRef> allocateCompletionFlag() override;
   ErrorOrSuccess freeCompletionFlag(void *hostPtr) override;
 
