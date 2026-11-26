@@ -38,6 +38,8 @@
 #include "mlir/Pass/PassManager.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/MathExtras.h"
 #include "llvm/TargetParser/Triple.h"
 #include <string>
@@ -179,52 +181,86 @@ private:
     Type f32Type = converter.convertType(rewriter.getF32Type());
     Type f8Type = converter.convertType(op.getType());
 
-    StringRef asmStr =
-        toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
-            ? "cvt.rn.satfinite.e4m3x2.f32"
-            : "cvt.rn.satfinite.e5m2x2.f32";
+    StringRef cvt = toFloatSemantics == llvm::APFloat::Semantics::S_Float8E4M3FN
+                        ? "cvt.rn.satfinite.e4m3x2.f32"
+                        : "cvt.rn.satfinite.e5m2x2.f32";
 
     assert(llvm::isPowerOf2_64(size) && "SIMD size must be a power of 2");
     Type i16Type = rewriter.getIntegerType(16);
     Type i32Type = rewriter.getIntegerType(32);
     if (size >= 4) {
       // Pack four values per 32-bit word with two `cvt`s and a `mov.b32`
-      // merge. Inserting the two 16-bit halves into a vector instead leaves
-      // ptxas to join them into the store word with byte permutes, which
-      // compete with the converts for the ALU pipe.
-      std::string asmStr4 = "{\n.reg .b16 lo, hi;\n";
-      asmStr4 += asmStr.str();
-      asmStr4 += " lo, $2, $1;\n";
-      asmStr4 += asmStr.str();
-      asmStr4 += " hi, $4, $3;\nmov.b32 $0, {lo, hi};\n}";
+      // merge, unrolled into one inline asm for the whole vector. Merging the
+      // two 16-bit halves in the asm keeps ptxas from joining them into the
+      // store word with byte permutes, which compete with the converts for
+      // the ALU pipe.
+      const uint64_t words = size / 4;
+      // A single output must not be a struct: LLVM rejects a one-element
+      // struct return for inline asm.
+      Type asmType = words == 1 ? i32Type
+                                : LLVM::LLVMStructType::getLiteral(
+                                      rewriter.getContext(),
+                                      SmallVector<Type>(words, i32Type));
+
+      // Operands are the `words` outputs, then the `size` inputs. A `cvt`
+      // takes its high half first, so the low value is the second input.
+      std::string ptx = "{\n.reg .b16 ";
+      for (uint64_t w = 0; w < words; ++w)
+        ptx += llvm::formatv("{0}lo{1}, hi{1}", w ? ", " : "", w).str();
+      ptx += ";\n";
+      for (uint64_t w = 0; w < words; ++w) {
+        uint64_t in = words + 4 * w;
+        ptx += llvm::formatv("  {0} lo{1}, ${2}, ${3};\n", cvt, w, in + 1, in)
+                   .str();
+        ptx +=
+            llvm::formatv("  {0} hi{1}, ${2}, ${3};\n", cvt, w, in + 3, in + 2)
+                .str();
+        ptx += llvm::formatv("  mov.b32 ${0}, {{lo{1}, hi{1}};\n", w, w).str();
+      }
+      ptx += "}";
+
+      std::string constraints;
+      for (uint64_t w = 0; w < words; ++w)
+        constraints += llvm::formatv("{0}=r", w ? "," : "").str();
+      for (uint64_t i = 0; i < size; ++i)
+        constraints += ",f";
+
+      SmallVector<Value> operands;
+      operands.reserve(size);
+      for (uint64_t i = 0; i < size; ++i)
+        operands.push_back(extractElement(rewriter, loc, f32Type, value, i));
+      Value converted =
+          createInlineAsm(rewriter, loc, ptx, constraints, asmType, operands)
+              .getResult(0);
+
       Value res = LLVM::UndefOp::create(rewriter, op.getLoc(),
-                                        VectorType::get(size / 4, i32Type));
-      for (uint64_t i = 0; i < size; i += 4) {
-        Value v0 = extractElement(rewriter, loc, f32Type, value, i);
-        Value v1 = extractElement(rewriter, loc, f32Type, value, i + 1);
-        Value v2 = extractElement(rewriter, loc, f32Type, value, i + 2);
-        Value v3 = extractElement(rewriter, loc, f32Type, value, i + 3);
-        Value converted = createInlineAsm(rewriter, loc, asmStr4, "=r,f,f,f,f",
-                                          i32Type, {v0, v1, v2, v3})
-                              .getResult(0);
+                                        VectorType::get(words, i32Type));
+      if (words == 1) {
         res = LLVM::InsertElementOp::create(
             rewriter, loc, res, converted,
-            createConstant<uint32_t>(rewriter, loc, i / 4));
+            createConstant<uint32_t>(rewriter, loc, 0));
+      } else {
+        for (uint64_t w = 0; w < words; ++w)
+          res = LLVM::InsertElementOp::create(
+              rewriter, loc, res,
+              LLVM::ExtractValueOp::create(rewriter, loc, converted,
+                                           static_cast<int64_t>(w)),
+              createConstant<uint32_t>(rewriter, loc, w));
       }
 
       rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, res);
     } else if (size == 2) {
       Value converted =
-          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
-                          "=h,f,f", i16Type,
+          createInlineAsm(rewriter, loc, cvt.str() + " $0, $1, $2;", "=h,f,f",
+                          i16Type,
                           {extractElement(rewriter, loc, f32Type, value, 1),
                            extractElement(rewriter, loc, f32Type, value, 0)})
               .getResult(0);
       rewriter.replaceOpWithNewOp<LLVM::BitcastOp>(op, f8Type, converted);
     } else {
       Value converted =
-          createInlineAsm(rewriter, loc, asmStr.str() + " $0, $1, $2;",
-                          "=h,f,f", i16Type,
+          createInlineAsm(rewriter, loc, cvt.str() + " $0, $1, $2;", "=h,f,f",
+                          i16Type,
                           {createConstant(rewriter, loc, APFloat(0.0f)), value})
               .getResult(0);
       rewriter.replaceOpWithNewOp<LLVM::TruncOp>(op, f8Type, converted);
