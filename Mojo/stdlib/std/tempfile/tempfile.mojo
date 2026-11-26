@@ -30,6 +30,7 @@ import std.os
 from std.format._utils import _FlushingWriteBuffer
 from std.pathlib import Path
 from std.random import random_ui64
+from std.stat import S_ISDIR
 from std.utils._nicheable import _FieldNicheable
 
 from std.collections import Span
@@ -228,13 +229,16 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
 
     for file_or_dir in std.os.listdir(path):
         var curr_path = std.os.path.join(path, file_or_dir)
-        if std.os.path.isfile(curr_path):
+
+        # unlink path if the current path is a link or file
+        if std.os.path.islink(curr_path) or std.os.path.isfile(curr_path):
             try:
                 std.os.remove(curr_path)
             except e:
                 if not ignore_errors:
                     raise e
-            continue
+                continue
+        # recursively unlink all links or file in this directory
         if std.os.path.isdir(curr_path):
             try:
                 _rmtree(curr_path, ignore_errors)
