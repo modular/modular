@@ -70,7 +70,7 @@ def test_assert_raises_no_error() raises:
 
 def test_assert_raises_no_error_with_error_types() raises:
     try:
-        with assert_raises[CustomError](error=CustomError("custom error")):
+        with assert_raises(error=CustomError("custom error")):
             pass
         raise Error("This should not be reachable.")
     except e:
@@ -86,18 +86,25 @@ def test_assert_raises_no_match() raises:
         assert_equal(String(e), "OtherError")
 
 
-def test_assert_raises_catches_matched_error_type_and_message() raises:
-    with assert_raises[IoError](
-        error=IoError("error reading from input stream")
-    ):
+def test_assert_raises_matches_error_type_and_message() raises:
+    with assert_raises(error=IoError("error reading from input stream")):
         raise IoError("error reading from input stream")
 
 
-def test_assert_raises_checks_error_content() raises:
+def test_assert_raises_matches_only_error_type() raises:
+    with assert_raises[IoError]():
+        raise IoError("error reading from input stream")
+
     try:
-        with assert_raises[IoError](
-            error=IoError("error reading from input stream")
-        ):
+        with assert_raises[IoError]():
+            raise CustomError("error reading from input stream")
+    except e:
+        assert_equal(String(e), "CustomError: error reading from input stream")
+
+
+def test_assert_raises_checks_for_matching_error_content() raises:
+    try:
+        with assert_raises(error=IoError("error reading from input stream")):
             raise IoError("another error entirely")
         raise Error("This should not be reachable")
     except e:
@@ -106,7 +113,7 @@ def test_assert_raises_checks_error_content() raises:
 
 
 def test_assert_raises_catches_typed_custom_error() raises:
-    with assert_raises[CustomError](error=CustomError("something broke")):
+    with assert_raises(error=CustomError("something broke")):
         raise CustomError("something broke")
 
 
