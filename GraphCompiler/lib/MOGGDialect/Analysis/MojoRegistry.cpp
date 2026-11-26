@@ -308,6 +308,11 @@ MojoRegistry::getResolvedKernel(llvm::StringRef name,
   return getResolvedKernel(name, deviceInfoMapping.get(device));
 }
 
+bool MojoRegistry::resolvesKernel(llvm::StringRef name,
+                                  DeviceRefAttr device) const {
+  return containsKernel(name) && !getResolvedKernel(name, device).isError();
+}
+
 ErrorOr<KernelDeclOp>
 MojoRegistry::getResolvedKernel(llvm::StringRef name,
                                 DeviceInfoAttr deviceInfo) const {

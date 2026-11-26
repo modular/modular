@@ -151,12 +151,8 @@ TensorValue lastDimExtent(RewriterBase &rewriter, Location loc,
 // TODO(GEX-3346): a target that wants a composite whole should register a
 // custom op for it instead, and this check goes away with the pass.
 bool hasKernel(const MOGG::MojoRegistry &registry, Operation *op) {
-  StringRef name = op->getName().getStringRef();
-  return registry.containsKernel(name) &&
-         !registry
-              .getResolvedKernel(name,
-                                 MOGG::MojoRegistry::getDeviceRefForOp(op))
-              .isError();
+  return registry.resolvesKernel(op->getName().getStringRef(),
+                                 MOGG::MojoRegistry::getDeviceRefForOp(op));
 }
 
 // xa * rsqrt(reduce.add(xa * xa) / N + epsilon), the row normalized in

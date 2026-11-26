@@ -96,6 +96,10 @@ public:
   ErrorOr<KernelDeclOp> getResolvedKernel(llvm::StringRef name,
                                           DeviceInfoAttr deviceInfo) const;
 
+  /// Returns whether `getResolvedKernel` selects a kernel for `name` on
+  /// `device`. False when no kernel is registered under `name`.
+  bool resolvesKernel(llvm::StringRef name, DeviceRefAttr device) const;
+
   /// Returns whether a kernel registered under `name` is selected for the
   /// device `deviceLabel`:`deviceId` of a graph in `graphModule`. Matches the
   /// device info that `graphModule` carries when it has a
