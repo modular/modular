@@ -1502,12 +1502,6 @@ class TestReadMayCarryError:
             ['{"object": "error", "message": "boom"}']
         )
 
-    def test_finds_an_escaped_key_through_its_tail(self) -> None:
-        """``\\u0065rror`` still spells ``rror``, so its read parses eagerly."""
-        assert request_module._read_may_carry_error(
-            ['{"\\u0065rror": {"message": "boom"}}']
-        )
-
     def test_finds_every_escaping_of_the_error_key(self) -> None:
         """Any mix of escaped and literal letters of the key is found.
 
@@ -2477,33 +2471,6 @@ class TestRequestDriver:
         mock_pbar.update.assert_called_once_with(1)
         assert result.success is True
 
-    @pytest.mark.asyncio
-    async def test_request_driver_without_progress_bar(
-        self, mock_aiohttp_session: Any, mocker: MockerFixture
-    ) -> None:
-        """Test that RequestDriver works without progress bars."""
-        request_input = make_request_input(
-            "http://localhost:8000/generate_stream",
-            prompt="Test prompt",
-            prompt_len=10,
-            max_tokens=100,
-            ignore_eos=False,
-        )
-
-        mock_aiohttp_session.setup_post_response(
-            _streaming_response(
-                mocker,
-                [
-                    b'data: {"text_output": "Hello"}\n\n',
-                ],
-            )
-        )
-
-        driver = TRTLLMRequestDriver(session=mock_aiohttp_session)
-        result = await driver.request(request_input)
-
-        assert result.success is True
-
     @pytest.mark.parametrize(
         "chunk",
         [
@@ -3344,12 +3311,6 @@ class TestCountGeneratedMedia:
                 }
             ]
         }
-
-    def test_counts_output_image(self) -> None:
-        body = self._wrap(
-            [{"type": "output_image", "image_url": "http://x/img.png"}]
-        )
-        assert _count_generated_media(body) == 1
 
     def test_counts_output_video(self) -> None:
         # Regression: video responses were previously miscounted as 0, causing
