@@ -1058,6 +1058,56 @@ LValue IREmitter::emitExprLValue(const ExprNode *expr, ExprDest &dest) {
   return emitLValue({anyValue, expr}, dest);
 }
 
+bool IREmitter::mayReferToDestination(MLValue destBuffer, ArrayRef<Type> types,
+                                      ArrayRef<TypedAttr> captureOrigins) {
+  // We're doing field sensitive comparisons below, so we record a destination
+  // "x.y" as a full "x.y" path, to make sure it doesn't conflict with reads of
+  // "x.z".  We do want "x.y.q" and "x" to conflict with "x.y" though.  Keep
+  // track of the fully field sensitive origin, and the containing origins.
+  SmallPtrSet<Attribute, 2> destOrigins, destContainerOrigins;
+
+  // processOriginUnionElts takes apart origin unions for us.
+  auto refOrigin = sugarCast<RefType>(destBuffer.getType()).getOrigin();
+  processOriginUnionElts(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
+    // AnyOrigin is assumed to be ok since it is used for
+    // Pointer etc.  We don't want to track it.
+    if (sugarIsa<AnyOriginAttr>(origin))
+      return;
+    // We want to track the fully field sensitive origin, and
+    // the containing origins.
+    destOrigins.insert(origin);
+    while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
+      origin = fieldAttr.getBase();
+      destContainerOrigins.insert(origin);
+    }
+  });
+
+  // Check to see if any of the the origins they may be accessing are the
+  // origin in question.
+  for (TypedAttr origin :
+       shared.cachedOriginFinder.findOriginsIn(types, captureOrigins)) {
+    // Look through any immcasts.
+    origin = OriginType::stripMutCastAndRebind(origin);
+
+    // If this is accessing any container origins directly, then we have a store
+    // to "x.y" and another use of "x" which can't be allowed.
+    if (destContainerOrigins.contains(origin))
+      return true;
+
+    // Otherwise, check to see if this is descended from the specific
+    // destination, e.g. the dest is "x.y" and this is "x.y.z".
+    while (1) {
+      if (destOrigins.contains(origin))
+        return true;
+      if (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
+        origin = fieldAttr.getBase();
+      else
+        break;
+    }
+  }
+  return false;
+}
+
 /// Emit a copy of the specified value, producing a new owned instance of the
 /// value in the specified destination.  This returns an RValue if
 /// there is no consuming dest, otherwise a BValue.
@@ -1126,7 +1176,22 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
       return {};
     }
     Value address = value.ir.getMValueReference();
-    MLValue destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
+
+    // Copy directly into the destination unless the source may refer to it,
+    // as in 'x = x' or 'x = x if c else y'.  A single memcpy can't read the
+    // old value and also replace it: CheckLifetimes would end the old value's
+    // lifetime before the copy reads it.  Copy into a temporary instead, as
+    // calls do for 'x = foo(x)'.
+    MLValue destBuffer;
+    if (MLValue existingDest = dest.getDefinedMLValueIfExists(valueType, *this);
+        existingDest &&
+        mayReferToDestination(existingDest, {address.getType()})) {
+      destBuffer = MLValue(emitVarDecl("__copy_tmp__", valueType,
+                                       value.expr->getLocation(*this),
+                                       VarDeclKind::Synthesized));
+    } else {
+      destBuffer = dest.getMLValueForResult(exprLoc, valueType, *this);
+    }
     if (!destBuffer)
       return {};
     MemcpyOp::create(*builder, translateLocation(exprLoc), address, destBuffer);

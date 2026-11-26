@@ -1599,3 +1599,110 @@ def test_mojo_3880():
     # CHECK-NEXT: lit.var.lifetime.end [[EVENT]]
     # CHECK-NEXT: lit.call {{.*}}Driver::@"__deinit__{{.*}}(%driver)
     # CHECK-NEXT: lit.var.lifetime.end %driver
+
+
+# Copying from a value that may be the destination itself, as in `v = v` or a
+# ternary that may pick `v`, must read the old value before its lifetime ends.
+# Otherwise the copy reads dead memory, and the initializer is reported as an
+# unused assignment.
+# Issue #7760: https://github.com/modular/modular/issues/7760
+@fieldwise_init
+struct TrivialOne(ImplicitlyCopyable):
+    var x: Int
+
+
+@fieldwise_init
+struct TrivialPair(ImplicitlyCopyable):
+    var x: Int
+    var y: Int
+
+
+@fieldwise_init
+struct TriviallyCopyableWithDtor(ImplicitlyCopyable):
+    var x: Int
+
+    def __deinit__(deinit self):
+        pass
+
+
+# CHECK-LABEL: lit.fn @"self_assign_one_field(
+def self_assign_one_field(a: Int) -> Int:
+    var v = TrivialOne(a)
+    # CHECK: lit.call {{.*}}TrivialOne::@"__init__{{.*}}, %v)
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: lit.memcpy %v,
+    v = v
+    return v.x
+
+
+# CHECK-LABEL: lit.fn @"self_assign_two_fields(
+def self_assign_two_fields(a: Int) -> Int:
+    var v = TrivialPair(a, a)
+    # CHECK: lit.call {{.*}}TrivialPair::@"__init__{{.*}}, %v)
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: lit.memcpy %v,
+    v = v
+    return v.x + v.y
+
+
+# CHECK-LABEL: lit.fn @"self_assign_keep_or_other(
+def self_assign_keep_or_other(a: Int, c: Bool) -> Int:
+    var v = TrivialPair(a, a)
+    var w = TrivialPair(a + 1, a)
+    # CHECK: lit.call {{.*}}TrivialPair::@"__init__{{.*}}, %v)
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: [[SRC:%.*]] = hlcf.if
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: lit.memcpy [[SRC]],
+    v = v if c else w
+    return v.x + v.y
+
+
+# CHECK-LABEL: lit.fn @"self_assign_other_or_keep(
+def self_assign_other_or_keep(a: Int, c: Bool) -> Int:
+    var v = TrivialPair(a, a)
+    var w = TrivialPair(a + 1, a)
+    # CHECK: lit.call {{.*}}TrivialPair::@"__init__{{.*}}, %v)
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: [[SRC:%.*]] = hlcf.if
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: lit.memcpy [[SRC]],
+    v = w if c else v
+    return v.x + v.y
+
+
+# CHECK-LABEL: lit.fn @"self_assign_keep_or_new(
+def self_assign_keep_or_new(a: Int, c: Bool) -> Int:
+    var v = TrivialPair(a, a)
+    # CHECK: lit.call {{.*}}TrivialPair::@"__init__{{.*}}, %v)
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: hlcf.if
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: lit.memcpy %v,
+    v = v if c else TrivialPair(9, 9)
+    return v.x + v.y
+
+
+# With a destructor, the old value must also not be destroyed before it is
+# copied.
+# CHECK-LABEL: lit.fn @"self_assign_with_dtor(
+def self_assign_with_dtor(a: Int) -> Int:
+    var v = TriviallyCopyableWithDtor(a)
+    # CHECK: lit.call {{.*}}TriviallyCopyableWithDtor::@"__init__{{.*}}, %v)
+    # CHECK-NOT: __deinit__
+    # CHECK-NOT: lifetime.end %v
+    # CHECK: lit.memcpy %v,
+    v = v
+    return v.x
+
+
+# Copying from a different variable is already correct and needs no
+# temporary.
+# CHECK-LABEL: lit.fn @"assign_from_other(
+def assign_from_other(a: Int) -> Int:
+    var v = TrivialPair(a, a)
+    # CHECK: lit.memcpy %v, %w
+    var w = v
+    # CHECK: lit.memcpy %w, %v
+    v = w
+    return v.x

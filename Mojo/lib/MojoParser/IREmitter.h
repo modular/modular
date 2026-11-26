@@ -632,6 +632,13 @@ public:
   /// there is no consuming dest, otherwise a BValue.
   CValue emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest);
 
+  /// Return true if a value of one of the specified types, or one of the
+  /// specified captured origins, may refer to the memory of 'destBuffer'.  A
+  /// result computed from such a value cannot be emitted directly into
+  /// 'destBuffer', as in 'x = foo(x)' or 'x = x'.
+  bool mayReferToDestination(MLValue destBuffer, ArrayRef<Type> types,
+                             ArrayRef<TypedAttr> captureOrigins = {});
+
   /// Copy a reference outside the default address space to a new owned value
   /// in the default address space, where argument conventions take values.
   /// Emits an error and returns null if the type is not provably trivially
