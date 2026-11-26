@@ -55,6 +55,7 @@ from max.graph import (
 from max.graph.graph import Module as GraphModule
 from max.nn._graph_group import EPPayload
 from max.nn._graph_ops import ep as kernels
+from max.nn.ep_backend import backend_for
 from max.nn.ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
     _EP_P2P_SMALL_WORDS,
@@ -279,7 +280,8 @@ class EPInitGraph:
     receive count buffers, then every device's rank. With
     ``config.fused_moe``, each device then also returns its fused MoE
     workspace size and token block, and why the backend refuses the
-    configuration, if it does.
+    configuration, if it does. An alternate EP backend sets itself up
+    instead and returns the same outputs, without the fused MoE.
 
     A raw graph, because the serving engine runs it as is: its inputs are
     the counters one per device in group-major order, and its outputs are
@@ -330,6 +332,15 @@ class EPInitGraph:
 
     def _forward(self, *counters: BufferValue) -> list[TensorValue]:
         n_gpus = self.config.n_gpus_per_node
+        backend = backend_for(self.config)
+        if backend is not None:
+            if self.config.fused_moe:
+                raise ValueError(
+                    "the alternate EP backend does not support fused MoE"
+                )
+            return backend.init(
+                self.config, [counters[i][0:1] for i in range(n_gpus)]
+            )
         pointers: list[TensorValue] = []
         ranks: list[TensorValue] = []
         fused: list[TensorValue] = []

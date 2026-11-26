@@ -14,6 +14,7 @@
 import dataclasses
 import re
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from max.driver import (
@@ -26,6 +27,7 @@ from max.driver import (
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, Type
+from max.nn import ep_backend
 from max.nn import ep_config as ep_config_module
 from max.nn._graph_ops import ep as ep_kernels
 from max.nn._graph_ops.ep import (
@@ -50,6 +52,7 @@ from max.nn.ep_config import (
     estimate_ep_memory_usage,
 )
 from max.nn.legacy.comm.ep.ep_manager import (
+    EPBatchManager,
     _ep_counter_words,
     _ep_sync_counter_bytes,
     _fused_moe_answer,
@@ -98,6 +101,50 @@ def test_calculate_ep_max_tokens_per_rank_ceil(
         )
         == expected
     )
+
+
+def test_calculate_ep_max_tokens_per_rank_uses_node_local_attention_tp() -> (
+    None
+):
+    assert (
+        calculate_ep_max_tokens_per_rank(
+            max_batch_input_tokens=4096,
+            ep_size=16,
+            data_parallel_degree=2,
+            n_gpus_per_node=8,
+        )
+        == 1024
+    )
+
+
+def test_alternate_backend_rejects_allreduce() -> None:
+    with pytest.raises(ValueError, match="allreduce"):
+        dataclasses.replace(
+            _base_ep_config(), backend="test", use_allreduce=True
+        )
+
+
+def test_alternate_backend_spans_nodes_without_mpi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("OMPI_COMM_WORLD_SIZE", raising=False)
+
+    config = dataclasses.replace(
+        _base_ep_config(), backend="test", n_nodes=2, node_id=1
+    )
+
+    assert config.node_id == 1
+
+
+def test_unknown_backend_names_registered_backends(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setitem(ep_backend._BACKENDS, "known", Mock())
+
+    with pytest.raises(ValueError, match="known"):
+        ep_backend.backend_for(
+            dataclasses.replace(_base_ep_config(), backend="unknown")
+        )
 
 
 def test_calculate_ep_max_tokens_per_rank_allreduce_bypasses_tp() -> None:
@@ -973,3 +1020,12 @@ def test_fused_moe_bound_covers_every_format_of_its_element_type(
         (plain, "NVFP4 or MXFP8"),
     ):
         assert (size, block) == (0, 0) and reason in refusal, refusal
+
+
+def test_legacy_exchange_refuses_an_alternate_backend() -> None:
+    manager = EPBatchManager(
+        dataclasses.replace(_base_ep_config(), backend="fake")
+    )
+
+    with pytest.raises(ValueError, match="runs on NVSHMEM only"):
+        manager.fetch_buffers([])

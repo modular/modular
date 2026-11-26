@@ -261,6 +261,8 @@ def test_a_drafter_block_past_the_split_decode_route_is_refused(
             runtime=SimpleNamespace(
                 ep_size=1,
                 ep_use_allreduce=True,
+                ep_backend="nvshmem",
+                ep_node_id=-1,
                 enable_chunked_prefill=True,
                 max_batch_input_tokens=256,
             ),

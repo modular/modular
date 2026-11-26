@@ -17,7 +17,7 @@ from __future__ import annotations
 import dataclasses
 
 from max import tree
-from max.nn.ep_config import EPConfig
+from max.nn.ep_config import NVSHMEM_EP_BACKEND, EPConfig
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated, Sharded
 
@@ -172,6 +172,26 @@ def check_supported(config: EPConfig, mesh: DeviceMesh) -> None:
     """
     _check_mesh(config, mesh)
     _check_dispatch_format(config)
+
+
+def check_exchange(config: EPConfig, mesh: DeviceMesh) -> None:
+    """Raises if an NVSHMEM exchange cannot run ``config`` on ``mesh``.
+
+    Every exchange here but :func:`distributed_dispatch` and
+    :func:`distributed_combine` calls the NVSHMEM kernels directly, so it
+    also refuses an alternate backend.
+
+    Raises:
+        ValueError: If :func:`check_supported` does, or if ``config`` names
+            an alternate backend.
+    """
+    if config.backend != NVSHMEM_EP_BACKEND:
+        raise ValueError(
+            "this exchange runs on NVSHMEM, so EP backend"
+            f" {config.backend!r} takes distributed_dispatch and"
+            " distributed_combine"
+        )
+    check_supported(config, mesh)
 
 
 def _check_mesh(config: EPConfig, mesh: DeviceMesh) -> None:

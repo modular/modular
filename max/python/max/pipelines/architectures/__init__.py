@@ -555,6 +555,12 @@ def register_all_models() -> None:
     except ModuleNotFoundError:
         pass
 
+    # Optional: pull in private EP backends.
+    try:
+        import moccl_backend  # type: ignore[import-not-found]
+    except ModuleNotFoundError:
+        pass
+
     # Optional: import the Qwen4-Exp model if available.
     try:
         from qwen4_exp import qwen4_exp_arch  # type: ignore[import-not-found]

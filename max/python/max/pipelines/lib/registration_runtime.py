@@ -41,7 +41,11 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.graph.weights import WeightData
 from max.nn.ep import check_supported
 from max.nn.ep import init as ep_init
-from max.nn.ep_config import EPConfig, _ep_fused_moe_requested
+from max.nn.ep_config import (
+    NVSHMEM_EP_BACKEND,
+    EPConfig,
+    _ep_fused_moe_requested,
+)
 from max.nn.legacy.graph_groups import EPPayload
 from max.pipelines.context import TextContext
 from max.tensor.compilation import CompiledCallable
@@ -205,6 +209,12 @@ class ModuleRuntime:
 
     ep_use_allreduce: bool = False
     """Whether expert parallelism combines through an allreduce."""
+
+    ep_backend: str = NVSHMEM_EP_BACKEND
+    """The expert-parallel exchange's backend."""
+
+    ep_node_id: int = -1
+    """This node's ID when expert parallelism spans nodes."""
 
     ep: EPConfig | None = None
     """The initialized expert-parallel config, under expert parallelism."""

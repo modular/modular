@@ -140,6 +140,24 @@ class PipelineRuntimeConfig(ConfigModel):
         ),
     )
 
+    ep_backend: str = Field(
+        default="nvshmem",
+        description=(
+            "The expert-parallel token exchange's backend: ``nvshmem``, or "
+            "the name of an alternate backend registered in "
+            "``max.nn.ep_backend``."
+        ),
+    )
+
+    ep_node_id: int = Field(
+        default=-1,
+        description=(
+            "This node's 0-based ID when expert parallelism spans nodes. An "
+            "export across nodes needs it, since each node's graph holds "
+            "only its own experts."
+        ),
+    )
+
     ep_fuse_ffn_combine_send: bool | None = Field(
         default=None,
         description=(

@@ -142,7 +142,7 @@ def _pipeline_config(
 ) -> Any:
     """A pipeline-config stand-in carrying what the registered build reads:
     the model's device specs, data-parallel degree and HuggingFace config,
-    and the runtime's expert-parallel size and batch limits."""
+    and the runtime's expert-parallel settings and batch limits."""
     return SimpleNamespace(
         model=SimpleNamespace(
             data_parallel_degree=data_parallel_degree,
@@ -165,6 +165,8 @@ def _pipeline_config(
             max_batch_input_tokens=8,
             ep_size=ep_size,
             ep_use_allreduce=True,
+            ep_backend="nvshmem",
+            ep_node_id=-1,
             enable_chunked_prefill=True,
         ),
         speculative=None,

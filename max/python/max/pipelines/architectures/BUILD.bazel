@@ -22,6 +22,8 @@ modular_py_library(
         "qwen4_exp",
         # Private Qwen4-Exp spec-decode family and MTP head, imported at runtime
         "qwen4_exp_spec",
+        # Private moccl EP backend, imported at runtime
+        "moccl_backend",
     ],
     deps = [
         requirement("transformers"),  # Used in hf_config_shims.py

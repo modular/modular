@@ -1341,6 +1341,8 @@ class ModuleV3DecoderPipelineModel(
             max_batch_total_tokens=self.planned_max_batch_total_tokens,
             ep_size=settings.ep_size,
             ep_use_allreduce=settings.ep_use_allreduce,
+            ep_backend=settings.ep_backend,
+            ep_node_id=settings.ep_node_id,
             max_batch_size=self.max_batch_size,
         )
         if runtime.ep_size > 1 and uses_expert_parallel_exchange(config):
@@ -2119,6 +2121,8 @@ class RegisteredDecoderBuilder:
             max_batch_total_tokens=context.max_batch_total_tokens,
             ep_size=settings.ep_size,
             ep_use_allreduce=settings.ep_use_allreduce,
+            ep_backend=settings.ep_backend,
+            ep_node_id=settings.ep_node_id,
             max_batch_size=context.memory_plan.planned_max_batch_size,
         )
         if runtime.ep_size > 1 and uses_expert_parallel_exchange(config):

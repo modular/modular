@@ -35,6 +35,7 @@ from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, Dim, TensorValue
 from max.nn._graph_ops import ep as kernels
+from max.nn.ep_backend import backend_for
 from max.nn.ep_config import EPConfig
 from max.tensor import Tensor
 from max.tensor.sharding import (
@@ -47,7 +48,7 @@ from max.tensor.sharding import (
 )
 
 from ._formats import DispatchLayout, dispatch_layout
-from .buffers import EPBuffers, check_supported
+from .buffers import EPBuffers, check_exchange
 
 
 @tree.dataclass
@@ -168,6 +169,119 @@ def _dispatch_wait(
     )
 
 
+def distributed_dispatch(
+    input_tokens: list[TensorValue],
+    topk_ids: list[TensorValue],
+    atomic_counters: list[BufferValue],
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    *,
+    router_weights: list[TensorValue],
+    input_scales: list[TensorValue] | None = None,
+) -> list[tuple[TensorValue, ...]]:
+    """Dispatches every device's tokens in one launch on the selected backend.
+
+    Without an alternate backend, this is
+    :func:`~max.nn._graph_ops.ep.call_distributed_ep_dispatch`. An alternate
+    backend applies the router weights at dispatch, so the caller passes them
+    here.
+
+    Args:
+        input_tokens: Each device's tokens.
+        topk_ids: Each device's top-k expert ids, as ``int32``.
+        atomic_counters: Each device's EP counters.
+        send_buf_ptrs: Each device's send buffer address.
+        recv_buf_ptrs: Each device's receive buffer address.
+        recv_count_ptrs: Each device's receive count address.
+        config: The expert-parallel configuration.
+        router_weights: Each device's router weights, of shape
+            ``(tokens, top_k)``.
+        input_scales: Each device's global input scale, for a quantized
+            dispatch that needs one.
+
+    Returns:
+        Each device's expert inputs.
+    """
+    backend = backend_for(config)
+    if backend is None:
+        return kernels.call_distributed_ep_dispatch(
+            input_tokens,
+            topk_ids,
+            atomic_counters,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            config,
+            input_scales=input_scales,
+        )
+    return backend.dispatch(
+        config,
+        input_tokens,
+        topk_ids,
+        router_weights,
+        input_scales,
+        atomic_counters,
+        send_buf_ptrs,
+    )
+
+
+def distributed_combine(
+    input_tokens: list[TensorValue],
+    src_info: list[TensorValue],
+    atomic_counters: list[BufferValue],
+    send_buf_ptrs: TensorValue,
+    recv_buf_ptrs: TensorValue,
+    recv_count_ptrs: TensorValue,
+    config: EPConfig,
+    num_tokens_per_device: list[Dim],
+    router_weights: list[TensorValue],
+) -> list[TensorValue]:
+    """Combines expert outputs in one launch on the selected backend.
+
+    Without an alternate backend, this is
+    :func:`~max.nn._graph_ops.ep.call_distributed_ep_combine`. An alternate
+    backend weighted the tokens at dispatch, so it reads neither ``src_info``
+    nor ``router_weights``.
+
+    Args:
+        input_tokens: Each device's expert outputs, in the rows it received.
+        src_info: Each device's routing information from the dispatch.
+        atomic_counters: Each device's EP counters.
+        send_buf_ptrs: Each device's send buffer address.
+        recv_buf_ptrs: Each device's receive buffer address.
+        recv_count_ptrs: Each device's receive count address.
+        config: The expert-parallel configuration.
+        num_tokens_per_device: Each device's token count.
+        router_weights: Each device's router weights, of shape
+            ``(tokens, top_k)``.
+
+    Returns:
+        Each device's weighted sum of its tokens' expert outputs.
+    """
+    backend = backend_for(config)
+    if backend is None:
+        return kernels.call_distributed_ep_combine(
+            input_tokens,
+            src_info,
+            atomic_counters,
+            send_buf_ptrs,
+            recv_buf_ptrs,
+            recv_count_ptrs,
+            config,
+            num_tokens_per_device,
+            router_weights,
+        )
+    return backend.combine(
+        config,
+        input_tokens,
+        atomic_counters,
+        send_buf_ptrs,
+        num_tokens_per_device,
+    )
+
+
 _call_dispatch = F.functional(kernels.call_distributed_ep_dispatch)
 _call_device_dispatch = F.functional(_device_dispatch)
 _call_combine = F.functional(kernels.call_distributed_ep_combine)
@@ -279,12 +393,12 @@ def dispatch(
         sends them back by.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, or if
+        ValueError: If :func:`check_exchange` rejects ``config``, or if
             ``config`` counts expert load without ``layer_idx`` or without
             :attr:`EPBuffers.expert_load`.
     """
     mesh = tokens.mesh
-    check_supported(config, mesh)
+    check_exchange(config, mesh)
     tally = _tally(config, buffers, layer_idx)
     if tally is not None:
         return _dispatch_per_device(
@@ -350,11 +464,11 @@ def dispatch_local(
         :func:`combine_local` sends them back by.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, or if
+        ValueError: If :func:`check_exchange` rejects ``config``, or if
             ``config`` counts expert load without ``layer_idx`` or without
             :attr:`EPBuffers.expert_load`.
     """
-    check_supported(config, tokens.mesh)
+    check_exchange(config, tokens.mesh)
     tally = _tally(config, buffers, layer_idx)
     return _dispatch_per_device(
         config, buffers, tokens, ids, input_scales, tally, layer_idx
@@ -432,12 +546,12 @@ def combine(
         ``tokens``.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, or if
+        ValueError: If :func:`check_exchange` rejects ``config``, or if
             ``config`` asks for an MXFP8 combine, which only
             :func:`combine_start` and :func:`combine_finish` send.
     """
     mesh = tokens.mesh
-    check_supported(config, mesh)
+    check_exchange(config, mesh)
     _check_exact_combine(config)
     tables = buffers.combine
 
@@ -495,12 +609,12 @@ def combine_local(
         the same on every device. Else it is mapped as ``weights``.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, or if
+        ValueError: If :func:`check_exchange` rejects ``config``, or if
             ``config.use_allreduce`` and ``weights`` shows that the devices
             hold different tokens.
     """
     mesh = weights.mesh
-    check_supported(config, mesh)
+    check_exchange(config, mesh)
     tables = buffers.combine
 
     def on_device(
@@ -571,11 +685,11 @@ def dispatch_start(
         input_scales: As for :func:`dispatch`.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, or if
+        ValueError: If :func:`check_exchange` rejects ``config``, or if
             ``config`` quantizes NVFP4 with per-token global scales, which
             only :func:`dispatch` sends.
     """
-    check_supported(config, tokens.mesh)
+    check_exchange(config, tokens.mesh)
     group = buffers.dispatch
 
     def on_device(
@@ -624,13 +738,13 @@ def dispatch_finish(
         As :func:`dispatch`.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, if
+        ValueError: If :func:`check_exchange` rejects ``config``, if
             ``config`` quantizes NVFP4 with per-token global scales, which
             only :func:`dispatch` sends, or if ``config`` counts expert load
             without ``layer_idx`` or without :attr:`EPBuffers.expert_load`.
     """
     mesh = tokens.mesh
-    check_supported(config, mesh)
+    check_exchange(config, mesh)
     tally = _tally(config, buffers, layer_idx)
     layout = dispatch_layout(config)
     group = buffers.dispatch
@@ -680,11 +794,11 @@ def combine_start(
             host scalar. Needed with ``config.combine_mx_min_tokens``.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, or if
+        ValueError: If :func:`check_exchange` rejects ``config``, or if
             ``config`` sets ``combine_mx_min_tokens`` without
             ``total_tokens``.
     """
-    check_supported(config, outputs.mesh)
+    check_exchange(config, outputs.mesh)
     tables = buffers.combine
 
     def on_device(
@@ -730,11 +844,11 @@ def combine_finish(
         As :func:`combine`.
 
     Raises:
-        ValueError: If :func:`check_supported` rejects ``config``, or if
+        ValueError: If :func:`check_exchange` rejects ``config``, or if
             ``config`` sets ``combine_mx_min_tokens`` without
             ``total_tokens``.
     """
-    check_supported(config, tokens.mesh)
+    check_exchange(config, tokens.mesh)
     tables = buffers.combine
 
     def on_device(

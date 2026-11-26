@@ -1533,6 +1533,8 @@ def _target_context(started: list[EPConfig], *, ep_size: int) -> Any:
                 max_batch_input_tokens=8,
                 ep_size=ep_size,
                 ep_use_allreduce=False,
+                ep_backend="nvshmem",
+                ep_node_id=-1,
             ),
         ),
         weights=object(),
@@ -1598,7 +1600,11 @@ def test_a_modulev3_model_initializes_expert_parallelism_with_max_nn_ep(
             data_parallel_degree=1, huggingface_config=_HF_CONFIG
         ),
         runtime=SimpleNamespace(
-            max_batch_input_tokens=8, ep_size=2, ep_use_allreduce=False
+            max_batch_input_tokens=8,
+            ep_size=2,
+            ep_use_allreduce=False,
+            ep_backend="nvshmem",
+            ep_node_id=-1,
         ),
     )
     model.arch_config = TargetConfig()
@@ -2140,7 +2146,11 @@ def _deployed_model(config: RuntimeRecordingConfig) -> Any:
             data_parallel_degree=1, huggingface_config=_HF_CONFIG
         ),
         runtime=SimpleNamespace(
-            max_batch_input_tokens=8, ep_size=1, ep_use_allreduce=False
+            max_batch_input_tokens=8,
+            ep_size=1,
+            ep_use_allreduce=False,
+            ep_backend="nvshmem",
+            ep_node_id=-1,
         ),
     )
     model.pipeline_config = pipeline_config

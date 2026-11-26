@@ -15,12 +15,21 @@
 from __future__ import annotations
 
 import dataclasses
+from typing import cast
+from unittest.mock import Mock
 
 import pytest
 from max import tree
 from max.dtype import DType
-from max.graph import DeviceRef, Graph, TensorType
-from max.nn import ep
+from max.graph import (
+    BufferValue,
+    DeviceRef,
+    Dim,
+    Graph,
+    TensorType,
+    TensorValue,
+)
+from max.nn import ep, ep_backend
 from max.nn._graph_ops import ep as ep_kernels
 from max.nn.ep.init import EPInitGraph, payload_buffers, payload_types
 from max.nn.quant_config import QuantConfig
@@ -275,6 +284,49 @@ def test_accepts_a_mesh_of_one_device_for_a_one_gpu_node(
 ) -> None:
     one = DeviceMesh(mesh.devices[:1], (1,), ("ep",))
     ep.check_supported(_config(n_devices=1), one)
+
+
+def test_nvshmem_exchange_refuses_an_alternate_backend(
+    mesh: DeviceMesh,
+) -> None:
+    config = dataclasses.replace(_config(), backend="fake")
+    # Setting up the exchange accepts any backend.
+    ep.check_supported(config, mesh)
+    with pytest.raises(ValueError, match="runs on NVSHMEM"):
+        ep.check_exchange(config, mesh)
+
+
+def test_distributed_exchange_runs_on_the_selected_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    backend = Mock()
+    backend.dispatch.return_value = [()]
+    backend.combine.return_value = []
+    monkeypatch.setitem(ep_backend._BACKENDS, "fake", backend)
+    config = dataclasses.replace(_config(), backend="fake")
+    tokens = [cast(TensorValue, Mock())]
+    ids = [cast(TensorValue, Mock())]
+    weights = [cast(TensorValue, Mock())]
+    counters = [cast(BufferValue, Mock())]
+    send = cast(TensorValue, Mock())
+    recv = cast(TensorValue, Mock())
+    count = cast(TensorValue, Mock())
+    rows = [Dim(4)]
+
+    dispatched = ep.distributed_dispatch(
+        tokens, ids, counters, send, recv, count, config, router_weights=weights
+    )
+    combined = ep.distributed_combine(
+        tokens, ids, counters, send, recv, count, config, rows, weights
+    )
+
+    assert dispatched == [()] and combined == []
+    backend.dispatch.assert_called_once_with(
+        config, tokens, ids, weights, None, counters, send
+    )
+    backend.combine.assert_called_once_with(
+        config, tokens, counters, send, rows
+    )
 
 
 def test_rejects_a_mesh_that_is_not_the_node(mesh: DeviceMesh) -> None:

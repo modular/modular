@@ -45,7 +45,7 @@ from max.support.math import ceildiv
 from max.tensor import Tensor
 
 from . import _formats
-from .buffers import EPBuffers, check_supported
+from .buffers import EPBuffers, check_exchange
 from .exchange import Grouped, Route, _expert_load, _row, _tally
 
 _FusedMoEParameter = bool | int | float | str | DType
@@ -265,13 +265,13 @@ def mega_ffn_fused(
         mapped as ``tokens``. The caller adds the shared expert.
 
     Raises:
-        ValueError: If :func:`~max.nn.ep.check_supported` rejects
+        ValueError: If :func:`~max.nn.ep.check_exchange` rejects
             ``config``, if EP init did not set up the fused MoE, or if
             ``config`` counts expert load without ``layer_idx`` or without
             :attr:`~max.nn.ep.EPBuffers.expert_load`.
     """
     mesh = tokens.mesh
-    check_supported(config, mesh)
+    check_exchange(config, mesh)
     tally = _tally(config, buffers, layer_idx)
 
     def on_device(
@@ -379,7 +379,7 @@ def mega_ffn_combine_send(
             SiLU.
 
     Raises:
-        ValueError: If :func:`~max.nn.ep.check_supported` rejects
+        ValueError: If :func:`~max.nn.ep.check_exchange` rejects
             ``config``, if ``config`` sets ``use_allreduce`` or
             ``fused_shared_expert``, or if ``config`` dispatches in another
             format than NVFP4 with one global scale. Legacy accepts
@@ -387,7 +387,7 @@ def mega_ffn_combine_send(
             them, so this refusal is deliberately stricter than legacy.
     """
     mesh = grouped.tokens.mesh
-    check_supported(config, mesh)
+    check_exchange(config, mesh)
     _check_combine_send(config)
     # The bound of the graph compiler's fusion; the expert term adds the
     # partial blocks and the send's own words.

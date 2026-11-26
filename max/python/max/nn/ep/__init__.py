@@ -23,7 +23,7 @@ framework runs.
 
 from max.nn.ep_config import EPConfig
 
-from .buffers import EPBuffers, check_supported
+from .buffers import EPBuffers, check_exchange, check_supported
 from .exchange import (
     Grouped,
     Route,
@@ -35,6 +35,8 @@ from .exchange import (
     dispatch_finish,
     dispatch_local,
     dispatch_start,
+    distributed_combine,
+    distributed_dispatch,
     grouped_matmul_bounds,
 )
 from .mega_ffn import mega_ffn_combine_send, mega_ffn_fused
@@ -44,6 +46,7 @@ __all__ = [
     "EPConfig",
     "Grouped",
     "Route",
+    "check_exchange",
     "check_supported",
     "combine",
     "combine_finish",
@@ -53,6 +56,8 @@ __all__ = [
     "dispatch_finish",
     "dispatch_local",
     "dispatch_start",
+    "distributed_combine",
+    "distributed_dispatch",
     "grouped_matmul_bounds",
     "mega_ffn_combine_send",
     "mega_ffn_fused",

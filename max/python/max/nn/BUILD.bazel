@@ -11,6 +11,7 @@ _CORE_SRCS = [
     "activation.py",
     "attention_mask.py",
     "ep_config.py",
+    "ep_backend.py",
     "outputs.py",
     "quant_config.py",
     "rope_scaling.py",

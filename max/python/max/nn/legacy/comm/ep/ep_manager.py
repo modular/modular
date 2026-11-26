@@ -67,10 +67,12 @@ from max.nn._graph_ops.ep import (
     call_ep_init,
 )
 from max.nn.activation import GatedActivation
+from max.nn.ep_backend import backend_for
 from max.nn.ep_config import (
     _EP_LOCAL_SYNC_RESERVED_WORDS,
     _EP_P2P_SMALL_WORDS,
     NUM_GROUPS,
+    NVSHMEM_EP_BACKEND,
     EPConfig,
     _ep_fused_moe_requested,
 )
@@ -157,6 +159,16 @@ def get_ep_local_sync_counters_size(n_experts: int) -> int:
     dispatch_wait_size = 8 * n_experts + 8
     combine_wait_size = MAX_SMS_PER_DEVICE
     return dispatch_async_size + dispatch_wait_size + combine_wait_size
+
+
+def _refuse_alternate_backend(config: EPConfig) -> None:
+    # This exchange calls the NVSHMEM kernels directly. An alternate backend
+    # sets up its own buffers, which those kernels cannot read.
+    if config.backend != NVSHMEM_EP_BACKEND:
+        raise ValueError(
+            "the legacy EP exchange runs on NVSHMEM only, so EP backend"
+            f" {config.backend!r} needs a ModuleV3 model"
+        )
 
 
 def _ep_counter_words(
@@ -523,6 +535,7 @@ class EPBatchManager:
         Args:
             input_vals: List of input values containing all buffer references.
         """
+        _refuse_alternate_backend(self.config)
         input_vals = list(_input_vals)
         start_idx = 0
         # First NUM_GROUPS * self.config.n_gpus_per_node elements are atomic counters
@@ -638,6 +651,7 @@ class EPBatchManager:
         which read ``self._send_buf_ptrs`` and so on, see the (subgraph-rebound)
         buffer values passed in as a forward argument.
         """
+        _refuse_alternate_backend(self.config)
         self._atomic_counters = [
             [BufferValue(t) for t in group] for group in comm.atomic_counters
         ]
@@ -1375,6 +1389,17 @@ class EPInit(Module):
     def __call__(self, *atomic_counters: Value[Any]) -> list[TensorValue]:
         """Initializes the EP communication buffers and returns them."""
         n_gpus = self.config.n_gpus_per_node
+        backend = backend_for(self.config)
+        if backend is not None:
+            if self.fused_moe:
+                raise ValueError(
+                    "the alternate EP backend does not support fused MoE"
+                )
+            return backend.init(
+                self.config,
+                [atomic_counters[i].buffer[0:1] for i in range(n_gpus)],
+            )
+
         dev_ptrs_list: list[TensorValue] = []
         my_rank_list: list[TensorValue] = []
         fused_list: list[TensorValue] = []

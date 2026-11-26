@@ -50,6 +50,9 @@ from max.support.math import ceildiv
 # dispatch buffers for the next iteration.
 NUM_GROUPS = 2
 
+NVSHMEM_EP_BACKEND = "nvshmem"
+"""The name of the built-in EP backend."""
+
 EP_COMBINE_MX_MIN_TOKENS = 2048
 """Step size, in tokens across all ranks, from which a model that asks for an
 MXFP8 combine sends it; below it the combine is latency-bound and stays exact."""
@@ -97,6 +100,10 @@ class EPConfig:
 
     node_id: int = -1
     """ID of the current node, which EP init finds."""
+
+    backend: str = NVSHMEM_EP_BACKEND
+    """The token exchange's backend, :data:`NVSHMEM_EP_BACKEND` or the name
+    of an alternate backend that :mod:`max.nn.ep_backend` registers."""
 
     dispatch_quant_config: QuantConfig | None = None
     """Quantization configuration used for dispatch token quantization."""
@@ -362,9 +369,12 @@ class EPConfig:
                 " the shared expert"
             )
 
-        if self.use_allreduce and self.n_nodes > 1:
+        if self.use_allreduce and (
+            self.n_nodes > 1 or self.backend != NVSHMEM_EP_BACKEND
+        ):
             raise ValueError(
-                "Using allreduce as communication backend is not supported when n_nodes > 1"
+                "Using allreduce as communication backend is not supported"
+                " with multi-node or alternate EP"
             )
 
         if self.combine_mx_min_tokens > 0 and (
@@ -390,7 +400,10 @@ class EPConfig:
             #
             # Multi-node launches via mpirun always set OMPI_COMM_WORLD_SIZE (the
             # only MPI launcher used in this codebase — see utils/bmpirun.sh).
-            if "OMPI_COMM_WORLD_SIZE" not in os.environ:
+            if (
+                self.backend == NVSHMEM_EP_BACKEND
+                and "OMPI_COMM_WORLD_SIZE" not in os.environ
+            ):
                 ep_size = self.n_gpus_per_node * self.n_nodes
                 raise ValueError(
                     f"ep_size={ep_size} with {self.n_gpus_per_node} GPU(s) on"
@@ -525,6 +538,7 @@ def calculate_ep_max_tokens_per_rank(
     ep_size: int,
     data_parallel_degree: int,
     use_allreduce: bool = False,
+    n_gpus_per_node: int | None = None,
 ) -> int:
     """Calculate the maximum number of tokens per rank for EP communication.
 
@@ -538,13 +552,17 @@ def calculate_ep_max_tokens_per_rank(
         ep_size: Expert parallelism size (total number of GPUs across nodes).
         data_parallel_degree: Degree of data parallelism.
         use_allreduce: Is allreduce-backed expert parallelism enabled.
+        n_gpus_per_node: GPUs on each node. Attention runs within a node, so
+            across nodes the tensor parallelism degree is this over the data
+            parallelism degree rather than ``ep_size`` over it.
 
     Returns:
         Maximum tokens per rank for EP communication buffers.
     """
     if use_allreduce:
         return max_batch_input_tokens
-    tp_size = ep_size // data_parallel_degree
+    attention_gpus = ep_size if n_gpus_per_node is None else n_gpus_per_node
+    tp_size = max(1, attention_gpus // data_parallel_degree)
     # Match the ceiling-biased ragged binning in ops.reducescatter.sum: when
     # max_batch_input_tokens is not divisible by tp_size, the first
     # (max_batch_input_tokens % tp_size) ranks receive
