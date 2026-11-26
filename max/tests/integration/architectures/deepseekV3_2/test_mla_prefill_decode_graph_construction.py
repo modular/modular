@@ -22,6 +22,7 @@ CPU worker. The compile + execute coverage lives in the GPU tests
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from typing import Any
 
@@ -289,7 +290,17 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
             assert paged_lse.type == cp_lse.type
             with pytest.raises(ValueError, match="must be positive"):
                 mla_decode_graph_cp(**{**cp_args, "dcp_interleave": 0})
-            g.output(out, cp_out, cp_lse, paged_out, paged_lse)
+            # A cache leaf without a record sends the zeros constant.
+            no_record_out, _ = mla_decode_graph_cp(
+                **{
+                    **cp_args,
+                    "kv_collection": dataclasses.replace(
+                        kv_collection, mixed_step_split=None
+                    ),
+                }
+            )
+            assert no_record_out.type == cp_out.type
+            g.output(out, cp_out, cp_lse, paged_out, paged_lse, no_record_out)
         return g
 
     _ = attn.state_dict()
@@ -297,6 +308,20 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
     # Both row-invariant decode paths are opt-in; a default graph emits
     # neither the split pin nor the row-invariant matmul.
     ir = str(g)
+    cp_ops = [
+        op
+        for op in g._mlir_op.regions[0].blocks[0].operations
+        if op.name == "mo.custom"
+        and mlir.StringAttr(op.attributes["symbol"]).value
+        == "attention.mla.graph.decode.paged.fp8.sparse.cp"
+    ]
+    assert len(cp_ops) == 3
+    assert {record_source(op) for op in cp_ops} == {"argument", "mo.constant"}
+    # The capturable-graph scalar sits right before the record.
+    for op in cp_ops:
+        operands = [v for v in op.operands if "chain" not in str(v.type)]
+        assert "[2], si64" in str(operands[-2].type)
+        assert "[7], ui32" in str(operands[-1].type)
     assert '"attention.mla.graph.decode.paged.fp8.sparse.cp"' in ir
     assert "split_rows_per_request" not in ir
     assert "mo.matmul.row_invariant" not in ir
@@ -712,6 +737,15 @@ def test_mla_indexer_cp_and_merge_construction(dcp_interleave: int) -> None:
     assert int(rows.shape[1]) == top_k
     assert rows.dtype == lengths.dtype == DType.int32
     assert lengths.rank == 1 and lengths.shape[0] == local_rows.shape[0]
+    indexer_ops = [
+        op
+        for op in g._mlir_op.regions[0].blocks[0].operations
+        if op.name == "mo.custom"
+        and mlir.StringAttr(op.attributes["symbol"]).value
+        == "attention.mla.indexer.ragged.float8.paged.remap.cp"
+    ]
+    assert len(indexer_ops) == 1
+    assert record_source(indexer_ops[0]) == "argument"
     ir = str(g)
     assert '"attention.mla.indexer.ragged.float8.paged.remap.cp"' in ir
     assert '"attention.mla.cp_merge_topk"' in ir

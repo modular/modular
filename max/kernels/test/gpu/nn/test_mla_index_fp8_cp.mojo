@@ -34,6 +34,11 @@ from kv_cache.paged_sparse_kv_index_remap import (
     PagedKVScaleRemap,
 )
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
+from kv_cache.mixed_step_split import (
+    MIXED_STEP_DECODE_WIDTH,
+    MIXED_STEP_SPLIT_SIZE,
+)
+from builtin_kernels.attention import _mla_indexer_ragged_cp_body
 from nn.attention.gpu.cp_merge_topk import cp_merge_topk
 from nn.attention.gpu.mla_index_fp8 import (
     _SCORES_BUDGET_BYTES,
@@ -264,6 +269,99 @@ def _run_rank_indexer[
             ),
             rank_dev.unsafe_ptr().as_imm(),
             budget,
+        )
+
+
+def _run_rank_indexer_body[
+    top_k: Int, cp_size: Int, cp_interleave: Int, halves: Int
+](
+    mut phys_dev: DeviceBuffer[DType.int32],
+    mut scores_dev: DeviceBuffer[DType.bfloat16],
+    q_dev: DeviceBuffer[DType.float8_e4m3fn],
+    qs_dev: DeviceBuffer[DType.float32],
+    iro_dev: DeviceBuffer[DType.uint32],
+    lut_dev: DeviceBuffer[DType.uint32],
+    scales_lut_dev: DeviceBuffer[DType.uint32],
+    rank_dev: DeviceBuffer[DType.int32],
+    record_host: HostBuffer[DType.uint32],
+    k_collection: Collection,
+    total_seq_len: Int,
+    batch_size: Int,
+    pages_per_seq: Int,
+    num_blocks: Int,
+    ctx: DeviceContext,
+) raises:
+    """Runs one rank's indexer through the op body, under `record_host`.
+
+    `halves = 2` remaps as over an NVFP4 cache, as `_run_rank_indexer` does.
+    """
+    comptime if halves == 2:
+        _mla_indexer_ragged_cp_body[
+            num_heads=NUM_HEADS,
+            depth=DEPTH,
+            k=top_k,
+            mask_str=MaskName.CAUSAL.name,
+            dcp_size=cp_size,
+            dcp_interleave=cp_interleave,
+            write_logical=False,
+        ](
+            TileTensor(phys_dev, row_major(0, top_k)),
+            TileTensor(scores_dev, row_major(total_seq_len, top_k)),
+            TileTensor(
+                q_dev, row_major(total_seq_len, NUM_HEADS, DEPTH)
+            ).as_imm(),
+            TileTensor(qs_dev, row_major(total_seq_len, NUM_HEADS)).as_imm(),
+            TileTensor(iro_dev, row_major(batch_size + 1)).as_imm(),
+            k_collection,
+            UInt32(0),
+            PagedKVScaleRemap[PAGE, top_k](
+                phys_dev.unsafe_ptr(),
+                lut_dev.unsafe_ptr().as_imm(),
+                scales_lut_dev.unsafe_ptr().as_imm(),
+                pages_per_seq,
+                pages_per_seq,
+                batch_size,
+                UInt32(num_blocks),
+                UInt32(num_blocks),
+                PAGE,
+            ),
+            rank_dev.unsafe_ptr().as_imm(),
+            record_host.unsafe_ptr()
+            .as_imm()
+            .unsafe_origin_cast[ImmutAnyOrigin](),
+            ctx,
+        )
+    else:
+        _mla_indexer_ragged_cp_body[
+            num_heads=NUM_HEADS,
+            depth=DEPTH,
+            k=top_k,
+            mask_str=MaskName.CAUSAL.name,
+            dcp_size=cp_size,
+            dcp_interleave=cp_interleave,
+            write_logical=False,
+        ](
+            TileTensor(phys_dev, row_major(0, top_k)),
+            TileTensor(scores_dev, row_major(total_seq_len, top_k)),
+            TileTensor(
+                q_dev, row_major(total_seq_len, NUM_HEADS, DEPTH)
+            ).as_imm(),
+            TileTensor(qs_dev, row_major(total_seq_len, NUM_HEADS)).as_imm(),
+            TileTensor(iro_dev, row_major(batch_size + 1)).as_imm(),
+            k_collection,
+            UInt32(0),
+            PagedKVRemap[PAGE](
+                phys_dev.unsafe_ptr(),
+                lut_dev.unsafe_ptr(),
+                pages_per_seq,
+                batch_size,
+                UInt32(num_blocks),
+            ),
+            rank_dev.unsafe_ptr().as_imm(),
+            record_host.unsafe_ptr()
+            .as_imm()
+            .unsafe_origin_cast[ImmutAnyOrigin](),
+            ctx,
         )
 
 
@@ -576,16 +674,43 @@ def _check_cp[
     _ = all_scores_dev
 
 
-def test_cp_indexer[
-    top_k: Int
+@fieldwise_init
+struct _IndexerFixture(Copyable, Movable):
+    """One random index-K cache and the queries that score it."""
+
+    var batch_size: Int
+    var total_seq_len: Int
+    var max_seq_len: Int
+    var max_total: Int
+    var pages_per_seq: Int
+    var num_blocks: Int
+    var lut_host: List[UInt32]
+    var lut_dev: DeviceBuffer[DType.uint32]
+    var scales_lut_host: List[UInt32]
+    var scales_lut_dev: DeviceBuffer[DType.uint32]
+    var k_full: HostBuffer[DType.float8_e4m3fn]
+    var ks_full: HostBuffer[DType.float32]
+    var q_dev: DeviceBuffer[DType.float8_e4m3fn]
+    var qs_dev: DeviceBuffer[DType.float32]
+    var iro_dev: DeviceBuffer[DType.uint32]
+    var cl_dev: DeviceBuffer[DType.uint32]
+    var ref_scores: HostBuffer[DType.bfloat16]
+    var ref_stride: Int
+
+
+def _build_indexer_fixture[
+    split: Bool
 ](
+    ctx: DeviceContext,
     seq_lens: List[Int],
     cache_lens: List[Int],
-    ctx: DeviceContext,
-    budget: Int = _SCORES_BUDGET_BYTES,
-) raises:
-    """Builds one full cache and checks every group shape against it."""
-    seed(1234)
+) raises -> _IndexerFixture:
+    """Builds the shared cache, queries and reference scores for one batch.
+
+    The collection's max-length bound is the batch's max total, cache plus
+    new tokens, when `split`, because the split's record validation reads
+    it; otherwise it is the batch's max cache length.
+    """
     var batch_size = len(seq_lens)
     var total_seq_len = 0
     var max_seq_len = 0
@@ -596,10 +721,6 @@ def test_cp_indexer[
         max_seq_len = max(max_seq_len, seq_lens[b])
         max_cache_len = max(max_cache_len, cache_lens[b])
         max_total = max(max_total, cache_lens[b] + seq_lens[b])
-    print(
-        t"test_cp_indexer top_k={top_k} batch={batch_size}"
-        t" tokens={total_seq_len} max_keys={max_total}"
-    )
     var pages_per_seq = ceildiv(max_total, PAGE)
     var num_blocks = batch_size * pages_per_seq + 3
     var n_rows = num_blocks * PAGE
@@ -672,7 +793,7 @@ def test_cp_indexer[
         pages_per_seq,
         num_blocks,
         max_seq_len,
-        max_cache_len,
+        max_total if split else max_cache_len,
     )
 
     # Reference scores of every visible key, from the op's own scorer.
@@ -696,124 +817,163 @@ def test_cp_indexer[
     )
     ctx.enqueue_copy(ref_scores, ref_dev)
     ctx.synchronize()
+    _ = k_dev
+    _ = ks_dev
+    _ = ref_dev
+    return _IndexerFixture(
+        batch_size=batch_size,
+        total_seq_len=total_seq_len,
+        max_seq_len=max_seq_len,
+        max_total=max_total,
+        pages_per_seq=pages_per_seq,
+        num_blocks=num_blocks,
+        lut_host=lut_host^,
+        lut_dev=lut_dev^,
+        scales_lut_host=scales_lut_host^,
+        scales_lut_dev=scales_lut_dev^,
+        k_full=k_full,
+        ks_full=ks_full,
+        q_dev=q_dev,
+        qs_dev=qs_dev,
+        iro_dev=iro_dev,
+        cl_dev=cl_dev,
+        ref_scores=ref_scores,
+        ref_stride=ref_stride,
+    )
 
+
+def test_cp_indexer[
+    top_k: Int
+](
+    seq_lens: List[Int],
+    cache_lens: List[Int],
+    ctx: DeviceContext,
+    budget: Int = _SCORES_BUDGET_BYTES,
+) raises:
+    """Builds one full cache and checks every group shape against it."""
+    seed(1234)
+    var f = _build_indexer_fixture[split=False](ctx, seq_lens, cache_lens)
+    print(
+        t"test_cp_indexer top_k={top_k} batch={f.batch_size}"
+        t" tokens={f.total_seq_len} max_keys={f.max_total}"
+    )
     _check_cp[top_k, 2, 1](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
     _check_cp[top_k, 4, 1](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
     _check_cp[top_k, 8, 1](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
     _check_cp[top_k, 2, PAGE](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
     _check_cp[top_k, 4, PAGE](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
     _check_cp[top_k, 8, PAGE](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
@@ -821,60 +981,60 @@ def test_cp_indexer[
     _check_cp[top_k, 2, 1, halves=2](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
     _check_cp[top_k, 8, 1, halves=2](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
     _check_cp[top_k, 4, PAGE, halves=2](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
@@ -882,26 +1042,324 @@ def test_cp_indexer[
     _check_cp[top_k, 1, 1](
         seq_lens,
         cache_lens,
-        lut_host,
-        lut_dev,
-        scales_lut_host,
-        scales_lut_dev,
-        pages_per_seq,
-        num_blocks,
-        k_full,
-        ks_full,
-        q_dev,
-        qs_dev,
-        iro_dev,
-        cl_dev,
-        ref_scores,
-        ref_stride,
+        f.lut_host,
+        f.lut_dev,
+        f.scales_lut_host,
+        f.scales_lut_dev,
+        f.pages_per_seq,
+        f.num_blocks,
+        f.k_full,
+        f.ks_full,
+        f.q_dev,
+        f.qs_dev,
+        f.iro_dev,
+        f.cl_dev,
+        f.ref_scores,
+        f.ref_stride,
         budget,
         ctx,
     )
-    _ = k_dev
-    _ = ks_dev
-    _ = ref_dev
+    _ = f^
+
+
+def test_cp_indexer_mixed_split[top_k: Int](ctx: DeviceContext) raises:
+    """A split record must not change any rank's selection or scores.
+
+    The batch is the ragged mix below: cached decode rows beside a prefill
+    row wider than the split's decode width, so the record cuts the batch
+    and the body runs one launch per view. Each rank's outputs under the
+    record must equal its outputs under a zeros record, which keeps the
+    whole-batch launch.
+    """
+    seed(1234)
+    var seq_lens: List[Int] = [1, 1, 7, 64, 1, 150]
+    var cache_lens: List[Int] = [0, 2000, 300, 0, 900, 1100]
+    var batch_size = len(seq_lens)
+    print(t"test_cp_indexer_mixed_split top_k={top_k}")
+    var f = _build_indexer_fixture[split=True](ctx, seq_lens, cache_lens)
+    var total_seq_len = f.total_seq_len
+    var pages_per_seq = f.pages_per_seq
+    var num_blocks = f.num_blocks
+    var n_rows = num_blocks * PAGE
+
+    # Each token's batch entry and global key bound, to grade selections.
+    var tok_batch = List[Int]()
+    var tok_bound = List[Int]()
+    for b in range(batch_size):
+        for t in range(seq_lens[b]):
+            tok_batch.append(b)
+            tok_bound.append(cache_lens[b] + t + 1)
+    var page_of_block = List[Dict[Int, Int]]()
+    for b in range(batch_size):
+        var d = Dict[Int, Int]()
+        for j in range(pages_per_seq):
+            d[Int(f.lut_host[b * pages_per_seq + j])] = j
+        page_of_block.append(d^)
+
+    # The record the host rules fill for this batch: the decode rows lead,
+    # the prefill rows trail, so the head view is the decode view.
+    var record = ctx.enqueue_create_host_buffer[DType.uint32](
+        MIXED_STEP_SPLIT_SIZE
+    )
+    var zeros = ctx.enqueue_create_host_buffer[DType.uint32](
+        MIXED_STEP_SPLIT_SIZE
+    )
+    ctx.synchronize()
+    var head_rows = 0
+    var head_tokens = 0
+    var head_max_q = 0
+    var head_max_cache = 0
+    for b in range(batch_size):
+        if seq_lens[b] > MIXED_STEP_DECODE_WIDTH:
+            break
+        head_rows += 1
+        head_tokens += seq_lens[b]
+        head_max_q = max(head_max_q, seq_lens[b])
+        head_max_cache = max(head_max_cache, cache_lens[b] + seq_lens[b])
+    var tail_max_q = 0
+    var tail_max_cache = 0
+    var prefill_context = 0
+    for b in range(head_rows, batch_size):
+        tail_max_q = max(tail_max_q, seq_lens[b])
+        tail_max_cache = max(tail_max_cache, cache_lens[b] + seq_lens[b])
+        prefill_context += cache_lens[b] + seq_lens[b]
+    record[0] = UInt32(head_rows)
+    record[1] = UInt32(head_tokens)
+    record[2] = UInt32(head_max_q)
+    record[3] = UInt32(head_max_cache)
+    record[4] = UInt32(tail_max_q)
+    record[5] = UInt32(tail_max_cache)
+    record[6] = UInt32(prefill_context)
+    for i in range(MIXED_STEP_SPLIT_SIZE):
+        zeros[i] = 0
+    assert_true(head_rows > 0, "the batch must split")
+    assert_true(
+        head_max_q <= MIXED_STEP_DECODE_WIDTH,
+        "the head view must be the decode view",
+    )
+    assert_true(
+        tail_max_q > MIXED_STEP_DECODE_WIDTH,
+        "the tail view must be the prefill view",
+    )
+
+    comptime Layout = ContextParallelLayout[2, 1]
+    for r in range(2):
+        var cp = Layout(r)
+        var k_rank = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            n_rows * DEPTH
+        )
+        var ks_rank = ctx.enqueue_create_buffer[DType.float32](n_rows)
+        with k_rank.map_to_host() as kh:
+            with ks_rank.map_to_host() as ksh:
+                for b in range(batch_size):
+                    for p in range(cache_lens[b] + seq_lens[b]):
+                        if not cp.owns(p):
+                            continue
+                        var s = cp.local_slot(p)
+                        var src = (
+                            Int(f.lut_host[b * pages_per_seq + p // PAGE])
+                            * PAGE
+                            + p % PAGE
+                        )
+                        var dst = (
+                            Int(f.lut_host[b * pages_per_seq + s // PAGE])
+                            * PAGE
+                            + s % PAGE
+                        )
+                        for d in range(DEPTH):
+                            kh[dst * DEPTH + d] = f.k_full[src * DEPTH + d]
+                        ksh[dst] = f.ks_full[src]
+        var rank_dev = ctx.enqueue_create_buffer[DType.int32](1)
+        with rank_dev.map_to_host() as rh:
+            rh[0] = Int32(r)
+        var coll = _collection(
+            k_rank,
+            ks_rank,
+            f.cl_dev,
+            f.lut_dev,
+            batch_size,
+            pages_per_seq,
+            num_blocks,
+            f.max_seq_len,
+            f.max_total,
+        )
+        comptime for halves in range(1, 3):
+            comptime W = halves * top_k
+            var phys_split = ctx.enqueue_create_buffer[DType.int32](
+                total_seq_len * W
+            )
+            var scores_split = ctx.enqueue_create_buffer[DType.bfloat16](
+                total_seq_len * top_k
+            )
+            var phys_zeros = ctx.enqueue_create_buffer[DType.int32](
+                total_seq_len * W
+            )
+            var scores_zeros = ctx.enqueue_create_buffer[DType.bfloat16](
+                total_seq_len * top_k
+            )
+            phys_split.enqueue_fill(Int32(-2))
+            phys_zeros.enqueue_fill(Int32(-2))
+            comptime if halves == 2:
+                _run_rank_indexer_body[top_k, 2, 1, 2](
+                    phys_split,
+                    scores_split,
+                    f.q_dev,
+                    f.qs_dev,
+                    f.iro_dev,
+                    f.lut_dev,
+                    f.scales_lut_dev,
+                    rank_dev,
+                    record,
+                    coll,
+                    total_seq_len,
+                    batch_size,
+                    pages_per_seq,
+                    num_blocks,
+                    ctx,
+                )
+                _run_rank_indexer_body[top_k, 2, 1, 2](
+                    phys_zeros,
+                    scores_zeros,
+                    f.q_dev,
+                    f.qs_dev,
+                    f.iro_dev,
+                    f.lut_dev,
+                    f.scales_lut_dev,
+                    rank_dev,
+                    zeros,
+                    coll,
+                    total_seq_len,
+                    batch_size,
+                    pages_per_seq,
+                    num_blocks,
+                    ctx,
+                )
+            else:
+                _run_rank_indexer_body[top_k, 2, 1, 1](
+                    phys_split,
+                    scores_split,
+                    f.q_dev,
+                    f.qs_dev,
+                    f.iro_dev,
+                    f.lut_dev,
+                    f.scales_lut_dev,
+                    rank_dev,
+                    record,
+                    coll,
+                    total_seq_len,
+                    batch_size,
+                    pages_per_seq,
+                    num_blocks,
+                    ctx,
+                )
+                _run_rank_indexer_body[top_k, 2, 1, 1](
+                    phys_zeros,
+                    scores_zeros,
+                    f.q_dev,
+                    f.qs_dev,
+                    f.iro_dev,
+                    f.lut_dev,
+                    f.scales_lut_dev,
+                    rank_dev,
+                    zeros,
+                    coll,
+                    total_seq_len,
+                    batch_size,
+                    pages_per_seq,
+                    num_blocks,
+                    ctx,
+                )
+            var phys_split_h = ctx.enqueue_create_host_buffer[DType.int32](
+                total_seq_len * W
+            )
+            var phys_zeros_h = ctx.enqueue_create_host_buffer[DType.int32](
+                total_seq_len * W
+            )
+            var scores_split_h = ctx.enqueue_create_host_buffer[DType.bfloat16](
+                total_seq_len * top_k
+            )
+            var scores_zeros_h = ctx.enqueue_create_host_buffer[DType.bfloat16](
+                total_seq_len * top_k
+            )
+            ctx.enqueue_copy(phys_split_h, phys_split)
+            ctx.enqueue_copy(phys_zeros_h, phys_zeros)
+            ctx.enqueue_copy(scores_split_h, scores_split)
+            ctx.enqueue_copy(scores_zeros_h, scores_zeros)
+            ctx.synchronize()
+            for i in range(total_seq_len * W):
+                assert_equal(
+                    phys_split_h[i],
+                    phys_zeros_h[i],
+                    String(
+                        t"rank {r} halves {halves} slot {i}: the split"
+                        t" changed a physical row"
+                    ),
+                )
+            for i in range(total_seq_len * top_k):
+                assert_equal(
+                    scores_split_h[i],
+                    scores_zeros_h[i],
+                    String(
+                        t"rank {r} halves {halves} slot {i}: the split"
+                        t" changed a score"
+                    ),
+                )
+            # The split run's own selections must be the reference's: a
+            # dropped view would leave its tokens' rows at the fill value.
+            for t in range(total_seq_len):
+                var b = tok_batch[t]
+                var n_local = cp.local_len(tok_bound[t])
+                var n_live = 0
+                for j in range(top_k):
+                    var row = Int(phys_split_h[t * W + j])
+                    if row < 0:
+                        assert_equal(
+                            scores_split_h[t * top_k + j],
+                            neg_inf[DType.bfloat16](),
+                            String(
+                                t"rank {r} halves {halves} token {t}: a"
+                                t" padding slot's score must be -inf"
+                            ),
+                        )
+                        continue
+                    n_live += 1
+                    var page = page_of_block[b][row // PAGE]
+                    var slot = page * PAGE + row % PAGE
+                    var pos = cp.global_pos(slot)
+                    assert_true(
+                        slot < n_local and pos < tok_bound[t],
+                        String(
+                            t"rank {r} halves {halves} token {t}: slot"
+                            t" {slot} not visible"
+                        ),
+                    )
+                    assert_equal(
+                        scores_split_h[t * top_k + j],
+                        f.ref_scores[t * f.ref_stride + pos],
+                        String(
+                            t"rank {r} halves {halves} token {t} pos"
+                            t" {pos}: score differs from the reference"
+                        ),
+                    )
+                assert_equal(
+                    n_live,
+                    min(top_k, n_local),
+                    String(
+                        t"rank {r} halves {halves} token {t}: live selections"
+                    ),
+                )
+            _ = phys_split^
+            _ = phys_zeros^
+            _ = scores_split^
+            _ = scores_zeros^
+            _ = phys_split_h^
+            _ = phys_zeros_h^
+            _ = scores_split_h^
+            _ = scores_zeros_h^
+        _ = k_rank
+        _ = ks_rank
+    _ = f^
+    print(t"    ok (split equals whole-batch on every rank)")
 
 
 def main() raises:
@@ -929,3 +1387,6 @@ def main() raises:
         var edge_seq: List[Int] = [1, 1, 1, 1, 1, 4, 129]
         var edge_cache: List[Int] = [0, 126, 127, 128, 999, 2047, 0]
         test_cp_indexer[256](edge_seq, edge_cache, ctx)
+        # The ragged mix under a split record: the body runs one launch per
+        # view, and every rank's outputs must equal the whole-batch run's.
+        test_cp_indexer_mixed_split[256](ctx)

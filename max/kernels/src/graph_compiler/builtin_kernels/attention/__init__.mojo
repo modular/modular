@@ -38,7 +38,7 @@ from kv_cache.paged_sparse_kv_index_remap import (
     paged_sparse_kv_index_remap,
     sparse_selection_rows,
 )
-from kv_cache.types import KVCacheStaticParams
+from kv_cache.types import KVCacheStaticParams, KVCollectionT
 from linalg.mx_format import MXFormat
 from layout import (
     coord_to_index_list,
@@ -1541,6 +1541,193 @@ struct MLAIndexerRaggedFloat8PagedRemapFiltered:
         )
 
 
+@inline(.always)
+def _mla_indexer_ragged_cp_body[
+    R: SparseIndexRemap,
+    KCollectionT: KVCollectionT & Deinitable,
+    Topk: IndexerTopk = BlockSplitTopk[],
+    //,
+    *,
+    num_heads: Int,
+    depth: Int,
+    k: Int,
+    mask_str: StaticString,
+    dcp_size: Int,
+    dcp_interleave: Int,
+    write_logical: Bool,
+](
+    output_indices: TileTensor[
+        mut=True, DType.int32, address_space=.GENERIC, ...
+    ],
+    scores: TileTensor[mut=True, DType.bfloat16, address_space=.GENERIC, ...],
+    q: TileTensor[mut=False, DType.float8_e4m3fn, address_space=.GENERIC, ...],
+    qs: TileTensor[mut=False, DType.float32, address_space=.GENERIC, ...],
+    input_row_offsets: TileTensor[
+        mut=False, DType.uint32, address_space=.GENERIC, ...
+    ],
+    k_collection: KCollectionT,
+    layer_idx: UInt32,
+    remap: R,
+    cp_rank: ImmPointer[Int32, _],
+    mixed_step_split: ImmPointer[UInt32, ImmutAnyOrigin],
+    ctx: DeviceContext,
+) raises:
+    """Shared body of the two CP indexer ops.
+
+    `remap` is the registration's remap; `mixed_step_split` is the KV
+    cache's split record, a host `uint32[MIXED_STEP_SPLIT_SIZE]`: a valid
+    split runs the two views, and any other record keeps the whole-batch
+    run.
+    """
+    comptime assert output_indices.rank == 2
+    comptime assert scores.rank == 2
+    comptime assert q.rank == 3
+    comptime assert qs.rank == 2
+    comptime assert input_row_offsets.rank == 1
+    comptime if ctx.target.is_nvidia_gpu():
+        # The trait hides the collection's max-length fields; the key
+        # cache's accessors return the values the kernel sizes its grid from.
+        var batch = Int(input_row_offsets.dim[0]()) - 1
+        var k_cache = k_collection.get_key_cache(Int(layer_idx))
+        var max_q_len = Int(k_cache.max_prompt_length())
+        var max_cache_len = Int(k_cache.max_context_length())
+        # The SM100 FP8 scorer is the only backend, so the split is an
+        # NVIDIA route; other targets keep the whole-batch launch.
+        if max_q_len > MIXED_STEP_DECODE_WIDTH:
+            # The record's layout is the host array's, so a view of it
+            # needs no caller layout check.
+            var split_args = TileTensor(
+                mixed_step_split, tt_row_major(MIXED_STEP_SPLIT_SIZE)
+            )
+            if case .Some(split) = read_mixed_split(
+                split_args,
+                batch,
+                Int(q.dim[0]()),
+                max_q_len,
+                max_cache_len,
+            ):
+                if (
+                    is_packed(q)
+                    and is_packed(qs)
+                    and is_packed(output_indices)
+                    and is_packed(scores)
+                    and is_packed(input_row_offsets)
+                ):
+                    var row_offsets = (
+                        input_row_offsets.unsafe_ptr()
+                        .unsafe_mut_cast[True]()
+                        .unsafe_origin_cast[MutAnyOrigin]()
+                    )
+                    for view_idx in range(2):
+                        var view = split.tail if view_idx == 1 else split.head
+                        var view_row_offsets = row_offsets
+                        var rebased: Optional[DeviceBuffer[.uint32]] = None
+                        if view.first_row != 0:
+                            var rebased_buf = rebase_row_offsets[
+                                with_cache_offsets=False
+                            ](row_offsets, row_offsets, batch, view, ctx)
+                            view_row_offsets = (
+                                rebased_buf.unsafe_ptr().unsafe_origin_cast[
+                                    MutAnyOrigin
+                                ]()
+                            )
+                            rebased = rebased_buf^
+                        mla_indexer_ragged_float8_paged_cp[
+                            DType.float8_e4m3fn,
+                            type_of(k_collection),
+                            num_heads,
+                            depth,
+                            k,
+                            mask_str,
+                            dcp_size,
+                            dcp_interleave,
+                            write_logical=write_logical,
+                            Topk=Topk,
+                        ](
+                            _mut_pointer_tile(
+                                TileTensor(
+                                    output_indices.unsafe_ptr().unsafe_offset(
+                                        view.first_token * k
+                                    ),
+                                    tt_row_major(view.tokens, Idx[k]),
+                                )
+                            ),
+                            _mut_pointer_tile(
+                                TileTensor(
+                                    scores.unsafe_ptr().unsafe_offset(
+                                        view.first_token * k
+                                    ),
+                                    tt_row_major(view.tokens, Idx[k]),
+                                )
+                            ),
+                            _imm_pointer_tile(
+                                TileTensor(
+                                    q.unsafe_ptr().unsafe_offset(
+                                        view.first_token * num_heads * depth
+                                    ),
+                                    tt_row_major(
+                                        view.tokens,
+                                        Idx[num_heads],
+                                        Idx[depth],
+                                    ),
+                                )
+                            ),
+                            _imm_pointer_tile(
+                                TileTensor(
+                                    qs.unsafe_ptr().unsafe_offset(
+                                        view.first_token * num_heads
+                                    ),
+                                    tt_row_major(view.tokens, Idx[num_heads]),
+                                )
+                            ),
+                            _imm_pointer_tile(
+                                TileTensor(
+                                    view_row_offsets,
+                                    tt_row_major(view.rows + 1),
+                                )
+                            ),
+                            k_collection.rows_view(
+                                view.first_row,
+                                view.rows,
+                                UInt32(view.max_q_len),
+                                UInt32(view.max_cache_len),
+                            ),
+                            layer_idx,
+                            ctx,
+                            _RebasedRemap(
+                                remap.offset(view.first_token * k),
+                                view.first_row,
+                            ),
+                            cp_rank,
+                        )
+                        _ = rebased^
+                    return
+
+    mla_indexer_ragged_float8_paged_cp[
+        DType.float8_e4m3fn,
+        type_of(k_collection),
+        num_heads,
+        depth,
+        k,
+        mask_str,
+        dcp_size,
+        dcp_interleave,
+        write_logical=write_logical,
+        Topk=Topk,
+    ](
+        _mut_pointer_tile(output_indices),
+        _mut_pointer_tile(scores),
+        _imm_pointer_tile(q),
+        _imm_pointer_tile(qs),
+        _imm_pointer_tile(input_row_offsets),
+        k_collection,
+        layer_idx,
+        ctx,
+        remap,
+        cp_rank,
+    )
+
+
 @extensibility.register("attention.mla.indexer.ragged.float8.paged.remap.cp")
 struct MLAIndexerRaggedFloat8PagedRemapCP:
     """Registers the `attention.mla.indexer.ragged.float8.paged.remap.cp` graph op.
@@ -1584,6 +1771,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCP:
         mla_kv_blocks: Some[MutableInput & Tensor],
         mla_lookup_table: Some[Input & Tensor],
         dcp_rank: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Selects this rank's local top-k physical rows and their scores.
@@ -1622,6 +1810,8 @@ struct MLAIndexerRaggedFloat8PagedRemapCP:
             mla_lookup_table: The MLA cache's page lookup table
                 `[batch_size, pages_per_seq]`.
             dcp_rank: This rank in `[0, dcp_size)`, int32 `[1]` on the device.
+            mixed_step_split: The KV cache's split record; zeros keep the
+                whole-batch route.
             ctx: Device context for GPU execution.
         """
         comptime assert conforms_to(type_of(output_indices), TileTensorable)
@@ -1644,6 +1834,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCP:
             type_of(k_scales_lookup_table), TileTensorable
         )
         comptime assert conforms_to(type_of(mla_kv_blocks), TileTensorable)
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert conforms_to(type_of(mla_lookup_table), TileTensorable)
         comptime assert conforms_to(type_of(dcp_rank), TileTensorable)
         comptime assert type_of(output_indices).rank == 2
@@ -1655,6 +1846,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCP:
         comptime assert type_of(k_blocks).rank == 6
         comptime assert type_of(mla_kv_blocks).rank == 6
         comptime assert type_of(mla_lookup_table).rank == 2
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert type_of(dcp_rank).rank == 1
         comptime page_size = type_of(k_blocks)._shape_types[3].static_value
         comptime head_dim = type_of(k_blocks)._shape_types[5].static_value
@@ -1690,27 +1882,26 @@ struct MLAIndexerRaggedFloat8PagedRemapCP:
             Int(mla_lookup_table.shape()[0].value()),
             UInt32(Int(mla_kv_blocks.shape()[0].value())),
         )
-        mla_indexer_ragged_float8_paged_cp[
-            DType.float8_e4m3fn,
-            type_of(k_collection),
-            num_heads,
-            depth,
-            k,
-            mask_str,
-            dcp_size,
-            dcp_interleave,
+        _mla_indexer_ragged_cp_body[
+            num_heads=num_heads,
+            depth=depth,
+            k=k,
+            mask_str=mask_str,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
             write_logical=write_logical,
         ](
-            _mut_pointer_tile(output_indices.to_tile_tensor[.int32]()),
-            _mut_pointer_tile(scores.to_tile_tensor[.bfloat16]()),
-            _imm_pointer_tile(q.to_tile_tensor[.float8_e4m3fn]()),
-            _imm_pointer_tile(qs.to_tile_tensor[.float32]()),
-            _imm_pointer_tile(input_row_offsets.to_tile_tensor[.uint32]()),
+            output_indices.to_tile_tensor[.int32](),
+            scores.to_tile_tensor[.bfloat16](),
+            q.to_tile_tensor[.float8_e4m3fn](),
+            qs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
             k_collection,
             layer_idx,
-            ctx,
             remap,
             dcp_rank.to_tile_tensor[.int32]().unsafe_ptr().as_imm(),
+            _split_record_pointer(mixed_step_split.to_tile_tensor[.uint32]()),
+            ctx,
         )
 
 
@@ -1765,6 +1956,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
         mla_scales_page_stride: Some[Input & Tensor],
         mla_scales_lookup_table: Some[Input & Tensor],
         dcp_rank: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         ctx: DeviceContext,
     ) raises:
         """Selects this rank's local top-k value and scale rows, with scores.
@@ -1814,6 +2006,8 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
             mla_scales_lookup_table: The MLA cache's scales page lookup table
                 `[batch_size, pages_per_seq]`.
             dcp_rank: This rank in `[0, dcp_size)`, int32 `[1]` on the device.
+            mixed_step_split: The KV cache's split record; zeros keep the
+                whole-batch route.
             ctx: Device context for GPU execution.
         """
         comptime assert conforms_to(type_of(output_indices), TileTensorable)
@@ -1845,6 +2039,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
             type_of(mla_scales_lookup_table), TileTensorable
         )
         comptime assert conforms_to(type_of(dcp_rank), TileTensorable)
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert type_of(output_indices).rank == 2
         comptime assert type_of(physical_indices).rank == 2
         comptime assert type_of(scores).rank == 2
@@ -1859,6 +2054,7 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
         comptime assert type_of(mla_scales_page_stride).rank == 1
         comptime assert type_of(mla_scales_lookup_table).rank == 2
         comptime assert type_of(dcp_rank).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime page_size = type_of(k_blocks)._shape_types[3].static_value
         comptime head_dim = type_of(k_blocks)._shape_types[5].static_value
         comptime k_num_heads = type_of(k_blocks)._shape_types[4].static_value
@@ -1914,28 +2110,27 @@ struct MLAIndexerRaggedFloat8PagedRemapCPNVFP4:
             UInt32(Int(mla_kv_scales.shape()[0].value())),
             scales_page_elems // scales_row_elems,
         )
-        mla_indexer_ragged_float8_paged_cp[
-            DType.float8_e4m3fn,
-            type_of(k_collection),
-            num_heads,
-            depth,
-            k,
-            mask_str,
-            dcp_size,
-            dcp_interleave,
+        _mla_indexer_ragged_cp_body[
+            num_heads=num_heads,
+            depth=depth,
+            k=k,
+            mask_str=mask_str,
+            dcp_size=dcp_size,
+            dcp_interleave=dcp_interleave,
             write_logical=write_logical,
             Topk=BlockSplitTopk[deterministic],
         ](
-            _mut_pointer_tile(output_indices.to_tile_tensor[.int32]()),
-            _mut_pointer_tile(scores.to_tile_tensor[.bfloat16]()),
-            _imm_pointer_tile(q.to_tile_tensor[.float8_e4m3fn]()),
-            _imm_pointer_tile(qs.to_tile_tensor[.float32]()),
-            _imm_pointer_tile(input_row_offsets.to_tile_tensor[.uint32]()),
+            output_indices.to_tile_tensor[.int32](),
+            scores.to_tile_tensor[.bfloat16](),
+            q.to_tile_tensor[.float8_e4m3fn](),
+            qs.to_tile_tensor[.float32](),
+            input_row_offsets.to_tile_tensor[.uint32](),
             k_collection,
             layer_idx,
-            ctx,
             remap,
             dcp_rank.to_tile_tensor[.int32]().unsafe_ptr().as_imm(),
+            _split_record_pointer(mixed_step_split.to_tile_tensor[.uint32]()),
+            ctx,
         )
 
 
@@ -7078,6 +7273,8 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         sparse_lengths: Some[Input & Tensor],
         split_len_bound: Int32,
         dcp_rank: Int32,
+        num_partitions_scalar: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -7097,6 +7294,10 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         comptime assert conforms_to(type_of(w_uk_scale), TileTensorable)
         comptime assert conforms_to(type_of(w_uv_scale), TileTensorable)
         comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(
+            type_of(num_partitions_scalar), TileTensorable
+        )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
         comptime assert conforms_to(type_of(sparse_lengths), TileTensorable)
         comptime dtype = type_of(output).dtype
@@ -7114,6 +7315,8 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
         comptime assert type_of(kv_blocks).rank == 6
         comptime assert type_of(page_stride).rank == 1
         comptime assert type_of(cache_lengths).rank == 1
+        comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert type_of(kv_lookup_table).rank == 2
         comptime assert type_of(max_prompt_length).rank == 1
         comptime assert type_of(max_cache_length).rank == 1
@@ -7169,6 +7372,18 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
             var gather_indices = _sparse_indices_ptr[indices_stride](
                 sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
+            # The decode view's split-K count is discarded: this op sizes
+            # split-K from its own bound, not the host's count.
+            var split, _ = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                num_tokens,
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_decode_branch_fp8[
                 kernels=SM100MLAGraph,
                 m_scale_granularity=m_scale_granularity,
@@ -7203,6 +7418,7 @@ struct Struct_mla_decode_graph_paged_fp8_sparse_cp:
                 lse_out=lse_ptr,
                 split_len_bound=Int(split_len_bound),
                 dcp_rank=Int(dcp_rank),
+                mixed_split=split,
             )
 
 
@@ -7256,6 +7472,8 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         sparse_lengths: Some[Input & Tensor],
         split_len_bound: Int32,
         dcp_rank: Int32,
+        num_partitions_scalar: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         comptime assert conforms_to(type_of(output), TileTensorable)
@@ -7273,6 +7491,10 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         comptime assert conforms_to(type_of(max_prompt_length), TileTensorable)
         comptime assert conforms_to(type_of(max_cache_length), TileTensorable)
         comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(
+            type_of(num_partitions_scalar), TileTensorable
+        )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
         comptime assert conforms_to(type_of(sparse_lengths), TileTensorable)
         comptime assert type_of(output).rank == 3
@@ -7291,6 +7513,8 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
         comptime assert type_of(max_prompt_length).rank == 1
         comptime assert type_of(max_cache_length).rank == 1
         comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert type_of(sparse_indices).rank == 2
         comptime assert type_of(sparse_lengths).rank == 1
         comptime assert type_of(kv).dtype == DType.bfloat16
@@ -7336,6 +7560,18 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
             var gather_indices = _sparse_indices_ptr[indices_stride](
                 sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
+            # The decode view's split-K count is discarded: this op sizes
+            # split-K from its own bound, not the host's count.
+            var split, _ = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                num_tokens,
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_decode_branch_bf16[
                 kernels=SM100MLAGraph,
                 mask_str=mask_str,
@@ -7367,6 +7603,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_cp:
                 lse_out=lse_ptr,
                 split_len_bound=Int(split_len_bound),
                 dcp_rank=Int(dcp_rank),
+                mixed_split=split,
             )
 
 
@@ -7426,6 +7663,8 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
         sparse_lengths: Some[Input & Tensor],
         split_len_bound: Int32,
         dcp_rank: Int32,
+        num_partitions_scalar: Some[Input & Tensor],
+        mixed_step_split: Some[Input & Tensor],
         context: DeviceContext,
     ) raises:
         _cp_check_rank[dcp_size](dcp_rank)
@@ -7457,6 +7696,10 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
             type_of(scales_lookup_table), TileTensorable
         )
         comptime assert conforms_to(type_of(scalar_args), TileTensorable)
+        comptime assert conforms_to(
+            type_of(num_partitions_scalar), TileTensorable
+        )
+        comptime assert conforms_to(type_of(mixed_step_split), TileTensorable)
         comptime assert conforms_to(type_of(sparse_indices), TileTensorable)
         comptime assert conforms_to(type_of(sparse_lengths), TileTensorable)
         comptime assert type_of(output).rank == 3
@@ -7478,6 +7721,8 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
         comptime assert type_of(scales_page_stride).rank == 1
         comptime assert type_of(scales_lookup_table).rank == 2
         comptime assert type_of(scalar_args).rank == 1
+        comptime assert type_of(num_partitions_scalar).rank == 1
+        comptime assert type_of(mixed_step_split).rank == 1
         comptime assert type_of(sparse_indices).rank == 2
         comptime assert type_of(sparse_lengths).rank == 1
         comptime assert type_of(kv).dtype == DType.bfloat16
@@ -7522,6 +7767,18 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
             var gather_indices = _sparse_indices_ptr[indices_stride](
                 sparse_indices.to_tile_tensor[.int32](), num_tokens
             )
+            # The decode view's split-K count is discarded: this op sizes
+            # split-K from its own bound, not the host's count.
+            var split, _ = _mla_mixed_split(
+                mixed_step_split.to_tile_tensor[.uint32](),
+                num_partitions_scalar.to_tile_tensor[.int64](),
+                input_row_offsets.to_tile_tensor[.uint32](),
+                scalar_args.to_tile_tensor[.int64](),
+                num_tokens,
+                Int(kv_collection.max_seq_length),
+                Int(kv_collection.max_cache_length),
+                context,
+            )
             mla_decode_branch_bf16[
                 kernels=SM100MLAGraph,
                 mask_str=mask_str,
@@ -7553,6 +7810,7 @@ struct Struct_mla_decode_graph_bf16_paged_sparse_nvfp4_cp:
                 lse_out=lse_ptr,
                 split_len_bound=Int(split_len_bound),
                 dcp_rank=Int(dcp_rank),
+                mixed_split=split,
             )
 
 

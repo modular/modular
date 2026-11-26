@@ -70,12 +70,19 @@ from std.math import ceildiv, exp, exp2, gcd, log, log2
 from std.random import randn, seed
 
 from max.gpu import *
-from max.gpu.host import DeviceContext
+from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import _is_sm10x_gpu
 from internal_utils.fp8_utils import cast_saturating
 from kv_cache.context_parallel import ContextParallelLayout
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
-from layout import Coord, Idx, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
 from nn.attention.mha_mask import CausalMask
 from nn.attention.mha_utils import MHAConfig, NonNullPointer
 from nn.attention.gpu.mla import SM100MLA, flare_mla_decoding
@@ -86,6 +93,12 @@ from nn.attention.gpu.mla_graph import (
 )
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
+    compute_mla_dispatch_scalars,
+)
+from kv_cache.mixed_step_split import (
+    MIXED_STEP_SPLIT_SIZE,
+    MixedSplit,
+    read_mixed_split,
 )
 from std.testing import assert_almost_equal, assert_true
 from std.memory import bitcast
@@ -137,6 +150,94 @@ def _owner(mut rng: _Lcg, token: Int, dcp: Int) -> Int:
     var u = rng.unit()
     var ranks = dcp - 1 if token == 0 else dcp
     return min(Int(Float64(ranks) * u * u), ranks - 1)
+
+
+def _mixed_record(
+    seq_lens: List[Int], cache_len: Int
+) -> Array[UInt32, MIXED_STEP_SPLIT_SIZE]:
+    """The record for a decode row ahead of one wide prefill row."""
+    var record = Array[UInt32, MIXED_STEP_SPLIT_SIZE](fill=0)
+    record[0] = UInt32(1)
+    record[1] = UInt32(seq_lens[0])
+    record[2] = UInt32(seq_lens[0])
+    record[3] = UInt32(cache_len + seq_lens[0])
+    record[4] = UInt32(seq_lens[1])
+    record[5] = UInt32(cache_len + seq_lens[1])
+    record[6] = UInt32(cache_len + seq_lens[1])
+    return record^
+
+
+def _mixed_split(
+    ctx: DeviceContext,
+    seq_lens: List[Int],
+    cache_len: Int,
+) raises -> MixedSplit:
+    """The split `read_mixed_split` returns for `_mixed_record`'s batch."""
+    var record = _mixed_record(seq_lens, cache_len)
+    var record_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        MIXED_STEP_SPLIT_SIZE
+    )
+    for i in range(MIXED_STEP_SPLIT_SIZE):
+        record_host[i] = record[i]
+    var q_max = 0
+    var total = 0
+    for s in seq_lens:
+        q_max = max(q_max, s)
+        total += s
+    var split = read_mixed_split(
+        TileTensor(
+            record_host.unsafe_ptr(), row_major(Idx[MIXED_STEP_SPLIT_SIZE])
+        ),
+        len(seq_lens),
+        total,
+        q_max,
+        cache_len + q_max,
+    )
+    if not split:
+        raise Error("the test record must split")
+    return split.value()
+
+
+def _cp_scalar_args[
+    num_heads: Int, is_fp8_kv: Bool
+](
+    ctx: DeviceContext,
+    seq_lens: List[Int],
+    cache_len: Int,
+    decode_rows: Int = 1,
+) raises -> Tuple[
+    TileTensor[DType.int64, RowMajorLayout[ComptimeInt[6]], MutAnyOrigin],
+    DeviceBuffer[DType.int64],
+]:
+    """The six-wide dispatch buffer the `.cp` op receives: the batch's
+    triple, then the decode view's (`decode_rows` 0 fills the batch's)."""
+    var q_max = 0
+    for s in seq_lens:
+        q_max = max(q_max, s)
+    comptime sm_count = ctx.default_device_info.sm_count
+    var batch_scalars = compute_mla_dispatch_scalars[
+        num_heads=num_heads, is_fp8_kv=is_fp8_kv, half_sms=sm_count // 2
+    ](len(seq_lens), cache_len, q_max, sm_count)
+    var host = ctx.enqueue_create_host_buffer[DType.int64](6)
+    host[0] = Int64(batch_scalars[0])
+    host[1] = Int64(batch_scalars[1])
+    host[2] = Int64(batch_scalars[2])
+    if decode_rows > 0:
+        var decode_scalars = compute_mla_dispatch_scalars[
+            num_heads=num_heads, is_fp8_kv=is_fp8_kv, half_sms=sm_count // 2
+        ](decode_rows, cache_len, seq_lens[0], sm_count)
+        host[3] = Int64(decode_scalars[0])
+        host[4] = Int64(decode_scalars[1])
+        host[5] = Int64(decode_scalars[2])
+    var dev = ctx.enqueue_create_buffer[DType.int64](6)
+    ctx.enqueue_copy(dev, host)
+    return (
+        TileTensor(
+            rebind[MutPointer[Int64, MutAnyOrigin]](dev.unsafe_ptr()),
+            row_major(Idx[6]),
+        ),
+        dev^,
+    )
 
 
 def run_cp_case[
@@ -552,22 +653,27 @@ def _cache_pattern(i: Int) -> Scalar[DType.float8_e4m3fn]:
 
 
 def _run_fused_cp[
-    dcp_size: Int, dcp_interleave: Int
+    dcp_size: Int,
+    dcp_interleave: Int,
 ](
     ctx: DeviceContext,
     seq_lens: List[Int],
     cache_len: Int,
     rank: Int,
     mut blocks_out: List[UInt8],
+    mut out_out: List[Float32],
     mut lse_out: List[Float32],
     mut lengths_out: List[Int],
+    mixed_split: Optional[MixedSplit] = None,
+    first_token: Int = 0,
+    first_row: Int = 0,
 ) raises:
     """Runs `mla_decode_branch_fp8`, as the `.cp` op does, for one rank.
 
     The cache starts as `_cache_pattern`. Each token attends over the first
     rows its rank holds (none for the first token), and the branch stores the
-    new tokens the rank owns. Returns the cache bytes, the LSE and the
-    lengths.
+    new tokens the rank owns. Returns the cache bytes, the output rows, the
+    LSE and the lengths.
     """
     comptime fp8 = DType.float8_e4m3fn
     comptime bf16 = DType.bfloat16
@@ -588,7 +694,9 @@ def _run_fused_cp[
 
     var blocks_host = ctx.enqueue_create_host_buffer[fp8](block_elems)
     for i in range(block_elems):
-        blocks_host[i] = _cache_pattern(i)
+        blocks_host[i] = _cache_pattern(
+            first_row * pages * PAGE_SIZE * Q_DEPTH + i
+        )
     var blocks_dev = ctx.enqueue_create_buffer[fp8](block_elems)
     ctx.enqueue_copy(blocks_dev, blocks_host)
     var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](
@@ -616,7 +724,7 @@ def _run_fused_cp[
     for b in range(batch_size):
         for s in range(seq_lens[b]):
             var t = Int(ro_host[b]) + s
-            var n = 0 if t == 0 else min(topk, held)
+            var n = 0 if t + first_token == 0 else min(topk, held)
             len_host[t] = Int32(n)
             for i in range(topk):
                 idx_host[t * topk + i] = Int32(
@@ -631,13 +739,17 @@ def _run_fused_cp[
     var q_n = total * F_HEADS * F_Q_DEPTH
     var q_host = ctx.enqueue_create_host_buffer[bf16](q_n)
     for i in range(q_n):
-        q_host[i] = Scalar[bf16](Float32((i % 97) - 48) * 0.05)
+        q_host[i] = Scalar[bf16](
+            Float32(((first_token * F_HEADS * F_Q_DEPTH + i) % 97) - 48) * 0.05
+        )
     var q_dev = ctx.enqueue_create_buffer[bf16](q_n)
     ctx.enqueue_copy(q_dev, q_host)
     var kv_n = total * Q_DEPTH
     var kv_host = ctx.enqueue_create_host_buffer[bf16](kv_n)
     for i in range(kv_n):
-        kv_host[i] = Scalar[bf16](Float32((i % 61) - 30) * 0.03)
+        kv_host[i] = Scalar[bf16](
+            Float32(((first_token * Q_DEPTH + i) % 61) - 30) * 0.03
+        )
     var kv_dev = ctx.enqueue_create_buffer[bf16](kv_n)
     ctx.enqueue_copy(kv_dev, kv_host)
     var wuk_n = F_HEADS * V_DEPTH * F_NOPE
@@ -672,7 +784,8 @@ def _run_fused_cp[
     ctx.enqueue_copy(freqs_dev, freqs_host)
     var gamma_dev = ctx.enqueue_create_buffer[bf16](V_DEPTH)
     ctx.enqueue_memset(gamma_dev, Scalar[bf16](1.0))
-    var out_dev = ctx.enqueue_create_buffer[bf16](total * F_HEADS * V_DEPTH)
+    var out_n = total * F_HEADS * V_DEPTH
+    var out_dev = ctx.enqueue_create_buffer[bf16](out_n)
     var lse_dev = ctx.enqueue_create_buffer[DType.float32](total * F_HEADS)
     ctx.enqueue_memset(lse_dev, Float32(123.0))
     ctx.synchronize()
@@ -710,8 +823,11 @@ def _run_fused_cp[
     ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
         return kv_in_tt.load[width=width](coords)
 
-    var mla_args = MLADispatchScalarArgs[num_heads=F_HEADS, is_fp8_kv=True](
-        batch_size, cache_len, q_max, ctx
+    var decode_rows = 0
+    if mixed_split:
+        decode_rows = 1
+    var scalar_args, scalar_args_buf = _cp_scalar_args[F_HEADS, True](
+        ctx, seq_lens, cache_len, decode_rows
     )
     mla_decode_branch_fp8[
         m_scale_granularity=F_M_GRAN,
@@ -754,7 +870,7 @@ def _run_fused_cp[
             uvs_dev.unsafe_ptr(),
             row_major((Idx[F_HEADS], Idx[uv_sn], Idx[uv_sk])),
         ),
-        mla_args.gpu_tile_tensor(),
+        scalar_args,
         kv_input_fn,
         ctx,
         d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](idx_dev.unsafe_ptr()),
@@ -765,8 +881,11 @@ def _run_fused_cp[
         lse_out=NonNullPointer[DType.float32](lse_dev),
         split_len_bound=topk,
         dcp_rank=rank,
+        mixed_split=mixed_split,
     )
     ctx.enqueue_copy(blocks_host, blocks_dev)
+    var out_host = ctx.enqueue_create_host_buffer[bf16](out_n)
+    ctx.enqueue_copy(out_host, out_dev)
     var lse_host = ctx.enqueue_create_host_buffer[DType.float32](
         total * F_HEADS
     )
@@ -776,6 +895,9 @@ def _run_fused_cp[
     blocks_out = List[UInt8](length=block_elems, fill=0)
     for i in range(block_elems):
         blocks_out[i] = bitcast[DType.uint8](blocks_host[i])
+    out_out = List[Float32](length=out_n, fill=0)
+    for i in range(out_n):
+        out_out[i] = out_host[i].cast[DType.float32]()
     lse_out = List[Float32](length=total * F_HEADS, fill=0)
     for i in range(total * F_HEADS):
         lse_out[i] = lse_host[i]
@@ -799,7 +921,7 @@ def _run_fused_cp[
     _ = gamma_dev^
     _ = out_dev^
     _ = lse_dev^
-    _ = mla_args^
+    _ = scalar_args_buf^
 
 
 def run_fused_cp_store[
@@ -818,9 +940,12 @@ def run_fused_cp_store[
         t" cache_len={cache_len}"
     )
     var ref_bytes = List[UInt8]()
+    var ref_out = List[Float32]()
     var lse = List[Float32]()
     var lengths = List[Int]()
-    _run_fused_cp[1, 1](ctx, seq_lens, cache_len, 0, ref_bytes, lse, lengths)
+    _run_fused_cp[1, 1](
+        ctx, seq_lens, cache_len, 0, ref_bytes, ref_out, lse, lengths
+    )
     var num_keys = cache_len
     var q_max = 0
     for s in seq_lens:
@@ -829,8 +954,9 @@ def run_fused_cp_store[
     var pages = ceildiv(num_keys, PAGE_SIZE)
     for r in range(dcp_size):
         var got = List[UInt8]()
+        var got_out = List[Float32]()
         _run_fused_cp[dcp_size, dcp_interleave](
-            ctx, seq_lens, cache_len, r, got, lse, lengths
+            ctx, seq_lens, cache_len, r, got, got_out, lse, lengths
         )
         var layout = ContextParallelLayout[dcp_size, dcp_interleave](r)
         var want = List[UInt8](length=len(ref_bytes), fill=0)
@@ -925,6 +1051,7 @@ def _run_bf16_branch[
     latent_output: Bool = False,
     owned_rows: Bool = False,
     heads: Int = B_HEADS,
+    kv_norm_multiply_before_cast: Bool = False,
 ](
     ctx: DeviceContext,
     seq_lens: List[Int],
@@ -934,6 +1061,10 @@ def _run_bf16_branch[
     mut blocks_out: List[UInt16],
     mut out_out: List[Float32],
     mut lse_out: List[Float32],
+    mixed_split: Optional[MixedSplit] = None,
+    first_token: Int = 0,
+    first_row: Int = 0,
+    gamma: Float32 = Float32(1.0),
 ) raises:
     """Runs `mla_decode_branch_bf16`, as the BF16 `.cp` op does, for one rank.
 
@@ -967,7 +1098,9 @@ def _run_bf16_branch[
 
     var blocks_host = ctx.enqueue_create_host_buffer[bf16](block_elems)
     for i in range(block_elems):
-        blocks_host[i] = _bf16_cache_pattern(i)
+        blocks_host[i] = _bf16_cache_pattern(
+            first_row * pages * PAGE_SIZE * Q_DEPTH + i
+        )
     var layout = ContextParallelLayout[dcp_size, dcp_interleave](rank)
     comptime if owned_rows:
         # Each cached position this rank owns, at its local slot.
@@ -975,7 +1108,7 @@ def _run_bf16_branch[
             for pos in range(cache_len):
                 if not layout.owns(pos):
                     continue
-                var src = (b * pages * PAGE_SIZE + pos) * Q_DEPTH
+                var src = ((first_row + b) * pages * PAGE_SIZE + pos) * Q_DEPTH
                 var dst = (
                     b * pages * PAGE_SIZE + layout.local_slot(pos)
                 ) * Q_DEPTH
@@ -1025,7 +1158,7 @@ def _run_bf16_branch[
             var m = _coprime_multiplier(visible)
             len_host[t] = Int32(B_TOPK)
             for i in range(B_TOPK):
-                var pos = (i * m + 3 * t + 1) % visible
+                var pos = (i * m + 3 * (t + first_token) + 1) % visible
                 idx_host[t * B_TOPK + i] = Int32(b * pages * PAGE_SIZE + pos)
     var idx_dev = ctx.enqueue_create_buffer[DType.int32](total * B_TOPK)
     ctx.enqueue_copy(idx_dev, idx_host)
@@ -1043,7 +1176,9 @@ def _run_bf16_branch[
     var kv_n = total * Q_DEPTH
     var kv_host = ctx.enqueue_create_host_buffer[bf16](kv_n)
     for i in range(kv_n):
-        kv_host[i] = Scalar[bf16](Float32((i % 61) - 30) * 0.03)
+        kv_host[i] = Scalar[bf16](
+            Float32(((first_token * Q_DEPTH + i) % 61) - 30) * 0.03
+        )
     var kv_dev = ctx.enqueue_create_buffer[bf16](kv_n)
     ctx.enqueue_copy(kv_dev, kv_host)
     var wuk_n = heads * V_DEPTH * B_NOPE
@@ -1065,7 +1200,7 @@ def _run_bf16_branch[
     var freqs_dev = ctx.enqueue_create_buffer[DType.float32](freqs_n)
     ctx.enqueue_copy(freqs_dev, freqs_host)
     var gamma_dev = ctx.enqueue_create_buffer[bf16](V_DEPTH)
-    ctx.enqueue_memset(gamma_dev, Scalar[bf16](1.0))
+    ctx.enqueue_memset(gamma_dev, Scalar[bf16](gamma))
     var out_n = total * heads * out_depth
     var out_dev = ctx.enqueue_create_buffer[bf16](out_n)
     ctx.enqueue_memset(out_dev, Scalar[bf16](7.0))
@@ -1106,8 +1241,11 @@ def _run_bf16_branch[
     ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
         return kv_in_tt.load[width=width](coords)
 
-    var mla_args = MLADispatchScalarArgs[num_heads=heads, is_fp8_kv=False](
-        batch_size, cache_len, q_max, ctx
+    var decode_rows = 0
+    if mixed_split:
+        decode_rows = 1
+    var scalar_args, scalar_args_buf = _cp_scalar_args[heads, False](
+        ctx, seq_lens, cache_len, decode_rows
     )
     mla_decode_branch_bf16[
         mask_str="causal",
@@ -1118,6 +1256,7 @@ def _run_bf16_branch[
         q_absorbed=q_absorbed,
         latent_output=latent_output,
         kernels=SM100MLAGraph,
+        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
     ](
         TileTensor(
             out_dev.unsafe_ptr(),
@@ -1141,7 +1280,7 @@ def _run_bf16_branch[
             wuv_dev.unsafe_ptr(),
             row_major((Idx[heads], Idx[B_V], Idx[V_DEPTH])),
         ),
-        mla_args.gpu_tile_tensor(),
+        scalar_args,
         kv_input_fn,
         ctx,
         d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](idx_dev.unsafe_ptr()),
@@ -1152,6 +1291,7 @@ def _run_bf16_branch[
         lse_out=NonNullPointer[DType.float32](lse_dev),
         split_len_bound=B_TOPK,
         dcp_rank=rank,
+        mixed_split=mixed_split,
     )
     ctx.enqueue_copy(blocks_host, blocks_dev)
     var out_host = ctx.enqueue_create_host_buffer[bf16](out_n)
@@ -1184,15 +1324,16 @@ def _run_bf16_branch[
     _ = gamma_dev^
     _ = out_dev^
     _ = lse_dev^
-    _ = mla_args^
+    _ = scalar_args_buf^
 
 
 def _bf16_plain_q[
     heads: Int = B_HEADS
-](total: Int) -> List[Scalar[DType.bfloat16]]:
+](total: Int, first_token: Int = 0) -> List[Scalar[DType.bfloat16]]:
+    """`total` query rows of the global pattern, starting at `first_token`."""
     var q = List[Scalar[DType.bfloat16]](capacity=total * heads * B_Q_DEPTH)
     for i in range(total * heads * B_Q_DEPTH):
-        q.append(_bf16_q(i))
+        q.append(_bf16_q(first_token * heads * B_Q_DEPTH + i))
     return q^
 
 
@@ -1510,6 +1651,9 @@ def _run_nvfp4_branch[
     mut scales_lut_out: List[Int],
     mut out_out: List[Float32],
     mut lse_out: List[Float32],
+    mixed_split: Optional[MixedSplit] = None,
+    first_token: Int = 0,
+    first_row: Int = 0,
     sel_rank: Int = -1,
 ) raises:
     """Runs `mla_decode_branch_bf16` over an NVFP4 cache, as the
@@ -1551,24 +1695,33 @@ def _run_nvfp4_branch[
     if B_TOPK > cache_len:
         raise Error("B_TOPK must not exceed the cached keys")
 
-    # The values' table is the identity; the scales' a permutation of it.
+    # The values' table is the identity; the scales' a permutation of it,
+    # sized for the whole batch so a slice can index past its own rows.
+    var lut_pages = (batch_size + first_row) * pages
     var lut_host = ctx.enqueue_create_host_buffer[DType.uint32](n_pages)
-    var slut_host = ctx.enqueue_create_host_buffer[DType.uint32](n_pages)
-    var mult = _coprime_multiplier(n_pages)
-    scales_lut_out = List[Int](length=n_pages, fill=0)
+    var slut_host = ctx.enqueue_create_host_buffer[DType.uint32](lut_pages)
+    var mult = _coprime_multiplier(lut_pages)
+    scales_lut_out = List[Int](length=lut_pages, fill=0)
     for i in range(n_pages):
         lut_host[i] = UInt32(i)
-        var sb = (i * mult + 1) % n_pages
+    for i in range(lut_pages):
+        var sb = (i * mult + 1) % lut_pages
         slut_host[i] = UInt32(sb)
         scales_lut_out[i] = sb
 
     var values_host = ctx.enqueue_create_host_buffer[DType.uint8](value_elems)
     for i in range(value_elems):
-        values_host[i] = _nvfp4_value_byte(i)
+        values_host[i] = _nvfp4_value_byte(
+            first_row * pages * PAGE_SIZE * NV_PACKED_ROW + i
+        )
     var scales_host = ctx.enqueue_create_host_buffer[fp8](scale_elems)
     for i in range(scale_elems):
         scales_host[i] = bitcast[fp8, 1](
-            SIMD[DType.uint8, 1](_nvfp4_scale_byte(i))
+            SIMD[DType.uint8, 1](
+                _nvfp4_scale_byte(
+                    first_row * pages * PAGE_SIZE * NV_SF_PER_ROW + i
+                )
+            )
         )[0]
     var layout = ContextParallelLayout[dcp_size, dcp_interleave](rank)
     for b in range(batch_size):
@@ -1576,13 +1729,15 @@ def _run_nvfp4_branch[
             if not layout.owns(pos):
                 continue
             var slot = layout.local_slot(pos)
-            var src = b * pages * PAGE_SIZE + pos
+            var src = (first_row + b) * pages * PAGE_SIZE + pos
             var dst = b * pages * PAGE_SIZE + slot
             for d in range(NV_PACKED_ROW):
                 values_host[dst * NV_PACKED_ROW + d] = _nvfp4_value_byte(
                     src * NV_PACKED_ROW + d
                 )
-            var src_s = _nvfp4_scale_row(scales_lut_out, pages, b, pos)
+            var src_s = _nvfp4_scale_row(
+                scales_lut_out, pages, first_row + b, pos
+            )
             var dst_s = _nvfp4_scale_row(scales_lut_out, pages, b, slot)
             for g in range(NV_SF_PER_ROW):
                 scales_host[dst_s * NV_SF_PER_ROW + g] = bitcast[fp8, 1](
@@ -1616,7 +1771,7 @@ def _run_nvfp4_branch[
         for s in range(seq_lens[b]):
             var t = Int(ro_host[b]) + s
             var owned = _bf16_owned_selection[sel_dcp, sel_interleave](
-                sel_rank if sel_rank >= 0 else rank, t, cache_len
+                sel_rank if sel_rank >= 0 else rank, t + first_token, cache_len
             )
             len_host[t] = Int32(len(owned))
             for i in range(B_TOPK):
@@ -1646,7 +1801,9 @@ def _run_nvfp4_branch[
     var kv_n = total * Q_DEPTH
     var kv_host = ctx.enqueue_create_host_buffer[bf16](kv_n)
     for i in range(kv_n):
-        kv_host[i] = Scalar[bf16](Float32((i % 61) - 30) * 0.03)
+        kv_host[i] = Scalar[bf16](
+            Float32(((first_token * Q_DEPTH + i) % 61) - 30) * 0.03
+        )
     var kv_dev = ctx.enqueue_create_buffer[bf16](kv_n)
     ctx.enqueue_copy(kv_dev, kv_host)
     var wuk_n = heads * V_DEPTH * B_NOPE
@@ -1734,8 +1891,11 @@ def _run_nvfp4_branch[
     ](coords: Coord[Int, Int]) {var kv_in_tt} -> SIMD[bf16, width]:
         return kv_in_tt.load[width=width](coords)
 
-    var mla_args = MLADispatchScalarArgs[num_heads=heads, is_fp8_kv=True](
-        batch_size, cache_len, q_max, ctx
+    var decode_rows = 0
+    if mixed_split:
+        decode_rows = 1
+    var scalar_args, scalar_args_buf = _cp_scalar_args[heads, True](
+        ctx, seq_lens, cache_len, decode_rows
     )
     mla_decode_branch_bf16[
         mask_str="causal",
@@ -1768,7 +1928,7 @@ def _run_nvfp4_branch[
             wuv_dev.unsafe_ptr(),
             row_major((Idx[heads], Idx[B_V], Idx[V_DEPTH])),
         ),
-        mla_args.gpu_tile_tensor(),
+        scalar_args,
         kv_input_fn,
         ctx,
         d_indices=rebind[MutPointer[Int32, MutAnyOrigin]](idx_dev.unsafe_ptr()),
@@ -1779,6 +1939,7 @@ def _run_nvfp4_branch[
         lse_out=NonNullPointer[DType.float32](lse_dev),
         split_len_bound=B_TOPK,
         dcp_rank=rank,
+        mixed_split=mixed_split,
     )
     ctx.enqueue_copy(values_host, values_dev)
     ctx.enqueue_copy(scales_host, scales_dev)
@@ -1817,7 +1978,7 @@ def _run_nvfp4_branch[
     _ = gamma_dev^
     _ = out_dev^
     _ = lse_dev^
-    _ = mla_args^
+    _ = scalar_args_buf^
 
 
 def run_nvfp4_cp_store[
@@ -2089,6 +2250,288 @@ def run_nvfp4_cp_owned_rows[
     )
 
 
+def _compare_mixed_rows[
+    width: Int = B_V
+](
+    name: String,
+    mixed_out: List[Float32],
+    mixed_lse: List[Float32],
+    first_token: Int,
+    ref_out: List[Float32],
+    ref_lse: List[Float32],
+    heads: Int,
+) raises:
+    """Compares the mixed run's rows from `first_token` against the alone
+    run's, one row of `len(ref_lse) // heads` tokens, each `width` wide."""
+    var tokens = len(ref_lse) // heads
+    var max_out_err = Float64(0)
+    var max_lse_err = Float64(0)
+    for t in range(tokens):
+        for h in range(heads):
+            var i = t * heads + h
+            var m = (first_token + t) * heads + h
+            max_lse_err = max(
+                max_lse_err, abs(Float64(mixed_lse[m]) - Float64(ref_lse[i]))
+            )
+            assert_almost_equal(mixed_lse[m], ref_lse[i], atol=1e-2, rtol=1e-3)
+            for d in range(width):
+                var got = Float64(mixed_out[m * width + d])
+                var want = Float64(ref_out[i * width + d])
+                max_out_err = max(max_out_err, abs(got - want))
+                assert_almost_equal(got, want, atol=2e-2, rtol=2e-2)
+    print(
+        t"{name}: tokens={tokens} max_out_err={max_out_err}"
+        t" max_lse_err={max_lse_err}"
+    )
+
+
+def run_bf16_mixed_split[
+    dcp_size: Int, dcp_interleave: Int
+](ctx: DeviceContext, cache_len: Int) raises:
+    """Checks the BF16 `.cp` branch's two-view split against per-row runs.
+
+    A decode row and a 40-token prefill row run together through the split
+    and each row alone, on the same rank of the same group, so the alone
+    run's cache image and store ownership match the split run's; the split
+    run must match both rows' outputs and LSEs on every rank.
+    """
+    print(
+        t"bf16_mixed_split: dcp={dcp_size} interleave={dcp_interleave}"
+        t" cache_len={cache_len}"
+    )
+    var seq_lens = List[Int](1, 40, __list_literal__=None)
+    var split = _mixed_split(ctx, seq_lens, cache_len)
+    var total = 41
+    var q = _bf16_plain_q(total)
+    var first_token = 0
+    for row in range(2):
+        var one_lens = List[Int](seq_lens[row], __list_literal__=None)
+        var one_q = _bf16_plain_q(seq_lens[row], first_token)
+        for r in range(dcp_size):
+            var one_words = List[UInt16]()
+            var one_out = List[Float32]()
+            var one_lse = List[Float32]()
+            _run_bf16_branch[dcp_size, dcp_interleave](
+                ctx,
+                one_lens,
+                cache_len,
+                r,
+                one_q,
+                one_words,
+                one_out,
+                one_lse,
+                first_token=first_token,
+                first_row=row,
+            )
+            var words = List[UInt16]()
+            var out = List[Float32]()
+            var lse = List[Float32]()
+            _run_bf16_branch[dcp_size, dcp_interleave](
+                ctx, seq_lens, cache_len, r, q, words, out, lse, split
+            )
+            _compare_mixed_rows(
+                String(t"bf16_mixed_split rank {r} row {row}"),
+                out,
+                lse,
+                first_token,
+                one_out,
+                one_lse,
+                B_HEADS,
+            )
+        first_token += seq_lens[row]
+
+
+def run_bf16_mixed_split_round_once[
+    dcp_size: Int, dcp_interleave: Int
+](ctx: DeviceContext, cache_len: Int) raises:
+    """Checks the split views keep `kv_norm_multiply_before_cast`.
+
+    The same mixed batch runs whole and split with the flag on and a
+    gamma away from one, where the two rounding orders differ; the
+    split run must store the whole run's latent words exactly and
+    match its outputs and LSEs.
+    """
+    print(
+        t"bf16_mixed_split_round_once: dcp={dcp_size}"
+        t" interleave={dcp_interleave} cache_len={cache_len}"
+    )
+    var seq_lens = List[Int](1, 40, __list_literal__=None)
+    var split = _mixed_split(ctx, seq_lens, cache_len)
+    var total = 41
+    var q = _bf16_plain_q(total)
+    comptime round_once = True
+    var gamma = Float32(1.25)
+    for r in range(dcp_size):
+        var whole_words = List[UInt16]()
+        var whole_out = List[Float32]()
+        var whole_lse = List[Float32]()
+        _run_bf16_branch[
+            dcp_size, dcp_interleave, kv_norm_multiply_before_cast=round_once
+        ](
+            ctx,
+            seq_lens,
+            cache_len,
+            r,
+            q,
+            whole_words,
+            whole_out,
+            whole_lse,
+            gamma=gamma,
+        )
+        var words = List[UInt16]()
+        var out = List[Float32]()
+        var lse = List[Float32]()
+        _run_bf16_branch[
+            dcp_size, dcp_interleave, kv_norm_multiply_before_cast=round_once
+        ](
+            ctx,
+            seq_lens,
+            cache_len,
+            r,
+            q,
+            words,
+            out,
+            lse,
+            split,
+            gamma=gamma,
+        )
+        var bad_words = 0
+        for i in range(len(words)):
+            if words[i] != whole_words[i]:
+                bad_words += 1
+        print(t"  rank={r} mismatched_words={bad_words}")
+        assert_true(
+            bad_words == 0,
+            "the split run's latent store differs from the whole run's",
+        )
+        _compare_mixed_rows(
+            String(t"bf16_mixed_split_round_once rank {r}"),
+            out,
+            lse,
+            0,
+            whole_out,
+            whole_lse,
+            B_HEADS,
+        )
+
+
+def run_nvfp4_mixed_split[
+    dcp_size: Int, dcp_interleave: Int
+](ctx: DeviceContext, cache_len: Int) raises:
+    """Checks the NVFP4 `.cp` branch's two-view split against per-row runs.
+
+    A decode row and a 40-token prefill row run together through the split
+    and each row alone, on the same rank of the same group, so the alone
+    run's cache image and store ownership match the split run's; the split
+    run must match both rows' outputs and LSEs on every rank.
+    """
+    print(
+        t"nvfp4_mixed_split: dcp={dcp_size} interleave={dcp_interleave}"
+        t" cache_len={cache_len}"
+    )
+    var seq_lens = List[Int](1, 40, __list_literal__=None)
+    var split = _mixed_split(ctx, seq_lens, cache_len)
+    var total = 41
+    var q = _bf16_plain_q(total)
+    var first_token = 0
+    for row in range(2):
+        var one_lens = List[Int](seq_lens[row], __list_literal__=None)
+        var one_q = _bf16_plain_q(seq_lens[row], first_token)
+        for r in range(dcp_size):
+            var one_values = List[UInt8]()
+            var one_scales = List[UInt8]()
+            var one_slut = List[Int]()
+            var one_out = List[Float32]()
+            var one_lse = List[Float32]()
+            _run_nvfp4_branch[dcp_size, dcp_interleave](
+                ctx,
+                one_lens,
+                cache_len,
+                r,
+                one_q,
+                one_values,
+                one_scales,
+                one_slut,
+                one_out,
+                one_lse,
+                first_token=first_token,
+                first_row=row,
+            )
+            var values = List[UInt8]()
+            var scales = List[UInt8]()
+            var slut = List[Int]()
+            var out = List[Float32]()
+            var lse = List[Float32]()
+            _run_nvfp4_branch[dcp_size, dcp_interleave](
+                ctx,
+                seq_lens,
+                cache_len,
+                r,
+                q,
+                values,
+                scales,
+                slut,
+                out,
+                lse,
+                split,
+            )
+            _compare_mixed_rows(
+                String(t"nvfp4_mixed_split rank {r} row {row}"),
+                out,
+                lse,
+                first_token,
+                one_out,
+                one_lse,
+                B_HEADS,
+            )
+        first_token += seq_lens[row]
+
+
+def run_fused_mixed_split(ctx: DeviceContext, cache_len: Int) raises:
+    """Checks the FP8 `.cp` branch's two-view split against per-row runs."""
+    print(t"fused_mixed_split: cache_len={cache_len}")
+    var seq_lens = List[Int](1, 40, __list_literal__=None)
+    var split = _mixed_split(ctx, seq_lens, cache_len)
+    var blocks = List[UInt8]()
+    var out = List[Float32]()
+    var lse = List[Float32]()
+    var lengths = List[Int]()
+    _run_fused_cp[1, 1](
+        ctx, seq_lens, cache_len, 0, blocks, out, lse, lengths, split
+    )
+    var split_out = out^
+    var split_lse = lse^
+    var first_token = 0
+    for row in range(2):
+        var one_lens = List[Int](seq_lens[row], __list_literal__=None)
+        var one_blocks = List[UInt8]()
+        var one_out = List[Float32]()
+        var one_lse = List[Float32]()
+        var one_lengths = List[Int]()
+        _run_fused_cp[1, 1](
+            ctx,
+            one_lens,
+            cache_len,
+            0,
+            one_blocks,
+            one_out,
+            one_lse,
+            one_lengths,
+            first_token=first_token,
+            first_row=row,
+        )
+        _compare_mixed_rows[width=V_DEPTH](
+            String(t"fused_mixed_split row {row}"),
+            split_out,
+            split_lse,
+            first_token,
+            one_out,
+            one_lse,
+            F_HEADS,
+        )
+        first_token += seq_lens[row]
+
+
 def main() raises:
     with DeviceContext() as ctx:
         comptime if ctx.target.is_nvidia_gpu() and _is_sm10x_gpu(
@@ -2165,6 +2608,16 @@ def main() raises:
             # step; this row runs past the fold bound beside a decode row.
             run_bf16_cp_owned_rows[4, 1](ctx, [1, 40, 4], cache_len=250)
             run_nvfp4_cp_owned_rows[8, 1](ctx, [1, 40, 4], cache_len=300)
+            # A mixed step splits into a decode and a prefill view; each
+            # view must match the same rows run alone.
+            run_bf16_mixed_split[1, 1](ctx, cache_len=101)
+            run_bf16_mixed_split[2, 1](ctx, cache_len=101)
+            # The split views must keep the caller's round-once latent
+            # store, not silently fall back to rounding before gamma.
+            run_bf16_mixed_split_round_once[1, 1](ctx, cache_len=101)
+            run_nvfp4_mixed_split[1, 1](ctx, cache_len=101)
+            run_nvfp4_mixed_split[2, 1](ctx, cache_len=101)
+            run_fused_mixed_split(ctx, cache_len=300)
             # A step can give the `.cp` branch zero tokens; it must
             # return at its guard and leave the cache unchanged.
             run_fused_cp_store[2, 1](ctx, [0], cache_len=250)

@@ -4714,6 +4714,7 @@ def mla_fp8_index_top_k_physical_cp(
             mla_collection.scales_lookup_table,
         ]
     values.append(dcp_rank)
+    values.append(_mixed_step_split_value(k_collection.mixed_step_split))
     results = ops.inplace_custom(
         op_name,
         device=q.device,
@@ -8101,6 +8102,13 @@ def mla_decode_graph_cp(
     # The `.cp` ops have no defaults for the group, so a group of one names it.
     parameters.setdefault("dcp_size", 1)
     parameters.setdefault("dcp_interleave", 1)
+    # The `.cp` op declares the capturable-graph scalar and the split record
+    # after the group operands, in that order (see attention.mojo).
+    assert kv_collection.mla_num_partitions is not None
+    input_values += [
+        kv_collection.mla_num_partitions,
+        _mixed_step_split_value(kv_collection.mixed_step_split),
+    ]
 
     results = ops.inplace_custom(
         op_name,

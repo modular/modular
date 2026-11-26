@@ -784,7 +784,10 @@ _EXTRA_CONSTRAINTS = {
 }
 
 _EXTRA_DEPS = {
-    "test_mla_index_fp8_cp.mojo": ["//max:kv_cache"],
+    "test_mla_index_fp8_cp.mojo": [
+        "//max:builtin_kernels",
+        "//max:kv_cache",
+    ],
     "test_indexer_k_quantize_store.mojo": ["//max:kv_cache"],
     "test_mla_index_windowed_keep.mojo": ["//max:kv_cache"],
     "attention/test_mha_sm100_depth512_sink.mojo": ["//max:kv_cache"],

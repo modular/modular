@@ -2521,7 +2521,7 @@ def mla_decode_branch_fp8[
     dtype: DType,
     fp8_dtype: DType,
     fp8_scale_dtype: DType,
-    collection_t: KVCollectionT,
+    collection_t: KVCollectionT & Deinitable,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
@@ -2559,6 +2559,9 @@ def mla_decode_branch_fp8[
     *,
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
+    # Gates the two-view split loop; the self-call passes False so the
+    # loop does not re-instantiate itself.
+    allow_split: Bool = True,
 ](
     output: TileTensor[mut=True, dtype, address_space=.GENERIC, ...],
     q: TileTensor[dtype, address_space=.GENERIC, ...],
@@ -2600,6 +2603,9 @@ def mla_decode_branch_fp8[
     # flare_mla_decoding.
     lse_out: LseOutPtrType = null_pointer[LseOutPtrType](),
     split_len_bound: Int = 0,
+    # The validated split of the batch into a decode and a prefill view;
+    # a split runs one self-call per view, None keeps the whole-batch route.
+    mixed_split: Optional[MixedSplit] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -2659,6 +2665,8 @@ def mla_decode_branch_fp8[
         LseOutPtrType: `OptionalPointer` type of `lse_out` (inferred,
             defaults to `NullPointer`).
         kernels: The vendor's MLA graph kernels; see `MLAGraphKernels`.
+        allow_split: Whether a passed `mixed_split` may run as two
+            self-calls (defaults to True); the per-view calls pass False.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -2711,6 +2719,9 @@ def mla_decode_branch_fp8[
             only); see `flare_mla_decoding`.
         split_len_bound: With `lse_out`, an upper bound on the per-token
             lengths that sizes split-K (0 keeps `indices_stride`).
+        mixed_split: The validated split of the batch into a decode and a
+            prefill view (defaults to None, one whole-batch route); the
+            caller checks the record against the batch before passing one.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -2742,6 +2753,116 @@ def mla_decode_branch_fp8[
 
     if seq_len == 0:
         return
+
+    # One self-call per view, so each view's kernel geometry and split-K
+    # count follow its own max query length; refused splits stay whole.
+    comptime if (
+        allow_split
+        and ctx.target.is_nvidia_gpu()
+        and not has_extra_k
+        and not fold_shared_index
+    ):
+        if case .Some(split) = mixed_split:
+            if (
+                is_packed(q)
+                and is_packed(output)
+                and is_packed(input_row_offsets)
+            ):
+                var batch = Int(input_row_offsets.dim[0]()) - 1
+                for i in range(2):
+                    var view = split.tail if i == 1 else split.head
+                    var row_offsets, rebased = _mla_split_row_offsets(
+                        input_row_offsets, view, batch, ctx
+                    )
+                    var args, args_owned = _mla_split_dispatch_args(
+                        scalar_args_buf, view, ctx
+                    )
+                    var view_collection = kv_collection.rows_view(
+                        view.first_row,
+                        view.rows,
+                        UInt32(view.max_q_len),
+                        UInt32(view.max_cache_len),
+                    )
+                    var first_token = view.first_token
+
+                    @inline(.always)
+                    def view_kv_input_fn[
+                        width: Int
+                    ](coords: Coord[Int, Int]) {
+                        var kv_input_fn, var first_token
+                    } -> SIMD[DType.bfloat16, width]:
+                        return kv_input_fn[width=width](
+                            Coord(coords[0] + first_token, coords[1])
+                        )
+
+                    mla_decode_branch_fp8[
+                        dtype=dtype,
+                        fp8_dtype=fp8_dtype,
+                        fp8_scale_dtype=fp8_scale_dtype,
+                        m_scale_granularity=m_scale_granularity,
+                        n_scale_granularity=n_scale_granularity,
+                        k_scale_granularity=k_scale_granularity,
+                        mask_str=mask_str,
+                        sparse_mla=sparse_mla,
+                        fold_shared_index=fold_shared_index,
+                        sparse_row=sparse_row,
+                        skip_masked_tiles=skip_masked_tiles,
+                        fp8_q=fp8_q,
+                        has_extra_k=has_extra_k,
+                        physical_indices=physical_indices,
+                        AttnSinkPtrType=AttnSinkPtrType,
+                        TopkLengthsPtrType=TopkLengthsPtrType,
+                        attn_sink_inert=attn_sink_inert,
+                        dcp_size=dcp_size,
+                        dcp_interleave=dcp_interleave,
+                        LseOutPtrType=LseOutPtrType,
+                        kernels=kernels,
+                        allow_split=False,
+                    ](
+                        _mla_split_token_rows(
+                            output, view.first_token, view.tokens
+                        ),
+                        _mla_split_token_rows(q, view.first_token, view.tokens),
+                        TileTensor(row_offsets, row_major(view.rows + 1)),
+                        freqs_cis,
+                        kv_norm_gamma,
+                        view_collection,
+                        layer_idx,
+                        scale,
+                        epsilon,
+                        w_uk,
+                        w_uk_scale,
+                        w_uv,
+                        w_uv_scale,
+                        TileTensor(args, row_major((Idx[3],))),
+                        view_kv_input_fn,
+                        ctx,
+                        _mla_split_indices(
+                            d_indices, view.first_token * indices_stride
+                        ),
+                        indices_stride,
+                        _mla_split_offset_pointer(
+                            topk_lengths, view.first_token
+                        ),
+                        attn_sink_ptr,
+                        extra_k,
+                        extra_d_indices,
+                        extra_indices_stride,
+                        extra_topk_lengths,
+                        extra_scales_ptr,
+                        num_partitions_in,
+                        logical_indices,
+                        selection_lag,
+                        dcp_rank,
+                        _mla_split_offset_pointer(
+                            lse_out, view.first_token * num_heads
+                        ),
+                        split_len_bound,
+                        mixed_split=None,
+                    )
+                    _ = args_owned^
+                    _ = rebased^
+                return
 
     comptime if ctx.target.is_amd_gpu() and sparse_mla:
         comptime assert (
@@ -4581,7 +4702,7 @@ def _copy_latent_q(
 
 
 def mla_decode_branch_bf16[
-    collection_t: KVCollectionT,
+    collection_t: KVCollectionT & Deinitable,
     KVInputFnType: ImplicitlyCopyable
     & RegisterPassable
     & def[width: Int](Coord[Int, Int]) -> SIMD[DType.bfloat16, width],
@@ -4616,6 +4737,9 @@ def mla_decode_branch_bf16[
     # Selects the vendor's kernels; see `MLAGraphKernels`.
     kernels: MLAGraphKernels,
     kv_norm_multiply_before_cast: Bool = False,
+    # Gates the two-view split loop; the self-call passes False so the
+    # loop does not re-instantiate itself.
+    allow_split: Bool = True,
 ](
     output: TileTensor[mut=True, .bfloat16, address_space=.GENERIC, ...],
     q: TileTensor[.bfloat16, address_space=.GENERIC, ...],
@@ -4653,6 +4777,9 @@ def mla_decode_branch_bf16[
     # the docstring.
     output_gate: OutputGatePtrType = null_pointer[OutputGatePtrType](),
     output_gate_row_stride: Int = 0,
+    # The validated split of the batch into a decode and a prefill view;
+    # a split runs one self-call per view, None keeps the whole-batch route.
+    mixed_split: Optional[MixedSplit] = None,
 ) raises:
     """BF16 MLA decode path.
 
@@ -4700,6 +4827,8 @@ def mla_decode_branch_bf16[
         kv_norm_multiply_before_cast: Whether the latent RMSNorm applies
             `gamma` in float32 and rounds once, rather than rounding before
             `gamma` (defaults to False).
+        allow_split: Whether a passed `mixed_split` may run as two
+            self-calls (defaults to True); the per-view calls pass False.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim],
@@ -4754,6 +4883,9 @@ def mla_decode_branch_bf16[
             by `sigmoid(gate)`, so the caller needs no separate elementwise
             pass. Null applies no gate.
         output_gate_row_stride: Row stride of `output_gate`, in elements.
+        mixed_split: The validated split of the batch into a decode and a
+            prefill view (defaults to None, one whole-batch route); the
+            caller checks the record against the batch before passing one.
     """
     comptime kv_params = collection_t.kv_params
     comptime assert kv_params.is_mla, "kv_params.is_mla should be true"
@@ -4806,6 +4938,104 @@ def mla_decode_branch_bf16[
     var seq_len = Int(q.dim(0))
     if seq_len == 0:
         return
+
+    # One self-call per view, so each view's kernel geometry and split-K
+    # count follow its own max query length; refused splits stay whole.
+    comptime if allow_split and ctx.target.is_nvidia_gpu():
+        if case .Some(split) = mixed_split:
+            if (
+                is_packed(q)
+                and is_packed(output)
+                and is_packed(input_row_offsets)
+            ):
+                var batch = Int(input_row_offsets.dim[0]()) - 1
+                for i in range(2):
+                    var view = split.tail if i == 1 else split.head
+                    var row_offsets, rebased = _mla_split_row_offsets(
+                        input_row_offsets, view, batch, ctx
+                    )
+                    var args, args_owned = _mla_split_dispatch_args(
+                        scalar_args_buf, view, ctx
+                    )
+                    var view_collection = kv_collection.rows_view(
+                        view.first_row,
+                        view.rows,
+                        UInt32(view.max_q_len),
+                        UInt32(view.max_cache_len),
+                    )
+                    var first_token = view.first_token
+
+                    @inline(.always)
+                    def view_kv_input_fn[
+                        width: Int
+                    ](coords: Coord[Int, Int]) {
+                        var kv_input_fn, var first_token
+                    } -> SIMD[DType.bfloat16, width]:
+                        return kv_input_fn[width=width](
+                            Coord(coords[0] + first_token, coords[1])
+                        )
+
+                    mla_decode_branch_bf16[
+                        mask_str=mask_str,
+                        sparse_mla=sparse_mla,
+                        physical_indices=physical_indices,
+                        sparse_row=sparse_row,
+                        skip_masked_tiles=skip_masked_tiles,
+                        AttnSinkPtrType=AttnSinkPtrType,
+                        TopkLengthsPtrType=TopkLengthsPtrType,
+                        dcp_size=dcp_size,
+                        dcp_interleave=dcp_interleave,
+                        LseOutPtrType=LseOutPtrType,
+                        OutputGatePtrType=OutputGatePtrType,
+                        q_absorbed=q_absorbed,
+                        latent_output=latent_output,
+                        nope_inputs=nope_inputs,
+                        kernels=kernels,
+                        kv_norm_multiply_before_cast=kv_norm_multiply_before_cast,
+                        allow_split=False,
+                    ](
+                        _mla_split_token_rows(
+                            output, view.first_token, view.tokens
+                        ),
+                        _mla_split_token_rows(q, view.first_token, view.tokens),
+                        TileTensor(row_offsets, row_major(view.rows + 1)),
+                        freqs_cis,
+                        kv_norm_gamma,
+                        view_collection,
+                        layer_idx,
+                        scale,
+                        epsilon,
+                        w_uk,
+                        w_uv,
+                        TileTensor(args, row_major((Idx[3],))),
+                        view_kv_input_fn,
+                        ctx,
+                        _mla_split_indices(
+                            d_indices, view.first_token * indices_stride
+                        ),
+                        indices_stride,
+                        _mla_split_offset_pointer(
+                            topk_lengths, view.first_token
+                        ),
+                        attn_sink_ptr,
+                        num_partitions_in,
+                        selection_lag,
+                        dcp_rank,
+                        _mla_split_offset_pointer(
+                            lse_out, view.first_token * num_heads
+                        ),
+                        split_len_bound,
+                        mixed_split=None,
+                        row_invariant_verify=row_invariant_verify,
+                        output_gate=_mla_split_offset_pointer(
+                            output_gate,
+                            first_token * output_gate_row_stride,
+                        ),
+                        output_gate_row_stride=output_gate_row_stride,
+                    )
+                    _ = args_owned^
+                    _ = rebased^
+                return
 
     # Sparse decode over a unit-scale FP8 latent cache on SM100 stages Q in
     # FP8 so the dispatch routes to the native-FP8 sparse kernel
