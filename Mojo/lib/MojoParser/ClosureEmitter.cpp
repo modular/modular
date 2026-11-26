@@ -527,8 +527,7 @@ static size_t explicitParamCount(FnOp fn) {
 static LogicalResult
 emitCallForwarderBody(SharedState &shared, FnOp wrapperFn, ASTDecl &wrapperDecl,
                       TypedAttr callee, FnTypeGeneratorType calleeSig,
-                      Type resultType, ArrayRef<Type> expectedOperandTypes,
-                      bool skipFirst = false) {
+                      Type resultType, bool skipFirst = false) {
   DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
   if (shared.diBuilder)
     diScopeGuard = shared.diBuilder->pushScopeGuard(wrapperFn.getLocScope());
@@ -540,15 +539,11 @@ emitCallForwarderBody(SharedState &shared, FnOp wrapperFn, ASTDecl &wrapperDecl,
   if (skipFirst)
     toForward = toForward.drop_front();
 
-  assert(toForward.size() == expectedOperandTypes.size() &&
-         "forwarder arity must match expected operand types");
-  SmallVector<Value> operands;
-  operands.reserve(toForward.size());
-  for (auto [arg, ty] : llvm::zip_equal(toForward, expectedOperandTypes))
-    operands.push_back(arg.getType() != ty
-                           ? Value(RebindOp::create(bodyBuilder, ty, arg))
-                           : Value(arg));
-
+  assert(toForward.size() == calleeSig.getArguments().size() &&
+         "forwarder arity must match the callee");
+  // Simply forward the args, the call emitters knows how to line up equal canon
+  // type.
+  SmallVector<Value> operands(toForward.begin(), toForward.end());
   return emitForwardingCall(bodyBuilder, wrapperFn, wrapperDecl, callee,
                             calleeSig, resultType, operands);
 }
@@ -616,8 +611,7 @@ static FnOp emitStorageCallWitness(
   callWitness->setAttr(kTransparentThunkCalleeExprAttr, calleeSymbol);
   auto calleeSig = cast<FnTypeGeneratorType>(calleeSymbol.getType());
   if (failed(emitCallForwarderBody(shared, callWitness, *callWitnessDecl,
-                                   calleeSymbol, calleeSig, callResult,
-                                   calleeSig.getArguments()))) {
+                                   calleeSymbol, calleeSig, callResult))) {
     shared.emitError(smLoc, "failed to emit trait-shaped __call__ forwarder");
     return {};
   }
@@ -880,11 +874,10 @@ ClosureEmitter::getInflatedClosureForFnSymbol(IREmitter &emitter, SMLoc loc,
         auto calleeSig = cast<FnTypeGeneratorType>(callee.getType());
         ArrayRef<ASTDecl *> decls = structDecl.lookupInCurrentScope(fnName);
         assert(decls.size() == 1);
-        if (failed(emitCallForwarderBody(
-                shared, callMethod, *decls.front(), callee, calleeSig, result,
-                calleeSig.getArguments(), /*skipFirst=*/true))) {
+        if (failed(emitCallForwarderBody(shared, callMethod, *decls.front(),
+                                         callee, calleeSig, result,
+                                         /*skipFirst=*/true)))
           llvm_unreachable("Internal Error: fail to forward closure call.");
-        };
         addConformanceTable(
             structDecl, callParent,
             {{"__call__", buildSymbol(shared.getEvaluationContext(), callMethod,

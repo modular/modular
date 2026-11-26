@@ -450,7 +450,7 @@ def star_args_throughWrapper() -> Int:
 # COM: separately.
 
 # KWARGS_FN_PTR: lit.fn @"__call__(inflated$def(var **kwargs: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]|{{.*}}[$0],kwargs:::SIMD[DType.int, 1]**)"
-# KWARGS_FN_PTR: lit.call tail{{.*}}: *"#__CALL__#"]{{.*}}(%{{[0-9]+}})
+# KWARGS_FN_PTR: lit.call tail{{.*}}: *"#__CALL__#"]{{.*}}(%kwargs)
 # KWARGS_FN_PTR: lit.fn @"kwargs_fn_ptr_useFnWrapper()"
 
 
@@ -529,7 +529,7 @@ def mixed_kwargs_duplicateSignature() -> Int:
 # COM: closure-typed value.
 
 # MIXED_KWARGS_FN_PTR: lit.fn @"__call__(inflated$def(x: ::SIMD[DType.int, 1], *, named: ::SIMD[DType.int, 1], var **kwargs: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]|{{.*}}[$0],::SIMD[DType.int, 1],named:::SIMD[DType.int, 1],kwargs:::SIMD[DType.int, 1]**)"
-# MIXED_KWARGS_FN_PTR: lit.call tail{{.*}}: *"#__CALL__#"]{{.*}}(%x, %named, %{{[0-9]+}})
+# MIXED_KWARGS_FN_PTR: lit.call tail{{.*}}: *"#__CALL__#"]{{.*}}(%x, %named, %kwargs)
 # MIXED_KWARGS_FN_PTR: lit.fn @"mixed_kwargs_fn_ptr_useFnBinding()"
 
 
@@ -551,7 +551,7 @@ def mixed_kwargs_fn_ptr_useFnBinding() -> Int:
 # COM: the fn-pointer wrapper as well.
 
 # STAR_ARGS_KWARGS_FN_PTR: lit.fn @"__call__{{.*}}(inflated$def{{.*}}(*args: ::SIMD[DType.int, 1], var **kwargs: ::SIMD[DType.int, 1]) thin -> ::SIMD[DType.int, 1]|{{.*}}[$0],::SIMD[DType.int, 1]*,kwargs:::SIMD[DType.int, 1]**)"
-# STAR_ARGS_KWARGS_FN_PTR: lit.call tail{{.*}}(%{{[0-9]+}}, %{{[0-9]+}})
+# STAR_ARGS_KWARGS_FN_PTR: lit.call tail{{.*}}(%args, %kwargs)
 # STAR_ARGS_KWARGS_FN_PTR: lit.fn @"star_args_kwargs_fn_ptr_useFnWrapper()"
 
 

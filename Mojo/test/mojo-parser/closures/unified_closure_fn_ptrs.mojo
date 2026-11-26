@@ -96,3 +96,34 @@ def use_closure[Impl: def(Int) -> Int](cb: Impl) -> Int:
 def wrap_fn() -> Int:
     var _ = use_closure(top_level)
     var _ = use_closure[type_of(top_level)](top_level)
+
+
+# // -----
+
+# COM: A function with a non-movable result converts to a closure wrapper. The
+# COM: forwarder passes its own error and result slots straight to the callee,
+# COM: the same as a hand-written `return make_pinned(i)`.
+
+# CHECK: lit.fn @"__call__(inflated$def(i: ::SIMD[DType.int, 1]) raises thin -> {{.*}}Pinned
+# CHECK-NOT: kgen.rebind
+# CHECK: lit.call tail[{{.*}}: *"#__CALL__#"][mut *"1_unnamed`", mut *"2_unnamed`"](%i, %__error__, %__result__)
+# CHECK: lit.end_fn
+
+
+@fieldwise_init
+struct Pinned(not Movable):
+    var value: Int
+
+
+def make_pinned(i: Int) raises -> Pinned:
+    return Pinned(i)
+
+
+def take_pinned_maker(f: Some[def(Int) raises -> Pinned]) raises:
+    var p = f(3)
+    _ = p.value
+
+
+def wrap_fn() raises:
+    take_pinned_maker(make_pinned)
+    take_pinned_maker(lambda (i: Int) raises -> Pinned: Pinned(i))
