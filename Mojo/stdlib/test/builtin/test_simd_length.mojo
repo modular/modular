@@ -19,5 +19,15 @@ def test_pow() raises:
     assert_equal(Int(SIMDLength(3) ** SIMDLength(0)), 1)
 
 
+def test_floordiv() raises:
+    assert_equal(SIMDLength(8) // SIMDLength(2), 4)
+    assert_equal(SIMDLength(7) // SIMDLength(2), 3)
+    assert_equal(SIMDLength(-7) // SIMDLength(2), -4)
+
+    # The result folds at compile time, so it can be used as a SIMD width.
+    var half = SIMD[.int32, SIMDLength(4) // 2](1, 2)
+    assert_equal(half, SIMD[.int32, 2](1, 2))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

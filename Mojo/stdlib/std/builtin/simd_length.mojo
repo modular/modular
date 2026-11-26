@@ -236,6 +236,24 @@ struct SIMDLength(
         )
 
     @always_inline("builtin")
+    def __floordiv__(self, rhs: Self) -> Int:
+        """Return the result of the floor division of `self` and `rhs`.
+
+        Rounds the result down (toward negative infinity).
+
+        Args:
+            rhs: The value to divide on.
+
+        Returns:
+            `self // rhs` value.
+        """
+        return Int(
+            mlir_value=__mlir_op.`index.floordivs`(
+                self._mlir_value, rhs._mlir_value
+            )
+        )
+
+    @always_inline("builtin")
     def __mul__(self, rhs: Self) -> Self:
         """Return `self * rhs`.
 

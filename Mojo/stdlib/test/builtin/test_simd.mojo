@@ -2019,6 +2019,15 @@ def test_split() raises:
     assert_equal(tup8[0], type_of(tup8[0])(1, 2, 3, 4))
     assert_equal(tup8[1], type_of(tup8[1])(5, 6, 7, 8))
 
+    # The halves have a concrete width, so they compare with a plain SIMD type.
+    var first, second = SIMD[.int32, 4](1, 2, 3, 4).split()
+    assert_equal(first, SIMD[.int32, 2](1, 2))
+    assert_equal(second, SIMD[.int32, 2](3, 4))
+    assert_true(first == SIMD[.int32, 2](1, 2))
+    var lo, hi = SIMD[.uint8, 8](1, 2, 3, 4, 5, 6, 7, 8).split()
+    assert_true(lo == SIMD[.uint8, 4](1, 2, 3, 4))
+    assert_true(hi == SIMD[.uint8, 4](5, 6, 7, 8))
+
 
 def test_contains() raises:
     var x = SIMD[.int8, 4](1, 2, 3, 4)
