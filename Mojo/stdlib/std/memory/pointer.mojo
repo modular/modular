@@ -312,10 +312,6 @@ def pointer_to_int(pointer: Optional[Pointer[...]]) -> Int:
     return Pointer(to=pointer).unsafe_bitcast[Int]()[]
 
 
-comptime _UnsafeDanglingPluginHookFnType = def[alignment: Int]() thin -> Int
-"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `Pointer.unsafe_dangling`."""
-
-
 # ===-----------------------------------------------------------------------===#
 # Pointer
 # ===-----------------------------------------------------------------------===#
@@ -1302,14 +1298,7 @@ struct Pointer[
         # initializing it first! The pointer is not null but isn't valid either!
         ```
         """
-        comptime alignment = align_of[Self.T]()
-        comptime if case .Some(dangling_fn) = CurrentPlugin.unsafe_dangling_fn:
-            comptime address = dangling_fn[alignment]()
-            comptime assert (
-                address != 0
-            ), "Pointer cannot be constructed with address 0"
-            return Self(unsafe_from_address=address)
-        return Self(unsafe_from_address=alignment)
+        return Self(unsafe_from_address=align_of[Self.T]())
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)

@@ -24,7 +24,6 @@ from std.math.math import (
 )
 from std.memory.stack_allocation import _StackAllocationPluginHookFnType
 from std.simd import _CastPluginHookFnType
-from std.memory.pointer import _UnsafeDanglingPluginHookFnType
 from std.sys.intrinsics import PrefetchOptions, _PrefetchPluginHookFnType
 from std._gpu.primitives.id import _GPUIdPluginHookFnType
 from std.io.io import _PrintEmitPluginHookFnType, _PrintfEmitPluginHookFnType
@@ -337,19 +336,6 @@ trait PluginHooks:
     Returns:
         The backend's `AddressSpace` for `name`, or `None` if the backend does
         not define it.
-    """
-
-    comptime unsafe_dangling_fn: OptionalReg[
-        _UnsafeDanglingPluginHookFnType
-    ] = None
-    """`Pointer.unsafe_dangling()` address override.
-
-    Parameters:
-        alignment: The natural alignment of the pointee type, which the
-            stdlib default uses as the dangling address.
-
-    Returns:
-        The raw integer address used to construct the dangling pointer.
     """
 
     # ===------------------------------------------------------------------=== #
