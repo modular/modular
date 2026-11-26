@@ -1144,6 +1144,41 @@ def test_deque_literal() raises:
     assert_equal(0, len(q3))
 
 
+def test_deque_literal_power_of_two_length() raises:
+    # 64 values exactly fill a 64-slot buffer, so the deque needs more room.
+    # Without it, `len` was 0 and `append` wrote past the end of the buffer.
+    # fmt: off
+    var q: Deque[Int] = [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+        32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+        48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+    ]
+    # fmt: on
+    assert_equal(len(q), 64)
+    assert_true(q._capacity > 64)
+    assert_equal(q[0], 0)
+    assert_equal(q[63], 63)
+
+    q.append(64)
+    assert_equal(len(q), 65)
+    assert_equal(q[64], 64)
+    assert_equal(q.popleft(), 0)
+    assert_equal(len(q), 64)
+
+    # The variadic constructor goes through the same code.
+    # fmt: off
+    var q2 = Deque(
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+        16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+        32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+        48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+    )
+    # fmt: on
+    assert_equal(len(q2), 64)
+    assert_true(Bool(q2))
+
+
 def test_repr_wrap() raises:
     var s = Deque[String]("a", "b", "c")
     assert_equal(
