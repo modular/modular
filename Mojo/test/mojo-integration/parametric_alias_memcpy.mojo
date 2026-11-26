@@ -105,5 +105,8 @@ def main():
     print("self_assign", self_assign_one(a), self_assign_three(a))
     # CHECK: ternary 12 12 12
     print(
-        "ternary", keep_or_other(a, c), keep_or_new(a, c), other_or_keep(a, not c)
+        "ternary",
+        keep_or_other(a, c),
+        keep_or_new(a, c),
+        other_or_keep(a, not c),
     )
