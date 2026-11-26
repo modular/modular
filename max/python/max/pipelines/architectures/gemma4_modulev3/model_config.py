@@ -44,6 +44,7 @@ class Gemma4Config(Gemma4ForConditionalGenerationConfig, DeploymentConfig):
     """Keeps raw keys for quantization, then assigns weights to their roles."""
 
     preserve_checkpoint_keys: ClassVar[bool] = True
+    ALLOW_KV_HEAD_REPLICATION: ClassVar[bool] = True
     weight_prefixes: ClassVar[Mapping[str, str]] = {
         GraphRole.DECODER: "decoder.",
         GraphRole.VISION: "vision.",
@@ -72,13 +73,17 @@ class Gemma4Config(Gemma4ForConditionalGenerationConfig, DeploymentConfig):
         self.text_config.return_hidden_states = outputs.return_hidden_states
         text = self.text_config
         n_devices = len(self.devices)
-        if n_devices > 1 and (
-            text.num_key_value_heads % n_devices
-            or text.num_global_key_value_heads % n_devices
+        if n_devices > 1 and any(
+            heads % n_devices and n_devices % heads
+            for heads in (
+                text.num_key_value_heads,
+                text.num_global_key_value_heads,
+            )
         ):
             raise ValueError(
                 "Gemma4 ModuleV3 tensor parallelism requires the device count "
-                "to divide both local and global KV head counts"
+                "to divide, or be a multiple of, both local and global KV "
+                "head counts"
             )
         if not text.enable_moe_block:
             return

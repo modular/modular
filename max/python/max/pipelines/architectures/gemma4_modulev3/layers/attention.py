@@ -24,24 +24,28 @@ from max.nn.common_layers import quant_ops
 from max.nn.common_layers.kv_cache import PagedCacheValues
 from max.nn.common_layers.linear import (
     ColumnParallelLinear,
+    Linear,
     RowParallelLinear,
     col_parallel,
     row_parallel,
 )
+from max.nn.common_layers.mesh_axis import TP
 from max.nn.common_layers.quant_linear import (
     QuantizedLinear,
 )
+from max.nn.common_layers.quant_tensor import NVFP4Tensor, QuantAwareTensor
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.kernels import flash_attention_ragged, rope_split_store_ragged
 from max.nn.kv_cache import KVCacheParams
 from max.nn.quant_config import QuantConfig
-from max.tensor import Tensor
+from max.tensor import Tensor, default_device
+from max.tensor.sharding import NamedMapping
 
 from .rms_norm import Gemma4RMSNorm
 
 # One attention projection: a plain parallel Linear (bf16) or a
 # QuantizedLinear wrapping a QTensor weight (NVFP4 community quants).
-_AttentionProj = ColumnParallelLinear | RowParallelLinear | QuantizedLinear
+_AttentionProj = Linear | QuantizedLinear
 
 
 class Gemma4Attention(Module[..., Tensor]):
@@ -85,6 +89,7 @@ class Gemma4Attention(Module[..., Tensor]):
         self.num_key_value_heads = num_kv
         self.q_weight_dim = self.head_dim * num_attention_heads
         self.kv_weight_dim = self.head_dim * num_kv
+        self.kv_repeats = max(kv_params.tensor_parallel_degree // num_kv, 1)
 
         self.q_norm = Gemma4RMSNorm(self.head_dim, eps=qk_norm_eps)
         self.k_norm = Gemma4RMSNorm(self.head_dim, eps=qk_norm_eps)
@@ -101,6 +106,19 @@ class Gemma4Attention(Module[..., Tensor]):
             :meth:`forward`); each still gets the TP sharding intent so
             ``quant_ops.matmul``'s sharding rules match the bf16 path.
             """
+            if parallel == "host":
+                # With more devices than KV heads, a split would cut a head.
+                # The weight stays on the host as stored, and the graph
+                # repeats each head once per device in its group.
+                with default_device(CPU()):
+                    if self._is_quantized:
+                        return QuantizedLinear(
+                            in_dim=in_dim,
+                            out_dim=out_dim,
+                            bias=False,
+                            quant_config=quant_config,
+                        )
+                    return Linear(in_dim=in_dim, out_dim=out_dim, bias=False)
             if self._is_quantized:
                 quantized = QuantizedLinear(
                     in_dim=in_dim,
@@ -126,10 +144,37 @@ class Gemma4Attention(Module[..., Tensor]):
             )
 
         self.q_proj = proj(hidden_size, self.q_weight_dim, "col")
-        self.k_proj = proj(hidden_size, self.kv_weight_dim, "col")
+        kv_parallel = "col" if self.kv_repeats == 1 else "host"
+        self.k_proj = proj(hidden_size, self.kv_weight_dim, kv_parallel)
         if self._has_v_proj:
-            self.v_proj = proj(hidden_size, self.kv_weight_dim, "col")
+            self.v_proj = proj(hidden_size, self.kv_weight_dim, kv_parallel)
         self.o_proj = proj(self.q_weight_dim, hidden_size, "row")
+
+    def _repeat_heads(self, rows: Tensor) -> Tensor:
+        """Repeats each KV head's rows once per device in its group."""
+        cols = int(rows.shape[1])
+        n_kv = self.num_key_value_heads
+        width = self.head_dim * cols
+        return F.broadcast_to(
+            rows.reshape([n_kv, 1, width]), [n_kv, self.kv_repeats, width]
+        ).reshape([-1, cols])
+
+    def _kv_weight(self, proj: _AttentionProj) -> QuantAwareTensor:
+        """Returns a K or V weight, each device holding whole heads."""
+        weight = proj.weight
+        if self.kv_repeats == 1:
+            return weight
+        mapping = NamedMapping(self.q_proj.weight.mesh, (TP, None))
+        if isinstance(weight, NVFP4Tensor):
+            return NVFP4Tensor(
+                weight=self._repeat_heads(weight.weight),
+                weight_scale=self._repeat_heads(weight.weight_scale),
+                weight_scale_2=weight.weight_scale_2,
+                input_scale=weight.input_scale,
+                block_size=weight.block_size,
+            ).to(mapping)
+        assert isinstance(weight, Tensor)
+        return self._repeat_heads(weight).to(mapping)
 
     @property
     def wqkv(self) -> Tensor:
@@ -139,9 +184,9 @@ class Gemma4Attention(Module[..., Tensor]):
         compile time and decode issues a single fused QKV matmul.
         Quantized (NVFP4) weights skip this (see :meth:`forward`).
         """
-        weights = [self.q_proj.weight, self.k_proj.weight]
+        weights = [self.q_proj.weight, self._kv_weight(self.k_proj)]
         if self._has_v_proj:
-            weights.append(self.v_proj.weight)
+            weights.append(self._kv_weight(self.v_proj))
         return F.concat(weights, axis=0)
 
     def _project_qkv(self, x: Tensor) -> tuple[Tensor, ...]:
@@ -155,18 +200,19 @@ class Gemma4Attention(Module[..., Tensor]):
         """
         if not self._is_quantized:
             fused = x @ self.wqkv.T
+            kv_dim = self.kv_weight_dim * self.kv_repeats
             splits = (
-                [self.q_weight_dim, self.kv_weight_dim, self.kv_weight_dim]
+                [self.q_weight_dim, kv_dim, kv_dim]
                 if self._has_v_proj
-                else [self.q_weight_dim, self.kv_weight_dim]
+                else [self.q_weight_dim, kv_dim]
             )
             parts = fused.split(splits, axis=-1)
             return parts[0], parts[1], parts[-1]
 
         x_q = quant_ops.matmul(x, self.q_proj.weight)
-        x_k = quant_ops.matmul(x, self.k_proj.weight)
+        x_k = quant_ops.matmul(x, self._kv_weight(self.k_proj))
         if self._has_v_proj:
-            x_v = quant_ops.matmul(x, self.v_proj.weight)
+            x_v = quant_ops.matmul(x, self._kv_weight(self.v_proj))
         else:
             x_v = x_k
         return x_q, x_k, x_v

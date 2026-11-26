@@ -197,6 +197,20 @@ def test_finalize_completes_a_copy_of_the_text_config(
     assert planning.return_hidden_states == ReturnHiddenStates.NONE
 
 
+@pytest.mark.parametrize(
+    ("n_devices", "ok"), [(2, True), (4, True), (3, False)]
+)
+def test_finalize_takes_a_degree_that_divides_or_repeats_the_kv_heads(
+    n_devices: int, ok: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    planning = _planning_text_config(num_global_key_value_heads=2)
+    if ok:
+        _finalize(planning, monkeypatch, n_devices)
+        return
+    with pytest.raises(ValueError, match="KV head counts"):
+        _finalize(planning, monkeypatch, n_devices)
+
+
 def _moe_text_config(**overrides: Any) -> Gemma4TextConfig:
     """The 26B-A4B MoE widths, with KV heads that split over 8 devices."""
     fields: dict[str, Any] = dict(

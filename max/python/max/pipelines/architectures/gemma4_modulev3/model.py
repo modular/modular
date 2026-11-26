@@ -255,13 +255,17 @@ class Gemma4Model(
         )
         n_devices = len(model_config.devices)
         text_config = model_config.text_config
-        if n_devices > 1 and (
-            text_config.num_key_value_heads % n_devices
-            or text_config.num_global_key_value_heads % n_devices
+        if n_devices > 1 and any(
+            heads % n_devices and n_devices % heads
+            for heads in (
+                text_config.num_key_value_heads,
+                text_config.num_global_key_value_heads,
+            )
         ):
             raise ValueError(
                 "Gemma4 ModuleV3 tensor parallelism requires the device"
-                f" count ({n_devices}) to divide both num_key_value_heads"
+                f" count ({n_devices}) to divide, or be a multiple of, both"
+                " num_key_value_heads"
                 f" ({text_config.num_key_value_heads}) and"
                 " num_global_key_value_heads"
                 f" ({text_config.num_global_key_value_heads})."
