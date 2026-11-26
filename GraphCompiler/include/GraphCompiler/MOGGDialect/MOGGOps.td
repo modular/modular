@@ -820,7 +820,7 @@ def MOGG_ShapeInitOp : MOGG_Op<"shape.__init__", [
 ]> {
   let summary = "Construct a mojo shape object";
   let description = [{
-    Builds an IndexList from the static shape attribute and its dynamic
+    Builds a `Coord` from the static shape attribute and its dynamic
     dimensions.
 
     Example:
@@ -1016,8 +1016,8 @@ def MOGG_ShapeFunctionDeclOp
   let description = [{
     At most one per registration (e.g. `"mo.avg_pool"`); import errors on
     duplicates. For a struct `shape` method, `sym_name` is
-    `"<struct_sym>.shape"`. `result_params` is always populated, since shape
-    functions return stdlib `IndexList`.
+    `"<struct_sym>.shape"`. A shape function returns an `IndexList` or a
+    `Coord`; nothing reads its `result_params`.
   }];
 
   let arguments = (ins
@@ -1253,6 +1253,13 @@ def MOGG_TileCreateEpilogueOp : MOGG_Op<"tile.create.epilogue", [
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
   let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+  private:
+    /// Prints the body as a legacy tile traits functor and binds it to the
+    /// tensor's epilogue.
+    ::mlir::LogicalResult emitLegacyTileTraitEpilogue(EmitMojoState &state);
+  }];
 }
 
 def MOGG_TensorGetPtrOp : MOGG_Op<"tensor.get_ptr", [
@@ -1292,7 +1299,7 @@ def MOGG_TensorCreatePrologueOp : MOGG_Op<"tensor.create.prologue", [
     MOGG_Shape:$shape,
     Variadic<MOGG_TensorLike>:$captures,
     // Runtime shapes for a dynamic `mogg.index.reshape` in the body; they
-    // become trailing `IndexList` fields on the fusion functor.
+    // become trailing `Coord` fields on the fusion functor.
     Variadic<MOGG_Shape>:$shapeCaptures,
     StrAttr:$device,
     TypeAttr:$elementType,
@@ -1435,12 +1442,13 @@ def MOGG_GraphBlobOp : MOGG_Op<"graph_blob", [
   NoTerminator,
   SingleBlock,
 ]> {
-  let summary = "Launch several declarative kernels as one device kernel.";
+  let summary = "Launch several kernels as one device kernel.";
   let description = [{
-    Runs the declarative `mogg.call.opaque`s in its body, in order, as one
-    launch on their shared device context. Each call runs on the part of the
-    launch its own configuration asks for, and every call sees the writes of
-    the calls before it.
+    Runs the declarative `mogg.call.opaque`s and the `mogg.call.foreach`s in
+    its body, in order, as one launch on their shared device context. Each
+    declarative call runs on the part of the launch its own configuration asks
+    for, each loop runs on all of it, and every call sees the writes of the
+    calls before it.
 
     The body holds the calls and the ops that build their operands, and can use
     the enclosing region's values. `LowerGraphBlobs` writes the op as host ops
@@ -1544,6 +1552,45 @@ def MOGG_GraphBlobBarrierOp : MOGG_Op<"graph_blob.barrier", [
     before it are visible to every thread after it.
   }];
   let assemblyFormat = "attr-dict";
+}
+
+def MOGG_GraphBlobForeachOp : MOGG_Op<"graph_blob.foreach", [
+  AttrSizedOperandSegments,
+  HasParent<"MOGG::GraphBlobCallOp">,
+  MOGG_CallLike,
+  DeclareOpInterfaceMethods<OpAsmOpInterface, ["getAsmBlockArgumentNames"]>,
+  NoTerminator,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+]> {
+  let summary = "Run a generated elementwise loop in a graph blob launch.";
+  let description = [{
+    Runs its body on every index of `$shape`, split across every thread of the
+    enclosing launch. Each thread runs its own share and doesn't wait for the
+    others. The body and its arguments are those of `mogg.call.foreach`: one
+    argument per `$capturing` tensor, then the index.
+
+    The SIMD widths the loop may run at must divide `$max_simd_width` when it
+    is set, else the GCD of `$dynamic_max_simd_width`'s dims when that is set.
+    At most one of them is set.
+
+    Example:
+    ```mlir
+    mogg.graph_blob.foreach shape(%s) (%idx : !map.index<2>)
+        capturing {%cx = %x : !mogg.tensor, %cy = %y : !mogg.tensor} {
+      %v = mogg.tensor.load %cx[%idx] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.tensor.store %cy[%idx] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+    ```
+  }];
+  let arguments = (ins
+    MOGG_Shape:$shape,
+    Variadic<MOGG_TensorLike>:$capturing,
+    Optional<MOGG_Shape>:$dynamic_max_simd_width,
+    OptionalAttr<I64Attr>:$max_simd_width
+  );
+  let regions = (region SizedRegion<1>:$body);
+  let hasCustomAssemblyFormat = 1;
+  let hasVerifier = 1;
 }
 
 def MOGG_ScalarCreateOp : MOGG_Op<"scalar.create", [
@@ -1857,12 +1904,13 @@ def MOGG_CallRowwiseOp : MOGG_Op<"call.rowwise", [
   let summary = "Run a fused reduction body once per row.";
   let description = [{
     Runs its body once per row of `$shape` along `$axis`. The body holds the
-    row's phases in order: folds (`mogg.rowwise.reduce`) and per-element
-    phases (`mogg.rowwise.map`), the row-level ops between them, and the
-    per-row stores. A fold can't follow a map phase, and a body with a map
-    phase has no per-row stores. Its arguments are one per `$capturing`
-    tensor, then the row index, which has the `$axis` coordinate pinned to
-    0. Lowered from a `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
+    row's phases in order: folds (`mogg.rowwise.reduce`) and the row-level
+    ops between and after them, the per-row stores, then per-element phases
+    (`mogg.rowwise.map`). A fold can't follow a map phase, and a body with
+    both a map phase and per-row stores keeps its row whole (`$dtype_size`
+    0). Its arguments are one per `$capturing` tensor, then the row index,
+    which has the `$axis` coordinate pinned to 0. Lowered from a
+    `map.iter.opaque` wrapping a `map.iter.rowwise.body`.
 
     A `mogg.rowwise.cache` computes a value of the row that later phases
     read instead of the tile.
@@ -1980,8 +2028,10 @@ def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
     read with `mogg.rowwise.cache.load` instead of computing it again. It
     reads the tile and the row's values computed before it, and may store
     each element. It prints as the Row's `cache`, and a phase that reads it
-    as the cached overload of its Row call.
+    as the cached overload of its Row call. A `shared` cache also keeps the
+    row in shared memory, where a phase reads other elements of it.
   }];
+  let arguments = (ins DefaultValuedAttr<BoolAttr, "false">:$shared);
   let results = (outs MOGG_Simd:$result);
   let regions = (region SizedRegion<1>:$body);
   let hasCustomAssemblyFormat = 1;
@@ -1989,7 +2039,6 @@ def MOGG_RowwiseCacheOp : MOGG_Op<"rowwise.cache", [
 }
 
 def MOGG_RowwiseCacheLoadOp : MOGG_Op<"rowwise.cache.load", [
-  ParentOneOf<["MOGG::RowwiseReduceOp", "MOGG::RowwiseMapOp"]>,
   AllTypesMatch<["cache", "result"]>,
   DeclareOpInterfaceMethods<EmitsMojoInterface>,
   Pure,
@@ -1997,12 +2046,16 @@ def MOGG_RowwiseCacheLoadOp : MOGG_Op<"rowwise.cache.load", [
   let summary = "Read a row cache at the current element.";
   let description = [{
     Reads the value the `mogg.rowwise.cache` `$cache` computes, at the
-    phase's own index. A phase reads either the tile or one cache: the value
-    the Row hands its closure.
+    phase's own index moved `$offset` elements along the row. A phase reads
+    either the tile or one cache: the value the Row hands its closure. A
+    nonzero offset reads a `shared` cache's row from shared memory.
   }];
-  let arguments = (ins MOGG_Simd:$cache);
+  let arguments = (ins MOGG_Simd:$cache,
+                       DefaultValuedAttr<I64Attr, "0">:$offset);
   let results = (outs MOGG_Simd:$result);
-  let assemblyFormat = "$cache attr-dict `:` qualified(type($cache))";
+  let assemblyFormat = [{
+    $cache (`offset` `(` $offset^ `)`)? attr-dict `:` qualified(type($cache))
+  }];
   let hasVerifier = 1;
 }
 
@@ -2251,6 +2304,9 @@ def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
     `$staticPermutations[i]` is the `$input` dimension that becomes output
     dimension `i` (`?` if known only at runtime, then read from
     `$permutations`).
+
+    `$permutations` is present exactly when some entry of
+    `$staticPermutations` is `?`.
   }];
   let arguments = (ins
     MOSH_ShapeAttr:$outShape,
@@ -2258,11 +2314,12 @@ def MOGG_TensorCreateTransposeOp : MOGG_Op<"tensor.create.transpose", [
     TypeAttr:$elementType,
     BoolAttr:$mut,
     MOGG_TensorLike:$input,
-    MOGG_Tensor:$permutations
+    Optional<MOGG_Tensor>:$permutations
   );
   let results = (outs MOGG_Tensor:$result);
+  let hasVerifier = 1;
   let assemblyFormat = [{
-    `(` $input `,` $permutations `)`
+    `(` $input (`,` $permutations^)? `)`
     `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
         `outShape` `=` qualified($outShape) `,`
         `staticPermutations` `=` qualified($staticPermutations) `>`
@@ -2297,6 +2354,35 @@ def MOGG_TensorCreateReshapeOp : MOGG_Op<"tensor.create.reshape", [
     `(` $input `,` $runtimeOutShape `)`
     `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
         `staticOutShape` `=` qualified($staticOutShape) `>`
+    attr-dict `:` qualified(type($input))
+  }];
+}
+
+def MOGG_TensorCreateCollapseOp : MOGG_Op<"tensor.create.collapse", [
+  Pure,
+  DeclareOpInterfaceMethods<EmitsMojoInterface>,
+  DeclareOpInterfaceMethods<MOGG_TensorCreateInterface>,
+]> {
+  let summary = "Build a codegen tensor that merges groups of adjacent dims of another.";
+  let description = [{
+    A zero-copy view of `$input` whose dim `g` merges the `$groups[g]`
+    consecutive dims of `$input` after the previous groups': its extent is
+    their product, its stride the group's innermost stride. `$outShape` is the
+    static shape (`dyn` where unknown); the run-time extents come from
+    `$input`'s own shape, so there is no shape operand.
+  }];
+  let arguments = (ins
+    MOSH_ShapeAttr:$outShape,
+    DenseI64ArrayAttr:$groups,
+    TypeAttr:$elementType,
+    BoolAttr:$mut,
+    MOGG_TensorLike:$input
+  );
+  let results = (outs MOGG_Tensor:$result);
+  let assemblyFormat = [{
+    `(` $input `)`
+    `<` `elementType` `=` $elementType `,` `mut` `=` $mut `,`
+        `outShape` `=` qualified($outShape) `,` `groups` `=` $groups `>`
     attr-dict `:` qualified(type($input))
   }];
 }
@@ -2424,6 +2510,8 @@ def MOGG_IndexConcatSelectOp : MOGG_Op<"index.concat.select", [
     attr-dict `:` qualified(type($index)) `->` type($result)
     $inputs
   }];
+
+  let hasVerifier = 1;
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MOGGDIALECT_MOGGOPS_TD

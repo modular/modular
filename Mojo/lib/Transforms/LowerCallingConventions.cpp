@@ -67,17 +67,6 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
                                           type.getArgumentTypes(), newTypes);
 }
 
-/// Lower a concrete pack to a struct.
-static StructType lowerPackStructType(StructType type) {
-  // Leave non-pack structs alone.
-  if (!type.getIsParamPack())
-    return type;
-  // Strip off the isParamPack bit.
-  return StructType::get(type.getContext(), type.getElementTypesVariadic(),
-                         type.getIsMemoryOnly(), type.getMinAlignment(), false,
-                         type.getDomain());
-}
-
 /// Lower `!kgen.variant` to a pair of `!pop.union` and a `!kgen.scalar`.
 static StructType lowerVariantType(VariantType type) {
   SmallVector<Type> types = llvm::to_vector(type.getTypes());
@@ -379,7 +368,6 @@ void LowerCallingConventionsPass::runOnOperation() {
   };
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);
-  replacer.addReplacement(lowerPackStructType);
   replacer.addReplacement(lowerVariantType);
   replacer.addReplacement(lowerVariantAttr);
   // Do not recurse into LinkageNameAttr sub-elements: by this point the

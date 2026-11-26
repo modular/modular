@@ -31,6 +31,7 @@ from std.testing import (
     assert_raises,
     assert_true,
 )
+from test_utils.mmap import ZeroedMmap
 
 
 def test_value_is_c_int() raises:
@@ -78,6 +79,24 @@ def _make_pipe() raises -> Tuple[c_int, c_int]:
 
 def _is_open(fd: c_int) -> Bool:
     return fcntl(fd, FcntlCommands.F_GETFD) != -1
+
+
+def test_read_bytes_over_int_max() raises:
+    var read_fd, write_fd = _make_pipe()
+    var writer = RawFileDescriptor(write_fd)
+    writer.write_string("ab")
+    writer.close()
+    var reader = RawFileDescriptor(read_fd)
+    # More bytes than macOS will read in a single call.
+    var mapping = ZeroedMmap[mut=True](Int(c_int.MAX) + 1)
+    var buffer = mapping.as_bytes()
+    var n: Int
+    try:
+        n = reader.read_bytes(buffer)
+    finally:
+        reader.close()
+    assert_equal(n, 2)
+    assert_equal(String(from_utf8_lossy=buffer[:n]), "ab")
 
 
 def test_close_closes_fd() raises:

@@ -24,6 +24,7 @@
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
+#include "Mojo/MojoParser/DeclResolver.h"
 #include "Mojo/MojoParser/ExprNode.h"
 #include "Mojo/POPDialect/POPTypes.h"
 
@@ -99,6 +100,13 @@ static raw_ostream &printStorage(raw_ostream &os,
       // Print the inferred attribute expression (e.g. `.f64`).
       val.getExpr()->print(os);
     }
+  } else if (auto val = dyn_cast<LambdaUValue>(storage)) {
+    if (isDump)
+      os << "LambdaUValue: ";
+    if (!val)
+      os << "<<NULL>>";
+    else
+      os << "lambda " << val.getPartialSignature();
   } else if (auto val = dyn_cast<MLValue>(storage)) {
     if (isDump)
       os << "ML: ";
@@ -132,6 +140,9 @@ raw_ostream &LIT::operator<<(raw_ostream &os, PValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, OverloadSetUValue value) {
+  return printStorage(os, value);
+}
+raw_ostream &LIT::operator<<(raw_ostream &os, LambdaUValue value) {
   return printStorage(os, value);
 }
 raw_ostream &LIT::operator<<(raw_ostream &os, InitializerUValue value) {
@@ -221,6 +232,7 @@ static ASTType getTypeFrom(AnyValue::Storage storage) {
   assert(!isa<OverloadSetUValue>(storage) && "overloaded rvalue has no type");
   assert(!isa<InferredBaseAttrRefUValue>(storage) &&
          "inferred base attr ref has no type");
+  assert(!isa<LambdaUValue>(storage) && "unresolved lambda has no type");
   llvm_unreachable("unknown IRValue");
 }
 
@@ -463,6 +475,80 @@ OverloadSetUValue::operator=(const OverloadSetUValue &existing) {
 
 OverloadSetUValue OverloadSetUValue::create(OverloadSet &&set) {
   return OverloadSetUValue(takeRCRef(new OverloadSetWrapper{std::move(set)}));
+}
+
+//===----------------------------------------------------------------------===//
+// LambdaUValue
+//===----------------------------------------------------------------------===//
+
+/// Reference-counted storage that keeps LambdaUValue copyable.
+struct LambdaUValue::LambdaWrapper
+    : public NonAtomicallyReferenceCounted<LambdaWrapper> {
+  SMLoc loc;
+
+  ArrayRef<ParsedArgument> args;
+  ArrayRef<ParsedArgument> params;
+
+  const ExprNode *bodyExpr = nullptr;
+
+  ArrayRef<Capture> captures;
+  bool hasExplicitCaptureList = false; // whether a `{...}` was written at all
+  std::optional<CaptureConvention> captureAllByConvention;
+
+  FnTypeGeneratorType partialSig;
+};
+
+LambdaUValue::LambdaUValue() = default;
+LambdaUValue::LambdaUValue(const LambdaUValue &existing)
+    : storage(existing.storage.copy()) {}
+LambdaUValue::LambdaUValue(RCRef<LambdaWrapper> storage)
+    : storage(std::move(storage)) {}
+LambdaUValue::~LambdaUValue() = default;
+
+LambdaUValue &LambdaUValue::operator=(const LambdaUValue &existing) {
+  storage = existing.storage.copy();
+  return *this;
+}
+
+LambdaUValue
+LambdaUValue::create(SMLoc loc, FnTypeGeneratorType partialSignature,
+                     ArrayRef<ParsedArgument> params,
+                     ArrayRef<ParsedArgument> args, const ExprNode *bodyExpr,
+                     ArrayRef<Capture> captures, bool hasExplicitCaptureList,
+                     std::optional<CaptureConvention> captureAllByConvention) {
+  assert(params.size() <= partialSignature.getInputParamTypes().size() &&
+         args.size() <= partialSignature.getArguments().size() &&
+         "more user parameters or arguments than the signature has");
+  auto *wrapper = new LambdaWrapper();
+  wrapper->loc = loc;
+  wrapper->args = args;
+  wrapper->params = params;
+  wrapper->bodyExpr = bodyExpr;
+  wrapper->captures = captures;
+  wrapper->hasExplicitCaptureList = hasExplicitCaptureList;
+  wrapper->captureAllByConvention = captureAllByConvention;
+  wrapper->partialSig = partialSignature;
+  return LambdaUValue(takeRCRef(wrapper));
+}
+
+SMLoc LambdaUValue::getLoc() const { return storage->loc; }
+FnTypeGeneratorType LambdaUValue::getPartialSignature() const {
+  return storage->partialSig;
+}
+ArrayRef<ParsedArgument> LambdaUValue::getParams() const {
+  return storage->params;
+}
+ArrayRef<ParsedArgument> LambdaUValue::getArgs() const { return storage->args; }
+const ExprNode *LambdaUValue::getBodyExpr() const { return storage->bodyExpr; }
+ArrayRef<LambdaUValue::Capture> LambdaUValue::getCaptures() const {
+  return storage->captures;
+}
+bool LambdaUValue::hasExplicitCaptureList() const {
+  return storage->hasExplicitCaptureList;
+}
+std::optional<CaptureConvention>
+LambdaUValue::getCaptureAllByConvention() const {
+  return storage->captureAllByConvention;
 }
 
 //===----------------------------------------------------------------------===//
@@ -730,6 +816,16 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
   return {};
 }
 
+CValue LambdaUValue::emitAsCValue(IREmitter &emitter, ExprDest &dest) {
+  // TODO: The partial signature is fully resolved for now, use it as the
+  // contextual type, will be replaced to a actual contextual type later.
+  auto ctxSig = getPartialSignature();
+  return emitter
+      .emitResult(emitter.getDeclResolver().resolveAnonymousClosure(
+                      *this, ctxSig, emitter),
+                  getBodyExpr(), dest)
+      .getIfCValue();
+}
 //===----------------------------------------------------------------------===//
 // InferredBaseAttrRefUValue
 //===----------------------------------------------------------------------===//

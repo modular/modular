@@ -754,7 +754,12 @@ static PValue emitDefault(ArrayRef<ParsedArgument> args, unsigned argIdx,
     if (paramUses.empty()) {
       if (auto value = emitter.emitExprPValue(initExpr, exprContext, type))
         return value;
-    } else if (auto irValue = emitter.emitExpr(initExpr, exprContext)) {
+    } else if (auto irValue = emitter.emitExpr(initExpr, exprContext);
+               irValue && !isa<UnresolvedType>(type)) {
+      // TODO: We don't allow a default expression on a arg/param unresolved
+      // type at the moment, we might be able to extend Mojo to support it
+      // later if desired.
+      //
       // Emit in two stages to handle UValues.
       auto cv = irValue.getIfCValue();
       if (!cv) {
@@ -1152,6 +1157,11 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
   assert(arg.variadicKind == VariadicKind::PosVarArg &&
          "this applies to variadic arguments");
 
+  if (isa<UnresolvedType>(elementType)) {
+    assert(tcParamList.partial);
+    return elementType;
+  }
+
   // Any _'s in the argument type get autoparameterized before we form something
   // around it.
   elementType = addImplicitTypeParams(arg.name, elementType, tcParamList,
@@ -1207,13 +1217,13 @@ static ASTType typeCheckVariadicParams(ASTType elementType, ParsedArgument &arg,
                                /*append=*/false, arg.loc);
 }
 
-TypeCheckedParamList::TypeCheckedParamList(ASTDecl &declScope)
-    : declScope(declScope), shared(declScope.getShared()) {}
+TypeCheckedParamList::TypeCheckedParamList(ASTDecl &declScope, bool partial)
+    : declScope(declScope), shared(declScope.getShared()), partial(partial) {}
 
 std::optional<TypeCheckedParamList>
-TypeCheckedParamList::create(ParsedParamList &parsedParams,
-                             ASTDecl &declScope) {
-  TypeCheckedParamList result(declScope);
+TypeCheckedParamList::create(ParsedParamList &parsedParams, ASTDecl &declScope,
+                             bool partial) {
+  TypeCheckedParamList result(declScope, partial);
   result.stagedBodyConstraints = std::move(parsedParams.bodyConstraints);
 
   // Resolve each of the parameter declarations.
@@ -1237,6 +1247,9 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
         assert(result.paramDeclAttrs.size() == numParams &&
                "parameter list changed under a deferred typing scope");
       }
+    } else if (partial) {
+      // TODO: handle variadic parameters in a partial signature.
+      type = UnresolvedType::get(declScope.getContext());
     } else {
       emitter.emitError(arg.loc, "parameters must always have a type");
       arg.isErroneous = true;
@@ -1679,7 +1692,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     return spelling == "raises" || spelling == "capturing" ||
            spelling == "escaping" || spelling == "thin" ||
            spelling == "register_passable" || spelling == "abi" ||
-           spelling == "where";
+           spelling == "where" || spelling == "__accesses";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1810,7 +1823,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       // explicit but leaves the CABI bit unset.
       continue; // tokens already consumed; skip bottom p.consumeIdentifier()
     } else {
-      assert(spelling == "where" && "isEffectKeywordOrWhere unknown keyword");
+      assert((spelling == "where" || spelling == "__accesses") &&
+             "isEffectKeywordOrWhere unknown keyword");
       break;
     }
 
@@ -1876,11 +1890,39 @@ void ParsedArgumentList::parseResultIfPresent(
                                      : ParsedArgument::kConventionOut;
 }
 
+/// Parses the experimental `__accesses(...)` clause and records its access
+/// promise for later function type construction.
+ParseResult ParsedArgumentList::parseAccessesIfPresent(ParserBase &p) {
+  while (p.consumeIfSoftIdentifier("__accesses")) {
+    auto loc = p.getToken().getLoc();
+    if (p.parseToken(Token::l_paren, "expected '(' after '__accesses'"))
+      return failure();
+    StringRef spelling = p.getTokenSpelling();
+    if (p.parseToken(Token::string, "expected access-set string") ||
+        p.parseToken(Token::r_paren, "expected ')' after access-set string"))
+      return failure();
+
+    if (Lexer::getStringLiteralValue(spelling) !=
+        "__unsafe_nested_origins_read_only") {
+      p.emitError(loc, "unsupported experimental access set ") << spelling;
+      continue;
+    }
+
+    if (isNestedOriginsReadOnly)
+      p.emitError(loc, "'__accesses' clause was already specified");
+    isNestedOriginsReadOnly = true;
+  }
+  return success();
+}
+
 /// This function creates a new anonymous origin decl for the specified
 /// argument, and wraps the type with a RefType using that origin.
-static RefType makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
-                                         Type type, bool isMutable,
-                                         TypeCheckedFnSignature &tcSignature) {
+static Type makeImplicitRefTypeForArg(const ParsedArgument &arg, size_t idx,
+                                      Type type, bool isMutable,
+                                      TypeCheckedFnSignature &tcSignature) {
+  if (isa<UnresolvedType>(type))
+    return type;
+
   ASTDecl &declScope = tcSignature.paramList.declScope;
 
   StringAttr originName;
@@ -2082,6 +2124,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     if (arg.variadicKind == VariadicKind::PackVarArg) {
       // Ts in "*args: *Ts" is a reference to a variadic list of types, but
       // needs to be type checked to an instance of VariadicPack.
+      // TODO: handle partially typed signature.
       type = typeCheckVariadicPack(arg, idx, typeEmitter, tcSignature);
     } else if (arg.variadicKind == VariadicKind::PosVarArg) {
       // "*args: Int" is an instance of VariadicList.
@@ -2124,11 +2167,15 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
 
   } else {
     // Otherwise, this is an error.
-    shared.emitError(arg.loc, "argument type must be specified")
-        << SourceRange(arg.loc, arg.loc);
-    type = shared.getTypeCheckErrorType();
-    arg.variadicKind = VariadicKind::None;
-    arg.isErroneous = true;
+    if (!tcSignature.partial) {
+      shared.emitError(arg.loc, "argument type must be specified")
+          << SourceRange(arg.loc, arg.loc);
+      type = shared.getTypeCheckErrorType();
+      arg.variadicKind = VariadicKind::None;
+      arg.isErroneous = true;
+    } else {
+      type = LIT::UnresolvedType::get(declScope.getContext());
+    }
   }
   assert(type && "must have an argument type");
   tcSignature.argTypes.push_back(type);
@@ -2189,7 +2236,8 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
     // IR-rewrite, could violate it, so hard-fail rather than assume it holds.
     if (arg.variadicKind == VariadicKind::KwVarArg)
       llvm::report_fatal_error("kwargs argument has no convention");
-    arg.convention = ParsedArgument::kConventionImm;
+    if (!isa<UnresolvedType>(type))
+      arg.convention = ParsedArgument::kConventionImm;
   }
 
   // Emit default argument values if present. An error would have been emitted
@@ -2198,6 +2246,7 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   {
     TypeCheckedParamList::DeferredTypingScope deferredTypingScope(
         tcSignature.paramList, &typeEmitter);
+    // TODO: for the MVP, don't allow default.
     defaultVal =
         emitDefault(tcSignature.argList.parsedArgs, idx, type,
                     tcSignature.defaults, typeEmitter, EC_DefaultArgument);
@@ -2208,7 +2257,15 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   // argument convention to compute the full type for the argument.
   switch (arg.convention) {
   case ParsedArgument::kConventionUnspec:
-    llvm_unreachable("should be resolved by now");
+    if (tcSignature.partial) {
+      // The convention is also unresolved if we are dealing with a unresolved
+      // type.
+      assert(isa<UnresolvedType>(type));
+      arg.kgenConvention = ArgConvention::Unresolved;
+      break;
+    } else {
+      llvm_unreachable("should be resolved by now");
+    }
   case ParsedArgument::kConventionByRefResult:
     llvm_unreachable("shouldn't occur in an argument list");
   case ParsedArgument::kConventionVar:
@@ -2304,8 +2361,9 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   // Values passed by memory need an associated origin parameter, and need to
   // be passed by reference. For now, we don't use reference types in **kwargs.
   Type fullType;
-  if (hasImplicitOrigin(arg.kgenConvention) &&
-      arg.variadicKind != VariadicKind::KwVarArg) {
+  if (arg.variadicKind != VariadicKind::KwVarArg &&
+      arg.kgenConvention != ArgConvention::Unresolved &&
+      hasImplicitOrigin(arg.kgenConvention)) {
     bool isMutable = arg.kgenConvention != ArgConvention::ImmMem &&
                      arg.kgenConvention != ArgConvention::PackImmMem &&
                      arg.kgenConvention != ArgConvention::PackMut;
@@ -2383,14 +2441,14 @@ static void typeCheckOneArgument(size_t idx, DefASTDecl *fnDecl,
   BlockArgument bbArg =
       blockOwningArg.addArgument(fullType, shared.translateLocation(arg.loc));
 
-  CValue argIRValue;
-  if (arg.kgenConvention == ArgConvention::ImmReg)
-    argIRValue = SRValue(bbArg);
-  else // Everything else is passed in memory.
-    argIRValue = CValue::getMValueForRef(bbArg);
+  // Having a dedicated UValue for a unresolved arguments makes more logical
+  // sense, but just use a SRValue to wrapped the SSA value for simplicity.
+  CValue irValue = arg.kgenConvention == ArgConvention::Unresolved
+                       ? SRValue(bbArg)
+                       : getFunctionArgumentValue(bbArg, arg.kgenConvention);
 
   auto &decl = typeEmitter.getDeclResolver().addFullyResolvedDecl(
-      argIRValue, arg.name, arg.loc, &typeEmitter.declScope);
+      irValue, arg.name, arg.loc, &typeEmitter.declScope);
   decl.setArgOrParamNumber(static_cast<ssize_t>(idx),
                            /*isParameter=*/false);
   tcSignature.argASTDecls.push_back(&decl);
@@ -2462,7 +2520,10 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
     resultType = tcSignature.selfType;
   } else {
     // If the result type wasn't specified, we default to "None".
-    resultType = shared.getNoneType();
+    if (tcSignature.partial)
+      resultType = LIT::UnresolvedType::get(shared.getContext());
+    else
+      resultType = shared.getNoneType();
   }
 
   // If a result origin is specified with `ref [life] Ty`, then form a ref
@@ -2580,9 +2641,17 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
   ASTType fullResultType = resultType;
   TypeConvention rp = resultType.getRegisterPassability(resultArg.loc, shared);
 
+  if (tcSignature.partial && tcSignature.argList.effects == FnEffects()) {
+    // TODO: set to a unresolved effect to match any effect in the contextual
+    // type.
+    tcSignature.argList.effects.setUnresolved();
+  }
+
+  bool mightThrows = tcSignature.argList.effects.isThrows() ||
+                     tcSignature.argList.effects.isUnresolved();
   // If this function throws, add a result slot for the error that may be
   // raised.
-  if (tcSignature.argList.effects.isThrows()) {
+  if (mightThrows) {
     ASTType errorType;
     if (tcSignature.argList.thrownTypeExpr) {
       IREmitter typeEmitter(declScope, EC_Type);
@@ -2591,9 +2660,14 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
       errorType = typeEmitter.emitExprType(tcSignature.argList.thrownTypeExpr,
                                            TypeStrictness::kConcrete);
     }
-    if (!errorType)
-      errorType = shared.lookupBuiltinType(
-          "Error", tcSignature.paramList.declScope, resultArg.loc);
+    if (!errorType) {
+      if (tcSignature.partial) {
+        errorType = LIT::UnresolvedType::get(shared.getContext());
+      } else {
+        errorType = shared.lookupBuiltinType(
+            "Error", tcSignature.paramList.declScope, resultArg.loc);
+      }
+    }
 
     // Synthesize a ByRefError argument for the error.
     ParsedArgument errArg;
@@ -2607,8 +2681,8 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
     tcSignature.argTypes.push_back(errorType);
     tcSignature.defaults.push_back(TypedAttr());
 
-    RefType refType = makeImplicitRefTypeForArg(
-        errArg, 0, errorType, /*isMutable*/ true, tcSignature);
+    Type refType = makeImplicitRefTypeForArg(errArg, 0, errorType,
+                                             /*isMutable*/ true, tcSignature);
     tcSignature.fullArgTypes.push_back(refType);
 
     // If this is for a lit.fn declaration (as opposed to a function type),
@@ -2642,7 +2716,7 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
 
     // Compute the RefType for this new argument with an implicit origin or
     // from the specified ref specification if present.
-    RefType refType;
+    Type refType;
     if (resultArg.refOriginExpr &&
         resultArg.convention == ParsedArgument::kConventionOut) {
       refType = processRefOriginSpecifier(
@@ -2680,7 +2754,7 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
     }
 
     // We know the ABI register result will be None now, which is trivial.
-    if (!tcSignature.argList.effects.isThrows())
+    if (!mightThrows)
       fullResultType = shared.getNoneType();
   }
 
@@ -2696,8 +2770,10 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                                                ParsedArgumentList &argList,
                                                const ExprNode *originExpr,
                                                DefASTDecl *fnDecl,
-                                               StringAttr baseName)
-    : paramList(paramList), argList(argList) {
+                                               StringAttr baseName,
+                                               bool partial)
+    : partial(partial), paramList(paramList), argList(argList),
+      isNestedOriginsReadOnly(argList.isNestedOriginsReadOnly) {
 
   if (baseName) { // Function pointer types don't have a name.
     fnInfo =

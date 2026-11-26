@@ -30,14 +30,15 @@ from max.nn.common_layers.stacked_quant_moe import (
     StackedExpertParallelMoE,
     StackedQuantizedMoE,
 )
+from max.nn.ep import EPBuffers, combine, dispatch
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import (
     moe_router_group_limited,
     moe_single_group_router_packed,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor, default_dtype
-from max.tensor.sharding import DeviceMapping, Sharded
+from max.tensor.sharding import DeviceMapping, Replicated, Sharded
 
 from ..model_config import MuseSparkTextConfig
 from .norms import (
@@ -134,6 +135,8 @@ class MuseSparkMoEBranch:
     """
 
     moe: MuseSparkEPMoE
+    ep: EPBuffers
+    """The exchange's buffers."""
     x: Tensor
     """The replicated input."""
     rows: Tensor
@@ -157,7 +160,9 @@ class MuseSparkMoEBranch:
         moe = self.moe
         h = moe.pre_expert_norm(moe.pre_expert_proj(self.rows))
         out = moe.post_expert_proj(
-            moe._routed(h, self.router_idx, self.router_weight, self.stacks)
+            moe._routed(
+                h, self.router_idx, self.router_weight, self.ep, self.stacks
+            )
         )
         # The gathered rows are ceil(t/2) + floor(t/2): t again.
         return F.rebind(out.to(self.x.mapping), self.x.shape)
@@ -389,7 +394,7 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
         self,
         config: MuseSparkTextConfig,
         quant_config: QuantConfig | None,
-        ep_batch_manager: EPBatchManager,
+        ep_config: EPConfig,
     ) -> None:
         super().__init__(
             hidden_dim=config.moe_hidden_size,
@@ -397,16 +402,17 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
             num_experts_per_token=config.num_experts_per_tok,
             moe_dim=config.moe_intermediate_size,
             quant_config=quant_config,
-            ep_batch_manager=ep_batch_manager,
+            ep_config=ep_config,
         )
         _add_muse_parts(self, config)
 
     def forward(
         self,
         x: Tensor,
-        comm: EPCommBuffers | None = None,
         layer_idx: Tensor | None = None,
         stacks: ExpertStacks | None = None,
+        *,
+        ep: EPBuffers | None = None,
     ) -> Tensor:
         """Runs the layer on ``x``, each device's own rows.
 
@@ -414,15 +420,20 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
         device, required when the EP config counts expert load. ``stacks``
         are expert stacks built outside control flow, as
         :meth:`ExpertParallelMoE.forward` takes them.
+
+        Raises:
+            ValueError: If not given ``ep``.
         """
-        if comm is not None:
-            self.ep_batch_manager.bind_comm_buffers(comm)
+        if ep is None:
+            raise ValueError("MuseSparkEPMoE.forward needs the ep buffers")
         h = self.pre_expert_norm(self.pre_expert_proj(x))
         return self.post_expert_proj(
-            self._routed(h, *self.gate(x), stacks=stacks, layer_idx=layer_idx)
+            self._routed(
+                h, *self.gate(x), ep, stacks=stacks, layer_idx=layer_idx
+            )
         )
 
-    def branch(self, x: Tensor) -> MuseSparkMoEBranch:
+    def branch(self, x: Tensor, ep: EPBuffers) -> MuseSparkMoEBranch:
         """Routes each device's own rows of the replicated ``x``."""
         rows = x.to(DeviceMapping(x.mesh, (Sharded(0),)))
         # Routed before the decode cond: an f32 router, or a cast of a value
@@ -430,6 +441,7 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
         router_idx, router_weight, routing = self.gate.packed(rows)
         return MuseSparkMoEBranch(
             self,
+            ep,
             x,
             rows,
             router_idx,
@@ -443,38 +455,41 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
         h: Tensor,
         router_idx: Tensor,
         router_weight: Tensor,
+        ep: EPBuffers,
         stacks: ExpertStacks | None = None,
         layer_idx: Tensor | None = None,
     ) -> Tensor:
         """The experts' combined output for each device's pooled rows ``h``."""
-        batch_mgr = self.ep_batch_manager
-        device_ids = [device.id for device in self.mesh.devices]
+        config = self.ep_config
         tokens = list(h.local_shards)
         stacks = stacks or self.expert_stacks()
         input_scales = (
-            [F.broadcast_to(s, [self.num_experts]) for s in stacks.global_scale]
+            Tensor.from_shard_values(
+                [
+                    F.broadcast_to(s, [self.num_experts])
+                    for s in stacks.global_scale
+                ],
+                DeviceMapping(self.mesh, (Replicated(),) * self.mesh.ndim),
+            )
             if stacks.global_scale is not None
             else None
         )
-        dispatched = batch_mgr.ep_dispatch_all(
-            tokens,
-            [ids.cast(DType.int32) for ids in router_idx.local_shards],
-            device_ids,
+        grouped, route = dispatch(
+            config,
+            ep,
+            h,
+            router_idx.cast(DType.int32),
             input_scales=input_scales,
-            layer_idx_per_device=(
-                [TensorValue(shard) for shard in layer_idx.local_shards]
-                if layer_idx is not None
-                else None
-            ),
+            layer_idx=layer_idx,
         )
         total_tokens = F.shape_to_tensor(tokens[0].shape)[0]
         for shard in tokens[1:]:
             total_tokens = total_tokens + F.shape_to_tensor(shard.shape)[0]
         estimated_total_m = (
-            total_tokens * self.num_experts_per_token // len(device_ids)
+            total_tokens * self.num_experts_per_token // self.mesh.num_devices
         ).cast(DType.uint32)
-        payload = EPDispatchPayload.from_dispatch(
-            dispatched, self.quant_config, batch_mgr.config
+        payload = EPDispatchPayload.from_grouped(
+            grouped, self.quant_config, config
         )
         down = self._local_compute(payload, None, estimated_total_m, stacks)
         # The combine reads only the routed rows, which the dispatch packs
@@ -483,13 +498,20 @@ class MuseSparkEPMoE(StackedExpertParallelMoE):
             self._local_expert_rows(out, payload.expert_start[i], i)
             for i, out in enumerate(down)
         ]
-        combined = batch_mgr.ep_combine_all(
-            normed, list(router_weight.local_shards), device_ids
+        combined = combine(
+            config,
+            ep,
+            Tensor.from_shard_values(normed, grouped.tokens.mapping),
+            route,
+            h,
+            router_weight,
         )
         return Tensor.from_shard_values(
             [
                 TensorValue(shard.cast(token.dtype))
-                for shard, token in zip(combined, tokens, strict=True)
+                for shard, token in zip(
+                    combined.local_shards, tokens, strict=True
+                )
             ],
             mapping=h.mapping,
         )

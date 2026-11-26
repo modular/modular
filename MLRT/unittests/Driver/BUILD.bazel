@@ -93,6 +93,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -120,12 +121,13 @@ modular_cc_test(
     # NVIDIA-only for now. VMM is opt-in rather than refused on AMD as of
     # GEX-4056, so this could run there too, but it has not been validated on
     # AMD and HIP caps total VMM-mapped memory per process (see
-    # MemoryManager::onDevice) -- enabling it needs a budget clamp first.
+    # createDeviceMemoryManager) -- enabling it needs a budget clamp first.
     gpu_constraints = ["//:nvidia_gpu"],
     tags = ["gpu"],
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -154,6 +156,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -182,6 +185,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -210,6 +214,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -248,6 +253,7 @@ _MEMORY_MANAGER_OOM_ENV = {
         deps = [
             ":TestUtils",
             "//MLRT:Driver/DeviceContextImpl",
+            "//MLRT:Driver/MemoryManager",
             "//Support:Base",
             "@llvm-project//llvm:Support",
         ],
@@ -282,6 +288,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -310,6 +317,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -322,11 +330,25 @@ modular_cc_test(
     srcs = [
         "MemoryManagerOomClassifyTest.cpp",
     ],
+    tags = ["ci-mojo-hal"],
     deps = [
         ":TestUtils",
-        "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+# The VMM granule the arena uses when `memory_manager_vmm_page_mb` is unset:
+# pure arithmetic over a budget and a granularity, so no device and no gpu tag.
+modular_cc_test(
+    name = "VmmPageSizeTest",
+    size = "small",
+    srcs = [
+        "VmmPageSizeTest.cpp",
+    ],
+    deps = [
+        "//MLRT:Driver/MemoryManager",
     ],
 )
 
@@ -357,6 +379,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -392,6 +415,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -431,6 +455,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -468,6 +493,7 @@ modular_cc_test(
         deps = [
             ":TestUtils",
             "//MLRT:Driver/DeviceContextImpl",
+            "//MLRT:Driver/MemoryManager",
             "//Support:Base",
             "@llvm-project//llvm:Support",
         ],
@@ -521,6 +547,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -551,6 +578,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -614,6 +642,7 @@ modular_cc_test(
         ":TestUtils",
         "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "//Target:Support",
         "@llvm-project//llvm:Support",
@@ -692,6 +721,7 @@ modular_cc_test(
     # Virtual mode needs a CompilationDevice for the configured api, and CUDA's
     # is the only one that exists (Metal hard-errors -- FIXME: MOCO-2411); its
     # NVPTX compilation driver is Linux-only.
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -736,6 +766,7 @@ modular_cc_test(
         "//AsyncRT:RuntimeGlobals",
         "//Support:Globals",
     ],
+    tags = ["ci-mojo-hal"],
     deps = [
         "//AsyncRT:RuntimeGlobals.static",
         "//MLRT:Driver/CAPI",
@@ -853,6 +884,7 @@ modular_cc_test(
     env = {
         "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -878,6 +910,7 @@ modular_cc_test(
     env = {
         "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -901,6 +934,7 @@ modular_cc_test(
     env = {
         "MODULAR_DRIVER_PLUGINS": "Mock@$(rootpath //MLRT/test/Driver/HAL:MockPlugin.so)",
     },
+    tags = ["ci-mojo-hal"],
     target_compatible_with = select({
         "//:hal_device_context_enabled": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -980,6 +1014,22 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
+        "//Support:Base",
+    ],
+)
+
+modular_cc_test(
+    name = "RedzoneDirectFreeTest",
+    size = "small",
+    srcs = ["RedzoneDirectFreeTest.cpp"],
+    env = {
+        "MODULAR_DEBUG_DEVICE_ALLOCATOR": "out-of-bounds",
+    },
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
     ],
 )
@@ -1015,6 +1065,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
     ],
 )
@@ -1290,7 +1341,7 @@ modular_cc_test(
 
 modular_cc_test(
     name = "GraphCaptureMultiDeviceTest",
-    size = "small",
+    size = "medium",
     srcs = ["GraphCaptureMultiDeviceTest.cpp"],
     exec_properties = {
         # Measured peak GPU memory: ~628 MB, set to 2x for safety margin.
@@ -1395,6 +1446,7 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -1416,6 +1468,26 @@ modular_cc_test(
     deps = [
         ":TestUtils",
         "//MLRT:Driver/DeviceContextImpl",
+        "//MLRT:Driver/MemoryManager",
+        "//Support:Base",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
+# The memory manager over fake backing and fake streams, so its driver calls
+# and its rollback after a driver refusal are tested on the CPU. The options
+# come from the test, not the config, so there is no env.
+modular_cc_test(
+    name = "MemoryManagerFakeBackingTest",
+    size = "small",
+    srcs = [
+        "MemoryManagerFakeBackingTest.cpp",
+        "MemoryManagerFakes.h",
+    ],
+    tags = ["ci-mojo-hal"],
+    deps = [
+        ":TestUtils",
+        "//MLRT:Driver/MemoryManager",
         "//Support:Base",
         "@llvm-project//llvm:Support",
     ],
@@ -1667,6 +1739,7 @@ modular_cc_test(
         "M_DRIVER_CAPI_HEADER_CHECK": "$(rootpath DriverCAPIHeaderCheck.c)",
         "M_DRIVER_CAPI_SHIM": "$(rootpath //MLRT:Driver/CAPIShim)",
     },
+    tags = ["ci-mojo-hal"],
     deps = ["//Support:Base"],
 )
 

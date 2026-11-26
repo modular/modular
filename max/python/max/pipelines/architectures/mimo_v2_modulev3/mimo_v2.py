@@ -36,9 +36,9 @@ from max.nn.common_layers.mesh_axis import DP
 from max.nn.common_layers.rotary_embedding import (
     RotaryEmbedding,
 )
+from max.nn.ep import EPBuffers
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams, PagedCacheValues
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.norm import rms_norm
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import ModuleV3Outputs
@@ -157,7 +157,7 @@ class MiMoV2DecoderLayer(Module[..., Tensor]):
         kv_collections: Sequence[PagedCacheValues],
         freqs_cis: Tensor,
         input_row_offsets: Tensor,
-        comm: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
     ) -> Tensor:
         """Runs the layer.
 
@@ -166,8 +166,7 @@ class MiMoV2DecoderLayer(Module[..., Tensor]):
             kv_collections: The layer's KV group, one per device.
             freqs_cis: The group's RoPE table, replicated.
             input_row_offsets: Ragged sequence boundaries, replicated.
-            comm: The EP communication buffers, when the MoE runs
-                expert-parallel.
+            ep: The exchange's buffers, when the MoE runs expert-parallel.
 
         Returns:
             The layer's output, replicated.
@@ -181,11 +180,10 @@ class MiMoV2DecoderLayer(Module[..., Tensor]):
         ).to(h.mapping)
         mlp_out: Tensor
         if isinstance(self.mlp, MiMoV2ExpertParallelMoE):
-            assert comm is not None
             # The shared compiled body resolves each layer's weights and
             # its EP buffers per call.
             mlp_out = as_subgraph(self.mlp, name="mimo_v2_moe")(
-                self.post_attention_layernorm(h), comm
+                self.post_attention_layernorm(h), ep
             )
         elif isinstance(self.mlp, MiMoV2MoE):
             # Every MoE layer shares one compiled body; each call resolves
@@ -206,9 +204,7 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
     bakes its KV-group index in as a constant, so attention layers cannot
     share a compiled subgraph. The MoE layers share one.
 
-    Under expert parallelism the graph's inputs grow an EP tail after the
-    KV leaves: the per-device atomic counters and the buffer-pointer
-    tensors the dispatch/combine kernels read. Every MoE call threads them
+    Under expert parallelism every MoE call threads the exchange's buffers
     through its shared subgraph.
 
     With ``data_parallel_degree > 1`` the graph also declares the DP
@@ -224,7 +220,7 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
     def __init__(
         self,
         config: MiMoV2Config,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         if config.return_hidden_states != ReturnHiddenStates.NONE:
             raise NotImplementedError(
@@ -272,9 +268,9 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
                 "MiMo-V2 fused chunked QKV preparation is not supported "
                 "with data-parallel attention."
             )
-        # Both directions of the wiring: an EP mode without its batch
-        # manager would silently build the tensor-parallel MoE, and a
-        # batch manager without an EP mode is a wiring error too. DP
+        # Both directions of the wiring: an EP mode without its EP config
+        # would silently build the tensor-parallel MoE, and an EP config
+        # without an EP mode is a wiring error too. DP
         # attention implies the EP mode, so the DP-without-EP case is
         # covered by the first arm (the tensor-parallel MoE's stacks have
         # no placement on a dp mesh).
@@ -284,21 +280,34 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
                 ParallelismMode.TP_EP,
                 ParallelismMode.DP_EP,
             )
-            and ep_batch_manager is None
+            and ep_config is None
         ):
             raise ValueError(
-                "EP parallelism is selected but no EP batch manager was "
+                "EP parallelism is selected but no EP config was "
                 f"given: mode={self.mode}, ep_config={config.ep_config}"
             )
-        if ep_batch_manager is not None and self.mode not in (
+        if ep_config is not None and self.mode not in (
             ParallelismMode.TP_EP,
             ParallelismMode.DP_EP,
         ):
             raise ValueError(
-                "An EP batch manager arrives without an EP parallelism "
+                "An EP config arrives without an EP parallelism "
                 f"mode: mode={self.mode}, ep_config={config.ep_config}"
             )
-        self.ep_batch_manager = ep_batch_manager
+        # The allreduce backend completes each token's top-k sum in the
+        # residual allreduce, which only a replicated stream has; the P2P
+        # backend needs each token on one device, which only DP attention
+        # gives.
+        if ep_config is not None and (
+            ep_config.use_allreduce == self.dp_attention
+        ):
+            raise NotImplementedError(
+                "MiMo-V2 expert parallelism runs the allreduce backend under"
+                " tensor-parallel attention and the P2P backend under"
+                f" data-parallel attention: mode={self.mode},"
+                f" use_allreduce={ep_config.use_allreduce}"
+            )
+        self.ep_config = ep_config
         self.devices = config.devices
         # Annotated, not inferred: the NONE guard above narrows the right
         # side to the literal, and an inferred-literal attribute would make
@@ -366,7 +375,7 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
             group_layer_counts[group] += 1
             mlp: MiMoV2MLP | MiMoV2MoE
             if i in config.moe_layers:
-                if ep_batch_manager is not None:
+                if ep_config is not None:
                     # Whole experts per device; the dispatch/combine move
                     # the tokens (see MiMoV2ExpertParallelMoE).
                     mlp = MiMoV2ExpertParallelMoE(
@@ -376,7 +385,7 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
                         moe_dim=config.moe_intermediate_size,
                         norm_topk_prob=config.norm_topk_prob,
                         quant_config=config.quant.experts,
-                        ep_batch_manager=ep_batch_manager,
+                        ep_config=ep_config,
                         route_on_every_device=self.route_on_every_device,
                     )
                 else:
@@ -527,6 +536,7 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         *kv_inputs: Tensor,
+        ep: EPBuffers | None = None,
     ) -> ModuleV3Outputs:
         """Runs the language graph over tokens and its KV inputs."""
         if self.return_logits == ReturnLogits.VARIABLE:
@@ -551,11 +561,6 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
         kv_iter = iter(kv_input_values(kv_inputs))
         # One entry per device, in declaration order: sliding, then full.
         sliding_kv, full_kv = self.kv_params.unflatten_basic_kv_tree(kv_iter)
-        # Whatever the KV tree left in the tail is the EP communication
-        # buffers, in the order EPBatchManager.input_types declares them.
-        comm: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            comm = self.ep_batch_manager.comm_buffers(list(kv_iter))
         tokens, input_row_offsets = self._place(tokens, input_row_offsets)
         kv_by_group = {SLIDING: list(sliding_kv), FULL: list(full_kv)}
 
@@ -577,7 +582,7 @@ class _MiMoV2(Module[..., ModuleV3Outputs]):
                 kv_by_group[group],
                 freqs_cis[group],
                 input_row_offsets,
-                comm,
+                ep,
             )
 
         # One projection and one gather serve both outputs when ALL logits
@@ -635,14 +640,14 @@ class _MiMoV2SpecTarget(_MiMoV2):
 
     Under data-parallel attention the verify splits the merged batch over
     the one-device replicas with the base forward's split helper, and the
-    EP batch manager threads the routed experts' dispatch buffers through
-    every MoE layer, as the base forward does.
+    routed experts' EP buffers thread through every MoE layer, as the base
+    forward does.
     """
 
     def __init__(
         self,
         config: MiMoV2Config,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
     ) -> None:
         if not config.target_layer_ids:
             raise ValueError(
@@ -664,7 +669,7 @@ class _MiMoV2SpecTarget(_MiMoV2):
                 return_logits=ReturnLogits.LAST_TOKEN,
                 return_hidden_states=ReturnHiddenStates.NONE,
             ),
-            ep_batch_manager,
+            ep_config,
         )
         self.return_logits = ReturnLogits.VARIABLE
         self.return_hidden_states = ReturnHiddenStates.SELECTED_LAYERS
@@ -677,7 +682,7 @@ class _MiMoV2SpecTarget(_MiMoV2):
         return_n_logits: Tensor,
         input_row_offsets: Tensor,
         kv_by_group: Mapping[str, Sequence[PagedCacheValues]],
-        comm: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         host_merged_offsets: Tensor | None = None,
         data_parallel_splits: Tensor | None = None,
     ) -> tuple[Tensor, list[Tensor]]:
@@ -690,8 +695,8 @@ class _MiMoV2SpecTarget(_MiMoV2):
             input_row_offsets: The single-device ragged offsets.
             kv_by_group: The target's caches, one per device per KV group,
                 keyed ``sliding_attention`` and ``full_attention``.
-            comm: The EP communication buffers, when the routed experts
-                serve expert parallelism.
+            ep: The exchange's buffers, when the routed experts serve
+                expert parallelism.
             host_merged_offsets: The merged offsets on the host, under data
                 parallelism; the split helper slices its bounds in int64.
             data_parallel_splits: Per-replica batch boundaries, under data
@@ -726,7 +731,7 @@ class _MiMoV2SpecTarget(_MiMoV2):
                 kv_by_group[group],
                 freqs_cis[group],
                 input_row_offsets,
-                comm,
+                ep,
             )
             if i in self._target_layers:
                 taps.append(h)
@@ -772,7 +777,7 @@ class MiMoV2Decoder(_MiMoV2SpecTarget):
     The registered graph keeps the name the precompiled MEFs and Mach's
     registry use, and the input order the existing graph declares: the
     DP batch-split tensors between the batch inputs and the KV leaves,
-    with the EP tail last.
+    with the EP tree last.
     """
 
     graph_name: ClassVar[str] = "MiMoV2"
@@ -788,19 +793,13 @@ class MiMoV2Decoder(_MiMoV2SpecTarget):
     )
 
     def __init__(self, config: MiMoV2Config) -> None:
-        manager = (
-            EPBatchManager(config.ep_config)
-            if config.ep_config is not None
-            else None
-        )
         if config.return_hidden_states == ReturnHiddenStates.SELECTED_LAYERS:
-            super().__init__(config, manager)
+            super().__init__(config, config.ep_config)
         else:
-            _MiMoV2.__init__(self, config, manager)
+            _MiMoV2.__init__(self, config, config.ep_config)
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
         """Runs the shared semantic batch in the existing physical order."""
-        ep_inputs = tree.leaves(inputs.ep) if inputs.ep is not None else ()
         split_inputs: tuple[Tensor, ...] = ()
         if self.dp_attention:
             assert inputs.data_parallel_splits is not None
@@ -815,5 +814,5 @@ class MiMoV2Decoder(_MiMoV2SpecTarget):
             inputs.input_row_offsets,
             *split_inputs,
             *tree.leaves(inputs.kv),
-            *ep_inputs,
+            ep=inputs.ep,
         )

@@ -28,6 +28,9 @@ from max.nn._graph_ops import (
     indexer_k_quantize_store as _indexer_k_quantize_store,
 )
 from max.nn._graph_ops import (
+    indexer_q_rope_quantize as _indexer_q_rope_quantize,
+)
+from max.nn._graph_ops import (
     indexer_q_ssmax_rope_quantize as _indexer_q_ssmax_rope_quantize,
 )
 from max.nn._graph_ops import (
@@ -60,6 +63,9 @@ from max.nn._graph_ops import (
 )
 from max.nn._graph_ops import mla_prefill_graph as _mla_prefill_graph
 from max.nn._graph_ops import (
+    mla_sparse_selection_rows as _mla_sparse_selection_rows,
+)
+from max.nn._graph_ops import (
     store_mla_latent_ragged as _store_mla_latent_ragged,
 )
 from max.nn.common_layers.mesh_axis import dcp_axis
@@ -79,6 +85,7 @@ mla_fp8_index_top_k = F.functional(_mla_fp8_index_top_k)
 mla_fp8_index_top_k_with_physical = F.functional(
     _mla_fp8_index_top_k_with_physical
 )
+mla_sparse_selection_rows = F.functional(_mla_sparse_selection_rows)
 mla_fp8_index_top_k_physical = F.functional(_mla_fp8_index_top_k_physical)
 mla_fp8_index_top_k_physical_cp = F.functional(_mla_fp8_index_top_k_physical_cp)
 mla_kpool_append = F.functional(_mla_kpool_append)
@@ -88,6 +95,7 @@ mla_kpool_ring_close = F.functional(_mla_kpool_ring_close)
 mla_kpool_seed_tail = F.functional(_mla_kpool_seed_tail)
 cp_merge_topk = F.functional(_cp_merge_topk)
 indexer_k_quantize_store = F.functional(_indexer_k_quantize_store)
+indexer_q_rope_quantize = F.functional(_indexer_q_rope_quantize)
 indexer_q_ssmax_rope_quantize = F.functional(_indexer_q_ssmax_rope_quantize)
 _mla_decode_graph_cp_per_device = F.functional(_mla_decode_graph_cp)
 
@@ -153,5 +161,6 @@ __all__ = [
     "mla_kpool_seed_tail",
     "mla_prefill_decode_graph",
     "mla_prefill_graph",
+    "mla_sparse_selection_rows",
     "store_mla_latent_ragged",
 ]

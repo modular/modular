@@ -13,6 +13,7 @@
 """HAL Driver — entry point for interacting with hardware via a plugin."""
 
 from .plugin import RawDriver
+from .plugin_spec import DriverPluginEntry
 from .device import Device, get_device_spec, get_machine_definition
 from .status import HALError
 from std.memory import ArcPointer
@@ -49,9 +50,19 @@ struct Driver(Deinitable, Movable):
         """Create a Driver by loading a plugin and initialising the backend.
 
         Args:
-            plugin_spec: 'name@/path/to/plugin.so' or just the path.
+            plugin_spec: One `MODULAR_DRIVER_PLUGINS` entry:
+                'name@/path/to/plugin.so' or just the path.
         """
-        var raw = RawDriver.load(plugin_spec)
+        return Self.create(DriverPluginEntry.parse(plugin_spec))
+
+    @staticmethod
+    def create(entry: DriverPluginEntry) raises HALError -> ArcPointer[Self]:
+        """Create a Driver by loading a plugin and initialising the backend.
+
+        Args:
+            entry: The plugin, as `MODULAR_DRIVER_PLUGINS` names it.
+        """
+        var raw = RawDriver.load(entry)
         # If `device_count` raises, `raw`'s destructor cleans up the
         # loaded plugin and initialised driver handle.
         var device_count = raw.device_count()

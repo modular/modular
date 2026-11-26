@@ -76,6 +76,7 @@ def _fake_pipeline_model(n_devices: int) -> Any:
     assert isinstance(model_cls, type)
     model = cast(Any, object.__new__(model_cls))
     model.devices = [CPU() for _ in range(n_devices)]
+    model._vision_module = NonCallableMock(spec=KimiK2_5VisionEncoder)
     processor = cast(Any, object.__new__(KimiK2_5BatchProcessor))
     processor.config = NonCallableMock(
         spec=KimiK2_5Config,

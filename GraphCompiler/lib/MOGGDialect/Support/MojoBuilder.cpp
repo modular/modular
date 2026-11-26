@@ -163,6 +163,11 @@ MojoBuilder::lambda(StringRef lambdaName, ArrayRef<NamedMojoDef> parameters,
   MojoValue lambdaParam = newVar(lambdaName.str());
   FunctionBody body;
 
+  // The Mojo parser warns on a capture whose type exposes AnyOrigin (e.g.
+  // Pointer[..., MutAnyOrigin]) unless the closure opts in with this
+  // decorator.
+  if (!captureConvention.empty())
+    statement("@__allow_legacy_any_origin_fields");
   if (inlineKind == LambdaInline::kAlways)
     statement(kDecoratorAlwaysInline);
   else if (inlineKind == LambdaInline::kNever)

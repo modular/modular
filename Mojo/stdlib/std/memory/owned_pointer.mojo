@@ -240,7 +240,6 @@ struct OwnedPointer[T: AnyType](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref[AddressSpace.GENERIC] self,
     ) -> ref[
@@ -259,7 +258,6 @@ struct OwnedPointer[T: AnyType](
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     def ptr[
         origin: Origin, //
     ](ref[origin] self) -> Pointer[Self.T, Self._InteriorOrigin[origin]]:

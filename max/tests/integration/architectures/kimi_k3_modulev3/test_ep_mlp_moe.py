@@ -20,11 +20,11 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from _ep_test_utils import allocate_ep_buffers
 from _moe_test_utils import assign_experts
 from max.driver import Accelerator
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.pipelines.architectures.kimi_k3_modulev3.layers import ep
 from max.pipelines.architectures.kimi_k3_modulev3.layers.moe_latent import (
     KimiK3LatentMoE,
     expert_parallel_config,
@@ -139,10 +139,11 @@ def test_latent_moe_ep2_matches_single_device() -> None:
         layer2 = build()
         layer2 = expert_parallel_latent_moe(layer2, mesh)
         config = expert_parallel_config(layer2, mesh, max_tokens_per_rank=64)
-        buffers = ep.allocate_ep_buffers(config, mesh, session)
+        layer2.ep_config = config
+        buffers = allocate_ep_buffers(config, mesh, session)
         x2 = Tensor(x_np, dtype=DType.float32).cast(DType.bfloat16)
         out2 = (
-            layer2.expert_parallel_forward(x2, config, buffers)
+            layer2.expert_parallel_forward(x2, buffers)
             .cast(DType.float32)
             .to_numpy()
         )

@@ -21,7 +21,10 @@ modular_cc_library(
 lit_tests(
     name = "test",
     srcs = glob(["*.mojo"]),
-    data = [":c_abi_reference"],
+    data = [
+        ":c_abi_reference",
+        "//Mojo/test/mojo-integration:enum_many_cases_fixture",
+    ],
     mojo_deps = ["@mojo//:std"],
     tools = ["//Mojo/tools/mojo"],
 )

@@ -120,6 +120,7 @@ modular_shared_library(
         ":MOFDriver",
         "//GraphCompiler:FrameworkFrontend",
         "//GraphCompiler:MEFModel",
+        "//GraphCompiler:GGUF",
         "//GraphCompiler:SafeTensor",
         "//Init",
         "//Kernels/lib/max_license:WeightsRegistry",

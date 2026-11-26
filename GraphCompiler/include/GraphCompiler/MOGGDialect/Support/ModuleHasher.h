@@ -23,11 +23,20 @@ class GeneratorOp;
 
 namespace M::MOGG {
 
-void hashModuleContents(mlir::ModuleOp module);
+/// Computes the semantic hash of each operation in `module`.
+///
+/// `symtab` must be the table for `module`, and no top-level symbol may be
+/// added, erased or renamed between its construction and this call: the hash
+/// is taken through it, so a table that disagrees with the module changes the
+/// hashed bytes. A cached `mlir::SymbolTableAnalysis` does not satisfy this on
+/// its own, because it reports itself as never invalidated, so a pass that
+/// mutates symbols leaves it stale.
 void hashModuleContents(mlir::ModuleOp module, const mlir::SymbolTable &symtab);
 
 /// Computes the semantic hash for each operation in the given module and then
 /// renames the `symbolsToRename` operations based on their semantic hash.
+///
+/// `symtab` carries the same precondition as `hashModuleContents`.
 llvm::DenseMap<mlir::StringAttr, KGEN::GeneratorOp> applySemanticNaming(
     mlir::ModuleOp module, llvm::ArrayRef<mlir::StringAttr> symbolsToRename,
     const mlir::SymbolTable &symtab, llvm::StringRef namePrefix = "");

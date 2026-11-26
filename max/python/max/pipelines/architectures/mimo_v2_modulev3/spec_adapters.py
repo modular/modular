@@ -31,8 +31,8 @@ from typing import TYPE_CHECKING, Any
 from max import functional as F
 from max.graph import TensorValue, ops
 from max.nn.common_layers.mesh_axis import DP
+from max.nn.ep import init as ep_init
 from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
@@ -116,14 +116,15 @@ class MiMoV2BlockTarget:
         # The paged-cache kernels take the same cache leaves as graph values,
         # so the buffers the kernels write in place stay buffers through the
         # round trip.
-        comm_buffers: EPCommBuffers | None = None
-        ep_batch_manager = self.target.ep_batch_manager
-        if ep_batch_manager is not None:
-            assert batch.ep_inputs is not None, (
-                "a target built with an EP batch manager must get the"
-                " graph's EP input buffers"
-            )
-            comm_buffers = ep_batch_manager.comm_buffers(batch.ep_inputs)
+        assert self.target.ep_config is None or batch.ep_inputs is not None, (
+            "a target built with an EP config must get the graph's EP input"
+            " buffers"
+        )
+        ep = ep_init.flat_buffers(
+            self.target.ep_config,
+            batch.ep_inputs or (),
+            self.target.norm.weight.mesh,
+        )
         logits, taps = self.target.verify(
             batch.merged_tokens,
             batch.return_n_logits,
@@ -132,7 +133,7 @@ class MiMoV2BlockTarget:
                 FULL: as_graph_values(list(batch.kv_collections)),
                 SLIDING: as_graph_values(list(batch.passthrough_kv[SLIDING])),
             },
-            comm=comm_buffers,
+            ep=ep,
             host_merged_offsets=batch.host_merged_offsets,
             data_parallel_splits=batch.data_parallel_splits,
         )
@@ -420,9 +421,9 @@ def verify(
 def ep_input_tree(target: Any) -> object | None:
     """Returns the group that names the target's EP buffers, if EP is on."""
     assert isinstance(target, MiMoV2Decoder)
-    if target.ep_batch_manager is None:
+    if target.ep_config is None:
         return None
-    return target.ep_batch_manager.input_tree()
+    return ep_init.payload_types(target.ep_config)
 
 
 def block_proposer(

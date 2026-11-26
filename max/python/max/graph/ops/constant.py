@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, TypeAlias, cast
+from typing import Any, TypeAlias
 
 import numpy as np
 from max.dtype import DType
@@ -32,6 +32,10 @@ from .validation import _check_device_placement
 Number: TypeAlias = float | np.number[Any]
 NestedArray: TypeAlias = Sequence["Number | NestedArray"]
 
+# Checked before the DLPackArray protocol, which is slow to test on a plain
+# Python literal.
+_LITERAL_TYPES = (bool, int, float, list, tuple)
+
 
 def shape(literal: NestedArray | Number) -> tuple[int, ...]:
     """Returns the nested shape of a literal array or number (scalar gives ``()``)."""
@@ -42,16 +46,6 @@ def shape(literal: NestedArray | Number) -> tuple[int, ...]:
     if len(inners) > 1:
         raise ValueError(f"Array literals must be rectangular, got {literal=}")
     return outer, *next(iter(inners), ())
-
-
-def index(literal: NestedArray | Number, idx: Sequence[int]) -> Number:
-    """Returns the element at the given index into a nested literal."""
-    if not idx:
-        assert not isinstance(literal, Sequence)
-        return cast(Number, literal)
-    first, *rest = idx
-    assert isinstance(literal, Sequence)
-    return index(literal[first], rest)
 
 
 def constant(
@@ -110,27 +104,22 @@ def constant(
             f"Cannot create a constant of type '{dtype}' since it is a sub-byte type."
         )
 
-    if not isinstance(value, DLPackArray):
+    if isinstance(value, _LITERAL_TYPES) or not isinstance(value, DLPackArray):
         if dtype is None or device is None:
             raise TypeError(
                 "Literal constants must explicitly set a dtype and device."
             )
 
-        min, max = _DTYPE_MIN_AND_MAX[dtype]
-        tensor = Buffer(dtype, shape(value), device=CPU())
-        for idx in tensor._iterate_indices():
-            v = index(value, idx)
+        type = TensorType(dtype, shape(value), DeviceRef.from_device(device))
+        mlir_type = type.to_mlir()
+        attr = _graph.array_attr(value, mlir_type)
+        # See constant_external() below for why constants never carry a
+        # profile_scope label.
+        return Graph.current._add_op_generated(
+            _mo.ConstantOp, mlir_type, attr, attach_profile_scopes=False
+        )[0].tensor
 
-            if not dtype.is_float() and not min <= int(v) <= max:
-                raise ValueError(
-                    "Unsafe cast: Refusing to implicitly promote external "
-                    f"array with value {v} out of range for DType {dtype}."
-                )
-
-            tensor[idx] = v
-
-        value = tensor
-    elif isinstance(value, np.ndarray):
+    if isinstance(value, np.ndarray):
         value = np.ascontiguousarray(value)
 
     value = Buffer.from_dlpack(value)
@@ -197,31 +186,3 @@ def constant_external(
         is_placeholder=is_placeholder,
         attach_profile_scopes=False,
     )[0]
-
-
-# For each DType, this is the full range of representable values.
-# Since constant and scalar have explicit users dtypes, we trust that the specified dtype is wanted.
-# We still error is a value does not fit in these ranges.
-_DTYPE_MIN_AND_MAX = {
-    DType.bool: (0, 1),
-    DType.int8: (-(2**7), 2**7 - 1),
-    DType.int16: (-(2**15), 2**15 - 1),
-    DType.int32: (-(2**31), 2**31 - 1),
-    DType.int64: (-(2**63), 2**63 - 1),
-    DType.uint8: (0, 2**8 - 1),
-    DType.uint16: (0, 2**16 - 1),
-    DType.uint32: (0, 2**32 - 1),
-    DType.uint64: (0, 2**64 - 1),
-    DType.float4_e2m1fn: (-0b0111, 0b0111),
-    DType.float6_e2m3fn: (-7.5, 7.5),
-    DType.float6_e3m2fn: (-28, 28),
-    DType.float8_e8m0fnu: (2**-127, 2**127),
-    DType.float8_e5m2: (float("-inf"), float("inf")),
-    DType.float8_e5m2fnuz: (-57344, 57344),
-    DType.float8_e4m3fn: (-448, 448),
-    DType.float8_e4m3fnuz: (-240, 240),
-    DType.bfloat16: (float("-inf"), float("inf")),
-    DType.float16: (float("-inf"), float("inf")),
-    DType.float32: (float("-inf"), float("inf")),
-    DType.float64: (float("-inf"), float("inf")),
-}

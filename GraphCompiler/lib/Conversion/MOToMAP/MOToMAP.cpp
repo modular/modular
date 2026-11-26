@@ -715,8 +715,15 @@ LogicalResult lowerTransposeToForeach(MO::TransposeOp op) {
   BlockArgument permArg = body->getArgument(1);
   BlockArgument outputArg = body->getArgument(2);
 
-  Value innerIdx = MAP::TransposeIndexOp::create(
-      bodyBuilder, loc, MAP::IndexType::get(ctx, rank), spec, idxArg, permArg);
+  // A constant perm is read at compile time, so the view doesn't take it, and
+  // canonicalization drops the loop's unused input.
+  Value permutations =
+      llvm::none_of(permAttr.asArrayRef(), ShapedType::isDynamic)
+          ? Value()
+          : Value(permArg);
+  Value innerIdx = MAP::TransposeIndexOp::create(bodyBuilder, loc,
+                                                 MAP::IndexType::get(ctx, rank),
+                                                 spec, idxArg, permutations);
   Value loaded = MAP::LoadOp::create(
       bodyBuilder, loc, outputTy.getElementType(), inputArg, innerIdx);
   MAP::StoreOp::create(bodyBuilder, loc, outputArg, idxArg, loaded);

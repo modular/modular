@@ -522,7 +522,7 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
         self._size = copy._size
 
     @inline(.always)
-    def current(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def current(self, ctx: DeviceContext) raises -> DeviceBuffer[Self.dtype]:
         if case .Some(ptr) = self._d_buffers[self._selection]:
             return DeviceBuffer[Self.dtype](
                 ctx,
@@ -534,7 +534,7 @@ struct DoubleBuffer[dtype: DType](ImplicitlyCopyable):
             return DeviceBuffer[Self.dtype].empty(ctx)
 
     @inline(.always)
-    def alternate(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def alternate(self, ctx: DeviceContext) raises -> DeviceBuffer[Self.dtype]:
         if case .Some(ptr) = self._d_buffers[self._selection ^ 1]:
             return DeviceBuffer[Self.dtype](
                 ctx,

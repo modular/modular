@@ -29,7 +29,7 @@ from typing import Any
 from max import functional as F
 from max import tree
 from max.driver import Accelerator
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef, TensorValue, ops
 from max.nn import _graph_ops as kernels
 from max.tensor.sharding import (
     AxisAssignment,
@@ -46,6 +46,7 @@ __all__ = [
     "block_scales_interleave",
     "compress_windows_ragged",
     "device_architectures",
+    "dsv4_qkv_prep_ragged",
     "indexer_score_ragged",
     "latent_sparse_attention_ragged",
     "moe_create_indices_with_slots",
@@ -121,6 +122,49 @@ rope_ragged = F.functional(
 compress_windows_ragged = F.functional(
     kernels.compress_windows_ragged, rule=replicated_rule()
 )
+
+
+def _rope_rows(freqs_table: TensorValue) -> TensorValue:
+    """The interleaved ``[max_seq_len, rope_dim]`` view of a rotary table.
+
+    The fused preparation kernels read this layout.
+    """
+    rows, pairs = freqs_table.shape[0], int(freqs_table.shape[1])
+    return ops.reshape(freqs_table, [rows, 2 * pairs])
+
+
+def _qkv_prep_body(
+    q: TensorValue,
+    kv: TensorValue,
+    kv_gamma: TensorValue,
+    freqs_table: TensorValue,
+    input_row_offsets: TensorValue,
+    swa: Any,
+    layer: TensorValue,
+    *,
+    kv_col: int,
+    epsilon: float,
+) -> TensorValue:
+    return kernels._dsv4_qkv_prep_ragged(
+        q,
+        kv,
+        kv_gamma,
+        _rope_rows(freqs_table),
+        input_row_offsets,
+        swa,
+        layer,
+        kv_col=kv_col,
+        epsilon=epsilon,
+    )
+
+
+# Each device preps its own heads and stores the whole latent into its own
+# copy of the window leaf.
+dsv4_qkv_prep_ragged = F.functional(
+    _qkv_prep_body,
+    rule=_named_rule(_qkv_prep_body, {"q": HEADS}, (HEADS,)),
+)
+
 top_k_per_row = F.functional(kernels.top_k_per_row, rule=replicated_rule(2))
 moe_create_indices_with_slots = F.functional(
     kernels.moe_create_indices_with_slots, rule=replicated_rule(9)

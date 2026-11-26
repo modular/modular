@@ -12,8 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 #include "MLRT/Driver/DeviceContext/CompilationDevice.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/DeviceContext/DeviceAllocator.h"
 #include "MLRT/lib/Driver/DeviceContext/Virtual/VirtualDeviceContext.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "ScopedEnvVar.h"
 #include "TestUtils.h"
 
@@ -145,15 +146,16 @@ TEST(MemoryManagerChunkGrowthTest, CapsChunkGrowthToCurrentFreeMemory) {
   auto device =
       M::RCRef<TestMemoryPressureDevice>::create(kInitialFree, kTotalMemory);
   ASSIGN_NO_ERR(Device::MemInfo, initialMemInfo, device->getMemoryInfo());
-  auto manager = std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
-      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize));
+  auto manager = createDeviceMemoryManager(
+      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize);
 
   // Simulate unrelated allocations after the memory manager is created.
   device->reserveExternalPressure(kExternalPressure);
 
   MemoryManagerFreeList &freeList = *manager->freeList();
-  ASSIGN_NO_ERR(void *, ptr,
-                freeList.allocate(kRequestSize, Device::AllocMode::SYNC));
+  ASSIGN_NO_ERR(
+      void *, ptr,
+      freeList.allocate(kRequestSize, AllocatorContext::AllocMode::SYNC));
 
   ASSERT_EQ(device->chunkAllocRequests().size(), 1u);
   EXPECT_EQ(device->chunkAllocRequests().front(), kExpectedChunkSize);
@@ -173,13 +175,13 @@ TEST(MemoryManagerChunkGrowthTest, ReportsChunkAllocFailureDetails) {
   auto device =
       M::RCRef<TestMemoryPressureDevice>::create(kInitialFree, kTotalMemory);
   ASSIGN_NO_ERR(Device::MemInfo, initialMemInfo, device->getMemoryInfo());
-  auto manager = std::unique_ptr<MemoryManager>(MemoryManager::onDevice(
-      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize));
+  auto manager = createDeviceMemoryManager(
+      *device, initialMemInfo, device->allocationAlignment(), kMaxCacheSize);
 
   device->failNextChunkAlloc("fake oom");
 
   MemoryManagerFreeList &freeList = *manager->freeList();
-  auto err = freeList.allocate(/*size=*/512, Device::AllocMode::SYNC);
+  auto err = freeList.allocate(/*size=*/512, AllocatorContext::AllocMode::SYNC);
   ASSERT_TRUE(err.isError());
   EXPECT_THAT(err.getError(),
               testing::HasSubstr("last_chunk_alloc_failure: chunkAlloc("));

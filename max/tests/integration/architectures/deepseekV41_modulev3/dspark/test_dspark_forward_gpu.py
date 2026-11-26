@@ -47,6 +47,9 @@ from max.pipelines.architectures.deepseekV41_modulev3.layers.dspark import (
 from max.pipelines.architectures.deepseekV41_modulev3.layers.dspark_moe import (
     DSparkMoE,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.layers.mxfp8_linear import (
+    ConcatenatedMXFP8Linear,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
 )
@@ -307,16 +310,26 @@ def _install_weights(
     """Places the synthetic weights on the device."""
     for name in ("q_norm", "kv_norm"):
         getattr(attn, name).weight = _bf16_tensor(w[name], device)
-    attn.wqa_wkv.weight = _fp8_tensor(
-        np.concatenate([w["wq_a_codes"], w["wkv_codes"]]),
-        DType.float8_e4m3fn,
-        device,
-    )
-    attn.wqa_wkv.scale = _fp8_tensor(
-        np.concatenate([w["wq_a_scale"], w["wkv_scale"]]),
-        DType.float8_e8m0fnu,
-        device,
-    )
+    if isinstance(attn.wqa_wkv, ConcatenatedMXFP8Linear):
+        for name in ("wq_a", "wkv"):
+            linear = getattr(attn.wqa_wkv, name)
+            linear.weight = _fp8_tensor(
+                w[f"{name}_codes"], DType.float8_e4m3fn, device
+            )
+            linear.scale = _fp8_tensor(
+                w[f"{name}_scale"], DType.float8_e8m0fnu, device
+            )
+    else:
+        attn.wqa_wkv.weight = _fp8_tensor(
+            np.concatenate([w["wq_a_codes"], w["wkv_codes"]]),
+            DType.float8_e4m3fn,
+            device,
+        )
+        attn.wqa_wkv.scale = _fp8_tensor(
+            np.concatenate([w["wq_a_scale"], w["wkv_scale"]]),
+            DType.float8_e8m0fnu,
+            device,
+        )
     for name in ("wq_b", "wo_a"):
         getattr(attn, name).weight = _fp8_tensor(
             w[f"{name}_codes"], DType.float8_e4m3fn, device

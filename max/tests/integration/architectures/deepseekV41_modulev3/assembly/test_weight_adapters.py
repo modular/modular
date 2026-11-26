@@ -849,19 +849,19 @@ def test_convert_weight_data_maps_mxfp4_experts_byte_for_byte() -> None:
             "layers.0.engram.embed.weight",
             DType.float8_e4m3fn,
             "layers.0.engram.embed.weight",
-            DType.uint8,
+            DType.float8_e4m3fn,
         ),
         (
             "layers.0.engram.embed.scale",
             DType.uint8,
             "layers.0.engram.embed.scale",
-            DType.uint8,
+            DType.float8_e8m0fnu,
         ),
         (
             "layers.0.engram.embed.scale",
             DType.float8_e8m0fnu,
             "layers.0.engram.embed.scale",
-            DType.uint8,
+            DType.float8_e8m0fnu,
         ),
         (
             "vision.blocks.0.attn.wo.weight",

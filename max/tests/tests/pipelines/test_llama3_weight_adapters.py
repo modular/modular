@@ -121,9 +121,9 @@ def test_convert_gguf_state_dict_quantized_keeps_legacy_qkv_keys() -> None:
 
 def test_modulev3_rules_name_what_the_converter_did() -> None:
     state_dict = {name: _weight_mock() for name in _CHECKPOINT_NAMES}
-    adapter = llama_modulev3_arch.checkpoint_adapters(LlamaConfig())[
-        WeightsFormat.safetensors
-    ]
+    adapter = llama_modulev3_arch.checkpoint_adapters(
+        LlamaConfig(), artifact_export=False
+    )[WeightsFormat.safetensors]
     assert isinstance(adapter, WeightTransform)
 
     converted = modulev3_weight_adapters.convert_safetensor_state_dict(
@@ -134,7 +134,9 @@ def test_modulev3_rules_name_what_the_converter_did() -> None:
 
 
 def test_gguf_checkpoint_keeps_its_converter() -> None:
-    adapters = llama_modulev3_arch.checkpoint_adapters(LlamaConfig())
+    adapters = llama_modulev3_arch.checkpoint_adapters(
+        LlamaConfig(), artifact_export=False
+    )
 
     assert (
         adapters[WeightsFormat.gguf]

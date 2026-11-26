@@ -37,6 +37,7 @@ from expert_stacks import (
     realize,
 )
 from max import functional as F
+from max import tree
 from max.driver import (
     CPU,
     set_virtual_device_api,
@@ -47,8 +48,8 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import SafetensorWeights, WeightData
 from max.nn import _graph_ops as kernels
+from max.nn.ep.init import payload_types
 from max.nn.ep_config import EPConfig
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.quant_config import QuantConfig
 from max.pipelines.architectures.mimo_v2_modulev3.layers.moe import (
     MiMoV2ExpertParallelMoE,
@@ -134,7 +135,7 @@ def _ep_moe(n_devices: int = N_DEVICES) -> MiMoV2ExpertParallelMoE:
         moe_dim=MOE_DIM,
         norm_topk_prob=True,
         quant_config=_mxfp4_experts_config(),
-        ep_batch_manager=EPBatchManager(_ep_config(n_devices)),
+        ep_config=_ep_config(n_devices),
     )
 
 
@@ -204,9 +205,7 @@ def test_ep_moe_refuses_the_p2p_backend() -> None:
             moe_dim=MOE_DIM,
             norm_topk_prob=True,
             quant_config=_mxfp4_experts_config(),
-            ep_batch_manager=EPBatchManager(
-                _ep_config(N_DEVICES, use_allreduce=False)
-            ),
+            ep_config=_ep_config(N_DEVICES, use_allreduce=False),
         )
     with (
         pytest.raises(NotImplementedError, match="allreduce"),
@@ -270,7 +269,7 @@ def test_mimo_v2_ep2_stages_with_the_ep_tail(
     config = _ep_config_model(checkpoint)
     assert config.ep_config is not None
     ep_config = config.ep_config
-    ep_batch_manager = EPBatchManager(ep_config)
+    ep_inputs = tree.leaves(payload_types(ep_config))
     devices = [ref.to_device() for ref in config.devices]
     mesh = DeviceMesh(tuple(devices), (N_DEVICES,), ("tp",))
     weights = SafetensorWeights(sorted(checkpoint.glob("*.safetensors")))
@@ -283,12 +282,12 @@ def test_mimo_v2_ep2_stages_with_the_ep_tail(
         inputs = decoder_input_types(
             config.kv_params,
             config.devices[0],
-            ep=ep_batch_manager.input_tree(),
+            ep=payload_types(ep_config),
             input_layout=MiMoV2Decoder.input_layout,
         )
         assert model.mode is ParallelismMode.TP_EP
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = _DecoderGraph(model).stage(
+        staged, _registry = _DecoderGraph(model, ep_mesh=mesh).stage(
             inputs,
             weights=adapted,
             name=MiMoV2Decoder.graph_name,
@@ -297,7 +296,7 @@ def test_mimo_v2_ep2_stages_with_the_ep_tail(
 
     # The EP tail is declared: the atomic counters plus the three pointer
     # tables per buffer group.
-    assert len(ep_batch_manager.input_types()) == 2 * N_DEVICES + 3 * 2
+    assert len(ep_inputs) == 2 * N_DEVICES + 3 * 2
     # The shared MoE subgraph still exists and now carries the EP
     # dispatch/combine; the ops are per-device inside the one body.
     assert text.count("mo.graph @mimo_v2_moe") == 1
@@ -327,7 +326,7 @@ def test_mimo_v2_dp2_stages_with_the_batch_split(
     config = _ep_config_model(checkpoint, use_allreduce=False)
     assert config.ep_config is not None
     config.data_parallel_degree = N_DEVICES
-    ep_batch_manager = EPBatchManager(config.ep_config)
+    ep_config = config.ep_config
     devices = [ref.to_device() for ref in config.devices]
     # The pipeline names the one mesh axis "dp" under data parallelism, so
     # the split placement keys on it.
@@ -346,11 +345,11 @@ def test_mimo_v2_dp2_stages_with_the_batch_split(
             config.kv_params,
             config.devices[0],
             data_parallel_degree=N_DEVICES,
-            ep=ep_batch_manager.input_tree(),
+            ep=payload_types(ep_config),
             input_layout=MiMoV2Decoder.input_layout,
         )
     with F.lazy(), default_device(mesh), default_dtype(config.dtype):
-        staged, _registry = _DecoderGraph(model).stage(
+        staged, _registry = _DecoderGraph(model, ep_mesh=mesh).stage(
             inputs,
             weights=adapted,
             name=MiMoV2Decoder.graph_name,
@@ -371,13 +370,13 @@ def test_mimo_v2_refuses_dp_without_an_ep_config(
     checkpoint: Path,
 ) -> None:
     """DP attention without an EP config is a wiring error, not a silent
-    tensor-parallel build: the registered decoder builds its batch manager
-    from ``config.ep_config`` alone, so a DP build with no EP config reaches
-    the module with no manager and is refused there.
+    tensor-parallel build: the registered decoder reads its EP config from
+    ``config.ep_config`` alone, so a DP build with no EP config reaches the
+    module with none and is refused there.
 
-    The reverse wiring -- a batch manager without an EP mode -- has no
-    caller since the shims were deleted: the registered decoder derives its
-    manager from the config, so no construction can pair the two.
+    The reverse wiring -- an EP config without an EP mode -- has no caller
+    since the shims were deleted: the registered decoder derives both from
+    the config, so no construction can pair the two.
     """
     set_virtual_device_api("cuda")
     set_virtual_device_target_arch("sm_100a")
@@ -390,7 +389,7 @@ def test_mimo_v2_refuses_dp_without_an_ep_config(
         tuple(ref.to_device() for ref in config.devices), (N_DEVICES,), ("tp",)
     )
     with (
-        pytest.raises(ValueError, match="no EP batch manager"),
+        pytest.raises(ValueError, match="no EP config"),
         F.lazy(),
         default_device(mesh),
         default_dtype(config.dtype),

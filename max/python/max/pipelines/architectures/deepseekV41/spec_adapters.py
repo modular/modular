@@ -32,13 +32,18 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.graph import (
     BufferType,
+    BufferValue,
     DeviceRef,
     TensorType,
     TensorValue,
     Value,
     ops,
 )
-from max.nn.kv_cache import PagedCacheValues
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    PagedCacheValues,
+    RecurrentStateInputsPerDevice,
+)
 from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.layer import Module
 from max.nn.legacy.transformer import logits_postprocess
@@ -336,17 +341,29 @@ def batch_distributed_buffers(
 def leaf_caches(
     specs: Sequence[V41KVLeafSpec],
     window: Sequence[PagedCacheValues],
-    others: Mapping[str, Sequence[PagedCacheValues]],
+    others: Mapping[
+        str,
+        Sequence[
+            PagedCacheValues
+            | RecurrentStateInputsPerDevice[TensorValue, BufferValue]
+        ],
+    ],
 ) -> list[CSA2Cache]:
     """Rebuilds each device's :class:`CSA2Cache` from its individual caches.
 
     ``window`` replaces the sliding-window cache, since the driver passes
-    that cache with its own lengths.
+    that cache with its own lengths. Every leaf ``specs`` names is paged.
     """
-    groups = [
-        list(window) if spec.key == PRIMARY_KV else list(others[spec.key])
-        for spec in specs
-    ]
+    groups: list[list[PagedCacheValues]] = []
+    for spec in specs:
+        if spec.key == PRIMARY_KV:
+            groups.append(list(window))
+            continue
+        paged: list[PagedCacheValues] = []
+        for record in others[spec.key]:
+            assert isinstance(record, KVCacheInputsPerDevice)
+            paged.append(record)
+        groups.append(paged)
     return [csa2_cache(specs, groups, i) for i in range(len(window))]
 
 

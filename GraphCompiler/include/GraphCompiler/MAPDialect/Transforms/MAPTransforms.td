@@ -60,10 +60,10 @@ def FuseHorizontal : Pass<"map-fuse-horizontal", "MO::GraphOp"> {
     Merges two `map.iter.elementwise` ops over the same index space that share an
     input into one multi-output kernel, so the shared operand is loaded once
     rather than by each kernel. Pairs siblings, where the other fusers pair a
-    producer with its consumer. Also moves a consumer into its producer's
-    epilogue when the producer's result has other readers, which output
-    fusion leaves alone; a consumer that reads a strided window of the result
-    runs there under a `map.index.slice.select`.
+    producer with its consumer. Also merges an elementwise producer with its
+    consumer when the producer's result has other readers, which input fusion
+    leaves alone; a consumer that reads a strided window of the result runs
+    under a `map.index.slice.select`. Opaque kernels are never merged.
   }];
 
   let dependentDialects = [
@@ -273,6 +273,40 @@ def LoopInvariantViewMotion : Pass<"map-livm", "MO::GraphOp"> {
   ];
 }
 
+def FlattenShapes : Pass<"map-flatten-shapes", "MO::GraphOp"> {
+  let summary = "Merge the neighbouring dims of fused kernels that are contiguous in memory.";
+  let description = [{
+    Runs after fusion, once views are hoisted out of the kernel bodies, and
+    before `InferMaxSimdWidth`. It handles each fused kernel: an elementwise
+    loop (`map.iter.elementwise.body`) and a reduction
+    (`map.iter.rowwise.body`).
+
+    It first decides which pairs of neighbouring dims merge. Every pair starts
+    allowed; a body that computes with the index keeps the kernel as it is;
+    each op in the body clears the pairs it can't support
+    (`FlattenableOpInterface::canFlattenDims`); each tensor clears the pairs
+    its layout, followed through its views (`getOutputLayout`), doesn't keep
+    contiguous; a reduction keeps its axis apart from its neighbours; an
+    elementwise loop keeps a symbolic innermost dim apart. In a kernel nested
+    in control flow or `mo.parallel`, only static dims merge.
+
+    It then reads every tensor through a `map.index.collapse.stride` of the
+    merged shape, drops the kernel's shape and index to the new rank, and
+    lets every op that stores a shape merge it (`flatten`). A merged symbolic
+    extent is declared as a graph parameter (`param_flat_*`).
+  }];
+
+  let dependentDialects = [
+    "M::MAP::MAPDialect",
+    "M::KGEN::KGENDialect",
+  ];
+
+  let statistics = [
+    Statistic<"numLoopsFlattened", "num-loops-flattened",
+              "Loops whose dims merged">,
+  ];
+}
+
 def InferMaxSimdWidth
     : Pass<"map-infer-max-simd-width", "MO::GraphOp"> {
   let summary = "Bound the SIMD width of each fused loop and reduction by what its body allows.";
@@ -280,7 +314,7 @@ def InferMaxSimdWidth
     Runs last in the MAP pipeline, after `LoopInvariantViewMotion` has hoisted
     every load-side view out of the loop bodies. Sets each
     `map.iter.elementwise.body`'s and `map.iter.rowwise.body`'s
-    `max_simd_width` to the limit every SIMD width of the kernel must divide,
+    `max_simd_width` to a number every SIMD width of the kernel must divide,
     from `MAP::MaxSimdWidthInterface`, simplified; leaves it unset when nothing
     limits the width.
 
@@ -308,6 +342,7 @@ def RaiseBackContiguousViews
   let dependentDialects = [
     "M::MO::MODialect",
     "M::MOGG::MOGGDialect",
+    "M::MOSH::MOSHDialect",
   ];
 
   let statistics = [

@@ -359,9 +359,14 @@ lit.fn @ref_upcast_sibling_subtrees<life: origin<true>>(
 // -----
 
 lit.struct.decl @NotAnEnum {
-  // expected-error @below {{'lit.enum.case' op expected to be in the body of an enum}}
+  // expected-error @below {{'lit.enum.case' op expected to be in the body of an enum or union}}
   lit.enum.case a : []
 }
+
+// -----
+
+// expected-error @below {{'lit.struct.decl' op expected at most one of 'isEnum' and 'isUnion'}}
+lit.struct.decl @EnumAndUnion {} <isEnum, isUnion>
 
 // -----
 

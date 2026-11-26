@@ -300,6 +300,7 @@ def test_mla_prefill_decode_graph_sparse_smoke() -> None:
     assert '"attention.mla.graph.decode.paged.fp8.sparse.cp"' in ir
     assert "split_rows_per_request" not in ir
     assert "mo.matmul.row_invariant" not in ir
+    assert "kv_norm_multiply_before_cast" not in ir
     assert re.search(r"dcp_interleave = 1\b", ir)
     assert re.search(r"dcp_interleave = 128\b", ir)
 
@@ -449,6 +450,10 @@ def test_mla_sparse_graphs_nvfp4_cache_construction(
             **sparse,
         )
         decode = mla_decode_graph(**decode_args, **sparse)
+        with pytest.raises(ValueError, match="kv_norm_multiply_before_cast"):
+            mla_decode_graph(
+                **decode_args, **sparse, kv_norm_multiply_before_cast=True
+            )
         # The NVFP4 op takes no row-invariant split pin, so asking for one
         # fails instead of dropping it.
         with pytest.raises(ValueError, match="sparse_split_rows_per_request"):
@@ -891,3 +896,143 @@ def test_mla_indexer_deterministic_reaches_the_op() -> None:
         assert "deterministic" not in op, op
     (op,) = indexer_ops(True)
     assert re.search(r"deterministic = true", op), op
+
+
+@pytest.mark.parametrize("enabled", [False, True])
+def test_mla_sparse_graphs_kv_norm_multiply_before_cast(enabled: bool) -> None:
+    """Only the BF16-weight sparse ops take the single-rounding latent norm.
+
+    It reaches both ops as a parameter when set, a default graph emits none,
+    and the dense decode op rejects it.
+    """
+    num_heads = 8
+    topk = 8
+    kv_lora_rank = 512
+    qk_nope_head_dim = 128
+    qk_rope_head_dim = 64
+    v_head_dim = 128
+
+    rope = DeepseekYarnRotaryEmbedding(
+        dim=qk_rope_head_dim,
+        n_heads=num_heads,
+        theta=10000.0,
+        max_seq_len=2048,
+        scaling_params=DeepseekYarnRopeScalingParams(
+            scaling_factor=40.0,
+            original_max_position_embeddings=4096,
+            beta_fast=32,
+            beta_slow=1,
+            mscale=1.0,
+            mscale_all_dim=1.0,
+        ),
+    )
+    kv_params = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=kv_lora_rank + qk_rope_head_dim,
+        num_layers=1,
+        page_size=128,
+        devices=[DeviceRef.GPU()],
+        num_q_heads=num_heads,
+    )
+    attn = LatentAttentionWithRope(
+        rope=rope,
+        num_attention_heads=num_heads,
+        num_key_value_heads=1,
+        hidden_size=1024,
+        kv_params=kv_params,
+        dtype=DType.bfloat16,
+        devices=[DeviceRef.GPU()],
+        graph_mode="auto",
+        q_lora_rank=256,
+        kv_lora_rank=kv_lora_rank,
+        qk_nope_head_dim=qk_nope_head_dim,
+        qk_rope_head_dim=qk_rope_head_dim,
+        v_head_dim=v_head_dim,
+        buffer_size=4096,
+    )
+
+    gpu = DeviceRef.GPU()
+    input_types = [
+        TensorType(
+            DType.bfloat16,
+            ["total_tokens", num_heads, qk_nope_head_dim + qk_rope_head_dim],
+            gpu,
+        ),
+        TensorType(
+            DType.bfloat16,
+            ["total_tokens", kv_lora_rank + qk_rope_head_dim],
+            gpu,
+        ),
+        TensorType(DType.uint32, ["row_offsets_len"], gpu),
+        TensorType(DType.int32, ["total_tokens", topk], gpu),
+        *tree.leaves(kv_params.get_symbolic_inputs()[0]),
+    ]
+
+    with Graph("mla_sparse_kv_norm_round_once", input_types=input_types) as g:
+        q, kv, input_row_offsets, rows = (x.tensor for x in g.inputs[:4])
+        kv_collection = paged_kv_from_flat_graph_inputs(
+            kv_params, list(g.inputs[4:])
+        )
+        assert kv_collection.attention_dispatch_metadata is not None
+        assert kv_collection.mla_num_partitions is not None
+        common: dict[str, Any] = dict(
+            kv_params=kv_params,
+            kv_collection=kv_collection,
+            layer_idx=ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+            mask_variant=MHAMaskVariant.CAUSAL_MASK,
+            scale=attn.scale,
+            epsilon=1e-6,
+            v_head_dim=v_head_dim,
+            scalar_args=kv_collection.attention_dispatch_metadata,
+            num_partitions_scalar=kv_collection.mla_num_partitions,
+            kv_norm_multiply_before_cast=enabled,
+        )
+        sparse: dict[str, Any] = dict(
+            sparse_indices=rows,
+            physical_indices=True,
+            sparse_indices_stride=topk,
+        )
+        freqs_cis = ops.cast(rope.freqs_cis, q.dtype).to(q.device)
+        decode_args: dict[str, Any] = dict(
+            q=q,
+            kv=kv,
+            input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
+            kv_norm_gamma=attn.kv_a_proj_layernorm,
+            w_uk=attn.w_uk,
+            w_uv=attn.w_uv,
+            **common,
+        )
+        if enabled:
+            with pytest.raises(
+                ValueError, match="kv_norm_multiply_before_cast"
+            ):
+                mla_decode_graph(**decode_args)
+        metadata = attn.create_mla_prefill_metadata(
+            input_row_offsets, kv_collection
+        )
+        prefill = mla_prefill_decode_graph(
+            q,
+            kv,
+            input_row_offsets,
+            freqs_cis,
+            attn.kv_a_proj_layernorm,
+            metadata.buffer_row_offsets,
+            metadata.cache_offsets,
+            metadata.buffer_lengths.to(DeviceRef.CPU()),
+            attn.w_k,
+            attn.w_uk,
+            attn.w_uv,
+            **common,
+            **sparse,
+        )
+        decode = mla_decode_graph(**decode_args, **sparse)
+        g.output(prefill, decode)
+
+    ir = str(g)
+    assert '"attention.mla.graph.prefill.decode.paged.sparse"' in ir
+    assert '"attention.mla.graph.decode.paged.sparse"' in ir
+    if enabled:
+        assert len(re.findall(r"kv_norm_multiply_before_cast = true", ir)) == 2
+    else:
+        assert "kv_norm_multiply_before_cast" not in ir

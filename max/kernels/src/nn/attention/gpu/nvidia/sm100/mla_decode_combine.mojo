@@ -169,14 +169,6 @@ struct CombineParams[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "CombineParams"
-
-    @staticmethod
-    def get_device_type_name() -> String:
-        return "CombineParams"
-
     def __init__(
         out self,
         out_accum_split_ptr: MutPointer[
@@ -221,6 +213,7 @@ struct CombineParams[
 @__name(
     t"sm100_mla_decode_combine_{output_type}_{accum_type}_{num_splits}_{ragged}",
 )
+@__allow_legacy_any_origin_fields
 def mla_combine_kernel[
     output_type: DType,
     accum_type: DType,
@@ -700,14 +693,6 @@ struct SplitParallelCombineParams[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "SplitParallelCombineParams"
-
-    @staticmethod
-    def get_device_type_name() -> String:
-        return "SplitParallelCombineParams"
 
     def __init__(
         out self,

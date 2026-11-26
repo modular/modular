@@ -586,6 +586,12 @@ def test_atol_base_0() raises:
     ):
         _ = atol("0of_", base=0)
 
+    # A non-ASCII byte after the `0` is not a prefix letter.
+    with assert_raises():
+        _ = atol("0²", base=0)
+    with assert_raises():
+        _ = atol("0²1", base=16)
+
 
 def test_atof() raises:
     assert_equal(375.0, atof("375.f"))
@@ -765,6 +771,12 @@ def test_find() raises:
 
     assert_false(String("abc").find("abcd"))
 
+    # An empty substring matches at `start`, if `start` is in bounds.
+    assert_equal(String("abc").find("", 2), 2)
+    assert_equal(String("abc").find("", 3), 3)
+    assert_equal(String("abc").find("", -1), 2)
+    assert_false(String("abc").find("", 4))
+
 
 def test_replace() raises:
     # Replace empty
@@ -807,6 +819,10 @@ def test_rfind() raises:
     assert_equal(s1.rfind("w", -5), 6)
 
     assert_false(String("abc").rfind("abcd"))
+
+    # An empty substring matches last at the end, if `start` is in bounds.
+    assert_equal(String("abc").rfind("", 3), 3)
+    assert_false(String("abc").rfind("", 4))
 
     # Special characters.
     # TODO(#26444): Support unicode strings.
@@ -1234,6 +1250,28 @@ def test_removeprefix() raises:
     assert_equal(
         StaticString("hello world").removeprefix("llo wor"), "hello world"
     )
+    # Test with String type.
+    var s1 = String("hello world")
+    assert_equal(s1.removeprefix(""), "hello world")
+    assert_equal(s1.removeprefix("hello"), " world")
+    assert_equal(s1.removeprefix("world"), "hello world")
+    assert_equal(s1.removeprefix("hello world"), "")
+    # Prefix longer than string returns original unchanged.
+    var s2 = String("hi")
+    assert_equal(s2.removeprefix("hello world"), "hi")
+    # Only removes once, not recursively.
+    var s3 = String("aaaahello")
+    assert_equal(s3.removeprefix("aa"), "aahello")
+    # Unicode prefix.
+    var s4 = String("héllo")
+    assert_equal(s4.removeprefix("hé"), "llo")
+    assert_equal(s4.removeprefix("ll"), "héllo")
+    # Empty string with empty prefix.
+    var s5 = String("")
+    assert_equal(s5.removeprefix(""), "")
+    # Multi-byte codepoint prefix.
+    var s6 = String("🌍hello")
+    assert_equal(s6.removeprefix("🌍"), "hello")
 
 
 def test_removesuffix() raises:
@@ -1246,6 +1284,28 @@ def test_removesuffix() raises:
     assert_equal(
         StaticString("hello world").removesuffix("llo wor"), "hello world"
     )
+    # Test with String type.
+    var t1 = String("hello world")
+    assert_equal(t1.removesuffix(""), "hello world")
+    assert_equal(t1.removesuffix("world"), "hello ")
+    assert_equal(t1.removesuffix("hello"), "hello world")
+    assert_equal(t1.removesuffix("hello world"), "")
+    # Suffix longer than string returns original unchanged.
+    var t2 = String("hi")
+    assert_equal(t2.removesuffix("hello world"), "hi")
+    # Only removes once, not recursively.
+    var t3 = String("helloaaaa")
+    assert_equal(t3.removesuffix("aa"), "helloaa")
+    # Unicode suffix.
+    var t4 = String("hellé")
+    assert_equal(t4.removesuffix("lé"), "hel")
+    assert_equal(t4.removesuffix("ll"), "hellé")
+    # Empty string with empty suffix.
+    var t5 = String("")
+    assert_equal(t5.removesuffix(""), "")
+    # Multi-byte codepoint suffix.
+    var t6 = String("hello🌍")
+    assert_equal(t6.removesuffix("🌍"), "hello")
 
 
 def test_intable() raises:
@@ -1441,6 +1501,8 @@ def test_format_args() raises:
     assert_equal("{{".format(), "{")
 
     assert_equal("{{}}{}{{}}".format("foo"), "{}foo{}")
+    # More entries than the entry list starts with room for.
+    assert_equal(("{{}}" * 20).format(), "{}" * 20)
 
     assert_equal("{{ {0}".format("foo"), "{ foo")
     assert_equal("{{{0}".format("foo"), "{foo")
@@ -2007,6 +2069,26 @@ def test_append_codepoint() raises:
     s.append(Codepoint.ord("🔥"))
     assert_equal(s, "a€🔥")
     assert_equal(s.byte_length(), 8)
+
+    # A short static string moves inline.
+    var short = String("hi")
+    short.append(Codepoint.ord("!"))
+    assert_equal(short, "hi!")
+    assert_true(short._is_inline())
+
+    # Appending to a shared buffer leaves the other owner untouched.
+    var heap = String("x") * 40
+    var shared = heap.copy()
+    shared.append(Codepoint.ord("€"))
+    assert_equal(shared, "x" * 40 + "€")
+    assert_equal(heap, "x" * 40)
+
+    # Overflowing the inline buffer moves the string to the heap.
+    var full = String("a") * String.INLINE_CAPACITY
+    assert_true(full._is_inline())
+    full.append(Codepoint.ord("🔥"))
+    assert_equal(full, "a" * String.INLINE_CAPACITY + "🔥")
+    assert_false(full._is_inline())
 
 
 def test_string_zero_init() raises:

@@ -12,58 +12,46 @@
 # ===----------------------------------------------------------------------=== #
 from __future__ import annotations
 
-import asyncio
 import contextlib
-import dataclasses
-import functools
 import json
 import logging
 import re
 from collections import defaultdict
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-import requests
 from max import tree
 from max.driver import CPU, Accelerator, accelerator_count
-from max.engine import InferenceSession, Model
-from max.engine.api import PrintStyle
-from max.nn import Linear, Module
+from max.nn import Module
 from max.nn._weight_utils import (
     _ExternalWeight,
     name_weights,
     shard_checkpoint,
 )
-from max.nn.common_layers.linear import QKVLinear
-from max.nn.common_layers.mlp import MLP
-from max.nn.common_layers.moe import MoE
-from max.nn.common_layers.quant_linear import (
-    QuantizedLinear,
-    QuantizedMLP,
-    QuantizedQKVLinear,
-)
-from max.nn.common_layers.quant_moe import QuantizedMoE
 from max.nn.common_layers.quant_tensor import (
     MXFP4Quantizer,
     MXFP8Quantizer,
     NVFP4TensorQuantizer,
 )
-from max.nn.quant_config import QuantConfig, QuantFormat, WeightSource
 from max.pipelines import PIPELINE_REGISTRY
-from max.pipelines.context import (
-    SamplingParams,
-)
 from max.pipelines.lib import (
-    GraphRole,
-    ModuleV3MultiGraphPipelineModelWithKVCache,
-    ModuleV3PipelineModelWithKVCache,
     PipelineArgs,
     PipelineConfig,
 )
-from max.pipelines.logging_utils import log_basic_config
-from max.pipelines.modeling.types import (
-    Pipeline,
+from max.pipelines.lib.pipeline_variants.text_generation import (
+    TextGenerationPipelineInterface,
+)
+from max.pipelines.lib.quantization import (
+    SOURCE_FORMATS,
+    _check_expert_parallel_target,
+    _enable_error_prints,
+    _graphs_without_compile,
+    _retarget_dispatch,
+    insert_quantized_linears,
+    on_the_fly_config,
+    quant_formats,
+    quantizing_factory,
 )
 from max.pipelines.weights.checkpoint_files import (
     ShardWriter,
@@ -76,277 +64,27 @@ from max.pipelines.weights.fp4_quantization import (
     FP4Format,
     nvfp4_quantization_config,
 )
-from max.profiler import OneShotCapture, Tracer
 from max.tensor import Tensor, compilation
 
-from .generate import stream_text_to_console
-from .metrics import TextGenerationMetrics
-from .quant_error_report import JSON_NAME, clear_error_dumps, write_report
+from .quant_error_report import JSON_NAME, write_report
 
 logger = logging.getLogger("max._entrypoints")
 
-MODEL_NAME = "model"
-
-# MoE before MLP. Rebuilding a MoE constructs new experts, so the MLP walk
-# must run after that and see those experts rather than the ones discarded.
-_FUSED_GROUPS = (
-    (MoE, ("gate_proj", "up_proj")),
-    (MLP, ("gate_proj", "up_proj")),
-    (QKVLinear, ("q_proj", "k_proj", "v_proj")),
-)
-
-
-def _child_path(parent: str, name: str) -> str:
-    return f"{parent}.{name}" if parent else name
-
-
-def _projection_hits(
-    paths: list[str], patterns: list[re.Pattern[str]]
-) -> list[str]:
-    return [
-        child
-        for child in paths
-        if any(pattern.search(child) for pattern in patterns)
-    ]
-
-
-def _require_full_group(
-    names: tuple[str, ...], paths: list[str], hits: list[str]
-) -> None:
-    """Rejects a fused matmul whose members were only partly targeted."""
-    if len(hits) == len(paths):
-        return
-    missing = [child for child in paths if child not in hits]
-    joined = ", ".join(names)
-    raise ValueError(
-        f"{joined} are one matmul, so quantize all of them or "
-        f"none of them. Matched {hits}; left out {missing}."
-    )
-
-
-def _routed_experts_match(
-    path: str,
-    moe: MoE,
-    names: tuple[str, ...],
-    patterns: list[re.Pattern[str]],
-) -> bool:
-    """Whether every routed expert's fused projections match ``patterns``.
-
-    Experts live at ``experts.N.gate_proj``, not on the MoE itself. A MoE
-    becomes one :class:`QuantizedMoE`, so a pattern that hits only some
-    experts is rejected. No hits leaves the MoE unchanged.
-    """
-    matched = 0
-    for index in range(len(moe.experts)):
-        expert_path = _child_path(_child_path(path, "experts"), str(index))
-        paths = [_child_path(expert_path, name) for name in names]
-        hits = _projection_hits(paths, patterns)
-        if not hits:
-            continue
-        _require_full_group(names, paths, hits)
-        matched += 1
-    if matched == 0:
-        return False
-    if matched != len(moe.experts):
-        raise ValueError(
-            "every expert's gate_proj and up_proj are one group, so "
-            "quantize all experts or none of them. "
-            f"Matched {matched} of {len(moe.experts)}."
-        )
-    return True
-
-
-def _can_swap_fused_module(
-    cls: type[Any],
-    names: tuple[str, ...],
-    path: str,
-    node: Any,
-    patterns: list[re.Pattern[str]],
-) -> bool:
-    """Whether ``node`` is an exact ``cls`` whose fused members all match.
-
-    Gate/up and q/k/v are each one matmul. A pattern that hits only part of
-    a group has no shared global scale, so that is rejected. A stacked
-    ``QKVLinear`` is already one weight. A MoE is swapped only when every
-    routed expert's gate and up match.
-    """
-    if type(node) is not cls:
-        return False
-    if isinstance(node, QKVLinear) and not node.name_transparent:
-        return False
-    if cls is MoE and isinstance(node, MoE):
-        return _routed_experts_match(path, node, names, patterns)
-    child_paths = [_child_path(path, name) for name in names]
-    hits = _projection_hits(child_paths, patterns)
-    if not hits:
-        return False
-    _require_full_group(names, child_paths, hits)
-    return True
-
-
-#: Formats whose on-the-fly quantizer can decode in the graph to measure
-#: its own error.
-_ERROR_REPORT_FORMATS = frozenset(
-    {QuantFormat.NVFP4, QuantFormat.MXFP8, QuantFormat.MXFP4}
-)
-
-
-def insert_quantized_linears(
-    module: Module[..., Any],
-    targets: Iterable[str],
-    quant_config: QuantConfig,
-    *,
-    verbose: bool = False,
-) -> Module[Any, Any]:
-    """Quantizes every weight matching ``targets``.
-
-    A full gate/up, q/k/v, or expert group is rebuilt as the quant container
-    first, so its forward fuses those members. Each matching projection,
-    including one the model built as its own module around a plain ``[out,
-    in]`` tensor, is then constructed as a :class:`QuantizedLinear`. A
-    projection that is not a common layer logs a warning. Weights-only
-    export still writes those weights, and on-the-fly quantization is
-    likely to break. A partial fused group is rejected. The constructor's
-    weight is the parameter the checkpoint fills. Its values stay the
-    constructor's zeros, and it takes the replaced linear's device map.
-
-    With ``quant_config.report_error``, each quantizer is built to print its
-    weight's quantization error from inside the graph, named after the
-    weight. Only the on-the-fly block-scaled formats in
-    :data:`_ERROR_REPORT_FORMATS` can measure their error.
-
-    Returns:
-        ``module``. A new object when ``module`` itself was the container:
-        a constructor cannot change the object the caller already holds.
-
-    Raises:
-        ValueError: If ``quant_config.report_error`` is set for a format that
-            cannot measure its error.
-    """
-    if quant_config.report_error and (
-        quant_config.format not in _ERROR_REPORT_FORMATS
-    ):
-        known = ", ".join(sorted(f.value for f in _ERROR_REPORT_FORMATS))
-        raise ValueError(
-            "error reporting is only implemented for "
-            f"{known}; got {quant_config.format.value}"
-        )
-    patterns = [re.compile(pattern) for pattern in targets]
-    count = 0
-    # The container is built first, with plain linear children. The loop
-    # below is what gives a matching child its quantizer, so an untargeted
-    # sibling (down_proj, a shared expert) stays a plain tensor.
-    for cls, names in _FUSED_GROUPS:
-        containers: dict[str, Module[Any, Any]] = {}
-        container_ids: set[int] = set()
-        for path, node in tree.nodes(module, cls).items():
-            if not _can_swap_fused_module(cls, names, path, node, patterns):
-                continue
-            built: Module[Any, Any]
-            if type(node) is MLP:
-                built = QuantizedMLP(
-                    int(node.hidden_dim),
-                    int(node.feed_forward_length),
-                    bias=bool(node.has_bias),
-                    activation_function=node.activation_function,
-                )
-            elif type(node) is QKVLinear:
-                built = QuantizedQKVLinear(
-                    int(node.q_proj.in_dim),
-                    node.q_dim,
-                    node.kv_dim,
-                    bias=node._has_bias,
-                )
-            elif type(node) is MoE:
-                shared = node.shared_experts
-                built = QuantizedMoE(
-                    hidden_dim=int(node.hidden_dim),
-                    num_experts=node.num_experts,
-                    num_experts_per_token=node.num_experts_per_token,
-                    moe_dim=int(node.moe_dim),
-                    has_shared_experts=shared is not None,
-                    shared_experts_dim=(
-                        int(shared.feed_forward_length)
-                        if shared is not None
-                        else 0
-                    ),
-                )
-            else:
-                raise TypeError(
-                    f"{type(node).__name__} is not a fused container this "
-                    "command replaces"
-                )
-            containers[path] = built
-            container_ids.add(id(node))
-        # The root is not a child, so a container built in its place
-        # comes back as the return value. One update per container type,
-        # after MoE, so an MLP walk does not rebuild experts the new MoE
-        # already replaced.
-        if not containers:
-            continue
-        updated = tree.update(
-            module,
-            containers,
-            leaf=lambda found, ids=container_ids: id(found) in ids,
-        )
-        if not isinstance(updated, Module):
-            raise TypeError(f"rebuilt {type(module).__name__} is not a Module")
-        module = updated
-    # One walk for a Linear, a QuantizedLinear still holding a plain
-    # tensor, and a projection the model built as its own module. The
-    # container updates above have already landed, so this sees those new
-    # children. A weight that is already a quantizer is not a Tensor and
-    # is skipped. The tree cannot be edited while it is walked, so the
-    # replacements are applied once afterwards.
-    replacements: dict[str, QuantizedLinear] = {}
-    replacing: set[int] = set()
-    for path, node in tree.nodes(module, Module).items():
-        weight = getattr(node, "weight", None)
-        if type(weight) is not Tensor or weight.rank != 2:
-            continue
-        if not any(pattern.search(path) for pattern in patterns):
-            continue
-        if type(node) not in (Linear, QuantizedLinear):
-            logger.warning(
-                "Replaced a custom %s with a common QuantizedLinear. "
-                "This should be ok for weights-only export but is likely "
-                "to break on-the-fly quantization.",
-                type(node).__name__,
-            )
-        if hasattr(node, "in_dim") and hasattr(node, "out_dim"):
-            in_dim, out_dim = int(node.in_dim), int(node.out_dim)
-        else:
-            in_dim, out_dim = int(weight.shape[1]), int(weight.shape[0])
-        bias = getattr(node, "bias", None)
-        wrapped = QuantizedLinear(
-            in_dim,
-            out_dim,
-            bias=isinstance(bias, Tensor),
-            quant_config=quant_config,
-        )
-        # The zeros are the parameter. The map is the one the model already
-        # gave this weight, including a tensor-parallel shard or an expert's
-        # device. Bias is sharded on its own map, and QuantizedLinear.to
-        # leaves a plain bias where it was constructed.
-        wrapped.weight = wrapped.weight.to(weight.mapping)
-        if isinstance(bias, Tensor) and isinstance(wrapped.bias, Tensor):
-            wrapped.bias = wrapped.bias.to(bias.mapping)
-        replacements[path] = wrapped
-        replacing.add(id(node))
-        count += 1
-    if replacements:
-        updated = tree.update(
-            module,
-            replacements,
-            leaf=lambda found: id(found) in replacing,
-        )
-        if not isinstance(updated, Module):
-            raise TypeError(f"rebuilt {type(module).__name__} is not a Module")
-        module = updated
-    if verbose:
-        print(module)
-    logger.info(f"Quantizing {count} weight tensors.")
-    return module
+# Re-export for callers and tests that still import these from the CLI module.
+__all__ = [
+    "SOURCE_FORMATS",
+    "_check_expert_parallel_target",
+    "_enable_error_prints",
+    "_graphs_without_compile",
+    "_retarget_dispatch",
+    "checkpoint_quantization_config",
+    "export_quantized_checkpoint",
+    "insert_quantized_linears",
+    "on_the_fly_config",
+    "quant_formats",
+    "quantize_pipeline",
+    "quantizing_factory",
+]
 
 
 # Leaves each on-the-fly quantizer writes, in checkpoint order. The name is
@@ -613,372 +351,42 @@ def export_quantized_checkpoint(
     logger.info("Exported %d quantized weights to %s", exported, dest)
 
 
-#: The config each ``--quantization-format`` value selects.
-#:
-#: ``source`` is set here rather than by the caller: the command exists to
-#: quantize a native-precision checkpoint, so CHECKPOINT would describe
-#: bytes that are not there.
-#:
-#: The layer tuples are empty because ``QuantConfig`` selects layers by
-#: index and this command selects them by name instead:
-#: ``insert_quantized_linears`` wraps whatever matches ``--targets``.
-#:
-#: A row here is necessary but not sufficient -- ``quant_ops`` must have a
-#: quantizer registered for the format too, or building the weight raises.
-_ON_THE_FLY: dict[str, QuantConfig] = {
-    "nvfp4": dataclasses.replace(
-        QuantConfig.nvfp4(mlp_quantized_layers=(), attn_quantized_layers=()),
-        source=WeightSource.QUANTIZE,
-    ),
-    "mxfp8": dataclasses.replace(
-        QuantConfig.mxfp8(mlp_quantized_layers=(), attn_quantized_layers=()),
-        source=WeightSource.QUANTIZE,
-    ),
-    "mxfp4": dataclasses.replace(
-        QuantConfig.mxfp4(mlp_quantized_layers=(), attn_quantized_layers=()),
-        source=WeightSource.QUANTIZE,
-    ),
-}
-
-
-def quant_formats() -> tuple[str, ...]:
-    """The values ``--quantization-format`` accepts."""
-    return tuple(sorted(_ON_THE_FLY))
-
-
-def on_the_fly_config(name: str, *, report_error: bool = False) -> QuantConfig:
-    """The config ``--quantization-format`` selects.
-
-    With ``report_error``, the quantizers built from it print their
-    quantization error from inside the graph.
-
-    Raises:
-        ValueError: if ``name`` is not a format this command can produce.
-    """
-    try:
-        config = _ON_THE_FLY[name]
-    except KeyError:
-        raise ValueError(
-            f"unknown quantization format {name!r}; this command can "
-            f"produce {', '.join(quant_formats())}"
-        ) from None
-    # A copy, because QuantConfig is mutable and the table is shared.
-    return dataclasses.replace(config, report_error=report_error)
-
-
-def _enable_error_prints(
-    session: InferenceSession, directory: Path | None
-) -> None:
-    """Has ``session`` dump the graph's prints, which carry the error stats.
-
-    Must run before the graphs compile. Dumps from an earlier run are
-    removed, so the report holds only this run's weights. A no-op without a
-    directory.
-    """
-    if directory is None:
-        return
-    clear_error_dumps(directory)
-    session.set_debug_print_options(
-        style=PrintStyle.BINARY_MAX_CHECKPOINT, output_directory=directory
-    )
-
-
-def _graphs_without_compile(
-    model: Any, session: InferenceSession
-) -> dict[str, Model]:
-    """Builds the graphs' modules and does not compile them.
-
-    ``_load_decoder`` and ``_load_towers`` read ``compiled_modules`` after
-    this returns, so the uncompiled modules stand in for the engine models.
-    The decoder ``nn_module`` is the one the insert hook stored. The export
-    state dict is the decoder. A tower that is not quantized is copied from
-    the source shard.
-    """
-    model._session = session
-    state_dict = model._load_state_dict()
-    model_config = model._create_model_config(state_dict)
-    specs = model.graph_specs(model_config)
-    exported: dict[str, Any] = {}
-    decoder = specs.get(GraphRole.DECODER)
-    if getattr(decoder, "weights", None):
-        exported.update(decoder.weights)
-    model._export_state_dict = exported
-    model.compiled_modules = {role: spec.module for role, spec in specs.items()}
-    return {}
-
-
-def _single_graph_quantizing_model(
-    model_cls: type[Any],
-    targets: Iterable[str],
-    quant_config: QuantConfig,
-    verbose: bool,
-    error_report_dir: Path | None,
-) -> type[Any]:
-    """Returns a subclass that quantizes what ``_instantiate_module`` builds.
-
-    Single-graph ``graph_specs`` calls ``_instantiate_module`` and never
-    ``_language_spec``.
-    """
-    # mypy only accepts a class as a base. The runtime base is the concrete
-    # pipeline model retrieved for this checkpoint.
-    if TYPE_CHECKING:
-        base = ModuleV3PipelineModelWithKVCache[Any, Any]
-    else:
-        base = model_cls
-
-    class QuantizingPipelineModel(base):
-        def _instantiate_module(self, model_config: Any) -> Any:
-            # Sparse attention reads this while the decoder is built, after
-            # expert-parallel init, so a bf16 checkpoint still dispatches in
-            # bf16. The on-the-fly layer tuples are empty, so the projections
-            # stay plain tensors for the wrap below. V3 treats a present
-            # config as "quantize these layers", so a bf16 V3 checkpoint
-            # keeps None.
-            if getattr(model_config, "quant_config", None) is None and hasattr(
-                model_config, "index_n_heads"
-            ):
-                model_config.quant_config = quant_config
-            nn_model = insert_quantized_linears(
-                super()._instantiate_module(model_config),
-                targets,
-                quant_config,
-                verbose=verbose,
-            )
-            self.nn_module = nn_model
-            return nn_model
-
-        @property
-        def final_state_dict(self) -> dict[str, Any]:
-            prepared = getattr(self, "_export_state_dict", None)
-            if prepared is not None:
-                return prepared
-            state_dict = self._load_state_dict()
-            model_config = self._create_model_config(state_dict)
-            return self._prepare_state_dict(state_dict, model_config)
-
-        def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
-            if self.pipeline_config.export_only:
-                return _graphs_without_compile(self, session)
-            _enable_error_prints(session, error_report_dir)
-            return super().load_graphs(session)
-
-    return QuantizingPipelineModel
-
-
-def _multi_graph_quantizing_model(
-    model_cls: type[Any],
-    targets: Iterable[str],
-    quant_config: QuantConfig,
-    verbose: bool,
-    error_report_dir: Path | None,
-) -> type[Any]:
-    """Returns a subclass that quantizes what ``_language_spec`` builds.
-
-    Multi-graph ``graph_specs`` calls ``_language_spec`` and never
-    ``_instantiate_module``.
-    """
-    if TYPE_CHECKING:
-        base = ModuleV3MultiGraphPipelineModelWithKVCache[Any, Any]
-    else:
-        base = model_cls
-
-    class QuantizingPipelineModel(base):
-        def _language_spec(
-            self, model_config: Any, state_dict: dict[str, Any]
-        ) -> Any:
-            spec = super()._language_spec(model_config, state_dict)
-            language = spec.module
-            if not isinstance(language, Module):
-                raise TypeError(
-                    f"{type(language).__name__} is not a ModuleV3 module, "
-                    "so layer quantizers cannot be inserted"
-                )
-            language = insert_quantized_linears(
-                language,
-                targets,
-                quant_config,
-                verbose=verbose,
-            )
-            self.nn_module = language
-            if language is not spec.module:
-                spec = dataclasses.replace(spec, module=language)
-            return spec
-
-        @property
-        def final_state_dict(self) -> dict[str, Any]:
-            prepared = getattr(self, "_export_state_dict", None)
-            if prepared is not None:
-                return prepared
-            # ``_load_state_dict`` splits the checkpoint and leaves the
-            # decoder weights on ``_language_weights_dict``.
-            self._load_state_dict()
-            return self._language_weights_dict
-
-        def load_graphs(self, session: InferenceSession) -> dict[str, Model]:
-            if self.pipeline_config.export_only:
-                return _graphs_without_compile(self, session)
-            _enable_error_prints(session, error_report_dir)
-            return super().load_graphs(session)
-
-    return QuantizingPipelineModel
-
-
-def _factory_with_layer_quantizers(
-    factory: Callable[[], Any],
-    targets: Iterable[str],
-    quant_config: QuantConfig,
-    *,
-    verbose: bool = False,
-    error_report_dir: Path | None = None,
-) -> Callable[[], Any]:
-    """Returns a factory that quantizes layers before the module is compiled.
-
-    ``retrieve_factory`` binds the pipeline-model class into the factory.
-    The subclass overrides the one hook ``graph_specs`` calls for that
-    class: ``_instantiate_module`` for a single graph, ``_language_spec``
-    for a multi-graph model.
-    """
-    if not isinstance(factory, functools.partial):
-        raise TypeError(
-            "pipeline factory must be a functools.partial so its "
-            "pipeline_model class can be replaced"
-        )
-    keywords = dict(factory.keywords or {})
-    model_cls = keywords["pipeline_model"]
-    if issubclass(model_cls, ModuleV3MultiGraphPipelineModelWithKVCache):
-        pipeline_model = _multi_graph_quantizing_model(
-            model_cls, targets, quant_config, verbose, error_report_dir
-        )
-    elif issubclass(model_cls, ModuleV3PipelineModelWithKVCache):
-        pipeline_model = _single_graph_quantizing_model(
-            model_cls, targets, quant_config, verbose, error_report_dir
-        )
-    else:
-        raise TypeError(
-            f"{model_cls.__name__} is not a ModuleV3 pipeline model, so "
-            "layer quantizers cannot be inserted"
-        )
-    pipeline_model.__name__ = f"Quantizing{model_cls.__name__}"
-    pipeline_model.__qualname__ = pipeline_model.__name__
-    keywords["pipeline_model"] = pipeline_model
-    return functools.partial(factory.func, *factory.args, **keywords)
-
-
 def quantize_pipeline(
     pipeline_args: PipelineArgs,
-    sampling_params: SamplingParams,
-    targets: Iterable[str],
-    prompt: str,
-    quantization_format: str,
-    verbose: bool = False,
-    image_urls: Iterable[str] = (),
-    num_warmups: int = 0,
-    profile: bool = False,
-    profile_top_n: int = 15,
-    error_report_dir: Path | None = None,
-    export_path: Path | None = None,
+    *,
+    export_path: Path,
 ) -> None:
-    """Quantizes the targeted layers on load, then generates text.
+    """Quantizes the targeted layers and writes a quantized checkpoint.
 
-    With ``--export-path``, the model is built and exported without a
-    generate graph. With ``error_report_dir``, every quantized weight's
-    error against its native-precision source is measured inside the
-    compiled graph and printed as the graph runs.
+    On-the-fly settings come from ``pipeline_args.quantization_format`` and
+    related fields, assembled into ``PipelineConfig.quant_config``. The
+    pipeline is built with ``export_only`` so no generate graph is compiled.
     """
-    quant_config = on_the_fly_config(
-        quantization_format, report_error=error_report_dir is not None
-    )
+    if pipeline_args.quantization_format is None:
+        raise ValueError("quantize needs quantization_format")
     pipeline_config = PipelineConfig.from_args(pipeline_args)
-    if export_path is not None:
-        pipeline_config = pipeline_config.model_copy(
-            update={"export_only": True}
-        )
+    if pipeline_config.quant_config is None:
+        raise ValueError("quantize needs a QuantConfig on the pipeline config")
+    pipeline_config = pipeline_config.model_copy(update={"export_only": True})
     retrieved = PIPELINE_REGISTRY.retrieve_factory(
-        pipeline_config, plan_memory=export_path is None
-    )
-    factory = _factory_with_layer_quantizers(
-        retrieved.factory,
-        targets,
-        quant_config,
-        verbose=verbose,
-        error_report_dir=error_report_dir,
+        pipeline_config, plan_memory=False
     )
     # Export uses this same pipeline. Its constructor returns once the model
     # exists, before the KV cache and the sampler.
-    pipeline = factory()
-    if export_path is not None:
-        logger.info(
-            "Exporting quantized weights without generation to %s",
-            export_path,
+    pipeline = retrieved.factory()
+    if not isinstance(pipeline, TextGenerationPipelineInterface):
+        raise TypeError(
+            f"{type(pipeline).__name__} has no pipeline model to export"
         )
-        export_quantized_checkpoint(
-            pipeline._pipeline_model, export_path, quantization_format
-        )
-        if error_report_dir is not None:
-            write_report(error_report_dir)
-            logger.info(f"Wrote {error_report_dir / JSON_NAME}")
-        return
-    tokenizer = retrieved.tokenizer
-    assert isinstance(pipeline, Pipeline)
-    log_basic_config(pipeline_config, memory_plan=retrieved.memory_plan)
-    logger.info("max_batch_size: %d", pipeline.max_batch_size)
-
-    capture = OneShotCapture(top_n=profile_top_n) if profile else None
-    try:
-        # Run timed run & print results.
-        with TextGenerationMetrics(print_report=True) as metrics:
-            if image_urls:
-                logger.info("Downloading images")
-                images = [requests.get(url).content for url in image_urls]
-            else:
-                images = []
-
-            if num_warmups > 0:
-                logger.info("Running warmup")
-                warmup_params = dataclasses.replace(
-                    sampling_params, max_new_tokens=num_warmups
-                )
-                asyncio.run(
-                    stream_text_to_console(
-                        pipeline,
-                        tokenizer,
-                        prompt,
-                        images,
-                        sampling_params=warmup_params,
-                        metrics=None,
-                        print_tokens=False,
-                    )
-                )
-
-            # Run and print results.
-            logger.info("Beginning text generation")
-
-            with contextlib.ExitStack() as exit_stack:
-                if capture is not None:
-                    capture.start()
-                    # ``Tracer`` adds an NVTX "inference" label visible in
-                    # nsys-ui. It must be entered after ``capture.start``
-                    # so its NVTX range sits inside the cuda profiler
-                    # window.
-                    exit_stack.enter_context(
-                        Tracer("inference", color="modular_purple")
-                    )
-                asyncio.run(
-                    stream_text_to_console(
-                        pipeline,
-                        tokenizer,
-                        prompt,
-                        images,
-                        sampling_params=sampling_params,
-                        metrics=metrics,
-                        print_tokens=True,
-                    )
-                )
-        # ``TextGenerationMetrics.__exit__`` has printed the report here.
-        # End the capture *now*, so nsys's file-writing output follows.
-    finally:
-        if capture is not None:
-            capture.end_and_finalize()
-    if error_report_dir is not None:
-        write_report(error_report_dir)
-        logger.info(f"Wrote {error_report_dir / JSON_NAME}")
+    logger.info(
+        "Exporting quantized weights to %s",
+        export_path,
+    )
+    export_quantized_checkpoint(
+        pipeline._pipeline_model,
+        export_path,
+        pipeline_args.quantization_format,
+    )
+    if pipeline_args.error_report_dir is not None:
+        write_report(pipeline_args.error_report_dir)
+        logger.info(f"Wrote {pipeline_args.error_report_dir / JSON_NAME}")

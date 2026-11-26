@@ -39,6 +39,7 @@ architecture.
 
 from std.builtin.device_passable import DevicePassable, DeviceTypeEncoder
 from std.collections import Array, Optional
+from std.bit import count_trailing_zeros
 from std.math import align_up, ceildiv
 from std.memory import Pointer, bitcast
 from max.gpu.compute.mma import st_matrix
@@ -468,10 +469,6 @@ struct NullSwiGLUOutput[
     ):
         pass
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "NullSwiGLUOutput"
-
 
 struct RealSwiGLUOutput[
     # Output row stride in bytes. NVFP4: H/2. MXFP8: H.
@@ -516,25 +513,30 @@ struct RealSwiGLUOutput[
 
     comptime device_type: AnyType = Self
 
-    @__allow_legacy_any_origin_fields
-    var c_packed_ptr: MutPointer[UInt8, MutAnyOrigin]
+    var c_packed_ptr: MutPointer[UInt8, MutUntrackedOrigin]
 
-    @__allow_legacy_any_origin_fields
-    var c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], MutAnyOrigin]
+    var c_swiglu_scales_ptr: MutPointer[
+        Scalar[Self._sf_dtype], MutUntrackedOrigin
+    ]
 
-    @__allow_legacy_any_origin_fields
-    var c_input_scales_ptr: ImmPointer[Float32, ImmutAnyOrigin]
+    var c_input_scales_ptr: ImmPointer[Float32, ImmUntrackedOrigin]
 
     @inline(.always)
     def __init__(
         out self,
-        c_packed_ptr: MutPointer[UInt8, MutAnyOrigin],
-        c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], MutAnyOrigin],
-        c_input_scales_ptr: ImmPointer[Float32, ImmutAnyOrigin],
+        c_packed_ptr: MutPointer[UInt8, _],
+        c_swiglu_scales_ptr: MutPointer[Scalar[Self._sf_dtype], _],
+        c_input_scales_ptr: ImmPointer[Float32, _],
     ):
-        self.c_packed_ptr = c_packed_ptr
-        self.c_swiglu_scales_ptr = c_swiglu_scales_ptr
-        self.c_input_scales_ptr = c_input_scales_ptr
+        self.c_packed_ptr = c_packed_ptr.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
+        self.c_swiglu_scales_ptr = c_swiglu_scales_ptr.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
+        self.c_input_scales_ptr = c_input_scales_ptr.unsafe_origin_cast[
+            ImmUntrackedOrigin
+        ]()
 
     @inline(.always)
     def store_packed_byte(self, m: Int, byte_pos: Int, val: UInt8):
@@ -624,10 +626,6 @@ struct RealSwiGLUOutput[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "RealSwiGLUOutput"
-
 
 # =============================================================================
 # Grouped1D1DMatmulKernel - Main kernel struct
@@ -690,6 +688,12 @@ struct Grouped1D1DMatmulKernel[
     # instead of gathering each block into one writer lane with shuffles.
     # Same output bytes; MXFP8 ignores it.
     swiglu_inplace_token_per_lane: Bool = False,
+    # When True, every warp finds the CTA's first tile with a warp scan of
+    # the group slots instead of lane 0's walk over them. The dispatch sets
+    # it for decode calls whose routed rows are fewer than their groups, so
+    # most slots are empty and the walk is long; False keeps the walk and
+    # compiles the kernel as before.
+    first_tile_scan: Bool = False,
     c_device_engine: TensorEngine = DefaultEngine[element_width=1],
     offsets_engine: TensorEngine = DefaultEngine[element_width=1],
     a_scale_offsets_engine: TensorEngine = DefaultEngine[element_width=1],
@@ -767,6 +771,8 @@ struct Grouped1D1DMatmulKernel[
             lane quantizes and stores one token's SF block; the output
             bytes are unchanged and MXFP8 ignores it (defaults to
             `False`).
+        first_tile_scan: When True, every warp finds its CTA's first tile
+            with a warp scan of the group slots; False keeps lane 0's walk.
         c_device_engine: Engine of the C `TileTensor`.
         offsets_engine: Engine of the per-expert offsets
             `TileTensor`.
@@ -1345,12 +1351,20 @@ struct Grouped1D1DMatmulKernel[
 
         Each consumer warp calls this independently at kernel start,
         eliminating the latency of waiting for the scheduler warp to
-        publish slot 0. Lane 0 scans the group slots here and
-        broadcasts the result. The warp lookup stays with the scheduler
-        warp so its priming is paid once per CTA. With
-        `read_expert_scale=False` the context's expert scale is 1 and
-        `expert_scales` is not read.
+        publish slot 0. With `first_tile_scan` the whole warp scans the
+        group slots (`_iter0_warp_scan`): a decode call can list every
+        local expert as a slot, most of them empty, and the serial walk
+        over them was a fixed few microseconds of each call. Without it
+        lane 0 walks the slots and broadcasts the result, the code as it
+        was. The warp lookup stays with the scheduler warp so its priming
+        is paid once per CTA. With `read_expert_scale=False` the
+        context's expert scale is 1 and `expert_scales` is not read.
         """
+        comptime if Self.first_tile_scan:
+            return Self._iter0_warp_scan[read_expert_scale](
+                num_active_experts, a_offsets, expert_ids, expert_scales
+            )
+
         var s_m: UInt32 = 0
         var s_n: UInt32 = 0
         var s_gidx: UInt32 = 0
@@ -1385,6 +1399,93 @@ struct Grouped1D1DMatmulKernel[
             warp.broadcast(s_ms),
             warp.broadcast(s_scale),
             warp.broadcast(s_me),
+        )
+
+    @staticmethod
+    @no_inline
+    def _iter0_warp_scan[
+        read_expert_scale: Bool
+    ](
+        num_active_experts: Int,
+        a_offsets: Self.OffsetsTile,
+        expert_ids: Self.ExpertIdsTile,
+        expert_scales: Self.ExpertScalesTile,
+    ) -> GroupedWorkContext1D1D:
+        """This CTA's first tile, the slots scanned by the whole warp.
+
+        Round r covers slots 32 r .. 32 r + 31, one per lane; the next
+        round's offsets and ids load while this round is scanned, so the
+        scan costs about one load latency plus a warp prefix sum per 32
+        slots, instead of two dependent loads per slot. The first slot
+        whose blocks pass this CTA's block owns it, in the same block
+        order as `GroupedWorkIterator1D1D`. Not inlined: every warp role
+        calls it, and one copy keeps it out of the instruction-fetch path.
+        """
+        comptime tile_m = UInt32(Self.WorkIterator.cta_group_tile_shape[0])
+        comptime tile_n = UInt32(Self.WorkIterator.cta_group_tile_shape[1])
+        comptime n_blocks = Self.WorkIterator.num_static_dim_blocks
+        var lane = Int(lane_id())
+        var nbi = UInt32(ufloordiv(block_idx.x, Self.config.cta_group))
+        var rounds = ceildiv(num_active_experts, WARP_SIZE)
+
+        var start: UInt32 = 0
+        var end: UInt32 = 0
+        var eid: Int32 = -1
+        if lane < num_active_experts:
+            start = a_offsets[lane][0]
+            end = a_offsets[lane + 1][0]
+            eid = expert_ids[lane][0]
+
+        var s_m: UInt32 = 0
+        var s_n: UInt32 = 0
+        var s_gidx: UInt32 = 0
+        var s_eid: Int32 = -1
+        var s_ms: UInt32 = 0
+        var s_me: UInt32 = 0
+        var s_scale: Float32 = 1.0
+        var carry: UInt32 = 0
+        for r in range(rounds):
+            var nxt_start: UInt32 = 0
+            var nxt_end: UInt32 = 0
+            var nxt_eid: Int32 = -1
+            var g_next = (r + 1) * WARP_SIZE + lane
+            if g_next < num_active_experts:
+                nxt_start = a_offsets[g_next][0]
+                nxt_end = a_offsets[g_next + 1][0]
+                nxt_eid = expert_ids[g_next][0]
+
+            var m_blocks: UInt32 = 0
+            if eid >= 0 and end > start:
+                m_blocks = ceildiv(end - start, tile_m)
+            var blocks = m_blocks * n_blocks
+            var incl = warp.prefix_sum(blocks)
+            var mask = warp.vote[.uint32](carry + incl > nbi)
+            if mask != 0:
+                var owner = count_trailing_zeros(mask)
+                var m: UInt32 = 0
+                var n: UInt32 = 0
+                var scale: Float32 = 1.0
+                if lane == Int(owner):
+                    var local = nbi - (carry + incl - blocks)
+                    m = (local % m_blocks) * tile_m + start
+                    n = (local / m_blocks) * tile_n
+                    comptime if read_expert_scale:
+                        scale = expert_scales[Int(eid)][0]
+                s_m = warp.shuffle_idx(m, owner)
+                s_n = warp.shuffle_idx(n, owner)
+                s_gidx = UInt32(r * WARP_SIZE) + owner
+                s_eid = warp.shuffle_idx(eid, owner)
+                s_ms = warp.shuffle_idx(start, owner)
+                s_me = warp.shuffle_idx(end, owner)
+                s_scale = warp.shuffle_idx(scale, owner)
+                break
+            carry += warp.shuffle_idx(incl, UInt32(WARP_SIZE - 1))
+            start = nxt_start
+            end = nxt_end
+            eid = nxt_eid
+
+        return GroupedWorkContext1D1D(
+            s_m, s_n, s_gidx, s_eid, s_ms, s_scale, s_me
         )
 
     @staticmethod
@@ -3546,6 +3647,7 @@ struct Grouped1D1DMatmulKernel[
             var lane_row_is_even = (lane_row & UInt32(1)) == UInt32(0)
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _ip_stage(
                 var upper_ip: PartialType,
                 var lower_ip: PartialType,
@@ -3920,6 +4022,7 @@ struct Grouped1D1DMatmulKernel[
         # bf16 SMEM scratchpad is byte-identical to the standalone
         # matmul's BF16 GMEM output (chain reference).
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def store_scaled_pair(
             smem_idx_a: UInt32,
             smem_idx_b: UInt32,
@@ -3930,6 +4033,7 @@ struct Grouped1D1DMatmulKernel[
             smem_bf16_ptr.unsafe_store(Int(SWIZZLE_BF(smem_idx_b)), pair_bf[1])
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _scatter_stage(
             upper_partial: PartialType,
             lower_partial: PartialType,

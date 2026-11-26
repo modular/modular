@@ -25,6 +25,7 @@ chat-completion `maxserve.request_count`.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 import random
 from collections.abc import Sequence
@@ -34,6 +35,7 @@ from typing_extensions import assert_never
 from .chat_judge import ChatJudgeChatSamples
 from .types import (
     ChatSamples,
+    ChatSession,
     RequestSamples,
     ResponseFormat,
     Samples,
@@ -114,16 +116,6 @@ def augment_samples_with_response_format(
             " driver does not send response_format."
         )
     elif isinstance(samples, ChatSamples):
-        if turn == "first":
-            # A session warmed to steady state replays its opening turns
-            # locally, so a constraint on the first one is never sent
-            # (CENG-1086).
-            logger.warning(
-                "Structured-output mixing: --response-format-turn first loses"
-                " the constraint on any session that starts mid-conversation"
-                " (--warmup-multiturn, on by default); use 'last' or"
-                " 'every' to constrain a turn the driver is guaranteed to send."
-            )
         constrained = 0
         eligible = 0
         for session in samples.chat_sessions:
@@ -151,10 +143,9 @@ def _eligible_turns(
     """The user turns `turn` makes eligible, in session order.
 
     Indexes the whole session, prefix turns included. `prefix_turns` is still 0
-    here -- `pick_warmup_population` assigns it after sampling -- so "first" can
-    name a turn that `chat_session_driver` later replays locally and never
-    sends. See CENG-1086; `augment_samples_with_response_format` warns when the
-    combination is reachable.
+    here -- `pick_warmup_population` assigns it after sampling -- so "first"
+    names the opening turn, and `move_first_turn_response_format` later moves
+    the mark to the first turn a warmed session sends.
     """
     user_turns = [m for m in messages if m.source == "user"]
     if not user_turns:
@@ -166,3 +157,49 @@ def _eligible_turns(
     if turn == "last":
         return [user_turns[-1]]
     assert_never(turn)
+
+
+def move_first_turn_response_format(
+    sessions: Sequence[ChatSession],
+) -> list[ChatSession]:
+    """Moves each warmed session's first-turn constraint to its first sent turn.
+
+    `chat_session_driver` replays a session's first `prefix_turns` turns
+    locally and never sends their `response_format`. With
+    `--response-format-turn first`, the constraint must go on user turn
+    `prefix_turns`, the first turn the driver sends. Run this after
+    `pick_warmup_population` assigns `prefix_turns`.
+
+    The sessions share their messages with the sampled workload, which later
+    runs pick start turns from again, so this copies the messages it changes.
+
+    Args:
+        sessions: Sessions whose `prefix_turns` are assigned, each below the
+            session's user-turn count. Only the opening user turn of each may
+            carry a `response_format`.
+
+    Returns:
+        The sessions, with each warmed session's constraint moved.
+    """
+    moved: list[ChatSession] = []
+    for session in sessions:
+        user_indices = [
+            i for i, m in enumerate(session.messages) if m.source == "user"
+        ]
+        if session.prefix_turns == 0 or not user_indices:
+            moved.append(session)
+            continue
+        first = session.messages[user_indices[0]]
+        if first.response_format is None:
+            moved.append(session)
+            continue
+        target = user_indices[session.prefix_turns]
+        messages = list(session.messages)
+        messages[user_indices[0]] = dataclasses.replace(
+            first, response_format=None
+        )
+        messages[target] = dataclasses.replace(
+            messages[target], response_format=first.response_format
+        )
+        moved.append(dataclasses.replace(session, messages=messages))
+    return moved

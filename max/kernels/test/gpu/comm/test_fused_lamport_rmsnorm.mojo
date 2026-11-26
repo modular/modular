@@ -95,10 +95,12 @@ def _run_rms_norm_unfused[
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(Index(K))))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[width: Int](coords: Coord) {var in_view} -> SIMD[dtype, width]:
         return in_view.load[width=width](coords)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_view} -> None:

@@ -388,6 +388,7 @@ def run_config[
         comptime for arm in range(_NUM_ARMS):
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def kernel_launch(
                 launch_ctx: DeviceContext[], copy: Int
             ) raises {mut o_tile, imm}:

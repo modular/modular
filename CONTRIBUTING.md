@@ -75,6 +75,16 @@ investing the time. Once a maintainer has signaled that the change is a good fit
 — typically by adding the `accepted` label or by leaving a comment giving the
 go-ahead — you're clear to start work.
 
+If you come across an already accepted issue that you wish to work on, there is
+no need to ask permission from the team before you begin working on it
+given it is not actively assigned to anyone.
+
+If you need clarification on the approach, or otherwise need a maintainer's
+attention, tag the GitHub team that owns the code rather than an individual.
+You can find the owning team for any path in
+[`.github/CODEOWNERS`](.github/CODEOWNERS), for example `@modular/stdlib` for
+the Mojo standard library, or `@modular/mojo-compiler` for the Mojo compiler.
+
 What counts as a "small, obvious fix" where you can skip straight to a PR:
 
 - Typos and grammar fixes in documentation or comments.

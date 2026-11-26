@@ -162,6 +162,26 @@ struct EmitMojo : public impl::EmitMojoBase<EmitMojo> {
         state.file->importAs(package, as);
     }
 
+    // The built-in kernel packages the registry was built from, under their own
+    // names so a kernel's fully-qualified path resolves. `mogg-import-packages`
+    // recorded them: `builtin_kernels` is a namespace, so importing it alone
+    // reaches nothing inside it, and the packages under it are whatever that
+    // pass found rather than a list this file carries. A name the loop above
+    // already imported is skipped, because a second import redefines it.
+    if (auto packages = moduleOp->getAttrOfType<mlir::ArrayAttr>(
+            MOGG::kBuiltInKernelPackagesAttrName)) {
+      for (mlir::Attribute attr : packages) {
+        llvm::StringRef package = llvm::cast<mlir::StringAttr>(attr).getValue();
+        bool alreadyImported = false;
+        for (const auto &entry : MOGG::kPackagesToImport)
+          alreadyImported |= entry.first == package;
+        // Plain, not aliased: the name a dotted import binds is its first
+        // component, which several of these share.
+        if (!alreadyImported)
+          state.file->import(package);
+      }
+    }
+
     // Import mojo packages for the custom kernel libraries.
     for (const auto &kernelLibraryPath : kernelLibraryPaths) {
       auto moduleName = std::filesystem::path(kernelLibraryPath).stem();

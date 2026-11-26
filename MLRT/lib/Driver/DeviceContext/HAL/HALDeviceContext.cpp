@@ -149,15 +149,17 @@ ErrorOr<DeviceRef> Device::create(StringRef api, int id) {
           "Call setVirtualDeviceTargetArch() with target GPU architecture "
           "(e.g., 'sm_80', 'sm_90') before creating virtual devices.");
 
-    ErrorOr<std::unique_ptr<CompilationDevice>> compilationDevice =
-        CompilationDevice::create(virtualAPI, targetArch);
-    if (compilationDevice.isError())
-      return compilationDevice.takeError();
+    const StringRef resolvedAPI = canonicalDeviceAPI(virtualAPI);
+    if (hasMojoVendor(resolvedAPI)) {
+      ErrorOr<std::unique_ptr<CompilationDevice>> compilationDevice =
+          CompilationDevice::create(resolvedAPI, targetArch);
+      if (compilationDevice.isError())
+        return compilationDevice.takeError();
+    }
 
-    const StringRef resolvedAPI = (*compilationDevice)->api();
-    return DeviceRef::take(new Device(
-        std::move(*compilationDevice), mapAPI(resolvedAPI),
-        std::string(resolvedAPI), id, "VirtualGPU-" + std::to_string(id)));
+    return DeviceRef::take(new Device(std::move(targetArch),
+                                      mapAPI(resolvedAPI), id,
+                                      "VirtualGPU-" + std::to_string(id)));
   }
 
   // Each Device owns its own boxed Mojo HAL DeviceContext.
@@ -183,8 +185,8 @@ ErrorOr<DeviceRef> Device::create(StringRef api, int id) {
   std::string apiStr = apiName;
   MojoHAL_strfree(apiName);
   return DeviceRef::take(new Device(
-      ctx, mapAPI(apiStr), apiStr,
-      static_cast<int>(MojoHAL_DeviceContext_id(ctx)), std::move(nameStr)));
+      ctx, mapAPI(apiStr), static_cast<int>(MojoHAL_DeviceContext_id(ctx)),
+      std::move(nameStr)));
 }
 
 ErrorOr<DeviceContextRef> Device::createContext() {
@@ -201,8 +203,8 @@ ErrorOr<DeviceContextRef> Device::createContext() {
     // This Device holds the device's only context, so share it (and its
     // stream).
     MojoHAL_DeviceContext_copy(&ctx, mojoCtx_);
-  } else if (const char *err =
-                 MojoHAL_DeviceContext_create(&ctx, apiStr_.c_str(), id_)) {
+  } else if (const char *err = MojoHAL_DeviceContext_create(
+                 &ctx, std::string(api_).c_str(), id_)) {
     return takeError(err);
   }
   return DeviceContextRef::take(new DeviceContext(ctx, DeviceRef::copy(this)));
@@ -263,7 +265,7 @@ const std::string &Device::getAcceleratorArchOrEmpty() {
 
 ErrorOr<const char *> Device::getArchName() const {
   if (isVirtual())
-    return compilationDevice_->getArchName();
+    return virtualArch_->c_str();
   if (archName_.empty()) {
     char *name = nullptr;
     if (const char *err = MojoHAL_DeviceContext_getArchName(&name, mojoCtx_))

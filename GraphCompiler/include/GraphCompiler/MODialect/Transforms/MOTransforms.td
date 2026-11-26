@@ -180,7 +180,7 @@ def ConstantFold : Pass<"mo-constant-fold", "ModuleOp"> {
     "M::MAP::MAPDialect",
     "M::MOGG::MOGGDialect",
     "M::MGP::MGPDialect",
-    "M::GRT::GRTDialect",
+    "M::MLRT::GRT::GRTDialect",
     "M::KGEN::KGENDialect",
     "M::KGEN::LIT::LITDialect",
     "M::KGEN::POP::POPDialect",
@@ -401,6 +401,20 @@ def HoistConstantSubgraphsIntoParent : Pass<"mo-hoist-constant-subgraphs-into-pa
   let description = [{
     ExecInvariantCodeMotion doesn't support subgraphs, so this lets constant
     ops be constant-folded or hoisted to the init block.
+  }];
+}
+
+def HoistConstantsOutOfIf : Pass<"mo-hoist-constants-out-of-if", "GraphOp"> {
+  let summary = "Hoist constant-derived ops out of mo.if branches.";
+  let description = [{
+    Moves each side-effect-free op that is computed only from constants and
+    weights, and that both branches of an mo.if compute, in front of the
+    mo.if as one op that both branches use. An op that only one branch
+    computes stays in that branch. An op whose result is larger than its
+    operands, such as a broadcast, stays in the branch with the users it
+    fuses into, unless it reaches them only through a copy to another
+    device. ExecInvariantCodeMotion doesn't lift ops out of control flow, so
+    this lets it move them to the init block.
   }];
 }
 

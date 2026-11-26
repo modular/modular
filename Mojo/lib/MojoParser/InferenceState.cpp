@@ -237,7 +237,7 @@ VerifiedParamBindings::specializeGenerator(TypedAttr generator) const {
       generator.getContext(), dischargedBodyConstraints);
   TypedAttr result =
       BindParamsAttr::get(generator.getContext(), generator, bindings,
-                          discharged, evaluationContext);
+                          discharged, /*resultType=*/{}, evaluationContext);
   assert(isEqualCanon(result.getType(), specializedType) &&
          "inferred bind_params type must match verified specialization");
   return result;

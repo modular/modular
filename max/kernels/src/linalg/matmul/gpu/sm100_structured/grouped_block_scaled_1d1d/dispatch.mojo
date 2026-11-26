@@ -35,6 +35,11 @@ NVFP4 routing (B200-tuned via ablation):
     Small prefill (avg_m <= 64):   AB_swapped=True, mma_bn=64, cta_group=2
     Large prefill (avg_m > 64):    AB_swapped=True, mma_bn=128, cta_group=2
 
+  With no tuned stage row for the shape, the large-prefill row takes
+  mma_bn=256 instead (`_large_prefill_mma_bn`). An MMA costs about 70 clocks at
+  N 128 and about 119 at N 256, so the wider tile issues half as many
+  instructions for the same work and reaches 15% more FLOP/s (measured).
+
   Tuned stages live in `NVFP4_TUNED_STAGES`, one row per (N, K, regime).
   A decode (shape, regime) pair with no row there groups two k-tiles per
   stage at `DECODE_K_GROUP_STAGES` when its k-tile count is even, else
@@ -57,7 +62,11 @@ from linalg.fp4_utils import (
     is_w4a8_operand_pair,
 )
 from structured_kernels.trace_buf import NullTrace, TraceBuf
-from ..structured_kernels.config import BlockScaledMatmulConfig, GEMMKind
+from ..structured_kernels.config import (
+    BlockScaledMatmulConfig,
+    GEMMKind,
+    _compute_output_tile_shape,
+)
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
 from .grouped_1d1d_matmul_kernel import (
     NullSwiGLUOutput,
@@ -186,6 +195,119 @@ def _tuned_stages[N: Int, K: Int, regime: Int]() -> Optional[Int]:
     return Optional[Int](None)
 
 
+def _has_tuned_stages[N: Int, K: Int, regime: Int]() -> Bool:
+    """Returns whether `NVFP4_TUNED_STAGES` has a row for one (N, K, regime).
+
+    Parameters:
+        N: Output N dimension.
+        K: Reduction dimension (unpacked element count).
+        regime: The regime row's `upper_avg_m` bound (-1 = large prefill).
+
+    Returns:
+        True when a measured pipeline depth pins this (N, K, regime).
+    """
+    comptime for row in NVFP4_TUNED_STAGES:
+        comptime if row[0] == N and row[1] == K and row[2] == regime:
+            return True
+    return False
+
+
+comptime M_TILE_ROWS = 256
+"""Rows a CTA pair covers along M: the height of one output tile."""
+
+comptime WIDE_TILE_MAX_PAD_FIFTHS = 5
+"""Largest M padding, in fifths of the rows an expert holds, that still takes
+the wide tile: 5 means a fifth. A shape whose last M tile is emptier than
+that keeps the narrow tile."""
+
+
+def _large_prefill_mma_bn[N: Int, K: Int, fuse_swiglu: Bool]() -> Int:
+    """Returns the widest MMA N tile the large-prefill regime may use.
+
+    A tcgen05 NVFP4 MMA costs about 70 clocks at N 128 and about 119 at N 256
+    on B200, so the wider tile does twice the work in 1.7x the time: measured
+    15% more FLOP/s, with a bit-identical output. Two limits keep it away from
+    some shapes: `N % 256 == 0` keeps the tile inside a whole number of N
+    tiles, and a shape with its own measured stage row would need that depth
+    re-ablated for the wider tile, whose per-stage shared memory differs. A
+    fused SwiGLU epilogue may take it too; it costs one pipeline stage more
+    than the plain epilogue, because its drain pass needs the whole tile in
+    scratch (see `num_output_stages`).
+
+    Whether a shape *should* take it depends on how full its M tiles are, which
+    is a runtime quantity: see `_wide_tile_fills`.
+
+    Parameters:
+        N: Output N dimension.
+        K: Reduction dimension (unpacked element count).
+        fuse_swiglu: Whether the fused SwiGLU epilogue runs.
+
+    Returns:
+        256 when the shape may use the wide tile, else 128.
+    """
+    comptime if N % 256 == 0 and not _has_tuned_stages[N, K, -1]():
+        return 256
+    return 128
+
+
+def _wide_tile_fills(avg_m: Int) -> Bool:
+    """Whether a shape's M tiles are full enough to pay for the wide N tile.
+
+    The wide tile halves the tiles a shape runs, so it is worth its one lost
+    pipeline stage only when the tiles it does run are mostly useful rows. The
+    narrow tile's cost tracks rows (its epilogue stores a tile's live rows),
+    the wide tile's cost tracks tiles, and they cross when the last M tile is
+    about a third full: measured on B200 from 256 to 683 rows an expert, the
+    wide tile wins at 256, 448, 512, 640 and 683 rows (0%, 14%, 0%, 20% and 12%
+    padding) and loses at 341 and 384 (50% and 33%).
+
+    `num_active_experts` is floored to at least one by the caller, so `avg_m` is
+    `estimated_total_m / num_active_experts`.
+
+    Args:
+        avg_m: Rows an active expert holds, on average.
+
+    Returns:
+        True when the wide tile is worth it for this fill.
+    """
+    if avg_m <= 0:
+        return False
+    var pad = (M_TILE_ROWS - avg_m % M_TILE_ROWS) % M_TILE_ROWS
+    return WIDE_TILE_MAX_PAD_FIFTHS * pad <= avg_m
+
+
+def _large_prefill_bn_for_tokens[
+    N: Int, K: Int, fuse_swiglu: Bool
+](total_m: Int, num_active_experts: Int) -> Int:
+    """Returns the MMA N tile the large-prefill regime launches.
+
+    The dispatch calls this with the `(total_m, num_active_experts)` it
+    receives, and the tests call it with the same pair, so a test cannot pin a
+    tile the launch does not use. The dispatch keeps an outer `comptime` guard
+    on `_large_prefill_mma_bn` as well: the wide branch must not be
+    instantiated for a shape where it is illegal, even though this helper
+    returns 128 there.
+
+    Parameters:
+        N: Output N dimension.
+        K: Reduction dimension (unpacked element count).
+        fuse_swiglu: Whether the fused SwiGLU epilogue runs.
+
+    Args:
+        total_m: Estimated total rows across active experts.
+        num_active_experts: Number of active experts, possibly zero.
+
+    Returns:
+        256 when the wide tile is legal and its M tiles are full enough, else
+        128.
+    """
+    var avg_m = total_m // max(num_active_experts, 1)
+    comptime if _large_prefill_mma_bn[N, K, fuse_swiglu]() == 256:
+        if _wide_tile_fills(avg_m):
+            return 256
+    return 128
+
+
 def _launch_grouped_block_scaled[
     transpose_b: Bool,
     AB_swapped: Bool,
@@ -202,6 +324,7 @@ def _launch_grouped_block_scaled[
     swiglu_enable_trace: Bool = False,
     TraceBufT: TraceBuf = NullTrace,
     swiglu_use_inplace: Bool = False,
+    first_tile_scan: Bool = False,
     RowScalesT: RowScales = NullRowScales,
     grid_scale: Int = 1,
 ](
@@ -250,6 +373,8 @@ def _launch_grouped_block_scaled[
         swiglu_use_inplace: When True, the fused epilogue uses the
             in-place register path (no SMEM scratch) on decode shapes.
             Default False keeps the cooperative path.
+        first_tile_scan: When True, every warp finds its CTA's first tile
+            with a warp scan of the group slots; False keeps lane 0's walk.
         RowScalesT: Per-row output scales type. Defaults to the no-op
             `NullRowScales`.
         grid_scale: CTAs launched per SM, forwarded to the launcher.
@@ -264,6 +389,20 @@ def _launch_grouped_block_scaled[
     comptime sfb_dtype = b_scales.dtype
     comptime umma_shape = (128 * cta_group, mma_bn, 32)
 
+    # A one-stage accumulator pipeline -- every MMA_N above 128, where a second
+    # stage would not fit TMEM -- makes the fused SwiGLU epilogue drain every
+    # sub-stage into its own C scratch region before it releases the
+    # accumulator, so the C-tile array has to hold the whole MMA_N extent at
+    # once: MMA_N / sub-tile-width output stages, not the usual two. Only that
+    # epilogue drains this way, so only it pays the shared memory.
+    comptime drains_whole_tile = fuse_swiglu and mma_bn > 128
+    comptime c_sub_tile_width = Int(
+        _compute_output_tile_shape(c_type, umma_shape, cta_group, AB_swapped)[0]
+    )
+    comptime num_output_stages = (
+        ceildiv(mma_bn, c_sub_tile_width) if drains_whole_tile else 2
+    )
+
     comptime config = BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ](
@@ -276,6 +415,7 @@ def _launch_grouped_block_scaled[
         k_group_size=k_group_size,
         num_pipeline_stages=num_pipeline_stages,
         num_accum_pipeline_stages=1 if mma_bn > 128 else 2,
+        num_output_stages=num_output_stages,
         is_gmm=True,
         gemm_kind=GEMMKind.GMM,
     )
@@ -300,6 +440,7 @@ def _launch_grouped_block_scaled[
         swiglu_enable_trace=swiglu_enable_trace,
         TraceBufT=TraceBufT,
         swiglu_use_inplace=_swiglu_use_inplace,
+        first_tile_scan=first_tile_scan,
         RowScalesT=RowScalesT,
         grid_scale=grid_scale,
     ](
@@ -557,18 +698,38 @@ def grouped_matmul_nvfp4_dispatch[
             # row. The row's `upper_avg_m` doubles as the regime key into
             # `NVFP4_TUNED_STAGES`, so a new tuned shape is one table row
             # there and nothing here.
+            #
+            # The large-prefill row's N width is a rule on (N, K), whether the
+            # epilogue is fused, and how full the shape's M tiles are; the
+            # same helper is what the test pins.
+            comptime large_stages = _tuned_stages[N, K, -1]()
+            comptime large_k_group = _k_group[K, -1]()
             comptime regimes = [
-                # (upper_avg_m, mma_bn, cta_group). upper_avg_m < 0 =
-                # unbounded (large prefill).
+                # (upper_avg_m, mma_bn, cta_group). The large-prefill row is
+                # chosen by fill below, so it is not in this list.
                 (DECODE_AVG_M, 8, 1),
                 (SMALL_PREFILL_AVG_M, 64, 2),
-                (-1, 128, 2),
             ]
             comptime for r in regimes:
                 comptime _stages = _tuned_stages[N, K, r[0]]()
-                if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
+                if estimated_total_m <= num_active_experts * r[0]:
                     _regime[r[1], r[2], _stages, _k_group[K, r[0]]()]()
                     return
+            # Large prefill. The outer guard is comptime so an illegal wide
+            # instantiation is never compiled; the helper then picks by fill.
+            comptime if _large_prefill_mma_bn[N, K, fuse_swiglu]() == 256:
+                if (
+                    _large_prefill_bn_for_tokens[N, K, fuse_swiglu](
+                        estimated_total_m, num_active_experts
+                    )
+                    == 256
+                ):
+                    _regime[256, 2, large_stages, large_k_group]()
+                else:
+                    _regime[128, 2, large_stages, large_k_group]()
+            else:
+                _regime[128, 2, large_stages, large_k_group]()
+            return
 
 
 def grouped_matmul_mxfp8_dispatch[
@@ -769,6 +930,7 @@ def grouped_matmul_mxfp8_dispatch[
         k_group: Int,
         grid: Int,
         ab_swapped: Bool,
+        scan: Bool = False,
     ]() raises {imm}:
         _launch_grouped_block_scaled[
             transpose_b,
@@ -778,6 +940,7 @@ def grouped_matmul_mxfp8_dispatch[
             num_pipeline_stages=stages,
             k_group_size=k_group,
             grid_scale=grid,
+            first_tile_scan=scan,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
             pdl_level=pdl_level,
             fuse_swiglu=fuse_swiglu,
@@ -831,6 +994,17 @@ def grouped_matmul_mxfp8_dispatch[
     comptime for r in regimes:
         comptime _s = Optional[Int](r[3]) if r[3] >= 0 else Optional[Int](None)
         if r[0] < 0 or estimated_total_m <= num_active_experts * r[0]:
+            # Decode calls with fewer routed rows than groups list mostly
+            # empty slots (DeepSeek-V4-Flash at TP2 passes all 128 local
+            # experts for 6 rows a token), which is exactly when lane 0's
+            # walk over the slots is long: those take the warp-scan
+            # instantiation. With rows >= groups the walk is short and the
+            # scan instantiation's extra code costs ~1% per call, so they
+            # keep the walk. One extra decode instantiation per shape.
+            comptime if r[0] == DECODE_AVG_M:
+                if estimated_total_m < num_active_experts:
+                    _go[r[1], r[2], _s, r[4], 1, True, scan=True]()
+                    return
             _go[r[1], r[2], _s, r[4], 1, True]()
             return
 

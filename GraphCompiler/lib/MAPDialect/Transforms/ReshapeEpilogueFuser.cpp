@@ -16,6 +16,9 @@
 // collapsing e.g. `matmul -> reshape -> add` into one kernel by moving the
 // reshape onto the epilogue's store index. An untransformed read is
 // `EpilogueFuser`'s job; a bare reshape relabel is left as its own kernel.
+// The kernel's vectors then address the consumer's other tensors in the
+// reshaped shape, so a reshape whose vectors would cross rows that one of
+// them doesn't lay out one after the other is left as its own kernel too.
 //
 //===----------------------------------------------------------------------===//
 

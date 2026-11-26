@@ -169,15 +169,6 @@ struct RowBoundsPtr(RowBound):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"RowBoundsPtr"`.
-        """
-        return "RowBoundsPtr"
-
 
 # ===----------------------------------------------------------------------=== #
 # Compile-time constants
@@ -5177,6 +5168,7 @@ def persistent_topk_block_split[
         # wider the payload the more that is true, which is why the width below is
         # chosen by `N` rather than fixed at the widest that fits.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_resident[res_vecs: Int]() raises {imm}:
             comptime if not ordered:
                 # With no rank to feed there is no reason to hand over a superset

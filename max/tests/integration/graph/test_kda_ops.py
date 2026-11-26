@@ -799,8 +799,8 @@ def test_kda_chunk_amd_output_and_slot_isolation(
 ) -> None:
     """kda_chunk on gfx950 via the graph op: fp64-oracle output and state.
 
-    Lengths [300, 65, 1] cover a sequence spanning several 64-token chunks,
-    a one-token ragged tail after a full chunk, and a single-token sequence.
+    Lengths [300, 65, 1] cover a sequence spanning several 32-token chunks,
+    a one-token ragged tail after full chunks, and a single-token sequence.
     """
     _run_kda_chunk_amd_case(
         session,
@@ -1039,8 +1039,8 @@ def test_kda_chunk_amd_strided_views(
 
     The graph compiler materializes these views before the custom op (the op
     sees dense strides), so this checks the graph-level composition; the
-    non-dense strides themselves are covered by `test_amd_chunk_strided` in
-    the kernel suite, which also pads the output.
+    non-dense strides themselves are covered by the padded cases in
+    `test_kda_amd_prefill.mojo`, which also pad the output.
     """
     _run_kda_chunk_amd_case(
         session,

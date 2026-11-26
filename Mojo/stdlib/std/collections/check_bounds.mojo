@@ -58,8 +58,12 @@ def check_bounds[
             inside a `__getitem__` method, it will show the source location where
             the incorrect index was provided.
     """
+    # The comptime interpreter builds the failure arguments eagerly, so avoid
+    # them when the index is in range.
+    if UInt(idx) < UInt(length):
+        return
     debug_assert[assert_mode=_AssertMode[cpu_default]](
-        UInt(idx) < UInt(length),
+        False,
         "index ",
         idx,
         " is out of bounds, valid range is 0 to ",

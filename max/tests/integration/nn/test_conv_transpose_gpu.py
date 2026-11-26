@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 import numpy as np
+import pytest
 import torch
 from max.driver import Accelerator, Buffer
 from max.dtype import DType
@@ -359,4 +360,72 @@ def test_conv2d_transpose_fused_epilogue() -> None:
     expected = np.array([[1, 2, 1], [2, 4, 2], [1, 2, 1]], dtype=np.float32)
     np.testing.assert_array_equal(
         result.to_numpy(), (expected + 1).reshape(1, 1, 3, 3)
+    )
+
+
+@pytorch_disable_tf32_dtype
+@pytest.mark.parametrize("fused", [False, True])
+@pytest.mark.parametrize(
+    "in_channels, out_channels, height, width, kernel, stride, dilation, padding",
+    [
+        # The geometries B200 serves with a dedicated kernel, and a near miss
+        # of each that goes to cuDNN.
+        (512, 1024, 1, 550, (1, 7), (1, 1), (1, 1), (0, 3)),
+        (2, 3, 1, 9, (1, 5), (1, 1), (1, 1), (0, 0)),
+        (4, 6, 8, 9, (3, 5), (1, 2), (2, 2), (1, 1)),
+        (4, 6, 8, 10, (3, 5), (1, 2), (2, 2), (1, 1)),
+    ],
+)
+def test_conv2d_transpose_nchw_against_torch(
+    in_channels: int,
+    out_channels: int,
+    height: int,
+    width: int,
+    kernel: tuple[int, int],
+    stride: tuple[int, int],
+    dilation: tuple[int, int],
+    padding: tuple[int, int],
+    fused: bool,
+) -> None:
+    """The NCHW / CFRS transposed convolution matches torch, with and without
+    an add fused into it as the epilogue."""
+    device = DeviceRef.GPU()
+    x_shape = (1, in_channels, height, width)
+    w_shape = (in_channels, out_channels, *kernel)
+    with Graph(
+        "conv2d_transpose_nchw",
+        input_types=(
+            TensorType(DType.float32, x_shape, device=device),
+            TensorType(DType.float32, w_shape, device=device),
+        ),
+    ) as graph:
+        x, w = (value.tensor for value in graph.inputs)
+        out = ops.conv2d_transpose(
+            x,
+            w,
+            stride=stride,
+            dilation=dilation,
+            padding=(padding[0], padding[0], padding[1], padding[1]),
+            input_layout=ConvInputLayout.NCHW,
+            filter_layout=FilterLayout.CFRS,
+        )
+        graph.output(out + 1.0 if fused else out)
+
+    compiled = InferenceSession(devices=[Accelerator()]).load(graph)
+    torch.manual_seed(0)
+    x_host = torch.rand(x_shape, device="cuda")
+    w_host = torch.rand(w_shape, device="cuda")
+    result = compiled.execute(x_host, w_host)[0]
+    assert isinstance(result, Buffer)
+
+    expected = torch.nn.functional.conv_transpose2d(
+        x_host, w_host, stride=stride, padding=padding, dilation=dilation
+    )
+    if fused:
+        expected = expected + 1.0
+    np.testing.assert_allclose(
+        result.to_numpy(),
+        expected.cpu().numpy(),
+        rtol=ACCURACY_RTOL,
+        atol=1e-3,
     )

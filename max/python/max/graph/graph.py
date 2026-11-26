@@ -21,6 +21,7 @@ import io
 import itertools
 import sys
 import traceback
+import weakref
 from collections import OrderedDict
 from collections.abc import Callable, Generator, Iterable, Mapping, Sequence
 from contextvars import ContextVar
@@ -127,7 +128,16 @@ class _DeviceChainMap(OrderedDict[DeviceRef, _ChainValue]):
 
     def __init__(self, graph: Graph) -> None:
         super().__init__()
-        self._graph = graph
+        # Weak because the graph owns this map. A strong reference would form
+        # a cycle, keeping a dropped graph and its MLIR module alive until
+        # the next garbage collection.
+        self._graph_ref = weakref.ref(graph)
+
+    @property
+    def _graph(self) -> Graph:
+        graph = self._graph_ref()
+        assert graph is not None, "the graph of these chains was freed"
+        return graph
 
     @staticmethod
     def _sort_key(device: DeviceRef) -> tuple[str, int]:
@@ -360,6 +370,30 @@ class KernelLibrary:
         """
         self._shared_analysis().verify_custom_op(custom_op)
 
+    def resolves(
+        self, kernel: str, graph_op: mlir.Operation, device: DeviceRef
+    ) -> bool:
+        """Returns whether a kernel registered as *kernel* applies to *device*.
+
+        A registration may be scoped to some devices only, by their API,
+        architecture or model, so a kernel that is registered under a name
+        does not apply to every device.
+
+        Args:
+            kernel: The registered name of the kernel to look up.
+            graph_op: The operation of the graph. Its module carries the
+                info of each device, which the scope of a registration is
+                matched against.
+            device: The device to resolve the kernel for.
+
+        Returns:
+            ``True`` if exactly one registration of *kernel* is selected for
+            *device*.
+        """
+        return self._shared_analysis().resolves_kernel(
+            kernel, graph_op, device.device_type.value, device.id
+        )
+
     def has_shape_function(self, kernel: str) -> bool:
         """Returns whether *kernel* registers a shape function.
 
@@ -536,6 +570,24 @@ def _to_mlir(o: Any) -> Any:
     elif isinstance(o, dict):
         return {k: _to_mlir(v) for k, v in o.items()}
     return o
+
+
+def _unwrap_to_cmlir(arg: Any) -> Any:
+    """Converts graph API values, types and attributes to ``max.mlir`` ones."""
+    if isinstance(arg, Value):
+        return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore[attr-defined]
+    elif isinstance(arg, Type):
+        return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
+    elif isinstance(arg, list | tuple):
+        return [_unwrap_to_cmlir(elem) for elem in arg]
+    elif isinstance(arg, _Attribute):
+        return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
+    elif isinstance(arg, _Type):
+        return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
+    elif isinstance(arg, _Value):
+        return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore[attr-defined]
+    else:
+        return arg
 
 
 # MLIR assembly text must be read and written through the ``max.mlir`` bindings
@@ -1360,25 +1412,10 @@ class Graph:
         attach_profile_scopes: bool = True,
         **kwargs,
     ) -> tuple[list[Value[Any]], mlir.OpView]:
-        # Convert args from instances of Python graph-api Value() to mlir.Value
-        def unwrap(arg: Any) -> Any:
-            if isinstance(arg, Value):
-                return mlir.Value._CAPICreate(arg._mlir_value._CAPIPtr)  # type: ignore[attr-defined]
-            elif isinstance(arg, Type):
-                return mlir.Type._CAPICreate(arg.to_mlir()._CAPIPtr)  # type: ignore
-            elif isinstance(arg, list | tuple):
-                return [unwrap(elem) for elem in arg]
-            elif isinstance(arg, _Attribute):
-                return mlir.Attribute._CAPICreate(arg._CAPIPtr)  # type: ignore
-            elif isinstance(arg, _Type):
-                return mlir.Type._CAPICreate(arg._CAPIPtr)  # type: ignore
-            elif isinstance(arg, _Value):
-                return mlir.Value._CAPICreate(arg._CAPIPtr)  # type: ignore[attr-defined]
-            else:
-                return arg
-
-        unwrapped_args = tuple(unwrap(arg) for arg in args)
-        unwrapped_kwargs = {k: unwrap(arg) for k, arg in kwargs.items()}
+        unwrapped_args = tuple(_unwrap_to_cmlir(arg) for arg in args)
+        unwrapped_kwargs = {
+            k: _unwrap_to_cmlir(arg) for k, arg in kwargs.items()
+        }
 
         ip = _ip or mlir.InsertionPoint(self._body)
 

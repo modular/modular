@@ -16,7 +16,9 @@ shared memory, completing on an mbarrier.
 `CpAsyncBulk` wraps
 `cp.async.bulk.shared::cta.global.mbarrier::complete_tx::bytes`: one thread
 copies a contiguous run of bytes, and the copy completes on the mbarrier
-the atom is built with, as transaction bytes the caller expects on it.
+the atom is built with, as transaction bytes the caller expects on it. The
+atom never arms or waits on the barrier: the building block that owns the
+barrier does both.
 
 You can import these APIs from the `layout.atoms.b200.cp_async` module:
 
@@ -26,7 +28,12 @@ from layout.atoms.b200.cp_async import CpAsyncBulk, MBarrierTransactions
 """
 
 from layout import ImmTileTensor, MutTileTensor
-from layout.atoms import BarrierCompletion, TransferAtom, vector_map
+from layout.atoms import (
+    BarrierCompletion,
+    CompletionFamily,
+    TransferAtom,
+    vector_map,
+)
 from layout.tensor_engine import DefaultEngine, TensorEngine
 from layout.layout import TensorLayout
 from layout.tma_async import SharedMemBarrier
@@ -42,6 +49,8 @@ struct MBarrierTransactions(BarrierCompletion):
 
     comptime Result = NoneType
     """Nothing: the copy signals the barrier."""
+    comptime family = CompletionFamily.barrier_bytes
+    """Every copy that completes transaction bytes on an mbarrier."""
     comptime Barrier = SharedMemBarrier
     """The barrier the atom is built with."""
 

@@ -93,6 +93,12 @@
 //   N7  arg_empty_member          {f32,{},f32}             correct: f64  (SSE)
 //   N8  arg_zero_array_member     {f32,{[0 x f32]},f32}    correct: f64  (SSE)
 //
+// Group Z - Types without size (MOCO-5490)
+//   Z1  arg_empty_between         si32, {}, si32            -> (i32, i32)
+//   Z2  ret_empty                 returns {}, resAttrs      -> void, no resAttrs
+//   Z3  variadic_empty_fixed      si32, {}, ... si32        -> (i32, ...)
+//   Z4  arg_attrs_empty           argAttrs around a {} arg  -> stay with their args
+//
 // MODULE HEADER NOTE: Each test uses the standard x86-64 Linux data layout
 // string to drive struct size and alignment computation in getStructSize(),
 // which in turn determines which ABI classification rule applies. The triple
@@ -958,4 +964,69 @@ kgen.func @arg_single_field_structs(%s8: !kgen.struct<(scalar<si8>)>, %u16: !kge
   hlcf.return
 }
 // CHECK: llvm.func @c_i2(i8, i16, i8) -> i8
+}
+
+//===----------------------------------------------------------------------===//
+// Group Z: Types without size
+//
+// Rule: as in clang, C passes no data for a type without size. An argument
+// takes no register and no stack slot, and a result is void (MOCO-5490).
+//===----------------------------------------------------------------------===//
+
+// -----
+
+// Z1: {} between two i32 args. The i32 after it stays in the second integer
+// register.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_empty_between
+kgen.func @arg_empty_between(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %b: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z1(%{{[^,]*}}, %{{[^,]*}}) : (i32, i32) -> ()
+  pop.external_call @c_z1(%a, %e, %b) : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> ()
+  hlcf.return
+}
+// CHECK: llvm.func @c_z1(i32, i32)
+}
+
+// -----
+
+// Z2: a {} result is void, so the declaration drops its resAttrs.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @ret_empty
+kgen.func @ret_empty(%a: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z2(%{{[^)]*}}) : (i32) -> (){{$}}
+  %r = pop.external_call @c_z2(%a) : (!kgen.scalar<si32>) -> !kgen.struct<()> <resAttrs = {llvm.noalias}>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z2(i32) attributes
+// CHECK-NOT: res_attrs
+}
+
+// -----
+
+// Z3: {} among the fixed args of a variadic call. numFixedArgs counts it, but
+// the declaration has one fixed parameter.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @variadic_empty_fixed
+kgen.func @variadic_empty_fixed(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %b: !kgen.scalar<si32>) {
+  // CHECK: llvm.call @c_z3(%{{[^,]*}}, %{{[^,]*}}) vararg(!llvm.func<void (i32, ...)>) : (i32, i32) -> ()
+  pop.external_call @c_z3(%a, %e, %b)
+    : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.scalar<si32>) -> () <numFixedArgs = 2 : index>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z3(i32, ...)
+}
+
+// -----
+
+// Z4: the argAttrs of a {} arg are dropped, and the argAttrs of the args
+// around it stay on their parameters.
+module attributes {M.target_info = #M.target<triple="x86_64-unknown-linux-gnu", arch="", features="", data_layout="e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128", simd_bit_width=128>} {
+// CHECK-LABEL: @arg_attrs_empty
+kgen.func @arg_attrs_empty(%a: !kgen.scalar<si32>, %e: !kgen.struct<()>, %p: !kgen.pointer<scalar<ui8>>) {
+  // CHECK: llvm.call @c_z4(%{{[^,]*}}, %{{[^,]*}}) : (i32, !llvm.ptr) -> ()
+  pop.external_call @c_z4(%a, %e, %p)
+    : (!kgen.scalar<si32>, !kgen.struct<()>, !kgen.pointer<scalar<ui8>>) -> () <argAttrs = [{llvm.noundef}, {llvm.noundef}, {llvm.nonnull}]>
+  hlcf.return
+}
+// CHECK: llvm.func @c_z4(i32 {llvm.noundef}, !llvm.ptr {llvm.nonnull})
 }

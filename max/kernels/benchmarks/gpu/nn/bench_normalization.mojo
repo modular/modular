@@ -28,8 +28,6 @@ from nn.normalization import rms_norm_gpu
 from builtin_kernels.rowwise_normalization import layer_norm
 from std.utils.coord import ComptimeInt
 
-from std.utils.index import Index, IndexList
-
 
 # The shape `Coord` is passed in (built by the caller) rather than constructed
 # here: a statically-shaped `Coord` (outer dims as `ComptimeInt`, what the graph
@@ -39,10 +37,8 @@ from std.utils.index import Index, IndexList
 # measure both arms and isolate the static-divisor folding. `shape` (comptime)
 # still drives host buffer sizing and the `BenchId`.
 def bench_layer_norm_gpu[
-    rank: Int,
-    //,
     dtype: DType,
-    shape: IndexList[rank],
+    shape: Coord,
     static_shape: Bool = False,
 ](
     ctx: DeviceContext[],
@@ -50,8 +46,9 @@ def bench_layer_norm_gpu[
     fn_name: String,
     shape_coord: Coord,
 ) raises:
-    comptime cols = shape[rank - 1]
-    comptime rows = shape.flattened_length() // cols
+    comptime rank = shape.rank
+    comptime cols = Int(shape[rank - 1])
+    comptime rows = Int(shape.product()) // cols
 
     var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
     var gamma_h = List(length=cols, fill=Scalar[dtype](0))
@@ -73,12 +70,10 @@ def bench_layer_norm_gpu[
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
     var beta_d = ctx.enqueue_create_buffer[dtype](cols)
 
-    var param_shape = Index(cols)
-
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var out_buf = TileTensor(out_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
-    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
+    var data_buf = TileTensor(data_d, row_major(shape))
+    var out_buf = TileTensor(out_d, row_major(shape))
+    var gamma = TileTensor(gamma_d, row_major(Coord(cols)))
+    var beta = TileTensor(beta_d, row_major(Coord(cols)))
     var epsilon = Scalar[dtype](0)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -152,10 +147,11 @@ def bench_layer_norm_gpu[
 
 
 def bench_rms_norm_gpu[
-    rank: Int, //, dtype: DType, shape: IndexList[rank]
+    dtype: DType, shape: Coord
 ](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
-    comptime cols = shape[rank - 1]
-    comptime rows = shape.flattened_length() // cols
+    comptime rank = shape.rank
+    comptime cols = Int(shape[rank - 1])
+    comptime rows = Int(shape.product()) // cols
 
     var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
     var gamma_h = List(length=cols, fill=Scalar[dtype](0))
@@ -170,10 +166,8 @@ def bench_rms_norm_gpu[
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
 
-    var param_shape = Index(cols)
-
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
-    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var data_buf = TileTensor(data_d, row_major(shape))
+    var gamma = TileTensor(gamma_d, row_major(Coord(cols)))
     comptime epsilon = Float32(0.001)
     comptime weight_offset = Float32(0.0)
 
@@ -205,7 +199,7 @@ def bench_rms_norm_gpu[
             epsilon=epsilon,
             weight_offset=weight_offset,
             multiply_before_cast=True,
-        ](input_fn, identity_output_fn, Coord(shape), gamma, ctx)
+        ](input_fn, identity_output_fn, shape, gamma, ctx)
 
     @inline(.always)
     def bench_fn(mut b: Bencher) raises {imm}:
@@ -242,29 +236,32 @@ def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     with DeviceContext() as ctx:
         comptime if kernel == "rms_norm" or (
-            kernel == "auto" and len(shape) == 3
+            kernel == "auto" and shape.rank == 3
         ):
             bench_rms_norm_gpu[dtype, shape](ctx, m, "rms_norm_gpu")
         else:
             # `layer_norm`: always run the dynamic (runtime-divide) arm; add the
             # static (folded-divisor) arm so the two are directly comparable. The
             # `Coord`s are built here (at `main` scope, where `shape[i]` folds at
-            # comptime): `Coord(shape)` erases dims to runtime; `coord[...]`
-            # keeps them as `ComptimeInt`.
+            # comptime): `shape` holds runtime dims; `coord[...]` keeps them as
+            # `ComptimeInt`.
             bench_layer_norm_gpu[dtype, shape, static_shape=False](
-                ctx, m, "layer_norm_gpu", Coord(shape)
+                ctx, m, "layer_norm_gpu", shape
             )
             comptime if want_static:
-                comptime if len(shape) == 2:
-                    bench_layer_norm_gpu[dtype, shape, static_shape=True](
-                        ctx, m, "layer_norm_gpu", coord[shape[0], shape[1]]
-                    )
-                elif len(shape) == 3:
+                comptime if shape.rank == 2:
                     bench_layer_norm_gpu[dtype, shape, static_shape=True](
                         ctx,
                         m,
                         "layer_norm_gpu",
-                        coord[shape[0], shape[1], shape[2]],
+                        coord[Int(shape[0]), Int(shape[1])],
+                    )
+                elif shape.rank == 3:
+                    bench_layer_norm_gpu[dtype, shape, static_shape=True](
+                        ctx,
+                        m,
+                        "layer_norm_gpu",
+                        coord[Int(shape[0]), Int(shape[1]), Int(shape[2])],
                     )
 
     m.dump_report()

@@ -46,6 +46,10 @@ modular_eager_py_test(
     cpu_only = True,
     # Needs attention.csa.window_kv_store, registered only by the closed-source kernels.
     env = {"MAX_EAGER_EXECUTOR": "fallback-internal"},
+    ignore_extra_deps = [
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41_modulev3",
+    ],
     # tokenizers is a transitive dependency of transformers but doesn't have
     # an unversioned bazel alias, so we need to ignore its unresolved imports
     ignore_unresolved_imports = [
@@ -55,17 +59,23 @@ modular_eager_py_test(
     tags = ["skip-external-ci"],
     deps = [
         ":runtime_config",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41",
+        "//max/python/max/pipelines/architectures/dspark_deepseekV41_modulev3",
         requirement("transformers"),
         "//max/python/max:tensor",
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/nn:core",
+        "//max/python/max/nn/kv_cache",
+        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
         requirement("numpy"),
     ],
 )
@@ -151,6 +161,29 @@ modular_py_test(
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
+        "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
+        requirement("numpy"),
+    ],
+)
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
+)
+
+# The Engram static initializer writes fp8 host tables. The graph compiler
+# accepts FP8 host data movement only beside an accelerator.
+modular_py_test(
+    name = "test_engram_static_init_gpu",
+    srcs = ["test_engram_static_init_gpu.py"],
+    gpu_constraints = ["//:b200_gpu"],
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/deepseekV41_modulev3",
         requirement("numpy"),
     ],

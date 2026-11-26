@@ -39,10 +39,6 @@ struct ZeroSized(
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "ZeroSized"
-
     @inline(.always)
     def value(self) -> S:
         return 2

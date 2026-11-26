@@ -122,6 +122,7 @@ def device_graph_allreduce_test[
 
     comptime InType = StableTileTensor[dtype, type_of(row_major(length))]
 
+    @__allow_legacy_any_origin_fields
     def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {mut}:
         _ = builder.place_stable(
             n,

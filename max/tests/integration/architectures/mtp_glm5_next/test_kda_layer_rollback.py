@@ -166,6 +166,7 @@ def _config() -> Glm5NextConfig:
         linear_head_dim=HEAD_DIM,
         linear_conv_kernel_dim=KERNEL,
         linear_lower_bound=-5.0,
+        linear_conv_dtype=DType.float32,
     )
 
 
@@ -203,7 +204,6 @@ class _Rollback(Module[..., tuple[Tensor, ...]]):
     """The verify and rollback beside the decode steps, in one graph."""
 
     def __init__(self, layer: KimiDeltaAttention, num_steps: int) -> None:
-        layer.pin_decode_fma = True
         self.layer = layer
         self.num_steps = num_steps
 

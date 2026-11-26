@@ -77,7 +77,6 @@ from max.nn.common_layers.quant_tensor import (
 )
 from max.nn.ep_config import EPConfig
 from max.nn.kernels.quant import preshuffle_blockwise_fp8_b
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.moe.moe_fp8 import MoEQuantized
 from max.nn.quant_config import (
     InputScaleSpec,
@@ -373,9 +372,7 @@ def test_blockwise_mega_ffn_amd_gate(
     moe = SimpleNamespace(
         hidden_dim=hidden,
         moe_dim=BW_I,
-        ep_batch_manager=SimpleNamespace(
-            config=SimpleNamespace(n_nodes=n_nodes)
-        ),
+        ep_config=SimpleNamespace(n_nodes=n_nodes),
         quant_config=SimpleNamespace(
             format=fmt,
             weight_scale=SimpleNamespace(block_size=block),
@@ -964,7 +961,7 @@ def test_blockwise_mega_ffn_layer_reads_checkpoint_experts(
             num_experts_per_token=top_k,
             moe_dim=i,
             quant_config=quant_config,
-            ep_batch_manager=EPBatchManager(ep_config),
+            ep_config=ep_config,
             swiglu_limit=swiglu_limit,
         )
     assert moe._blockwise_mega_ffn_amd_eligible()

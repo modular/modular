@@ -2849,6 +2849,7 @@ def mla_decode_sm100_dispatch[
     # allowing np=2 with 2-3 pages per split instead of 1-2.
     # =========================================================================
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_impl[split_page_size_param: Int]() raises {imm}:
         _mla_decode_sm100_dispatch_impl[
             q_type=q_type,
@@ -3116,6 +3117,7 @@ def _mla_decode_sm100_dispatch_impl[
             MutPointer[UInt32, origin=MutAnyOrigin]
         ](valid_length.ptr)
 
+        @__allow_legacy_any_origin_fields
         def _launch_split_k_path() raises {imm}:
             # Launch main MLA decode kernel (writes partial results to accumulators)
             mla_decode_sm100_sink_split_k[
@@ -3393,6 +3395,7 @@ def _mla_decode_sm100_dispatch_impl[
         else:
             lse_accum_split_ptr = lse_out
 
+        @__allow_legacy_any_origin_fields
         def _launch_no_split_path() raises {imm}:
             mla_decode_sm100_sink_split_k[
                 q_type=q_type,
@@ -3823,6 +3826,7 @@ def mla_decode_sm100_sink_split_k[
             # direct gather), so a launch encodes only the two it uses.
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _launch_sparse_qkv_fp8[
                 _fold_shared_index_val: Bool = False,
                 _q_len_fold_val: Int = 1,
@@ -4208,6 +4212,7 @@ def mla_decode_sm100_sink_split_k[
             var valid_len: ValidLengthType = {valid_length}
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _launch_r[
                 _fold_q: Bool,
                 _q_len_fold: Int,
@@ -4305,6 +4310,7 @@ def mla_decode_sm100_sink_split_k[
             var valid_len: ValidLengthType = {}
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _launch_n[
                 _fold_q: Bool,
                 _q_len_fold: Int,

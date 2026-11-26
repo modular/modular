@@ -220,33 +220,31 @@ static LIT::TryOp lowerTryFinally(LIT::TryOp tryOp) {
     return WalkResult::advance();
   };
 
-  // Route exiting branches from the 'try', 'except', and 'else' regions through
-  // the finally region. Nothing to do if the 'finally' region is trivial.
+  // Route exiting branches from the try, except, and else regions through the
+  // finally region. Nothing to do if the finally region is trivial.
   if (!tryOp.hasTrivialFinally()) {
     tryOp.getTryRegion().walk(checkRegion);
-    tryOp.getExceptRegion().walk(checkRegion);
+    for (Region &exceptRegion : tryOp.getExceptRegions())
+      exceptRegion.walk(checkRegion);
     tryOp.getElseRegion().walk(checkRegion);
     // Paste the finally block at the exits of the else and except regions if
     // they are not terminated by an exit.
-    if (auto yield = dyn_cast<LIT::TryYieldOp>(
-            tryOp.getExceptRegion().front().getTerminator()))
-      pasteFinally(yield);
+    for (Region &exceptRegion : tryOp.getExceptRegions())
+      if (auto yield =
+              dyn_cast<LIT::TryYieldOp>(exceptRegion.front().getTerminator()))
+        pasteFinally(yield);
     if (auto yield = dyn_cast<LIT::TryYieldOp>(
             tryOp.getElseRegion().front().getTerminator()))
       pasteFinally(yield);
   }
 
-  // Clear the finally region by rebuilding the operation without it.
-  OperationState state(tryOp.getLoc(), tryOp->getName());
-  for (unsigned i = 0; i < 3; ++i) {
-    state.regions.emplace_back(std::make_unique<Region>())
-        ->takeBody(tryOp->getRegion(i));
-  }
-  OpBuilder b(tryOp);
-  auto newTry = cast<LIT::TryOp>(b.create(state));
-  newTry.setLabelAttr(tryOp.getLabelAttr());
-  tryOp.erase();
-  return newTry;
+  // The fixed finally region remains as an unreachable CFG region after its
+  // source operations have been pasted onto every exiting path.
+  while (!finallyBlock.empty())
+    finallyBlock.back().erase();
+  OpBuilder builder = OpBuilder::atBlockEnd(&finallyBlock);
+  HLCF::UnreachableOp::create(builder, tryOp.getLoc());
+  return tryOp;
 }
 
 /// Erase operations to the end of the block after op.
@@ -595,7 +593,7 @@ void LowerSemanticCF::lowerParamFor(HLCF::ComptimeForOp paramFor,
 }
 
 /// Emit the semantic control-flow IR corresponding to a raise statement.
-static void emitRaise(ImplicitLocOpBuilder &b) {
+static void emitRaise(ImplicitLocOpBuilder &b, LIT::RaiseOp raiseOp) {
   Operation *opForRaise = LIT::findOpProcessingRaise(b.getInsertionBlock());
   assert(opForRaise && "IR invalid, RaiseOp must only be in valid context");
   if (auto fnOp = dyn_cast<LIT::FnOp>(opForRaise)) {
@@ -612,7 +610,12 @@ static void emitRaise(ImplicitLocOpBuilder &b) {
         b, ParamConstantOp::create(
                b, SIMDAttr::getScalarBool(b.getContext(), true)));
   } else {
-    LIT::TryRaiseOp::create(b, cast<LIT::TryOp>(opForRaise).getLabelAttr());
+    IntegerAttr handlerIndex = raiseOp.getHandlerIndexAttr();
+    if (!handlerIndex)
+      handlerIndex = b.getI64IntegerAttr(0);
+    LIT::TryRaiseOp::create(b, ValueRange(),
+                            cast<LIT::TryOp>(opForRaise).getLabelAttr(),
+                            handlerIndex);
   }
 }
 
@@ -646,7 +649,7 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
     if (auto raiseOp = dyn_cast<LIT::RaiseOp>(op)) {
       effects.doesRaise = true;
       auto b = handleSemanticTerminatorOp(op, "raise statement");
-      emitRaise(b);
+      emitRaise(b, raiseOp);
       op.erase();
       effects.doesFallThrough = false;
       return;
@@ -786,7 +789,8 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
 
       // Diagnose unneeded code.
       if (!tryBodyRaises) {
-        Operation &firstOpInExcept = tryOp.getExceptRegion().front().front();
+        Operation &firstOpInExcept =
+            tryOp.getExceptRegions().front().front().front();
         // If the finally region is not empty, then this could be a
         // try-finally pattern.
         if (!tryOp.getSuppressWarnings() && tryOp.hasTrivialFinally()) {
@@ -800,16 +804,20 @@ void LowerSemanticCF::lowerBlock(Block &block, CodeEffects &effects) {
           }
         }
 
-        Operation *firstExceptOp = &tryOp.getExceptRegion().front().front();
-        auto builder = OpBuilder(firstExceptOp);
-        UnreachableOp::create(builder, firstExceptOp->getLoc());
-        eraseOpToEndOfBlock(firstExceptOp);
+        for (Region &exceptRegion : tryOp.getExceptRegions()) {
+          Operation *firstExceptOp = &exceptRegion.front().front();
+          auto builder = OpBuilder(firstExceptOp);
+          UnreachableOp::create(builder, firstExceptOp->getLoc());
+          eraseOpToEndOfBlock(firstExceptOp);
+        }
       } else {
         // The except and else blocks execute without protection from the try.
-        CodeEffects exceptEffects;
-        lowerBlock(tryOp.getExceptRegion().front(), exceptEffects);
-        effects.mergeControlEffects(exceptEffects);
-        tryFallsThrough |= exceptEffects.doesFallThrough;
+        for (Region &exceptRegion : tryOp.getExceptRegions()) {
+          CodeEffects exceptEffects;
+          lowerBlock(exceptRegion.front(), exceptEffects);
+          effects.mergeControlEffects(exceptEffects);
+          tryFallsThrough |= exceptEffects.doesFallThrough;
+        }
       }
 
       // If there is an 'else' block that is unreachable, complain and remove

@@ -62,6 +62,7 @@ from .sync import (
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"all_to_all_p2p_{dtype}_{simd_width}")
+@__allow_legacy_any_origin_fields
 def _all_to_all_p2p_kernel[
     dtype: DType,
     ngpus: Int,
@@ -187,6 +188,7 @@ def _launch_all_to_all[
 
 
 @inline(.always)
+@__allow_legacy_any_origin_fields
 def all_to_all[
     dtype: DType,
     ngpus: Int,

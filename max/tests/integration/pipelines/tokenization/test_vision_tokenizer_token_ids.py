@@ -22,7 +22,6 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import pytest
-from max.pipelines.architectures.qwen2_5vl.tokenizer import Qwen2_5VLTokenizer
 from max.pipelines.architectures.qwen3_5.tokenizer import Qwen3_5Tokenizer
 from max.pipelines.context import TextAndVisionContext
 from max.pipelines.context.exceptions import InputError
@@ -32,7 +31,6 @@ from max.pipelines.modeling.types import RequestID, TextGenerationRequest
 from transformers import AutoConfig
 
 GEMMA3 = "google/gemma-3-4b-it"
-QWEN2_5VL = "Qwen/Qwen2.5-VL-3B-Instruct"
 QWEN3_5 = "Qwen/Qwen3.5-9B"
 PROMPT = "The capital of France is"
 
@@ -98,36 +96,6 @@ async def test_text_and_vision_tokenizer_rejects_placeholder_without_image() -> 
         await tokenizer.new_context(_request(token_ids))
 
 
-@pytest.mark.asyncio
-async def test_qwen2_5vl_tokenizer_token_id_prompt() -> None:
-    tokenizer = Qwen2_5VLTokenizer(
-        QWEN2_5VL, pipeline_config=_pipeline_config(QWEN2_5VL)
-    )
-    text_context = await tokenizer.new_context(_request(PROMPT))
-    token_ids = text_context.tokens.prompt.tolist()
-
-    context = await tokenizer.new_context(_request(token_ids))
-
-    _assert_same_row(context, text_context)
-    assert context.rope_delta == text_context.rope_delta
-    np.testing.assert_array_equal(
-        context.decoder_position_ids, text_context.decoder_position_ids
-    )
-
-
-@pytest.mark.asyncio
-async def test_qwen2_5vl_tokenizer_rejects_placeholder_without_image() -> None:
-    tokenizer = Qwen2_5VLTokenizer(
-        QWEN2_5VL, pipeline_config=_pipeline_config(QWEN2_5VL)
-    )
-    text_context = await tokenizer.new_context(_request(PROMPT))
-    token_ids = text_context.tokens.prompt.tolist()
-    token_ids.insert(1, tokenizer.image_token_id)
-
-    with pytest.raises(ValueError, match="image placeholder tokens"):
-        await tokenizer.new_context(_request(token_ids))
-
-
 async def _assert_token_id_range(
     tokenizer: TextAndVisionTokenizer, model_path: str
 ) -> None:
@@ -155,15 +123,6 @@ async def test_text_and_vision_tokenizer_token_id_range() -> None:
     # DeepSeek-V4.1 builds its rows through encode.
     with pytest.raises(InputError, match="out of range"):
         await tokenizer.encode([tokenizer._token_id_bound])
-
-
-@pytest.mark.asyncio
-async def test_qwen2_5vl_tokenizer_token_id_range() -> None:
-    tokenizer = Qwen2_5VLTokenizer(
-        QWEN2_5VL, pipeline_config=_pipeline_config(QWEN2_5VL)
-    )
-
-    await _assert_token_id_range(tokenizer, QWEN2_5VL)
 
 
 @pytest.mark.asyncio

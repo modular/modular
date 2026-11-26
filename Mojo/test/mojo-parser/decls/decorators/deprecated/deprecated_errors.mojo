@@ -131,6 +131,24 @@ struct StructConformingToNormalTrait(NormalTrait, Movable where False):
     pass
 
 
+trait TraitWithMethod:
+    def required_method(self):
+        ...
+
+
+# Satisfying a trait requirement with a deprecated method is not a use of it.
+struct ConformsWithDeprecatedMethod(TraitWithMethod, Movable where False):
+    @deprecated("deprecated witness")
+    # expected-note @below {{'required_method' declared here}}
+    def required_method(self):
+        pass
+
+
+def test_deprecated_witness_call(x: ConformsWithDeprecatedMethod):
+    # expected-warning @below {{deprecated witness}}
+    x.required_method()
+
+
 # ===----------------------------------------------------------------------=== #
 # Test: Deprecated alias usage
 # ===----------------------------------------------------------------------=== #
@@ -265,6 +283,16 @@ struct InstanceMethodRefTopLevel(Movable where False):
     @deprecated(use=some_top_level_func)
     def instance_method(self):
         pass
+
+
+comptime some_top_level_value = 1
+
+
+struct ComptimeMemberRefTopLevel(Movable where False):
+    # comptime members, like methods, name a sibling member as the replacement.
+    # expected-error @below {{cannot reference unknown value 'some_top_level_value'}}
+    @deprecated(use=some_top_level_value)
+    comptime member = 1
 
 
 # ===----------------------------------------------------------------------=== #

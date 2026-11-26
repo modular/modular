@@ -89,7 +89,7 @@ comptime _nvptx_foreign_payload_target = CompilationTarget[
 
 
 struct _GPUHooks[target: CompilationTarget](PluginHooks):
-    comptime device_kind = TargetDeviceKind.gpu
+    comptime device_kind = TargetDeviceKind.gpu()
 
 
 struct _NPUHooks[target: CompilationTarget](PluginHooks):

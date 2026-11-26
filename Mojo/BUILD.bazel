@@ -1306,7 +1306,8 @@ modular_cc_library(
     deps = [
         ":KGENDialect",
         ":LITDialect",
-        ":ToolCommon.headers",
+        # `isGPUTriple`, for plugin GPU targets in `sanitizesSymbolNames`.
+        ":ToolCommon",
         "//AsyncRT:CompilerSupport",
         "//Cache",
         "@llvm-project//mlir:IndexDialect",

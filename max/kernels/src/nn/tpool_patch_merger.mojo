@@ -70,8 +70,8 @@ def tpool_patch_merger_kernel[
 
     Grid mapping:
         block_idx.z  = video index
-        block_idx.y  = patch index within the video (max_pat upper bound)
-        block_idx.x  = tile index along D
+        block_idx.x  = patch index within the video (max_pat upper bound)
+        block_idx.y  = tile index along D
         thread_idx.x = lane within D tile
 
     Parameters:
@@ -116,8 +116,8 @@ def tpool_patch_merger_kernel[
     comptime assert grid_thws.element_size == 1
 
     var vid = block_idx.z
-    var pat_idx = block_idx.y
-    var d_tile = block_idx.x
+    var pat_idx = block_idx.x
+    var d_tile = block_idx.y
     var tid = thread_idx.x
 
     if vid >= _n_vids:
@@ -224,6 +224,7 @@ def tpool_patch_merger[
     """
     var D = Int(x.dim[1]())
     var n_vids = Int(bounds.dim[0]())
+    # Spatial rows can exceed the smaller launch limit of grid.y.
     var max_pat = max_h // kH * max_w // kW * kH * kW
 
     comptime simd_width = simd_width_of[
@@ -233,7 +234,7 @@ def tpool_patch_merger[
     comptime num_threads = 256
 
     if D % simd_width == 0:
-        var grid_x = ceildiv(D, num_threads * simd_width)
+        var grid_y = ceildiv(D, num_threads * simd_width)
         comptime kernel = tpool_patch_merger_kernel[
             dtype,
             x.LayoutType,
@@ -256,12 +257,12 @@ def tpool_patch_merger[
             Int32(kW),
             Int32(D),
             Int32(n_vids),
-            grid_dim=(grid_x, max_pat, n_vids),
+            grid_dim=(max_pat, grid_y, n_vids),
             block_dim=(num_threads, 1, 1),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )
     else:
-        var grid_x = ceildiv(D, num_threads * 1)
+        var grid_y = ceildiv(D, num_threads * 1)
         comptime kernel = tpool_patch_merger_kernel[
             dtype,
             x.LayoutType,
@@ -284,7 +285,7 @@ def tpool_patch_merger[
             Int32(kW),
             Int32(D),
             Int32(n_vids),
-            grid_dim=(grid_x, max_pat, n_vids),
+            grid_dim=(max_pat, grid_y, n_vids),
             block_dim=(num_threads, 1, 1),
             attributes=pdl_launch_attributes(PDLLevel.ON),
         )

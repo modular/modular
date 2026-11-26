@@ -24,6 +24,7 @@
 //     OverloadSetUValue         <- an unresolved overload set
 //     InitializerUValue         <- constructor operands {a=1, b="foo"}
 //     InferredBaseAttrRefUValue <- inferred-base attr ref `.f64`
+//     LambdaUValue              <- a `lambda` with an unresolved closure type
 //   CValue        <- Concrete value: something with a known type.
 //     LValue         <- mutable reference to storage
 //       MLValue        <- value is in memory with a mutable reference
@@ -64,6 +65,7 @@
 
 namespace M::KGEN::LIT {
 class BaseDLValue;
+struct ParsedArgument;
 class ExprNode;
 class IREmitter;
 class OverloadSet;
@@ -72,6 +74,8 @@ class ExprDest;
 class StructFieldOp;
 class CallOperands;
 class AnyValue;
+class FnTypeGeneratorType;
+enum class CaptureConvention : uint8_t;
 
 //===----------------------------------------------------------------------===//
 // Helpers
@@ -434,6 +438,55 @@ private:
 };
 raw_ostream &operator<<(raw_ostream &os, OverloadSetUValue value);
 
+/// Instances of LambdaUValue represent a `lambda` expression whose closure
+/// type is not resolved yet.
+class LambdaUValue {
+public:
+  using Capture = std::tuple<StringRef, CaptureConvention, SMLoc>;
+
+  LambdaUValue(); // Used by dyn_cast.
+  LambdaUValue(const LambdaUValue &existing);
+  LambdaUValue &operator=(const LambdaUValue &existing);
+  ~LambdaUValue();
+
+  bool isNull() const { return !storage; }
+  bool operator!() const { return isNull(); }
+  explicit operator bool() const { return !isNull(); }
+
+  /// `partialSignature` refers to its own parameters and implicit origins by
+  /// index. `params` and `args` are the ones the user wrote, in order; the
+  /// signature can also have parameters and arguments that type checking
+  /// synthesized.
+  static LambdaUValue
+  create(SMLoc loc, FnTypeGeneratorType partialSignature,
+         ArrayRef<ParsedArgument> params, ArrayRef<ParsedArgument> args,
+         const ExprNode *bodyExpr, ArrayRef<Capture> captures,
+         bool hasExplicitCaptureList,
+         std::optional<CaptureConvention> captureAllByConvention);
+
+  SMLoc getLoc() const;
+  FnTypeGeneratorType getPartialSignature() const;
+  ArrayRef<ParsedArgument> getParams() const;
+  ArrayRef<ParsedArgument> getArgs() const;
+  const ExprNode *getBodyExpr() const;
+  ArrayRef<Capture> getCaptures() const;
+  bool hasExplicitCaptureList() const;
+  std::optional<CaptureConvention> getCaptureAllByConvention() const;
+
+  CValue emitAsCValue(IREmitter &emitter, ExprDest &dest);
+
+  bool mightBeThin() const {
+    return !getCaptureAllByConvention().has_value() && getCaptures().empty();
+  }
+
+private:
+  struct LambdaWrapper;
+  LambdaUValue(RCRef<LambdaWrapper> storage);
+
+  RCRef<LambdaWrapper> storage;
+};
+raw_ostream &operator<<(raw_ostream &os, LambdaUValue value);
+
 /// Instances of InitializerUValue represent the operand list for a constructor
 /// call before knowing what the type being constructed is.  It is similar to
 /// the {1, 2, 3} syntax in C++: both are resolved when applied to a type, e.g.
@@ -515,8 +568,8 @@ struct VariantValueStorageBase {
   using Storage =
       SmartVariant<NullRepresentation, PValue, SRValue, MRValue,
                    OverloadSetUValue, InitializerUValue,
-                   InferredBaseAttrRefUValue, SBValue, MBPValue, PMBValue,
-                   PMRValue, MBValue, DLValue, MLValue, RLValue>;
+                   InferredBaseAttrRefUValue, LambdaUValue, SBValue, MBPValue,
+                   PMBValue, PMRValue, MBValue, DLValue, MLValue, RLValue>;
 
   VariantValueStorageBase()
       : storage(NullRepresentation()) {} // All are default constructible.
@@ -648,6 +701,11 @@ struct VariantUValue {
       getStorageR() = std::move(value);
   }
 
+  VariantUValue(LambdaUValue value) {
+    if (value)
+      getStorageR() = std::move(value);
+  }
+
   OverloadSetUValue getIfOverloadSet() const {
     return dyn_cast<OverloadSetUValue>(getStorageR());
   }
@@ -662,6 +720,10 @@ struct VariantUValue {
     return dyn_cast<InferredBaseAttrRefUValue>(getStorageR());
   }
 
+  LambdaUValue getIfLambda() const {
+    return dyn_cast<LambdaUValue>(getStorageR());
+  }
+
 private:
   // These are named getStorageR instead of getStorage to easy
   // multiple-inheritance name lookup issues.
@@ -674,7 +736,8 @@ private:
   }
 };
 
-/// UValue = OverloadSetUValue|InitializerUValue|InferredBaseAttrRefUValue
+/// UValue = OverloadSetUValue|InitializerUValue|InferredBaseAttrRefUValue|
+///          LambdaUValue
 class UValue : public VariantValueStorage<UValue>,
                public VariantUValue<UValue> {
 public:
@@ -684,8 +747,8 @@ public:
   static UValue getFrom(Storage storage) {
     UValue result;
     // Initialize conditionally based on what is in Storage.
-    if (isa<OverloadSetUValue, InitializerUValue, InferredBaseAttrRefUValue>(
-            storage))
+    if (isa<OverloadSetUValue, InitializerUValue, InferredBaseAttrRefUValue,
+            LambdaUValue>(storage))
       result.storage = std::move(storage);
     return result;
   }

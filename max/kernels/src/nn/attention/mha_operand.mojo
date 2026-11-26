@@ -666,10 +666,6 @@ struct SparseRowsMHAOperand[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "SparseRowsMHAOperand"
-
     def __init__(
         out self,
         base: Self.base_t,
@@ -1089,10 +1085,6 @@ struct KVCacheMHAOperand[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "KVCacheMHAOperand"
 
     def __init__(out self, cache: Self.cache_t):
         self.cache = cache
@@ -1542,10 +1534,6 @@ struct KVCacheScalesMHAOperand[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "KVCacheScalesMHAOperand"
-
     def __init__(out self, cache: Self.cache_t):
         self.cache = cache
 
@@ -1921,10 +1909,6 @@ struct TileTensorMHAOperand[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "TileTensorMHAOperand"
 
     def __init__(
         out self,
@@ -2371,10 +2355,6 @@ struct RaggedMHAOperand[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "RaggedMHAOperand"
 
     def __init__(
         # The dangling scale tile this constructor builds is only expressible

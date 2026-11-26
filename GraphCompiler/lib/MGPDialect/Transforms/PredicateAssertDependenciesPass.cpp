@@ -23,7 +23,7 @@
 #include "mlir/Pass/Pass.h"
 #include "llvm/ADT/SetOperations.h"
 
-#define EXCLUDED_TYPES MGP::ContextType, MEF::MEFChainTypeInterface
+#define EXCLUDED_TYPES MGP::ContextType, MLRT::MEF::MEFChainTypeInterface
 
 using namespace mlir;
 

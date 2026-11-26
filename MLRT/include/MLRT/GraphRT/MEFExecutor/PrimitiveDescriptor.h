@@ -22,7 +22,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallVector.h"
 
-namespace M {
+namespace M::MLRT {
 class MEFInvokable;
 template <typename T>
 class MEFAttr;
@@ -309,6 +309,6 @@ public:
   void addInvokable(MEFInvokable *inv) { invokables.push_back(inv); }
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEFEXECUTOR_PRIMITIVEDESCRIPTOR_H

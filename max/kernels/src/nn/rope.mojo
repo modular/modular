@@ -225,6 +225,7 @@ def rope_ragged[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def rope_fn[width: Int, alignment: Int = 1](idx_arg: Coord) {var}:
         comptime assert idx_arg.rank == 3, "Invalid rank passed to rope kernel"
         comptime assert freqs_cis.flat_rank >= 2

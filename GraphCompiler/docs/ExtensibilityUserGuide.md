@@ -189,18 +189,19 @@ traits rather than `ManagedTensorSlice` or its aliases:
 
 These arguments carry no IO-role, fusion, access, or stable marker. For
 example, `convert_e4m3fn_to_e4m3fnuz_shape` in
-`max/kernels/src/graph_compiler/builtin_kernels/conv.mojo` reads only the input
-shape:
+`max/kernels/src/graph_compiler/builtin_kernels/conv/__init__.mojo` reads only
+the input shape:
 
 ```mojo
 @extensibility.register_shape_function("quantization.convert_e4m3fn_to_e4m3fnuz")
 def convert_e4m3fn_to_e4m3fnuz_shape(
     input: Some[Tensor],
-) -> IndexList[type_of(input).rank]:
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape().tuple())
-    )
+) -> type_of(input.shape()):
+    return input.shape()
 ```
+
+A shape function returns its output shape as a `Coord`, as here, or as an
+`IndexList`. Returning the argument's own `Coord` needs no conversion.
 
 ### **Parameters Supported**
 

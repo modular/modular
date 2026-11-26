@@ -162,6 +162,40 @@ def _inflated_chat_session_count(
     return base_session_count + args.warmup_oversample_factor * max_warmup
 
 
+def check_video_schema_inputs(
+    benchmark_task: str,
+    benchmark_dataset: BenchmarkDataset,
+    video_request_schema: str | None,
+    keyframes: str | None,
+) -> None:
+    """Rejects a registered video schema run that its task cannot describe.
+
+    A registered schema picks its own task from the conditioning frames, so a
+    run without them would record text-to-video under ``image-to-video``. Only
+    the synthetic-pixel dataset passes the schema fields through to the request.
+
+    Raises:
+        ValueError: If the dataset or the keyframes do not fit the task.
+    """
+    if video_request_schema in (None, "default"):
+        return
+    if not isinstance(benchmark_dataset, SyntheticPixelBenchmarkDataset):
+        raise ValueError(
+            f"--video-request-schema {video_request_schema} supports only"
+            " --dataset-name synthetic-pixel"
+        )
+    if benchmark_task == "image-to-video" and keyframes is None:
+        raise ValueError(
+            f"--video-request-schema {video_request_schema} needs --keyframes"
+            " for --benchmark-task image-to-video"
+        )
+    if benchmark_task == "text-to-video" and keyframes is not None:
+        raise ValueError(
+            f"--keyframes conditions a {video_request_schema} request on"
+            " images, so it needs --benchmark-task image-to-video"
+        )
+
+
 def sample_requests(
     *,
     args: ServingBenchmarkConfig,
@@ -597,7 +631,10 @@ def sample_requests(
                     "text-to-video currently supports only "
                     "--dataset-name synthetic-pixel"
                 )
-            if args.num_frames is None:
+            if (
+                args.num_frames is None
+                and args.video_request_schema == "default"
+            ):
                 raise ValueError(
                     "--num-frames is required for --benchmark-task text-to-video"
                 )
@@ -610,7 +647,10 @@ def sample_requests(
                     "image-to-video currently supports only "
                     "--dataset-name local-image or synthetic-pixel"
                 )
-            if args.num_frames is None:
+            if (
+                args.num_frames is None
+                and args.video_request_schema == "default"
+            ):
                 raise ValueError(
                     "--num-frames is required for --benchmark-task image-to-video"
                 )
@@ -621,6 +661,13 @@ def sample_requests(
             raise ValueError(
                 "image-to-image currently supports only "
                 "--dataset-name local-image or synthetic-pixel"
+            )
+        if benchmark_task in ("text-to-video", "image-to-video"):
+            check_video_schema_inputs(
+                benchmark_task,
+                benchmark_dataset,
+                args.video_request_schema,
+                args.keyframes,
             )
         logger.info("sampling requests")
         return benchmark_dataset.sample_requests(
@@ -634,6 +681,11 @@ def sample_requests(
             image_negative_prompt=args.image_negative_prompt,
             image_seed=args.image_seed,
             num_frames=args.num_frames,
+            video_request_schema=args.video_request_schema,
+            video_duration_seconds=args.video_duration_seconds,
+            video_aspect_ratio=args.video_aspect_ratio,
+            video_short_edge=args.video_short_edge,
+            keyframes=args.keyframes,
         )
     else:
         raise ValueError(f"Unsupported benchmark task: {benchmark_task}")

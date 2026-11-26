@@ -21,6 +21,7 @@ from layout.coord import ComptimeInt, Coord
 from layout.atoms.pointer import PointerLoad, PointerStore
 from layout.atoms.tmem import TMemLoad, TMemStore
 from layout.bit_layout import is_bit_linear, placement
+from layout.building_blocks import wait_issues
 from layout.owned_tensor import OwnedGPUTensor
 from layout.bit_layout import BitLayout
 from layout.two_level_layout import (
@@ -354,27 +355,27 @@ def tmem_tileop_kernel(addr: UInt32):
     # The test binary also elaborates kernels for the host, where tcgen05
     # is unavailable.
     comptime if _is_sm_100x_or_newer():
-        var tile = TileTensor[
-            .float32, Accum, MutUntrackedOrigin, Engine=TMemEngine
-        ](TMemStorage[.float32, MutUntrackedOrigin](addr), AccumLayout)
+        var tile = TileTensor[Engine=TMemEngine](
+            TMemStorage[.float32, MutUntrackedOrigin](addr), AccumLayout
+        )
         var regs = OwnedGPUTensor[.float32, .LOCAL](row_major[1, 32]())
         # The TileOps only issue; this kernel, standing in for a building
         # block, waits before it uses the registers.
         tiled_load[threads=128](
             TMemLoad[.float32, 16](), TileTensor(regs), tile, Int(thread_idx.x)
         )
-        TMemLoad[.float32, 16].Completion.wait()
+        wait_issues[TMemLoad[.float32, 16].Completion]()
         tiled_store[threads=128](
             TMemStore[.float32, 16](), tile, TileTensor(regs), Int(thread_idx.x)
         )
-        TMemStore[.float32, 16].Completion.wait()
+        wait_issues[TMemStore[.float32, 16].Completion]()
 
 
 def tmem_tileop_issue_kernel(addr: UInt32):
     comptime if _is_sm_100x_or_newer():
-        var tile = TileTensor[
-            .float32, Accum, MutUntrackedOrigin, Engine=TMemEngine
-        ](TMemStorage[.float32, MutUntrackedOrigin](addr), AccumLayout)
+        var tile = TileTensor[Engine=TMemEngine](
+            TMemStorage[.float32, MutUntrackedOrigin](addr), AccumLayout
+        )
         var regs = OwnedGPUTensor[.float32, .LOCAL](row_major[1, 32]())
         tiled_load[threads=128](
             TMemLoad[.float32, 16](), TileTensor(regs), tile, Int(thread_idx.x)

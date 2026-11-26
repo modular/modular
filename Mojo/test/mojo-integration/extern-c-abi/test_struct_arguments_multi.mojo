@@ -156,6 +156,39 @@ def test_hfa3d_two_scalars_return():
 
 
 # ============================================================================
+# Sub-eightbyte aggregate on the stack
+# ============================================================================
+@fieldwise_init
+struct MultiSubEightbyte(TrivialRegisterPassable):
+    var a: Int8
+    var b: Int8
+
+
+def test_all_gprs_and_small_struct_then_int():
+    """All GPRs are used, so the 2-byte struct goes on the stack. It must take
+    a whole 8-byte slot, or C reads the next argument from the wrong place."""
+    var s = MultiSubEightbyte(2, 3)
+    var result = external_call[
+        "c_func_all_gprs_and_small_struct_then_int", Int64
+    ](
+        Int64(1),
+        Int64(1),
+        Int64(1),
+        Int64(1),
+        Int64(1),
+        Int64(1),
+        Int64(1),
+        Int64(1),
+        s,
+        Int32(4),
+    )
+    print("all_gprs_and_small_struct_then_int:", result)
+
+
+# CHECK: all_gprs_and_small_struct_then_int: 43211111111
+
+
+# ============================================================================
 # Main - run all tests
 # ============================================================================
 def main():
@@ -165,3 +198,4 @@ def main():
     test_hfa4f_then_scalar()
     test_hfa3d_argument()
     test_hfa3d_two_scalars_return()
+    test_all_gprs_and_small_struct_then_int()

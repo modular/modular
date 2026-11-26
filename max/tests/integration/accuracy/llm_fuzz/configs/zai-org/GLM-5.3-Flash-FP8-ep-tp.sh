@@ -26,7 +26,6 @@ extra_pipelines_args=(
 
 model_profile=glm-5.1
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # shellcheck source=/dev/null

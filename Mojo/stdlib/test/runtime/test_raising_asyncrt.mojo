@@ -232,6 +232,32 @@ def test_raising_task_await_chained() raises:
     assert_equal(task^.wait(), 15)
 
 
+# ===-----------------------------------------------------------------------===#
+# Phase 4: Raising coroutines awaiting other raising coroutines.
+# ===-----------------------------------------------------------------------===#
+
+
+__async def raising_inner() raises -> Int:
+    """A raising coroutine with a branch-free body."""
+    raise Error("inner failure")
+
+
+def test_raising_coroutine_await_raising_coroutine() raises:
+    """Regression test for MOCO-5033."""
+
+    __async def outer() raises -> Int:
+        return __await raising_inner()
+
+    var task = create_raising_task(outer())
+    var caught = False
+    try:
+        _ = task^.wait()
+    except e:
+        caught = True
+        assert_equal(String(e), "inner failure")
+    assert_true(caught, "expected error was not raised")
+
+
 def main() raises:
     # Phase 1: wrapper pattern
     test_raising_async_success_via_wrapper()
@@ -251,5 +277,8 @@ def main() raises:
     test_raising_task_await_error()
     test_raising_task_await_conditional()
     test_raising_task_await_chained()
+
+    # Phase 4: raising coroutine awaiting a raising coroutine
+    test_raising_coroutine_await_raising_coroutine()
 
     print("All raising asyncrt tests passed!")

@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """A concat fused into a reduction reads its inputs in place.
 
-The concat's select sits in the fold. Over the innermost dim, the kernel's
-width divides every input's extent, and every vector starts on a multiple of
-it, so no vector reads across two inputs. Distinct input values catch one
-that does.
+The concat's select sits in the fold, or in the map phase after it. Over the
+innermost dim, the kernel's width divides every input's extent, and every
+vector starts on a multiple of it, so no vector reads across two inputs.
+Distinct input values catch one that does.
 """
 
 from __future__ import annotations
@@ -121,3 +121,44 @@ def test_long_row_of_concat(
     cooperative tier: the split-axis tier needs rows of 262,144 or more, so
     its stripes are tested directly in test_elementwise_cpu_chunk_alignment."""
     _check(session, device, ([2, 16386], [2, 16384]), 1, 1, "sum")
+
+
+@pytest.mark.parametrize("device", _DEVICES)
+@pytest.mark.parametrize(
+    "shape",
+    # Width limits 8 (the half), 1 (an odd half) and 4 on a 3-D row.
+    [[4, 16], [3, 10], [2, 3, 8]],
+    ids=["even_half", "odd_half", "3d"],
+)
+def test_rotate_half_after_reduction(
+    session: InferenceSession, device: DeviceRef, shape: list[int]
+) -> None:
+    """A concat over the reduced axis after the reduction joins its map
+    phase, where each element reads its partner in the other half of the
+    row: rotate-half, as in RoPE."""
+    half = shape[-1] // 2
+    with Graph(
+        "rotate_half_after_reduction",
+        input_types=[TensorType(DType.float32, shape, device=device)] * 3,
+    ) as graph:
+        x, cos, sin = (v.tensor for v in graph.inputs)
+        y = x - ops.max(x, axis=-1)
+        y1, y2 = ops.split(y, [half, half], axis=-1)
+        graph.output(y * cos + ops.concat([-y2, y1], axis=-1) * sin)
+
+    rng = np.random.default_rng(0)
+    x_np, cos_np, sin_np = (
+        rng.standard_normal(shape).astype(np.float32) for _ in range(3)
+    )
+    (out,) = run_and_verify_fusion(
+        session,
+        graph,
+        x_np,
+        cos_np,
+        sin_np,
+        fused=r"mo\.reduce\.max.*mo\.concat",
+    )
+    y_np = x_np - x_np.max(axis=-1, keepdims=True)
+    rotated = np.concatenate([-y_np[..., half:], y_np[..., :half]], axis=-1)
+    expected = y_np * cos_np + rotated * sin_np
+    np.testing.assert_allclose(out, expected, rtol=1e-5, atol=1e-5)

@@ -366,8 +366,10 @@ comptime _PDL_PRODUCER_DELAY_NS = 1_000_000
 comptime _PDL_STALE_A = 4.0
 
 
-def _pdl_fill_a_kernel(
-    dst: MutPointer[Scalar[.bfloat16], MutAnyOrigin],
+def _pdl_fill_a_kernel[
+    dst_origin: MutOrigin
+](
+    dst: MutPointer[Scalar[.bfloat16], dst_origin],
     n: Int32,
     value: Scalar[.bfloat16],
 ):
@@ -379,9 +381,11 @@ def _pdl_fill_a_kernel(
         i += stride
 
 
-def _pdl_stage_a_kernel(
-    src: ImmPointer[Scalar[.bfloat16], ImmutAnyOrigin],
-    dst: MutPointer[Scalar[.bfloat16], MutAnyOrigin],
+def _pdl_stage_a_kernel[
+    src_origin: ImmOrigin, dst_origin: MutOrigin
+](
+    src: ImmPointer[Scalar[.bfloat16], src_origin],
+    dst: MutPointer[Scalar[.bfloat16], dst_origin],
     n: Int32,
     delay_ns: Int32,
 ):
@@ -407,9 +411,11 @@ def _pdl_stage_a_kernel(
         i += stride
 
 
-def _pdl_consume_kernel(
-    src: ImmPointer[Scalar[.bfloat16], ImmutAnyOrigin],
-    dst: MutPointer[Scalar[.bfloat16], MutAnyOrigin],
+def _pdl_consume_kernel[
+    src_origin: ImmOrigin, dst_origin: MutOrigin
+](
+    src: ImmPointer[Scalar[.bfloat16], src_origin],
+    dst: MutPointer[Scalar[.bfloat16], dst_origin],
     n: Int32,
 ):
     """Waits for the producing grid, then copies its output to `dst`."""
@@ -505,8 +511,8 @@ def test_quantized[
         # The activations hold a stale sentinel until the producer's delayed
         # write lands, so a GEMM that reads them before its own wait computes
         # something the reference comparison cannot match.
-        ctx.enqueue_function[_pdl_fill_a_kernel](
-            a_device.unsafe_ptr(),
+        ctx.enqueue_function[_pdl_fill_a_kernel[origin_of(a_device)]](
+            a_device,
             Int32(a_size),
             Scalar[a_type](_PDL_STALE_A),
             grid_dim=ceildiv(a_size, 256),
@@ -515,9 +521,13 @@ def test_quantized[
         # A producer grid writes the activations immediately before the GEMM,
         # with no host synchronisation between them: the GEMM's own wait is
         # what keeps it from reading the sentinel.
-        ctx.enqueue_function[_pdl_stage_a_kernel](
-            a_src_device.unsafe_ptr(),
-            a_device.unsafe_ptr(),
+        ctx.enqueue_function[
+            _pdl_stage_a_kernel[
+                ImmOrigin(origin_of(a_src_device)), origin_of(a_device)
+            ]
+        ](
+            a_src_device,
+            a_device,
             Int32(a_size),
             Int32(_PDL_PRODUCER_DELAY_NS),
             grid_dim=ceildiv(a_size, 256),
@@ -631,9 +641,13 @@ def test_quantized[
     comptime if join_pdl_chain:
         # Dependent consumer: it must not read the GEMM's output until the
         # producing grid has finished.
-        ctx.enqueue_function[_pdl_consume_kernel](
-            c_device.unsafe_ptr(),
-            c_stage_device.unsafe_ptr(),
+        ctx.enqueue_function[
+            _pdl_consume_kernel[
+                ImmOrigin(origin_of(c_device)), origin_of(c_stage_device)
+            ]
+        ](
+            c_device,
+            c_stage_device,
             Int32(c_size),
             grid_dim=ceildiv(c_size, 256),
             block_dim=256,

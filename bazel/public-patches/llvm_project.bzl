@@ -42,11 +42,23 @@ BACKENDS = [
 ]
 
 def _llvm_project_impl(module_ctx):
+    # Check the raw names before they collapse into dictionaries: a repeated or
+    # overlapping name is a configuration mistake, not something to merge.
     targets = {t: None for t in BACKENDS}
+    optional_targets = {}
     for mod in module_ctx.modules:
         for tag in mod.tags.configure:
             for t in tag.extra_targets:
+                if t in targets:
+                    fail("LLVM target {} is listed more than once in extra_targets or is a default backend".format(t))
                 targets[t] = None
+            for t in tag.optional_targets:
+                if t in optional_targets:
+                    fail("LLVM target {} is listed more than once in optional_targets".format(t))
+                optional_targets[t] = None
+    for t in optional_targets:
+        if t in targets:
+            fail("LLVM target {} is listed both as builtin and in optional_targets".format(t))
 
     # llvm-libc's build rules reference @linux_uapi and @pyyaml. Upstream
     # supplies both from its own llvm_repos_extension, which we do not use, so
@@ -67,6 +79,7 @@ def _llvm_project_impl(module_ctx):
     _llvm_configure(
         name = "llvm-project",
         targets = sorted(targets.keys()),
+        optional_targets = sorted(optional_targets.keys()),
     )
 
     return module_ctx.extension_metadata(reproducible = True)
@@ -75,6 +88,12 @@ _configure = tag_class(
     attrs = {
         "extra_targets": attr.string_list(
             doc = "Additional LLVM backends to configure alongside default backends.",
+        ),
+        "optional_targets": attr.string_list(
+            doc = "LLVM backends whose libraries exist but are linked only by " +
+                  "targets that depend on them explicitly. They stay out of " +
+                  "the default aggregates, the LLVM shared library, " +
+                  "Targets.def and the LLVM_HAS_<T>_TARGET defines.",
         ),
     },
 )

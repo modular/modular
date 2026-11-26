@@ -52,6 +52,7 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/EndianStream.h"
+#include "llvm/Support/LibraryOptionsContext.h"
 #include "llvm/Support/MemoryBuffer.h"
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/Target/TargetMachine.h"
@@ -181,6 +182,24 @@ static void buildPostElaborationPipeline(mlir::PassManager &pm,
                                          const CompilationOptions &options) {
   ErrorOr<const TargetBackend *> backendOr =
       TargetBackendRegistry::get().lookup(target.getTriple());
+
+  // Every target needs its `pop.var_alloc`s lowered, and before anything could
+  // promote one to registers, so this runs ahead of a target's own pipeline.
+  LowerVarAllocsOptions varAllocOptions;
+  if (!backendOr.isError()) {
+    if (std::optional<unsigned> shared =
+            (*backendOr)->sharedMemoryAddressSpace())
+      varAllocOptions.sharedAddressSpace = *shared;
+  }
+  ErrorOr<const TargetTraits *> traitsOr =
+      TargetTraitsRegistry::get().lookup(target.getTriple());
+  if (!traitsOr.isError()) {
+    if (std::optional<unsigned> stack =
+            (*traitsOr)->requiredStackAllocationAddressSpace())
+      varAllocOptions.stackAddressSpace = *stack;
+  }
+  pm.addPass(createLowerVarAllocs(varAllocOptions));
+
   if (!backendOr.isError() &&
       (*backendOr)->buildPostElaborationPipeline(pm, options))
     return;
@@ -256,17 +275,16 @@ static ErrorOr<StringAttr> compileStandaloneKernel(
   if (!targetDataLayout.empty())
     compilationOptions.targetDataLayout = targetDataLayout;
 
-  // Pull `target-abi` out of the emission options and apply it directly to
-  // `compilationOptions` before the target machine is created: `createTarget-
-  // Machine` reads `targetABI` as a struct field, not by re-querying LLVM's
-  // registered `-target-abi` cl option, so letting it flow through the
-  // generic cl-parsed list below would only mutate global state unseen here.
-  compilationOptions.targetABI.clear();
-  applyTargetABIEmissionOptions(emissionOptions, compilationOptions.targetABI);
+  // The target machine and the pass pipeline read the intercepted options as
+  // `compilationOptions` fields, so set the fields before creating them.
+  if (ErrorOrSuccess applied =
+          applyInterceptedEmissionOptions(emissionOptions, compilationOptions);
+      applied.isError())
+    return applied.takeError();
   SmallVector<StringRef> clEmissionOptions;
   llvm::copy_if(
       emissionOptions, std::back_inserter(clEmissionOptions),
-      [](StringRef item) { return !isTargetABIEmissionOption(item); });
+      [](StringRef item) { return !isInterceptedEmissionOption(item); });
 
   // Initialize the object compiler.
   PassManagerConfigOptions pmOptions;
@@ -571,13 +589,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       if (!targetDataLayout.empty())
         compilationOptions.targetDataLayout = targetDataLayout;
       // Every offload compile below -- bundled or per-kernel -- needs the same
-      // fp-mode, target-abi and link options derived from this group.
-      if (std::optional<std::string> badItem = applyOffloadEmissionOptions(
+      // options derived from this group.
+      if (ErrorOrSuccess applied = applyOffloadEmissionOptions(
               offloadInfo.emissionOptions, offloadInfo.emissionLinkOptions,
-              hostFpMode, compilationOptions))
-        return Error(llvm::formatv("invalid fp-mode emission option '{0}', "
-                                   "expected 'contract=fast' or 'contract=off'",
-                                   *badItem));
+              hostFpMode, compilationOptions);
+          applied.isError())
+        return applied.takeError();
       offloadInfo.emissionOptions = compilationOptions.emissionOptions;
 
       // A backend that owns offload lowering emits one artifact per entry
@@ -626,12 +643,12 @@ static ElaboratorCompileOffloadRetType compileOffloads(
         // `compileStandaloneKernel` parses these into LLVM's registered cl
         // options per kernel and does not reset them, so restore this loop's
         // per-target invariant here instead of leaking one target's
-        // configuration into the next. `target-abi` is excluded because that
-        // path deliberately never parses it as a cl option.
+        // configuration into the next. The intercepted options are excluded
+        // because that path deliberately never parses them as cl options.
         SmallVector<StringRef> clPerKernelOptions;
         llvm::copy_if(
             perKernelOptions, std::back_inserter(clPerKernelOptions),
-            [](StringRef item) { return !isTargetABIEmissionOption(item); });
+            [](StringRef item) { return !isInterceptedEmissionOption(item); });
         if (ErrorOrSuccess resetOr = resetEmissionOptions(clPerKernelOptions);
             resetOr.isError())
           return resetOr.takeError();
@@ -839,10 +856,9 @@ static ElaboratorCompileOffloadRetType compileOffloads(
       StringRef(offloadInfo.emissionOptions)
           .split(emissionOptions, /*Separator=*/",",
                  /*MaxSplit=*/-1, /*KeepEmpty=*/false);
-      // `target-abi` was already applied to `compilationOptions.targetABI`
-      // above; keep it out of the parse/reset lists so it doesn't also mutate
-      // LLVM's shared, registered `-target-abi` cl option as a side effect.
-      llvm::erase_if(emissionOptions, isTargetABIEmissionOption);
+      // `applyOffloadEmissionOptions` already set the intercepted options in
+      // `compilationOptions`.
+      llvm::erase_if(emissionOptions, isInterceptedEmissionOption);
 
       KGEN_DEBUG(0, {
         llvm::dbgs() << "Emit offloads with options: "
@@ -1248,15 +1264,31 @@ setEmissionOptions(llvm::DenseMap<llvm::StringRef, llvm::cl::Option *> &options,
 
   llvm::cl::Option *opt = options.lookup(key);
   if (!opt) {
-    // Only `ParseCommandLineOptions` reaches options LLVM declares in TableGen.
-    // TODO: Reset them once LLVM can reset a single such option.
-    if (reset)
+    // LLVM declares this option in TableGen, so its value lives in
+    // `getEmissionLibraryOptions`, which only `parseCommandLineOptions` sets.
+    llvm::cl::LibraryOptionsContext &libraryOptions =
+        getEmissionLibraryOptions();
+    if (reset) {
+      // Parse the other set options again into an empty context.
+      std::string prefix = ("-" + key + "=").str();
+      SmallVector<std::string> keptArgs;
+      for (const char *arg : libraryOptions.args())
+        if (!StringRef(arg).starts_with(prefix))
+          keptArgs.push_back(arg);
+      SmallVector<const char *> argv = {"mojo"};
+      for (const std::string &arg : keptArgs)
+        argv.push_back(arg.c_str());
+      llvm::cl::LibraryOptionsContext kept;
+      if (!llvm::cl::parseCommandLineOptions(kept, argv, "", &llvm::nulls()))
+        return Error("cannot reset emission option \"" + Twine(key) + "\"");
+      libraryOptions.assign(kept);
       return success();
+    }
     std::string arg = ("-" + key + "=" + normalizedValue).str();
     const char *argv[] = {"mojo", arg.c_str()};
     std::string parseErrors;
     llvm::raw_string_ostream errs(parseErrors);
-    if (llvm::cl::ParseCommandLineOptions(2, argv, "", &errs))
+    if (llvm::cl::parseCommandLineOptions(libraryOptions, argv, "", &errs))
       return success();
     if (StringRef(parseErrors).contains("Unknown command line argument"))
       return Error("emission option \"" + Twine(key) + "\" is not found");

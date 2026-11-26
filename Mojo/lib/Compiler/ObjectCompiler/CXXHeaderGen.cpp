@@ -209,10 +209,6 @@ static LogicalResult checkStructSpellingMatchesABI(FuncOp func, Type t,
   if (!structType)
     return success();
 
-  // A parameter pack is spelled by the ParamListType path, not as a struct.
-  if (structType.getIsParamPack())
-    return success();
-
   std::optional<SmallVector<Type>> elts = structType.getElementTypes();
   if (!elts)
     return success(); // Parametric; getCTypeForType reports it.

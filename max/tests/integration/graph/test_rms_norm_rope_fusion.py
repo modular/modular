@@ -13,12 +13,11 @@
 
 """End-to-end test for the float32-RMSNorm-sandwich + rotate-half RoPE fusion.
 
-This is the JSC-32 query/key preprocess graph: a bfloat16 activation is upcast
-to float32, RMS-normalized, cast back to bfloat16, then run through rotate-half
-RoPE. The graph compiler must fuse this into a single ``rms_norm_rope`` GPU
-kernel (input upcast absorbed by prologue fusion, output produced in bfloat16
-via the kernel's decoupled output dtype). GPU-only: the composite has no CPU
-kernel.
+A query/key preprocess graph: a bfloat16 activation is upcast to float32,
+RMS-normalized, cast back to bfloat16, then run through rotate-half RoPE. The
+graph compiler fuses it into one generated rowwise kernel: the sum of squares,
+then a map phase where each element reads its partner in the other half of the
+row.
 """
 
 from __future__ import annotations
@@ -84,15 +83,12 @@ def test_rms_norm_rope_fusion(session: InferenceSession) -> None:
     dev = DeviceRef.from_device(session.devices[0])
     model = session.load(_build_graph(dev))
 
-    # 1. The graph compiler fused the f32-sandwich RMSNorm + RoPE into the
-    #    composite kernel (rather than several separate elementwise kernels).
-    summaries = model.kernel_summaries
-    combined = " ".join(summaries)
-    assert "rms_norm_rope" in combined, (
-        f"expected a fused rms_norm_rope kernel, got: {summaries}"
-    )
+    # 1. One generated kernel computes the norm and the rotation.
+    rowwise = [s for s in model.kernel_summaries if "Rowwise(" in s]
+    assert len(rowwise) == 1, model.kernel_summaries
+    assert "mo.concat" in rowwise[0], rowwise[0]
 
-    # 2. The fused kernel is numerically equivalent to the unfused reference.
+    # 2. It matches the unfused reference.
     torch.manual_seed(0)
     q = torch.randn(N, NHEADS, HEAD, dtype=torch.bfloat16)
     cos = torch.randn(N, 1, HEAD, dtype=torch.bfloat16)

@@ -32,8 +32,6 @@ from state_space.causal_conv1d import (
     enqueue_causal_conv1d_update_gpu,
 )
 
-from std.utils.coord import coord_to_index_list
-from std.utils.index import IndexList
 from extensibility import Input, Output, Tensor, TileTensorable
 from layout import ImmTileTensor, MutTileTensor
 
@@ -320,7 +318,7 @@ def causal_conv1d_shape(
     input: Some[Tensor],
     weight: Some[Tensor],
     bias: Some[Tensor],
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     """Returns the output shape for the `causal_conv1d` op.
 
     Causal 1D convolution preserves the input shape: output has the same
@@ -342,9 +340,7 @@ def causal_conv1d_shape(
     comptime assert (
         type_of(bias).dtype == type_of(input).dtype
     ), "bias dtype must match input dtype"
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -513,7 +509,7 @@ def causal_conv1d_update_shape(
     conv_state_in: Some[Tensor],
     weight: Some[Tensor],
     bias: Some[Tensor],
-) -> Tuple[IndexList[type_of(input).rank], IndexList[type_of(input).rank]]:
+) -> Tuple[type_of(input.shape()), type_of(conv_state_in.shape())]:
     """Returns the output shapes for the `causal_conv1d_update` op.
 
     The update produces two tensors: the convolution output for the new
@@ -545,11 +541,4 @@ def causal_conv1d_update_shape(
     comptime assert (
         type_of(bias).dtype == type_of(input).dtype
     ), "bias dtype must match input dtype"
-    return (
-        rebind[IndexList[type_of(input).rank]](
-            coord_to_index_list(input.shape())
-        ),
-        rebind[IndexList[type_of(input).rank]](
-            coord_to_index_list(conv_state_in.shape())
-        ),
-    )
+    return (input.shape(), conv_state_in.shape())

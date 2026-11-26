@@ -1,7 +1,9 @@
 // RUN: mo-opt -allow-unregistered-dialect --canonicalize --mgp-lower-primitives %s | FileCheck %s
+// RUN: mo-opt %s --mogg-import-packages --mgp-lower-primitives --mogg-sequence-fusion --mogg-outline-async-routines --mogg-add-try-except-blocks --canonicalize --mogg-emit-mojo --mogg-dump-mojo 2>&1 | FileCheck %s --check-prefix=EMIT
 
 // Test that mgp.buffer.plan operation is properly lowered with emit-mojo enabled.
 // The operation should be wrapped in mogg.routine.async with async pack/unpack.
+// The sharing matrix is emitted as one string of '0'/'1' digits.
 
 // CHECK-LABEL: mgp.model @buffer_plan_basic
 mgp.model @buffer_plan_basic devices [#M.device_ref<"cpu", 0>] init (%weights: !mgp.opaque<"weights_registry">, %cpu: !mgp.device_context<<"cpu", 0>>) {
@@ -20,6 +22,8 @@ mgp.model @buffer_plan_basic devices [#M.device_ref<"cpu", 0>] init (%weights: !
   // CHECK: mogg.async.pack
   // CHECK: mogg.async.pack
   // CHECK: mogg.output
+  //
+  // EMIT-DAG: mgp_buffer_plan[{{.*}}, "000000000", {{.*}}](
   %high_watermark, %offset0, %offset1, %offset2 = mgp.buffer.plan(%size0, %size1, %size2) <
     alignments = #M.dense_array<64, 128, 64> : !M.array<3xui64>,
     canShare = #M.dense_array<0, 0, 0, 0, 0, 0, 0, 0, 0> : !M.array<9xui8>
@@ -51,10 +55,12 @@ mgp.model @buffer_plan_existing_static_with_constant devices [#M.device_ref<"cpu
   // CHECK: mogg.async.pack
   // CHECK: mogg.async.pack
   // CHECK: mogg.output
+  //
+  // EMIT-DAG: mgp_buffer_plan[{{.*}}, "010100000", {{.*}}](
   %c512 = index.constant 512
   %high_watermark, %offset0, %offset1, %offset2 = mgp.buffer.plan(%c512, %dynamic_size) <
     alignments = #M.dense_array<64, 64, 64> : !M.array<3xui64>,
-    canShare = #M.dense_array<0, 0, 0, 0, 0, 0, 0, 0, 0> : !M.array<9xui8>,
+    canShare = #M.dense_array<0, 1, 0, 1, 0, 0, 0, 0, 0> : !M.array<9xui8>,
     staticSizes = #M.dense_array<256> : !M.array<1xsi64>
   > : (index, index) -> (index, index, index, index)
 

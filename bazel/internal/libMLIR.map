@@ -48,6 +48,7 @@
       mlir::irdl::VariadicityAttr::*;
       mlir::LLVM::AsmDialectAttr::*;
       mlir::LLVM::BlockAddressAttr::*;
+      mlir::LLVM::DenormalFPEnvAttr::*;
       mlir::LLVM::DIAnnotationAttr::*;
       mlir::LLVM::DIBasicTypeAttr::*;
       mlir::LLVM::DICompileUnitAttr::*;

@@ -619,6 +619,15 @@ lit.fn @call_using_empty_struct<es: !lit.struct<@EmptyStruct>, alwaysFn: !lit.ge
   hlcf.return
 }
 
+// COM: A non-func generator whose params are all singletons lowers to its
+// COM: body, so binding it leaves nothing to bind.
+// CHECK-LABEL: kgen.generator @bind_singleton_only_type_generator<typeGen: type>()
+lit.fn @bind_singleton_only_type_generator<es: !lit.struct<@EmptyStruct>, typeGen: !lit.generator<<@EmptyStruct>type>>() {
+  // CHECK-NEXT: kgen.param.declare t: type = <typeGen>
+  kgen.param.declare t: type = <bind_params(:!lit.generator<<@EmptyStruct>type> typeGen, :!lit.struct<@EmptyStruct> es)>
+  hlcf.return
+}
+
 // -----
 
 //===----------------------------------------------------------------------===//

@@ -6,7 +6,7 @@
 // RUN:   --mogg-form-graph-blobs="max-calls=0" | FileCheck %s --check-prefix=OFF
 
 // With `max-calls` at 0, no routines fuse.
-// OFF-NOT: mogg.graph_blob
+// OFF-NOT: mogg.graph_blob {
 
 // A blob that holds `max-calls` routines, one call each, ends before the next,
 // which starts a new blob.

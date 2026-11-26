@@ -73,6 +73,7 @@ from max.graph import (
 from max.graph import Module as GraphModule
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.graph_groups import BatchContext
 from max.nn.legacy.graph_groups import DecoderOutputs as GroupedDecoderOutputs
 from max.nn.legacy.layer import Module as GraphApiModule
@@ -741,7 +742,9 @@ class GraphApiDecoderPipelineModel(
                     "parallelism"
                 )
             runtime, self.ep_comm_initializer, ep_init = (
-                initialize_ep_comm_buffers(config, runtime, self._session)
+                initialize_ep_comm_buffers(
+                    config, runtime, self._session, EPCommInitializer
+                )
             )
             self.compiled_modules = {**self.compiled_modules, **ep_init}
         self._runtime = runtime

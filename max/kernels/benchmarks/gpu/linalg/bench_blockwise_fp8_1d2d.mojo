@@ -195,6 +195,7 @@ def bench_blockwise_fp8_1d2d[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_legacy(
         mut bencher: Bencher,
     ) {
@@ -234,6 +235,7 @@ def bench_blockwise_fp8_1d2d[
 
     # ===== Benchmark Structured Kernel =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_structured(
         mut bencher: Bencher,
     ) {

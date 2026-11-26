@@ -697,9 +697,8 @@ struct PythonTypeBuilder(Copyable):
         # correctness. This check here ensures that the user is not accidentally
         # creating multiple `PyTypeObject` instances that bind the same Mojo
         # type.
-        var type_id = self._type_id
-        if type_id:
-            _register_py_type_object(type_id[], type_obj)
+        if case .Some(type_id) = self._type_id:
+            _register_py_type_object(type_id, type_obj)
 
         Python.add_object(module, self.type_name, type_obj)
         self.methods.clear()
@@ -1515,8 +1514,8 @@ def _py_function_fastcall_wrapper[
         # CPython's vectorcall protocol (PEP 590) guarantees `args` is
         # non-null for every METH_FASTCALL invocation, including the
         # `nargs == 0` case (CPython hands the callee a pointer into a
-        # cached empty tuple). `_dispatch_fast` therefore accepts a plain
-        # `Pointer` rather than `Optional[Pointer]`.
+        # cached empty tuple). `_dispatch_python_object_function` therefore
+        # accepts a plain `Pointer` rather than `Optional[Pointer]`.
         return _dispatch_python_object_function[func](
             args, Int(nargs)
         ).steal_data()
@@ -1757,9 +1756,8 @@ def check_arguments_arity(
                indicating whether too few or too many arguments were provided.
     """
     # This overload (and the `(arity, arg_count)` overload below) exists
-    # because the generic dispatch templates in `_python_func.mojo`
-    # (`_dispatch_kwargs`, `_dispatch_fast`) don't have access to the
-    # registered function name. The wrappers that invoke them
+    # because the generic `_dispatch_python_object_*` templates don't have
+    # access to the registered function name. The wrappers that invoke them
     # (`_py_kwargs_function_wrapper`, `_py_function_fastcall_wrapper`) decay to
     # `thin -> ...` C function pointers for CPython's `PyMethodDef`
     # table, which means they cannot capture any runtime state - so a

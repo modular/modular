@@ -270,15 +270,15 @@ struct DeviceFunction[
 
         Args:
             ctx: The device context to compile for.
-            func_attribute: An attribute to use when compiling the function. The
-                HAL backend accepts only `MAX_DYNAMIC_SHARED_SIZE_BYTES`, and it
-                has no effect.
+            func_attribute: An attribute to use when compiling the function.
+                Only `MAX_DYNAMIC_SHARED_SIZE_BYTES` is accepted, and it has no
+                effect.
             name: The symbol name to give the function. The HAL backend
                 ignores it.
 
         Raises:
-            If the compilation or function loading fails, or if the HAL backend
-            is given an unsupported function attribute.
+            If the compilation or function loading fails, or if given an
+            unsupported function attribute.
         """
         comptime __guard not use_legacy_backend() else:
             self._impl = Self._Legacy(
@@ -288,19 +288,16 @@ struct DeviceFunction[
             )
             return
 
-        if case .Some(func_attribute) = func_attribute:
-            # The CUDA plugin lifts the dynamic shared memory cap to the
-            # device's opt-in limit when it loads a function, and Metal and
-            # HIP have no cap, so a requested cap needs nothing more.
-            if (
-                func_attribute.attribute
-                != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-            ):
-                raise Error(
-                    "the function attribute '",
-                    func_attribute.attribute,
-                    "' is not currently supported",
-                )
+        # The CUDA plugin lifts the dynamic shared memory cap to the
+        # device's opt-in limit when it loads a function, and Metal and
+        # HIP have no cap, so a requested cap needs nothing more.
+        if case .Some(func_attribute) = func_attribute;
+          func_attribute.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
+            raise Error(
+                "the function attribute '",
+                func_attribute.attribute,
+                "' is not currently supported",
+            )
         var info = ctx._impl._context[]._compile_inner[
             type_of(Self._HAL._wrapped_func),
             Self._HAL._wrapped_func,
@@ -1083,6 +1080,7 @@ struct DeviceExternalFunction[
                 .as_unsafe_any_origin()
             )
 
+        @__allow_legacy_any_origin_fields
         def _populate_arg_sizes[i: Int]() {mut dense_args}:
             dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 
@@ -1141,6 +1139,7 @@ struct DeviceExternalFunction[
                 .as_unsafe_any_origin()
             )
 
+        @__allow_legacy_any_origin_fields
         def _populate_arg_sizes[i: Int]() {mut dense_args}:
             dense_args.sizes.unsafe_get(i) = UInt64(size_of[Ts[i]]())
 

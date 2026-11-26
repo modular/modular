@@ -415,3 +415,32 @@ def test_llama_arch_declares_cascade_factory() -> None:
     arch = PIPELINE_REGISTRY.retrieve_architecture("LlamaForCausalLM")
     assert arch is not None
     assert arch.cascade_pipeline_factory is CommonTextGenPipeline
+
+
+def test_every_modulev3_port_of_a_cascade_architecture_declares_it() -> None:
+    # Cascade looks the architecture up with prefer_module_v3, which defaults
+    # to true, so a ModuleV3 port needs the factory its graph architecture
+    # declares. Derive the list from the registry, so a new port is covered
+    # without editing this test.
+    register_all_models()
+    graphs = {
+        arch.name: arch
+        for arch in PIPELINE_REGISTRY.all_architectures()
+        if not arch.name.endswith("_ModuleV3")
+        and arch.cascade_pipeline_factory is not None
+    }
+    assert graphs, "no graph architecture declares a cascade pipeline"
+
+    checked = []
+    for name, graph in sorted(graphs.items()):
+        resolved = PIPELINE_REGISTRY.retrieve_architecture(
+            name, prefer_module_v3=True
+        )
+        assert resolved is not None, name
+        if resolved.name == graph.name:
+            continue
+        assert (
+            resolved.cascade_pipeline_factory is graph.cascade_pipeline_factory
+        ), resolved.name
+        checked.append(resolved.name)
+    assert checked, "no ModuleV3 port was checked"

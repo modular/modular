@@ -135,26 +135,22 @@ def _signal_bytes() -> int:
     return Signals.NUM_BYTES
 
 
-def _allocate_signals(device_ids: tuple[int, ...]) -> list[driver.Buffer]:
+def _allocate_signals(devices: tuple[DeviceRef, ...]) -> list[driver.Buffer]:
     """Allocates and initializes one signal buffer per device."""
     from max.nn.legacy.comm.allreduce import Signals
 
-    return Signals.allocate([driver.Accelerator(id=i) for i in device_ids])
+    return Signals.allocate([driver.Accelerator(id=d.id) for d in devices])
 
 
-def _signal_buffer_types(device_ids: tuple[int, ...]) -> list[BufferType]:
-    """Returns the graph input types of the signal buffers of ``device_ids``.
+def _signal_buffer_types(devices: tuple[DeviceRef, ...]) -> list[BufferType]:
+    """Returns the graph input types of the signal buffers of ``devices``.
 
     This allocates nothing. A graph declares the signal buffers as inputs
     when it is built, which may happen on a machine without the devices.
     """
     return [
-        BufferType(
-            dtype=DType.uint8,
-            shape=(_signal_bytes(),),
-            device=DeviceRef.GPU(id=i),
-        )
-        for i in device_ids
+        BufferType(dtype=DType.uint8, shape=(_signal_bytes(),), device=device)
+        for device in devices
     ]
 
 
@@ -162,14 +158,14 @@ def _signal_buffer_types(device_ids: tuple[int, ...]) -> list[BufferType]:
 # few. An evicted entry is allocated again on the next call.
 @functools.lru_cache(maxsize=4)
 def _cached_signal_buffers(
-    device_ids: tuple[int, ...],
+    devices: tuple[DeviceRef, ...],
 ) -> tuple[list[driver.Buffer], list[BufferType]]:
     """Returns the signal buffers and their types for the given devices.
 
     Signal buffers are large, so they are allocated once per set of devices
     and shared by every graph that runs on those devices.
     """
-    return _allocate_signals(device_ids), _signal_buffer_types(device_ids)
+    return _allocate_signals(devices), _signal_buffer_types(devices)
 
 
 def _make_unrealized(
@@ -530,14 +526,15 @@ class EagerRealizationContext(RealizationContext):
 
         from max.driver import Accelerator as _Acc
 
-        gpu_ids: list[int] = []
-        seen: set[int] = set()
-        for dev in mesh.devices:
-            if isinstance(dev, _Acc) and dev.id not in seen:
-                gpu_ids.append(dev.id)
-                seen.add(dev.id)
+        devices = tuple(
+            dict.fromkeys(
+                DeviceRef.from_device(dev)
+                for dev in mesh.devices
+                if isinstance(dev, _Acc)
+            )
+        )
 
-        if len(gpu_ids) < 2:
+        if len(devices) < 2:
             return None
 
         # Compile-only: a virtual device allocates nothing, so the graph
@@ -545,10 +542,10 @@ class EagerRealizationContext(RealizationContext):
         virtual = driver.is_virtual_device_mode()
         if virtual:
             runtime_bufs: list[driver.Buffer] = []
-            buf_types = _signal_buffer_types(tuple(gpu_ids))
+            buf_types = _signal_buffer_types(devices)
         else:
             # Get or allocate shared runtime buffers (expensive — 1+256 MB each).
-            runtime_bufs, buf_types = _cached_signal_buffers(tuple(gpu_ids))
+            runtime_bufs, buf_types = _cached_signal_buffers(devices)
 
         # Add signal buffer types as new graph inputs (per-graph, cheap).
         # Register them in self.sources so the execution loop picks them

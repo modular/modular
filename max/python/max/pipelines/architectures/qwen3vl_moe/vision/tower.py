@@ -27,6 +27,7 @@ from collections import OrderedDict
 from typing import ClassVar
 
 from max import functional as F
+from max._artifact.vision import VisionMetadata
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, DimLike, TensorType
 from max.nn import Embedding, LayerNorm, Linear, Module, as_subgraph
@@ -37,10 +38,17 @@ from max.nn.legacy.graph_groups import (
     VisionSegments,
 )
 from max.nn.sequential import ModuleList
+from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib.graph_specs import GraphSpec
 from max.tensor import Tensor, default_dtype
 
 from ..model_config import Qwen3VLConfig, VisionConfig
 from .attention import VisionAttention
+from .preprocess import (
+    image_preprocess_spec,
+    qwen3vl_vision_metadata,
+    video_preprocess_spec,
+)
 
 __all__ = ["Qwen3VLVisionEncoder", "Qwen3VLVisionTransformer"]
 
@@ -385,3 +393,33 @@ class Qwen3VLVisionEncoder(Qwen3VLVisionTransformer):
                 max_seqlen=TensorType(DType.uint32, [1], cpu)
             ),
         )
+
+    @classmethod
+    def vision_metadata(
+        cls, pipeline_config: PipelineConfig, config: Qwen3VLConfig
+    ) -> VisionMetadata | None:
+        """Returns the media layout the checkpoint is served with."""
+        del config
+        huggingface_config = pipeline_config.model.huggingface_config
+        assert huggingface_config is not None
+        return qwen3vl_vision_metadata(huggingface_config)
+
+    @classmethod
+    def vision_preprocess_spec(
+        cls, pipeline_config: PipelineConfig, config: Qwen3VLConfig
+    ) -> GraphSpec | None:
+        """Returns the graph that preprocesses one image for the tower."""
+        del pipeline_config
+        return image_preprocess_spec(config.vision_config)
+
+    @classmethod
+    def vision_preprocess_video_spec(
+        cls, pipeline_config: PipelineConfig, config: Qwen3VLConfig
+    ) -> GraphSpec | None:
+        """Returns the graph that preprocesses one temporal patch of a clip.
+
+        The tower attends within each temporal patch, so a patch is a
+        clip's attention segment.
+        """
+        del pipeline_config
+        return video_preprocess_spec(config.vision_config)

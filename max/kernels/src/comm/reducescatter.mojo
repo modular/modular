@@ -363,6 +363,7 @@ def _reduce_scatter_impl[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"reducescatter_{dtype}_{use_multimem}")
+@__allow_legacy_any_origin_fields
 def _reducescatter_kernel[
     dtype: DType,
     in_layout: TensorLayout,
@@ -523,6 +524,7 @@ def _reducescatter_kernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
 @__name(t"reducescatter_relay_{dtype}")
+@__allow_legacy_any_origin_fields
 def _reducescatter_relay_kernel[
     dtype: DType,
     ngpus: Int,
@@ -873,6 +875,7 @@ def _reducescatter_p2p_relay[
 
 
 @inline(.always)
+@__allow_legacy_any_origin_fields
 def _reducescatter_p2p[
     dtype: DType,
     ngpus: Int,
@@ -1137,6 +1140,7 @@ def _reducescatter_p2p[
 
 
 @inline(.always)
+@__allow_legacy_any_origin_fields
 def _reducescatter_launch[
     dtype: DType,
     ngpus: Int,

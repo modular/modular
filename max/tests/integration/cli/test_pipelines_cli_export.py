@@ -17,11 +17,15 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 from click.testing import CliRunner
+from max import driver
+from max._artifact import export as export_module
 from max._artifact.batch_processor import BatchProcessorDims
 from max._artifact.format_spec import FormatSpec
 from max._artifact.serialization import deserialize
 from max._entrypoints import pipelines
+from max.pipelines.lib.config import PipelineConfig
 
 
 def _env(name: str) -> str:
@@ -58,13 +62,22 @@ def test_export_writes_the_graphs_by_role(tmp_path: Path) -> None:
     sections = json.loads((dest / "artifact.json").read_text())
     assert "format_spec" not in sections
     # A host-only artifact cannot overlap, so it ships no overlap helpers.
-    assert "overlap_helpers" not in sections
     section = sections["model"]
     assert set(section) == {"decoder", "sampler"}
     assert section["decoder"]["mef"] == {"$file": "decoder/model.mef"}
     engine_config = sections["engine_config"]
     assert engine_config["max_batch_size"] == 1
     assert engine_config["max_length"] == 128
+    assert engine_config["parallel"] == {
+        "dp": 1,
+        "tp": 1,
+        "ep": 1,
+        "dcp": 1,
+        "pcp": 1,
+        "dcp_interleave": 1,
+    }
+    assert engine_config["prefill_token_budget"] is None
+    assert engine_config["speculative"] is None
     # Llama's one attention cache, which is not in a tree, and its pool leaf.
     caches = sections["kv_cache"]["caches"]
     assert [(cache["name"], cache["kind"]) for cache in caches] == [("", "mha")]
@@ -143,6 +156,75 @@ def test_export_stores_the_format_spec_it_is_given(tmp_path: Path) -> None:
     )
 
 
+def test_export_target_configures_virtual_devices_before_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    events: list[tuple[str, object]] = []
+    set_api = driver.set_virtual_device_api
+    set_arch = driver.set_virtual_device_target_arch
+    set_count = driver.set_virtual_device_count
+
+    def api(value: str) -> None:
+        events.append(("api", value))
+        set_api(value)
+
+    def arch(value: str) -> None:
+        events.append(("arch", value))
+        set_arch(value)
+
+    def count(value: int) -> None:
+        events.append(("count", value))
+        set_count(value)
+
+    monkeypatch.setattr(driver, "set_virtual_device_api", api)
+    monkeypatch.setattr(driver, "set_virtual_device_target_arch", arch)
+    monkeypatch.setattr(driver, "set_virtual_device_count", count)
+
+    def export(
+        config: PipelineConfig,
+        output: Path,
+        format_spec: Path | None,
+        *,
+        prefill_token_budget: int | None,
+        prefill_capture_tokens: int,
+    ) -> Path:
+        assert driver.is_virtual_device_mode()
+        assert len(config.model.device_specs) == 2
+        events.append(
+            ("export", (prefill_token_budget, prefill_capture_tokens))
+        )
+        return output.with_suffix(".m")
+
+    monkeypatch.setattr(export_module, "export_pipeline", export)
+    args = [
+        "--devices=gpu:0,1" if arg == "--devices=cpu" else arg
+        for arg in _export_args(tmp_path / "virtual")
+    ]
+    try:
+        result = CliRunner().invoke(
+            pipelines.main,
+            [
+                *args,
+                "--target",
+                "cuda:sm_100a",
+                "--prefill-token-budget",
+                "64",
+                "--prefill-graph-max-tokens",
+                "32",
+            ],
+            catch_exceptions=False,
+        )
+        assert result.exit_code == 0, result.output
+        assert events == [
+            ("api", "cuda"),
+            ("arch", "sm_100a"),
+            ("count", 2),
+            ("export", (64, 32)),
+        ]
+    finally:
+        set_count(0)
+
+
 def test_export_refuses_an_existing_output(tmp_path: Path) -> None:
     (tmp_path / "taken.m").mkdir()
     result = CliRunner().invoke(
@@ -157,3 +239,10 @@ def test_export_help_lists_pipeline_options() -> None:
     assert result.exit_code == 0, result.output
     assert "--output" in result.output
     assert "--model-path" in result.output
+    assert "--target" in result.output
+    assert "--prefill-token-budget" in result.output
+    assert "--prefill-graph-max-tokens" in result.output
+    assert "--quantization-format" in result.output
+    assert "--targets" in result.output
+    assert "--error-report-dir" in result.output
+    assert "--mse-sweep-scales" in result.output

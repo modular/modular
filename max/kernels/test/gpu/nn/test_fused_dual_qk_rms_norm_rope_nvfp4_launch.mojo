@@ -362,12 +362,14 @@ def run_case(
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def q_main_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var staging_tt} -> SIMD[dtype, width]:
         return staging_tt.load[width=width]((token, head * head_dim + col))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def k_main_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var staging_tt} -> SIMD[dtype, width]:
@@ -376,6 +378,7 @@ def run_case(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def v_main_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var staging_tt} -> SIMD[dtype, width]:
@@ -384,6 +387,7 @@ def run_case(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def q_index_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var staging_tt} -> SIMD[dtype, width]:
@@ -392,6 +396,7 @@ def run_case(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def k_index_fn[
         width: Int, alignment: Int
     ](token: Int, head: Int, col: Int) {var staging_tt} -> SIMD[dtype, width]:
@@ -400,6 +405,7 @@ def run_case(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_row(c: DeviceContext[]) raises {imm}:
         fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
             multiply_before_cast=True,
@@ -429,6 +435,7 @@ def run_case(
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_warp(c: DeviceContext[]) raises {imm}:
         fused_dual_qk_rms_norm_rope_nvfp4_ragged_paged[
             multiply_before_cast=True,

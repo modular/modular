@@ -119,10 +119,12 @@ struct _SpanIter[
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType:
         return self^
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __next__(
         mut self,
@@ -140,6 +142,7 @@ struct _SpanIter[
             self.index -= 1
             return self.src._data[unsafe_offset=self.index]
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __len__(self) -> Int:
         """Returns the number of elements remaining in this iterator.
@@ -152,6 +155,7 @@ struct _SpanIter[
         else:
             return self.index
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         """Returns bounds `[lower, upper]` for the remaining iterator length.
@@ -363,6 +367,7 @@ struct Span[
     # Operator dunders
     # ===------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @stable(since="1.0")
     @inline(.always)
     def __getitem__(
@@ -379,6 +384,7 @@ struct Span[
         check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, idx: Some[Indexer]
@@ -394,6 +400,7 @@ struct Span[
         check_bounds(index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         self, idx: IntLiteral
@@ -413,6 +420,7 @@ struct Span[
         check_bounds(idx, length=len(self))
         return self._data[unsafe_offset=idx]
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     @stable(since="1.3")
     def __getitem__(self, slice: ContiguousSlice) -> Self:
@@ -431,6 +439,7 @@ struct Span[
         var start, end = check_slice_bounds(slice, len(self))
         return self._unchecked_subspan(start=start, end=end)
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __iter__(var self) -> Self.IteratorOwnedType where Self._is_generic_as:
         """Consume the span and return an iterator over its elements.
@@ -461,6 +470,7 @@ struct Span[
             0, rebind[Span[downcast[Self.T, Copyable], Self.origin]](self)
         )
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __reversed__(
         self,
@@ -484,6 +494,7 @@ struct Span[
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @always_inline("builtin")
     @stable(since="1.3")
     def __len__(self) -> Int:
@@ -494,6 +505,7 @@ struct Span[
         """
         return self._len
 
+    @__unsafe_nested_origins_read_only
     @__allow_legacy_custom_self_type
     @stable(since="1.0")
     def __contains__[
@@ -645,6 +657,7 @@ struct Span[
     # Methods
     # ===------------------------------------------------------------------===#
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def as_imm(self) -> Self.Immutable:
         """Return an immutable version of this `Span`.
@@ -654,6 +667,36 @@ struct Span[
         """
         return rebind[Self.Immutable](self)
 
+    comptime _OriginCastType[target_origin: Origin[mut=Self.mut]] = Span[
+        Self.T, target_origin, address_space=Self.address_space
+    ]
+
+    @__unsafe_nested_origins_read_only
+    @always_inline("builtin")
+    def unsafe_origin_cast[
+        target_origin: Origin[mut=Self.mut]
+    ](self) -> Self._OriginCastType[target_origin]:
+        """Changes the origin of a span.
+
+        Parameters:
+            target_origin: Origin of the destination span.
+
+        Returns:
+            A span with the same element type, mutability, address space, and
+            length as the original span, but with the specified origin.
+
+        Safety:
+            Casting the origin of a span is inherently unsafe. Improper usage
+            can lead to undefined behavior or unexpected variable destruction.
+            Consider parameterizing the origin at the function level to avoid
+            unnecessary casts.
+        """
+        return {
+            unsafe_ptr = self._data.unsafe_origin_cast[target_origin](),
+            length = self._len,
+        }
+
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def unsafe_get(
         self, idx: Some[Indexer]
@@ -675,6 +718,7 @@ struct Span[
         check_bounds[cpu_default=False](index(idx), length=len(self))
         return self._data[unsafe_offset=idx]
 
+    @__unsafe_nested_origins_read_only
     @always_inline("builtin")
     def unsafe_ptr(
         self,
@@ -690,6 +734,7 @@ struct Span[
         """
         return self._data
 
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def as_ref(
         self,
@@ -731,6 +776,7 @@ struct Span[
             for i in range(len(self)):
                 self[i] = other[i].copy()
 
+    @__unsafe_nested_origins_read_only
     def __bool__(self) -> Bool:
         """Check if a span is non-empty.
 
@@ -1055,6 +1101,76 @@ struct Span[
                 ptr.unsafe_offset(processed + i).unsafe_write(func(vec))
 
     @__allow_legacy_custom_self_type
+    def map_reduce[
+        dtype: DType,
+        map_dtype: DType,
+        accum_dtype: DType,
+        MapFn: def[w: SIMDLength](SIMD[dtype, w]) -> SIMD[map_dtype, w],
+        ReduceFn: def(SIMD[map_dtype, _]) -> Scalar[accum_dtype],
+        AccumFn: def(Scalar[accum_dtype], Scalar[accum_dtype]) -> Scalar[
+            accum_dtype
+        ],
+        //,
+    ](
+        self: Span[Scalar[dtype], _, address_space=_],
+        map_fn: MapFn,
+        reduce_fn: ReduceFn,
+        accum_fn: AccumFn = lambda (
+            lhs: Scalar[accum_dtype], rhs: Scalar[accum_dtype]
+        ) -> Scalar[accum_dtype]: (lhs + rhs),
+        *,
+        start: Scalar[accum_dtype] = 0,
+    ) -> Scalar[accum_dtype]:
+        """Maps each element, reduces each SIMD chunk, then accumulates.
+
+        Parameters:
+            dtype: Element dtype of the span.
+            map_dtype: DType produced by `map_fn`.
+            accum_dtype: DType of the accumulator.
+            MapFn: Type of the elementwise map.
+            ReduceFn: Type of the per-chunk reduction.
+            AccumFn: Type of the scalar accumulation.
+
+        Args:
+            map_fn: Maps each element of a loaded SIMD chunk.
+            reduce_fn: Reduces one mapped chunk to an accumulator value.
+            accum_fn: Combines the accumulator with a chunk value. Defaults to
+                addition.
+            start: Runtime value the accumulator starts from.
+
+        Returns:
+            The reduced scalar.
+
+        Examples:
+
+        ```mojo
+        var data = Span([1, 2, 3, 4])
+        var start = 10
+        var total = data.map_reduce(
+            lambda [w: SIMDLength](chunk: SIMD[DType.int, w]) -> SIMD[DType.int, w]:
+                chunk,
+            lambda (chunk: SIMD[DType.int, _]) -> Scalar[DType.int]: chunk.reduce_add(),
+            start=start,
+        )
+        print(total) # 20
+        ```
+        """
+
+        comptime simd_width = simd_width_of[dtype]()
+        var ptr = self.unsafe_ptr().as_imm()
+        var length = len(self)
+        var acc = start
+
+        def run[
+            width: Int
+        ](idx: Int) {mut acc, imm ptr, imm map_fn, imm reduce_fn, imm accum_fn}:
+            var mapped = map_fn[width](ptr.unsafe_load[width=width](idx))
+            acc = accum_fn(acc, reduce_fn(mapped))
+
+        vectorize[simd_width](length, run)
+        return acc
+
+    @__allow_legacy_custom_self_type
     def count[
         dtype: DType,
         //,
@@ -1073,18 +1189,11 @@ struct Span[
             The amount of times the function returns `True`.
         """
 
-        comptime simdwidth = simd_width_of[dtype]()
-        var ptr = self.unsafe_ptr().as_imm()
-        var length = len(self)
-        var count = 0
+        return self.map_reduce(
+            func, lambda (mask: SIMD[.bool, _]) -> Int: mask.reduce_bit_count()
+        )
 
-        def do_count[width: Int](idx: Int) {mut count, imm ptr, imm func}:
-            var mask = func[width](ptr.unsafe_load[width=width](idx))
-            count += mask.reduce_bit_count()
-
-        vectorize[simdwidth](length, do_count)
-        return count
-
+    @__unsafe_nested_origins_read_only
     @inline(.always)
     def unsafe_subspan(self, *, offset: Int, length: Int) -> Self:
         """Returns a subspan of the current span.

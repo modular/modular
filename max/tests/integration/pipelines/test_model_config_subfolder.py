@@ -123,14 +123,14 @@ class TestMAXModelConfigSubfolder:
         with (
             patch("os.path.exists", return_value=True),
             patch(
-                "max.pipelines.lib._hf_config.load_huggingface_config",
+                "max.pipelines.lib.config.model_config.load_huggingface_config",
                 return_value=mock_auto_config,
             ) as mock_load,
             patch(
                 "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
-            _ = model_config.huggingface_config
+            assert model_config.huggingface_config is mock_auto_config
             mock_load.assert_called_once()
             repo_arg = mock_load.call_args.args[0]
             assert repo_arg.subfolder == "vae"
@@ -145,14 +145,14 @@ class TestMAXModelConfigSubfolder:
         with (
             patch("os.path.exists", return_value=True),
             patch(
-                "max.pipelines.lib._hf_config.load_huggingface_config",
+                "max.pipelines.lib.config.model_config.load_huggingface_config",
                 return_value=mock_auto_config,
             ) as mock_load,
             patch(
                 "max.pipelines.lib.config.model_config.validate_hf_repo_access",
             ),
         ):
-            _ = model_config.huggingface_config
+            assert model_config.huggingface_config is mock_auto_config
             mock_load.assert_called_once()
             repo_arg = mock_load.call_args.args[0]
             assert repo_arg.subfolder is None
@@ -421,19 +421,25 @@ class TestExternalWeightRepoRevision:
         the (reset) ``huggingface_weight_repo.revision`` rather than the base
         model's ``huggingface_weight_revision``.
         """
-        config = self._external_config("deadbeef", "deadbeef")
         with (
-            patch("max.pipelines.weights.hf_utils.validate_hf_repo_access"),
+            patch.object(hf_hub_constants, "HF_HUB_OFFLINE", False),
+            patch(
+                "max.pipelines.lib.config.model_config.GenerationConfig.from_pretrained"
+            ),
             patch(
                 "max.pipelines.lib.config.model_config.download_weight_files",
                 return_value=[Path("/tmp/w.safetensors")],
             ) as mock_download,
         ):
-            config.resolved_weight_paths([Path("w.safetensors")])
-        assert (
-            mock_download.call_args.kwargs["revision"]
-            == hf_hub_constants.DEFAULT_REVISION
+            config = self._external_config("deadbeef", "deadbeef")
+            paths = config.resolved_weight_paths([Path("w.safetensors")])
+        mock_download.assert_called_once_with(
+            huggingface_model_id="org/quant-repo",
+            filenames=["w.safetensors"],
+            revision=hf_hub_constants.DEFAULT_REVISION,
+            force_download=False,
         )
+        assert paths == [Path("/tmp/w.safetensors")]
 
 
 def test_create_survives_a_frozen_subclass() -> None:

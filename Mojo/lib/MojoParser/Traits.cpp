@@ -207,6 +207,7 @@ static LogicalResult signatureResolveDefaultTraitFnStubs(
     OverloadSet ov(name, structDefinesMethods, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic,
                    /*contextualType=*/structSelfType);
+    ov.isConformanceWitness = true;
     // This runs in the struct's scope, not the conformance's, so the
     // conformance `where` clause is not among the scope's own assumptions and
     // has to be handed over explicitly.
@@ -595,6 +596,7 @@ checkConformanceMember(ConformanceWitnessASTDecl &member,
     OverloadSet ov(name, decls, std::move(bindings),
                    CallSyntax::kMethodCallSynthetic,
                    /*contextualType=*/selfType);
+    ov.isConformanceWitness = true;
     auto emitError = [&](SMLoc loc) -> MojoInflightDiag & {
       // `attachNote(decl)` also appends the requirement's synthesized
       // signature, redundant with the "no candidates have type" note below;
@@ -1221,21 +1223,8 @@ SmallVector<ConstraintAttr> LIT::canonicalizeTraitSymbolsAndConstraints(
 
   // Canonicalize the symbols first.
   canonicalizeTraitCompositionSymbols(shared, symbols);
-  if (constraintMap.empty())
-    return {};
-
-  // fill in the missing constraints if we have an non-empty map.
-  SmallVector<ConstraintAttr> constraints;
-  constraints.reserve(symbols.size());
-  for (TraitSymbolAttr symbol : symbols) {
-    if (auto it = constraintMap.find(symbol); it != constraintMap.end()) {
-      constraints.push_back(it->second);
-    } else {
-      // FIXME(MOCO-4250): `True` is wrong, should be inherited from parents.
-      constraints.push_back(getUnconditionalConstraint(shared.getContext()));
-    }
-  }
-  return constraints;
+  return getTraitConstraintsInSymbolOrder(shared.getContext(), symbols,
+                                          constraintMap);
 }
 
 static std::pair<TraitType, StructDeclOp> extractTraitBound(SharedState &shared,

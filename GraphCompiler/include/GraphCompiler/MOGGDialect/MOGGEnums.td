@@ -95,7 +95,7 @@ def MOGG_TensorArgAccess
         I32BitEnumAttrCaseNone<"none">,
         I32BitEnumAttrCaseBit<"load", 0, "load">,
         I32BitEnumAttrCaseBit<"store", 1, "store">,
-        I32BitEnumAttrCaseBit<"transform", 2, "transform">,
+        I32BitEnumAttrCaseBit<"legacy_compute", 2, "legacy_compute">,
         // TODO(GEX-4340): the interim legacy tile traits; remove with GEX-4467.
         I32BitEnumAttrCaseBit<"legacy_tile_store", 3, "legacy_tile_store">,
         I32BitEnumAttrCaseBit<"legacy_tile_transform", 4,

@@ -1149,6 +1149,7 @@ def _matmul_Q4_K_columns[
             .unsafe_origin_cast[ImmutAnyOrigin]()
         )
 
+        @__allow_legacy_any_origin_fields
         def matmul_group_packed(
             a_q_bits_ptr: ImmPointer[Int8, ImmutAnyOrigin],
             mut c_int32_group: _Accumulator[.int32, 1, tile_n, simd_width],
@@ -1190,6 +1191,7 @@ def _matmul_Q4_K_columns[
     }:
         var b_q_bits_ptr = b_q_bits.unsafe_origin_cast[MutAnyOrigin]()
 
+        @__allow_legacy_any_origin_fields
         def matmul_group_unpacked(
             a_ptr: ImmPointer[Int8, ImmutAnyOrigin],
             mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],
@@ -1397,6 +1399,7 @@ def _matmul_Q6_K_columns[
             .unsafe_origin_cast[ImmutAnyOrigin]()
         )
 
+        @__allow_legacy_any_origin_fields
         def matmul_group_packed(
             a_q_bits_ptr: ImmPointer[Int8, ImmutAnyOrigin],
             mut c_int32_group: _Accumulator[.int32, 1, tile_n, simd_width],
@@ -1433,6 +1436,7 @@ def _matmul_Q6_K_columns[
     ](m: Int) {var b_q_bits, mut a_ptr, mut c_ptr, imm}:
         var b_q_bits_ptr = b_q_bits.as_unsafe_any_origin()
 
+        @__allow_legacy_any_origin_fields
         def matmul_group_unpacked(
             a_ptr: ImmPointer[Int8, ImmutAnyOrigin],
             mut c_int32_group: _Accumulator[.int32, tile_m, tile_n, simd_width],

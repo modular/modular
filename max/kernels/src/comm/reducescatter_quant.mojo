@@ -343,7 +343,10 @@ def reducescatter_quant[
         raise Error("reducescatter_quant needs cols to be a multiple of 32")
     if rows == 0:
         return
-    var grid = min(ceildiv(rows, ngpus), MAX_NUM_BLOCKS_UPPER_BOUND // 2)
+    var shard_rows = ceildiv(rows, ngpus)
+    var grid = min(shard_rows, MAX_NUM_BLOCKS_UPPER_BOUND // 2)
+    comptime if ctx.target.is_amd_gpu():
+        grid = min(grid, 128 if shard_rows <= 2048 else 256)
     comptime kernel = _reducescatter_quant_kernel[
         dtype, ngpus, quant_bits, _RS_QUANT_BLOCK, has_residual
     ]

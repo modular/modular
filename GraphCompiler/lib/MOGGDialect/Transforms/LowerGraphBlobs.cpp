@@ -15,6 +15,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/IRMapping.h"
+#include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SetVector.h"
 
@@ -31,7 +32,7 @@ namespace {
 // Adds the ops the kernel runs to produce `value` to `producers`, each after
 // the producers of its operands, and the values they take from the host to
 // `crossing`. Fails on a value the host builds that can't cross the launch.
-LogicalResult collectOperandProducers(Value value, CallOpaqueOp call,
+LogicalResult collectOperandProducers(Value value, Operation *call,
                                       llvm::SetVector<Operation *> &producers,
                                       llvm::SetVector<Value> &crossing) {
   Operation *def = value.getDefiningOp();
@@ -60,7 +61,7 @@ LogicalResult collectOperandProducers(Value value, CallOpaqueOp call,
     return success();
   case LaunchPlacement::HostOnly: {
     // The host builds the value, and the kernel can't take it.
-    InFlightDiagnostic diag = call.emitOpError(
+    InFlightDiagnostic diag = call->emitOpError(
         "reads a value that the host builds and a graph blob launch can't "
         "take");
     diag.attachNote(def->getLoc()) << "built here";
@@ -70,18 +71,69 @@ LogicalResult collectOperandProducers(Value value, CallOpaqueOp call,
   llvm_unreachable("unknown launch placement");
 }
 
+// Returns the values `call` reads from the blob's body, other than its device
+// context: its kernel operands, or a loop's shapes and captures and the values
+// its body reads from outside it.
+SmallVector<Value> readValues(Operation *call) {
+  if (auto opaque = dyn_cast<CallOpaqueOp>(call)) {
+    SmallVector<Value> values(opaque.getInputs());
+    llvm::append_range(values, opaque.getOutputs());
+    return values;
+  }
+  auto foreach = cast<CallForeachOp>(call);
+  llvm::SetVector<Value> values;
+  values.insert(foreach.getShape());
+  values.insert(foreach.getCapturing().begin(), foreach.getCapturing().end());
+  if (Value dims = foreach.getDynamicMaxSimdWidth())
+    values.insert(dims);
+  getUsedValuesDefinedAbove(foreach->getRegions(), values);
+  return values.takeVector();
+}
+
+Value deviceContext(Operation *call) {
+  if (auto foreach = dyn_cast<CallForeachOp>(call))
+    return foreach.getDeviceContext();
+  return cast<CallOpaqueOp>(call).getDeviceContexts().front();
+}
+
+// Creates `call` in a `mogg.graph_blob.call`, reading the values `mapping`
+// gives for its operands.
+void createDeviceCall(OpBuilder &builder, Operation *call, IRMapping &mapping) {
+  auto mapped = [&](ValueRange values) {
+    return llvm::map_to_vector(
+        values, [&](Value value) { return mapping.lookup(value); });
+  };
+  if (auto opaque = dyn_cast<CallOpaqueOp>(call)) {
+    CallExecuteDeviceOp::create(
+        builder, opaque.getLoc(), opaque.getCalleeAttr(),
+        mapped(opaque.getInputs()), mapped(opaque.getOutputs()),
+        opaque.getKernelParamAttr());
+    return;
+  }
+  auto foreach = cast<CallForeachOp>(call);
+  Value dims = foreach.getDynamicMaxSimdWidth();
+  auto lowered = GraphBlobForeachOp::create(
+      builder, foreach.getLoc(), mapping.lookup(foreach.getShape()),
+      mapped(foreach.getCapturing()), dims ? mapping.lookup(dims) : Value(),
+      foreach.getMaxSimdWidthAttr());
+  foreach
+    .getBody().cloneInto(&lowered.getBody(), mapping);
+}
+
 LogicalResult lowerBlob(GraphBlobOp blob) {
   Block &body = blob.getBody().front();
-  auto calls = llvm::to_vector(body.getOps<CallOpaqueOp>());
+  SmallVector<Operation *> calls;
+  for (Operation &op : body) {
+    if (op.hasTrait<CallLike>())
+      calls.push_back(&op);
+  }
 
   // Find what each call's region builds and what crosses the launch, before
   // changing any IR.
   llvm::SetVector<Value> crossing;
   SmallVector<llvm::SetVector<Operation *>> producers(calls.size());
   for (auto [call, callProducers] : llvm::zip_equal(calls, producers)) {
-    SmallVector<Value> operands(call.getInputs());
-    llvm::append_range(operands, call.getOutputs());
-    for (Value value : operands) {
+    for (Value value : readValues(call)) {
       if (failed(collectOperandProducers(value, call, callProducers, crossing)))
         return failure();
     }
@@ -89,7 +141,7 @@ LogicalResult lowerBlob(GraphBlobOp blob) {
 
   // Move all the host code to the top, leaving only the calls at the end.
   for (Operation &op : llvm::make_early_inc_range(body)) {
-    if (!isa<CallOpaqueOp>(op))
+    if (!op.hasTrait<CallLike>())
       op.moveBefore(blob);
   }
 
@@ -97,23 +149,28 @@ LogicalResult lowerBlob(GraphBlobOp blob) {
   Location loc = blob.getLoc();
   OpBuilder builder(blob);
   Type configType = LaunchConfigType::get(ctx);
-  Value context = calls.front().getDeviceContexts().front();
+  Value context = deviceContext(calls.front());
 
-  // Generate a call to `execute_configuration` on the host for each call,
-  // passing the same inputs and outputs.
-  auto configs = llvm::map_to_vector(calls, [&](CallOpaqueOp call) -> Value {
+  // Generate a call to `execute_configuration` on the host for each
+  // declarative call, passing the same inputs and outputs.
+  auto configs = llvm::map_to_vector(calls, [&](Operation *call) -> Value {
+    auto opaque = dyn_cast<CallOpaqueOp>(call);
+    if (!opaque)
+      return Value();
     return CallExecuteConfigurationOp::create(
-        builder, call.getLoc(), configType, call.getCalleeAttr(),
-        call.getInputs(), call.getOutputs(), call.getKernelParamAttr());
+        builder, opaque.getLoc(), configType, opaque.getCalleeAttr(),
+        opaque.getInputs(), opaque.getOutputs(), opaque.getKernelParamAttr());
   });
 
-  // Get the whole-device launch configuration and each call's part of it.
+  // Get the whole-device launch configuration and each call's part of it. A
+  // loop, which has no configuration, runs on all of it.
   Value launchConfig =
       GraphBlobLaunchConfigOp::create(builder, loc, configType, context);
   SmallVector<Value> args(crossing.begin(), crossing.end());
   for (Value config : configs)
     args.push_back(GraphBlobActiveThreadsOp::create(
-        builder, loc, builder.getI32Type(), config, launchConfig));
+        builder, loc, builder.getI32Type(), config ? config : launchConfig,
+        launchConfig));
 
   // Launch one kernel that takes the crossing values, then the active counts.
   auto launch =
@@ -129,7 +186,7 @@ LogicalResult lowerBlob(GraphBlobOp blob) {
 
     // Run the call on its active threads.
     auto region = GraphBlobCallOp::create(
-        builder, call.getLoc(), kernel->getArgument(crossing.size() + index));
+        builder, call->getLoc(), kernel->getArgument(crossing.size() + index));
     OpBuilder::InsertionGuard guard(builder);
     builder.createBlock(&region.getBody());
 
@@ -141,14 +198,7 @@ LogicalResult lowerBlob(GraphBlobOp blob) {
     for (Operation *op : producers[index])
       builder.clone(*op, mapping);
 
-    // Run the kernel's `execute_device` on the rebuilt operands.
-    auto mapped = [&](ValueRange values) {
-      return llvm::map_to_vector(
-          values, [&](Value value) { return mapping.lookup(value); });
-    };
-    CallExecuteDeviceOp::create(
-        builder, call.getLoc(), call.getCalleeAttr(), mapped(call.getInputs()),
-        mapped(call.getOutputs()), call.getKernelParamAttr());
+    createDeviceCall(builder, call, mapping);
   }
 
   blob.erase();

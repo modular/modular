@@ -28,7 +28,8 @@
 // pool and are never reclaimed. We detect this by counting unique pointers
 // across repeated alloc/free cycles.
 
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/Driver/DeviceContext/DeviceContext.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "TestUtils.h"
 
 #include "gtest/gtest.h"
@@ -71,7 +72,7 @@ TEST_F(GPUMemoryManagerFallthroughTest,
   // 8MB exceeds the 4MB maxCacheSize configured in BUILD, triggering the
   // fallthrough allocation path.
   const size_t allocSize = 8 * 1024 * 1024;
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
 
   // Warmup: one alloc/free cycle to prime the stream-ordered pool.
   ASSIGN_NO_ERR(void *, warmupPtr, freeList.allocate(allocSize, mode));
@@ -111,7 +112,7 @@ TEST_F(GPUMemoryManagerFallthroughTest,
 TEST_F(GPUMemoryManagerFallthroughTest,
        DISABLED_MultipleContextsFallthroughReusesSameAddress) {
   const size_t allocSize = 8 * 1024 * 1024;
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   const int numContexts = 4;
   const int numCyclesPerContext = 8;
 
@@ -168,8 +169,9 @@ TEST_F(GPUMemoryManagerFallthroughTest, FallthroughIsCountedUntilAReset) {
   EXPECT_EQ(stats.driverFallbacks, 0u);
   EXPECT_EQ(stats.driverFallbackBytes, 0u);
 
-  ASSIGN_NO_ERR(void *, ptr,
-                freeList.allocate(allocSize, Device::AllocMode::SYNC));
+  ASSIGN_NO_ERR(
+      void *, ptr,
+      freeList.allocate(allocSize, AllocatorContext::AllocMode::SYNC));
   EXPECT_NE(ptr, nullptr);
   stats = ctx->getMemoryManagerStats();
   EXPECT_EQ(stats.driverFallbacks, 1u);

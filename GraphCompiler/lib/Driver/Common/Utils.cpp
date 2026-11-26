@@ -33,7 +33,7 @@ M::ErrorOr<std::string> M::getFileContentIdentity(const BufferRef &file,
   case FileFormat::kMGPDialect:
     return "input is a Modular model";
   case FileFormat::kMEFFile: {
-    ErrorOr<RCRef<MEFFile>> mefFileOr = MEFFile::open(file.copy());
+    ErrorOr<RCRef<MLRT::MEFFile>> mefFileOr = MLRT::MEFFile::open(file.copy());
     if (failed(mefFileOr))
       return Error(mefFileOr.getError());
 

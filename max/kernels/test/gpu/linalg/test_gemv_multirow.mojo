@@ -35,7 +35,11 @@ from linalg.gemv import (
 
 def _fill[
     dtype: DType, integral: Bool
-](x: MutPointer[Scalar[dtype], MutAnyOrigin], length: Int32, seed: Int32,):
+](
+    x: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    length: Int32,
+    seed: Int32,
+):
     var i = Int(global_idx.x)
     if i >= Int(length):
         return

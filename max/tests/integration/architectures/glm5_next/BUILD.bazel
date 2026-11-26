@@ -166,6 +166,12 @@ modular_py_test(
     ],
 )
 
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
+)
+
 modular_py_test(
     name = "test_preprocess_graph",
     srcs = ["test_preprocess_graph.py"],

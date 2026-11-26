@@ -1039,12 +1039,7 @@ struct StringSpan[origin: ImmOrigin](
             A StringSpan merged with the other origin.
         """
         return {
-            unsafe_from_utf8 = Span[Byte, result.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_origin_cast[
-                    result.origin
-                ](),
-                length=self.byte_length(),
-            )
+            unsafe_from_utf8 = self._slice.unsafe_origin_cast[result.origin]()
         }
 
     # ===------------------------------------------------------------------===#
@@ -1218,7 +1213,7 @@ struct StringSpan[origin: ImmOrigin](
         var r_idx = self.byte_length()
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
         # for s in self.__reversed__():
-        #     if not s.isspace():
+        #     if not s.is_ascii_whitespace():
         #         break
         #     r_idx -= 1
         while (
@@ -1264,7 +1259,7 @@ struct StringSpan[origin: ImmOrigin](
         var l_idx = 0
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
         # for s in self:
-        #     if not s.isspace():
+        #     if not s.is_ascii_whitespace():
         #         break
         #     l_idx += 1
         while (
@@ -1863,17 +1858,21 @@ struct StringSpan[origin: ImmOrigin](
             print(text[byte=:index])  # héllo
         ```
         """
-        if not substr:
-            return 0
-
-        if self.byte_length() < substr.byte_length() + start:
-            return None
-
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
         var start_byte = start if start >= 0 else max(
             start + self.byte_length(), 0
         )
+
+        if not substr:
+            # An empty substring matches at `start_byte`, if it is in bounds.
+            if start_byte > self.byte_length():
+                return None
+            return start_byte
+
+        if self.byte_length() < substr.byte_length() + start:
+            return None
+
         var haystack = self.as_bytes()[start_byte:]
 
         __guard case .Some(loc) = _memmem(
@@ -1909,6 +1908,9 @@ struct StringSpan[origin: ImmOrigin](
         ```
         """
         if not substr:
+            # A negative `start` always resolves in bounds.
+            if start > self.byte_length():
+                return None
             return self.byte_length()
 
         if self.byte_length() < substr.byte_length() + start:
@@ -1927,11 +1929,6 @@ struct StringSpan[origin: ImmOrigin](
         ) else:
             return None
         return Int(loc) - Int(self.unsafe_ptr())
-
-    @doc_hidden
-    @deprecated(use=is_ascii_whitespace)
-    def isspace[single_character: Bool = False](self) -> Bool:
-        return self.is_ascii_whitespace[single_character=single_character]()
 
     def is_ascii_whitespace[single_character: Bool = False](self) -> Bool:
         """Determines whether every character in the given StringSpan is a
@@ -1956,14 +1953,14 @@ struct StringSpan[origin: ImmOrigin](
         from std.testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:
-        assert_false(StringSpan("").isspace())
+        assert_false(StringSpan("").is_ascii_whitespace())
 
         # ASCII space characters
-        assert_true(StringSpan(" ").isspace())
-        assert_true(StringSpan("\t").isspace())
+        assert_true(StringSpan(" ").is_ascii_whitespace())
+        assert_true(StringSpan("\t").is_ascii_whitespace())
 
         # Contains non-space characters
-        assert_false(StringSpan(" abc  ").isspace())
+        assert_false(StringSpan(" abc  ").is_ascii_whitespace())
         ```
         """
 

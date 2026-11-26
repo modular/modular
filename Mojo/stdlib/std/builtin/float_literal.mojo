@@ -103,17 +103,6 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`](
             `#pop<float_literal_isa<neg_zero `, self.value, `>> : i1`
         ]
 
-    @always_inline("builtin")
-    def _is_normal(self) -> Bool:
-        """Return whether the FloatLiteral is a normal (i.e. not special) value.
-
-        Returns:
-            True, if the value is a normal float, False otherwise.
-        """
-        return __mlir_attr[
-            `#pop<float_literal_isa<normal `, self.value, `>> : i1`
-        ]
-
     # ===------------------------------------------------------------------===#
     # Conversion Operators
     # ===------------------------------------------------------------------===#

@@ -13,11 +13,17 @@
 """Tests for ops.layer_norm."""
 
 import pytest
-from conftest import GraphBuilder, shapes, static_positive_dims, tensor_types
+from conftest import (
+    GraphBuilder,
+    mismatched_devices,
+    shapes,
+    static_positive_dims,
+    tensor_types,
+)
 from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
-from max.graph import Shape, StaticDim, TensorType, ops
+from max.graph import DeviceRef, Shape, StaticDim, TensorType, ops
 
 
 @given(
@@ -181,3 +187,39 @@ def test_layer_norm__error__zero_last_dim(
         )
         assert out.type == zero_last_dim_type
         graph.output(out)
+
+
+@given(devices=mismatched_devices())
+def test_layer_norm__error__device_mismatch(
+    graph_builder: GraphBuilder, devices: tuple[DeviceRef, DeviceRef]
+) -> None:
+    """Test that layer_norm raises an error when beta is on another device."""
+    device, beta_device = devices
+    with graph_builder(
+        input_types=[
+            TensorType(DType.float32, [2, 4], device),
+            TensorType(DType.float32, [4], device),
+            TensorType(DType.float32, [4], beta_device),
+        ]
+    ) as graph:
+        x, gamma, beta = (v.tensor for v in graph.inputs)
+        with pytest.raises(ValueError, match="same device"):
+            ops.layer_norm(x, gamma, beta, epsilon=1e-5)
+
+
+@given(devices=mismatched_devices())
+def test_group_norm__error__device_mismatch(
+    graph_builder: GraphBuilder, devices: tuple[DeviceRef, DeviceRef]
+) -> None:
+    """Test that group_norm raises an error when beta is on another device."""
+    device, beta_device = devices
+    with graph_builder(
+        input_types=[
+            TensorType(DType.float32, [1, 4, 8], device),
+            TensorType(DType.float32, [4], device),
+            TensorType(DType.float32, [4], beta_device),
+        ]
+    ) as graph:
+        x, gamma, beta = (v.tensor for v in graph.inputs)
+        with pytest.raises(ValueError, match="same device"):
+            ops.group_norm(x, gamma, beta, num_groups=2, epsilon=1e-5)

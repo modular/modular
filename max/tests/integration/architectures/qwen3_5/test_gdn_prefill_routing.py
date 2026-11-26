@@ -37,7 +37,7 @@ from max.graph import (
     TensorValue,
     ops,
 )
-from max.nn._graph_ops.state_space import verify_width_operand
+from max.nn._graph_ops.state_space import kimi_delta, verify_width_operand
 from max.nn.legacy import Module
 from max.pipelines.architectures.qwen3_5.layers import gated_deltanet
 from max.pipelines.architectures.qwen3_5.layers.gated_deltanet import (
@@ -77,8 +77,10 @@ def _qualify_weight_names(layer: Module, prefix: str = "gdn") -> None:
 def _forward_mlir(monkeypatch: pytest.MonkeyPatch, architecture: str) -> str:
     """Builds the layer as if on an NVIDIA GPU of ``architecture``."""
     monkeypatch.setattr(gated_deltanet, "accelerator_api", lambda: "cuda")
+    monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: "cuda")
+    monkeypatch.setattr(kimi_delta, "accelerator_count", lambda: 1)
     monkeypatch.setattr(
-        gated_deltanet, "accelerator_architecture_name", lambda: architecture
+        kimi_delta, "accelerator_architecture_name", lambda: architecture
     )
     layer = GatedDeltaNet(
         hidden_size=HIDDEN,
@@ -123,43 +125,56 @@ def _forward_mlir(monkeypatch: pytest.MonkeyPatch, architecture: str) -> str:
 
 
 # The graph is only built, never compiled or run, so the routing is checked
-# for both sides of the SM100 gate from any host, with the driver queries
-# patched to report the architecture under test.
-PRE_SM100 = ["sm_86", "sm_90a"]
-SM100_PLUS = ["sm_100a", "sm_103"]
+# for every side of the tcgen05 gate from any host, with the driver queries
+# patched to report the architecture under test. GB10 reports ``sm_121a``:
+# above SM100 numerically, without tcgen05.
+NO_TCGEN05 = ["sm_86", "sm_90a", "sm_121a"]
+TCGEN05 = ["sm_100a", "sm_103"]
 
 
-@pytest.mark.parametrize("architecture", PRE_SM100)
-def test_pre_sm100_prefill_stays_sequential(
+@pytest.mark.parametrize("architecture", NO_TCGEN05)
+def test_no_tcgen05_prefill_stays_sequential(
     monkeypatch: pytest.MonkeyPatch, architecture: str
 ) -> None:
-    """The fused chunk kernel doesn't instantiate below SM100 (A10G, H100)."""
+    """A part without tcgen05 keeps the sequential recurrence for prefill."""
     mlir = _forward_mlir(monkeypatch, architecture)
     assert "kda_chunk" not in mlir
     assert "gated_delta_recurrence" in mlir
 
 
 @pytest.mark.parametrize(
-    ("architecture", "capability"),
+    ("architecture", "has_tcgen05"),
     [
-        ("sm_86", 86),
-        ("sm_90a", 90),
-        ("sm_100a", 100),
-        ("sm_103", 103),
-        ("gfx942", 0),
-        ("", 0),
+        ("sm_86", False),
+        ("sm_90a", False),
+        ("sm_100a", True),
+        ("sm_103", True),
+        ("sm_121a", False),
+        ("gfx942", False),
+        ("", False),
     ],
 )
-def test_compute_capability_is_read_from_the_architecture_name(
-    monkeypatch: pytest.MonkeyPatch, architecture: str, capability: int
+def test_tcgen05_is_read_from_the_architecture_name(
+    monkeypatch: pytest.MonkeyPatch, architecture: str, has_tcgen05: bool
 ) -> None:
+    monkeypatch.setattr(kimi_delta, "accelerator_count", lambda: 1)
     monkeypatch.setattr(
-        gated_deltanet, "accelerator_architecture_name", lambda: architecture
+        kimi_delta, "accelerator_architecture_name", lambda: architecture
     )
-    assert gated_deltanet._nvidia_compute_capability() == capability
+    assert kimi_delta.has_blackwell_tcgen05() == has_tcgen05
 
 
-@pytest.mark.parametrize("architecture", SM100_PLUS)
+def test_tcgen05_answers_false_without_an_accelerator(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(kimi_delta, "accelerator_count", lambda: 0)
+    monkeypatch.setattr(
+        kimi_delta, "accelerator_architecture_name", lambda: "sm_100a"
+    )
+    assert not kimi_delta.has_blackwell_tcgen05()
+
+
+@pytest.mark.parametrize("architecture", TCGEN05)
 def test_prefill_and_decode_are_both_wired(
     monkeypatch: pytest.MonkeyPatch, architecture: str
 ) -> None:
@@ -205,8 +220,10 @@ def _verify_mlir(
 ) -> str:
     """Builds a verify of the layer on ``architecture``."""
     monkeypatch.setattr(gated_deltanet, "accelerator_api", lambda: "cuda")
+    monkeypatch.setattr(kimi_delta, "accelerator_api", lambda: "cuda")
+    monkeypatch.setattr(kimi_delta, "accelerator_count", lambda: 1)
     monkeypatch.setattr(
-        gated_deltanet, "accelerator_architecture_name", lambda: architecture
+        kimi_delta, "accelerator_architecture_name", lambda: architecture
     )
     layer = GatedDeltaNet(
         hidden_size=HIDDEN,
@@ -279,7 +296,7 @@ def _verify_mlir(
     return str(graph)
 
 
-@pytest.mark.parametrize("architecture", SM100_PLUS)
+@pytest.mark.parametrize("architecture", TCGEN05)
 def test_a_verify_runs_its_long_rows_on_the_chunk_op(
     monkeypatch: pytest.MonkeyPatch, architecture: str
 ) -> None:
@@ -308,11 +325,11 @@ def test_a_verify_runs_its_long_rows_on_the_chunk_op(
     assert "mo.scatter_nd" not in mlir
 
 
-@pytest.mark.parametrize("architecture", PRE_SM100)
+@pytest.mark.parametrize("architecture", NO_TCGEN05)
 def test_a_verify_without_the_chunk_op_commits_its_long_rows(
     monkeypatch: pytest.MonkeyPatch, architecture: str
 ) -> None:
-    """Below SM100 the ring's commit variant keeps the long rows."""
+    """Without tcgen05 the ring's commit variant keeps the long rows."""
     mlir = _verify_mlir(monkeypatch, architecture)
     assert "kda_chunk" not in mlir
     assert "skip_long_rows = true" not in mlir

@@ -21,6 +21,7 @@
 #include "Mojo/ToolCommon/KGENPasses.h"
 #include "Mojo/TransformUtils/CallGraphUtils.h"
 #include "Mojo/TransformUtils/InliningUtils.h"
+#include "Support/Compiler/Threading.h"
 #include "Support/Context.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoOps.h"
 #include "Support/STLExtras.h"
@@ -503,19 +504,42 @@ void CallGraph::performInlining(uint64_t threshold) {
 }
 
 void CallGraph::collectNonCallReferencedSymbols(Operation *module) {
-  // One walker for the whole scan: its visited set persists across values,
-  // so a value visited under one attribute is not revisited under another;
-  // the insert below is idempotent, so the collected set is unchanged.
-  mlir::AttrTypeWalker walker;
-  walker.addWalk([&](FlatSymbolRefAttr ref) {
-    nonCallReferencedSyms.insert(ref.getAttr());
-  });
-  module->walk([&](Operation *op) {
+  auto walkAttrs = [](Operation *op, mlir::AttrTypeWalker &walker) {
     if (isa<KGENCallOpInterface>(op))
       return;
     for (NamedAttribute attr : op->getAttrs())
       walker.walk(attr.getValue());
+  };
+
+  SmallVector<Operation *, 0> topLevelOps;
+  for (Region &region : module->getRegions()) {
+    for (Block &block : region) {
+      for (Operation &op : block)
+        topLevelOps.push_back(&op);
+    }
+  }
+
+  // One walker for each chunk of top-level ops. Its visited set persists
+  // across values, so the chunk walks each value once.
+  auto chunkSyms = parallelMapChunks(
+      module->getContext(), topLevelOps, [&](ArrayRef<Operation *> ops) {
+        SmallVector<StringAttr, 0> syms;
+        mlir::AttrTypeWalker walker;
+        walker.addWalk(
+            [&](FlatSymbolRefAttr ref) { syms.push_back(ref.getAttr()); });
+        for (Operation *topLevelOp : ops)
+          topLevelOp->walk([&](Operation *op) { walkAttrs(op, walker); });
+        return syms;
+      });
+  for (const SmallVector<StringAttr, 0> &syms : chunkSyms)
+    nonCallReferencedSyms.insert(syms.begin(), syms.end());
+
+  mlir::AttrTypeWalker moduleWalker;
+  moduleWalker.addWalk([&](FlatSymbolRefAttr ref) {
+    nonCallReferencedSyms.insert(ref.getAttr());
   });
+  walkAttrs(module, moduleWalker);
+
   for (auto &[func, node] : nodes)
     node.nonCallReferencedSyms = &nonCallReferencedSyms;
 }
@@ -708,10 +732,20 @@ void AutomaticInline::runOnOperation() {
     state.join();
   }
 
+  // Unlink the dead functions on this thread, then destroy them in parallel.
+  // An unlinked function shares no use list with another function.
+  SmallVector<Operation *, 0> deadFuncs;
   for (auto &[func, node] : graph.nodes) {
-    if (node.func && node.isFunctionDead())
-      symtab.remove(func);
+    if (!node.func || !node.isFunctionDead())
+      continue;
+    symtab.remove(func);
+    func->remove();
+    deadFuncs.push_back(func);
+    // The node must not erase the function again when it is destroyed.
+    node.func = FuncOp();
   }
+  mlir::parallelForEach(&getContext(), deadFuncs,
+                        [](Operation *func) { func->destroy(); });
 }
 
 std::unique_ptr<mlir::Pass> KGEN::createAutomaticInline(

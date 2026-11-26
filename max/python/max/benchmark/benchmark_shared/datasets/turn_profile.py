@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from .distribution import BaseDistribution, DistributionParameter
 
 
@@ -70,23 +72,33 @@ class TurnProfile:
             delay=BaseDistribution.from_distribution_parameter(delay),
         )
 
-    def draw(self, *, min_input_len: int, min_output_len: int) -> TurnTargets:
+    def draw(
+        self,
+        *,
+        min_input_len: int,
+        min_output_len: int,
+        rng: np.random.RandomState | None = None,
+    ) -> TurnTargets:
         """Draw one turn's targets: one sample from each distribution.
 
         Args:
             min_input_len: Floor for the input length.
             min_output_len: Floor for the output length.
+            rng: The random stream to draw from, or ``None`` for NumPy's
+                global stream.
 
         Returns:
             The sampled lengths and delay.
         """
         return TurnTargets(
-            input_len=max(round(self.input_len.sample_value()), min_input_len),
+            input_len=max(
+                round(self.input_len.sample_value(rng)), min_input_len
+            ),
             output_len=max(
-                round(self.output_len.sample_value()), min_output_len
+                round(self.output_len.sample_value(rng)), min_output_len
             ),
             delay_ms=(
-                max(float(self.delay.sample_value()), 0.0)
+                max(float(self.delay.sample_value(rng)), 0.0)
                 if self.delay is not None
                 else None
             ),

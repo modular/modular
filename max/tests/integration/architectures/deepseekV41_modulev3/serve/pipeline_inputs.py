@@ -72,11 +72,12 @@ def pipeline_compile_input_types(
         pipeline_config=cast(
             Any,
             SimpleNamespace(
+                artifact_export=False,
                 model=SimpleNamespace(
                     huggingface_config=hf,
                     data_parallel_degree=1,
                     device_specs=[DeviceSpec.accelerator(0)],
-                )
+                ),
             ),
         ),
         devices=[CPU()],

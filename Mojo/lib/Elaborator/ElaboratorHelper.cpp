@@ -16,6 +16,7 @@
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/Support/NameMangling.h"
+#include "Mojo/ToolCommon/CompilationOptions.h"
 #include "Mojo/TransformUtils/ManglingUtils.h"
 #include "Support/DebugInfoDialect/IR/DebugInfoAttrs.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -83,6 +84,10 @@ StringAttr KGEN::applyLinkageName(StringAttr resolved, LinkageNameAttr lna,
   llvm::raw_string_ostream os(funcTypeStr);
   funcType.print(os);
   return appendAutoMangledSuffix(resolved, symName, funcTypeStr);
+}
+
+bool KGEN::sanitizesSymbolNames(TargetInfoAttr target) {
+  return target.isGPU() || isGPUTriple(target.getTriple());
 }
 
 void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {

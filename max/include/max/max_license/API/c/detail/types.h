@@ -14,6 +14,8 @@
 #ifndef GENERICML_API_C_DETAIL_TYPES_H
 #define GENERICML_API_C_DETAIL_TYPES_H
 
+#include "GraphCompiler/Support/GGUF/GGUF.h"
+#include "GraphCompiler/Support/GGUF/GGUFWriter.h"
 #include "GraphCompiler/Support/ModelTensorSpec.h"
 #include "GraphCompiler/Support/SafeTensor/SafeTensor.h"
 #include "Kernels/max_license/WeightsRegistry.h"
@@ -67,6 +69,32 @@ struct M_Safetensors {
 
 struct M_AsyncCompiledModel {
   M::AsyncValueRef<M::CompiledModels> valueOrError;
+};
+
+// Holds the tensors parsed from the files passed to `M_loadGGUF`, flattened
+// into a single name-keyed view across all files.
+struct M_GGUF {
+  // A materialized tensor: its device-memory view and its parsed metadata.
+  struct Entry {
+    M::Driver::DeviceBufferRef memory;
+    M::GGUF::TensorInfo info;
+  };
+
+  // Tensor names in load order, for stable index-based enumeration.
+  std::vector<std::string> names;
+  // name -> materialized entry.
+  llvm::StringMap<Entry> entries;
+  // Format version and tensor data alignment of the files.
+  uint32_t version = 0;
+  size_t alignment = 0;
+};
+
+// The state behind `M_newGGUFWriter`: the GGUF serializer and the alignment it
+// was created with.
+struct M_GGUFWriter {
+  explicit M_GGUFWriter(size_t alignment) : writer(alignment) {}
+
+  M::GGUFWriter writer;
 };
 
 struct M_AsyncModel {

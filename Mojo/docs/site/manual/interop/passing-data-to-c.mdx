@@ -185,9 +185,10 @@ struct CBuffer:
         var block = external_call[
             "malloc", Optional[Pointer[UInt8, MutUntrackedOrigin]]
         ](c_size_t(size))
-        if not block:
+        if case .Some(ptr) = block:
+            self.ptr = ptr
+        else:
             raise Error("malloc failed")
-        self.ptr = block.value()
         self.size = size
 
     def __enter__(self) -> Span[UInt8, MutUntrackedOrigin]:

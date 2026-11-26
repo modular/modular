@@ -218,20 +218,16 @@ RecordingDeviceContext::createHostBuffer(size_t byteSize) {
 
 ErrorOr<DeviceFunctionRef> RecordingDeviceContext::loadFunction(
     StringRef moduleName, StringRef functionName, StringRef code,
-    int32_t maxDynamicSharedBytes, StringRef debugLevel,
-    int32_t optimizationLevel) {
+    StringRef debugLevel, int32_t optimizationLevel) {
   return builder_->context().loadFunction(moduleName, functionName, code,
-                                          maxDynamicSharedBytes, debugLevel,
-                                          optimizationLevel);
+                                          debugLevel, optimizationLevel);
 }
 
 ErrorOr<DeviceFunctionRef> RecordingDeviceContext::loadFunctionWithDebugName(
     StringRef moduleName, StringRef functionName, StringRef code,
-    int32_t maxDynamicSharedBytes, StringRef debugLevel,
-    int32_t optimizationLevel, StringRef debugName) {
+    StringRef debugLevel, int32_t optimizationLevel, StringRef debugName) {
   return builder_->context().loadFunctionWithDebugName(
-      moduleName, functionName, code, maxDynamicSharedBytes, debugLevel,
-      optimizationLevel, debugName);
+      moduleName, functionName, code, debugLevel, optimizationLevel, debugName);
 }
 
 namespace {

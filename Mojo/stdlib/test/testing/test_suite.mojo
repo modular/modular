@@ -105,23 +105,23 @@ def main() raises:
         suite^.abandon()
 
     var result_repr = String()
-    TestResult.PASS.write_repr_to(result_repr)
-    assert_equal(result_repr, "TestResult.PASS")
+    TestResult.pass.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.pass")
 
     result_repr = String()
-    TestResult.FAIL.write_repr_to(result_repr)
-    assert_equal(result_repr, "TestResult.FAIL")
+    TestResult.fail.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.fail")
 
     result_repr = String()
-    TestResult.SKIP.write_repr_to(result_repr)
-    assert_equal(result_repr, "TestResult.SKIP")
+    TestResult.skip.write_repr_to(result_repr)
+    assert_equal(result_repr, "TestResult.skip")
 
     var test_report = TestReport.passed(name="my_test", duration_ns=1234)
     var report_repr = String()
     test_report.write_repr_to(report_repr)
     assert_true(report_repr.startswith("TestReport("))
     assert_true("name=" in report_repr)
-    assert_true("result=TestResult.PASS" in report_repr)
+    assert_true("result=TestResult.pass" in report_repr)
     assert_true("duration_ns=1234" in report_repr)
 
     var suite_report_repr = String()

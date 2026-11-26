@@ -1105,9 +1105,8 @@ struct String(
         self._clear_nul_terminator()
         var length = self.byte_length()
         var new_length = length + codepoint.utf8_byte_length()
-        self.reserve_bytes(new_length)
         _ = codepoint.unsafe_write_utf8(
-            self.unsafe_ptr_mut().unsafe_offset(length)
+            self.unsafe_ptr_mut(new_length).unsafe_offset(length)
         )
         self._set_byte_length(new_length)
 
@@ -1254,10 +1253,6 @@ struct String(
 
     def join[T: Copyable & Writable](self, elems: Span[T, _]) -> String:
         """Joins string elements using the current string as a delimiter.
-        Defaults to writing to the stack if total bytes of `elems` is less than
-        `buffer_size`, otherwise will allocate once to the heap and write
-        directly into that. The `buffer_size` defaults to 4096 bytes to match
-        the default page size on arm64 and x86-64.
 
         Parameters:
             T: The type of the elements. Must implement the `Copyable`,
@@ -1272,10 +1267,6 @@ struct String(
         Notes:
             - Defaults to writing directly to the string if the bytes
             fit in an inline `String`, otherwise will process it by chunks.
-            - The `buffer_size` defaults to 4096 bytes to match the default
-            page size on arm64 and x86-64, but you can increase this if you're
-            joining a very large `List` of elements to write into the stack
-            instead of the heap.
         """
         return StringSpan(self).join(elems)
 
@@ -1556,7 +1547,6 @@ struct String(
             .as_imm()
         )
 
-    @__unsafe_nested_origins_read_only
     def as_bytes(
         ref self,
     ) -> Span[Byte, Self._InteriorOrigin[origin_of(self)]]:
@@ -1582,7 +1572,6 @@ struct String(
             length=self.byte_length(),
         )
 
-    @__unsafe_nested_origins_read_only
     def _interior_slice(
         ref self,
     ) -> StringSpan[Self._InteriorOrigin[origin_of(self)]]:
@@ -1783,11 +1772,6 @@ struct String(
                 listed above, otherwise False.
         """
         return StringSpan(self).is_ascii_whitespace()
-
-    @doc_hidden
-    @deprecated(use=is_ascii_whitespace)
-    def isspace(self) -> Bool:
-        return self.is_ascii_whitespace()
 
     @inline(.always)
     def split(
@@ -2824,11 +2808,13 @@ def _handle_base_prefix(
     var start = pos
     var buff = str_slice.unsafe_ptr()
     if start + 1 < str_len:
-        var prefix_char = chr(Int(buff[unsafe_offset=start + 1]))
-        if buff[unsafe_offset=start] == UInt8(ord("0")) and (
-            (base == 2 and (prefix_char == "b" or prefix_char == "B"))
-            or (base == 8 and (prefix_char == "o" or prefix_char == "O"))
-            or (base == 16 and (prefix_char == "x" or prefix_char == "X"))
+        # `| 0x20` lower-cases ASCII letters, and no other byte lands on
+        # `b`, `o` or `x`.
+        var prefix = buff[unsafe_offset=start + 1] | 0x20
+        if buff[unsafe_offset=start] == Byte(ord("0")) and (
+            (base == 2 and prefix == Byte(ord("b")))
+            or (base == 8 and prefix == Byte(ord("o")))
+            or (base == 16 and prefix == Byte(ord("x")))
         ):
             start += 2
     return start, start != pos
@@ -2849,28 +2835,34 @@ def _identify_base(str_slice: StringSpan, start: Int) -> Tuple[Int, Int]:
     # just 1 digit, assume base 10
     if start == (length - 1):
         return 10, start
-    if str_slice[byte=start] == "0":
-        var second_digit = str_slice[byte=start + 1]
-        if second_digit == "b" or second_digit == "B":
+
+    # Work off raw bytes: `str_slice[byte=i]` builds a one-byte `StringSpan`
+    # and compares it with a `memcmp` call.
+    var buff = str_slice.unsafe_ptr()
+    var first = buff[unsafe_offset=start]
+    if first == Byte(ord("0")):
+        # `| 0x20` lower-cases ASCII letters, and no other byte lands on
+        # `b`, `o` or `x`.
+        var second = buff[unsafe_offset=start + 1] | 0x20
+        if second == Byte(ord("b")):
             return 2, start + 2
-        if second_digit == "o" or second_digit == "O":
+        if second == Byte(ord("o")):
             return 8, start + 2
-        if second_digit == "x" or second_digit == "X":
+        if second == Byte(ord("x")):
             return 16, start + 2
         # checking for special case of all "0", "_" are also allowed
         var was_last_character_underscore = False
         for i in range(start + 1, length):
-            if str_slice[byte=i] == "_":
+            var byte = buff[unsafe_offset=i]
+            if byte == Byte(ord("_")):
                 if was_last_character_underscore:
                     return -1, -1
-                else:
-                    was_last_character_underscore = True
-                    continue
-            else:
-                was_last_character_underscore = False
-            if str_slice[byte=i] != StringSpan("0"):
+                was_last_character_underscore = True
+                continue
+            was_last_character_underscore = False
+            if byte != Byte(ord("0")):
                 return -1, -1
-    elif ord("1") <= Int(str_slice.as_bytes()[start]) <= ord("9"):
+    elif Byte(ord("1")) <= first <= Byte(ord("9")):
         return 10, start
     else:
         return -1, -1

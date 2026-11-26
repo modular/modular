@@ -399,6 +399,7 @@ def _launch_matmul[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def epilogue_fn[
             _dtype: DType, width: SIMDLength, *, alignment: Int
         ](idx: Coord, val: SIMD[_dtype, width]) {var d}:

@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Backend-dispatching wrapper for `DevicePointer`.
+"""`DevicePointer`: a host-side pointer into a `DeviceBuffer`.
 
-A `DevicePointer` borrows a `DeviceBuffer` and an offset into it. The wrapper
-holds the backend's pointer and forwards to it, so each backend keeps its own
-notion of buffer identity for comparisons.
+A `DevicePointer` borrows a `DeviceBuffer` and an offset into it. The pointer
+logic is shared by both backends; buffer identity comes from
+`DeviceBuffer._identity()`, and only the Metal buffer handle differs.
 """
 
 from std.builtin.device_passable import (
@@ -29,29 +29,7 @@ from max._driver.max_license.device_context_dispatch.device_buffer import (
     DeviceBuffer,
 )
 from .device_context import use_legacy_backend
-from max.gpu.host._legacy.device_context import LegacyDevicePointer
 from max.gpu.host.info import default_accelerator
-
-
-@fieldwise_init
-struct _HALDevicePointer[
-    mut: Bool,
-    //,
-    dtype: DType,
-    origin: Origin[mut=mut],
-](ImplicitlyCopyable, TrivialRegisterPassable):
-    """The state of a `DevicePointer` on the HAL backend.
-
-    Parameters:
-        mut: Whether the borrow of the underlying `DeviceBuffer` is mutable
-            (inferred from `origin`).
-        dtype: Data dtype to be stored in the pointer.
-        origin: The origin of the borrowed `DeviceBuffer`.
-    """
-
-    var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
-    var _offset: Int
-    var _size: Int
 
 
 struct DevicePointer[
@@ -81,11 +59,8 @@ struct DevicePointer[
     - Does not support load/store operations.
 
     At the device function execution boundary a `DevicePointer` is transformed
-    into an `Pointer` on the device at the point of being handed over to
+    into a `Pointer` on the device at the point of being handed over to
     the device driver.
-
-    The wrapper holds the backend's pointer, so each backend keeps its own
-    notion of buffer identity for comparisons.
 
     Parameters:
         mut: Whether the borrow of the underlying `DeviceBuffer` is mutable
@@ -94,11 +69,9 @@ struct DevicePointer[
         origin: The origin of the borrowed `DeviceBuffer`.
     """
 
-    comptime _Legacy = LegacyDevicePointer[Self.dtype, Self.origin]
-    comptime _HAL = _HALDevicePointer[Self.dtype, Self.origin]
-    comptime _Impl = Self._Legacy if use_legacy_backend() else Self._HAL
-
-    var _impl: Self._Impl
+    var _buffer: Pointer[DeviceBuffer[Self.dtype], Self.origin]
+    var _offset: Int
+    var _size: Int
 
     comptime PointeeType: AnyType = Scalar[Self.dtype]
     """The type this pointer points to."""
@@ -124,14 +97,12 @@ struct DevicePointer[
         Raises:
             If `buffer` has size 0.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl = Self._Legacy(buffer._legacy_buffer())
-            return
-
         var size = len(buffer)
         if size == 0:
             raise Error("DevicePointer: size of DeviceBuffer must not be 0")
-        self._impl = Self._HAL(Pointer(to=buffer), 0, size)
+        self._buffer = Pointer(to=buffer)
+        self._offset = 0
+        self._size = size
 
     def __init__(
         out self,
@@ -149,10 +120,6 @@ struct DevicePointer[
             If `buffer` has size 0, or if `offset` is outside the half-open
             range `[0, len(buffer))`.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl = Self._Legacy(buffer._legacy_buffer(), offset)
-            return
-
         var size = len(buffer)
         if size == 0:
             raise Error("DevicePointer: invalid DeviceBuffer of size '0'")
@@ -161,16 +128,9 @@ struct DevicePointer[
                 t"DevicePointer: invalid offset '{offset}' for DeviceBuffer of"
                 t" size '{size}'"
             )
-        self._impl = Self._HAL(Pointer(to=buffer), offset, size)
-
-    @doc_hidden
-    def __init__(out self, *, var _impl: Self._Impl):
-        """Wraps an already-constructed backend pointer.
-
-        Args:
-            _impl: The backend pointer to wrap.
-        """
-        self._impl = _impl
+        self._buffer = Pointer(to=buffer)
+        self._offset = offset
+        self._size = size
 
     # ===-------------------------------------------------------------------===#
     # Accessors
@@ -185,12 +145,7 @@ struct DevicePointer[
         Returns:
             A reference to the referenced `DeviceBuffer`.
         """
-        comptime __guard not use_legacy_backend() else:
-            return rebind[Pointer[DeviceBuffer[Self.dtype], Self.origin]](
-                Pointer(to=self._impl.buffer())
-            )[]
-
-        return self._impl._buffer[]
+        return self._buffer[]
 
     def offset(self) -> Int:
         """Returns the element offset from the start of the owning buffer.
@@ -198,10 +153,7 @@ struct DevicePointer[
         Returns:
             The element offset.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.offset()
-
-        return self._impl._offset
+        return self._offset
 
     @doc_hidden
     def unsafe_ptr(
@@ -216,25 +168,31 @@ struct DevicePointer[
         Returns:
             The raw device pointer.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.unsafe_ptr()
-
         # TODO: GEX-3693: Assert/raise when target doesn't support raw device
         # pointer access
-        # `DeviceBuffer.unsafe_ptr()` now ties its mutability to the borrow of
-        # the buffer; force mutable to preserve this helper's `MutAnyOrigin`
+        # `DeviceBuffer.unsafe_ptr()` ties its mutability to the borrow of the
+        # buffer; force mutable to preserve this helper's `MutAnyOrigin`
         # contract.
         return (
-            self._impl._buffer[]
-            ._impl._device_ptr.unsafe_offset(self._impl._offset)
+            self._buffer[]
+            .unsafe_ptr()
+            .unsafe_offset(self._offset)
+            .unsafe_mut_cast[True]()
             .as_unsafe_any_origin()
         )
 
     def _buffer_handle(
         ref self,
     ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
+        # Metal's argument encoder binds each buffer by its C++ handle. HAL
+        # buffers have none.
         comptime __guard not use_legacy_backend() else:
-            return self._impl._buffer_handle()
+            return Optional(
+                self._buffer[]
+                ._legacy_buffer()
+                ._handle.value()
+                .unsafe_bitcast[NoneType]()
+            )
 
         return None
 
@@ -314,18 +272,9 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard not use_legacy_backend() else:
-            return Self(_impl=self._impl + n)
-
-        var offset = self._impl._offset + n
-        if offset < 0 or offset >= self._impl._size:
-            raise Error(
-                t"DevicePointer: addition of '{n}' results in invalid offset of"
-                t" '{offset}' for DeviceBuffer of size {self._impl._size}"
-            )
-        return Self(
-            _impl=Self._HAL(self._impl._buffer, offset, self._impl._size)
-        )
+        var result = self
+        result += n
+        return result
 
     def __sub__(self, n: Int) raises -> Self:
         """Returns a new `DevicePointer` offset backward by `n` elements.
@@ -341,18 +290,9 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard not use_legacy_backend() else:
-            return Self(_impl=self._impl - n)
-
-        var offset = self._impl._offset - n
-        if offset < 0 or offset >= self._impl._size:
-            raise Error(
-                t"DevicePointer: subtraction of '{n}' results in invalid offset"
-                t" of '{offset}' for DeviceBuffer of size {self._impl._size}"
-            )
-        return Self(
-            _impl=Self._HAL(self._impl._buffer, offset, self._impl._size)
-        )
+        var result = self
+        result -= n
+        return result
 
     def __iadd__(mut self, n: Int) raises:
         """Offsets this `DevicePointer` forward by `n` elements in place.
@@ -364,19 +304,13 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard not use_legacy_backend() else:
-            var impl = self._impl
-            impl.__iadd__(n)
-            self._impl = impl
-            return
-
-        var offset = self._impl._offset + n
-        if offset < 0 or offset >= self._impl._size:
+        var offset = self._offset + n
+        if offset < 0 or offset >= self._size:
             raise Error(
                 t"DevicePointer: addition of '{n}' results in invalid offset of"
-                t" '{offset}' for DeviceBuffer of size {self._impl._size}"
+                t" '{offset}' for DeviceBuffer of size {self._size}"
             )
-        self._impl._offset = offset
+        self._offset = offset
 
     def __isub__(mut self, n: Int) raises:
         """Offsets this `DevicePointer` backward by `n` elements in place.
@@ -388,19 +322,13 @@ struct DevicePointer[
             If the resulting offset is outside the bounds of the owning
             `DeviceBuffer`.
         """
-        comptime __guard not use_legacy_backend() else:
-            var impl = self._impl
-            impl.__isub__(n)
-            self._impl = impl
-            return
-
-        var offset = self._impl._offset - n
-        if offset < 0 or offset >= self._impl._size:
+        var offset = self._offset - n
+        if offset < 0 or offset >= self._size:
             raise Error(
                 t"DevicePointer: subtraction of '{n}' results in invalid offset"
-                t" of '{offset}' for DeviceBuffer of size {self._impl._size}"
+                t" of '{offset}' for DeviceBuffer of size {self._size}"
             )
-        self._impl._offset = offset
+        self._offset = offset
 
     # ===-------------------------------------------------------------------===#
     # Comparison
@@ -416,17 +344,9 @@ struct DevicePointer[
         Returns:
             Whether the pointers are equal.
         """
-        comptime __guard not use_legacy_backend() else:
-            var lhs = self._impl
-            var rhs = other._impl
-            return lhs == rhs
-
-        # Buffer identity = base device address (HAL buffers have no C++
-        # handle).
         return (
-            self._impl._buffer[]._impl._device_ptr
-            == other._impl._buffer[]._impl._device_ptr
-            and self._impl._offset == other._impl._offset
+            self._buffer[]._identity() == other._buffer[]._identity()
+            and self._offset == other._offset
         )
 
     @__unsafe_nested_origins_read_only
@@ -439,17 +359,9 @@ struct DevicePointer[
         Returns:
             Whether the pointers are equal.
         """
-        comptime __guard not use_legacy_backend() else:
-            var lhs = self._impl
-            var rhs = other._impl
-            return lhs == rhs
-
-        # Buffer identity = base device address (HAL buffers have no C++
-        # handle).
         return (
-            self._impl._buffer[]._impl._device_ptr
-            == other._impl._buffer[]._impl._device_ptr
-            and self._impl._offset == other._impl._offset
+            self._buffer[]._identity() == other._buffer[]._identity()
+            and self._offset == other._offset
         )
 
     @__unsafe_nested_origins_read_only
@@ -489,20 +401,12 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard not use_legacy_backend() else:
-            var lhs = self._impl
-            var rhs = other._impl
-            return lhs < rhs
-
-        if (
-            self._impl._buffer[]._impl._device_ptr
-            != other._impl._buffer[]._impl._device_ptr
-        ):
+        if self._buffer[]._identity() != other._buffer[]._identity():
             raise Error(
                 "DevicePointer: less than comparison not supported when the"
                 " underlying DeviceBuffer does not match"
             )
-        return self._impl._offset < other._impl._offset
+        return self._offset < other._offset
 
     @__unsafe_nested_origins_read_only
     def __le__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
@@ -517,20 +421,12 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard not use_legacy_backend() else:
-            var lhs = self._impl
-            var rhs = other._impl
-            return lhs <= rhs
-
-        if (
-            self._impl._buffer[]._impl._device_ptr
-            != other._impl._buffer[]._impl._device_ptr
-        ):
+        if self._buffer[]._identity() != other._buffer[]._identity():
             raise Error(
                 "DevicePointer: less than or equal comparison not supported"
                 " when the underlying DeviceBuffer does not match"
             )
-        return self._impl._offset <= other._impl._offset
+        return self._offset <= other._offset
 
     @__unsafe_nested_origins_read_only
     def __gt__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
@@ -545,20 +441,12 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard not use_legacy_backend() else:
-            var lhs = self._impl
-            var rhs = other._impl
-            return lhs > rhs
-
-        if (
-            self._impl._buffer[]._impl._device_ptr
-            != other._impl._buffer[]._impl._device_ptr
-        ):
+        if self._buffer[]._identity() != other._buffer[]._identity():
             raise Error(
                 "DevicePointer: greater than comparison not supported when the"
                 " underlying DeviceBuffer does not match"
             )
-        return self._impl._offset > other._impl._offset
+        return self._offset > other._offset
 
     @__unsafe_nested_origins_read_only
     def __ge__(self, other: DevicePointer[Self.dtype, _]) raises -> Bool:
@@ -573,20 +461,12 @@ struct DevicePointer[
         Raises:
             If the pointers are into different buffers.
         """
-        comptime __guard not use_legacy_backend() else:
-            var lhs = self._impl
-            var rhs = other._impl
-            return lhs >= rhs
-
-        if (
-            self._impl._buffer[]._impl._device_ptr
-            != other._impl._buffer[]._impl._device_ptr
-        ):
+        if self._buffer[]._identity() != other._buffer[]._identity():
             raise Error(
                 "DevicePointer: greater than or equal comparison not supported"
                 " when the underlying DeviceBuffer does not match"
             )
-        return self._impl._offset >= other._impl._offset
+        return self._offset >= other._offset
 
     # ===-------------------------------------------------------------------===#
     # Writable and DevicePassable
@@ -598,14 +478,10 @@ struct DevicePointer[
         Args:
             writer: The writer to write to.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.write_to(writer)
-            return
-
         writer.write(
             t"DevicePointer[{Self.dtype}]("
-            t"buffer=DeviceBuffer(size={len(self._impl._buffer[])}), "
-            t"offset={self._impl._offset})"
+            t"buffer=DeviceBuffer(size={len(self._buffer[])}), "
+            t"offset={self._offset})"
         )
 
     def _to_device_type(

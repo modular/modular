@@ -173,7 +173,7 @@ SmallVector<Value> closeOverCapturedValues(Region &region) {
     // Break captured chains: all execution ordering is now encoded as
     // dependency nodes. Chains are not present in the generated Mojo code and
     // can inhibit sinking.
-    if (isa<MEF::ChainType>(value.getType())) {
+    if (isa<MLRT::MEF::ChainType>(value.getType())) {
       OpBuilder builder(value.getContext());
       builder.setInsertionPointToStart(&body);
       Value chain = MOGG::ChainDummyOp::create(builder, value.getLoc());

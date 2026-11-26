@@ -253,11 +253,11 @@ def test_resolve_config_file_passthrough_for_plain_paths() -> None:
 def test_resolve_config_file_resolves_builtin_recipe() -> None:
     """Paths with the max/pipelines/architectures/ prefix resolve to the package."""
     resolved = _resolve_config_file(
-        "max/pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+        "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml"
     )
     assert Path(resolved).is_file()
     assert resolved.endswith(
-        "pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+        "pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml"
     )
 
 
@@ -693,11 +693,11 @@ def test_config_file_with_builtin_recipe_prefix() -> None:
     import yaml
 
     resolved = _resolve_config_file(
-        "max/pipelines/architectures/llama3_modulev3/recipes/llama32_1b.yaml"
+        "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml"
     )
     with open(resolved) as f:
         data = yaml.safe_load(f)
-    assert data["model"]["model_path"] == "meta-llama/Llama-3.2-1B-Instruct"
+    assert data["model"]["model_path"] == "meta-llama/Llama-3.1-8B-Instruct"
 
 
 def test_synthetic_acceptance_rejected_with_constrained_decoding() -> None:

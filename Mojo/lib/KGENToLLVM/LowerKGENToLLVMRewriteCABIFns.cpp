@@ -42,6 +42,11 @@ reconstructCABIArguments(LLVMFunctionType newFnTy, LLVMFuncOp func,
     Location loc = origArg.getLoc();
     b.setLoc(loc);
     Type origType = origArg.getType();
+    if (coercion.isIgnore()) {
+      // C passes no data for the argument.
+      reconstructed.push_back(UndefOp::create(b, origType));
+      continue;
+    }
     unsigned paramIdx = sigClass.getLLVMParamIndex(argIdx);
     auto paramTy = newFnTy.getParamType(paramIdx);
     if (coercion.isIdentity()) {
@@ -100,7 +105,13 @@ createCABIResultSlot(LLVMFuncOp func, const M::KGEN::CoercionInfo &retInfo,
 namespace M::KGEN {
 
 void rewriteCABIReturn(ReturnOp ret, const CABIDefinition &def) {
-  if (!def.retSlot || ret.getOperands().empty())
+  if (ret.getOperands().empty())
+    return;
+  if (def.ret.isIgnore()) {
+    ret->setOperands(ValueRange());
+    return;
+  }
+  if (!def.retSlot)
     return;
   ImplicitLocOpBuilder rb(ret.getLoc(), ret);
   // sret: store the result through the hidden pointer and return void.
@@ -167,7 +178,7 @@ CABIDefinition rewriteCABIFunctionEntry(LLVMFuncOp func, CABIInfo &abiInfo,
       origArg.replaceAllUsesWith(reconVal);
     entry->eraseArguments(0, origArgTypes.size());
 
-    if (!retInfo.isIdentity()) {
+    if (!retInfo.isIdentity() && !retInfo.isIgnore()) {
       def = createCABIResultSlot(func, retInfo, origRetType, b, ptrType, ctx,
                                  loc, dl);
     }

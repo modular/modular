@@ -58,6 +58,7 @@ comptime test_2d_shapes = (
 )
 
 
+@__allow_legacy_any_origin_fields
 def reducescatter_test[
     dtype: DType,
     ngpus: Int,
@@ -398,6 +399,7 @@ def _residual_value[
     return Scalar[dtype]((flat_idx % 7) + 1 + 8 * group_id)
 
 
+@__allow_legacy_any_origin_fields
 def grouped_reducescatter_test[
     ngpus: Int = 4,
     group_size: Int = 2,

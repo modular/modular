@@ -62,6 +62,9 @@ def _collapse_norm(
         streams.dtype,
         streams.mesh.devices[0],
     ):
+        # The fused op rounds the norm once; a norm that rounds twice would
+        # give other results here than on the graph-op path.
+        assert norm.multiply_before_cast, "the fused iHC norm rounds once"
         # The op runs per device; under tensor parallelism every device
         # computes the same replicated result.
         x, gates = ihc_pre(

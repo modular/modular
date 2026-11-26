@@ -62,10 +62,13 @@ class EPConfig:
     .. note::
 
        The EP kernel requires ``n_gpus_per_node * n_nodes >= 2``.
-       Single-GPU MoE configs pass Python construction but fail at
-       Mojo kernel compile (``constraint failed``) after 2-3 minutes.
-       For single-GPU MoE, instantiate the MoE block without an EP
-       manager and use ``ShardingStrategy.tensor_parallel(1)``.
+       :func:`max.nn.ep.check_supported` accepts a one-device mesh when
+       ``n_gpus_per_node == 1``, so that a rank-local simulation can run
+       one rank's share of the exchange on one GPU. A real deployment on
+       one single-GPU node passes that check but fails at Mojo kernel
+       compile (``constraint failed``) after 2-3 minutes. For single-GPU
+       MoE, build the MoE block without an EP config and use
+       ``ShardingStrategy.tensor_parallel(1)``.
     """
 
     dispatch_dtype: DType
@@ -93,7 +96,7 @@ class EPConfig:
     """Total number of nodes in the distributed setup."""
 
     node_id: int = -1
-    """ID of the current node. Will be set by the EPCommInitializer."""
+    """ID of the current node, which EP init finds."""
 
     dispatch_quant_config: QuantConfig | None = None
     """Quantization configuration used for dispatch token quantization."""
@@ -144,14 +147,18 @@ class EPConfig:
     moe_dim: int = 0
     """Intermediate width of the routed experts' FFN, when the model provides
     it. A config that gives it gets the fused MoE counters' reserve in its EP
-    sync-counter buffers. It does not request the fused MoE, which needs
-    ``MODULAR_EP_FUSED_MOE=1`` and a configuration the backend serves."""
+    sync-counter buffers. It does not request the fused MoE: see
+    :attr:`fused_moe`."""
+
+    fused_moe: bool = False
+    """Whether EP init sets up the backend's one-launch fused MoE. A ModuleV3
+    pipeline sets it from ``MODULAR_EP_FUSED_MOE=1``, which the legacy
+    ``EPCommInitializer`` reads itself."""
 
     fused_moe_ready: bool = False
     """Whether EP init set up the backend's one-launch fused MoE for this
-    configuration. Set by :class:`EPCommInitializer` when
-    ``MODULAR_EP_FUSED_MOE=1`` requests it and the backend serves the
-    configuration; layers whose experts the fused op serves then run
+    configuration: it was requested and the backend serves the
+    configuration. Layers whose experts the fused op serves then run
     dispatch, FFN and combine as one launch."""
 
     use_allreduce: bool = False
@@ -177,7 +184,8 @@ class EPConfig:
 
     # EPLB parameters (used only when eplb_enabled is True)
     eplb_enabled: bool = False
-    """When true, EPBatchManager exposes log2phy / logcnt input buffer. """
+    """When true, the exchange's graph inputs include each GPU's ``log2phy``
+    and ``logcnt`` maps (:attr:`max.nn.ep.EPBuffers.eplb`)."""
 
     num_moe_layers: int = 0
     """Number of MoE layers; sizes the per layer EPLB buffer. """
@@ -192,17 +200,20 @@ class EPConfig:
     (``max_replicas == 1``)."""
 
     eplb_count_expert_load: bool = False
-    """When true, EPBatchManager exposes one ``[num_moe_layers,
-    n_local_experts]`` uint64 tally per GPU and every dispatch adds each local
-    expert slot's routed-token count to the row of its MoE layer. The tally is
-    a running total the engine reads and differences on the host. Independent
-    of ``eplb_enabled``: a static placement can be profiled too."""
+    """When true, the exchange's graph inputs include one ``[num_moe_layers,
+    n_local_experts]`` uint64 tally per GPU
+    (:attr:`max.nn.ep.EPBuffers.expert_load`), and every dispatch adds each
+    local expert slot's routed-token count to the row of its MoE layer. The
+    tally is a running total the engine reads and differences on the host.
+    Independent of ``eplb_enabled``: a static placement can be profiled
+    too."""
 
     eplb_phy2log_plan: Any = None
     """Optional pre-computed EPLB plan (phy2log numpy array, shape
-    [num_moe_layers, num_phy]). When non-None, EPBatchManager picks it
-    up at construction time so that MoE.shard sees the plan during the
-    model's first __init__ pass (no re-shard needed).
+    [num_moe_layers, num_phy]). Only ModuleV2 models read it: when non-None,
+    the legacy ``EPBatchManager`` picks it up at construction time so that
+    MoE.shard sees the plan during the model's first __init__ pass (no
+    re-shard needed). :mod:`max.nn.ep` does not read it.
     """
 
     # In EPConfig, alongside n_experts / num_moe_layers / max_replicas:
@@ -422,9 +433,10 @@ def estimate_ep_memory_usage(
 ) -> int:
     """Estimate the EP communication memory usage per device per buffer group.
 
-    This is a standalone function so it can be called both from
-    :class:`~max.nn.legacy.comm.ep.ep_manager.EPCommInitializer` (which has a fully-validated ``EPConfig``)
-    and from memory estimators that only need the numeric fields.
+    This is a standalone function so it can be called both through
+    :meth:`EPConfig.estimate_memory_usage`, which EP init calls on a
+    fully-validated ``EPConfig``, and from
+    memory estimators that only need the numeric fields.
 
     Args:
         hidden_size: Model hidden dimension.

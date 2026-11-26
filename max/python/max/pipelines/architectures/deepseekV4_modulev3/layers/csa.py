@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """One compressed stream on ModuleV3: state leaf in, zone leaf out.
 
-Stores the chunk's raw projections into the state leaf, pools every window
-the chunk touches, and stores each candidate entry into the zone leaf at
-entry slot ``P // ratio + w``. Storing the trailing, possibly unclosed window
-is exact; the proof is in the docstring of the ModuleV2 implementation
-(``deepseekV4/layers/csa.py`` at dfc8109fc0c).
+One op stores the chunk's raw projections into the state leaf, pools every
+window the chunk closes, and stores each entry into the zone leaf at entry
+slot ``P // ratio + w``. A window still open after the chunk is not stored:
+no query reads its slot until a later chunk closes and writes it.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from max.dtype import DType
 from max.support.math import ceildiv
 from max.tensor import Tensor
 
-from .cache import KEY, VALUE, CacheLeaf, LayerIndex
+from .cache import CacheLeaf, LayerIndex
 from .compressor import DeepseekV4Compressor
 from .ragged import RaggedRows, WindowRows
 
@@ -125,20 +124,15 @@ def compressed_stream(
 
     kv_proj, score_proj = compressor.projections(x32)
     cap = ceildiv(max_seq_len, ratio)
-    state_leaf.store(layer.zone, KEY, kv_proj, rows.offsets)
-    state_leaf.store(layer.zone, VALUE, score_proj, rows.offsets)
-    woff = windows.woff.cast(DType.uint32)
-    fresh = compressor(
-        kv_proj, score_proj, rows, woff, freqs_table, state_leaf, layer.zone
-    )
-    zone_leaf.store(
+    compressor(
+        kv_proj,
+        score_proj,
+        rows,
+        windows.woff.cast(DType.uint32),
+        freqs_table,
+        state_leaf,
+        zone_leaf,
         layer.zone,
-        KEY,
-        fresh,
-        woff,
-        cache_lengths=windows.base,
-        rows_per_seq=cap,
-        ratio=ratio,
     )
     return CompressedStream(
         windows=windows,

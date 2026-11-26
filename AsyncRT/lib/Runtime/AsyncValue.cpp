@@ -479,8 +479,7 @@ void AsyncValue::setToErrorAndDecRef(EncodedDiagnostic diagnostic) {
 void AsyncValue::andThenAsyncOutOfLine(Waiter waiter) {
   andThenSync(
       [waiter = std::move(waiter), cpuDevice = getCPUDevice()]() mutable {
-        cpuDevice->getWorkQueue()->addTask(
-            [waiter = std::move(waiter)]() mutable { waiter(); });
+        cpuDevice->getWorkQueue()->addTask(std::move(waiter));
       });
 }
 

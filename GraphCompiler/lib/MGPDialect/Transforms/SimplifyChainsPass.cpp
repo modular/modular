@@ -54,11 +54,11 @@ class SimplifyChainsPass
     if (!op)
       return ValueRange{};
 
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op))
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op))
       // Only the extra strict operands are gating for control flow ops.
       return cfOp.getStrictExtraOperands();
 
-    if (isa<MEF::NonStrictInterface>(op))
+    if (isa<MLRT::MEF::NonStrictInterface>(op))
       return ValueRange{};
     return op->getOperands();
   }
@@ -79,7 +79,7 @@ class SimplifyChainsPass
       if (!visited.insert(top).second)
         continue;
 
-      if (auto chain = top.getDefiningOp<GRT::ChainCreateOp>()) {
+      if (auto chain = top.getDefiningOp<MLRT::GRT::ChainCreateOp>()) {
         for (auto input : chain.getInputChains())
           stack.push(input);
 
@@ -100,7 +100,7 @@ class SimplifyChainsPass
   /// this walks the transitive gating inputs of the producers of %0, %1, and %2
   /// and deletes any of %0, %1, %2 reachable from another.
   SmallVector<Value, 16>
-  eliminateImpliedByOperands(GRT::ChainCreateOp chainCreate) {
+  eliminateImpliedByOperands(MLRT::GRT::ChainCreateOp chainCreate) {
     // Needles still in the set at the end were not found.
     llvm::SmallSetVector<Value, 16> needles;
     for (auto arg : chainCreate.getInputChains()) {
@@ -137,19 +137,20 @@ class SimplifyChainsPass
   void runOnOperation() override {
     ModelOp modelOp = getOperation();
 
-    SmallVector<GRT::ChainCreateOp> chainCreates;
+    SmallVector<MLRT::GRT::ChainCreateOp> chainCreates;
 
-    modelOp.walk([&](GRT::ChainCreateOp op) { chainCreates.push_back(op); });
+    modelOp.walk(
+        [&](MLRT::GRT::ChainCreateOp op) { chainCreates.push_back(op); });
 
     using CacheT =
-        SmallVector<std::pair<GRT::ChainCreateOp, SmallVector<Value>>>;
+        SmallVector<std::pair<MLRT::GRT::ChainCreateOp, SmallVector<Value>>>;
 
     auto consolidate = [](CacheT &source, MutableArrayRef<CacheT> others) {
       for (CacheT &other : others)
         source.append(std::move(other));
     };
 
-    auto func = [&](CacheT &cache, GRT::ChainCreateOp op) {
+    auto func = [&](CacheT &cache, MLRT::GRT::ChainCreateOp op) {
       cache.emplace_back(op, eliminateImpliedByOperands(op));
       return success();
     };
@@ -166,7 +167,8 @@ class SimplifyChainsPass
       chainOp.setInputChains(values);
 
     RewritePatternSet patterns(&getContext());
-    GRT::ChainCreateOp::getCanonicalizationPatterns(patterns, &getContext());
+    MLRT::GRT::ChainCreateOp::getCanonicalizationPatterns(patterns,
+                                                          &getContext());
 
     auto asOperations = llvm::to_vector_of<Operation *>(chainCreates);
 

@@ -103,6 +103,11 @@ public:
   /// assumptions when discharging candidates' constraints.
   TypedAttr additionalAssumptions;
 
+  /// True when resolving a trait requirement's witness. Satisfying a
+  /// requirement is not a use of the method, so it does not warn about
+  /// deprecation.
+  bool isConformanceWitness = false;
+
   /// When doing resolution, we should only raise new errors if previous errors
   /// haven't already been raised about functions in the overload set.  The most
   /// common issue is when one of the included declarations is erroneous.
@@ -192,8 +197,9 @@ public:
   /// If not, generate a diagnostic (when `emitDiagnosticOnFailure` is true) and
   /// return null.
   ///
-  /// When `forwardedNeedingOrigins` is non-null, instead of materializing the
-  /// operands that need origins, simply forward the information to the caller.
+  /// When `forwardedNeedingReEmission` is non-null, instead of materializing
+  /// the operands that need origins, simply forward the information to the
+  /// caller.
   ///
   /// A candidate whose body constraints can be neither proven nor disproven in
   /// this scope is inconclusive: it is not selected, but it is not rejected
@@ -205,10 +211,11 @@ public:
   /// that doesn't need a self value, and by pre-emitting PValues when not in an
   /// parameter context. The actual emission needs to use the updated argument
   /// list.
-  CalleeResult filterOverloadSet(
-      CallOperands &operands, bool emitDiagnosticOnFailure, IREmitter &emitter,
-      bool disableMaterialization = false,
-      OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr) const;
+  CalleeResult
+  filterOverloadSet(CallOperands &operands, bool emitDiagnosticOnFailure,
+                    IREmitter &emitter, bool disableMaterialization = false,
+                    OperandsNeedingReEmissionList *forwardedNeedingReEmission =
+                        nullptr) const;
 
   /// Evaluate the fnDecls candidates and see if there is an unambiguous
   /// candidate that works with the specified parameter bindings on the overload
@@ -282,13 +289,19 @@ public:
   /// `declScope`; it must not be read as a definitive answer.
   static FailureOr<CalleeResult> canConstructType(
       ASTType requiredType, CallOperands &operands, ASTDecl &declScope,
-      OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr);
+      OperandsNeedingReEmissionList *forwardedNeedingReEmission = nullptr);
 
   LLVM_DUMP_METHOD void dump() const;
 
 private:
   OverloadSet(ASTDecl &declScope, const ExprNode *expr, CallSyntax syntax,
               bool erroneous, ASTType contextualType = {});
+
+  CalleeResult
+  filterDecls(ArrayRef<ASTDecl *> decls, CallOperands &operands,
+              bool emitDiagnosticOnFailure, IREmitter &emitter,
+              bool disableMaterialization,
+              OperandsNeedingReEmissionList *forwardedNeedingReEmission) const;
 
   /// Resolve the selected candidate `fnDecl` into a single PValue callee.
   /// `verifiedBindings`, when provided, are the bindings already inferred

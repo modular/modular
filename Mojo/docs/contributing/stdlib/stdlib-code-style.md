@@ -196,8 +196,9 @@ code.
 | `trait`                                      | `trait Copyable`                           | `PascalCase` |
 | Trait composition                            | `comptime KeyElement = Movable & Hashable` | `PascalCase` |
 | `struct` type                                | `struct Point`                             | `PascalCase` |
-| `__enum` type                                | `__enum IOErrorKind` / `__enum IpAddr`     | `PascalCase` |
-| `__enum` case                                | `case not_found`                           | `snake_case` |
+| `__enum` type                                | `__enum IOErrorKind`                       | `PascalCase` |
+| `__union` type                               | `__union IpAddr`                           | `PascalCase` |
+| `__enum` or `__union` case                   | `case not_found`                           | `snake_case` |
 | Module-level `comptime` type alias           | `comptime Int8 = Scalar[DType.int8]`       | `PascalCase` |
 | Type parameter                               | `struct List[T: Movable]`                  | `PascalCase` |
 | Value parameter                              | `def repeat[count: Int]()`                 | `snake_case` |

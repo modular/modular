@@ -64,12 +64,15 @@ def _lane_group_kernel[
     *,
     width: Int,
     fmt: FP6Format,
+    out_origin: MutOrigin,
+    scale_origin: MutOrigin,
+    in_origin: ImmOrigin,
 ](
-    output: TileTensor[.uint8, out_layout, MutAnyOrigin, Engine=out_storage],
+    output: TileTensor[.uint8, out_layout, out_origin, Engine=out_storage],
     scales: TileTensor[
-        .float8_e8m0fnu, scale_layout, MutAnyOrigin, Engine=scale_storage
+        .float8_e8m0fnu, scale_layout, scale_origin, Engine=scale_storage
     ],
-    input: TileTensor[.bfloat16, in_layout, MutAnyOrigin, Engine=in_storage],
+    input: TileTensor[.bfloat16, in_layout, in_origin, Engine=in_storage],
     num_cols: Int32,
 ):
     """One thread per `width` elements, so a block spans `SF // width` lanes.
@@ -133,8 +136,7 @@ def _run_case[
     var d_got_sc = ctx.enqueue_create_buffer[.float8_e8m0fnu](rows * scale_cols)
     ctx.enqueue_copy(d_in, inp)
 
-    var in_tt_mut = TileTensor(d_in, row_major(rows, cols))
-    var in_tt = in_tt_mut.as_imm()
+    var in_tt = TileTensor(d_in, row_major(rows, cols)).as_imm()
     var ref_out_tt = TileTensor(d_ref_out, row_major(rows, packed_cols))
     var ref_sc_tt = TileTensor(d_ref_sc, row_major(rows, scale_cols))
     var got_out_tt = TileTensor(d_got_out, row_major(rows, packed_cols))
@@ -147,17 +149,20 @@ def _run_case[
     comptime kernel = _lane_group_kernel[
         type_of(got_out_tt).LayoutType,
         type_of(got_sc_tt).LayoutType,
-        type_of(in_tt_mut).LayoutType,
+        type_of(in_tt).LayoutType,
         type_of(got_out_tt).Engine,
         type_of(got_sc_tt).Engine,
-        type_of(in_tt_mut).Engine,
+        type_of(in_tt).Engine,
         width=width,
         fmt=fmt,
+        out_origin=got_out_tt.origin,
+        scale_origin=got_sc_tt.origin,
+        in_origin=in_tt.origin,
     ]
     ctx.enqueue_function[kernel](
         got_out_tt,
         got_sc_tt,
-        in_tt_mut,
+        in_tt,
         Int32(cols),
         grid_dim=(ceildiv_int(cols, cols_per_block), rows),
         block_dim=(threads),

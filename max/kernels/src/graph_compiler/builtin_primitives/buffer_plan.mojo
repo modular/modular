@@ -15,6 +15,23 @@ from std.collections import BitSet, Array
 from std.math import align_up
 
 
+def _digits_to_array[n: Int, digits: StaticString]() -> Array[Int, n]:
+    """Convert a string of decimal digits into an Array of Ints.
+
+    Parameters:
+        n: Number of digits to read.
+        digits: A string whose first `n` bytes are the digits '0'-'9'.
+
+    Returns:
+        An Array holding one Int per digit.
+    """
+    var result = Array[Int, n](fill=0)
+    var bytes = digits.as_bytes()
+    for i in range(n):
+        result[i] = Int(bytes[i]) - 48
+    return result^
+
+
 def _compute_unshareable[
     N: Int,
 ](can_share: Array[Int, N * N], out result: BitSet[N]):
@@ -131,15 +148,21 @@ struct BufferPlanState[
     num_allocs: Int,
     //,
     alignments: Array[Int, num_allocs],
-    can_share: Array[Int, num_allocs * num_allocs],
+    can_share: StaticString,
 ](Movable):
+    # Sharing matrix parsed from one digit per entry.
+    comptime can_share_matrix = _digits_to_array[
+        Self.num_allocs * Self.num_allocs, Self.can_share
+    ]()
     # Computed at comptime: which allocations interfere with all others and
     # therefore can never share a memory block with any other allocation.
-    comptime unshareable = _compute_unshareable[Self.num_allocs](Self.can_share)
+    comptime unshareable = _compute_unshareable[Self.num_allocs](
+        Self.can_share_matrix
+    )
     # Per-allocation sharing bitsets: shareable_rows[i].test(j) == True iff
     # allocations i and j can share a memory block.
     comptime shareable_rows = _compute_shareable_rows[Self.num_allocs](
-        Self.can_share
+        Self.can_share_matrix
     )
     # If every allocation is unshareable, skip the greedy block-reuse logic
     # entirely and use the fast linear-allocation path.

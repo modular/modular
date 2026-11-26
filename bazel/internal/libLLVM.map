@@ -1,0 +1,11 @@
+# Exports of libLLVM and libLLVMSupport on Linux, linked with --version-script.
+#
+# Without a version, another LLVM in the same process (ROCm 10.1 comgr links
+# libLLVM.so.24.0git, symbols versioned LLVM_24.0) binds its versioned
+# references to these definitions when they were loaded first. One version
+# node keeps each LLVM on its own symbols, like the simple version script
+# llvm/tools/llvm-shlib uses in the CMake build.
+MODULAR_LLVM {
+  global:
+    *;
+};

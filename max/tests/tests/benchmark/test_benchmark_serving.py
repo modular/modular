@@ -14,15 +14,19 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
+import uvloop
 from max.benchmark.benchmark_serving import (
     BenchmarkSession,
     EndCondition,
     _make_gpu_recorder,
     _run_benchmark_sweep,
+    _run_dry_run_sweep,
     _sample_for_seed,
     parse_args,
 )
@@ -37,9 +41,10 @@ from max.benchmark.benchmark_shared.datasets.types import (
 from max.benchmark.benchmark_shared.iteration import (
     resolve_skip_counts,
     retain_result,
-    seed_for_concurrency,
 )
 from max.benchmark.benchmark_shared.metrics import BenchmarkResult
+from max.benchmark.benchmark_shared.workload_stats import WorkloadStats
+from tests.benchmark.benchmark_fakes import make_sampled_request
 
 
 @patch("max.profiler.gpu.BackgroundRecorder")
@@ -165,17 +170,6 @@ def test_resolve_skip_counts() -> None:
     assert rsc(request_rate=2.0, ignore_first_turn_stats=True) == (0, 0)
 
 
-def test_seed_for_concurrency_is_deterministic() -> None:
-    """Same (seed, max_concurrency) always derives the same sub-seed."""
-    assert seed_for_concurrency(24301, 4) == seed_for_concurrency(24301, 4)
-
-
-def test_seed_for_concurrency_differs_across_concurrency_levels() -> None:
-    """Different concurrency levels get distinct sub-seeds from one base seed."""
-    seeds = {seed_for_concurrency(24301, mc) for mc in [1, 4, 6, 8, 16]}
-    assert len(seeds) == 5
-
-
 @pytest.mark.parametrize(
     ("passed", "always_save_result", "kept"),
     [
@@ -236,13 +230,7 @@ def test_benchmark_serving_help(capsys: pytest.CaptureFixture[str]) -> None:
 
 
 def _one_request_sample() -> tuple[SampledRequest, RequestSamples]:
-    request = SampledRequest(
-        prompt_formatted="hi",
-        prompt_len=1,
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    request = make_sampled_request()
     return request, RequestSamples(requests=[request], shared_contexts=[])
 
 
@@ -398,9 +386,12 @@ def test_run_benchmark_sweep_yields_labeled_failure_without_result() -> None:
         orig_skip_last=None,
     )
 
+    loops: list[asyncio.AbstractEventLoop] = []
+
     async def failed_benchmark(
         *args: object, **kwargs: object
     ) -> tuple[BenchmarkResult, bool]:
+        loops.append(asyncio.get_running_loop())
         return BenchmarkResult(task_type="text", max_concurrency=4), False
 
     with (
@@ -427,3 +418,167 @@ def test_run_benchmark_sweep_yields_labeled_failure_without_result() -> None:
     assert run.labels is not None
     assert run.labels.tokenizer_id == "myorg/session-tokenizer"
     assert run.labels.model_id == "myorg/model"
+    assert isinstance(loops[-1], uvloop.Loop)
+
+
+def test_run_benchmark_sweep_samples_every_level_from_the_base_seed() -> None:
+    """Every concurrency level samples the same workload."""
+    args = parse_args(
+        [
+            "--model",
+            "myorg/model",
+            "--tokenizer",
+            "myorg/tokenizer",
+            "--max-concurrency",
+            "4,8",
+            "--seed",
+            "42",
+        ]
+    )
+    args.flush_prefix_cache = False
+    session = BenchmarkSession(
+        benchmark_task="text-generation",
+        endpoint="/v1/completions",
+        api_url="http://localhost:8000/v1/completions",
+        base_url="http://localhost:8000",
+        model_id="myorg/model",
+        tokenizer_id="myorg/tokenizer",
+        tokenizer=None,
+        samples=RequestSamples(requests=[]),
+        lora_manager=None,
+        trace_path=None,
+        orig_skip_first=None,
+        orig_skip_last=None,
+    )
+
+    async def passing_benchmark(
+        *args: object, **kwargs: object
+    ) -> tuple[BenchmarkResult, bool]:
+        return BenchmarkResult(task_type="text", max_concurrency=4), True
+
+    with (
+        patch(
+            "max.benchmark.benchmark_serving.benchmark",
+            side_effect=passing_benchmark,
+        ),
+        patch(
+            "max.benchmark.benchmark_serving._sample_for_seed",
+            return_value=RequestSamples(requests=[]),
+        ) as sample,
+    ):
+        end_condition = EndCondition(
+            num_prompts=1, num_prompts_multiplier=None, max_duration_s=None
+        )
+        runs = list(_run_benchmark_sweep(args, session, end_condition))
+
+    assert [run.max_concurrency for run in runs] == [4, 8]
+    assert [call.args[-1] for call in sample.call_args_list] == [42, 42]
+
+
+def _thinking_samples(count: int) -> ChatSamples:
+    """``count`` sessions of 3 turns that think 60 s: 120 s of interest each."""
+    sessions = []
+    for sid in range(count):
+        messages: list[SessionMessage] = []
+        for turn in range(3):
+            messages.append(
+                SessionMessage(source="user", content=f"u{turn}", num_tokens=5)
+            )
+            messages.append(
+                SessionMessage(
+                    source="assistant",
+                    content="a",
+                    num_tokens=5,
+                    delay_until_next_message=(60_000.0 if turn < 2 else None),
+                )
+            )
+        sessions.append(ChatSession(id=sid, messages=messages))
+    return ChatSamples(chat_sessions=sessions, shared_contexts=[])
+
+
+def _preview(samples: ChatSamples, argv: list[str], rate: float) -> int:
+    """Run one dry-run preview point and return the runs it reported."""
+    args = parse_args(["--model", "myorg/model", *argv])
+    args.print_workload_stats = True
+    return len(
+        list(
+            _run_dry_run_sweep(
+                args,
+                BenchmarkSession(
+                    benchmark_task="text-generation",
+                    endpoint="/v1/chat/completions",
+                    api_url="http://localhost:8000/v1/chat/completions",
+                    base_url="http://localhost:8000",
+                    model_id="myorg/model",
+                    tokenizer_id="myorg/session-tokenizer",
+                    tokenizer=None,
+                    samples=samples,
+                    lora_manager=None,
+                    trace_path=None,
+                    orig_skip_first=None,
+                    orig_skip_last=None,
+                ),
+                EndCondition(
+                    num_prompts=10,
+                    num_prompts_multiplier=None,
+                    max_duration_s=None,
+                ),
+                [None],
+                [rate],
+                WorkloadStats(
+                    requests=0,
+                    context_limit=None,
+                    turns_dropped_at_context_limit=0,
+                    input_len=None,
+                    input_len_first_turn=None,
+                    input_len_later_turn=None,
+                    output_len=None,
+                    tool_request_fraction=None,
+                    tools_per_request=None,
+                    image_request_fraction=None,
+                    constrained_request_fraction=None,
+                ),
+            )
+        )
+    )
+
+
+def test_dry_run_preview_reports_the_plan_the_run_will_use(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The preview samples the population and pool split the run itself uses.
+
+    A preview that measured the chain from a different ``main_pool_target``
+    reported a different candidate count and factor than the run, which is the
+    one thing a preview exists to get right.
+    """
+    # Five sessions of 120 s think time hold ceil(0.01 x 120) = 2 open, and the
+    # measured pool keeps the rest because the dataset has nothing to spare.
+    with caplog.at_level(logging.INFO, logger="max.benchmark"):
+        assert (
+            _preview(
+                _thinking_samples(5),
+                ["--request-rate", "0.01", "--num-chat-sessions", "5"],
+                0.01,
+            )
+            == 1
+        )
+    assert "M=2" in caplog.text
+    assert "main_pool=3" in caplog.text
+    assert "factor=1" in caplog.text
+
+    # A workload with no think time derives a zero population, so the preview
+    # says the run warms nothing instead of sampling every session as a warm-up.
+    caplog.clear()
+    with caplog.at_level(
+        logging.INFO, logger="max.benchmark.benchmark_serving"
+    ):
+        assert (
+            _preview(
+                _one_chat_sample()[1],
+                ["--request-rate", "1.0", "--num-chat-sessions", "1"],
+                1.0,
+            )
+            == 1
+        )
+    assert "will not pre-warm any sessions" in caplog.text

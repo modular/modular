@@ -144,6 +144,9 @@ def execute_tail_row_batch_test[
     comptime group = num_q_heads // kv_params.num_heads
     comptime num_layers = 1
     comptime layer_idx = 0
+    # The fp8 route takes e4m3 Q and KV and writes bf16, as `flash_attention`
+    # requires.
+    comptime out_dtype = DType.bfloat16 if dtype.is_float8() else dtype
 
     var batch_size = len(valid_lengths)
     var valid_length = 0
@@ -291,17 +294,17 @@ def execute_tail_row_batch_test[
     var v_cache = kv_collection.get_value_cache(layer_idx)
 
     var test_out_size = total_length * num_q_heads * head_size
-    var test_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
+    var test_out_dev = ctx.enqueue_create_buffer[out_dtype](test_out_size)
     var test_out_lt = TileTensor(
         test_out_dev,
         row_major(Int64(total_length), Idx[num_q_heads], Idx[head_size]),
     )
-    var ctrl_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
+    var ctrl_out_dev = ctx.enqueue_create_buffer[out_dtype](test_out_size)
     var ctrl_out_lt = TileTensor(
         ctrl_out_dev,
         row_major(Int64(total_length), Idx[num_q_heads], Idx[head_size]),
     )
-    var ref_out_dev = ctx.enqueue_create_buffer[dtype](test_out_size)
+    var ref_out_dev = ctx.enqueue_create_buffer[out_dtype](test_out_size)
     var ref_out_lt = TileTensor(
         ref_out_dev,
         row_major(Int64(total_length), Idx[num_q_heads], Idx[head_size]),
@@ -372,9 +375,9 @@ def execute_tail_row_batch_test[
     )
     ctx.synchronize()
 
-    var test_out_host = ctx.enqueue_create_host_buffer[dtype](test_out_size)
-    var ctrl_out_host = ctx.enqueue_create_host_buffer[dtype](test_out_size)
-    var ref_out_host = ctx.enqueue_create_host_buffer[dtype](test_out_size)
+    var test_out_host = ctx.enqueue_create_host_buffer[out_dtype](test_out_size)
+    var ctrl_out_host = ctx.enqueue_create_host_buffer[out_dtype](test_out_size)
+    var ref_out_host = ctx.enqueue_create_host_buffer[out_dtype](test_out_size)
     ctx.enqueue_copy(test_out_host, test_out_dev)
     ctx.enqueue_copy(ctrl_out_host, ctrl_out_dev)
     ctx.enqueue_copy(ref_out_host, ref_out_dev)
@@ -427,7 +430,12 @@ def execute_tail_row_batch_test[
 
     # 16-bit MMA + f32-softmax vs f32 naive over the same inputs; the bf16 bound
     # matches `test_mha_sm100_ws_bm32`, and fp16 scales it by the 8x finer ulp.
-    comptime atol = Float32(0.04) if dtype == .bfloat16 else Float32(0.005)
+    # fp8 rounds P to e4m3 before P@V, a relative error of at most 2^-4 per
+    # weight, so the error in O is at most 2^-4 * max|V| = 0.0625 for V in
+    # [0, 1), plus bf16 output rounding.
+    comptime atol = Float32(0.04) if dtype == .bfloat16 else (
+        Float32(0.005) if dtype == .float16 else Float32(0.07)
+    )
     # The poisoned run must be bit-identical to the zero-filled control: a stale
     # tail row that only perturbs the lazy-rescale vote still moves rounding.
     # The forced-unfused run is a second oracle-checked route; bit-identical
@@ -591,6 +599,39 @@ def _run_fp16[num_q_heads: Int](ctx: DeviceContext, bm_eff_1q: Int) raises:
         )
 
 
+def _run_fp8[num_q_heads: Int](ctx: DeviceContext, bm_eff_1q: Int) raises:
+    """Samples e4m3 Q and KV, which the packed 1Q gate admits: the last packed
+    length unsplit and its successor, then a sliding-window verify step on
+    cluster and workspace split-K."""
+    comptime f8 = DType.float8_e4m3fn
+    execute_tail_row_test[
+        CausalMask, num_q_heads, NO_POISON, num_partitions=1, dtype=f8
+    ](
+        CausalMask(),
+        cache_length=357,
+        valid_length=bm_eff_1q,
+        ctx=ctx,
+        unfused_probe_len=bm_eff_1q + 1,
+    )
+    execute_tail_row_test[CausalMask, num_q_heads, NO_POISON, dtype=f8](
+        CausalMask(), cache_length=357, valid_length=bm_eff_1q + 1, ctx=ctx
+    )
+    comptime for p in [2, 3]:
+        execute_tail_row_test[
+            SlidingWindowCausalMask[512],
+            num_q_heads,
+            NO_POISON,
+            num_partitions=p,
+            dtype=f8,
+        ](
+            SlidingWindowCausalMask[512](),
+            cache_length=2048,
+            valid_length=8,
+            ctx=ctx,
+            unfused_probe_len=bm_eff_1q + 1,
+        )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         # group 9 (72 q heads): BM_eff = 3. group 6 (48 q heads): BM_eff = 5.
@@ -600,3 +641,5 @@ def main() raises:
         _run_boundary[48](ctx, 5, 21)
         _run_fp16[72](ctx, 14)
         _run_fp16[48](ctx, 21)
+        _run_fp8[72](ctx, 14)
+        _run_fp8[48](ctx, 21)

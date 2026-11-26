@@ -179,6 +179,7 @@ def stable_allgather_test[
 
     var out_tensors = Array[_, ngpus * group_size](fill_with=out_tile_at)
 
+    @__allow_legacy_any_origin_fields
     def run_and_check(alt: Bool) raises {imm}:
         for d in range(ngpus):
             allgather[group_size=group_size](

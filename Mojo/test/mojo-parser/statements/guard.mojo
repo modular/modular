@@ -39,6 +39,17 @@ def guard_condition(condition: Bool) -> Int:
     return 1
 
 
+# CHECK-LABEL: lit.fn @"guard_multiple_clauses
+# CHECK: %{{.*}} = lit.var.decl "value"
+# CHECK: hlcf.match {
+# CHECK: hlcf.match.complete
+def guard_multiple_clauses(condition: Bool, x: Optional[Int]):
+    __guard condition;
+      case .Some(value) = x else:
+        return
+    _ = value
+
+
 # The failed guard path cannot fall through into the continuation.
 # CHECK-LABEL: lit.fn @"guard_no_fallthrough
 # CHECK: hlcf.match
@@ -66,5 +77,14 @@ def comptime_guard_binding[pair: Tuple[Int, Int]]() -> Int:
 # CHECK: hlcf.comptime.if
 def comptime_guard_condition[condition: Bool]() -> Int:
     comptime __guard condition else:
+        return 0
+    return 1
+
+
+# CHECK-LABEL: lit.fn @"comptime_guard_multiple_clauses
+# CHECK: hlcf.comptime.if
+def comptime_guard_multiple_clauses[T: AnyType, enabled: Bool]() -> Int:
+    comptime __guard enabled;
+      case == Int = T else:
         return 0
     return 1

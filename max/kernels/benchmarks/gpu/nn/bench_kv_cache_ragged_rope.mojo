@@ -198,6 +198,7 @@ def execute_kv_cache_ragged_rope[
     var flop_count = num_flops_per_elem * num_elems
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut b: Bencher,
     ) raises {

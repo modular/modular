@@ -26,9 +26,9 @@ using namespace M::MGP;
 // MGPBufferBuilder
 //===----------------------------------------------------------------------===//
 
-TypedValue<MEF::ChainType> MGPBufferBuilder::setupForModel(
+TypedValue<MLRT::MEF::ChainType> MGPBufferBuilder::setupForModel(
     ModelOp modelOp, MGPBufferBuilder *hostBufferBuilder, OpBuilder &builder,
-    Location loc, TypedValue<MEF::ChainType> inChain) {
+    Location loc, TypedValue<MLRT::MEF::ChainType> inChain) {
   this->hostBufferBuilder = hostBufferBuilder;
 
   TypedValue<ContextType> context;
@@ -81,14 +81,14 @@ TypedValue<ContextType> MGPBufferBuilder::getContextForOp(Operation *op) {
 }
 
 Value MGPBufferBuilder::bufferConstant(OpBuilder &builder, Location loc,
-                                       TypedValue<MEF::ChainType> inChain,
+                                       TypedValue<MLRT::MEF::ChainType> inChain,
                                        TypedValue<ContextType> context,
                                        ElementsAttr value) {
   return BufferConstantOp::create(builder, loc, /*aValue=*/value);
 }
 
 Value MGPBufferBuilder::bufferConstantExternal(
-    OpBuilder &builder, Location loc, TypedValue<MEF::ChainType> inChain,
+    OpBuilder &builder, Location loc, TypedValue<MLRT::MEF::ChainType> inChain,
     TypedValue<ContextType> context,
     TypedValue<MGP::OpaqueType> weightsRegistry,
     TypedValue<MGP::OpaqueType> name, uint64_t size, uint64_t align,
@@ -254,7 +254,7 @@ Value MGPBufferBuilder::bufferGetSize(OpBuilder &builder, Location loc,
                                       Value inChain, Value inBuffer) {
   return builder.createOrFold<BufferGetSizeOp>(
       loc,
-      /*inChain=*/cast<TypedValue<MEF::ChainType>>(inChain),
+      /*inChain=*/cast<TypedValue<MLRT::MEF::ChainType>>(inChain),
       /*inBuffer=*/cast<TypedValue<DeviceBufferType>>(inBuffer));
 }
 
@@ -299,37 +299,38 @@ toMultiline(OpBuilder &builder, uint64_t moduleIndex, ArrayAttr arrayAttr,
   return MultiLineStringAttr::get(builder.getContext(), stringAttrs);
 }
 
-TypedValue<MEF::ChainType> MGPBufferBuilder::moduleLoad(
+TypedValue<MLRT::MEF::ChainType> MGPBufferBuilder::moduleLoad(
     OpBuilder &builder, Location loc, TypedValue<ContextType> context,
-    TypedValue<MEF::ChainType> inChain, ElementsAttr image,
+    TypedValue<MLRT::MEF::ChainType> inChain, ElementsAttr image,
     ArrayAttr functionSymbols, ArrayAttr constantSymbols) {
   auto functionSymbolsAttr = toMultiline(builder, nextModuleIndex,
                                          functionSymbols, functionToIndexPair);
   auto constantSymbolsAttr = toMultiline(builder, nextModuleIndex,
                                          constantSymbols, constantToIndexPair);
-  auto load = ModuleLoadOp::create(builder, loc,
-                                   /*inChain=*/
-                                   cast<TypedValue<MEF::ChainType>>(inChain),
-                                   /*theContext=*/context,
-                                   /*aRuntimeSlot=*/runtimeSlot,
-                                   /*bImage=*/image,
-                                   /*cFunctionSymbols=*/functionSymbolsAttr,
-                                   /*dConstantSymbols=*/constantSymbolsAttr,
-                                   /*eDevice=*/device,
-                                   /*fModuleIndex=*/nextModuleIndex);
+  auto load =
+      ModuleLoadOp::create(builder, loc,
+                           /*inChain=*/
+                           cast<TypedValue<MLRT::MEF::ChainType>>(inChain),
+                           /*theContext=*/context,
+                           /*aRuntimeSlot=*/runtimeSlot,
+                           /*bImage=*/image,
+                           /*cFunctionSymbols=*/functionSymbolsAttr,
+                           /*dConstantSymbols=*/constantSymbolsAttr,
+                           /*eDevice=*/device,
+                           /*fModuleIndex=*/nextModuleIndex);
   ++nextModuleIndex;
   return load;
 }
 
 Value MGPBufferBuilder::chainCreate(OpBuilder &builder, Location loc,
                                     ArrayRef<Value> inChains) {
-  return GRT::ChainCreateOp::create(builder, loc, inChains);
+  return MLRT::GRT::ChainCreateOp::create(builder, loc, inChains);
 }
 
-std::pair<TypedValue<MEF::ChainType>, uint64_t>
+std::pair<TypedValue<MLRT::MEF::ChainType>, uint64_t>
 MGPBufferBuilder::cache(OpBuilder &initBuilder, Location loc,
                         TypedValue<ContextType> context,
-                        TypedValue<MEF::ChainType> inChain,
+                        TypedValue<MLRT::MEF::ChainType> inChain,
                         ContextCreateOp contextCreateOp, Value buffer) {
   uint64_t bufferSlot = contextCreateOp.getNumSlots();
   contextCreateOp.setNumSlots(bufferSlot + 1);
@@ -342,7 +343,7 @@ MGPBufferBuilder::cache(OpBuilder &initBuilder, Location loc,
 
 Value MGPBufferBuilder::getCached(OpBuilder &builder, Location loc,
                                   TypedValue<ContextType> context,
-                                  TypedValue<MEF::ChainType> inChain,
+                                  TypedValue<MLRT::MEF::ChainType> inChain,
                                   uint64_t bufferSlot,
                                   Type expectedBufferType) {
   auto parentOp = builder.getBlock()->getParentOp();

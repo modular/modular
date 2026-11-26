@@ -332,6 +332,7 @@ def run_mla_prefill_v2[
         var num_works = md.num_works
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_func(
             mut b: Bencher,
         ) raises {

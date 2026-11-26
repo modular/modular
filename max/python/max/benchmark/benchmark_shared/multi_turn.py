@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 import random
 import re
@@ -32,10 +33,12 @@ import numpy as np
 from max.benchmark.benchmark_shared.config import SamplingConfig
 from max.benchmark.benchmark_shared.datasets import ChatSession
 from max.benchmark.benchmark_shared.datasets.types import (
+    AssistantToolCall,
     ImageContentBlock,
     ImageURLDetail,
     OpenAIImage,
     TextContentBlock,
+    ToolCallFunction,
 )
 from max.benchmark.benchmark_shared.lora_benchmark_manager import (
     LoRABenchmarkManager,
@@ -44,6 +47,7 @@ from max.benchmark.benchmark_shared.request import (
     BaseRequestFuncInput,
     BaseRequestFuncOutput,
     ChatMessage,
+    ChatWireHistory,
     RequestCounter,
     RequestDriver,
     RequestFuncInput,
@@ -61,6 +65,11 @@ from max.benchmark.benchmark_shared.utils import (
 from transformers import PreTrainedTokenizerBase
 
 logger = logging.getLogger(__name__)
+
+# Roughly what a chat template spends on one message's role, delimiters and
+# tool_call_id. A replayed turn's extra messages carry no drawn text, so their
+# framing is all chat_len can charge for them.
+_MESSAGE_FRAMING_TOKENS = 8
 
 # The special tokens of OpenAI's Harmony format. A model can echo them into
 # its message text, where a Harmony chat template rejects them.
@@ -90,6 +99,117 @@ def _cap_output_len(output_len: int, max_output_len: int | None) -> int:
     return min(output_len, max_output_len)
 
 
+def _replayable_tool_calls(
+    calls: Sequence[AssistantToolCall],
+) -> list[AssistantToolCall] | None:
+    """Returns the calls a session can replay, or ``None`` for none of them.
+
+    A turn cut off by its output budget leaves a tool call whose arguments are
+    not valid JSON. The server would reject the replayed turn, so a session
+    with such a call replays its text instead.
+    """
+    if not calls:
+        return None
+    for call in calls:
+        try:
+            json.loads(call.function.arguments)
+        except ValueError:
+            return None
+    return list(calls)
+
+
+def _assistant_turn(
+    response: RequestFuncOutput,
+    plain_text: str,
+    strip_wire_tags: bool = False,
+) -> ChatMessage:
+    """The assistant message a session sends back for a finished turn.
+
+    The turn goes back the way the API returned it, as an OpenAI-compatible
+    agent harness sends it: ``content``, ``tool_calls``, and the reasoning
+    under the key the server used. Each model's chat template then decides
+    whether to keep or drop past reasoning; one that keeps it renders the turn
+    as generated, so the next prompt extends this one's prompt and reply.
+
+    A driver that records no chat fields replays ``plain_text`` instead, and so
+    does a turn whose tool calls were left with unusable arguments.
+    ``strip_wire_tags`` removes Harmony wire tags from every field replayed as
+    free text, so the option covers this path as well as the plain-text one.
+    """
+
+    def _strip(text: str) -> str:
+        return _HARMONY_WIRE_TAG.sub("", text) if strip_wire_tags else text
+
+    tool_calls = _replayable_tool_calls(
+        [
+            AssistantToolCall(
+                id=call.id,
+                function=ToolCallFunction(
+                    name=call.function.name,
+                    arguments=_strip(call.function.arguments),
+                ),
+            )
+            for call in response.tool_calls
+        ]
+    )
+    if not (response.content_text or response.reasoning_text or tool_calls):
+        return ChatMessage(
+            role="assistant",
+            content=[TextContentBlock(text=_strip(plain_text))],
+        )
+    message = ChatMessage(
+        role="assistant",
+        content=_strip(response.content_text),
+        tool_calls=tool_calls,
+    )
+    reasoning = _strip(response.reasoning_text)
+    if response.reasoning_field == "reasoning":
+        message.reasoning = reasoning or None
+    else:
+        message.reasoning_content = reasoning or None
+    return message
+
+
+def _next_turn_messages(
+    content: list[TextContentBlock | ImageContentBlock],
+    previous_turn: ChatMessage | None,
+) -> list[ChatMessage]:
+    """The messages that carry a session's next turn.
+
+    After a reply that called tools, the turn is the calls' result: the API
+    expects a ``tool`` message answering each call by id before the
+    conversation goes on. A tool result stands in for the user turn, which is
+    how an agent loop works, so no extra ``user`` message is added. The turn's
+    text answers the first call, and any further calls get an empty result.
+
+    A tool message's content is always plain text. MAX rejects image parts in a
+    tool message, so a turn that drew images sends them in a ``user`` message
+    after the results.
+    """
+    calls = previous_turn.tool_calls if previous_turn is not None else None
+    if not calls:
+        return [ChatMessage(role="user", content=content)]
+    text = "".join(
+        block.text for block in content if isinstance(block, TextContentBlock)
+    )
+    messages = [
+        ChatMessage(
+            role="tool",
+            content=text if index == 0 else "",
+            tool_call_id=call.id,
+        )
+        for index, call in enumerate(calls)
+    ]
+    # Widened to the union ``ChatMessage`` accepts: a list is invariant, so the
+    # narrower ``list[ImageContentBlock]`` inference would not fit its content.
+    images: list[TextContentBlock | ImageContentBlock] = [
+        block for block in content if isinstance(block, ImageContentBlock)
+    ]
+    if images:
+        messages.append(ChatMessage(role="user", content=images))
+    return messages
+
+
 async def chat_session_driver(
     model_id: str,
     api_url: str,
@@ -104,6 +224,7 @@ async def chat_session_driver(
     run_prefix_len: int = 0,
     est_ttft_ms: float = 0.0,
     est_tpot_ms: float = 0.0,
+    rate_paced: bool = False,
     use_session_id_as_cache_salt: bool = False,
     lora_id: str | None = None,
     disable_ignore_eos: bool = False,
@@ -125,6 +246,9 @@ async def chat_session_driver(
         max_tokens=0,
         ignore_eos=True,
         lora_id=lora_id,
+        # The history below only ever grows, so the driver can reuse the wire
+        # form of the messages already sent and pay for the new one alone.
+        wire_history=ChatWireHistory(),
     )
     content_idx = 0  # Assume user initiates the conversation
 
@@ -158,6 +282,9 @@ async def chat_session_driver(
                 ],
             )
         )
+        # Sticky: a prefix image is resent with every later turn's history.
+        if messages[content_idx].images:
+            request_func_input.prompt_carries_image = True
         # Synthetic placeholder for the assistant response.
         assistant_content = messages[content_idx + 1].content
         if not assistant_content:
@@ -184,7 +311,23 @@ async def chat_session_driver(
         output_len = _cap_output_len(
             messages[content_idx + 1].num_tokens, max_output_len
         )
-        if chat_len + output_len > max_chat_len:
+        user_prompt = messages[content_idx].content
+        if content_idx == 0 and run_prefix:
+            user_prompt = run_prefix + user_prompt
+        turn_messages = _next_turn_messages(
+            [
+                TextContentBlock(text=user_prompt),
+                *_image_content_blocks(messages[content_idx].images),
+            ],
+            message_history[-1] if message_history else None,
+        )
+        # The drawn turn's text is already in chat_len above; what a replayed
+        # turn adds is the framing of every message past the first, which is a
+        # tool result answering a call, or the images' own message. Charged
+        # before the check, so a replayed turn cannot send a prompt past the
+        # limit.
+        added_framing = _MESSAGE_FRAMING_TOKENS * (len(turn_messages) - 1)
+        if chat_len + added_framing + output_len > max_chat_len:
             logger.warning(
                 f"Ending conversation: hitting max chat length {max_chat_len}"
             )
@@ -194,18 +337,10 @@ async def chat_session_driver(
         if not advance_request:  # reached max_requests
             break
 
-        user_prompt = messages[content_idx].content
-        if content_idx == 0 and run_prefix:
-            user_prompt = run_prefix + user_prompt
-        message_history.append(
-            ChatMessage(
-                role="user",
-                content=[
-                    TextContentBlock(text=user_prompt),
-                    *_image_content_blocks(messages[content_idx].images),
-                ],
-            )
-        )
+        message_history.extend(turn_messages)
+        chat_len += added_framing
+        if messages[content_idx].images:
+            request_func_input.prompt_carries_image = True
         request_func_input.prompt = message_history
         request_func_input.prompt_len = chat_len
         request_func_input.max_tokens = output_len
@@ -231,19 +366,25 @@ async def chat_session_driver(
             if (
                 content_idx > 0
             ):  # pre-warmed: phase-spread across inter-turn window
-                # Spread the first measured turn across the just-completed
-                # turn's occupancy window R_{k} + D_{k} (generation + sleep).
-                # A draw landing in the generation portion (u < R_k) means the
-                # session would still be generating, so fire immediately;
-                # otherwise sleep the remaining delay u - R_k. With zero runtime
-                # estimates R_k = 0 and this is uniform[0, D_k] as before.
                 prev_msg = messages[content_idx - 1]
                 delay_ms = prev_msg.delay_until_next_message or 0.0
                 runtime_ms = est_ttft_ms + est_tpot_ms * prev_msg.num_tokens
                 window_ms = delay_ms + runtime_ms
                 if window_ms > 0:
-                    u = random.uniform(0, window_ms)
-                    sleep_s = max(0.0, u - runtime_ms) / 1000
+                    if rate_paced:
+                        # Open loop: the pre-warmed sessions are the population
+                        # already in flight, so a submit has to arrive at the
+                        # offered rate. A session sits at a uniform point of the
+                        # turn it just finished, so its next submit comes that
+                        # window's forward-recurrence time, uniform[0, R + D].
+                        sleep_s = random.uniform(0.0, window_ms) / 1000
+                    else:
+                        # Closed loop: a draw inside the generation part fires
+                        # now, so sessions in reach of the delay submit at t0,
+                        # which is what the ramp-up trim assumes. With no
+                        # runtime estimates this is uniform[0, D].
+                        u = random.uniform(0.0, window_ms)
+                        sleep_s = max(0.0, u - runtime_ms) / 1000
                     if sleep_s > 0:
                         if exceeds_deadline(sleep_s, benchmark_should_end_time):
                             return session_outputs
@@ -297,9 +438,10 @@ async def chat_session_driver(
                 "", assistant_text
             )
         message_history.append(
-            ChatMessage(
-                role="assistant",
-                content=[TextContentBlock(text=assistant_text)],
+            _assistant_turn(
+                response,
+                assistant_text,
+                strip_wire_tags=strip_harmony_wire_tags,
             )
         )
         # What the turn actually produced, not what it drew: a constrained turn
@@ -360,6 +502,8 @@ async def prerun_warmup_turns(
         chat_len = 0
         content_idx = 0
         pending_request: RequestFuncInput | None = None
+        prompt_end = 0
+        prompt_carries_image = False
         while content_idx < prefix_end_idx and content_idx + 1 < len(messages):
             chat_len += messages[content_idx].num_tokens
             output_len = messages[content_idx + 1].num_tokens
@@ -374,6 +518,11 @@ async def prerun_warmup_turns(
                     ],
                 )
             )
+            if messages[content_idx].images:
+                prompt_carries_image = True
+            # History keeps growing below, so the slice this request sends is
+            # taken once after the loop rather than copied per turn.
+            prompt_end = len(message_history)
             # Overwrite each iteration; only the last fitting turn's
             # request fires. Its prompt covers every earlier prefix.
             pending_request = RequestFuncInput(
@@ -383,7 +532,7 @@ async def prerun_warmup_turns(
                 if use_session_id_as_cache_salt
                 else None,
                 sampling=sampling,
-                prompt=list(message_history),
+                prompt=message_history,
                 images=[],
                 api_url=api_url,
                 prompt_len=chat_len,
@@ -391,11 +540,15 @@ async def prerun_warmup_turns(
                 max_tokens=_cap_output_len(output_len, max_output_len),
                 ignore_eos=True,
                 tools=messages[content_idx].tools,
+                prompt_carries_image=prompt_carries_image,
                 is_cache_warmup=True,
+                # wire_history stays None on purpose: this fires once per
+                # session, so a cache it filled would never be read again.
             )
             assistant_content = messages[content_idx + 1].content
             if not assistant_content:
-                assistant_content = " ".join(["token"] * max(output_len, 1))
+                # Same text as " ".join(["token"] * n), without the list.
+                assistant_content = ("token " * max(output_len, 1)).rstrip()
             message_history.append(
                 ChatMessage(
                     role="assistant",
@@ -405,6 +558,7 @@ async def prerun_warmup_turns(
             chat_len += output_len
             content_idx += 2
         if pending_request is not None:
+            pending_request.prompt = message_history[:prompt_end]
             requests_to_fire.append(pending_request)
 
     if not requests_to_fire:
@@ -490,6 +644,8 @@ async def run_multiturn_benchmark(
     # apply the semaphore at the session level
     # ex: with max_concurrency = 1,
     # the first session finishes before the second session starts
+    use_rate_pacing = request_rate != float("inf")
+
     async def limited_chat_session_driver(
         chat_session: ChatSession,
         session_idx: int,
@@ -514,6 +670,7 @@ async def run_multiturn_benchmark(
                 run_prefix_len=run_prefix_len,
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
+                rate_paced=use_rate_pacing,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,
@@ -527,11 +684,11 @@ async def run_multiturn_benchmark(
         )
         return session_id, outputs
 
-    # Pre-warmed sessions (prefix_turns > 0) get phase-spread jitter inside
-    # chat_session_driver. Cold-start sessions are paced here: Poisson
-    # inter-arrival when request_rate is finite, warmup_delay_ms stagger otherwise.
-    use_rate_pacing = request_rate != float("inf")
-
+    # Pre-warmed sessions (prefix_turns > 0) phase-spread inside
+    # chat_session_driver and skip the gate below: they are the population
+    # already in flight, not sessions joining it. Cold-start sessions are
+    # paced here: Poisson inter-arrival when request_rate is finite,
+    # warmup_delay_ms stagger otherwise.
     async def _pace_cold_start(idx: int) -> bool:
         """Pace a cold-start session launch. Returns True if the deadline was hit."""
         if use_rate_pacing and idx > 0:
@@ -597,7 +754,9 @@ class ConcurrentTurnsRequestDriver(RequestDriver):
         semaphore: contextlib.AbstractAsyncContextManager[None],
         benchmark_should_end_time: int | None = None,
     ) -> None:
-        super().__init__(tokenizer=request_driver.tokenizer)
+        super().__init__(
+            session=request_driver.session, tokenizer=request_driver.tokenizer
+        )
         self._request_driver = request_driver
         self._semaphore = semaphore
         self._benchmark_should_end_time = benchmark_should_end_time
@@ -740,8 +899,9 @@ async def run_kv_cache_stress_benchmark(
                 return
 
             # Pre-warmed sessions (prefix_turns > 0) have their KV cache
-            # populated; start them immediately. Cold-start sessions
-            # (prefix_turns == 0) are rate-gated like new arrivals.
+            # populated and start immediately; they are the in-flight
+            # population, not arrivals. Cold-start sessions (prefix_turns ==
+            # 0) are rate-gated like new arrivals.
             if use_rate_pacing and chat_session.prefix_turns == 0:
                 if await _wait_for_rate_token():
                     return
@@ -763,6 +923,7 @@ async def run_kv_cache_stress_benchmark(
                 run_prefix_len=run_prefix_len,
                 est_ttft_ms=est_ttft_ms,
                 est_tpot_ms=est_tpot_ms,
+                rate_paced=use_rate_pacing,
                 use_session_id_as_cache_salt=use_session_id_as_cache_salt,
                 lora_id=lora_id,
                 disable_ignore_eos=disable_ignore_eos,

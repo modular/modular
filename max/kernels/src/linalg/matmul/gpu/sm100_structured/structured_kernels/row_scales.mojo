@@ -79,15 +79,6 @@ struct NullRowScales(RowScales):
     ):
         pass
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name.
-
-        Returns:
-            Always `"NullRowScales"`.
-        """
-        return "NullRowScales"
-
 
 struct RealRowScales(RowScales):
     """Row scales read from an array of one `bfloat16` per output row."""
@@ -95,18 +86,17 @@ struct RealRowScales(RowScales):
     comptime Enabled = True
     comptime device_type: AnyType = Self
 
-    @__allow_legacy_any_origin_fields
-    var ptr: Pointer[BFloat16, ImmutAnyOrigin]
+    var ptr: ImmPointer[BFloat16, ImmUntrackedOrigin]
     """Device pointer to the per-row scales, indexed like the output rows."""
 
     @inline(.always)
-    def __init__(out self, ptr: Pointer[BFloat16, ImmutAnyOrigin]):
+    def __init__(out self, ptr: ImmPointer[BFloat16, _]):
         """Wraps a device pointer to the per-row scales.
 
         Args:
             ptr: Device pointer to one scale per output row.
         """
-        self.ptr = ptr
+        self.ptr = ptr.unsafe_origin_cast[ImmUntrackedOrigin]()
 
     @inline(.always)
     def load(self, row: Int) -> Float32:
@@ -124,15 +114,6 @@ struct RealRowScales(RowScales):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name.
-
-        Returns:
-            Always `"RealRowScales"`.
-        """
-        return "RealRowScales"
 
 
 struct TileRowScales[RowScalesT: RowScales, tile_rows: Int](

@@ -25,6 +25,7 @@ from max.driver import SymmetricPool, accelerator_api, load_devices
 from max.engine import InferenceSession
 from max.nn import Module as ModuleV3
 from max.nn.legacy.comm import MulticastPool
+from max.nn.quant_config import QuantConfig
 from max.pipelines.diffusion.config import resolve_denoising_cache
 from max.pipelines.kv_cache.config import KVCacheConfig, is_fp4_kv_cache_format
 from max.pipelines.lib._model_components import (
@@ -1011,9 +1012,10 @@ class PipelineConfig(ConfigFileModel):
     """Configuration for a pipeline.
 
     Contains settings for model selection, batch sizing, sampling, profiling,
-    LoRA adapters, and speculative decoding. Once initialized, all fields are
-    resolved to their final values from CLI flags, config files, environment
-    variables, or internal defaults.
+    LoRA adapters, on-the-fly :class:`~max.nn.quant_config.QuantConfig`, and
+    speculative decoding. Once initialized, all fields are resolved to their
+    final values from CLI flags, config files, environment variables, or
+    internal defaults.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
@@ -1036,6 +1038,17 @@ class PipelineConfig(ConfigFileModel):
         ),
     )
     """Build the module and skip generation setup."""
+
+    artifact_export: bool = Field(
+        default=False,
+        description=(
+            "The pipeline is built for ``max export``'s pipeline artifact, "
+            "which ``max export`` sets. An architecture whose artifact graphs "
+            "take inputs MAX Serve's don't reads it when it initializes its "
+            "config; MAX Serve never sets it."
+        ),
+    )
+    """Whether the pipeline is built for a pipeline artifact."""
 
     tokenizer_impl: str | None = Field(
         default=None,
@@ -1239,6 +1252,17 @@ class PipelineConfig(ConfigFileModel):
         default=None, description="The LoRA config."
     )
     """The LoRA configuration."""
+
+    quant_config: QuantConfig | None = Field(
+        default=None,
+        description=(
+            "On-the-fly :class:`~max.nn.quant_config.QuantConfig`. When set "
+            "with ``source=QUANTIZE`` and ``targets``, the pipeline registry "
+            "wraps the factory so those linears quantize inside the compiled "
+            "graphs."
+        ),
+    )
+    """On-the-fly quantization config, or ``None`` when unused."""
 
     speculative: SpeculativeConfig | None = Field(
         default=None, description="The SpeculativeConfig."
@@ -1642,6 +1666,19 @@ class PipelineConfig(ConfigFileModel):
             ),
         )
         lora = args.lora.model_copy(deep=True) if args.lora else None
+        quant_config = None
+        if args.quantization_format is not None:
+            from max.pipelines.lib.quantization import on_the_fly_config
+
+            quant_config = on_the_fly_config(
+                args.quantization_format,
+                report_error=args.error_report_dir is not None,
+                targets=args.targets,
+                error_report_dir=args.error_report_dir,
+                verbose=args.verbose,
+                mse_sweep_scales=args.mse_sweep_scales,
+                source_format=args.source_format,
+            )
 
         _apply_speculative_draft_architecture(args.speculative, models)
         # Must precede the arch lookups so every consumer resolves the
@@ -1779,6 +1816,7 @@ class PipelineConfig(ConfigFileModel):
             runtime=runtime,
             profiling=_construct_from_user_fields(args.profiling),
             lora=lora,
+            quant_config=quant_config,
             speculative=speculative,
             task=args.task,
             debug_verify_replay=args.debug_verify_replay,

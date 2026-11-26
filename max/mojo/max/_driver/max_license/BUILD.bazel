@@ -29,7 +29,10 @@ overlay_layer(
 
 overlay_srcs(
     name = "max_srcs_hal",
-    layers = [":max_base_layer"],
+    layers = [
+        ":max_base_layer",
+        "//max/mojo/max/_driver/max_license/hal_backend:hal_backend_layer",
+    ],
 )
 
 mojo_library(

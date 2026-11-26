@@ -126,6 +126,70 @@ def stop_capture(output_path: str) -> str:
         incomplete.
     """
 
+class TraceActivity:
+    """
+    One activity of a capture: a host range, a runtime call, or device work.
+
+    The fields are the trace file's, except that times are in nanoseconds.
+    """
+
+    @property
+    def name(self) -> str: ...
+    @property
+    def category(self) -> str:
+        """
+        The activity's type, as the trace file's ``cat`` field names it.
+
+        For example ``user_annotation``, ``kernel`` or ``gpu_memcpy``.
+        """
+
+    @property
+    def start_ns(self) -> int:
+        """Start time, in nanoseconds since the Unix epoch."""
+
+    @property
+    def duration_ns(self) -> int: ...
+    @property
+    def device(self) -> int:
+        """The device for device work; the process for host activities."""
+
+    @property
+    def resource(self) -> int:
+        """The stream for device work; the thread track for host activities."""
+
+    @property
+    def thread_id(self) -> int: ...
+    @property
+    def correlation_id(self) -> int: ...
+    @property
+    def external_id(self) -> int:
+        """
+        The ID of the range the activity is correlated to, or 0 if none.
+
+        The trace file stores it as the activity's ``External id``.
+        """
+
+def stop_capture_activities(
+    output_path: str | None = None,
+) -> tuple[list[TraceActivity], dict[str, str], str]:
+    """
+    Stops the capture :func:`start_capture` started, returning its trace.
+
+    As :func:`stop_capture`, but the trace comes back in memory, so it can
+    be read without a trace file. Device work is included only for the
+    vendors the profiler records.
+
+    Args:
+        output_path: Where to also save the trace, expanded like
+            ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``, or None to save
+            nothing.
+
+    Returns:
+        The trace's activities; its top-level metadata, each value raw
+        JSON, such as ``MAX dropped range spans``; and an empty string on
+        success, otherwise why the trace is missing or incomplete.
+    """
+
 def request_burst(reason: str) -> bool:
     """
     Requests an extra step-window burst for an event, opened now.

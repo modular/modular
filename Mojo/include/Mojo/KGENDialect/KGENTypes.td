@@ -882,10 +882,6 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     DefaultValuedParameter<"TypedAttr",
                            "$_builder.getIndexAttr(1)">:$minAlignment,
 
-    // This is true when this corresponds to a variadic parameter pack. This is
-    // looked at by ArgConvention lowering to know when it can flatten a pack.
-    "bool":$isParamPack,
-
     // Whether the struct is a memory layout (the type domain), a value
     // representation (the value domain), or undecided.
     "StructDomain":$domain
@@ -903,22 +899,18 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     // explicit alignment) when TypedAttr{} is passed.
     TypeBuilder<(ins "TypedAttr":$variadic,
                      CArg<"TypedAttr", "{}">:$isMemoryOnly,
-                     CArg<"TypedAttr", "{}">:$minAlignment,
-                     CArg<"bool", "false">:$isParamPack), [{}]>,
+                     CArg<"TypedAttr", "{}">:$minAlignment), [{}]>,
     // Builder that takes every flag, for rebuilding an existing struct.
     TypeBuilder<(ins "TypedAttr":$variadic,
                      "TypedAttr":$isMemoryOnly,
                      "TypedAttr":$minAlignment,
-                     "bool":$isParamPack,
                      "StructDomain":$domain), [{}]>,
     // Convenience builder with bool isMemoryOnly (wraps in BoolAttr).
     TypeBuilder<(ins "TypedAttr":$variadic,
                      "bool":$isMemoryOnly,
-                     CArg<"TypedAttr", "{}">:$minAlignment,
-                     CArg<"bool", "false">:$isParamPack), [{
+                     CArg<"TypedAttr", "{}">:$minAlignment), [{
       return get($_ctxt, variadic,
-                 BoolAttr::get($_ctxt, isMemoryOnly), minAlignment,
-                 isParamPack);
+                 BoolAttr::get($_ctxt, isMemoryOnly), minAlignment);
     }]>,
     // Builder with TypedAttr variadic (infers context from variadic).
     TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,
@@ -968,14 +960,12 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     /// Builds a layout struct, which reduces each element to its layout half.
     static StructType getLayoutDomain(MLIRContext *context, TypedAttr variadic,
                                       TypedAttr isMemoryOnly = {},
-                                      TypedAttr minAlignment = {},
-                                      bool isParamPack = false);
+                                      TypedAttr minAlignment = {});
 
     /// Builds a value struct, which keeps each element whole.
     static StructType getValueDomain(MLIRContext *context, TypedAttr variadic,
                                      TypedAttr isMemoryOnly = {},
-                                     TypedAttr minAlignment = {},
-                                     bool isParamPack = false);
+                                     TypedAttr minAlignment = {});
 
     bool isLayoutDomain() const { return getDomain() == StructDomain::Layout; }
     bool isValueDomain() const { return getDomain() == StructDomain::Value; }

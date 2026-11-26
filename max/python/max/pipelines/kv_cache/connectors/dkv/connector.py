@@ -52,6 +52,7 @@ from max.pipelines.kv_cache.kv_connector import (
     CompletedProbe,
     KVConnector,
     KVConnectorTransfer,
+    KVLoadAbandoned,
     KVLoadFailed,
     KVLoadRefused,
     KVLookup,
@@ -59,6 +60,8 @@ from max.pipelines.kv_cache.kv_connector import (
     KVTransfer,
 )
 from max.profiler import traced
+
+__all__ = ["DKVConnector", "DkvClientTooOldError"]
 
 _logger = logging.getLogger("max.pipelines")
 
@@ -70,6 +73,35 @@ _PRESENCE_ENTRIES = ("presence", "presence_supported", "start_presence")
 # Lookup entries that gained ``chain_start`` later. pyo3 rejects an unknown
 # keyword, so each entry is passed it only where its signature names it.
 _CHAIN_START_ENTRIES = ("prepare_load", "start_prepare_load")
+
+# The extension's ``DkvConnector.API_LEVEL`` this shim needs: 1 takes the
+# per-block ``placement_keys`` on ``offload`` (required only under striping)
+# and the ``sequence_major_striping`` constructor argument.
+_MIN_CLIENT_API_LEVEL = 1
+
+
+class DkvClientTooOldError(RuntimeError):
+    """The installed dkv_connector extension predates what this shim calls."""
+
+
+def _require_client_api_level(client_cls: type) -> None:
+    """Refuses an extension older than the shim at construction.
+
+    Without this an old extension fails on its first offload, mid-serve,
+    with a ``TypeError`` that names neither side's version.
+
+    Raises:
+        DkvClientTooOldError: If the extension's ``API_LEVEL`` is below
+            ``_MIN_CLIENT_API_LEVEL``, or it has none.
+    """
+    level = getattr(client_cls, "API_LEVEL", 0)
+    if level < _MIN_CLIENT_API_LEVEL:
+        raise DkvClientTooOldError(
+            f"the dkv_connector extension is at API level {level}, but this "
+            f"MAX needs API level {_MIN_CLIENT_API_LEVEL} or later (per-block "
+            "offload placement keys); install a dkv-connector wheel built "
+            "with them"
+        )
 
 
 class _DkvLookup(Protocol):
@@ -92,11 +124,16 @@ class _DkvPresence(Protocol):
     ``masks`` is ``None`` when the server or a hinted peer predates presence,
     or when the query went unanswered because the server shed it or the
     co-located dKV timed out, answered not ready, or never received it.
+    ``colocated_runs`` is each group's leading run on the co-located dKV, or
+    ``None`` unless that dKV looked at every key. An extension that predates
+    it lacks the entry.
     """
 
     def is_complete(self) -> bool: ...
 
     def masks(self) -> Sequence[Sequence[bool]] | None: ...
+
+    def colocated_runs(self) -> Sequence[int] | None: ...
 
 
 class _DkvLoadTransfer(KVTransfer, Protocol):
@@ -146,6 +183,7 @@ class _DkvClient(Protocol):
         block_hashes: Sequence[int],
         hint: bytes | None = ...,
         chain_start: int | None = ...,
+        colocated_run: int | None = ...,
     ) -> _DkvLookup: ...
 
     def load_lookup(
@@ -196,6 +234,7 @@ class _DkvClient(Protocol):
         group_id: int,
         block_ids: Sequence[int],
         block_hashes: Sequence[int],
+        placement_keys: Sequence[int],
     ) -> KVTransfer: ...
 
     def touch(self, *, group_id: int, block_hashes: Sequence[int]) -> None: ...
@@ -277,8 +316,8 @@ def _group_recency(group_id: KVCacheGroupId) -> int:
     return _DKV_RECENCY_FULL_SEQUENCE
 
 
-def _takes_chain_start(client: object, entry: str) -> bool:
-    """Returns whether ``client``'s ``entry`` accepts ``chain_start``.
+def _takes_keyword(client: object, entry: str, keyword: str) -> bool:
+    """Returns whether ``client``'s ``entry`` accepts ``keyword``.
 
     An entry the client lacks, or one whose signature cannot be read, does
     not.
@@ -287,7 +326,7 @@ def _takes_chain_start(client: object, entry: str) -> bool:
     if method is None:
         return False
     try:
-        return "chain_start" in inspect.signature(method).parameters
+        return keyword in inspect.signature(method).parameters
     except (TypeError, ValueError):
         return False
 
@@ -978,13 +1017,50 @@ def _resolve_admission_timeout_s(env: Mapping[str, str] | None = None) -> float:
     return admission_s
 
 
+def _left_copy_in_flight(err: BaseException) -> bool:
+    """Returns whether ``err`` gave up on a copy that may still write its pages.
+
+    The binding marks such a failure with a true ``copy_in_flight``
+    attribute, and :func:`_as_load_failure` turns it into a
+    :class:`KVLoadAbandoned`.
+    """
+    return isinstance(err, KVLoadAbandoned) or bool(
+        getattr(err, "copy_in_flight", False)
+    )
+
+
+def _failure_to_raise(
+    kept: BaseException | None, err: BaseException, what: str
+) -> BaseException:
+    """Picks which of two failures one transfer raises and logs the other.
+
+    The first failure wins unless only the later one left a copy running,
+    because the caller has to keep the pages of such a copy out of use, and
+    the failure it is handed is all it decides that from. A keyboard
+    interrupt or a system exit kept first still wins, so a copy left running
+    never swallows it.
+    """
+    if kept is None:
+        return err
+    if (
+        not isinstance(kept, (KeyboardInterrupt, SystemExit))
+        and _left_copy_in_flight(err)
+        and not _left_copy_in_flight(kept)
+    ):
+        kept, err = err, kept
+    _logger.error(what, exc_info=err)
+    return kept
+
+
 def _drain(transfers: Sequence[KVTransfer]) -> None:
     """Waits for every transfer in ``transfers``, draining all of them.
 
     Guarded per transfer with the first failure re-raised at the END rather
     than immediately: this is what stands between a short delivery and the
     caller freeing a page with an H2D still landing in it, so one leaf's
-    transport error must not skip the leaves after it.
+    transport error must not skip the leaves after it. A failure that left a
+    copy running is raised ahead of the others, since the caller must then
+    keep the pages.
 
     ``synchronize`` takes its handles out, so draining the same transfer twice
     is a no-op and the unwind path can drain blindly.
@@ -994,10 +1070,9 @@ def _drain(transfers: Sequence[KVTransfer]) -> None:
         try:
             transfer.synchronize()
         except BaseException as err:
-            if first is None:
-                first = err
-            else:
-                _logger.exception("dkv transfer synchronize failed")
+            first = _failure_to_raise(
+                first, err, "dkv transfer synchronize failed"
+            )
     if first is not None:
         raise first
 
@@ -1009,11 +1084,16 @@ def _as_load_failure(err: BaseException) -> BaseException:
     condition and ``ValueError`` for a caller bug. Anything else comes back
     unchanged, a ``RuntimeError`` subclass included, so a bug in the shim or
     the binding still crashes rather than reading as a copy the manager can
-    recompute.
+    recompute. A failure the binding marks as having left its copy running
+    becomes :class:`KVLoadAbandoned`, so the manager keeps its pages.
     """
     if type(err) is not RuntimeError:
         return err
-    failure = KVLoadFailed(str(err))
+    failure = (
+        KVLoadAbandoned(str(err))
+        if _left_copy_in_flight(err)
+        else KVLoadFailed(str(err))
+    )
     failure.__cause__ = err
     return failure
 
@@ -1090,23 +1170,25 @@ class _DkvBatchTransfer:
                 if not transfer.is_complete():
                     self._pending.append(transfer)
             except BaseException as err:
-                if first is None:
-                    first = err
-                else:
-                    _logger.exception("dkv transfer poll failed")
+                first = _failure_to_raise(
+                    first, err, "dkv transfer poll failed"
+                )
         if first is not None:
             # The caller unpins this transfer's blocks on the failure, so a
             # leaf still in flight has to be waited out first or its copy
-            # lands in a page that has been freed and reused.
-            self._failure = _as_load_failure(first)
+            # lands in a page that has been freed and reused. A leaf the drain
+            # gives up on while it still runs makes the whole load abandoned.
             still_flying = self._pending
             self._pending = []
             try:
                 _drain(still_flying)
-            except BaseException:
-                _logger.exception(
-                    "draining the surviving leaves of a failed dkv load failed"
+            except BaseException as err:
+                first = _failure_to_raise(
+                    first,
+                    err,
+                    "draining the surviving leaves of a failed dkv load failed",
                 )
+            self._failure = _as_load_failure(first)
             raise self._failure
         return not self._pending
 
@@ -1255,6 +1337,33 @@ class _DkvPendingProbe:
             resident if r in self._able else unknown for r in self._replica_idxs
         ]
 
+    def colocated_runs(self) -> list[Mapping[str, int]] | None:
+        """Returns each replica's co-located run per leaf, once answered.
+
+        Read apart from :meth:`masks`, so a call a peer left unanswered still
+        reports the run the co-located dKV found. A layout whose call reports
+        no run, or whose extension predates it, leaves its leaves out, and
+        ``None`` means no leaf has one.
+        """
+        if not self.is_complete():
+            raise RuntimeError("dkv presence has not answered on every layout")
+        runs: dict[str, int] = {}
+        for leaf_ids, handle in self._handles:
+            if not hasattr(handle, "colocated_runs"):
+                continue
+            answer = handle.colocated_runs()
+            if answer is None:
+                continue
+            if len(answer) != len(leaf_ids):
+                raise ValueError(
+                    f"dkv start_presence answered {len(answer)} co-located "
+                    f"runs for leaves {leaf_ids}"
+                )
+            runs.update(zip(leaf_ids, answer, strict=True))
+        if not runs:
+            return None
+        return [runs if r in self._able else {} for r in self._replica_idxs]
+
 
 class _DkvSyncLookup(CompletedLookup):
     """A lookup answered in place by an extension without the async entries.
@@ -1305,6 +1414,7 @@ class DKVConnector(KVConnector):
         local_block_store_endpoint: str,
         devices: Sequence[Device],
         params: KVCacheParamInterface,
+        sequence_major_striping: bool = False,
     ) -> None:
         """Constructs and admits one dKV Rust client per DP replica.
 
@@ -1315,6 +1425,9 @@ class DKVConnector(KVConnector):
             devices: The pipeline's flat, ordered device list across replicas.
             params: KV-cache parameters, folded into the tenant store's layout
                 ``kv_config_hash``.
+            sequence_major_striping: Targets new blocks with equal placement
+                keys to one dKV region per TP shard. Deduplicated blocks keep
+                their stored locations. Advertises this in the handshake.
 
         Raises:
             ValueError: If either operator-injected variable is missing —
@@ -1340,6 +1453,8 @@ class DKVConnector(KVConnector):
         import dkv_connector as _dkv_extension
 
         _DkvConnectorClient = _dkv_extension.DkvConnector
+
+        _require_client_api_level(_DkvConnectorClient)
 
         # The Rust client creates a NIXL agent, which dlopens the transport
         # plugin RTLD_LOCAL; the UCX flavors carry unresolved CUDA/NVML (and,
@@ -1533,6 +1648,7 @@ class DKVConnector(KVConnector):
                     overlap_peer_lookups=overlap_peer_lookups,
                     peer_attach_wait_ms=peer_attach_wait_ms,
                     admission_timeout_s=admission_timeout_s,
+                    sequence_major_striping=sequence_major_striping,
                 )
             self._clients.append(clients_for_replica)
         # One client per leaf per DP replica. load/offload index
@@ -1639,6 +1755,7 @@ class DKVConnector(KVConnector):
         overlap_peer_lookups: bool,
         peer_attach_wait_ms: int,
         admission_timeout_s: float,
+        sequence_major_striping: bool,
     ) -> _DkvClient:
         # Group the per-leaf units into one (device_id, units) entry
         # per TP shard. The Rust client concatenates each shard's units, in
@@ -1743,6 +1860,7 @@ class DKVConnector(KVConnector):
                 tenant_gpu_device_ids=list(tenant_gpu_device_ids),
                 overlap_peer_lookups=overlap_peer_lookups,
                 admission_timeout_s=admission_timeout_s,
+                sequence_major_striping=sequence_major_striping,
                 # passed only when set, so an extension that predates the
                 # keyword still builds with the wait off
                 **(
@@ -1849,7 +1967,7 @@ class DKVConnector(KVConnector):
 
         An extension without the handle carried lookup and presence entries
         is driven through the blocking calls instead, and one whose lookups
-        predate ``chain_start`` is called without it.
+        predate ``chain_start`` or ``colocated_run`` is called without them.
         """
         self._async_lookup_replicas = [
             all(
@@ -1879,7 +1997,16 @@ class DKVConnector(KVConnector):
                 leaf_id: frozenset(
                     entry
                     for entry in _CHAIN_START_ENTRIES
-                    if _takes_chain_start(client, entry)
+                    if _takes_keyword(client, entry, "chain_start")
+                )
+                for leaf_id, client in clients.items()
+            }
+            for clients in self._clients
+        ]
+        self._colocated_run_clients = [
+            {
+                leaf_id: _takes_keyword(
+                    client, "start_prepare_load", "colocated_run"
                 )
                 for leaf_id, client in clients.items()
             }
@@ -1897,6 +2024,21 @@ class DKVConnector(KVConnector):
         if entry in self._chain_start_entries[replica_idx][leaf_id]:
             return {"chain_start": chain_start}
         return {}
+
+    def _colocated_run_kwargs(
+        self,
+        replica_idx: int,
+        leaf_id: str,
+        colocated_runs: Mapping[str, int] | None,
+    ) -> dict[str, int]:
+        """Returns ``leaf_id``'s run as ``start_prepare_load``'s keyword.
+
+        Empty when the leaf has no run or its client predates the keyword.
+        """
+        run = (colocated_runs or {}).get(leaf_id)
+        if run is None or not self._colocated_run_clients[replica_idx][leaf_id]:
+            return {}
+        return {"colocated_run": run}
 
     def lookup(
         self,
@@ -2288,7 +2430,8 @@ class DKVConnector(KVConnector):
                 promised.
             KVLoadFailed: If posting a leaf's copy failed, or a copy that a
                 short delivery drained did. Every leaf that posted has been
-                drained by then.
+                drained by then, and it is a :class:`KVLoadAbandoned` when the
+                drain gave up on a copy that was still running.
         """
         clients = self._clients[replica_idx]
         depths = self._leased_depths.pop(replica_idx, None)
@@ -2318,6 +2461,7 @@ class DKVConnector(KVConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         """Starts one leased read per leaf and returns before any answers.
 
@@ -2326,7 +2470,9 @@ class DKVConnector(KVConnector):
         request's lookup never cancels another's. :meth:`load_lookup` reads
         out of the handle and :meth:`abandon_lookup` hands it back, and a
         handle the manager drops does the same on its own. ``hint`` and
-        ``chain_start`` go to the reads as in :meth:`lookup`.
+        ``chain_start`` go to the reads as in :meth:`lookup`. Each leaf's
+        ``colocated_runs`` entry goes to its read, which starts an overlapped
+        peer read past it.
 
         An extension without the async entries answers through the blocking
         :meth:`lookup` here instead. That lease lives in the prepared slot,
@@ -2361,6 +2507,9 @@ class DKVConnector(KVConnector):
                     hint=usable_hint,
                     **self._chain_start_kwargs(
                         replica_idx, leaf_id, "start_prepare_load", chain_start
+                    ),
+                    **self._colocated_run_kwargs(
+                        replica_idx, leaf_id, colocated_runs
                     ),
                 )
         except Exception:
@@ -2590,15 +2739,23 @@ class DKVConnector(KVConnector):
             abandon_all()
             # A leaf that posted has reads landing into rows the caller frees
             # as soon as this raises. Swallowing: the original exception is
-            # the one worth propagating.
+            # the one worth propagating, except that a drain which gave up on
+            # a copy still running makes the load abandoned, so the caller
+            # keeps the rows that copy may write.
+            left_running = False
             try:
                 _drain(posted_transfers)
-            except BaseException:
+            except BaseException as drain_err:
+                left_running = _left_copy_in_flight(drain_err)
                 _logger.exception(
                     "dkv transfer drain failed while unwinding a load; its "
                     "reads may still be landing"
                 )
             failure = _as_load_failure(err)
+            if left_running and isinstance(
+                failure, (KVLoadFailed, KVLoadRefused)
+            ):
+                raise KVLoadAbandoned(str(err)) from err
             if failure is err:
                 raise
             raise failure from err
@@ -2608,6 +2765,8 @@ class DKVConnector(KVConnector):
         block_ids: Mapping[str, Sequence[int]],
         block_hashes: Mapping[str, Sequence[bytes]],
         replica_idx: int = 0,
+        *,
+        placement_key: int,
     ) -> KVConnectorTransfer:
         """Offloads ``replica_idx``'s device blocks to the dkv service by hash.
 
@@ -2621,6 +2780,8 @@ class DKVConnector(KVConnector):
         alone.
 
         Routes to the processing replica's per-leaf clients, one call per leaf.
+        Every block of the call is one request's, so each takes
+        ``placement_key``.
 
         Returns:
             A :class:`_DkvBatchTransfer` over the posted WRITEs, reporting
@@ -2663,6 +2824,7 @@ class DKVConnector(KVConnector):
                 group_id=self._wire_ids[leaf_id],
                 block_ids=list(block_ids[leaf_id]),
                 block_hashes=[_to_dkv_u64(h) for h in block_hashes[leaf_id]],
+                placement_keys=[placement_key] * len(block_hashes[leaf_id]),
             )
             for leaf_id in self._leaves
         ]
@@ -2908,6 +3070,18 @@ class DKVConnector(KVConnector):
                     dkv_overlapped_peer_lookups=m.get(
                         "overlapped_peer_lookups", 0
                     ),
+                    dkv_overlap_reads_moved_by_probe=m.get(
+                        "overlap_reads_moved_by_probe", 0
+                    ),
+                    dkv_overlap_blocks_moved_by_probe=m.get(
+                        "overlap_blocks_moved_by_probe", 0
+                    ),
+                    dkv_own_runs_short_of_probe=m.get(
+                        "own_runs_short_of_probe", 0
+                    ),
+                    dkv_own_run_blocks_short_of_probe=m.get(
+                        "own_run_blocks_short_of_probe", 0
+                    ),
                     dkv_hinted_lookups=m.get("hinted_lookups", 0),
                     dkv_hinted_lookup_ms_total=m.get(
                         "hinted_lookup_ms_total", 0.0
@@ -2953,6 +3127,9 @@ class DKVConnector(KVConnector):
                         "settle_queue_oldest_age_ms", 0.0
                     ),
                     dkv_settle_jobs_finished=m.get("settle_jobs_finished", 0),
+                    dkv_offloads_capacity_refused=m.get(
+                        "offload_capacity_refused", 0
+                    ),
                     dkv_owner_releases_halted=int(
                         m.get("owner_releases_halted", False)
                     ),

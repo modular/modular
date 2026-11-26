@@ -70,9 +70,10 @@ def _processor() -> DeepseekV41BatchProcessor:
         pipeline_config=cast(
             Any,
             SimpleNamespace(
+                artifact_export=False,
                 model=SimpleNamespace(
                     huggingface_config=_hf(), data_parallel_degree=1
-                )
+                ),
             ),
         ),
         devices=[CPU()],

@@ -17,24 +17,25 @@
 #include "llvm/ADT/StringRef.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // PrimitiveRegistry::Impl
 //===----------------------------------------------------------------------===//
 
-namespace M {
+namespace M::MLRT {
 struct PrimitiveRegistry::Impl {
   bool isFinalized = false;
   std::vector<std::pair<StringLiteral, PrimitiveImplFn>> prims;
 };
-} // namespace M
+} // namespace M::MLRT
 
 //===----------------------------------------------------------------------===//
 // PrimitiveRegistry
 //===----------------------------------------------------------------------===//
 
 static void mef_model() {
-  M_PROFILE_RANGE("mef_model", M_PROFILE_COLOR_TEAL);
+  M_PROFILE_SPAN("mef_model", M_PROFILE_COLOR_TEAL);
 
   ASSERT_STREAM(false, << "mef.model should never be invoked");
 }

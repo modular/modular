@@ -29,7 +29,7 @@ share, until each moves onto :class:`SpecDecodePipelineModel`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from functools import cached_property, partial
@@ -105,6 +105,7 @@ from max.profiler import traced
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable
 from max.tensor.realization_context import current_realization_context
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
@@ -146,7 +147,13 @@ from ..registration_draft import (
     RegisteredDraftBuilder,
     default_target_hidden_states,
 )
-from ..registration_runtime import BatchContextLengths
+from ..registration_runtime import (
+    BatchContextLengths,
+    ConstantInputs,
+    ExpertParallelExchange,
+    ExpertParallelInputs,
+    initialize_static_inputs,
+)
 from ..utils import CompilationTimer, start_checkpoint_prefetch
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 from ..weight_transform import (
@@ -303,6 +310,39 @@ def _builds_modulev3(arch: SupportedArchitecture) -> bool:
             ModuleV3MultiGraphPipelineModelWithKVCache,
         ),
     )
+
+
+_EPStarted = tuple[
+    EPConfig,
+    ExpertParallelExchange | None,
+    dict[str, CompiledCallable[..., Any]],
+]
+
+
+def _start_graph_api_ep(
+    session: InferenceSession, ep_config: EPConfig, mesh: DeviceMesh
+) -> _EPStarted:
+    """Starts a graph-API target's exchange.
+
+    It sets ``ep_config``'s node ID in place.
+    """
+    del mesh
+    if is_virtual_device_mode():
+        # An export still records the init graph, which nothing can run.
+        _, modules = compile_ep_init(session, ep_config, EPCommInitializer)
+        return ep_config, None, modules
+    initializer, modules = init_ep_comm(session, ep_config, EPCommInitializer)
+    return initializer.config, initializer, modules
+
+
+_EP_STARTS: dict[
+    bool, Callable[[InferenceSession, EPConfig, DeviceMesh], _EPStarted]
+] = {
+    True: ExpertParallelInputs().initialize,
+    False: _start_graph_api_ep,
+}
+"""Starts the exchange, keyed by whether the target builds a ModuleV3
+module (:func:`_builds_modulev3`)."""
 
 
 def _draft_architecture(
@@ -756,7 +796,7 @@ def _pairing_stage_error(pipeline_config: PipelineConfig) -> str | None:
     assert method is not None
     if issubclass(
         _pipeline_model(pairing.target), PipelinedModel
-    ) and spec_adapters.speculates_on_last_stage(pairing.target_arch, method):
+    ) and spec_adapters.speculates_on_last_stage(pairing.adapter_arch, method):
         return None
     return (
         f"A {pairing.target_arch} target does not speculate with {method} on"
@@ -999,11 +1039,31 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._method = speculative.speculative_method
         self._pairing = _Pairing.from_pipeline_config(runtime.pipeline_config)
         target = self._pairing.target
-        self._takes_images = _takes_images(target)
+        self._takes_images = _takes_images(
+            target
+        ) and spec_adapters.takes_vision_inputs(
+            self._pairing.adapter_arch, self._method, config.target
+        )
         self._prepares_batches = _encodes_in_batching(
             target
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
-        self._ep_comm_initializer: EPCommInitializer | None = None
+        self._ep_comm_initializer: ExpertParallelExchange | None = None
+        self._constant_inputs: ConstantInputs | None = None
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Combines canonical speculative bounds with the target's own bounds."""
+        bounds: dict[str, int] = {}
+        for dim in dims:
+            try:
+                bounds.update(super().max_dims([dim], kv_params))
+            except ValueError:
+                target = self._target_batching
+                if target is None:
+                    raise
+                bounds.update(target.max_dims([dim], kv_params))
+        return bounds
 
     @property
     def _target_prepares_inputs(self) -> bool:
@@ -1019,15 +1079,33 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
     def _target_batching(self) -> Any:
         """The target's batching, where it prepares or encodes any batches."""
         config = self.spec_config
+        if (
+            self._constant_inputs is not None
+            and not self._target_prepares_inputs
+        ):
+            raise ValueError(
+                "the target takes constant inputs, which only its own batching "
+                "passes, but its batching does not prepare the batches"
+            )
         if not (self._target_prepares_inputs or self._takes_images):
             return None
         batching = _batching(self._pairing.target)(config.target, self.runtime)
         if isinstance(batching, ReplayBatching):
             batching.bind_kv_params(config.kv_params)
+        if self._constant_inputs is not None:
+            batching.constant_inputs = self._constant_inputs
         return batching
 
+    def bind_constant_inputs(self, constants: ConstantInputs) -> None:
+        """Hands the target's constant inputs to the target's batching.
+
+        The pipeline model built and initialized them; the target's batching
+        passes those same buffers every step, as standalone serving does.
+        """
+        self._constant_inputs = constants
+
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: ExpertParallelExchange | None
     ) -> None:
         """Hands expert parallelism's buffers to the target's batching.
 
@@ -1357,7 +1435,7 @@ class SpecDecodePipelineModel(
     batch_processor_cls: ClassVar[type[Any]] = _BatchProcessor
 
     model: Model
-    ep_comm_initializer: EPCommInitializer | None = None
+    ep_comm_initializer: ExpertParallelExchange | None = None
     """Expert parallelism's runtime, which the target and the draft share."""
     drafter_export: object | None = None
     """What the graph bakes in of a draft that records it, which an export's
@@ -1768,7 +1846,13 @@ class SpecDecodePipelineModel(
         assert speculative is not None
         pairing = self.pairing
 
-        ep = _EPRuntime(session)
+        ep = _EPRuntime(
+            session,
+            lambda: DeviceMesh(
+                tuple(self.devices), (len(self.devices),), ("ep",)
+            ),
+            _EP_STARTS[_builds_modulev3(pairing.target)],
+        )
         self._weight_loads = []
         context = replace(
             ModelLoadContext.from_pipeline_model(self),
@@ -1784,7 +1868,8 @@ class SpecDecodePipelineModel(
             context,
             weights=load_weights(draft_paths),
             adapter=pairing.draft.checkpoint_adapters(
-                draft_checkpoint.huggingface_config
+                draft_checkpoint.huggingface_config,
+                artifact_export=self.pipeline_config.artifact_export,
             ).get(weights_format(draft_paths)),
             # A draft without a leaf of its own runs on the target's.
             kv_params=config.kv_params.children.get(
@@ -1826,8 +1911,23 @@ class SpecDecodePipelineModel(
         target, target_config = target_builder.build_module(target_context)
         # The planner sized the cache from this config before finalizing.
         config.target = target_config
-        self.ep_comm_initializer = ep.initializer
-        self.compiled_modules = {**self.compiled_modules, **ep.modules}
+        constant_provider = getattr(type(target), "constant_inputs", None)
+        constants = (
+            constant_provider(target_config, devices=self.devices)
+            if constant_provider is not None
+            else None
+        )
+        static_modules = initialize_static_inputs(session, constants)
+        if constants is not None:
+            assert isinstance(constants, ConstantInputs)
+            # Serving reads the buffers the initializer just filled.
+            self._batching.bind_constant_inputs(constants)
+        self.ep_comm_initializer = ep.exchange
+        self.compiled_modules = {
+            **self.compiled_modules,
+            **ep.modules,
+            **static_modules,
+        }
         # Each module's entries go under its name in the fused graph. A module
         # whose naming isn't rules yet compiles with its checkpoint_weights,
         # and leaves the graph unnamed.
@@ -1858,6 +1958,18 @@ class SpecDecodePipelineModel(
         self.weight_naming = (
             {GraphRole.SPEC_DECODER: tuple(entries)} if named else {}
         )
+        if (
+            isinstance(constants, ConstantInputs)
+            and constants.initializer is not None
+        ):
+            self.weight_naming = {
+                **self.weight_naming,
+                GraphRole.STATIC_INIT: tuple(
+                    _weight_entries(
+                        target_builder, target_context, target_config
+                    )
+                ),
+            }
         return _Modules(
             target, target_config, draft, draft_config, hidden_states, weights
         )
@@ -2369,8 +2481,12 @@ def _driver_call(
     # A target that encodes its images in its own batching passes them
     # past the tail, so only one that encodes through the vision cache
     # takes the pipeline's vision inputs.
-    vision = _takes_images(pairing.target) and not _encodes_in_batching(
-        pairing.target
+    vision = (
+        _takes_images(pairing.target)
+        and not _encodes_in_batching(pairing.target)
+        and spec_adapters.takes_vision_inputs(
+            target_arch, method, target_config
+        )
     )
     huggingface_config = pipeline_config.model.huggingface_config
     verify = spec_adapters.verify_for(
@@ -2630,6 +2746,11 @@ class _SpecDecodeVisionCachePipelineModel(_SpecDecodeVisionPipelineModel):
 
     model_config_cls: ClassVar[type[Any]] = _SpecDecodeVisionArchConfig
 
+    @property
+    def vision_encoding(self) -> SupportsVisionEncoding[Any] | None:
+        """Returns the encoder when this speculative deployment takes images."""
+        return self if self._batching._takes_images else None
+
     def pack_vision_inputs(
         self,
         selection: Sequence[tuple[Any, Sequence[ImageMetadata]]],
@@ -2830,27 +2951,27 @@ class _EPRuntime:
     """
 
     session: InferenceSession
-    initializer: EPCommInitializer | None = None
+    mesh: Callable[[], DeviceMesh]
+    """Returns the mesh of the pipeline's devices."""
+    start_exchange: Callable[
+        [InferenceSession, EPConfig, DeviceMesh], _EPStarted
+    ]
+    """Starts the exchange of the target's module API."""
+    config: EPConfig | None = None
+    """The config the exchange started with."""
+    exchange: ExpertParallelExchange | None = None
     modules: dict[str, CompiledCallable[..., Any]] = field(default_factory=dict)
     """The init graph, by role, for ``compiled_modules``."""
 
-    def start(self, ep_config: EPConfig) -> None:
+    def start(self, ep_config: EPConfig) -> EPConfig:
         """Starts the runtime once, and gives ``ep_config`` its node ID."""
-        if is_virtual_device_mode():
-            # An export still records the init graph, which nothing can run.
-            if not self.modules:
-                _, self.modules = compile_ep_init(self.session, ep_config)
-            return
-        if self.initializer is None:
-            self.initializer, self.modules = init_ep_comm(
-                self.session, ep_config
+        if self.config is None:
+            self.config, self.exchange, self.modules = self.start_exchange(
+                self.session, ep_config, self.mesh()
             )
-        ep_config.node_id = self.initializer.config.node_id
-        if ep_config.node_id == -1:
-            raise ValueError(
-                "EP node ID is not set. Please check if the EP initialization"
-                " is successful."
-            )
+            return self.config
+        ep_config.node_id = self.config.node_id
+        return ep_config
 
 
 def _named_leaves(node: Any) -> dict[str, list[Any]]:

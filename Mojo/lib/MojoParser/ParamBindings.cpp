@@ -154,7 +154,8 @@ TypedAttr LIT::getCtxBoundConstAttrForFn(ASTDecl &fnDecl, SharedState &shared,
   DenseBoolArrayAttr discharged = KGEN::getDenseBoolArrayAttr(
       ctxBoundFn.getContext(), verified.getDischargedBodyConstraints());
   return BindParamsAttr::get(ctxBoundFn.getContext(), ctxBoundFn,
-                             verified.getBindings(), discharged, &evalContext);
+                             verified.getBindings(), discharged,
+                             /*resultType=*/{}, &evalContext);
 }
 
 /// Utility function to perform substitutions of the bindings into the symbol

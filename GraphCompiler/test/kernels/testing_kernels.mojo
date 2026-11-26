@@ -233,10 +233,8 @@ struct Foo:
 
 
 @extensibility.register_shape_function("imposter_add")
-def imposter_add_shape(
-    x: Some[Tensor], y: Some[Tensor]
-) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
+def imposter_add_shape(x: Some[Tensor], y: Some[Tensor]) -> type_of(x.shape()):
+    return x.shape()
 
 
 # Same as `imposter_add`, but its shape function raises, so the generated shape
@@ -266,10 +264,10 @@ struct FooRaisingShape:
 @extensibility.register_shape_function("imposter_add_raising_shape")
 def imposter_add_raising_shape_shape(
     x: Some[Tensor], y: Some[Tensor]
-) raises -> IndexList[type_of(x).rank]:
+) raises -> type_of(x.shape()):
     if type_of(x).rank == 0:
         raise "imposter_add_raising_shape: rank-0 is not supported"
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
+    return x.shape()
 
 
 # Device entry for the GPU negate path: one thread per flat element, negating
@@ -513,7 +511,7 @@ def _fused_load_negate[
             )
 
         comptime block_size = 64
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             device_body,
             grid_dim=(ceildiv(n, block_size),),
             block_dim=(block_size,),
@@ -1421,20 +1419,20 @@ struct TraitFusedStoreHostNegative:
         z.store[1]((0,), SIMD[type_of(z).dtype, 1](0))
 
 
-# Output-transform (compute-output) fusion: the kernel computes `x[i] + 1`.
-# In the compute form it applies the fused transform via `z.compute`, then
-# performs the final dense store itself (a compute-form operand transforms a
+# Legacy compute-output fusion: the kernel computes `x[i] + 1`.
+# In the compute form it applies the fused compute via `z.compute`, then
+# performs the final dense store itself (a compute-form operand maps a
 # computed value and leaves the parent responsible for the store).
 # `_LegacyComputable` is the sole access form; `TileTensorable` adds only the
 # dense projection used for that final store. In the store form (the graph
 # compiler downgraded a cast, reshape, or multi-store epilogue) it calls
 # `z.store`, which runs the whole epilogue. `x` is a plain dense input.
-# Device entry for the fused-transform path: one thread per element computes
-# `x[i] + 1`, applies the fused transform via `z.compute`, and stores through
-# the output-buffer projection `z.to_tile_tensor()`. `z` is the device-projected
-# transform wrapper, `ZHost.device_type`. The body assert requires ONLY
-# `_LegacyComputable & TileTensorable`.
-def _gpu_fused_transform_bias_kernel[
+# Device entry for the fused legacy compute path: one thread per element
+# computes `x[i] + 1`, applies the fused compute via `z.compute`, and stores
+# through the output-buffer projection `z.to_tile_tensor()`. `z` is the
+# device-projected compute wrapper, `ZHost.device_type`. The body assert
+# requires ONLY `_LegacyComputable & TileTensorable`.
+def _gpu_fused_legacy_compute_bias_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
@@ -1462,7 +1460,7 @@ def _gpu_fused_transform_bias_kernel[
 # Device entry for the store form of a `_LegacyComputeOutput` slot: one thread
 # per element computes `x[i] + 1` and stores it through `z.store`, which runs
 # the whole downgraded epilogue.
-def _gpu_fused_transform_bias_store_form_kernel[
+def _gpu_fused_legacy_compute_bias_store_form_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
@@ -1482,8 +1480,8 @@ def _gpu_fused_transform_bias_store_form_kernel[
     z.store[1](Coord(i), raw)
 
 
-@extensibility.register("trait_fused_transform_bias")
-struct TraitFusedTransformBias:
+@extensibility.register("trait_fused_legacy_compute_bias")
+struct TraitFusedLegacyComputeBias:
     @staticmethod
     def execute(
         # The output declares only `Output & Fused & _LegacyComputeOutput`.
@@ -1518,7 +1516,7 @@ struct TraitFusedTransformBias:
             comptime block_size = 64
             comptime if conforms_to(type_of(z), _LegacyComputable):
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_kernel[
+                    _gpu_fused_legacy_compute_bias_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1530,7 +1528,7 @@ struct TraitFusedTransformBias:
                 )
             else:
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_store_form_kernel[
+                    _gpu_fused_legacy_compute_bias_store_form_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1542,15 +1540,15 @@ struct TraitFusedTransformBias:
                 )
 
 
-# UNIFIED-closure fused-transform variant: the device kernel binds the PROJECTED
-# transform proxy (`ZHost.device_type`, access-enabled), asserts that it is
-# `_LegacyComputable & TileTensorable`, and applies the transform + final store
+# UNIFIED-closure fused legacy compute variant: the device kernel binds the
+# PROJECTED compute proxy (`ZHost.device_type`, access-enabled), asserts that it
+# is `_LegacyComputable & TileTensorable`, and applies the compute + final store
 # through a unified closure that captures that projected value. Same context
 # gate as store/load: the closure captures `device_type`, so the
 # `compute`/`to_tile_tensor` bodies' `comptime assert _access_enabled` passes; a
-# host-side transform is a compile error (see
-# `trait_fused_transform_host_negative`).
-def _gpu_fused_transform_bias_unified_closure_kernel[
+# host-side compute is a compile error (see
+# `trait_fused_legacy_compute_host_negative`).
+def _gpu_fused_legacy_compute_bias_unified_closure_kernel[
     ZHost: DevicePassable,
     dtype: DType,
     LayoutType: TensorLayout,
@@ -1578,8 +1576,8 @@ def _gpu_fused_transform_bias_unified_closure_kernel[
     transform_and_store(coord, raw)
 
 
-@extensibility.register("trait_fused_transform_bias_unified_closure")
-struct TraitFusedTransformBiasUnifiedClosure:
+@extensibility.register("trait_fused_legacy_compute_bias_unified_closure")
+struct TraitFusedLegacyComputeBiasUnifiedClosure:
     @staticmethod
     def execute(
         z: Some[Output & Fused & _LegacyComputeOutput & Tensor],
@@ -1610,7 +1608,7 @@ struct TraitFusedTransformBiasUnifiedClosure:
             comptime block_size = 64
             comptime if conforms_to(type_of(z), _LegacyComputable):
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_unified_closure_kernel[
+                    _gpu_fused_legacy_compute_bias_unified_closure_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1622,7 +1620,7 @@ struct TraitFusedTransformBiasUnifiedClosure:
                 )
             else:
                 ctx.enqueue_function[
-                    _gpu_fused_transform_bias_store_form_kernel[
+                    _gpu_fused_legacy_compute_bias_store_form_kernel[
                         type_of(z), type_of(z).dtype, type_of(x).LayoutType
                     ]
                 ](
@@ -1637,7 +1635,7 @@ struct TraitFusedTransformBiasUnifiedClosure:
 # A fused-output `TensorTuple` declared before a `_LegacyComputeOutput` slot,
 # so each argument's position differs from its result position. Copies `x`
 # into every tuple element through its fused store, and computes `z` as in
-# `trait_fused_transform_bias`.
+# `trait_fused_legacy_compute_bias`.
 @extensibility.register("trait_tuple_then_compute_output")
 struct TraitTupleThenComputeOutput:
     @staticmethod
@@ -1679,13 +1677,13 @@ struct TraitTupleThenComputeOutput:
             raise Error("trait_tuple_then_compute_output is CPU-only")
 
 
-# NEGATIVE control: transforms DIRECTLY on the fused-transform proxy at the host
-# entry. On a GPU device the emitted proxy is the device-passable HOST proxy
-# (`_access_enabled=False`), so the compute body's `comptime assert
+# NEGATIVE control: computes DIRECTLY on the fused legacy compute proxy at the
+# host entry. On a GPU device the emitted proxy is the device-passable HOST
+# proxy (`_access_enabled=False`), so the compute body's `comptime assert
 # _access_enabled` fails at instantiation -- must NOT compile. Exercised
-# (expecting failure) by `mogg-kernel-api-e2e-trait-fused-transform-host-negative.mlir`.
-@extensibility.register("trait_fused_transform_host_negative")
-struct TraitFusedTransformHostNegative:
+# (expecting failure) by `mogg-kernel-api-e2e-trait-fused-legacy-compute-host-negative.mlir`.
+@extensibility.register("trait_fused_legacy_compute_host_negative")
+struct TraitFusedLegacyComputeHostNegative:
     @staticmethod
     def execute(
         z: Some[Output & Fused & _LegacyComputeOutput],
@@ -1732,8 +1730,8 @@ struct FooWithStructParam[flip: Bool]:
 @extensibility.register_shape_function("imposter_add_struct_param")
 def imposter_add_struct_param_shape(
     x: Some[Tensor],
-) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
+) -> type_of(x.shape()):
+    return x.shape()
 
 
 def _matmul(
@@ -1835,8 +1833,8 @@ struct PrintTensorSpecOp:
 
 
 @extensibility.register_shape_function("print_tensor_spec")
-def print_tensor_spec_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
+def print_tensor_spec_shape(x: Some[Tensor]) -> type_of(x.shape()):
+    return x.shape()
 
 
 @extensibility.register("print_tensor")
@@ -2078,8 +2076,8 @@ struct AddComputeFusion:
 @extensibility.register_shape_function("imposter_add_compute_fusion")
 def imposter_add_compute_fusion_shape(
     x: Some[Tensor], y: Some[Tensor]
-) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
+) -> type_of(x.shape()):
+    return x.shape()
 
 
 @extensibility.register("imposter_add_fuse_output")
@@ -2319,8 +2317,8 @@ struct ElementwisePrintShape:
 
 
 @extensibility.register_shape_function("print_shape_fused")
-def print_shape_fused_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](coord_to_index_list(x.shape()))
+def print_shape_fused_shape(x: Some[Tensor]) -> type_of(x.shape()):
+    return x.shape()
 
 
 # Raises if input shape is 10
@@ -2556,11 +2554,9 @@ struct TestCustomOp:
 
 
 @extensibility.register_shape_function("test_custom_op")
-def test_custom_op_shape(input: Some[Tensor]) -> IndexList[type_of(input).rank]:
+def test_custom_op_shape(input: Some[Tensor]) -> type_of(input.shape()):
     print("Hello")
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()
 
 
 # A custom op whose shape function is trait-typed: a metadata-only, no-role
@@ -2591,8 +2587,8 @@ struct TraitMetadataShapeOp:
 @extensibility.register_shape_function("trait_metadata_shape_op")
 def trait_metadata_shape_op_shape[
     T: TileTensorable
-](input: T) -> IndexList[T.rank]:
-    return rebind[IndexList[T.rank]](coord_to_index_list(input.shape()))
+](input: T) -> type_of(input.shape()):
+    return input.shape()
 
 
 # A custom op whose shape function binds the bare `Tensor` metadata trait
@@ -2621,8 +2617,8 @@ struct TraitTensorShapeOp:
 
 
 @extensibility.register_shape_function("trait_tensor_shape_op")
-def trait_tensor_shape_op_shape[T: Tensor](input: T) -> IndexList[T.rank]:
-    return rebind[IndexList[T.rank]](coord_to_index_list(input.shape()))
+def trait_tensor_shape_op_shape[T: Tensor](input: T) -> type_of(input.shape()):
+    return input.shape()
 
 
 # A custom op whose shape function reads element values off a
@@ -2695,8 +2691,8 @@ struct TraitTensorTupleShapeOp:
 @extensibility.register_shape_function("trait_tensor_tuple_shape_op")
 def trait_tensor_tuple_shape_op_shape[
     Ts: TypeList[Trait=Tensor, ...], //
-](inputs: TensorTuple[*Ts]) -> IndexList[Ts[0].rank]:
-    return rebind[IndexList[Ts[0].rank]](coord_to_index_list(inputs[0].shape()))
+](inputs: TensorTuple[*Ts]) -> type_of(inputs[0].shape()):
+    return inputs[0].shape()
 
 
 @extensibility.register("single_device_context")
@@ -2771,8 +2767,8 @@ struct PrintVectorSize:
     def elementwise[
         dtype: DType,
         width: SIMDLength,
-    ](x: SIMD[dtype, width], idx: IndexList) -> SIMD[dtype, width]:
-        if idx[0] == 0:
+    ](x: SIMD[dtype, width], idx: Coord) -> SIMD[dtype, width]:
+        if Int(idx[0]) == 0:
             # Only print once
             # We can't directly print `width` as it's HW-dependent.
             # Instead compare it with the width of i8 / f32.
@@ -2849,10 +2845,8 @@ struct CustomOpWithCustomParameterShapeFunc:
 )
 def custom_op_with_custom_parameter_shape_func_shape[
     test_flag: Int
-](input_tensor: Some[Tensor]) -> IndexList[type_of(input_tensor).rank]:
-    return rebind[IndexList[type_of(input_tensor).rank]](
-        coord_to_index_list(input_tensor.shape())
-    )
+](input_tensor: Some[Tensor]) -> type_of(input_tensor.shape()):
+    return input_tensor.shape()
 
 
 @extensibility.register("custom_op_with_mixed_bound_shape_func")
@@ -3125,9 +3119,9 @@ struct ShapeFuncWithMutable:
 @extensibility.register_shape_function("shape_func_with_mutable")
 def shape_func_with_mutable_shape(
     x: Some[Tensor],
-) -> IndexList[2]:
+) -> type_of(x.shape()):
     comptime assert type_of(x).rank == 2, "x must be rank 2"
-    return rebind[IndexList[2]](coord_to_index_list(x.shape()))
+    return x.shape()
 
 
 @extensibility.register("elemwise_add_with_param")
@@ -3147,13 +3141,10 @@ struct ElemwiseAddWithIndex:
     def elementwise[
         dtype: DType,
         width: SIMDLength,
-        rank: Int,
-    ](input: SIMD[dtype, width], indices: IndexList[rank]) -> SIMD[
-        dtype, width
-    ]:
+    ](input: SIMD[dtype, width], indices: Coord) -> SIMD[dtype, width]:
         var bias = SIMD[dtype, width]()
         comptime for i in range(width):
-            bias[i] = Scalar[dtype](indices[0] + i)
+            bias[i] = Scalar[dtype](Int(indices[0]) + i)
         return input + bias
 
 
@@ -4134,7 +4125,7 @@ struct TraitTensorTupleFusedConcatUnifiedClosure:
                         )
 
             comptime block_size = 64
-            ctx.enqueue_function(
+            ctx.enqueue_closure(
                 device_body,
                 grid_dim=(ceildiv(Int(n_dev), block_size),),
                 block_dim=(block_size,),

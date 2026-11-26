@@ -23,7 +23,7 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
-namespace M {
+namespace M::MLRT {
 class MEFInvokable;
 class PrimitiveRegistry;
 class PrimitiveDescriptor;
@@ -71,6 +71,6 @@ protected:
 /// checking the magic number.
 MODULAR_CXX_EXPORT bool isMEFFile(llvm::StringRef contents);
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEFEXECUTOR_MEFFILE_H

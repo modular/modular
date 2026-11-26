@@ -33,7 +33,11 @@ from max.pipelines.lib.module_registration import (
     ModuleV3DecoderPipelineModel,
     decoder_input_types,
 )
+from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    spec_decode_architecture,
+)
 from max.pipelines.lib.registration_runtime import batch_context_length_types
+from max.pipelines.speculative import spec_adapters
 
 
 def test_the_registration_uses_the_shared_decoder_runtime() -> None:
@@ -65,6 +69,10 @@ def test_the_registered_input_order_keeps_the_prefill_length_before_kv() -> (
     assert leaves[4] == cache
 
 
+def test_only_mach_serves_hy4() -> None:
+    assert hy_v4_arch.mach_only
+
+
 @pytest.mark.parametrize("ep_size", [1, 4])
 def test_local_expert_sharding_accepts_both_existing_ep_settings(
     ep_size: int,
@@ -94,3 +102,17 @@ def test_the_mtp_target_adapter_accepts_the_registered_decoder() -> None:
     object.__setattr__(target, "language_model", language)
     verified = verify(target, None, ReturnHiddenStates.NONE, None)
     assert verified.target is language
+
+
+def test_hy4_vl_pairs_with_its_dfly2_drafter() -> None:
+    arch = spec_decode_architecture(
+        "HYV4VLForConditionalGeneration", "dfly", None, prefer_module_v3=True
+    )
+    assert arch is not None
+    assert arch.name == "HYV4VLForConditionalGeneration_ModuleV3+dfly"
+    assert (
+        spec_adapters.primary_kv(
+            "HYV4VLForConditionalGeneration_ModuleV3", "dfly"
+        )
+        == "mla"
+    )

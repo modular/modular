@@ -468,12 +468,12 @@ public:
 
   /// Grows domainMap for one iteration of the body sub-block of cfOp, which
   /// must have one sub-block.
-  void flowSimpleLoop(GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
-                      const FlowOp &flowOp);
+  void flowSimpleLoop(MLRT::GRT::GRTControlFlowInterface cfOp,
+                      DomainMap &domainMap, const FlowOp &flowOp);
 
   /// Grows domainMap for executing the condition THEN body sub-block of cfOp,
   /// which must have two sub-blocks.
-  void flowConditionedLoop(GRT::GRTControlFlowInterface cfOp,
+  void flowConditionedLoop(MLRT::GRT::GRTControlFlowInterface cfOp,
                            DomainMap &domainMap, const FlowOp &flowOp);
 
   /// Returns partition of set as (within, without) such that %x in within
@@ -481,12 +481,12 @@ public:
   std::pair<Set, Set> splitByScope(const Set &set, Block *block);
 
   /// Grows domainMap for the sub-blocks of branch control flow op.
-  void flowBranch(GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+  void flowBranch(MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
                   const FlowOp &flowOp);
 
   /// Grows domainMap using the control flow closure rules.
-  void flowControlFlow(GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
-                       const FlowOp &flowOp);
+  void flowControlFlow(MLRT::GRT::GRTControlFlowInterface cfOp,
+                       DomainMap &domainMap, const FlowOp &flowOp);
 
   /// Grows domainMap to account for the results of op.
   void flowDefault(Operation *op, DomainMap &domainMap);
@@ -516,12 +516,12 @@ public:
 
   /// Grows domainMap for one iteration of the body sub-block of cfOp, which
   /// must have one sub-block.
-  void flowSimpleLoop(GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
-                      const FlowOp &flowOp);
+  void flowSimpleLoop(MLRT::GRT::GRTControlFlowInterface cfOp,
+                      DomainMap &domainMap, const FlowOp &flowOp);
 
   /// Grows domainMap for executing the condition THEN body sub-block of cfOp,
   /// which must have two sub-blocks.
-  void flowConditionedLoop(GRT::GRTControlFlowInterface cfOp,
+  void flowConditionedLoop(MLRT::GRT::GRTControlFlowInterface cfOp,
                            DomainMap &domainMap, const FlowOp &flowOp);
 
   /// Returns partition of set as (within, without) such that operand using %x
@@ -529,12 +529,12 @@ public:
   std::pair<Set, Set> splitByScope(const Set &set, Block *block);
 
   /// Grows domainMap for the sub-blocks of branch control flow op.
-  void flowBranch(GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+  void flowBranch(MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
                   const FlowOp &flowOp);
 
   /// Grows domainMap using the control flow closure rules.
-  void flowControlFlow(GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
-                       const FlowOp &flowOp);
+  void flowControlFlow(MLRT::GRT::GRTControlFlowInterface cfOp,
+                       DomainMap &domainMap, const FlowOp &flowOp);
 
   /// Graws domainMap to account for the operands of op.
   void flowDefault(Operation *op, DomainMap &domainMap);

@@ -82,12 +82,8 @@ struct TensorTuple[*Ts: AnyType](
         Ts: The element types.
     """
 
-    # A plain aggregate, not a parameter pack: `isParamPack` marks a struct
-    # whose elements the calling convention expands into separate arguments,
-    # which would leave a launch with more device parameters than the host
-    # passed. Without it the tuple crosses as one argument. A plain struct's
-    # element list must be typed by `!kgen.type` rather than by the elements'
-    # trait bound, as `VariadicPack` spells its own.
+    # A plain struct's element list must be typed by `!kgen.type` rather than
+    # by the elements' trait bound, as `VariadicPack` spells its own.
     comptime _element_types = rebind[
         __mlir_type[`!kgen.param_list<`, __mlir_type.`!kgen.type`, `>`]
     ](Self.Ts.values)
@@ -252,15 +248,6 @@ struct TensorTuple[*Ts: AnyType](
                 .unsafe_offset(offset)
                 .unsafe_bitcast[NoneType](),
             )
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the host type's name, for kernel-launch diagnostics.
-
-        Returns:
-            The name `TensorTuple`.
-        """
-        return String("TensorTuple")
 
     @staticmethod
     def _element_offset[idx: Int, *, target: CompilationTarget]() -> Int:

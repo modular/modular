@@ -1252,6 +1252,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
         host_args=(dt_fn,),
     )
 
+    @__allow_legacy_any_origin_fields
     def launch_pass[VPT: Int, entry_bf16: Bool](entry_addr: Int) raises {imm}:
         comptime pass_kernel = ssd_state_passing[
             kernel_dtype,
@@ -1443,6 +1444,7 @@ def mamba2_ssd_chunked_fwd_inplace_gpu[
 
         state_pass[False](0)
 
+        @__allow_legacy_any_origin_fields
         def launch_output[use_grouped_cb: Bool]() raises {imm}:
             comptime out_kernel = ssd_chunk_output[
                 kernel_dtype,

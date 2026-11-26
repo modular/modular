@@ -868,8 +868,7 @@ static LogicalResult lowerAttributesAndTypes(
                                   ParamsBindingArrayAttr::get(
                                       generator.getContext(),
                                       params.getBoundMask(), boundValues),
-                                  /*discharged=*/{},
-                                  /*evaluationContext=*/nullptr),
+                                  /*discharged=*/{}),
               WalkResult::skip());
         });
 
@@ -1005,6 +1004,9 @@ static LogicalResult lowerAttributesAndTypes(
             if (newOperands.size() != paramValues.size()) {
               TypedAttr generator =
                   cast<TypedAttr>(replacer.replace(bindParams.getGenerator()));
+              // If all params were singletons, there's nothing left to bind.
+              if (!sugarIsa<GeneratorType>(generator.getType()))
+                return std::make_pair(generator, WalkResult::skip());
               return std::make_pair(
                   BindParamsAttr::get(generator.getContext(), generator,
                                       newOperands,
@@ -1636,7 +1638,7 @@ static void populateTypeDomainRules(StructDecls &decls,
             bindParams.getContext(), cast<TypedAttr>(*generatorOr),
             ParamsBindingArrayAttr::get(bindParams.getContext(),
                                         params.getBoundMask(), loweredParams),
-            bindParams.getDischarged(), evalCtxPtr);
+            bindParams.getDischarged(), /*resultType=*/{}, evalCtxPtr);
         return evaluated;
       });
 
@@ -1676,8 +1678,7 @@ static void populateTypeDomainRules(StructDecls &decls,
                               ? StructDomain::Layout
                               : type.getDomain();
     return KGEN::StructType::get(type.getContext(), *variadicOr,
-                                 *isMemoryOnlyOr, *minAlignmentOr,
-                                 type.getIsParamPack(), domain);
+                                 *isMemoryOnlyOr, *minAlignmentOr, domain);
   });
 
   // NOTE: Downcast becomes an no-op after lower-lit. However, we should
@@ -1741,10 +1742,7 @@ static void populateTypeDomainRules(StructDecls &decls,
       return failure();
     auto mapped =
         ParamOperatorAttr::get(POC::VariadicPtrMap, *variadicOr, *addrSpaceOr);
-    return KGEN::StructType::getLayoutDomain(ref.getContext(), mapped,
-                                             /*isMemoryOnly=*/{},
-                                             /*minAlignment=*/{},
-                                             /*isParamPack=*/true);
+    return KGEN::StructType::getLayoutDomain(ref.getContext(), mapped);
   });
 
   // !lit.ref -> !kgen.pointer
@@ -1932,7 +1930,7 @@ static void populateValueDomainRules(StructDecls &decls,
       return type;
     return KGEN::StructType::getValueDomain(
         type.getContext(), type.getElementTypesVariadic(),
-        type.getIsMemoryOnly(), type.getMinAlignment(), type.getIsParamPack());
+        type.getIsMemoryOnly(), type.getMinAlignment());
   });
 
   // A struct reference becomes a generator reference over the same parameter
@@ -2115,33 +2113,46 @@ static TypedAttr getAlignmentFromType(Type type, LITTypeLowerer &b) {
 
 static Value lowerOp(VarDeclOp op, VarDeclOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  // TODO: Storage outside the default address space needs a target-specific
-  // allocation rather than a stack slot; reject it until that lowering exists.
+  // Check if the element type is a struct with explicit alignment.
+  TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);
+
+  // Where a variable outside the default address space lives depends on the
+  // target, which is only known after elaboration.
   if (!op.getType().isDefaultAddrSpace()) {
-    op.emitError("variables outside the default address space are not yet "
-                 "supported");
-    return {};
+    return POP::VarAllocOp::create(b, op.getLoc(),
+                                   op.getType().getAsPointerType(),
+                                   op.getName(), alignment);
   }
 
   // Lower a lit.var.decl to pop.stack_allocation.
-  // Check if the element type is a struct with explicit alignment.
-  TypedAttr alignment = getAlignmentFromType(op.getType().getElementType(), b);
   return POP::StackAllocationOp::create(
       b, op.getLoc(), op.getType().getAsPointerType(),
       /*count=*/1, alignment, /*markedLifetimes=*/true);
 }
 
+/// Return the stack slot that the lit.var.decl producing `var` was lowered
+/// to, or null if it was lowered to a `pop.var_alloc`, which has no lifetime
+/// markers.
+static Value getLoweredStackSlot(Value var) {
+  Value ptr = var.getDefiningOp()->getOperand(0);
+  return ptr.getDefiningOp<POP::StackAllocationOp>() ? ptr : Value();
+}
+
 static Value lowerOp(VarLifetimeStartOp op, VarLifetimeStartOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  b.replaceOpWithNewOp<POP::StackAllocLifetimeStartOp>(
-      op, op.getArg().getDefiningOp()->getOperand(0));
+  if (Value slot = getLoweredStackSlot(op.getArg()))
+    b.replaceOpWithNewOp<POP::StackAllocLifetimeStartOp>(op, slot);
+  else
+    b.eraseOp(op);
   return {};
 }
 
 static Value lowerOp(VarLifetimeEndOp op, VarLifetimeEndOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  b.replaceOpWithNewOp<POP::StackAllocLifetimeEndOp>(
-      op, op.getArg().getDefiningOp()->getOperand(0));
+  if (Value slot = getLoweredStackSlot(op.getArg()))
+    b.replaceOpWithNewOp<POP::StackAllocLifetimeEndOp>(op, slot);
+  else
+    b.eraseOp(op);
   return {};
 }
 
@@ -2265,14 +2276,10 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
     // This catches cases where parametric types have resolved identically.
     bool isIdentity = adaptor.getContainer().getType() == resultType;
 
-    auto isNonPackStruct =
-        isa<KGEN::StructType>(containerElemType) &&
-        !cast<KGEN::StructType>(containerElemType).getIsParamPack();
-
     // Detection method 2: Container already flattened to a concrete scalar.
     // This catches cases where the struct was flattened before this point.
     bool isFlattenedNonStruct =
-        !isNonPackStruct && !isa<KGEN::ParamType>(containerElemType);
+        !isa<KGEN::StructType, KGEN::ParamType>(containerElemType);
 
     if (isIdentity || isFlattenedNonStruct)
       return adaptor.getContainer();

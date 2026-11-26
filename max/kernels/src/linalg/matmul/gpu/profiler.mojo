@@ -120,12 +120,14 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @inline(.always)
     def get_workspace(
         ctx: DeviceContext,
-    ) raises -> Span[UInt64, MutAnyOrigin]:
+    ) raises -> Span[UInt64, MutUntrackedOrigin]:
         var length = Int(Self._calculate_buffer_length())
         var device_buffer = ctx.enqueue_create_buffer[.uint64](length)
         device_buffer.enqueue_fill(0)
-        return Span[UInt64, MutAnyOrigin](
-            unsafe_ptr=device_buffer.unsafe_ptr().as_unsafe_any_origin(),
+        return Span[UInt64, MutUntrackedOrigin](
+            unsafe_ptr=device_buffer.unsafe_ptr().unsafe_origin_cast[
+                MutUntrackedOrigin
+            ](),
             length=length,
         )
 
@@ -158,7 +160,7 @@ struct BlackwellWarpProfilingWorkspaceManager[
     @inline(.always)
     def dump_workspace_as_csv(
         ctx: DeviceContext,
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, _],
         filename: StaticString,
     ) raises:
         var length = Int(Self._calculate_buffer_length())

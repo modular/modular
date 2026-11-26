@@ -207,7 +207,7 @@ def SugaredTypeInterface : TypeInterface<"SugaredTypeInterface"> {
       If this type has a cached canonical type, return it, otherwise return
       null.  The type canonicalizer will recursively canonicalize types without
       a cache.
-    }], "Type", "getCachedCanonicalType", (ins "Type":$type)>,
+    }], "Type", "getCachedCanonicalType">,
   ];
 }
 

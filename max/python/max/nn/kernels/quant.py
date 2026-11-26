@@ -73,6 +73,9 @@ from max.nn._graph_ops import mxfp4_dequant as _mxfp4_dequant
 from max.nn._graph_ops import mxfp8_dequant as _mxfp8_dequant
 from max.nn._graph_ops import nvfp4_dequant as _nvfp4_dequant
 from max.nn._graph_ops import (
+    quantize_block_scaled_with_amax as _quantize_block_scaled_with_amax,
+)
+from max.nn._graph_ops import (
     quantize_dynamic_block_scaled as _quantize_dynamic_block_scaled,
 )
 from max.nn._graph_ops import (
@@ -242,6 +245,28 @@ def _block_scaled_quantize_rule(
     ]
 
 
+def _block_scaled_with_amax_rule(
+    input: TensorLayout,
+    block_amax: TensorLayout,
+    tensor_sf: TensorLayout | float = 1.0,
+    sf_vector_size: int = 16,
+) -> list[AxisAssignment]:
+    """Sharding rule for NVFP4 quantization with each block's amax given.
+
+    ``block_amax`` holds one value per block of the input, so it is placed
+    as the input is.
+    """
+    rows = [
+        AxisAssignment((*row.needed_inputs, row.needed_inputs[0]), row.outputs)
+        for row in _follow_input_rows(input, lambda placement: placement)
+    ]
+    if not isinstance(tensor_sf, TensorLayout):
+        return rows
+    return [
+        AxisAssignment((*row.needed_inputs, R), row.outputs) for row in rows
+    ]
+
+
 def _mxfp4_quantize_rule(
     input: TensorLayout,
     scales_type: DType = DType.float8_e8m0fnu,
@@ -334,6 +359,7 @@ def _nvfp4_grouped_matmul_rule(
     expert_usage_stats_host: TensorLayout,
     out_type: DType = DType.bfloat16,
     estimated_total_m: TensorLayout | None = None,
+    a_row_scales: TensorLayout | None = None,
 ) -> list[AxisAssignment]:
     """Sharding rule for the NVFP4 block-scaled grouped (MoE) matmul."""
     layouts = (
@@ -347,7 +373,9 @@ def _nvfp4_grouped_matmul_rule(
         expert_scales,
         expert_usage_stats_host,
         *((estimated_total_m,) if estimated_total_m is not None else ()),
+        *((a_row_scales,) if a_row_scales is not None else ()),
     )
+    # Per-row scales do not shard with the contraction or output channels.
     metadata = (R,) * (len(layouts) - 4)
     return [
         AxisAssignment((R, R, R, R, *metadata), (R,)),
@@ -434,6 +462,9 @@ quantize_dynamic_block_scaled = F.functional(
 )
 quantize_dynamic_block_scaled_mxfp4 = F.functional(
     _quantize_dynamic_block_scaled_mxfp4, rule=_mxfp4_quantize_rule
+)
+quantize_block_scaled_with_amax = F.functional(
+    _quantize_block_scaled_with_amax, rule=_block_scaled_with_amax_rule
 )
 dynamic_scaled_matmul = F.functional(
     _dynamic_scaled_matmul, rule=_scaled_matmul_rule
@@ -621,6 +652,7 @@ __all__ = [
     "mxfp8_dequant",
     "nvfp4_dequant",
     "preshuffle_blockwise_fp8_b",
+    "quantize_block_scaled_with_amax",
     "quantize_dynamic_block_scaled",
     "quantize_dynamic_block_scaled_mxfp4",
     "quantize_dynamic_scaled_float8",

@@ -147,6 +147,47 @@ class GeneratedMediaStore:
             payload=video_bytes,
         )
 
+    async def save_video_bytes(
+        self,
+        container: bytes,
+        media_type: str = "video/mp4",
+        *,
+        asset_id: str | None = None,
+    ) -> StoredMediaAsset:
+        """Persists an already-encoded video container to disk.
+
+        Stores a producer's finished container verbatim so a download returns
+        exactly the bytes the producer wrote.
+        :meth:`save_video_content` stays the frames-to-MP4 path.
+
+        Args:
+            container: The encoded container bytes.
+            media_type: MIME type of ``container``; it names the stored file's
+                extension and is what the download route returns.
+            asset_id: Id to store the asset under, for callers whose own id is
+                the one clients already hold. Defaults to a fresh id.
+
+        Raises:
+            ValueError: If ``container`` is empty, or ``media_type`` names a
+                container this store cannot name a file extension for.
+        """
+        if not container:
+            raise ValueError("Cannot persist an empty video container.")
+        extension = _VIDEO_EXTENSIONS.get(media_type)
+        if extension is None:
+            raise ValueError(
+                f"Cannot write {media_type!r} video; supported types are "
+                f"{sorted(_VIDEO_EXTENSIONS)}."
+            )
+        return await self._save_payload(
+            kind="video",
+            directory=self._videos_dir,
+            extension=extension,
+            media_type=media_type,
+            payload=container,
+            asset_id=asset_id,
+        )
+
     async def save_audio_content(
         self, content: OutputAudioContent
     ) -> StoredMediaAsset:
@@ -213,6 +254,7 @@ class GeneratedMediaStore:
         extension: str,
         media_type: str,
         payload: bytes,
+        asset_id: str | None = None,
     ) -> StoredMediaAsset:
         """Evict if needed, write a payload to disk, and track the saved asset.
 
@@ -240,6 +282,7 @@ class GeneratedMediaStore:
             extension=extension,
             media_type=media_type,
             size_bytes=size_bytes,
+            asset_id=asset_id,
         )
         try:
             await self._write_file(asset.path, payload)
@@ -292,9 +335,14 @@ class GeneratedMediaStore:
         extension: str,
         media_type: str,
         size_bytes: int,
+        asset_id: str | None = None,
     ) -> StoredMediaAsset:
-        """Create metadata for a future on-disk asset with a fresh id."""
-        asset_id = uuid4().hex
+        """Create metadata for a future on-disk asset.
+
+        ``asset_id`` defaults to a fresh id; a caller that supplies one owns
+        the id's uniqueness.
+        """
+        asset_id = asset_id or uuid4().hex
         output_path = directory / f"{asset_id}.{extension}"
         now = time.time()
         return StoredMediaAsset(
@@ -375,6 +423,11 @@ class GeneratedMediaStore:
             for store in (self._images, self._videos, self._audio)
             for asset in store.values()
         )
+
+
+# Extensions for the containers this store can hand back over HTTP. Explicit
+# rather than guessed: `mimetypes` answers depend on the platform database.
+_VIDEO_EXTENSIONS = {"video/mp4": "mp4"}
 
 
 def _decode_output_image_bytes(content: OutputImageContent) -> bytes:

@@ -48,10 +48,12 @@ bits and this thread's lane and warp bits select. Lanes the instruction adds
 itself, as `tcgen05.ld` does, are left out of that start, and the atom adds
 the value offsets.
 
-A TileOp never waits. `tiled_load` and `tiled_store` issue their atoms and
-return; the caller waits with the atom's completion, such as
-`TMemLoadWait.wait()`, when it needs the registers or the memory, so that
-other work can run while the issues are in flight.
+A TileOp contains no synchronization of any kind: no wait, commit, fence,
+barrier arrival or barrier wait. `tiled_load` and `tiled_store` issue their
+atoms and return; the building block that called them waits on the atom's
+completion with `layout.building_blocks`, such as
+`wait_issues[A.Completion]()`, when it needs the registers or the memory,
+so that other work can run while the issues are in flight.
 
 You can import these APIs from the `layout.tileops` package:
 
@@ -493,8 +495,9 @@ def tiled_load[
     Constraints:
         `can_tiled_load[A, LR, LM, EM, threads=threads]()`, and `A`'s
         completion is synchronous or a counter. `tiled_load` does not wait:
-        for a counter, the caller waits with `A.Completion.wait()` before it
-        reads the registers.
+        for a counter, the building block waits with
+        `layout.building_blocks.wait_issues[A.Completion]()` before it reads
+        the registers.
     """
     comptime assert T == A.dtype, "tiled_load: operand dtype"
     _check_completion[A.Completion]()
@@ -556,7 +559,8 @@ def tiled_store[
     Constraints:
         `can_tiled_store[A, LM, EM, LR, threads=threads]()`, and `A`'s
         completion is synchronous or a counter. `tiled_store` does not wait:
-        for a counter, the caller waits with `A.Completion.wait()` before it
+        for a counter, the building block waits with
+        `layout.building_blocks.wait_issues[A.Completion]()` before it
         reuses the registers.
     """
     comptime assert T == A.dtype, "tiled_store: operand dtype"

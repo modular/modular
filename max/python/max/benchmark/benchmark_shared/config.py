@@ -44,6 +44,7 @@ from .datasets import (
 )
 from .goodput import GoodputTargets, goodput_tokens
 from .utils import int_or_none, parse_comma_separated
+from .video_schema import VideoRequestSchema, get_video_request_schema
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +136,8 @@ CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
     "vllm-chat": "/reset_prefix_cache",
     "sglang": "/flush_cache",
     "sglang-chat": "/flush_cache",
+    "tokenspeed": "/flush_cache",
+    "tokenspeed-chat": "/flush_cache",
 }
 
 BenchmarkTask = Literal[
@@ -177,6 +180,7 @@ PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
 # Override endpoint per backend for video tasks (text-to-video and
 # image-to-video). For vllm-omni use the dedicated /v1/videos/sync endpoint.
 VIDEO_GEN_DEFAULT_ENDPOINT: Mapping[Backend, Endpoint] = {
+    "mach": "/v1/responses",
     "vllm": "/v1/videos/sync",
     "vllm-chat": "/v1/videos/sync",
     "sglang": "/v1/videos",
@@ -197,10 +201,21 @@ IMAGE_MIXING_ENDPOINTS: frozenset[Endpoint] = frozenset(
 )
 
 
-def get_pixel_gen_endpoint(backend: Backend, task: BenchmarkTask) -> Endpoint:
-    """Return the pixel-generation endpoint for a given backend and task."""
-    if task in VIDEO_GENERATION_TASKS and backend in VIDEO_GEN_DEFAULT_ENDPOINT:
-        return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
+def get_pixel_gen_endpoint(
+    backend: Backend,
+    task: BenchmarkTask,
+    video_request_schema: VideoRequestSchema = "default",
+) -> Endpoint:
+    """Returns the video schema's endpoint before the backend defaults."""
+    if task in VIDEO_GENERATION_TASKS:
+        schema = get_video_request_schema(video_request_schema)
+        if (
+            schema is not None
+            and (endpoint := schema.endpoint(backend)) is not None
+        ):
+            return endpoint
+        if backend in VIDEO_GEN_DEFAULT_ENDPOINT:
+            return VIDEO_GEN_DEFAULT_ENDPOINT[backend]
     if backend in PIXEL_GEN_DEFAULT_ENDPOINT:
         return PIXEL_GEN_DEFAULT_ENDPOINT[backend]
     raise ValueError(
@@ -499,7 +514,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     # Backend and API configuration (serving-specific)
     backend: Backend = Field(
         default="modular",
-        description="Backend to use for benchmarking. Choices: atom, atom-chat, mach, mcloud, modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
+        description="Backend to use for benchmarking. Choices: atom, atom-chat, mach, mcloud, modular, modular-chat, sglang, sglang-chat, tokenspeed, tokenspeed-chat, trtllm, trtllm-chat, vllm, vllm-chat",
         json_schema_extra={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
@@ -847,6 +862,32 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Output Control"},
     )
 
+    video_request_schema: VideoRequestSchema = Field(
+        default="default",
+        description="Video body schema registered by the benchmark entrypoint.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    video_duration_seconds: int | None = Field(
+        default=None,
+        description="Clip length in seconds for a registered video schema.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    video_aspect_ratio: str | None = Field(
+        default=None,
+        description="Output aspect ratio for a registered video schema.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    video_short_edge: int | None = Field(
+        default=None,
+        description="Short edge in pixels for a registered video schema.",
+        json_schema_extra={"group": "Output Control"},
+    )
+    keyframes: Literal["first-last"] | None = Field(
+        default=None,
+        description="Conditioning frames for a registered video schema.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
     # Traffic control (serving-specific)
     request_rate: Sequence[float] = Field(
         default=[float("inf")],
@@ -908,6 +949,13 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
+    warmup_count: int | None = Field(
+        default=None,
+        ge=1,
+        description="Multi-turn workloads only: how many sessions --warmup-multiturn starts mid-conversation. This is a population, not a concurrency limit: a finite --request-rate derives it as ceil(rate x mean session lifetime), and an unpaced run uses --max-concurrent-conversations, else --max-concurrency. Set it to override either.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
     warmup_oversample_factor: int = Field(
         default=8,
         description="Warmup-candidate pool multiplier (sessions per warmup slot). 0 disables length-biased warmup; 1 = uniform random turn warmup; >=2 = length-biased warmup.",
@@ -922,7 +970,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     warmup_delay_estimated_ttft_ms: float = Field(
         default=0.0,
-        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. 0 = off.",
+        description="Estimated time-to-first-token in milliseconds per turn. When set (with --warmup-delay-biased), warmup weights each turn by its occupancy (estimated generation time + inter-turn delay) instead of delay alone, better matching steady state for high-TPOT / long-output workloads. It also lengthens a rate-paced run's pre-warm population, and since a workload YAML cannot set it, a YAML-driven run derives from think time alone and slightly under-warms. 0 = off.",
         json_schema_extra={"group": "Traffic Control"},
     )
 

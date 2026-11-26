@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""End-to-end reasoning + tool-calling tests over the cascade chat route.
+"""End-to-end reasoning, tool-calling and stop-string tests over the chat route.
 
 The text-echo pipeline replays a scripted model response verbatim (skipping the
 tokenizer), so the whole serve path -- runtime, worker-to-worker streaming,
@@ -234,3 +234,40 @@ async def test_tools_absent_leaves_markers_as_content(
     assert choice["finish_reason"] == "stop"
     assert choice["message"]["tool_calls"] is None
     assert choice["message"]["content"] == '<tool_call>a\n{"x": 1}</tool_call>'
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stream", [False, True])
+async def test_stop_string_ends_the_response(
+    runtime: LocalRuntime, stream: bool
+) -> None:
+    async with await _client(runtime, _config()) as client:
+        resp = await client.post(
+            "/v1/chat/completions",
+            json={
+                "model": "echo",
+                "messages": [
+                    {"role": "user", "content": "The answer is 42.\nQ: next"}
+                ],
+                "max_tokens": 64,
+                "stop": ["Q:", "never"],
+                "stream": stream,
+            },
+        )
+    assert resp.status_code == 200
+    if stream:
+        events = [
+            line[len("data: ") :]
+            for line in resp.text.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert events[-1] == "[DONE]"
+        choices = [json.loads(e)["choices"][0] for e in events[:-1]]
+        content = "".join(c["delta"].get("content") or "" for c in choices)
+        finish_reason = choices[-1]["finish_reason"]
+    else:
+        choice = resp.json()["choices"][0]
+        content = choice["message"]["content"]
+        finish_reason = choice["finish_reason"]
+    assert content == "The answer is 42.\n"
+    assert finish_reason == "stop"

@@ -155,22 +155,18 @@ run_warm_cache() {
 declare -a PIPELINES=(
   # ========== Robust Pipelines ==========
   # Model paths from create_pipelines.py PIPELINE_ORACLES
-  "meta-llama/Meta-Llama-3-8B-Instruct|cpu,gpu|big|Llama 3 8B float32"
   "meta-llama/Llama-3.1-8B-Instruct|cpu,gpu|big|Llama 3.1 8B float32"
   "sentence-transformers/all-mpnet-base-v2|cpu,gpu||MPNet embeddings"
   "unsloth/gpt-oss-20b-BF16|gpu||GPT-OSS 20B bfloat16"
 
   # ========== Brittle Pipelines ==========
   # Llama family
-  "meta-llama/Meta-Llama-3-8B-Instruct|gpu||Llama 3 8B bfloat16"
   "meta-llama/Llama-3.1-8B-Instruct|gpu||Llama 3.1 8B bfloat16"
   # data-parallel uses same model_path as base Llama 3.1
   "meta-llama/Llama-3.1-8B-Instruct|gpu|nvidia-multi,no-h100|Llama 3.1 8B data-parallel bfloat16"
   # FP8 static uses RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8 (not the -float8-static suffix)
   "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8|gpu|float8-support|Llama 3.1 8B FP8 static"
   "RedHatAI/Meta-Llama-3.1-8B-Instruct-FP8-dynamic|gpu|float8-support|Llama 3.1 8B FP8 dynamic"
-  "meta-llama/Llama-3.2-1B|gpu|nvidia-only|Llama 3.2 1B bfloat16"
-  "meta-llama/Llama-3.3-70B-Instruct|gpu|nvidia-multi|Llama 3.3 70B bfloat16"
 
   # Mistral family
   "mistralai/Mistral-Nemo-Instruct-2407|gpu|big|Mistral Nemo bfloat16"

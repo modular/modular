@@ -13,19 +13,9 @@
 """FFI wrapper for POSIX thread library."""
 
 
-from std.ffi import (
-    external_call,
-    c_long,
-    c_char,
-    c_ulong,
-    c_int,
-    c_long_long,
-    c_uint,
-    CStringSpan,
-)
-from std.collections.string import StringSlice, StaticString
-from std.memory import ImmPointer, MaybeUninit
-from std.sys.info import CompilationTarget, bit_width_of
+from std.ffi import external_call, c_int
+from std.memory import ImmPointer
+from std.sys.info import CompilationTarget
 from std.time.time import _CTimeSpec
 from ._pthread_darwin import (
     pthread_cond_t as _darwin_opaque_pthread_cond_t,

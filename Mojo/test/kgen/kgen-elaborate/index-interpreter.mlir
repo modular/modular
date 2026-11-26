@@ -593,6 +593,35 @@ kgen.generator export @testShl() -> !kgen.scalar<index> {
   hlcf.return %0 : !kgen.scalar<index>
 }
 
+// COM: pop.simd.insertelement into uninitialized memory with index on 32-bit
+
+kgen.generator @insert_index(%arg0: !kgen.scalar<index>, %arg1: !kgen.scalar<index>) -> !kgen.simd<2, index> {
+  %idx0 = kgen.param.constant: scalar<index> = <0>
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, index> = <#interp.uninitmem : !kgen.simd<2, index>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx0] : !kgen.simd<2, index>
+  %2 = pop.simd.insertelement %arg1, %1[%idx1] : !kgen.simd<2, index>
+  hlcf.return %2 : !kgen.simd<2, index>
+}
+
+kgen.generator @insert_uindex(%arg0: !kgen.scalar<uindex>) -> !kgen.simd<2, uindex> {
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, uindex> = <#interp.uninitmem : !kgen.simd<2, uindex>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx1] : !kgen.simd<2, uindex>
+  hlcf.return %1 : !kgen.simd<2, uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testInsertIntoUninit
+kgen.generator export @testInsertIntoUninit() -> !kgen.simd<2, index> {
+  kgen.param.declare S0: simd<2, index> = <apply(:(!kgen.scalar<index>, !kgen.scalar<index>) -> !kgen.simd<2, index> @insert_index, 3, -4)>
+  // CHECK: <<3, -4>>
+  %0 = kgen.param.constant: !kgen.simd<2, index> = <S0>
+  kgen.param.declare U0: simd<2, uindex> = <apply(:(!kgen.scalar<uindex>) -> !kgen.simd<2, uindex> @insert_uindex, 7)>
+  // CHECK: <<0, 7>>
+  %1 = kgen.param.constant: !kgen.simd<2, uindex> = <U0>
+  hlcf.return %0 : !kgen.simd<2, index>
+}
+
 }
 
 // -----
@@ -755,6 +784,35 @@ kgen.generator export @testShl() -> !kgen.scalar<index> {
   // CHECK: = <32>
   %0 = kgen.param.constant: !kgen.scalar<index> = <S2>
   hlcf.return %0 : !kgen.scalar<index>
+}
+
+// COM: pop.simd.insertelement into uninitialized memory with index on 64-bit
+
+kgen.generator @insert_index(%arg0: !kgen.scalar<index>, %arg1: !kgen.scalar<index>) -> !kgen.simd<2, index> {
+  %idx0 = kgen.param.constant: scalar<index> = <0>
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, index> = <#interp.uninitmem : !kgen.simd<2, index>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx0] : !kgen.simd<2, index>
+  %2 = pop.simd.insertelement %arg1, %1[%idx1] : !kgen.simd<2, index>
+  hlcf.return %2 : !kgen.simd<2, index>
+}
+
+kgen.generator @insert_uindex(%arg0: !kgen.scalar<uindex>) -> !kgen.simd<2, uindex> {
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, uindex> = <#interp.uninitmem : !kgen.simd<2, uindex>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx1] : !kgen.simd<2, uindex>
+  hlcf.return %1 : !kgen.simd<2, uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testInsertIntoUninit
+kgen.generator export @testInsertIntoUninit() -> !kgen.simd<2, index> {
+  kgen.param.declare S0: simd<2, index> = <apply(:(!kgen.scalar<index>, !kgen.scalar<index>) -> !kgen.simd<2, index> @insert_index, 3, -4)>
+  // CHECK: <<3, -4>>
+  %0 = kgen.param.constant: !kgen.simd<2, index> = <S0>
+  kgen.param.declare U0: simd<2, uindex> = <apply(:(!kgen.scalar<uindex>) -> !kgen.simd<2, uindex> @insert_uindex, 7)>
+  // CHECK: <<0, 7>>
+  %1 = kgen.param.constant: !kgen.simd<2, uindex> = <U0>
+  hlcf.return %0 : !kgen.simd<2, index>
 }
 
 }

@@ -74,14 +74,22 @@ struct MODULAR_CXX_EXPORT SafeTensor {
   M::Driver::DeviceBufferRef getTensorMemory(const TensorInfo &info) const;
 
 private:
+  /// `get` for a buffer whose contents are already known: `isFileMapping` says
+  /// whether `data` is a file mapping, which is what makes it worth asking the
+  /// kernel for page-cache readahead while the header is parsed.
+  static ErrorOr<SafeTensor> get(M::Driver::DeviceContextRef device,
+                                 M::Driver::DeviceBufferRef data,
+                                 bool isFileMapping);
+
   /// Constructs a SafeTensor from parsed metadata and tensor information.
   SafeTensor(uint64_t headerLength, M::Driver::DeviceContextRef &&device,
              M::Driver::DeviceBufferRef &&parentBuffer,
              llvm::json::Object &&metadata,
-             llvm::DenseMap<std::string, TensorInfo> &&tensorInfo)
+             llvm::DenseMap<std::string, TensorInfo> &&tensorInfo,
+             bool isFileMapping)
       : headerLength(headerLength), device(std::move(device)),
         parentBuffer(std::move(parentBuffer)), metadata(std::move(metadata)),
-        tensorInfo(std::move(tensorInfo)) {}
+        tensorInfo(std::move(tensorInfo)), isFileMapping(isFileMapping) {}
 
   uint64_t headerLength;
   M::Driver::DeviceContextRef device;
@@ -89,6 +97,10 @@ private:
   M::Driver::DeviceBufferRef parentBuffer;
   llvm::json::Object metadata;
   llvm::DenseMap<std::string, TensorInfo> tensorInfo;
+  /// True when `parentBuffer` maps a file, so `MADV_WILLNEED` on its pages is
+  /// both meaningful and safe. False for buffers that hold data some other
+  /// way, where the same advice is at best a no-op.
+  bool isFileMapping = false;
 };
 
 struct SafeTensorBundle {

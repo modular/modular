@@ -67,6 +67,7 @@ def legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
+        @__allow_legacy_any_origin_fields
         def is_duplicate() {imm} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
@@ -453,6 +454,7 @@ def test_combine[
     ]
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_async](
@@ -470,6 +472,7 @@ def test_combine[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_wait](
@@ -492,6 +495,7 @@ def test_combine[
         run_dispatch_async_wait(dev_idx, slot_idx)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_combine_async(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[combine_async](
@@ -513,6 +517,7 @@ def test_combine[
         var output_2_tensor = get_output_2_tensor(dev_idx, slot_idx)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def store_output_2[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](coords: Coord, val: SIMD[dtype, width]) {var output_2_tensor}:
@@ -682,6 +687,7 @@ def test_combine[
     print("Verifying results...")
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def verify_results(dev_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
 

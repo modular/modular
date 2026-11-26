@@ -424,8 +424,8 @@ ConcatOp::inferReturnTypes(MLIRContext *context,
                      .getParentRegion()
                      ->getParentOfType<MO::GraphOp>();
   Location loc = location.value_or(graphOp.getLoc());
-  MO::ShapeMaterializeResult result =
-      MO::materializeConcatShape(graphOp, loc, axisAttr, inputShapes);
+  MO::ShapeMaterializeResult result = MO::materializeConcatShape(
+      graphOp, loc, axisAttr, inputShapes, MO::ParamNaming::Inference);
 
   if (result.isError())
     return mlir::emitOptionalError(location, result.getError().msg);
@@ -502,8 +502,8 @@ ReshapeOp::inferReturnTypes(MLIRContext *context,
   auto graphOp =
       adaptor.getInput().getParentRegion()->getParentOfType<MO::GraphOp>();
   Location loc = location.value_or(graphOp.getLoc());
-  MO::ShapeMaterializeResult result =
-      MO::materializeReshapeShape(graphOp, loc, inputShape, newShapeAttr);
+  MO::ShapeMaterializeResult result = MO::materializeReshapeShape(
+      graphOp, loc, inputShape, newShapeAttr, MO::ParamNaming::Inference);
 
   DType inputDtype = input.getType().getDtype();
   return runShapePropagation(adaptor.getOperands(), location, inputDtype,
@@ -529,8 +529,8 @@ LogicalResult BroadcastToOp::inferReturnTypes(
   auto graphOp =
       adaptor.getInput().getParentRegion()->getParentOfType<MO::GraphOp>();
   Location loc = location.value_or(graphOp.getLoc());
-  MO::ShapeMaterializeResult result =
-      MO::materializeBroadcastToShape(graphOp, loc, inputShape, newShapeAttr);
+  MO::ShapeMaterializeResult result = MO::materializeBroadcastToShape(
+      graphOp, loc, inputShape, newShapeAttr, MO::ParamNaming::Inference);
 
   DType inputDtype = input.getType().getDtype();
   return runShapePropagation(adaptor.getOperands(), location, inputDtype,
@@ -731,7 +731,8 @@ ConvOp::inferReturnTypes(MLIRContext *context, std::optional<Location> location,
       graphOp, loc, inputShape, filterShape, adaptor.getStrides(),
       adaptor.getDilations(), adaptor.getPaddings(), adaptor.getNumGroupsAttr(),
       adaptor.getInputLayoutAttr(),
-      cast<MO::TensorType>(adaptor.getFilter().getType()).getLayoutAttr());
+      cast<MO::TensorType>(adaptor.getFilter().getType()).getLayoutAttr(),
+      MO::ParamNaming::Inference);
 
   return runShapePropagation(adaptor.getOperands(), location, *promotedDtype,
                              result, inferredReturnTypes, getDevice(input),
@@ -765,7 +766,8 @@ LogicalResult ConvTransposeOp::inferReturnTypes(
       graphOp, loc, inputShape, filterShape, adaptor.getStrides(),
       adaptor.getDilations(), adaptor.getPaddings(),
       adaptor.getOutputPaddings(), adaptor.getInputLayoutAttr(),
-      cast<MO::TensorType>(adaptor.getFilter().getType()).getLayoutAttr());
+      cast<MO::TensorType>(adaptor.getFilter().getType()).getLayoutAttr(),
+      MO::ParamNaming::Inference);
 
   return runShapePropagation(adaptor.getOperands(), location, *promotedDtype,
                              result, inferredReturnTypes, getDevice(input),
@@ -789,7 +791,8 @@ MaxPoolOp::inferReturnTypes(MLIRContext *context,
   auto graphOp = input.getParentRegion()->getParentOfType<MO::GraphOp>();
   MO::ShapeMaterializeResult result = MO::materializePoolShape(
       graphOp, loc, inputShape, adaptor.getFilterShape(), adaptor.getStrides(),
-      adaptor.getDilations(), adaptor.getPaddings(), adaptor.getCeilMode());
+      adaptor.getDilations(), adaptor.getPaddings(), adaptor.getCeilMode(),
+      MO::ParamNaming::Inference);
 
   return runShapePropagation(adaptor.getOperands(), location,
                              input.getType().getDtype(), result,
@@ -810,7 +813,8 @@ AvgPoolOp::inferReturnTypes(MLIRContext *context,
   auto graphOp = input.getParentRegion()->getParentOfType<MO::GraphOp>();
   MO::ShapeMaterializeResult result = MO::materializePoolShape(
       graphOp, loc, inputShape, adaptor.getFilterShape(), adaptor.getStrides(),
-      adaptor.getDilations(), adaptor.getPaddings(), adaptor.getCeilMode());
+      adaptor.getDilations(), adaptor.getPaddings(), adaptor.getCeilMode(),
+      MO::ParamNaming::Inference);
 
   return runShapePropagation(adaptor.getOperands(), location,
                              input.getType().getDtype(), result,

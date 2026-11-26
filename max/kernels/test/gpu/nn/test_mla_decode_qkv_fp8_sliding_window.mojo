@@ -191,6 +191,7 @@ def test[
     var scalar_args_buf_tt = mla_args.gpu_tile_tensor()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kernel_launch(
         ctx: DeviceContext,
     ) raises {

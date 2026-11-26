@@ -66,7 +66,7 @@ def test_vendor_blas[
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # a/b are constructed as immutable to match the immutable
     # parameters that matmul_kernel_naive expects.
 
     var c_ref_tt = TileTensor(
@@ -74,17 +74,13 @@ def test_vendor_blas[
         row_major(M, N),
     )
     var a_tt = TileTensor(
-        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
+        a_device,
         row_major(M, K),
-    )
+    ).as_imm()
     var b_tt = TileTensor(
-        ImmPointer[Scalar[dtype], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
+        b_device,
         row_major(N, K) if transpose_b else row_major(K, N),
-    )
+    ).as_imm()
 
     comptime kernel = matmul_kernel_naive[
         dtype,

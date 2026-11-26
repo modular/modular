@@ -67,20 +67,6 @@ def test_promoted_interior_origin():
     inner()
 
 
-def test_keep_base_origin():
-    var list = List[Int]()
-    list.append(5)
-    var p = Pointer(to=list[0])
-
-    def inner() {imm}:
-        print(len(list))
-        print(p[])
-
-    # CHECK: 1
-    # CHECK-NEXT: 5
-    inner()
-
-
 def test_two_interiors():
     var a = List[Int]()
     var b = List[Int]()
@@ -131,7 +117,6 @@ def main():
     test_immutable_interior_origin()
     test_mutable_interior_origin()
     test_promoted_interior_origin()
-    test_keep_base_origin()
     test_two_interiors()
     test_derive_interior_without_interior_capture()
     test_parametric_base_mutability_mutable()

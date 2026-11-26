@@ -25,8 +25,9 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "llvm/Support/SourceMgr.h"
 using namespace M;
+using namespace M::MLRT;
 
-void M::registerMEFToMLIRTranslation() {
+void M::MLRT::registerMEFToMLIRTranslation() {
   static mlir::TranslateToMLIRRegistration toMLIR(
       "import-mef", "Import a MEF file and translate to MLIR",
       [](llvm::SourceMgr &sourceMgr, MLIRContext *ctx) {

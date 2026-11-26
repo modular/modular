@@ -84,13 +84,9 @@ def run_case[
 
     # The output starts `PAD` slots into the buffer so a write at a negative
     # position lands on a canary.
-    var out_ptr = (
-        out_dev.unsafe_ptr()
-        .unsafe_offset(PAD)
-        .unsafe_origin_cast[MutAnyOrigin]()
-    )
-    var in_ptr = in_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-    var idx_ptr = idx_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var out_ptr = out_dev.unsafe_ptr().unsafe_offset(PAD)
+    var in_ptr = in_dev.unsafe_ptr()
+    var idx_ptr = idx_dev.unsafe_ptr()
     comptime if squeeze:
         squeeze_shape_gpu(
             out_ptr,
@@ -118,8 +114,8 @@ def run_case[
 
     ctx.enqueue_copy(out_host, out_dev)
     ctx.synchronize()
-    # The helpers take untracked pointers, so keep the device inputs alive
-    # until the kernel has run.
+    # The helpers launch the kernel asynchronously, so keep the device inputs
+    # alive until it has run.
     _ = in_dev^
     _ = idx_dev^
     var ref_host = ctx.enqueue_create_host_buffer[shape_dtype](
@@ -128,13 +124,9 @@ def run_case[
     ctx.synchronize()
     for t in range(out_rank + 2 * PAD):
         ref_host[t] = CANARY
-    var ref_out = (
-        ref_host.unsafe_ptr()
-        .unsafe_offset(PAD)
-        .unsafe_origin_cast[MutAnyOrigin]()
-    )
-    var ref_in = in_host.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-    var ref_idx = idx_host.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+    var ref_out = ref_host.unsafe_ptr().unsafe_offset(PAD)
+    var ref_in = in_host.unsafe_ptr()
+    var ref_idx = idx_host.unsafe_ptr()
     comptime if squeeze:
         _squeeze_shape(ref_out, 1, ref_in, 1, ref_idx, 1, rank, num_indices)
     else:

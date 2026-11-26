@@ -188,6 +188,12 @@ void disable() {
   Detail::getEnabledGate().store(false, std::memory_order_release);
 }
 
+bool disableCollecting(TraceVisitor visitor, bool save) {
+  const Detail::RangeSink *sink = Detail::acquire(Detail::SinkRequest::Observe);
+  return sink && sink->disableCollecting &&
+         sink->disableCollecting(visitor, save);
+}
+
 void activatePendingTrace() {
   if (const Detail::RangeSink *sink =
           Detail::acquire(Detail::SinkRequest::DeviceInit))

@@ -514,12 +514,6 @@ struct Pointer[
     ]
     """The underlying pointer type."""
 
-    comptime _with_origin[
-        with_mut: Bool, //, with_origin: Origin[mut=with_mut]
-    ] = Pointer[
-        mut=with_mut, Self.T, with_origin, address_space=Self.address_space
-    ]
-
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#

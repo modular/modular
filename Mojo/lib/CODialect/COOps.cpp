@@ -241,10 +241,12 @@ LogicalResult AwaitOp::canonicalize(AwaitOp op, PatternRewriter &b) {
   // `co.await(co.execute) -> inlined region`.
   if (auto execute = op.getCoroutine().getDefiningOp<ExecuteOp>()) {
     SmallVector<Value, 2> args(llvm::reverse(op.getSlots()));
-    // If the block argument types don't match the provided result slots, then
-    // this operation is UB.
+    // If the block argument types or result types don't match the provided
+    // result slots, then this operation is UB.
     if (execute.getBody()->getArgumentTypes() != ValueRange(args).getType())
       return b.notifyMatchFailure(op.getLoc(), "result slot types don't match");
+    if (execute.getResultTypes() != op.getResultTypes())
+      return b.notifyMatchFailure(op.getLoc(), "result types don't match");
     // This should be the only user of the coroutine.
     if (!op.getCoroutine().hasOneUse())
       return b.notifyMatchFailure(op.getLoc(), "coroutine has other uses");

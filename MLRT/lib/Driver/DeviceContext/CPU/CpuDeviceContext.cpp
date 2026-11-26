@@ -25,7 +25,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "Support/AlignedAlloc.h"
 #include "Support/Buffer.h"
 #include "Support/ErrorOr.h"
@@ -379,8 +379,7 @@ CpuDeviceContext::memmapFileImpl(const std::filesystem::path &filename) const {
 
 ErrorOr<DeviceFunctionRef>
 CpuDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
-                               StringRef code, int32_t maxDynamicSharedBytes,
-                               StringRef debugLevel,
+                               StringRef code, StringRef debugLevel,
                                int32_t optimizationLevel) {
   M_PROFILE_SPAN("CpuDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   // Currently not implemented. Maybe never to be implemented.

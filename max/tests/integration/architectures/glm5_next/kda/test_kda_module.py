@@ -23,12 +23,15 @@ split would have been wrong.
 
 The meshes are simulated CPUs, and the layer is 16 heads of 8: placing the
 weights needs neither a GPU nor the checkpoint's widths.
+
+The conv weights keep the checkpoint's dtype, which differs between the two
+published checkpoints.
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -36,6 +39,7 @@ from max import functional as F
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
+from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures.glm5_next.layers.kda import (
     KimiDeltaAttention,
     layer_rows,
@@ -60,6 +64,7 @@ def _layer(num_devices: int) -> KimiDeltaAttention:
         linear_head_dim=HEAD_DIM,
         linear_conv_kernel_dim=KERNEL,
         linear_lower_bound=-5.0,
+        linear_conv_dtype=DType.float32,
         rms_norm_eps=1e-5,
     )
     mesh = DeviceMesh((CPU(),) * num_devices, (num_devices,), ("tp",))
@@ -170,3 +175,45 @@ def test_static_layer_rows_take_a_static_slice(position: int) -> None:
     dynamic = _layer_rows_mlir(None)
     assert "mo.slice(%arg0" in dynamic, dynamic
     assert _RESULT in dynamic
+
+
+@pytest.mark.parametrize("stored", [DType.float32, DType.bfloat16])
+def test_conv_weights_keep_the_checkpoint_dtype(stored: DType) -> None:
+    """NVIDIA's NVFP4 export stores the conv weights in float32, the FP8
+    checkpoint in bfloat16. The layer declares them as stored, whatever the
+    model's default dtype."""
+    devices = [DeviceRef.CPU()]
+    leaf = MLAKVCacheParams(
+        dtype=DType.bfloat16,
+        head_dim=HIDDEN,
+        num_layers=1,
+        page_size=128,
+        devices=devices,
+        num_q_heads=HEADS,
+    )
+    config = Glm5NextConfig(
+        dtype=DType.bfloat16,
+        kv_params=MultiKVCacheParams.from_params(
+            {"mla": leaf, "indexer": leaf}
+        ),
+        devices=devices,
+        max_seq_len=128,
+        hidden_size=HIDDEN,
+        num_hidden_layers=1,
+        qk_rope_head_dim=0,
+        linear_num_heads=HEADS,
+        linear_head_dim=HEAD_DIM,
+        linear_conv_kernel_dim=KERNEL,
+    )
+    state_dict = {
+        f"language_model.layers.0.self_attn.{p}_conv1d": SimpleNamespace(
+            dtype=stored
+        )
+        for p in "qkv"
+    }
+    config.finalize(cast(Any, None), state_dict, cast(Any, None))
+    mesh = DeviceMesh((CPU(),), (1,), ("tp",))
+    with F.lazy(), default_device(mesh), default_dtype(DType.bfloat16):
+        layer = KimiDeltaAttention(config)
+    convs = (layer.q_conv1d, layer.k_conv1d, layer.v_conv1d)
+    assert {conv.dtype for conv in convs} == {stored}

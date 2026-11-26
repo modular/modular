@@ -309,7 +309,8 @@ def ihc_collapse_rms_norm_block[
 
     Args:
         output: `rms_norm(sum_j pre_j * streams[:, j])`, the collapse rounded
-            to `dtype` first. Shape: `[num_rows, hidden]`.
+            to `dtype` first, the norm and `gamma` applied in float32 and
+            rounded once. Shape: `[num_rows, hidden]`.
         gates: `pre`, then `post` when `num_mix == 2 * hc_mult`. Shape:
             `[num_rows, num_mix]`.
         streams: Shape: `[num_rows, hc_mult, hidden]`.
@@ -381,11 +382,14 @@ def ihc_collapse_rms_norm_block[
     comptime for i in range(vecs):
         var d = (tid + i * block_size) * width
         if d < hidden:
-            # Llama-style, as `mo.reduce.rms_norm`: round, then scale by gamma.
+            # Round once after gamma, as vLLM's `rms_norm` kernel does.
             output.store(
                 (row, d),
-                (collapsed[i].cast[.float32]() * factor).cast[dtype]()
-                * gamma.load[width=width]((d,)),
+                (
+                    collapsed[i].cast[.float32]()
+                    * factor
+                    * gamma.load[width=width]((d,)).cast[.float32]()
+                ).cast[dtype](),
             )
 
 

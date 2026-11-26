@@ -25,7 +25,7 @@
 
 #include <functional>
 
-namespace M {
+namespace M::MLRT {
 class PrimitiveDescriptor;
 
 /// This exposes an abstract interface that describes an "invokable", which is a
@@ -160,6 +160,6 @@ private:
   virtual void vtableAnchor();
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEFEXECUTOR_MEFINVOKABLE_H

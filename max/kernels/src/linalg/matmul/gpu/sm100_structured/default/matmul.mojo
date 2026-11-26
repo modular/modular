@@ -44,7 +44,6 @@ from layout import (
 from structured_kernels.tile_types import create_tma_tile
 from structured_kernels.kernel_common import _to_batched_3d
 
-from std.utils.index import Index, IndexList
 from std.utils.coord import Coord, DynamicCoord
 from std.collections import OptionalReg
 from std.utils.static_tuple import StaticTuple
@@ -83,6 +82,7 @@ def _blackwell_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
     EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
+    epilogue_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -92,10 +92,10 @@ def _blackwell_matmul_tma_umma_warp_specialized[
         TileTensor[
             config.c_type,
             EpilogueLayoutType,
-            ImmutAnyOrigin,
+            epilogue_origin,
             Engine=EpilogueEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """Internal matmul launch for SM100 without a compute epilogue. Always
     takes rank-3 TileTensors.
@@ -146,6 +146,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64],
     EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
+    epilogue_origin: ImmOrigin = ImmUntrackedOrigin,
     has_epilogue_fn: Bool,
     has_compute_fn: Bool,
     compute_fn_reads_c: Bool,
@@ -160,10 +161,10 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
         TileTensor[
             config.c_type,
             EpilogueLayoutType,
-            ImmutAnyOrigin,
+            epilogue_origin,
             Engine=EpilogueEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """Internal matmul launch for SM100. Always takes rank-3 TileTensors.
 
@@ -376,7 +377,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
     comptime epi_load_tma_tile_shape = coord[
         epi_load_tma_tile_rows, epi_load_tma_tile_cols
     ]
-    comptime MutPtr = MutPointer[Scalar[c_type], MutAnyOrigin]
+    comptime MutPtr = MutPointer[Scalar[c_type], MutUntrackedOrigin]
     var epi_load_tma_ptr: MutPtr
     var epi_load_tma_rows: Int
     var epi_load_tma_cols: Int
@@ -403,7 +404,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     # 1D bias: pass raw TileTensor to kernel (cp.async.bulk, no TMA descriptor).
     # For non-1D, a placeholder dangling pointer is used (never accessed).
-    comptime ImmutPtr = ImmPointer[Scalar[c_type], ImmutAnyOrigin]
+    comptime ImmutPtr = ImmPointer[Scalar[c_type], ImmUntrackedOrigin]
     var bias_1d_ptr: ImmutPtr
     comptime if epilogue_is_1d:
         bias_1d_ptr = rebind[ImmutPtr](epilogue_tensor.value().ptr)
@@ -428,7 +429,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_impl[
 
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
-    var workspace: Span[UInt64, MutAnyOrigin]
+    var workspace: Span[UInt64, MutUntrackedOrigin]
 
     comptime if enable_profiling:
         workspace = MatmulWarpSpecializationWorkSpaceManager[
@@ -544,6 +545,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
     EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
+    epilogue_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -553,10 +555,10 @@ def blackwell_matmul_tma_umma_warp_specialized[
         TileTensor[
             config.c_type,
             EpilogueLayoutType,
-            ImmutAnyOrigin,
+            epilogue_origin,
             Engine=EpilogueEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """Public entry point for SM100 matmul (non-batched, rank-2 inputs).
 
@@ -576,6 +578,8 @@ def blackwell_matmul_tma_umma_warp_specialized[
             RowMajorLayout[Int64, Int64]).
         EpilogueEngine: Engine of the epilogue tensor (defaults to
             DefaultEngine[element_width=1]).
+        epilogue_origin: Origin of the epilogue tensor (inferred from
+            `epilogue_tensor`).
     Args:
         c_device: Output TileTensor of shape (M, N).
         a_device: LHS TileTensor of shape (M, K).
@@ -640,6 +644,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
     EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
+    epilogue_origin: ImmOrigin = ImmUntrackedOrigin,
     has_compute_fn: Bool = True,
 ](
     c_device: TileTensor,
@@ -651,10 +656,10 @@ def blackwell_matmul_tma_umma_warp_specialized[
         TileTensor[
             config.c_type,
             EpilogueLayoutType,
-            ImmutAnyOrigin,
+            epilogue_origin,
             Engine=EpilogueEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """SM100 matmul (non-batched, rank-2 inputs) with a compute epilogue
     closure.
@@ -678,6 +683,8 @@ def blackwell_matmul_tma_umma_warp_specialized[
             RowMajorLayout[Int64, Int64]).
         EpilogueEngine: Engine of the epilogue tensor (defaults to
             DefaultEngine[element_width=1]).
+        epilogue_origin: Origin of the epilogue tensor (inferred from
+            `epilogue_tensor`).
         has_compute_fn: Whether to apply `compute_fn`. When False,
             `compute_fn` is ignored and this is the overload without it
             (defaults to True).
@@ -728,7 +735,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
                 TileTensor[
                     new_config.c_type,
                     EpilogueLayoutType,
-                    ImmutAnyOrigin,
+                    epilogue_origin,
                     Engine=EpilogueEngine,
                 ]
             ]
@@ -910,7 +917,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
         pdl_level=pdl_level,
         max_profiled_tiles_per_SM=max_profiled_tiles_per_SM,
     ](
-        IndexList[2](Int(c_device.dim[0]()), Int(c_device.dim[1]())),
+        (Int(c_device.dim[0]()), Int(c_device.dim[1]())),
         a_device,
         b_device,
         epilogue_fn,
@@ -927,7 +934,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     pdl_level: PDLLevel = PDLLevel(),
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
 ](
-    c_shape: IndexList[2],
+    c_shape: Tuple[Int, Int],
     a_device: TileTensor,
     b_device: TileTensor,
     epilogue_fn: EpilogueFnType,
@@ -973,7 +980,7 @@ def blackwell_matmul_tma_umma_warp_specialized[
     ] = None
     var c_shape_only = TileTensor(
         c_ptr._unsafe_nullable(),
-        tt_row_major(Coord(IndexList[3](1, c_shape[0], c_shape[1]))),
+        tt_row_major(Coord(1, c_shape[0], c_shape[1])),
     )
 
     def no_c_compute_fn[
@@ -1031,7 +1038,7 @@ def splitk_grid(
     cluster_m: Int,
     cluster_n: Int,
     num_split_k: Int,
-) -> IndexList[3]:
+) -> Tuple[Int, Int, Int]:
     """Returns the split-K launcher's grid: one CTA per output tile and split.
 
     Args:
@@ -1047,7 +1054,7 @@ def splitk_grid(
     Returns:
         The grid as (A tiles, B tiles, splits).
     """
-    return Index(
+    return (
         align_up(ceildiv(a_rows, block_m), cluster_m),
         align_up(ceildiv(b_rows, mma_n), cluster_n),
         num_split_k,
@@ -1310,7 +1317,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         ReductionTTLayout, type_of(reduction_tensor).Engine
     ]
 
-    var grid = splitk_grid(
+    var grid_dim = splitk_grid(
         M_maybe_swapped,
         N_maybe_swapped,
         BM,
@@ -1319,7 +1326,6 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
         cluster_shape[1],
         config.num_split_k,
     )
-    var grid_dim = (grid[0], grid[1], grid[2])
 
     var cluster_dim = StaticTuple[Int32, 3](
         Int32(ceildiv(grid_dim[0], cluster_shape[0])),
@@ -1335,7 +1341,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
 
     var mnk = StaticTuple[UInt32, 3](UInt32(M), UInt32(N), UInt32(K))
 
-    var workspace: Span[UInt64, MutAnyOrigin]
+    var workspace: Span[UInt64, MutUntrackedOrigin]
 
     # The kernel indexes the workspace and locks over the launch grid, which
     # is built from the swapped dims when AB_swapped; size them the same way.
@@ -1449,7 +1455,7 @@ def _blackwell_matmul_tma_umma_warp_specialized_split_k[
             max_profiled_tiles
         ].get_workspace(ctx)
     else:
-        workspace = Span[UInt64, MutAnyOrigin]()
+        workspace = Span[UInt64, MutUntrackedOrigin]()
 
     ctx.enqueue_function[kernel](
         a_tma_op,
@@ -1497,6 +1503,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
     max_profiled_tiles_per_SM: Optional[UInt32] = None,
     EpilogueLayoutType: TensorLayout = RowMajorLayout[Int64, Int64],
     EpilogueEngine: TensorEngine = DefaultEngine[element_width=1],
+    epilogue_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -1506,10 +1513,10 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
         TileTensor[
             config.c_type,
             EpilogueLayoutType,
-            ImmutAnyOrigin,
+            epilogue_origin,
             Engine=EpilogueEngine,
         ]
-    ] = None,
+    ] = {},
 ) raises:
     """Public entry point for batched SM100 BF16 matmul.
 
@@ -1529,6 +1536,8 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
             RowMajorLayout[Int64, Int64]).
         EpilogueEngine: Engine of the epilogue tensor (defaults to
             DefaultEngine[element_width=1]).
+        epilogue_origin: Origin of the epilogue tensor (inferred from
+            `epilogue_tensor`).
     Args:
         c_device: Output TileTensor of shape (M, N) or (B, M, N).
         a_device: LHS TileTensor of shape (M, K) or (B, M, K).
@@ -1545,7 +1554,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 TileTensor[
                     new_config.c_type,
                     EpilogueLayoutType,
-                    ImmutAnyOrigin,
+                    epilogue_origin,
                     Engine=EpilogueEngine,
                 ]
             ]
@@ -1581,7 +1590,7 @@ def blackwell_batched_matmul_tma_umma_warp_specialized[
                 TileTensor[
                     new_config.c_type,
                     EpilogueLayoutType,
-                    ImmutAnyOrigin,
+                    epilogue_origin,
                     Engine=EpilogueEngine,
                 ]
             ]
@@ -1645,11 +1654,9 @@ def matmul_sm100_fallback[
             `bfloat16` or `float8_e4m3fn`.
         b_type: Input element dtype of the RHS matrix; must equal `a_type`.
         transpose_b: Whether B is stored transposed as (N, K). Must be True.
-        umma_shape: Tensor core MMA instruction shape as a 3-element
-            `IndexList` of (M, N, K).
-        block_tile_shape: CTA block tile shape as a 3-element
-            `IndexList` of (BM, BN, BK) giving the tile dimensions
-            along M, N, and K.
+        umma_shape: Tensor core MMA instruction shape as (M, N, K).
+        block_tile_shape: CTA block tile shape as (BM, BN, BK) giving the
+            tile dimensions along M, N, and K.
         a_swizzle: TMA swizzle mode for A tensor loads (defaults to
             `SWIZZLE_128B`).
         b_swizzle: TMA swizzle mode for B tensor loads (defaults to

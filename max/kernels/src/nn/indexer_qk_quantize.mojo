@@ -10,15 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""One-launch epilogues of a DSA lightning indexer with SSMax.
+"""One-launch epilogues of a DSA lightning indexer.
 
 `indexer_q_ssmax_rope_quantize` replaces the query chain an SSMax indexer runs
 after its query projection (SSMax scaling, interleaved RoPE over the leading
-columns of each head, per-head FP8 quantization with an E8M0 scale), and
-`indexer_k_quantize_store` replaces the whole key chain from the raw key
-projection on (a biased LayerNorm, interleaved RoPE over the leading columns,
-per-key FP8 quantization with an E8M0 scale, then the paged-cache stores of
-the key and its scale).
+columns of each head, per-head FP8 quantization with an E8M0 scale),
+`indexer_q_rope_quantize` replaces that chain for an indexer without SSMax
+(its scales widened to float32), and `indexer_k_quantize_store` replaces the
+whole key chain from the raw key projection on (a biased LayerNorm,
+interleaved RoPE over the leading columns, per-key FP8 quantization with an
+E8M0 scale, then the paged-cache stores of the key and its scale).
 
 Each step rounds where the graph-op chain it replaces rounds, so the outputs
 are bit-identical to that chain: SSMax's factor is rounded to BF16 after the
@@ -193,13 +194,17 @@ def _e8m0_scale(
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(_BLOCK_THREADS))
 )
-@__name(t"indexer_q_ssmax_rope_fp8_r{rope_dim}_h{num_heads}")
+@__name(
+    t"indexer_q_{'ssmax_' if ssmax else ''}rope_fp8_r{rope_dim}_h{num_heads}{'_f32_scales' if scale_dtype == DType.float32 else ''}"
+)
 def _indexer_q_kernel[
     num_heads: Int,
     rope_dim: Int,
+    ssmax: Bool,
+    scale_dtype: DType,
 ](
     q_out: MutPointer[Scalar[.float8_e4m3fn], MutUntrackedOrigin],
-    scale_out: MutPointer[Scalar[.float8_e8m0fnu], MutUntrackedOrigin],
+    scale_out: MutPointer[Scalar[scale_dtype], MutUntrackedOrigin],
     q: ImmPointer[BFloat16, ImmUntrackedOrigin],
     positions: ImmPointer[UInt32, ImmUntrackedOrigin],
     ssmax_s: ImmPointer[BFloat16, ImmUntrackedOrigin],
@@ -235,13 +240,15 @@ def _indexer_q_kernel[
         # zeros included, so it is not applied here. Each SSMax factor step
         # rounds to BF16 as the graph's chain rounds it.
         var v = src.unsafe_load[width=_LANE_WIDTH](col)
-        var log_pos = log(
-            positions[unsafe_offset=row].cast[.float32]() + Float32(1)
-        ).cast[.bfloat16]()
-        var factor = (
-            log_pos * ssmax_s[unsafe_offset=head] + ssmax_b[unsafe_offset=head]
-        )
-        v = v * factor
+        comptime if ssmax:
+            var log_pos = log(
+                positions[unsafe_offset=row].cast[.float32]() + Float32(1)
+            ).cast[.bfloat16]()
+            var factor = (
+                log_pos * ssmax_s[unsafe_offset=head]
+                + ssmax_b[unsafe_offset=head]
+            )
+            v = v * factor
 
         comptime if rope_dim > 0:
             if col < rope_dim:
@@ -261,7 +268,7 @@ def _indexer_q_kernel[
             col, fp8_quantize[.float8_e4m3fn](values, recip)
         )
         if lane_id() == 0:
-            scale_out[unsafe_offset=unit_offset] = scale
+            scale_out[unsafe_offset=unit_offset] = scale.cast[scale_dtype]()
 
 
 def indexer_q_ssmax_rope_quantize[
@@ -309,6 +316,99 @@ def indexer_q_ssmax_rope_quantize[
         start_pos: `[batch]` cached tokens per request, the RoPE start.
         ctx: The device context.
     """
+    _launch_indexer_q[rope_dim, ssmax=True](
+        q_out,
+        scale_out,
+        q,
+        positions,
+        ssmax_s,
+        ssmax_b,
+        freqs_cis,
+        input_row_offsets,
+        start_pos,
+        ctx,
+    )
+
+
+def indexer_q_rope_quantize[
+    rope_dim: Int,
+](
+    q_out: TileTensor[mut=True, .float8_e4m3fn, ...],
+    scale_out: TileTensor[mut=True, .float32, ...],
+    q: TileTensor[.bfloat16, ...],
+    freqs_cis: TileTensor[.bfloat16, ...],
+    input_row_offsets: TileTensor[.uint32, ...],
+    start_pos: TileTensor[.uint32, ...],
+    ctx: DeviceContext,
+) raises:
+    """Rotates and FP8-quantizes an indexer query in one launch, without SSMax.
+
+    `indexer_q_ssmax_rope_quantize`'s chain for an indexer that scales no
+    query: rotates the leading `rope_dim` columns of each head by the
+    interleaved RoPE at the row's cache position and quantizes the head to FP8,
+    writing its E8M0 scale widened to float32, the dtype the head weights read.
+
+    Parameters:
+        rope_dim: Leading columns of each head the RoPE rotates; 0 rotates
+            none.
+
+    Args:
+        q_out: `[rows, heads, 128]` FP8 query.
+        scale_out: `[rows, heads]` power-of-two float32 scale of each head.
+        q: `[rows, heads, 128]` BF16 query projection, rows contiguous.
+        freqs_cis: `[positions, rope_dim]` interleaved RoPE table, rows
+            contiguous.
+        input_row_offsets: `[batch + 1]` ragged row offsets.
+        start_pos: `[batch]` cached tokens per request, the RoPE start.
+        ctx: The device context.
+
+    Raises:
+        Error: If `input_row_offsets` is empty, if `q_out` is not a contiguous
+            `[rows, heads, 128]` tensor or `scale_out` a contiguous
+            `[rows, heads]` one, if `start_pos` has fewer entries than
+            requests, or if the launch fails.
+    """
+    # The kernel reads no SSMax operand when ssmax is off, so tensors of the
+    # right dtype stand in for them.
+    var freqs = freqs_cis.as_imm()
+    var starts = start_pos.as_imm()
+    _launch_indexer_q[rope_dim, ssmax=False](
+        q_out,
+        scale_out,
+        q,
+        starts,
+        freqs,
+        freqs,
+        freqs,
+        input_row_offsets,
+        starts,
+        ctx,
+    )
+
+
+def _launch_indexer_q[
+    scale_dtype: DType,
+    //,
+    rope_dim: Int,
+    ssmax: Bool,
+](
+    q_out: TileTensor[mut=True, .float8_e4m3fn, ...],
+    scale_out: TileTensor[mut=True, scale_dtype, ...],
+    q: TileTensor[.bfloat16, ...],
+    positions: TileTensor[.uint32, ...],
+    ssmax_s: TileTensor[.bfloat16, ...],
+    ssmax_b: TileTensor[.bfloat16, ...],
+    freqs_cis: TileTensor[.bfloat16, ...],
+    input_row_offsets: TileTensor[.uint32, ...],
+    start_pos: TileTensor[.uint32, ...],
+    ctx: DeviceContext,
+) raises:
+    # The kernel's symbol tells float32 scales from E8M0 ones and no other
+    # dtype, so another scale dtype would share the E8M0 kernel's symbol.
+    comptime assert scale_dtype in (
+        DType.float8_e8m0fnu,
+        DType.float32,
+    ), "scale_out must be float8_e8m0fnu or float32"
     comptime assert q.flat_rank == 3, "q must be [rows, heads, head_dim]"
     comptime num_heads = Int(q.static_shape[1])
     comptime assert (
@@ -349,7 +449,7 @@ def indexer_q_ssmax_rope_quantize[
         )
     if num_rows == 0:
         return
-    comptime kernel = _indexer_q_kernel[num_heads, rope_dim]
+    comptime kernel = _indexer_q_kernel[num_heads, rope_dim, ssmax, scale_dtype]
     ctx.enqueue_function[kernel](
         q_out.ptr.unsafe_origin_cast[MutUntrackedOrigin](),
         scale_out.ptr.unsafe_origin_cast[MutUntrackedOrigin](),

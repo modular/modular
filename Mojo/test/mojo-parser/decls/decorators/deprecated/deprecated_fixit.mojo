@@ -124,6 +124,18 @@ def takes_method(m: def(MethodCastTest) thin -> None):
     pass
 
 
+# ===----------------------------------------------------------------------=== #
+# Test: comptime member access should emit fixit
+# ===----------------------------------------------------------------------=== #
+
+
+struct ComptimeMemberTest(Movable where False):
+    comptime new_value = 1
+
+    @deprecated(use=new_value)
+    comptime OLD_VALUE = Self.new_value
+
+
 def main():
     # Direct function call: fixit covers "deprecated_function" (columns 5-24)
     # CHECK: "fixIts":[{"end":{"column":24,"line":[[#@LINE+1]]},"start":{"column":5,"line":[[#@LINE+1]]},"text":"new_function"}]
@@ -157,3 +169,7 @@ def main():
     # Method reference passed as parameter: fixit covers "deprecated_method_for_cast"
     # CHECK: "fixIts":[{"end":{"column":59,"line":[[#@LINE+1]]},"start":{"column":33,"line":[[#@LINE+1]]},"text":"new_method_for_cast"}]
     takes_method(MethodCastTest.deprecated_method_for_cast)
+
+    # comptime member access: fixit covers "OLD_VALUE" (columns 28-37)
+    # CHECK: "fixIts":[{"end":{"column":37,"line":[[#@LINE+1]]},"start":{"column":28,"line":[[#@LINE+1]]},"text":"new_value"}]
+    _ = ComptimeMemberTest.OLD_VALUE

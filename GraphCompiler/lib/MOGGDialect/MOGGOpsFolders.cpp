@@ -168,7 +168,8 @@ static LogicalResult sinkChainCreateOperands(AsyncRoutineOp op,
   for (OpOperand &operand : op.getOperandsMutable()) {
     BlockArgument bodyArgument = body.getArgument(operand.getOperandNumber());
 
-    auto chainCreateOp = operand.get().getDefiningOp<GRT::ChainCreateOp>();
+    auto chainCreateOp =
+        operand.get().getDefiningOp<MLRT::GRT::ChainCreateOp>();
     // Only remove grt.chain.create operands whose corresponding body
     // argument is unused.
     if (!chainCreateOp || !chainCreateOp.getResult().hasOneUse() ||
@@ -237,7 +238,7 @@ static LogicalResult removeRedundantResults(AsyncRoutineOp op,
 
   for (OpOperand &operand : outputOp->getOpOperands()) {
     unsigned idx = operand.getOperandNumber();
-    bool isChain = isa<MEF::ChainType>(operand.get().getType());
+    bool isChain = isa<MLRT::MEF::ChainType>(operand.get().getType());
     if (!isChain && !op->getResult(idx).use_empty())
       continue;
     toRemoveBits.set(idx);
@@ -249,7 +250,7 @@ static LogicalResult removeRedundantResults(AsyncRoutineOp op,
   // The last chain output is always kept; removed chains are rewired to it.
   std::optional<unsigned> keptChainNewIdx;
   for (OpOperand &operand : llvm::reverse(outputOp->getOpOperands())) {
-    if (isa<MEF::ChainType>(operand.get().getType())) {
+    if (isa<MLRT::MEF::ChainType>(operand.get().getType())) {
       unsigned origIdx = operand.getOperandNumber();
       toRemoveBits.reset(origIdx);
       // Position of the kept chain within the collapsed result list.
@@ -305,7 +306,7 @@ static LogicalResult removeRedundantResults(AsyncRoutineOp op,
   unsigned curIdx = 0;
   for (OpResult result : op->getOpResults()) {
     if (toRemoveBits.test(result.getResultNumber())) {
-      if (keptChainNewIdx && isa<MEF::ChainType>(result.getType()))
+      if (keptChainNewIdx && isa<MLRT::MEF::ChainType>(result.getType()))
         rewriter.replaceAllUsesWith(result,
                                     newKernel->getResult(*keptChainNewIdx));
     } else {

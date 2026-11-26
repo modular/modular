@@ -38,7 +38,6 @@ from max.gpu import (
 from max.gpu.sync import barrier
 from max.gpu.compute.mma import mma as _mma_intrinsic
 from layout import Coord, TensorEngine, TensorLayout, TileTensor
-from std.memory import unsafe_stack_allocation
 from std.utils.numerics import get_accum_type
 
 from ....utils import (
@@ -715,12 +714,16 @@ def _wmma_matmul_kernel[
         # Single LDS tile fed by a register-staged prefetch: the next K-tile's
         # global loads stay in registers during the current tile's WMMA. One
         # buffer lets a larger BLOCK_K fit than double-buffering would.
-        var a_smem = unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE, a_type, address_space=.SHARED
-        ]()
-        var b_smem = unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE, b_type, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var a_smem_storage = Array[Scalar[a_type], BLOCK_M * SMEM_STRIDE](
+            uninitialized=True
+        )
+        var a_smem = a_smem_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var b_smem_storage = Array[Scalar[b_type], BLOCK_N * SMEM_STRIDE](
+            uninitialized=True
+        )
+        var b_smem = b_smem_storage.unsafe_ptr()
 
         # Per-thread 128-bit vector counts for the register-staged loads.
         comptime VW = min(BLOCK_K, 8)
@@ -819,18 +822,26 @@ def _wmma_matmul_kernel[
             "double-buffer tiles exceed LDS; this config needs transpose_b=True"
             " to use the register-staged pipeline"
         )
-        var a_smem_0 = unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE, a_type, address_space=.SHARED
-        ]()
-        var a_smem_1 = unsafe_stack_allocation[
-            BLOCK_M * SMEM_STRIDE, a_type, address_space=.SHARED
-        ]()
-        var b_smem_0 = unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE, b_type, address_space=.SHARED
-        ]()
-        var b_smem_1 = unsafe_stack_allocation[
-            BLOCK_N * SMEM_STRIDE, b_type, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var a_smem_0_storage = Array[Scalar[a_type], BLOCK_M * SMEM_STRIDE](
+            uninitialized=True
+        )
+        var a_smem_0 = a_smem_0_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var a_smem_1_storage = Array[Scalar[a_type], BLOCK_M * SMEM_STRIDE](
+            uninitialized=True
+        )
+        var a_smem_1 = a_smem_1_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var b_smem_0_storage = Array[Scalar[b_type], BLOCK_N * SMEM_STRIDE](
+            uninitialized=True
+        )
+        var b_smem_0 = b_smem_0_storage.unsafe_ptr()
+        @__address_space(.SHARED)
+        var b_smem_1_storage = Array[Scalar[b_type], BLOCK_N * SMEM_STRIDE](
+            uninitialized=True
+        )
+        var b_smem_1 = b_smem_1_storage.unsafe_ptr()
 
         # Load first K-tile into buffer 0.
         _load_tile_to_smem[

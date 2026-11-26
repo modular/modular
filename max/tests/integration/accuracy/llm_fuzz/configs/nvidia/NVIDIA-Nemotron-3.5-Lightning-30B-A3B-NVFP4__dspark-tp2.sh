@@ -34,7 +34,6 @@ extra_pipelines_args=(
 )
 model_profile=nemotron
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # Deliberately empty: no known-failure exemptions. A failing test is a bug to

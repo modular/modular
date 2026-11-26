@@ -46,7 +46,9 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_tile_schedu
 
 
 comptime _ColumnTile[rows: Int] = TileTensor[
-    .int32, RowMajorLayout[ComptimeInt[rows], ComptimeInt[1]], MutAnyOrigin
+    .int32,
+    RowMajorLayout[ComptimeInt[rows], ComptimeInt[1]],
+    MutUntrackedOrigin,
 ]
 
 

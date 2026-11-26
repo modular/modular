@@ -52,9 +52,11 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
     ) -> None:
         super().__init__()
         self.ihc = ihc
-        self.input_layernorm = RMSNorm(config.hidden_size, config.rms_norm_eps)
+        self.input_layernorm = RMSNorm(
+            config.hidden_size, config.rms_norm_eps, multiply_before_cast=True
+        )
         self.post_attention_layernorm = RMSNorm(
-            config.hidden_size, config.rms_norm_eps
+            config.hidden_size, config.rms_norm_eps, multiply_before_cast=True
         )
         self.self_attn = HYV4Attention(config, layer_idx)
         self.mlp: HYV4MoE | HYV4MLP = (
@@ -63,7 +65,7 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
             else HYV4MLP(
                 config.hidden_size,
                 config.intermediate_size,
-                config.quant_config,
+                config.projection_quant_config,
             )
         )
         if ihc:
@@ -91,11 +93,13 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
         input_row_offsets: Tensor,
         prev_topk_indices: Tensor | None,
         buffer_length: Tensor,
+        token_rope: Tensor | None = None,
     ) -> tuple[Tensor, Tensor]:
         """Returns the updated residual and the attention's top-k positions.
 
         ``layer_idx`` and ``indexer_layer`` are the layer's host-side cache
-        slots, as :meth:`HYV4Attention.forward` takes them.
+        slots, and ``token_rope`` the per-token rope rows, as
+        :meth:`HYV4Attention.forward` takes them.
         """
         topk: Tensor | None = None
 
@@ -111,6 +115,7 @@ class HYV4DecoderLayer(Module[..., tuple[Tensor, Tensor]]):
                 input_row_offsets,
                 prev_topk_indices,
                 buffer_length,
+                token_rope,
             )
             return y
 

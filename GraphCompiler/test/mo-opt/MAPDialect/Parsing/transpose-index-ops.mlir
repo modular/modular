@@ -18,7 +18,7 @@ module {
 // CHECK-NEXT:    inputs  ([[INPUT:%[^ :,]+]]: !mo.tensor<[2, 3], f32>, [[PERM:%[^ :,]+]]: !mo.tensor<[2], si64>)
 // CHECK-NEXT:    outputs ([[OUTARG:%[^ :,]+]]: !mo.tensor<[3, 2], f32>)
 // CHECK-NEXT:    index   ([[IDX:%[^ :,]+]]: !map.index<2>) -> !mo.tensor<[3, 2], f32> {
-// CHECK-NEXT:   [[IDX_:%[^ ]+]] = map.index.transpose<#map.index.transpose.spec<[2, 3] -> [3, 2], perm = [1, 0]>> ([[IDX]], [[PERM]]) : (!map.index<2>, !mo.tensor<[2], si64>) -> !map.index<2>
+// CHECK-NEXT:   [[IDX_:%[^ ]+]] = map.index.transpose<#map.index.transpose.spec<[2, 3] -> [3, 2], perm = [1, 0]>> ([[IDX]]) : (!map.index<2>) -> !map.index<2>
 // CHECK-NEXT:   [[VAL:%[^ ]+]] = map.load [[INPUT]]{{\[}}[[IDX_]]] : !mo.tensor<[2, 3], f32>
 // CHECK-NEXT:   map.store [[OUTARG]]{{\[}}[[IDX]]] = [[VAL]] : !mo.tensor<[3, 2], f32>
 // CHECK-NEXT: }
@@ -31,8 +31,8 @@ mo.graph @transposeSwap(%input: !mo.tensor<[2, 3], f32>, %perm: !mo.tensor<[2], 
       index   (%idx: !map.index<2>)
       -> !mo.tensor<[3, 2], f32>
   {
-    %idx_ = map.index.transpose<#swapSpec>(%idx, %perm)
-        : (!map.index<2>, !mo.tensor<[2], si64>) -> !map.index<2>
+    %idx_ = map.index.transpose<#swapSpec>(%idx)
+        : (!map.index<2>) -> !map.index<2>
     %val = map.load %input[%idx_] : !mo.tensor<[2, 3], f32>
     map.store %out[%idx] = %val : !mo.tensor<[3, 2], f32>
   }
@@ -45,7 +45,7 @@ mo.graph @transposeSwap(%input: !mo.tensor<[2, 3], f32>, %perm: !mo.tensor<[2], 
 // CHECK-NEXT:    inputs  ([[INPUT2:%[^ :,]+]]: !mo.tensor<[2, 3, 4], f32>, [[PERM2:%[^ :,]+]]: !mo.tensor<[3], si64>)
 // CHECK-NEXT:    outputs ([[OUTARG2:%[^ :,]+]]: !mo.tensor<[4, 2, 3], f32>)
 // CHECK-NEXT:    index   ([[IDX2:%[^ :,]+]]: !map.index<3>) -> !mo.tensor<[4, 2, 3], f32> {
-// CHECK-NEXT:   [[IDX2_:%[^ ]+]] = map.index.transpose<#map.index.transpose.spec<[2, 3, 4] -> [4, 2, 3], perm = [2, 0, 1]>> ([[IDX2]], [[PERM2]]) : (!map.index<3>, !mo.tensor<[3], si64>) -> !map.index<3>
+// CHECK-NEXT:   [[IDX2_:%[^ ]+]] = map.index.transpose<#map.index.transpose.spec<[2, 3, 4] -> [4, 2, 3], perm = [2, 0, 1]>> ([[IDX2]]) : (!map.index<3>) -> !map.index<3>
 // CHECK-NEXT:   [[VAL2:%[^ ]+]] = map.load [[INPUT2]]{{\[}}[[IDX2_]]] : !mo.tensor<[2, 3, 4], f32>
 // CHECK-NEXT:   map.store [[OUTARG2]]{{\[}}[[IDX2]]] = [[VAL2]] : !mo.tensor<[4, 2, 3], f32>
 // CHECK-NEXT: }
@@ -58,8 +58,8 @@ mo.graph @transpose3D(%input: !mo.tensor<[2, 3, 4], f32>, %perm: !mo.tensor<[3],
       index   (%idx: !map.index<3>)
       -> !mo.tensor<[4, 2, 3], f32>
   {
-    %idx_ = map.index.transpose<#permute3dSpec>(%idx, %perm)
-        : (!map.index<3>, !mo.tensor<[3], si64>) -> !map.index<3>
+    %idx_ = map.index.transpose<#permute3dSpec>(%idx)
+        : (!map.index<3>) -> !map.index<3>
     %val = map.load %input[%idx_] : !mo.tensor<[2, 3, 4], f32>
     map.store %out[%idx] = %val : !mo.tensor<[4, 2, 3], f32>
   }

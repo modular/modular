@@ -22,6 +22,7 @@ from max.graph.weights import WeightData, Weights
 from max.nn.kv_cache import KVCacheParamInterface
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.registration_draft import DraftRegistration
+from max.pipelines.lib.weight_transform import WeightTransform
 from max.tensor import default_dtype, defaults
 from transformers import AutoConfig
 
@@ -98,6 +99,7 @@ def configure_dspark_draft(
     # The trunk's mesh rule, so the stages place their rows on the axis the
     # trunk's split shards.
     trunk.data_parallel_degree = pipeline_config.model.data_parallel_degree
+    trunk.raw_checkpoint_weights = isinstance(context.adapter, WeightTransform)
     return DSparkDeepseekV41ModuleV3DraftConfig(
         **{f.name: getattr(trunk, f.name) for f in fields(trunk)},
         rope=RopeParams.from_text_config(

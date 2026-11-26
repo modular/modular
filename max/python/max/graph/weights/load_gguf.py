@@ -14,58 +14,19 @@
 
 from __future__ import annotations
 
+import difflib
+from collections.abc import Set as AbstractSet
 from os import PathLike
 
-# This is only imported internally if gguf is available
-import gguf  # type: ignore
-from max.driver import DLPackArray
+from max._core.gguf import GGUF, gguf_open
+from max.driver import Buffer, DLPackArray
 from max.dtype import DType
 from max.graph import DeviceRef
 
 from ..quantization import QuantizationEncoding
 from ..type import Shape, ShapeLike
 from ..weight import Weight
-from ._gguf_reader import TokenSkippingGGUFReader
 from .weights import WeightData, Weights
-
-_GGML_TO_DTYPE = {
-    gguf.GGMLQuantizationType.I8: DType.int8,
-    gguf.GGMLQuantizationType.I16: DType.int16,
-    gguf.GGMLQuantizationType.I32: DType.int32,
-    gguf.GGMLQuantizationType.I64: DType.int64,
-    gguf.GGMLQuantizationType.F16: DType.float16,
-    gguf.GGMLQuantizationType.F32: DType.float32,
-    gguf.GGMLQuantizationType.F64: DType.float64,
-    gguf.GGMLQuantizationType.BF16: DType.bfloat16,
-}
-
-_FROM_QUANTIZED_GGML_DTYPES = {
-    gguf.GGMLQuantizationType.Q4_0: QuantizationEncoding.Q4_0,
-    # gguf.GGMLQuantizationType.Q4_1,
-    # gguf.GGMLQuantizationType.Q5_0,
-    # gguf.GGMLQuantizationType.Q5_1,
-    # gguf.GGMLQuantizationType.Q8_0,
-    # gguf.GGMLQuantizationType.Q8_1,
-    # gguf.GGMLQuantizationType.Q2_K,
-    # gguf.GGMLQuantizationType.Q3_K,
-    gguf.GGMLQuantizationType.Q4_K: QuantizationEncoding.Q4_K,
-    gguf.GGMLQuantizationType.Q5_K: QuantizationEncoding.Q5_K,
-    gguf.GGMLQuantizationType.Q6_K: QuantizationEncoding.Q6_K,
-    # gguf.GGMLQuantizationType.Q8_K,
-    # gguf.GGMLQuantizationType.IQ2_XXS,
-    # gguf.GGMLQuantizationType.IQ2_XS,
-    # gguf.GGMLQuantizationType.IQ3_XXS,
-    # gguf.GGMLQuantizationType.IQ1_S,
-    # gguf.GGMLQuantizationType.IQ4_NL,
-    # gguf.GGMLQuantizationType.IQ3_S,
-    # gguf.GGMLQuantizationType.IQ2_S,
-    # gguf.GGMLQuantizationType.IQ4_XS,
-    # gguf.GGMLQuantizationType.IQ1_M,
-}
-
-_TO_QUANTIZED_GGML_DTYPES = {
-    value: key for key, value in _FROM_QUANTIZED_GGML_DTYPES.items()
-}
 
 
 class GGUFWeights(Weights):
@@ -78,68 +39,89 @@ class GGUFWeights(Weights):
 
     .. code-block:: python
 
+        import tempfile
         from pathlib import Path
-        from max.graph.weights import GGUFWeights
+
+        import numpy as np
+        from max._core.gguf import GGUFWriter
         from max.dtype import DType
-        from max.graph.quantization import QuantizationEncoding
+        from max.graph import DeviceRef
+        from max.graph.weights import GGUFWeights
 
-        # Load weights from GGUF file
-        gguf_path = Path("model-q4_k.gguf")
-        weights = GGUFWeights(gguf_path)
-
-        # Check if a weight exists
-        if weights.model.layers[0].attention.wq.exists():
-            # Allocate quantized attention weight
-            wq_weight = weights.model.layers[0].attention.wq.allocate(
-                dtype=DType.uint8,  # GGUF quantized weights use uint8
-                device=DeviceRef.CPU()
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "model.gguf"
+            weight = np.ones((4, 4), dtype=np.float32)
+            writer = GGUFWriter()
+            writer.set_string("general.architecture", "example")
+            # 0 is the GGML type id of float32.
+            writer.add_tensor(
+                "model.embed_tokens.weight", 0, [4, 4], weight.tobytes()
             )
+            writer.write(path)
 
-        # Access weight data with quantization info
-        weight_data = weights.model.layers[0].attention.wq.data()
-        print(f"Quantization: {weight_data.quantization_encoding}")
-        print(f"Shape: {weight_data.shape}")
+            weights = GGUFWeights(path)
 
-        # Allocate with quantization validation
-        ffn_weight = weights.model.layers[0].feed_forward.w1.allocate(
-            quantization_encoding=QuantizationEncoding.Q4_K,
-            device=DeviceRef.GPU(0)
-        )
+            if weights.model.embed_tokens.weight.exists():
+                embedding_weight = weights.model.embed_tokens.weight.allocate(
+                    dtype=DType.float32,
+                    device=DeviceRef.CPU(),
+                )
 
-        # Iterate through all weights in a layer
-        for name, weight in weights.model.layers[0].items():
-            if weight.exists():
-                print(f"Found weight: {name}")
+    .. invisible-code-block: python
+
+        assert embedding_weight.shape == [4, 4]
+
+    GGUF checkpoints can also store block-quantized tensors, such as
+    ``Q4_K``. Those are exposed as ``uint8`` data whose shape counts
+    quantization blocks, and the weight's ``quantization_encoding`` names the
+    scheme, so ``allocate(quantization_encoding=...)`` can validate that a
+    layer was stored the way the model expects.
     """
 
-    _reader: gguf.GGUFReader
-    _tensors: dict[str, gguf.ReaderTensor]
+    _reader: GGUF
+    _tensors: AbstractSet[str]
+    _sorted_tensors: list[str]
     _prefix: str
     _allocated: dict[str, DLPackArray]
+    _gguf_weight_map: dict[str, Buffer]
 
     def __init__(
         self,
-        source: PathLike[str] | gguf.GGUFReader,
-        tensors: dict[str, gguf.ReaderTensor] | None = None,
+        source: PathLike[str] | GGUF,
+        tensors: AbstractSet[str] | None = None,
         prefix: str = "",
         allocated: dict[str, DLPackArray] | None = None,
+        _gguf_weight_map: dict[str, Buffer] | None = None,
+        _sorted_tensors: list[str] | None = None,
     ) -> None:
         """Creates a GGUF weights reader.
 
         Args:
-            source: Path to a GGUF file or a GGUFReader object.
-            tensors: List of tensors in the GGUF checkpoint.
+            source: Path to a GGUF file or a parsed ``GGUF`` reader.
+            tensors: Names of every tensor in the checkpoint.
             prefix: Weight name or prefix.
             allocated: Dictionary of allocated values.
+            _gguf_weight_map: Buffers already handed out, shared by prefix
+                clones so each tensor is decoded at most once.
+            _sorted_tensors: Names in declaration order, shared by prefix
+                clones.
         """
-        self._reader = (
-            source
-            if isinstance(source, gguf.GGUFReader)
-            else TokenSkippingGGUFReader(source)
+        self._reader = source if isinstance(source, GGUF) else gguf_open(source)
+        self._tensors = (
+            frozenset(self._reader.keys()) if tensors is None else tensors
         )
-        self._tensors = tensors or {t.name: t for t in self._reader.tensors}
+        # Sorted because the reader hands out its keys in hash order, and a
+        # graph built by walking these weights declares them in this order.
+        self._sorted_tensors = (
+            sorted(self._tensors)
+            if _sorted_tensors is None
+            else _sorted_tensors
+        )
         self._prefix = prefix
         self._allocated = {} if allocated is None else allocated
+        self._gguf_weight_map = (
+            {} if _gguf_weight_map is None else _gguf_weight_map
+        )
 
     @property
     def name(self) -> str:
@@ -148,7 +130,7 @@ class GGUFWeights(Weights):
 
     def items(self):  # noqa: ANN201
         """Iterate through all allocable weights that start with the prefix."""
-        for name in self._tensors:
+        for name in self._sorted_tensors:
             if name.startswith(self._prefix):
                 yield (
                     name,
@@ -157,6 +139,8 @@ class GGUFWeights(Weights):
                         self._tensors,
                         prefix=name,
                         allocated=self._allocated,
+                        _gguf_weight_map=self._gguf_weight_map,
+                        _sorted_tensors=self._sorted_tensors,
                     ),
                 )
 
@@ -170,84 +154,50 @@ class GGUFWeights(Weights):
             self._tensors,
             prefix=full_path,
             allocated=self._allocated,
+            _gguf_weight_map=self._gguf_weight_map,
+            _sorted_tensors=self._sorted_tensors,
         )
 
     def __getitem__(self, idx: int | str) -> GGUFWeights:
         return self.__getattr__(str(idx))
 
+    def _validate_name(self) -> str:
+        if self._prefix in self._tensors:
+            return self._prefix
+        possible_match = difflib.get_close_matches(
+            self._prefix, self._tensors, n=1
+        )
+        hint = f" Did you mean '{possible_match[0]}'?" if possible_match else ""
+        raise KeyError(
+            f"Could not find weight named {self._prefix}. Please check that the"
+            f" name is correct.{hint}"
+        )
+
+    def _load_buffer(self) -> Buffer:
+        """Returns this weight's data, decoding it at most once."""
+        name = self._validate_name()
+        if name not in self._gguf_weight_map:
+            self._gguf_weight_map[name] = self._reader.get_buffer(name)
+        return self._gguf_weight_map[name]
+
+    def _quantization_encoding(self) -> QuantizationEncoding | None:
+        scheme = self._reader.quantization(self._validate_name())
+        return None if scheme is None else QuantizationEncoding(scheme)
+
     def data(self) -> WeightData:
         """Loads and returns the weight data for this tensor."""
-        tensor = self._raw_tensor()
-
-        try:
-            dtype = _GGML_TO_DTYPE[tensor.tensor_type]
-        except KeyError:
-            if tensor.tensor_type in _FROM_QUANTIZED_GGML_DTYPES:
-                dtype = DType.uint8
-            else:
-                raise
-
-        # Dims are reversed for some reason:
-        # https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py#L277
-        # We have to un-reverse them here.
-        shape_list = list(reversed(tensor.shape.tolist()))
-        if tensor.tensor_type in _FROM_QUANTIZED_GGML_DTYPES:
-            shape = Shape(
-                gguf.quant_shape_to_byte_shape(shape_list, tensor.tensor_type)
-            )
-        else:
-            shape = Shape(shape_list)
-        quantization_encoding = _FROM_QUANTIZED_GGML_DTYPES.get(
-            tensor.tensor_type
-        )
+        tensor = self._load_buffer()
         return WeightData(
-            tensor.data, self.name, dtype, shape, quantization_encoding
+            tensor,
+            self.name,
+            tensor.dtype,
+            Shape(tensor.shape),
+            self._quantization_encoding(),
         )
-
-    def _raw_tensor(self) -> gguf.ReaderTensor:
-        """Returns the GGUF tensor corresponding to this weights object.
-
-        Raises:
-            KeyError if this weights object isn't a tensor.
-        """
-        if self._prefix not in self._tensors:
-            raise KeyError(
-                f"Could not find weight named {self._prefix}. Please check that"
-                " the name is correct."
-            )
-
-        return self._tensors[self._prefix]
 
     def exists(self) -> bool:
         """Returns True if a tensor exists for the current prefix."""
         return self._prefix in self._tensors
-
-    def _parse_weight(
-        self, tensor: gguf.ReaderTensor, device: DeviceRef
-    ) -> Weight:
-        # Dims are reversed for some reason:
-        # https://github.com/ggerganov/llama.cpp/blob/master/gguf-py/gguf/gguf_reader.py#L277
-        # We have to un-reverse them here.
-        shape = list(reversed(tensor.shape.tolist()))
-        encoding = None
-        if (dtype := _GGML_TO_DTYPE.get(tensor.tensor_type)) is None:
-            if encoding := _FROM_QUANTIZED_GGML_DTYPES.get(tensor.tensor_type):
-                # Quantized dtypes are treated as uint8 values.
-                dtype = DType.uint8
-                shape = gguf.quant_shape_to_byte_shape(
-                    shape, tensor.tensor_type
-                )
-            else:
-                raise ValueError(f"Unknown GGML DType: {tensor.tensor_type}.")
-
-        return Weight(
-            name=tensor.name,
-            dtype=dtype,
-            shape=shape,
-            quantization_encoding=encoding,
-            align=self._reader.alignment,
-            device=device,
-        )
 
     def allocate(
         self,
@@ -257,28 +207,28 @@ class GGUFWeights(Weights):
         device: DeviceRef = DeviceRef.CPU(),  # noqa: B008
     ) -> Weight:
         """Creates and optionally validates a new Weight."""
-        tensor = self._raw_tensor()
-        weight = self._parse_weight(tensor, device)
-        self._allocated[self._prefix] = tensor.data
+        name = self._validate_name()
+        weight = Weight(
+            name=name,
+            dtype=(tensor := self._load_buffer()).dtype,
+            shape=tensor.shape,
+            quantization_encoding=self._quantization_encoding(),
+            align=self._reader.alignment,
+            device=device,
+        )
+        self._allocated[self._prefix] = tensor
 
-        # Validate the loaded weight.
+        # Validate the loaded weight. GGUF stores block-quantized tensors as
+        # bytes, so compare against the tensor's logical element shape.
         if shape is not None:
             expected_shape = tuple(shape)
-            weight_unpacked_shape = tuple(int(dim) for dim in weight.shape)
-            if weight.quantization_encoding:
-                # Get the unpacked weight.
-                ggml_dtype = _TO_QUANTIZED_GGML_DTYPES[
-                    weight.quantization_encoding
-                ]
-                weight_unpacked_shape = gguf.quant_shape_from_byte_shape(
-                    weight_unpacked_shape, ggml_dtype
+            element_shape = tuple(self._reader.element_shape(name))
+            if element_shape != expected_shape:
+                raise ValueError(
+                    f"Value provided to weight '{self.name}' had different"
+                    f" shape (expected={expected_shape},"
+                    f" actual={element_shape})"
                 )
-
-        if shape is not None and weight_unpacked_shape != expected_shape:
-            raise ValueError(
-                f"Value provided to weight '{self.name}' had different shape"
-                f" (expected={expected_shape}, actual={weight_unpacked_shape})"
-            )
         if dtype is not None and weight.dtype != dtype:
             raise ValueError(
                 f"Value provided to weight '{self.name}' had different dtype"

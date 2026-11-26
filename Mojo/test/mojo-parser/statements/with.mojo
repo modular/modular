@@ -458,7 +458,7 @@ def with_infer_int() raises Int:
         raise_int()
 
 
-__enum ContextualWithError(ImplicitlyCopyable):
+__union ContextualWithError(ImplicitlyCopyable):
     case custom(String)
 
 

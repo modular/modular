@@ -35,6 +35,7 @@
 #include <thread>
 
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // Misc
@@ -940,7 +941,7 @@ AnyAsyncValueRef grt_debug_print_num_refs(AnyAsyncValueRef input) {
 
 /// This registers the 'test' dialect primitives, intended for writing
 /// executor testcases.
-void M::registerGraphRTTestPrimitives(PrimitiveRegistry &registry) {
+void M::MLRT::registerGraphRTTestPrimitives(PrimitiveRegistry &registry) {
   // grt.testcase
   ADD_PRIMITIVE(registry, "grt.testcase", grt_testcase);
 

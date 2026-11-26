@@ -54,3 +54,31 @@ def test_named_effect_no_space_already_correct():
     source = 'def foo() abi("C"):\n    pass\n'
     expected = 'def foo() abi("C"):\n    pass\n'
     assert_mojo_format(source, expected)
+
+
+def test_accesses_clause():
+    """Formats the experimental accesses clause."""
+    source = (
+        'def foo(x: Int) -> Int __accesses ('
+        '"__unsafe_nested_origins_read_only"): pass\n'
+    )
+    expected = (
+        'def foo(x: Int) -> Int __accesses('
+        '"__unsafe_nested_origins_read_only"):\n'
+        '    pass\n'
+    )
+    assert_mojo_format(source, expected)
+
+
+def test_accesses_clause_on_function_type():
+    """Formats accesses clauses on function type annotations."""
+    source = (
+        'def takes(f: def(Int) -> Int __accesses ('
+        '"__unsafe_nested_origins_read_only")): pass\n'
+    )
+    expected = (
+        'def takes(f: def(Int) -> Int __accesses('
+        '"__unsafe_nested_origins_read_only")):\n'
+        '    pass\n'
+    )
+    assert_mojo_format(source, expected)

@@ -455,7 +455,7 @@ modular_py_test(
     ignore_extra_deps = [
         # Resolves Gemma 3 by name at runtime.
         "//max/python/max/pipelines/architectures/gemma3multimodal",
-        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
     ],
     tags = [
         "gpu",
@@ -467,8 +467,8 @@ modular_py_test(
     deps = [
         ":auto_model_vision_checks",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
-        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         requirement("pillow"),
     ],
 )
@@ -490,7 +490,7 @@ modular_py_test(
     ignore_extra_deps = [
         # Resolves Gemma 3 by name at runtime.
         "//max/python/max/pipelines/architectures/gemma3multimodal",
-        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
     ],
     tags = [
         "gpu",
@@ -502,8 +502,8 @@ modular_py_test(
     deps = [
         ":auto_model_vision_checks",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
-        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
     ],
 )
 
@@ -548,8 +548,8 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/nn:core",
         "//max/python/max/nn/kv_cache",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
-        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/internvl",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
@@ -715,8 +715,8 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn:core",
+        "//max/python/max/pipelines/architectures/gemma3_modulev3",
         "//max/python/max/pipelines/architectures/gemma3multimodal",
-        "//max/python/max/pipelines/architectures/gemma3multimodal_modulev3",
         "//max/python/max/pipelines/architectures/internvl",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",

@@ -431,6 +431,7 @@ def allgather_rmsnorm[
     )
 
 
+@__allow_legacy_any_origin_fields
 def _allgather_rmsnorm_impl[
     in_dtype: DType,
     ngpus: Int,

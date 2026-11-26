@@ -35,8 +35,8 @@ from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DimLike, TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.ep import init as ep_init
 from max.nn.kv_cache import RecurrentStateInputsPerDevice
-from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.lib.role_contracts import VisionInputs
 from max.pipelines.speculative.block_driver import BlockBatch
@@ -148,11 +148,12 @@ def _verify(
     mesh = language_model.mesh
     assert mesh is not None
     replicated = DeviceMapping.replicated(mesh)
-    comm_buffers: EPCommBuffers | None = None
-    ep_batch_manager = state.target.ep_batch_manager
-    if ep_batch_manager is not None:
-        assert batch.ep_inputs is not None
-        comm_buffers = ep_batch_manager.comm_buffers(batch.ep_inputs)
+    assert state.target.ep_config is None or batch.ep_inputs is not None
+    ep = ep_init.flat_buffers(
+        state.target.ep_config,
+        [Tensor.from_graph_value(v) for v in batch.ep_inputs or ()],
+        mesh,
+    )
 
     offsets = Tensor.from_shard_values(batch.merged_offsets_per_dev, replicated)
     # A step with images to encode merges no drafts, mixed or not:
@@ -181,7 +182,7 @@ def _verify(
                 batch.passthrough_kv[INDEXER_CACHE_KEY], replicated
             ),
             state_inputs,
-            comm_buffers,
+            ep,
             vision=vision,
             subgraphs=False,
         )
@@ -357,12 +358,10 @@ class Glm5NextMTPProposer(TensorAdapter):
         tail_pool, tail_rows = state_leaf(
             _state(batch), TAIL_RING_LEAF_ID, replicated, head_sharded=False
         )
-        comm_buffers: EPCommBuffers | None = None
-        if self.draft.ep_batch_manager is not None:
-            assert batch.ep_inputs is not None
-            comm_buffers = self.draft.ep_batch_manager.comm_buffers(
-                batch.ep_inputs
-            )
+        assert self.draft.ep_config is None or batch.ep_inputs is not None
+        ep = ep_init.flat_buffers(
+            self.draft.ep_config, batch.ep_inputs or (), self.mesh
+        )
         h, selection = self.draft(
             embedded,
             hidden,
@@ -383,7 +382,7 @@ class Glm5NextMTPProposer(TensorAdapter):
             self.language_model.rope.freqs_cis.cast(embedded.dtype).to(
                 self.mesh
             ),
-            comm_buffers,
+            ep,
             Tensor.from_shard_values(reuse, replicated)
             if reuse is not None
             else None,
@@ -395,9 +394,9 @@ class Glm5NextMTPProposer(TensorAdapter):
 def ep_input_tree(target: Any) -> object | None:
     """Returns the group that names the target's EP inputs, if EP is on."""
     target = _language_model(target)
-    if target.ep_batch_manager is None:
+    if target.ep_config is None:
         return None
-    return target.ep_batch_manager.input_tree()
+    return ep_init.payload_types(target.ep_config)
 
 
 def batch_distributed_buffers(

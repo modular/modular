@@ -226,3 +226,34 @@ def test_concat_slice_projection_window(
     expected = torch.cat([cache_t, new_rows], dim=1)
     torch.testing.assert_close(full_out, expected, rtol=0, atol=0)
     torch.testing.assert_close(window, expected[:, -8:], rtol=0, atol=0)
+
+
+@pytest.mark.parametrize("device", _BF16_DEVICES)
+def test_concat_view_fused_elementwise(
+    session: InferenceSession, device: DeviceRef
+) -> None:
+    """A concat lowered as a view fuses its elementwise producers and consumer
+    into one kernel, along its innermost axis, where every vector must stay
+    inside one input."""
+    with Graph(
+        "concat_view_fused_elementwise",
+        input_types=[
+            TensorType(DType.float32, [4, 6], device=device),
+            TensorType(DType.float32, [4, 10], device=device),
+        ],
+    ) as graph:
+        a, b = (v.tensor for v in graph.inputs)
+        cat = ops.concat([-a, ops.exp(b)], axis=-1)
+        graph.output(ops.relu(cat))
+
+    a_t = torch.randn(4, 6)
+    b_t = torch.randn(4, 10)
+    (out,) = _run_bf16(
+        session,
+        graph,
+        a_t,
+        b_t,
+        fused=r"Elementwise\(mo\.exp, mo\.negative, View\(mo\.concat, mo\.relu\)\)",
+    )
+    expected = torch.relu(torch.cat([-a_t, torch.exp(b_t)], dim=-1))
+    torch.testing.assert_close(out, expected)

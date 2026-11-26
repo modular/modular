@@ -722,7 +722,6 @@ struct ListPair:
 
 
 # This function coerces a ref to a subtree based on the specified base.
-@__unsafe_nested_origins_read_only
 def get_subtree_ref[T: AnyType, //, subtree_root: Origin](ref [subtree_root.subtree] x: T)
   -> ref[subtree_root.subtree] T:
     return x

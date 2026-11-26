@@ -39,6 +39,7 @@ deepseekV41_arch = SupportedArchitecture(
     multi_gpu_supported=True,
     pipeline_model=DeepseekV41Model,
     tokenizer=DeepseekV41Tokenizer,
+    tokenizer_family=("deepseek-v4.1", None),
     context_type=TextAndVisionContext,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
     default_weights_format=WeightsFormat.safetensors,

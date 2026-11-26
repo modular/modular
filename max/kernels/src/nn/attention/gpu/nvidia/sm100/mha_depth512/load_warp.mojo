@@ -403,6 +403,7 @@ def depth512_load[
     # ---- V load helper (peeled + loop share this) ----------------------------
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _load_v_stage[
         pv_stage: Int
     ](
@@ -451,6 +452,7 @@ def depth512_load[
     # ---- K load helper (peeled-first, main, peeled-last share this) ---------
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _produce_k[
         partial: Bool,
         qk_stage: Int = 0,

@@ -306,8 +306,8 @@ def use_all() abi("Mojo"):
 # CHECK-DAG: attributes #[[OS]] = { {{.*}}optsize{{.*}} }
 # CHECK-DAG: attributes #[[MS]] = { {{.*}}minsize{{.*}} }
 # CHECK-DAG: attributes #[[SRP]] = { {{.*}}"save-reg-params"{{.*}} }
-# CHECK-DAG: attributes #[[DFP]] = { {{.*}}"denormal-fp-math"="preserve-sign,preserve-sign"{{.*}} }
-# CHECK-DAG: attributes #[[DFP32]] = { {{.*}}"denormal-fp-math-f32"="ieee,ieee"{{.*}} }
+# CHECK-DAG: attributes #[[DFP]] = { {{.*}}denormal_fpenv(preservesign){{.*}} }
+# CHECK-DAG: attributes #[[DFP32]] = { {{.*}}denormal_fpenv(ieee){{.*}} }
 # CHECK-DAG: attributes #[[FPC]] = { {{.*}}"fp-contract"="fast"{{.*}} }
 # CHECK-DAG: attributes #[[PS]] = { {{.*}}"probe-stack"="__chkstk"{{.*}} }
 # CHECK-DAG: attributes #[[NILT]] = { {{.*}}"no-inline-line-tables"="true"{{.*}} }

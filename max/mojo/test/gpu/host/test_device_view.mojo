@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Tests the `Device` view returned by `DeviceContext.device()`."""
 
+from max._driver.max_license.device_context_dispatch.backend_selection import (
+    HAL_DEVICE_CONTEXT,
+)
 from max.gpu.host import DeviceAttribute, DeviceContext
-from std.sys.defines import is_defined
 from std.testing import (
     assert_equal,
     assert_false,
@@ -22,11 +24,8 @@ from std.testing import (
     TestSuite,
 )
 
-# `--config=hal-device-context` defines `HAL_DEVICE_CONTEXT`; the two backends
-# word the driver's no-architecture error differently.
-comptime _NO_ARCH_ERROR = "failed to get device property 'arch'" if is_defined[
-    "HAL_DEVICE_CONTEXT"
-]() else "Not implemented for device: cpu"
+# The two backends word the driver's no-architecture error differently.
+comptime _NO_ARCH_ERROR = "failed to get device property 'arch'" if HAL_DEVICE_CONTEXT else "Not implemented for device: cpu"
 
 
 def _multiprocessor_count(ctx: DeviceContext) raises -> Int:
@@ -81,10 +80,9 @@ def _max_grid_dim_z(ctx: DeviceContext) raises -> Int:
 def _assert_matches_raw(named: Optional[Int], raw: Optional[Int]) raises:
     # A plugin may not map every CUDA-numbered attribute, so the named query
     # has to raise exactly where `get_attribute` does.
-    assert_equal(Bool(named), Bool(raw))
-    if raw:
-        assert_equal(named.value(), raw.value())
-        assert_true(raw.value() > 0)
+    assert_equal(named, raw)
+    if case .Some(value) = raw:
+        assert_true(value > 0)
 
 
 def test_named_queries_match_get_attribute() raises:

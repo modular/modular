@@ -632,6 +632,7 @@ void FunctionTypeNode::print(raw_indented_ostream &os) const {
   os.unindent() << "]\n";
 
   os << "effects: " << stringifyFnEffects(effects.getImpl()) << "\n";
+  os << "nested origins read only: " << isNestedOriginsReadOnly << "\n";
   os << "originExpr: ";
   if (originExpr)
     originExpr->print(os);

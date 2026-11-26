@@ -17,7 +17,7 @@
 #include "Support/SymbolExport.h"
 #include <cstddef>
 
-namespace M {
+namespace M::MLRT {
 
 /// `MojoValue` represents a runtime mojo object.
 /// It owns the object (and release it when the MojoValue is
@@ -102,6 +102,6 @@ private:
   bool shouldFree = false;
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_CORE_MOJOVALUE_H

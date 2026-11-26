@@ -10,7 +10,7 @@
 // `Idx` when static, else the run-time largest power of two dividing the
 // limit's terms, static part included.
 
-// CHECK:      var [[DIV:var_+[0-9]+]] = builtin_primitives.primitives.pow2_divisor_of_dims(std.utils.coord.coord_to_index_list({{var_+[0-9]+}}))
+// CHECK:      var [[DIV:var_+[0-9]+]] = builtin_primitives.primitives.pow2_divisor_of_dims({{var_+[0-9]+}})
 // CHECK-NEXT: builtin_primitives.primitives._foreach[simd_width = {{.*}}]({{.*}}, max_simd_width = Scalar[DType.int]([[DIV]]))
 mo.graph @dynamic<N>(%a: !mo.tensor<[N], f32>) -> !mo.tensor<[N], f32> {
   %r = map.iter.opaque

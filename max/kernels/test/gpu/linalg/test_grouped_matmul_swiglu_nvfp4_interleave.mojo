@@ -36,7 +36,6 @@ from max.gpu.host import DeviceContext
 from std.memory import alloc
 from std.memory.alloc import unsafe_alloc
 from std.random import random_ui64, seed, rand
-from std.simd import _convert_f32_to_float8_scalar
 from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 
 from layout import Idx, TileTensor, row_major
@@ -162,10 +161,6 @@ def _test_swiglu_interleave[
         row_major(Idx[num_active_experts]),
     )
     var expert_scales_device = ctx.enqueue_create_buffer[.float32](num_experts)
-    var expert_scales_tensor = TileTensor(
-        expert_scales_device,
-        row_major(Idx[num_experts]),
-    )
     var input_scales_device = ctx.enqueue_create_buffer[.float32](
         num_active_experts
     )
@@ -287,9 +282,11 @@ def _test_swiglu_interleave[
                 0, align_up(K, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
             ):
                 if idx1 < K:
-                    var scale_value = _convert_f32_to_float8_scalar[
-                        scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[.float32]())
+                    var scale_value = (
+                        (1 << random_ui64(0, 2))
+                        .cast[.float32]()
+                        .cast[scales_dtype]()
+                    )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )
@@ -409,7 +406,7 @@ def _test_swiglu_interleave[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
@@ -420,7 +417,7 @@ def _test_swiglu_interleave[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_perm_tt = TileTensor(
         b_scales_perm_device,
         row_major(
@@ -431,11 +428,11 @@ def _test_swiglu_interleave[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_device,
         row_major(Int64(num_experts)),
-    ).as_unsafe_any_origin()
+    )
 
     # ---- Path REF: matmul on W ----
     grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b](

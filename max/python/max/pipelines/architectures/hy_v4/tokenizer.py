@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Hy4 text tokenizer: think delimiters and ``reasoning_effort`` mapping."""
+"""Hy4 tokenizers: think delimiters, ``reasoning_effort`` mapping, VL parts."""
 
 from __future__ import annotations
 
@@ -20,6 +20,7 @@ from typing import Any, ClassVar
 
 from max.pipelines.lib.tokenizer import ReasoningTextTokenizer
 from max.pipelines.modeling.types import (
+    TextGenerationRequestFunction,
     TextGenerationRequestMessage,
     TextGenerationRequestTool,
 )
@@ -70,3 +71,54 @@ class HYV4Tokenizer(ReasoningTextTokenizer):
             tools,
             **normalize_hy4_reasoning_effort(chat_template_options),
         )
+
+
+class HYV4VLTokenizer(HYV4Tokenizer):
+    """Tokenizer for Hy4 VL: list content and tools as vLLM renders them."""
+
+    @property
+    def expects_content_wrapping(self) -> bool:
+        """Keeps image parts, which render as image placeholders."""
+        return True
+
+    def apply_chat_template(
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None,
+        **chat_template_options: Any,
+    ) -> str:
+        """Applies the chat template with each tool's keys in vLLM's order.
+
+        The template prints a tool's keys in dict order, and MAX builds the
+        dict as description, name, parameters, where vLLM serializes them
+        as name, description, parameters.
+        """
+        if tools:
+            tools = [
+                TextGenerationRequestTool(
+                    type=tool["type"],
+                    function=TextGenerationRequestFunction(
+                        name=tool["function"]["name"],
+                        description=tool["function"]["description"],
+                        parameters=tool["function"]["parameters"],
+                    ),
+                )
+                for tool in tools
+            ]
+        return super().apply_chat_template(
+            messages, tools, **chat_template_options
+        )
+
+    def _flatten_message(
+        self, message: TextGenerationRequestMessage
+    ) -> dict[str, Any]:
+        """Leaves list content as parts, as vLLM serves it.
+
+        The template writes the parts in order with nothing between them, an
+        image as its placeholder; flattening joins text parts by newlines.
+        A video part still goes to flattening, which refuses it: Hy4 VL
+        serves no video.
+        """
+        if isinstance(message.content, str) or message.number_of_videos:
+            return super()._flatten_message(message)
+        return message.model_dump(exclude_none=True)

@@ -25,6 +25,7 @@ from max.pipelines.kv_cache import cache_dtype_for_encoding
 from max.pipelines.lib import MAXModelConfig, PipelineConfig
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
+from max.pipelines.lib.pipeline_parallel import stage_layers
 from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.registration_runtime import (
     ExpertParallelDeploymentConfig,
@@ -42,6 +43,7 @@ from ..deepseekV3_2_modulev3.model_config import (
     DeepseekV3_2Config,
     check_replica_layout,
     hisparse_params_for,
+    nextn_drafts,
     resolve_dcp_q_replicate,
     resolve_indexer_types,
     resolve_prefill_context_parallel,
@@ -190,6 +192,8 @@ class Glm5_1Config(DeepseekV3_2Config, ExpertParallelDeploymentConfig):
             quantization_encoding=quantization_encoding,
             unpadded_vocab_size=glm_unpadded_vocab_size(pipeline_config),
             hisparse=hisparse,
+            layer_ids=stage_layers(pipeline_config, config.num_hidden_layers),
+            last_stage_embeds=nextn_drafts(pipeline_config),
         )
 
     def finalize(

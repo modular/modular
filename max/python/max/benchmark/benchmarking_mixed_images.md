@@ -124,10 +124,10 @@ turns locally, but the driver splices the images into the history it sends, so
 an image on a replayed turn still reaches the server on the first measured
 request.
 
-This is where images and `--response-format-turn first` differ: a
-`response_format` is a per-request field the prefix loop never sets, so a
-constraint on a replayed turn is genuinely lost (CENG-1086). An image is part
-of the message history, so it is not.
+`--response-format-turn first` needs an extra step: a `response_format` is a
+per-request field the prefix loop never sets, so the benchmark moves the
+constraint from the opening turn to the first turn the session sends. An image
+is part of the message history, so it needs no such move.
 
 ## Matching a real image-size distribution
 

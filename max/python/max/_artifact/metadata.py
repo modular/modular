@@ -20,8 +20,12 @@ from dataclasses import dataclass
 from .codec import ref_from_dict, ref_to_dict
 from .value_types import ArtifactError, HuggingFaceRef, JsonValue
 
-ARTIFACT_VERSION = 0
-"""The artifact format version written at export. Not checked at load time yet.
+ARTIFACT_VERSION = 2
+"""The artifact format version written at export and required at load.
+
+Version 2 records the parallel layout, the capture limits and the
+speculative facts in ``engine_config``, and stores the overlap helpers as
+``model`` roles. An artifact of another version is re-exported, not read.
 """
 
 
@@ -34,7 +38,7 @@ class ArtifactMetadata:
     """
 
     artifact_version: int
-    """The artifact format version. Recorded but not yet checked."""
+    """The artifact format version, :data:`ARTIFACT_VERSION` to load."""
 
     model_sources: Sequence[HuggingFaceRef]
     """Every Hugging Face reference used by the artifact's components."""

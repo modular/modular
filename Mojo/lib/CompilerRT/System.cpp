@@ -13,6 +13,7 @@
 
 #include "Memory.h"
 #include "Support/Configuration.h"
+#include "Support/Process.h"
 #include "Support/SymbolExport.h"
 #include "Support/Threading/HWInfo.h"
 #include "llvm/ADT/StringRef.h"
@@ -120,6 +121,11 @@ std::string getStackTrace(unsigned depth = 0, unsigned dropFirst = 0) {
 COMPILERRT_EXPORT
 COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_PrintStackTraceOnFault() {
   auto configOr = M::Config::open();
+  // Under `mojo run` the report would name `mojo`, with none of the program's
+  // frames, so it is opt-in.
+  if (configOr.isError() ||
+      !configOr->getValueAsBool("max-debug.macos-crash-report", false))
+    M::disableMacOSCrashReport();
   bool enabled =
       configOr.isError() ||
       configOr->getValueAsBool("max-debug.stack-trace-on-crash", true);

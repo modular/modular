@@ -277,6 +277,7 @@ def run_shape[
     ]
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_slow(
         launch_ctx: DeviceContext[],
     ) raises {
@@ -318,6 +319,7 @@ def run_shape[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_pbf16(
         launch_ctx: DeviceContext[],
     ) raises {
@@ -359,6 +361,7 @@ def run_shape[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_fast(
         launch_ctx: DeviceContext[],
     ) raises {
@@ -376,6 +379,7 @@ def run_shape[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_nosplit(
         launch_ctx: DeviceContext[],
     ) raises {

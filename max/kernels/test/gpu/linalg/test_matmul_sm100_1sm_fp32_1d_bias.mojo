@@ -125,12 +125,6 @@ def test_blackwell_matmul_with_1d_bias[
         num_clc_pipeline_stages=num_clc_pipeline_stages,
     )
 
-    comptime EpilogueType = TileTensor[
-        matmul_config.c_type,
-        type_of(bias_shape),
-        ImmutAnyOrigin,
-        Engine=bias_tile.Engine,
-    ]
     blackwell_matmul_tma_umma_warp_specialized[
         transpose_b=transpose_b,
         config=matmul_config,
@@ -139,7 +133,7 @@ def test_blackwell_matmul_with_1d_bias[
         a_tensor,
         b_tensor,
         ctx,
-        epilogue_tensor=rebind[EpilogueType](bias_tile),
+        epilogue_tensor=bias_tile.as_imm(),
     )
 
     # Reference: cuBLAS matmul

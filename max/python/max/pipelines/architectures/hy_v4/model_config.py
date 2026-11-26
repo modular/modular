@@ -10,16 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Configuration for Hy4 (``HYV4ForCausalLM``) models."""
+"""Configuration for Hy4 (``HYV4ForCausalLM``) and Hy4 VL models."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
+from types import MappingProxyType
 from typing import Any, ClassVar
 
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.nn.common_layers.quant_ops import is_fp8_block_quantized
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheQuantizationConfig,
@@ -27,7 +30,12 @@ from max.nn.kv_cache import (
 )
 from max.nn.quant_config import QuantConfig
 from max.pipelines.kv_cache import cache_dtype_for_encoding
-from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib import (
+    GraphRole,
+    KVCacheConfig,
+    MAXModelConfig,
+    PipelineConfig,
+)
 from max.pipelines.lib.config.model_config import _select_quantization_encoding
 from max.pipelines.lib.interfaces.arch_config import (
     ArchConfigWithKVCache,
@@ -119,6 +127,10 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
     rope_theta: float
     max_position_embeddings: int
     num_nextn_predict_layers: int
+    dfly_draft: bool = False
+    """Whether the layers are the DFly2 drafter's: each attends with its
+    target layer's top-k and has no indexer, and block FP8 covers every
+    projection."""
 
     def finalize(
         self,
@@ -157,11 +169,23 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
                 f" mlp_layer_types ({len(self.mlp_layer_types)}) must both"
                 f" have num_hidden_layers ({n}) entries"
             )
-        if self.indexer_types[0] != "full":
+        if self.indexer_types[0] != "full" and not self.dfly_draft:
             raise ValueError(
                 "indexer_types[0] must be 'full': a 'shared' layer reuses the"
                 f" most recent full layer's top-k, got {self.indexer_types[0]!r}"
             )
+
+    @property
+    def projection_quant_config(self) -> QuantConfig | None:
+        """The quant config of the MLA projections, indexer and dense MLPs.
+
+        A block-FP8 checkpoint (Hy4-FP8) quantizes only ``o_proj``,
+        ``linear_gate`` and the routed experts of its target layers, so they
+        stay BF16 there; its DFly2 drafter quantizes every projection.
+        """
+        if is_fp8_block_quantized(self.quant_config) and not self.dfly_draft:
+            return None
+        return self.quant_config
 
     @property
     def num_key_value_heads(self) -> int:
@@ -201,8 +225,9 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
         model_config: MAXModelConfig,
     ) -> int:
         """The checkpoint's context length, bounded by the config's."""
+        text_config = huggingface_config.get_text_config()
         return upper_bounded_default(
-            upper_bound=huggingface_config.max_position_embeddings,
+            upper_bound=text_config.max_position_embeddings,
             default=model_config.max_length,
         )
 
@@ -215,6 +240,7 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
         cache_dtype: DType,
     ) -> MultiKVCacheParams:
         """Builds the MLA and indexer cache params for the devices."""
+        huggingface_config = huggingface_config.get_text_config()
         dp_degree = pipeline_config.model.data_parallel_degree
         speculative = pipeline_config.speculative
         # Every leaf of a cache tree must agree on these.
@@ -271,12 +297,12 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
             pipeline_config, len(pipeline_config.model.device_specs)
         )
         model_config = model_config or pipeline_config.model
-        config = model_config.huggingface_config
-        if config is None:
+        if model_config.huggingface_config is None:
             raise ValueError(
                 f"HuggingFace config is required for"
                 f" '{model_config.model_path}', but config could not be loaded."
             )
+        config = model_config.huggingface_config.get_text_config()
         quantization_encoding = _select_quantization_encoding(
             model_config, cls.DEFAULT_ENCODING
         )
@@ -332,4 +358,138 @@ class HYV4Config(ArchConfigWithKVCache, DeploymentConfig):
             num_nextn_predict_layers=getattr(
                 config, "num_nextn_predict_layers", 0
             ),
+        )
+
+
+def _compressed_tensors_quantizes(scheme: Mapping[str, Any], name: str) -> bool:
+    """Returns whether a compressed-tensors scheme quantizes module ``name``.
+
+    A module is quantized when a group targets it and ``ignore`` does not
+    list it; a ``re:`` entry matches from the start of the name.
+    """
+
+    def listed(patterns: list[str]) -> bool:
+        return any(
+            re.match(p[3:], name) if p.startswith("re:") else p == name
+            for p in patterns
+        )
+
+    targets = [
+        t for g in scheme["config_groups"].values() for t in g["targets"]
+    ]
+    return listed(targets) and not listed(scheme.get("ignore", []))
+
+
+@dataclass(frozen=True, kw_only=True)
+class HYV4VLVisionConfig:
+    """The vision tower and projector fields of ``vision_config``."""
+
+    hidden_size: int
+    intermediate_size: int
+    num_hidden_layers: int
+    num_attention_heads: int
+    num_channels: int
+    patch_size: int
+    spatial_merge_size: int
+    out_hidden_size: int
+    max_image_size: int
+    interpolate_mode: str
+    hidden_act: str
+    rms_norm_eps: float
+
+    @classmethod
+    def from_hf(cls, vision_config: Any) -> Self:
+        """Reads each field from the same-named ``vision_config`` key."""
+        return cls(
+            **{f.name: getattr(vision_config, f.name) for f in fields(cls)}
+        )
+
+
+@dataclass(frozen=True, kw_only=True)
+class HYV4DFlyConfig:
+    """The DFly2 drafter fields, from the top-level ``dfly_*`` keys."""
+
+    num_hidden_layers: int
+    block_size: int
+    mask_token_id: int
+    target_index_topk: int
+    target_index_layer: list[int]
+    target_kv_layers: list[int]
+
+    @classmethod
+    def from_hf(cls, huggingface_config: Any) -> Self:
+        """Reads each field from the ``dfly_``-prefixed key."""
+        return cls(
+            **{
+                f.name: getattr(huggingface_config, f"dfly_{f.name}")
+                for f in fields(cls)
+            }
+        )
+
+
+@dataclass(kw_only=True)
+class HYV4VLConfig(HYV4Config):
+    """Configuration for Hy4 VL (``HYV4VLForConditionalGeneration``).
+
+    The text fields come from ``text_config``.
+    """
+
+    weight_prefixes: ClassVar[Mapping[str, str]] = MappingProxyType(
+        {GraphRole.VISION: "vision_encoder."}
+    )
+
+    mrope_section: list[int]
+    mrope_interleaved: bool
+    vision: HYV4VLVisionConfig
+    dfly: HYV4DFlyConfig
+
+    @override
+    def finalize(
+        self,
+        huggingface_config: AutoConfig,
+        state_dict: Mapping[str, Any],
+        outputs: ModelOutputConfig,
+    ) -> Self:
+        """Keeps block FP8 on the attention layers the checkpoint quantizes.
+
+        The parser marks every layer; the checkpoint's ``ignore`` list leaves
+        layer 0's attention BF16. ``linear_gate`` follows ``o_proj``: the
+        scheme targets and ignores both together.
+        """
+        config = super().finalize(huggingface_config, state_dict, outputs)
+        quant = config.quant_config
+        if quant is None or not is_fp8_block_quantized(quant):
+            return config
+        scheme = huggingface_config.quantization_config
+        layers = {
+            i
+            for i in range(config.num_hidden_layers)
+            if _compressed_tensors_quantizes(
+                scheme, f"model.layers.{i}.self_attn.o_proj"
+            )
+        }
+        return replace(
+            config, quant_config=replace(quant, attn_quantized_layers=layers)
+        )
+
+    @override
+    @classmethod
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+        *,
+        max_seq_len: int,
+    ) -> Self:
+        text = HYV4Config.initialize(
+            pipeline_config, model_config, max_seq_len=max_seq_len
+        )
+        hf = (model_config or pipeline_config.model).huggingface_config
+        rope = hf.get_text_config().rope_parameters
+        return cls(
+            **{f.name: getattr(text, f.name) for f in fields(text)},
+            mrope_section=list(rope["mrope_section"]),
+            mrope_interleaved=rope["mrope_interleaved"],
+            vision=HYV4VLVisionConfig.from_hf(hf.vision_config),
+            dfly=HYV4DFlyConfig.from_hf(hf),
         )

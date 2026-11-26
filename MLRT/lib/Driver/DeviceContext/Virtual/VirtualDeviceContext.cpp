@@ -230,10 +230,10 @@ ErrorOrSuccess VirtualDeviceContext::enqueueSetMemory(void *dst,
   RETURN_ERROR("VirtualDevice does not support memory operations");
 }
 
-ErrorOr<DeviceFunctionRef> VirtualDeviceContext::loadFunction(
-    StringRef moduleName, StringRef functionName, StringRef code,
-    int32_t maxDynamicSharedBytes, StringRef debugLevel,
-    int32_t optimizationLevel) {
+ErrorOr<DeviceFunctionRef>
+VirtualDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
+                                   StringRef code, StringRef debugLevel,
+                                   int32_t optimizationLevel) {
   M_PROFILE_SPAN("VirtualDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   RETURN_ERROR("VirtualDevice does not support function loading");
 }

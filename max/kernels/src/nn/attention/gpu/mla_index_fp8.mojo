@@ -643,15 +643,6 @@ struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"BlockTopKScoreHook"`.
-        """
-        return "BlockTopKScoreHook"
-
 
 struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
     """Drops every key whose block of `block_size` keys a row does not keep.
@@ -792,15 +783,6 @@ struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"BlockTopKMaskScoreHook"`.
-        """
-        return "BlockTopKMaskScoreHook"
 
 
 struct _IndexerSink[R: SparseIndexRemap, write_logical: Bool](TopkSink):
@@ -997,15 +979,6 @@ struct _IndexerRowBound[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"_IndexerRowBound"`.
-        """
-        return "_IndexerRowBound"
-
 
 struct _CPIndexerSink[
     R: SparseIndexRemap, write_logical: Bool, in_dtype: DType
@@ -1187,15 +1160,6 @@ struct _CPIndexerRowBound[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"_CPIndexerRowBound"`.
-        """
-        return "_CPIndexerRowBound"
 
 
 # ===----------------------------------------------------------------------=== #

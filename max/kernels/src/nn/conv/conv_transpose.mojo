@@ -59,6 +59,7 @@ from layout.tensor_engine import TensorEngine
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv.conv import _get_cudnn_meta, check_cudnn_error
+from nn.conv.gpu.nvidia.sm100.conv_dgrad_fp32 import conv_dgrad_fp32
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -1738,7 +1739,10 @@ def conv_transposed_gpu[
     padding: Coord,
     ctx: DeviceContext,
 ) raises:
-    """Runs a transposed convolution on the GPU via the cuDNN backward-data path.
+    """Runs a transposed convolution on the GPU.
+
+    The geometries `conv_dgrad_fp32` serves run on its dedicated B200 kernel;
+    cuDNN's backward-data is the fallback for every other convolution.
 
     Parameters:
         input_type: Element type of the input tensor.
@@ -1754,6 +1758,18 @@ def conv_transposed_gpu[
         padding: Padding along each spatial axis.
         ctx: Device context used to access the cuDNN handle and device buffers.
     """
+    comptime if input.rank == 4:
+        if conv_dgrad_fp32(
+            input,
+            filter,
+            output,
+            _int_coord[2](stride),
+            _int_coord[2](dilation),
+            _int_coord[2](padding),
+            ctx,
+        ):
+            return
+
     conv_transposed_cudnn[input_type, filter_type, output_type](
         input,
         filter,
@@ -1782,14 +1798,16 @@ def conv_transposed_gpu[
     elementwise_epilogue: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
-    """Runs a transposed convolution on the GPU via the cuDNN backward-data path
-    and hands every output value to an elementwise epilogue.
+    """Runs a transposed convolution on the GPU and hands every output value to
+    an elementwise epilogue.
 
     The same convolution as the overload that takes `output`, for a caller
     whose epilogue owns every write, such as a graph op whose output is fused.
-    cuDNN writes into a temporary buffer and a separate elementwise pass feeds
-    it to `elementwise_epilogue`. The output is given as a layout, so the
-    kernel never sees a pointer it could write through.
+    The geometries `conv_dgrad_fp32` serves apply the epilogue in the kernel's
+    store, once per output element. cuDNN is the fallback for every other
+    convolution: it writes into a temporary buffer and a separate elementwise
+    pass feeds it to `elementwise_epilogue`. The output is given as a layout,
+    so the kernel never sees a pointer it could write through.
 
     Parameters:
         EpilogueFnType: Type of `elementwise_epilogue` (inferred).
@@ -1809,6 +1827,24 @@ def conv_transposed_gpu[
             output value.
         ctx: Device context used to access the cuDNN handle and device buffers.
     """
+    comptime if input.rank == 4 and OutputLayoutType.rank == 4:
+        if conv_dgrad_fp32[output_type=output_type](
+            input,
+            filter,
+            Coord(
+                Int(output_layout.shape[0]().value()),
+                Int(output_layout.shape[1]().value()),
+                Int(output_layout.shape[2]().value()),
+                Int(output_layout.shape[3]().value()),
+            ),
+            _int_coord[2](stride),
+            _int_coord[2](dilation),
+            _int_coord[2](padding),
+            elementwise_epilogue,
+            ctx,
+        ):
+            return
+
     var output_tmp_data = ctx.enqueue_create_buffer[output_type](
         output_layout.product()
     )

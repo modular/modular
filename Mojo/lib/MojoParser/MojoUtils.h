@@ -105,12 +105,27 @@ CValue materializeAsyncCallAsCoroutine(IREmitter &emitter, AsyncCallOp call,
                                        const ExprNode *expr,
                                        FnTypeGeneratorType sig, ExprDest &dest);
 
+/// Return the value through which a function body refers to its argument
+/// `bbArg`, passed with `convention`.
+CValue getFunctionArgumentValue(Value bbArg, ArgConvention convention);
+
 /// Helper to delete code in a region and mark it as unreachable when it's
 /// determined to be dead code.
 void markRegionUnreachable(Region *deadRegion, Location unreachableLoc);
 
+/// Returns true if an AnyOrigin appears anywhere in `type`.
+bool typeHasAnyOrigin(SharedState &shared, Type type);
+
 /// Check if a name is for an internal decl or not.
 bool isInternalName(StringRef name);
+
+/// Return how diagnostics name `structOp`, a struct declared with `__enum` or
+/// `__union`: "enum" or "union".
+StringRef getEnumOrUnionNoun(StructDeclOp structOp);
+
+/// Return the error for a malformed case of `structOp`, a struct declared with
+/// `__enum` or `__union`, which names the forms a case of it takes.
+StringRef getMalformedCaseMessage(StructDeclOp structOp);
 
 /// Generate the mangled name identifying the thunk that converts a value of
 /// signature `actual` into one of signature `expected`. The AST-level spelling

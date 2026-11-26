@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Supported architecture entry for the ModuleV3 DeepSeek-V2."""
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import (
@@ -45,4 +48,5 @@ deepseekV2_modulev3_arch = SupportedArchitecture(
     config=DeepseekV2Config,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )

@@ -386,6 +386,7 @@ struct TiledMatmul[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def row_iteration[
             tile_kernel_rows: Int
         ](row_offset: Int) {var sub_tile_n_k, var b_packed_tile, imm}:

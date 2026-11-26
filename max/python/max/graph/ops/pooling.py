@@ -23,6 +23,7 @@ from ..shape import Shape
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
+from .validation import assert_same_device
 
 
 def avg_pool2d(
@@ -197,6 +198,7 @@ def roi_align(
         )
     if mode not in ("AVG", "MAX"):
         raise ValueError(f"roi_align mode must be 'AVG' or 'MAX', got '{mode}'")
+    assert_same_device(input=input, rois=rois)
 
     device = input.type.device
     num_rois = rois.type.shape[0]

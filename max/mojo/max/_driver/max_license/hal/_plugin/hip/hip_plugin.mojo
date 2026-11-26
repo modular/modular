@@ -13,13 +13,13 @@
 
 from .._trait import HalPluginHooks
 from ..._machine import DeviceRef
-from ...execution_config._amd import ExecutionConfigForTarget
+from ...execution_config.gpu_execution_config import GPUExecutionConfiguration
 from ...extensions.hip import HIPHALExtensions
 
 
 struct HipHalPluginHooks(HalPluginHooks):
-    comptime ExecutionConfigType[device: DeviceRef] = ExecutionConfigForTarget[
-        device.spec.name
+    comptime ExecutionConfigType[device: DeviceRef] = GPUExecutionConfiguration[
+        has_constant_memory=True
     ]
     """Returns the execution configuration for the given device."""
 

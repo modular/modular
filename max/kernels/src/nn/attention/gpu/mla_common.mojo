@@ -23,7 +23,8 @@ struct SparseRowLayout(TrivialRegisterPassable):
     Every producer packs its valid entries first and pads with `-1`, so the
     number of valid entries is a closed-form function of how many keys the
     token sees. The decode mask uses it to keep `-1` slots out of the
-    softmax without reading the indices.
+    softmax without reading the indices. The SM100 decode also bounds each
+    row by its first `-1`, found by a search that relies on this packing.
 
     A k-pool producer (`kpool_expand_topk_kernel`) selects up to
     `pool_topk` pools of `kpool` keys, then, with `select_tail`, the

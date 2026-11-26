@@ -17,7 +17,7 @@ func.func @build_graph_missing_decl(
 // A mogg.graph_blob is the one launch of the calls it holds, so it can't hold
 // another.
 func.func @nested_graph_blob(%ctx: !mogg.context) {
-  // expected-error@+1 {{calls kernels only through 'mogg.call.opaque', but holds 'mogg.graph_blob'}}
+  // expected-error@+1 {{calls kernels only through 'mogg.call.opaque' and 'mogg.call.foreach', but holds 'mogg.graph_blob'}}
   mogg.graph_blob {
     mogg.graph_blob {
       mogg.call.opaque @missing.kernel context(%ctx : !mogg.context)
@@ -94,5 +94,23 @@ func.func @execute_device_not_declarative(%ctx: !mogg.context, %cfg: !mogg.launc
       mogg.call.execute_device @builtin_kernels.monoids.ReduceSum
     }
   }
+  return
+}
+
+// -----
+
+// A static permutation reads no permutations operand.
+func.func @transpose_static_with_permutations(%input: !mogg.tensor, %perm: !mogg.tensor) {
+  // expected-error@+1 {{takes a permutations operand only when some static permutation is dynamic}}
+  %0 = mogg.tensor.create.transpose(%input, %perm) <elementType = f32, mut = false, outShape = #mosh<ape[3, 2]> : !mosh.ape, staticPermutations = array<i64: 1, 0>> : !mogg.tensor
+  return
+}
+
+// -----
+
+// A run-time permutation is read from the permutations operand.
+func.func @transpose_dynamic_without_permutations(%input: !mogg.tensor) {
+  // expected-error@+1 {{takes a permutations operand only when some static permutation is dynamic}}
+  %0 = mogg.tensor.create.transpose(%input) <elementType = f32, mut = false, outShape = #mosh<ape[3, 2]> : !mosh.ape, staticPermutations = array<i64: -9223372036854775808, 0>> : !mogg.tensor
   return
 }

@@ -19,7 +19,9 @@ import json
 import logging
 import math
 import statistics
+from array import array
 from collections.abc import Sequence
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -29,6 +31,7 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
     ServerTokenStats,
+    compute_chunk_tpots,
 )
 from max.benchmark.benchmark_shared.serving_metrics import (
     _aggregate_gpu_stats,
@@ -124,8 +127,8 @@ def _calculate(
     )
 
 
-def test_per_chunk_tpot_collected_from_outputs() -> None:
-    """Per-chunk TPOT values are collected into step_tpot_ms."""
+def _calculate_one_five_token_request() -> BenchmarkResult:
+    """Returns metrics for one 5-token request with distinct ITL and TPOT."""
     output = RequestFuncOutput(
         success=True,
         latency=1.0,
@@ -135,14 +138,16 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         itl=[0.1, 0.2, 0.3],
         tpot=[0.05, 0.1, 0.15],
     )
-
-    tokenizer = _make_mock_tokenizer({"hello world": 5})
-
-    metrics = _calculate(
+    return _calculate(
         outputs=[output],
         dur_s=1.0,
-        tokenizer=tokenizer,
+        tokenizer=_make_mock_tokenizer({"hello world": 5}),
     )
+
+
+def test_per_chunk_tpot_collected_from_outputs() -> None:
+    """Per-chunk TPOT values are collected into step_tpot_ms."""
+    metrics = _calculate_one_five_token_request()
 
     assert metrics.text_data is not None
 
@@ -153,6 +158,107 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
     #                       = (1.0 - 0.1) / (5 - 1) = 0.225 s -> 225 ms.
     assert metrics.text_data.tpot_ms is not None
     assert math.isclose(metrics.text_data.tpot_ms.p50, 225.0, rel_tol=1e-3)
+
+
+def test_recorded_chunk_tpots_reach_the_result() -> None:
+    """Chunks recorded during streaming become ``step_tpot_ms``."""
+    tokenizer = MagicMock()
+    tokenizer.encode.return_value = list(range(5))
+    tokenizer.return_value = SimpleNamespace(input_ids=[[0, 1], [0]])
+    # "hello world" in three chunks: "hello" ends at 5, " wo" at 8, "rld" at
+    # 11. The first chunk is TTFT's, so two chunks carry per-step TPOT.
+    output = _make_request_func_output(
+        itl=[0.4, 0.4], pending_tpot_ends=[5, 8, 11]
+    )
+
+    result = build_text_generation_result(
+        outputs=[output],
+        benchmark_duration=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert output.tpot == [pytest.approx(0.2), pytest.approx(0.4)]
+    assert len(output.pending_tpot_ends) == 0
+    assert result.text_data is not None
+    assert result.text_data.step_tpot_ms is not None
+    assert math.isclose(result.text_data.step_tpot_ms.mean, 300.0, rel_tol=1e-6)
+
+
+def test_a_result_built_without_the_post_run_pass_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Metrics built from raw outputs say their per-chunk TPOT is missing."""
+    output = _make_request_func_output(
+        itl=[0.4, 0.4], pending_tpot_ends=[5, 8, 11]
+    )
+
+    with caplog.at_level(
+        logging.WARNING, logger="max.benchmark.benchmark_shared.serving_metrics"
+    ):
+        result = _calculate(
+            [output], dur_s=1.0, tokenizer=_make_tokenizer_mock()
+        )
+
+    assert result.text_data is not None
+    assert result.text_data.step_tpot_ms is None
+    warnings = [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "compute_chunk_tpots()" in rec.message
+    ]
+    assert len(warnings) == 1
+
+
+def test_a_single_chunk_response_without_the_pass_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """One end offset describes no interval, so there is no TPOT to lose."""
+    # A response with one text chunk: TTFT's chunk, and no ITL to divide.
+    output = _make_request_func_output(pending_tpot_ends=[5])
+
+    with caplog.at_level(
+        logging.WARNING, logger="max.benchmark.benchmark_shared.serving_metrics"
+    ):
+        _calculate([output], dur_s=1.0, tokenizer=_make_tokenizer_mock())
+
+    assert not [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "compute_chunk_tpots()" in rec.message
+    ]
+
+
+def test_a_result_built_after_the_post_run_pass_does_not_warn(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The pass drains the offsets, so the metrics step stays quiet."""
+    output = _make_request_func_output(
+        itl=[0.4, 0.4], pending_tpot_ends=[5, 8, 11]
+    )
+    tokenizer = MagicMock()
+    tokenizer.return_value = SimpleNamespace(input_ids=[[0, 1], [0]])
+    compute_chunk_tpots([output], tokenizer)
+
+    with caplog.at_level(
+        logging.WARNING, logger="max.benchmark.benchmark_shared.serving_metrics"
+    ):
+        _calculate([output], dur_s=1.0, tokenizer=tokenizer)
+
+    assert not [
+        rec
+        for rec in caplog.records
+        if rec.levelno == logging.WARNING
+        and "compute_chunk_tpots()" in rec.message
+    ]
 
 
 def test_tpot_both_definitions() -> None:
@@ -309,23 +415,7 @@ def test_empty_outputs_no_crash() -> None:
 
 def test_itl_metrics_unchanged() -> None:
     """ITL metrics remain unchanged by the TPOT refactor."""
-    output = RequestFuncOutput(
-        success=True,
-        latency=1.0,
-        ttft=0.1,
-        prompt_len=10,
-        generated_text="hello world",
-        itl=[0.1, 0.2, 0.3],
-        tpot=[0.05, 0.1, 0.15],
-    )
-
-    tokenizer = _make_mock_tokenizer({"hello world": 5})
-
-    metrics = _calculate(
-        outputs=[output],
-        dur_s=1.0,
-        tokenizer=tokenizer,
-    )
+    metrics = _calculate_one_five_token_request()
 
     assert metrics.text_data is not None
 
@@ -619,32 +709,6 @@ def test_request_submit_time_defaults_to_none() -> None:
     assert output.request_complete_time is None
 
 
-def test_request_submit_time_set_on_output() -> None:
-    """request_submit_time can be set and is preserved through metrics."""
-    output = RequestFuncOutput(
-        success=True,
-        latency=1.0,
-        ttft=0.1,
-        prompt_len=10,
-        generated_text="hello",
-        itl=[0.1],
-        tpot=[0.1],
-        request_submit_time=100.5,
-    )
-
-    assert output.request_submit_time == 100.5
-
-    tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics = _calculate(
-        outputs=[output],
-        dur_s=1.0,
-        tokenizer=tokenizer,
-    )
-    assert metrics.text_data is not None
-    # Metrics are computed normally regardless of submit time
-    assert metrics.text_data.completed == 1
-
-
 def test_measured_duration_uses_measured_window() -> None:
     """When skipping is applied, duration and throughput reflect the measured window only."""
     # 10 warmup requests: submit every 1s starting at t=0, each takes 5s.
@@ -837,105 +901,6 @@ def test_request_complete_time_property() -> None:
     assert len(submit_times) == len(complete_times)
 
 
-def test_skip_uses_submit_time_for_head_complete_time_for_tail() -> None:
-    """skip_first targets earliest submits, skip_last targets latest completes.
-
-    Mirrors a multi-turn flat list, where outputs arrive in
-    ``[session0_turns, session1_turns, ...]`` block order rather than
-    chronological order. The dispatch-order slice would silently target the
-    wrong requests; the timing-based selection picks the right ones.
-    """
-    # Three "sessions" of two turns each, flattened in block order. Submit/
-    # complete times are intentionally non-monotonic vs. iteration order.
-    outputs = [
-        # session 0: starts first, finishes early
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s0t0",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=0.0,  # earliest submit overall
-        ),
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s0t1",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=2.0,
-        ),
-        # session 1: middle
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s1t0",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=0.5,
-        ),
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s1t1",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=3.0,
-        ),
-        # session 2: starts last, last turn finishes last (latest complete)
-        RequestFuncOutput(
-            success=True,
-            latency=1.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s2t0",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=1.0,
-        ),
-        RequestFuncOutput(
-            success=True,
-            latency=5.0,
-            ttft=0.1,
-            prompt_len=10,
-            generated_text="s2t1",
-            itl=[0.1],
-            tpot=[0.1],
-            request_submit_time=4.0,  # complete = 9.0, latest overall
-        ),
-    ]
-
-    tokenizer = _make_mock_tokenizer(
-        {"s0t0": 2, "s0t1": 2, "s1t0": 2, "s1t1": 2, "s2t0": 2, "s2t1": 2}
-    )
-
-    metrics = _calculate(
-        outputs=outputs,
-        dur_s=10.0,
-        tokenizer=tokenizer,
-        skip_first_n_requests=1,
-        skip_last_n_requests=1,
-    )
-
-    assert metrics.text_data is not None
-
-    # Head trim drops s0t0 (submit=0.0, the earliest).
-    # Tail trim drops s2t1 (complete=9.0, the latest).
-    # Dispatch-order slicing would have dropped s0t0 and s2t1 here too —
-    # but only because outputs[0] happens to be the earliest submit and
-    # outputs[-1] happens to be the latest complete. Use the asymmetric
-    # case below to distinguish.
-    assert metrics.text_data.completed == 4
-
-
 def test_skip_distinguishes_dispatch_order_from_timing() -> None:
     """Head/tail trim uses timing, not iteration order.
 
@@ -1076,7 +1041,10 @@ def _make_request_func_output(
     latency: float = 1.0,
     ttft: float = 0.1,
     itl: list[float] | None = None,
+    pending_tpot_ends: Sequence[int] = (),
     request_submit_time: float | None = 0.0,
+    stream_events_per_read: dict[int, int] | None = None,
+    itl_unresolved: int = 0,
 ) -> RequestFuncOutput:
     return RequestFuncOutput(
         success=True,
@@ -1085,7 +1053,10 @@ def _make_request_func_output(
         prompt_len=prompt_len,
         generated_text=generated_text,
         itl=itl or [],
+        itl_unresolved=itl_unresolved,
+        pending_tpot_ends=array("I", pending_tpot_ends),
         request_submit_time=request_submit_time,
+        stream_events_per_read=stream_events_per_read or {},
     )
 
 
@@ -1144,6 +1115,118 @@ def _outputs_with_completion_tokens(
         output.server_token_stats = ServerTokenStats(completion_tokens=count)
         outputs.append(output)
     return outputs
+
+
+def _stream_read_result(
+    outputs: list[RequestFuncOutput],
+) -> BenchmarkResult:
+    return build_text_generation_result(
+        outputs=outputs,
+        benchmark_duration=1.0,
+        tokenizer=_make_tokenizer_mock(),
+        gpu_metrics=None,
+        cpu_metrics=None,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+
+def test_build_text_generation_result_pools_stream_reads() -> None:
+    """Bunched socket reads are pooled over the run into the diagnostics."""
+    result = _stream_read_result(
+        [
+            _make_request_func_output(stream_events_per_read={1: 3, 3: 1}),
+            _make_request_func_output(stream_events_per_read={1: 4}),
+        ]
+    )
+
+    assert result.stream_reads == 8
+    assert result.stream_reads_bunched == 1
+    assert result.events_per_read_max == 3
+    assert result.events_per_read_p99 == 3.0
+    assert result.events_per_read_mean == pytest.approx(10 / 8)
+    # Always reported, even when the fields only describe a healthy client.
+    assert result.result_groups is not None
+    assert result.result_groups.diagnostics is not None
+    assert result.result_groups.diagnostics.stream_reads_bunched == 1
+    # And carried flat, alongside the namespaced group, for the JSON readers
+    # that predate it.
+    flat = result.to_result_dict()
+    assert flat["stream_reads"] == 8
+    assert flat["stream_reads_bunched"] == 1
+    assert flat["events_per_read_max"] == 3
+    assert flat["events_per_read_p99"] == 3.0
+    assert flat["events_per_read_mean"] == pytest.approx(10 / 8)
+
+
+def test_build_text_generation_result_omits_read_stats_without_reads() -> None:
+    """No streamed text means no samples: ``None``, not zeros that read as data."""
+    result = _stream_read_result([_make_request_func_output()])
+
+    assert result.stream_reads is None
+    assert result.stream_reads_bunched is None
+    assert result.events_per_read_max is None
+    assert result.events_per_read_p99 is None
+    assert result.events_per_read_mean is None
+    assert "stream_reads" not in result.to_result_dict()
+    # Nothing in the diagnostics group claims a read sample either; the group
+    # itself is built for the steady-state figures this run does have.
+    diagnostics = (
+        result.result_groups.diagnostics if result.result_groups else None
+    )
+    assert diagnostics is None or diagnostics.stream_reads is None
+
+
+def test_build_text_generation_result_pools_itl_unresolved() -> None:
+    """The ITL shortfall is pooled, so a short series is explainable."""
+    result = _stream_read_result(
+        [
+            _make_request_func_output(
+                stream_events_per_read={3: 1}, itl_unresolved=2
+            ),
+            _make_request_func_output(
+                stream_events_per_read={1: 2}, itl_unresolved=0
+            ),
+            _make_request_func_output(
+                stream_events_per_read={2: 1}, itl_unresolved=1
+            ),
+        ]
+    )
+
+    assert result.itl_unresolved == 3
+    # Carried flat with the read stats it explains.
+    assert result.to_result_dict()["itl_unresolved"] == 3
+
+
+def test_build_text_generation_result_omits_itl_unresolved_without_reads() -> (
+    None
+):
+    """No streamed text means no shortfall to explain: ``None``, not zero."""
+    result = _stream_read_result(
+        [
+            _make_request_func_output(),
+            _make_request_func_output(itl_unresolved=4),
+        ]
+    )
+
+    assert result.itl_unresolved is None
+    assert "itl_unresolved" not in result.to_result_dict()
+
+
+def test_build_text_generation_result_reports_unbunched_reads() -> None:
+    """A run whose reads each carried one event still reports the stats."""
+    result = _stream_read_result(
+        [_make_request_func_output(stream_events_per_read={1: 5})]
+    )
+
+    assert result.stream_reads == 5
+    assert result.stream_reads_bunched == 0
+    assert result.events_per_read_max == 1
+    assert result.events_per_read_p99 == 1.0
+    assert result.events_per_read_mean == 1.0
 
 
 def test_build_text_generation_result_attaches_aggregate_server_stats() -> None:
@@ -1423,6 +1506,11 @@ def test_build_text_generation_result_filtering_disabled_uses_skip_counts() -> (
     assert result.text_data is not None
     assert result.text_data.completed == 185
     assert result.to_result_dict()["steady_state_mode"] == "disabled"
+    # Steady-state fields are attached after the result is built, so they reach
+    # ``result_groups`` only because the update rebuilds the groups.
+    groups = result.result_groups
+    assert groups is not None and groups.diagnostics is not None
+    assert groups.diagnostics.steady_state_mode == "disabled"
 
 
 def test_build_text_generation_result_filtering_disabled_keeps_all_requests() -> (

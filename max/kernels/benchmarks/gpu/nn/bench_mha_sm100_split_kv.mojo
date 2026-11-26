@@ -168,6 +168,7 @@ def run[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fn(
         mut b: Bencher,
     ) raises {

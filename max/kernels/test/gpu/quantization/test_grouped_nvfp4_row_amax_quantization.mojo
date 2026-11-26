@@ -460,11 +460,7 @@ def _launch_fused[
     )
     var src_t = TileTensor(dev_src, row_major(Coord(src_rows, Idx[N])))
     if gather:
-        var idx_t = (
-            TileTensor(dev_indices, row_major(Coord(total)))
-            .as_unsafe_any_origin()
-            .as_imm()
-        )
+        var idx_t = TileTensor(dev_indices, row_major(Coord(total))).as_imm()
         if top_k == 6:
             grouped_quantize_nvfp4_row_amax[
                 input_fn=input_fn,

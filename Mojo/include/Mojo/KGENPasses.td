@@ -371,6 +371,39 @@ def UpdateMaterialization : Pass<"update-materialization"> {
 }
 
 //===----------------------------------------------------------------------===//
+// LowerVarAllocs
+//===----------------------------------------------------------------------===//
+
+def LowerVarAllocs : Pass<"lower-var-allocs"> {
+  let summary = "Give variables outside the default address space storage.";
+  let description = [{
+    Rewrites each `pop.var_alloc` op into storage for its address space.
+
+    A variable whose parametric address space resolves to the default address
+    space gets a default stack slot on every target.
+
+    A target with shared memory gives a variable in its stack address space a
+    default stack slot cast to that address space, and a variable in its shared
+    memory address space a shared-memory global variable. It diagnoses any
+    other address space.
+
+    A target without shared memory, such as the host, gives every variable a
+    stack slot in its address space.
+  }];
+
+  let options = [
+    Option<"sharedAddressSpace", "shared-address-space", "int64_t", "-1",
+           "The target's shared memory address space, or -1 if it has no "
+           "shared memory.">,
+    Option<"stackAddressSpace", "stack-address-space", "int64_t", "-1",
+           "The address space the target requires for stack slots, or -1 if "
+           "it does not constrain it.">,
+  ];
+
+  let dependentDialects = ["POP::POPDialect"];
+}
+
+//===----------------------------------------------------------------------===//
 // SetFastMathFlags
 //===----------------------------------------------------------------------===//
 

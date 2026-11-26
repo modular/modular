@@ -29,11 +29,11 @@ namespace M::MAP {
 
 namespace {
 
-// The GCD of the limit `body`'s ops need and the one it already has, which
-// constrains its width too: running the pass again keeps a limit.
+// The GCD of the width `body`'s ops need and the one it already has, which
+// constrains its width too: running the pass again keeps a width.
 TypedAttr combinedLimit(Operation *body, TypedAttr existing, Region &region) {
-  return GCDAttr::getSimplified(body->getContext(),
-                                {existing, getMaxSimdWidth(region)});
+  return GCDAttr::getSimplified(
+      body->getContext(), {existing, MaxSimdWidthInterface::ofRegion(region)});
 }
 
 struct InferMaxSimdWidthPass
@@ -41,7 +41,7 @@ struct InferMaxSimdWidthPass
   using Base::Base;
 
   void runOnOperation() override {
-    // Both outlined bodies carry the limit of the ops in their region; the
+    // Both outlined bodies carry the width the ops in their region need; the
     // kernel ops they come from (`IterOpInterface`) carry none.
     auto update = [](auto body) {
       body.setMaxSimdWidthAttr(

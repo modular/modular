@@ -193,11 +193,12 @@ def MAP_TransposeSpecAttr : MAP_Attr<"TransposeSpec", "index.transpose.spec"> {
 
 def MAP_GCDAttr : MAP_Attr<"GCD", "gcd",
                           [DeclareAttrInterfaceMethods<TypedAttrInterface>]> {
-  let summary = "The GCD of SIMD width limits";
+  let summary = "The GCD of SIMD widths";
   let description = [{
-    A limit on a SIMD width is a number every width must divide. It is a dim:
-    a constant, a parameter known only at run time, or this attribute, the
-    GCD of other limits. Its type is the MOSH dim type, so a GCD nests:
+    A SIMD width is a number every width of the enclosing kernel must divide.
+    It is a dim: a constant, a parameter known only at run time, or this
+    attribute, the GCD of other widths. Its type is the MOSH dim type, so a
+    GCD nests:
 
     ```mlir
     #map.gcd<[6, 10]>
@@ -205,31 +206,51 @@ def MAP_GCDAttr : MAP_Attr<"GCD", "gcd",
     #map.gcd<[#map.gcd<[N0, 6]>, 10]>
     ```
 
-    `getSimplified` builds the GCD of some limits in normal form, which
-    `MAP::simplifyWidthLimit` also gives any limit: nested GCDs are flattened,
-    constants folded, duplicate dims dropped, a 1 absorbs the rest, and a GCD
-    of one element is that element, so the result is a constant, a parameter
-    or a GCD. A parameter must be declared, not an
-    expression: the lowering hands each one to the kernel by name
-    (`buildShape`).
+    `getSimplified` puts the GCD of some widths in normal form, which it also
+    gives a single width: nested GCDs are flattened, constants folded,
+    duplicate dims dropped, a 1 absorbs the rest, and a GCD of one element is
+    that element, so the result is a constant, a parameter or a GCD. A
+    parameter must be declared, not an expression: the lowering hands each one
+    to the kernel by name (`buildShape`).
   }];
 
-  let parameters = (ins ArrayRefParameter<"::mlir::TypedAttr">:$limits);
+  let parameters = (ins ArrayRefParameter<"::mlir::TypedAttr">:$widths);
 
   let hasCustomAssemblyFormat = 1;
   let genVerifyDecl = 1;
 
   let extraClassDeclaration = [{
-    /// Returns the GCD of `limits` in normal form (see above), ignoring null
-    /// limits; null when none is left.
+    /// Whether `attr` is a SIMD width: a constant dim, a parameter dim, or a
+    /// `#map.gcd` of them.
+    static bool isSimdWidth(::mlir::Attribute attr);
+
+    /// Puts `widths` in normal form (see above), ignoring null widths; null
+    /// when none is left.
     static ::mlir::TypedAttr getSimplified(
-        ::mlir::MLIRContext *ctx, ::llvm::ArrayRef<::mlir::TypedAttr> limits);
+        ::mlir::MLIRContext *ctx,
+        ::llvm::ArrayRef<::mlir::TypedAttr> widths);
+
+    /// `width` in normal form (see above); null for null.
+    static ::mlir::TypedAttr getSimplified(::mlir::TypedAttr width);
+
+    /// Appends the constant and parameter dims `width` is the GCD of, nested
+    /// GCDs flattened.
+    static void collectDims(::mlir::TypedAttr width,
+                            ::llvm::SmallVectorImpl<::mlir::TypedAttr> &dims);
+
+    /// Parses a width: a dim (`2`, `N0`) or a `#map.gcd`.
+    static ::mlir::ParseResult parseSimdWidth(::mlir::AsmParser &parser,
+                                              ::mlir::TypedAttr &width);
+
+    /// Prints a width as `parseSimdWidth` reads it.
+    static void printSimdWidth(::mlir::AsmPrinter &printer,
+                               ::mlir::TypedAttr width);
   }];
 }
 
-// A SIMD width limit, as a kernel body's `max_simd_width`: a constant or a
-// parameter dim, or a `#map.gcd` of them (`MAP::isWidthLimit`).
-def MAP_WidthLimitAttr : Attr<CPred<"::M::MAP::isWidthLimit($_self)">,
+// A SIMD width, as a kernel body's `max_simd_width`: a constant or a parameter
+// dim, or a `#map.gcd` of them (`GCDAttr::isSimdWidth`).
+def MAP_SimdWidthAttr : Attr<CPred<"::M::MAP::GCDAttr::isSimdWidth($_self)">,
     "a constant or parameter dim, or a #map.gcd of them"> {
   let storageType = "::mlir::TypedAttr";
   let returnType = "::mlir::TypedAttr";

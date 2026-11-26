@@ -21,7 +21,6 @@ from max.gpu.host.info import is_cpu, is_gpu
 from layout import Coord, TileTensor
 from std.utils.coord import DynamicCoord
 
-from std.utils.index import IndexList
 from std.utils.numerics import min_or_neg_inf
 
 from .shapes import get_sliding_window_out_dim
@@ -58,7 +57,7 @@ def pool_shape_ceil[
     strides_buf: TileTensor[mut=False, strides_type, ...],
     dilations_buf: TileTensor[mut=False, dilations_type, ...],
     paddings_buf: TileTensor[mut=False, paddings_type, ...],
-) raises -> IndexList[input_buf.rank]:
+) raises -> DynamicCoord[.int, input_buf.rank]:
     """Computes the output shape of a pooling operation using ceil rounding for the spatial dimensions.
 
     Parameters:
@@ -101,7 +100,7 @@ def pool_shape[
     strides_buf: TileTensor[mut=False, strides_type, ...],
     dilations_buf: TileTensor[mut=False, dilations_type, ...],
     paddings_buf: TileTensor[mut=False, paddings_type, ...],
-) raises -> IndexList[input_buf.rank]:
+) raises -> DynamicCoord[.int, input_buf.rank]:
     """Computes the output shape of a pooling operation using floor rounding for the spatial dimensions.
 
     Parameters:
@@ -145,7 +144,7 @@ def pool_shape_impl[
     strides_buf: TileTensor[mut=False, strides_type, ...],
     dilations_buf: TileTensor[mut=False, dilations_type, ...],
     paddings_buf: TileTensor[mut=False, paddings_type, ...],
-) raises -> IndexList[input_buf.rank]:
+) raises -> DynamicCoord[.int, input_buf.rank]:
     """
     Compute the output shape of a pooling operation, and assert the inputs are
     compatible. Works for 2D pool operations only in the NHWC format.
@@ -197,9 +196,9 @@ def pool_shape_impl[
     # Assume input has layout NHWC
     var batch_size = Int(input_buf.dim(0))
     var input_channels = Int(input_buf.dim(3))
-    var output_shape = IndexList[input_buf.rank]()
-    output_shape[0] = batch_size
-    output_shape[input_buf.rank - 1] = input_channels
+    var output_shape = DynamicCoord[.int, input_buf.rank]()
+    output_shape.replace_dynamic[0](batch_size)
+    output_shape.replace_dynamic[input_buf.rank - 1](input_channels)
 
     comptime for i in range(0, input_buf.rank - 2):
         var input_spatial_dim = Int(input_buf.dim(i + 1))
@@ -212,7 +211,7 @@ def pool_shape_impl[
         )
         if output_spatial_dim <= 0:
             raise Error("[pooling] output spatial dim must be positive")
-        output_shape[i + 1] = output_spatial_dim
+        output_shape.replace_dynamic[i + 1](output_spatial_dim)
 
     return output_shape
 

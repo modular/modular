@@ -14,7 +14,7 @@
 #include "MLRT/Driver/DeviceContext/DeviceContext.h"
 #include "AsyncRT/Runtime/Globals/VirtualDeviceGlobals.h"
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "ScopedEnvVar.h"
 #include "Target/lib/Support/HostMemory.h"
 #include "TestUtils.h"
@@ -676,7 +676,7 @@ TEST(DeviceContextTest, MemoryManager) {
 
   MemoryManagerFreeList &bufCache = *device->memoryManager().freeList();
 
-  const Device::AllocMode mode = Device::AllocMode::SYNC;
+  const AllocatorContext::AllocMode mode = AllocatorContext::AllocMode::SYNC;
   ASSIGN_NO_ERR(void *, base, bufCache.allocate(1, mode));
   char *cacheBase = static_cast<char *>(base);
   EXPECT_NO_ERR(bufCache.free(cacheBase));

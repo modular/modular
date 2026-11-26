@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo -Dtest=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
+# RUN: not --crash %mojo -Dtest=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
 
 from std.memory.alloc import alloc, dealloc, Layout, ThinAllocation
 from std.sys import size_of

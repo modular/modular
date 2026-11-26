@@ -66,7 +66,7 @@ from max.serve.telemetry.common import (
     _telemetry_disabled,
     send_telemetry_log,
 )
-from max.serve.telemetry.metrics import METRICS
+from max.serve.telemetry.metrics import METRICS, MetricClient
 from max.serve.telemetry.ttft_join import announce_enabled
 from max.serve.worker_interface import RequestQueueFull
 from max.serve.worker_interface._zmq_queue import generate_zmq_ipc_path
@@ -121,12 +121,16 @@ class ServingTokenGeneratorSettings:
 async def lifespan(
     app: FastAPI,
     settings: Settings,
-    serving_settings: ServingTokenGeneratorSettings,
+    serving_settings: ServingTokenGeneratorSettings | None,
     zmq_endpoint_base: str,
 ) -> AsyncGenerator[None]:
-    """Runs the app's startup and shutdown work."""
+    """Runs the app's startup and shutdown work.
+
+    ``serving_settings`` describes the model this host serves. It is ``None``
+    when the caller supplies routes without a local model worker or pipeline.
+    """
     try:
-        if not _telemetry_disabled(settings):
+        if serving_settings is not None and not _telemetry_disabled(settings):
             send_telemetry_log(
                 serving_settings.pipeline_config.models.model_name
             )
@@ -163,131 +167,16 @@ async def lifespan(
         METRICS.export_zero_client_disconnect_cancellations()
         METRICS.export_zero_structured_output_requests()
 
-        # start model worker
-
-        override_architecture: str | None = None
-
-        model_worker_interface = ZmqModelWorkerInterface[
-            BaseContext, PipelineOutput
-        ](
-            serving_settings.task,
-            PIPELINE_REGISTRY.retrieve_context_type(
-                serving_settings.pipeline_config,
-                override_architecture=override_architecture,
-                task=serving_settings.task,
-            ),
-            # Cap the in-transit request backlog to the model worker (HTTP 429
-            # when full). ``None`` keeps the queue unbounded.
-            request_queue_size=settings.max_queue_size,
-        )
-        model_worker = await exit_stack.enter_async_context(
-            start_model_worker(
-                serving_settings.model_factory,
-                serving_settings.pipeline_config,
-                settings,
-                metric_client,
-                model_worker_interface=model_worker_interface,
-                zmq_endpoint_base=zmq_endpoint_base,
-                memory_plan=serving_settings.memory_plan,
-            )
-        )
-
-        lora_queue: LoRAQueue | None = (
-            LoRAQueue(
-                zmq_endpoint_base,
-                serving_settings.pipeline_config.lora.lora_paths,
-            )
-            if serving_settings.pipeline_config.lora
-            else None
-        )
-
-        METRICS.pipeline_load(
-            serving_settings.pipeline_config.models.model_name
-        )
-
-        pipeline = {
-            PipelineTask.TEXT_GENERATION: lambda: TokenGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                lora_queue=lora_queue,
-                model_worker=model_worker,
-                reasoning_parser_name=serving_settings.reasoning_parser_name,
-                min_chunk_tokens=settings.stream_min_chunk_tokens,
-            ),
-            PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                lora_queue=lora_queue,
-                model_worker=model_worker,
-            ),
-            # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
-            PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                model_worker=model_worker,
-                lora_queue=lora_queue,
-            ),
-            # Audio generation serves /v1/audio/speech and /v1/responses, both
-            # of which go through GeneralPipelineHandler.
-            PipelineTask.AUDIO_GENERATION: lambda: GeneralPipelineHandler(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                model_worker=model_worker,
-                lora_queue=lora_queue,
-            ),
-        }[serving_settings.task]()
-
-        # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
-        # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
-        # OpenResponses API uses GeneralPipelineHandler
-        app.state.pipeline = pipeline
-        app.state.pipeline_config = serving_settings.pipeline_config
-        # The worker sized its KV cache once loaded and may have lowered the
-        # planned max length; the tokenizer refuses prompts past it.
-        app.state.memory_plan = (
-            model_worker.memory_plan or serving_settings.memory_plan
-        )
-        served_length = (
-            app.state.memory_plan.planned_max_length
-            if app.state.memory_plan is not None
-            else None
-        )
-        tokenizer_length = getattr(
-            serving_settings.tokenizer, "max_length", None
-        )
-        if (
-            served_length is not None
-            and isinstance(tokenizer_length, int)
-            and served_length < tokenizer_length
-        ):
-            tokenizer: Any = serving_settings.tokenizer
-            tokenizer.max_length = served_length
-        # The served task, for routes that only mean something for one of them:
-        # every API type is mounted regardless, so a route with no counterpart
-        # in the served model has to refuse the request itself.
-        app.state.task = serving_settings.task
-        if serving_settings.task == PipelineTask.TEXT_GENERATION:
-            # Probes the checkpoint (a Hub request for a repo id), so keep it
-            # off the event loop.
-            app.state.decision_format = await asyncio.to_thread(
-                detect_decision_format,
-                serving_settings.pipeline_config.models["main"].model_path,
-            )
-
-        # Also store as handler for OpenResponses API route compatibility
-        # For the media tasks, this is the same as pipeline
-        # For other tasks, we also create a separate handler instance
-        if serving_settings.task in (
-            PipelineTask.PIXEL_GENERATION,
-            PipelineTask.AUDIO_GENERATION,
-        ):
-            app.state.handler = pipeline
+        if serving_settings is None:
+            logger.info("Serving API routes without a local model worker.")
         else:
-            app.state.handler = GeneralPipelineHandler(
-                model_name=serving_settings.pipeline_config.models.model_name,
-                tokenizer=serving_settings.tokenizer,
-                model_worker=model_worker,
-                lora_queue=lora_queue,
+            await _start_local_pipeline(
+                app,
+                settings,
+                serving_settings,
+                exit_stack,
+                metric_client,
+                zmq_endpoint_base,
             )
 
         logger.info(
@@ -299,6 +188,141 @@ async def lifespan(
         yield
 
         logger.info("Shutting down workers...")
+
+
+async def _start_local_pipeline(
+    app: FastAPI,
+    settings: Settings,
+    serving_settings: ServingTokenGeneratorSettings,
+    exit_stack: AsyncExitStack,
+    metric_client: MetricClient,
+    zmq_endpoint_base: str,
+) -> None:
+    """Starts the model worker and the pipeline routes are served from.
+
+    Everything here needs a local model, which is exactly what a
+    remote-engine host does not have.
+    """
+    override_architecture: str | None = None
+
+    model_worker_interface = ZmqModelWorkerInterface[
+        BaseContext, PipelineOutput
+    ](
+        serving_settings.task,
+        PIPELINE_REGISTRY.retrieve_context_type(
+            serving_settings.pipeline_config,
+            override_architecture=override_architecture,
+            task=serving_settings.task,
+        ),
+        # Cap the in-transit request backlog to the model worker (HTTP 429
+        # when full). ``None`` keeps the queue unbounded.
+        request_queue_size=settings.max_queue_size,
+    )
+    model_worker = await exit_stack.enter_async_context(
+        start_model_worker(
+            serving_settings.model_factory,
+            serving_settings.pipeline_config,
+            settings,
+            metric_client,
+            model_worker_interface=model_worker_interface,
+            zmq_endpoint_base=zmq_endpoint_base,
+            memory_plan=serving_settings.memory_plan,
+        )
+    )
+
+    lora_queue: LoRAQueue | None = (
+        LoRAQueue(
+            zmq_endpoint_base,
+            serving_settings.pipeline_config.lora.lora_paths,
+        )
+        if serving_settings.pipeline_config.lora
+        else None
+    )
+
+    METRICS.pipeline_load(serving_settings.pipeline_config.models.model_name)
+
+    pipeline = {
+        PipelineTask.TEXT_GENERATION: lambda: TokenGeneratorPipeline(
+            model_name=serving_settings.pipeline_config.models.model_name,
+            tokenizer=serving_settings.tokenizer,
+            lora_queue=lora_queue,
+            model_worker=model_worker,
+            reasoning_parser_name=serving_settings.reasoning_parser_name,
+            min_chunk_tokens=settings.stream_min_chunk_tokens,
+        ),
+        PipelineTask.EMBEDDINGS_GENERATION: lambda: TokenGeneratorPipeline(
+            model_name=serving_settings.pipeline_config.models.model_name,
+            tokenizer=serving_settings.tokenizer,
+            lora_queue=lora_queue,
+            model_worker=model_worker,
+        ),
+        # Pixel generation uses only the OpenResponses API via GeneralPipelineHandler
+        PipelineTask.PIXEL_GENERATION: lambda: GeneralPipelineHandler(
+            model_name=serving_settings.pipeline_config.models.model_name,
+            tokenizer=serving_settings.tokenizer,
+            model_worker=model_worker,
+            lora_queue=lora_queue,
+        ),
+        # Audio generation serves /v1/audio/speech and /v1/responses, both
+        # of which go through GeneralPipelineHandler.
+        PipelineTask.AUDIO_GENERATION: lambda: GeneralPipelineHandler(
+            model_name=serving_settings.pipeline_config.models.model_name,
+            tokenizer=serving_settings.tokenizer,
+            model_worker=model_worker,
+            lora_queue=lora_queue,
+        ),
+    }[serving_settings.task]()
+
+    # Store pipeline (may be GeneralPipelineHandler or modality-specific wrapper)
+    # Legacy API routes (OpenAI, KServe, SageMaker) use modality-specific wrappers
+    # OpenResponses API uses GeneralPipelineHandler
+    app.state.pipeline = pipeline
+    app.state.pipeline_config = serving_settings.pipeline_config
+    # The worker sized its KV cache once loaded and may have lowered the
+    # planned max length; the tokenizer refuses prompts past it.
+    app.state.memory_plan = (
+        model_worker.memory_plan or serving_settings.memory_plan
+    )
+    served_length = (
+        app.state.memory_plan.planned_max_length
+        if app.state.memory_plan is not None
+        else None
+    )
+    tokenizer_length = getattr(serving_settings.tokenizer, "max_length", None)
+    if (
+        served_length is not None
+        and isinstance(tokenizer_length, int)
+        and served_length < tokenizer_length
+    ):
+        tokenizer: Any = serving_settings.tokenizer
+        tokenizer.max_length = served_length
+    # The served task, for routes that only mean something for one of them:
+    # every API type is mounted regardless, so a route with no counterpart
+    # in the served model has to refuse the request itself.
+    app.state.task = serving_settings.task
+    if serving_settings.task == PipelineTask.TEXT_GENERATION:
+        # Probes the checkpoint (a Hub request for a repo id), so keep it
+        # off the event loop.
+        app.state.decision_format = await asyncio.to_thread(
+            detect_decision_format,
+            serving_settings.pipeline_config.models["main"].model_path,
+        )
+
+    # Also store as handler for OpenResponses API route compatibility
+    # For the media tasks, this is the same as pipeline
+    # For other tasks, we also create a separate handler instance
+    if serving_settings.task in (
+        PipelineTask.PIXEL_GENERATION,
+        PipelineTask.AUDIO_GENERATION,
+    ):
+        app.state.handler = pipeline
+    else:
+        app.state.handler = GeneralPipelineHandler(
+            model_name=serving_settings.pipeline_config.models.model_name,
+            tokenizer=serving_settings.tokenizer,
+            model_worker=model_worker,
+            lora_queue=lora_queue,
+        )
 
 
 def version() -> JSONResponse:
@@ -370,9 +394,17 @@ async def _request_queue_full_exception_handler(
 
 def fastapi_app(
     settings: Settings,
-    serving_settings: ServingTokenGeneratorSettings,
+    serving_settings: ServingTokenGeneratorSettings | None,
 ) -> FastAPI:
-    """Builds the FastAPI app from the server settings."""
+    """Builds the FastAPI app from the server settings.
+
+    Args:
+        settings: Server settings.
+        serving_settings: The model this host serves, or ``None`` for a host
+            that serves a remote engine and loads no local model. In that
+            mode only routes that do not need a model worker are mounted.
+            The caller attaches any additional routes and their lifespan.
+    """
     zmq_endpoint_base = generate_zmq_ipc_path()
 
     @asynccontextmanager
@@ -416,69 +448,79 @@ def fastapi_app(
     app.add_api_route("/version", version)
     app.add_api_route("/health", health)
 
-    reset_prefix_cache_frontend = ResetPrefixCacheFrontend(zmq_endpoint_base)
+    if serving_settings is not None:
+        # Every route here answers from a local model worker, which this
+        # host does not have when it serves a remote engine.
+        reset_prefix_cache_frontend = ResetPrefixCacheFrontend(
+            zmq_endpoint_base
+        )
 
-    async def reset_prefix_cache() -> Response:
-        """Reset the prefix cache."""
-        try:
-            model_config = serving_settings.pipeline_config.model
-        except ValueError:
-            return Response(
-                status_code=400,
-                content="No main model configured (diffusion pipeline). Ignoring request",
-            )
-        if not model_config.kv_cache.enable_prefix_caching:
-            return Response(
-                status_code=400,
-                content="Prefix caching is not enabled. Ignoring request",
-            )
+        async def reset_prefix_cache() -> Response:
+            """Reset the prefix cache."""
+            # Declared optional; the guard above is what mounts this route.
+            assert serving_settings is not None
+            try:
+                model_config = serving_settings.pipeline_config.model
+            except ValueError:
+                return Response(
+                    status_code=400,
+                    content="No main model configured (diffusion pipeline). Ignoring request",
+                )
+            if not model_config.kv_cache.enable_prefix_caching:
+                return Response(
+                    status_code=400,
+                    content="Prefix caching is not enabled. Ignoring request",
+                )
 
-        reset_prefix_cache_frontend.enqueue_reset_prefix_cache()
-        return Response(status_code=200, content="Success")
+            reset_prefix_cache_frontend.enqueue_reset_prefix_cache()
+            return Response(status_code=200, content="Success")
 
-    app.add_api_route(
-        "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
-    )
+        app.add_api_route(
+            "/reset_prefix_cache", reset_prefix_cache, methods=["POST"]
+        )
 
-    eplb_stats_frontend = EplbStatsFrontend(zmq_endpoint_base)
+        eplb_stats_frontend = EplbStatsFrontend(zmq_endpoint_base)
 
-    async def eplb_stats() -> Response:
-        """Get the EPLB stats snapshot."""
-        if not settings.eplb_profile:
-            return Response(
-                status_code=404,
-                content="EPLB stats profiling is not enabled.",
-            )
-        try:
-            snap = await eplb_stats_frontend.fetch_snapshot()
-        except TimeoutError:
-            return Response(
-                status_code=504,
-                content="EPLB stats fetch timed out.",
-            )
-        return JSONResponse(snap.to_dict())
+        async def eplb_stats() -> Response:
+            """Get the EPLB stats snapshot."""
+            if not settings.eplb_profile:
+                return Response(
+                    status_code=404,
+                    content="EPLB stats profiling is not enabled.",
+                )
+            try:
+                snap = await eplb_stats_frontend.fetch_snapshot()
+            except TimeoutError:
+                return Response(
+                    status_code=504,
+                    content="EPLB stats fetch timed out.",
+                )
+            return JSONResponse(snap.to_dict())
 
-    app.add_api_route("/max_internal/eplb_stats", eplb_stats, methods=["GET"])
+        app.add_api_route(
+            "/max_internal/eplb_stats", eplb_stats, methods=["GET"]
+        )
 
-    # reset eplb stat endpoint
-    eplb_stats_reset_frontend = EplbStatsResetFrontend(zmq_endpoint_base)
+        # reset eplb stat endpoint
+        eplb_stats_reset_frontend = EplbStatsResetFrontend(zmq_endpoint_base)
 
-    async def eplb_stats_reset() -> Response:
-        """Reset the EP stats accumulator on the worker."""
-        if not settings.eplb_profile:
-            return Response(
-                status_code=404,
-                content="EP stats profiling is not enabled.",
-            )
-        eplb_stats_reset_frontend.enqueue_reset()
-        return Response(status_code=200, content="Success")
+        async def eplb_stats_reset() -> Response:
+            """Reset the EP stats accumulator on the worker."""
+            if not settings.eplb_profile:
+                return Response(
+                    status_code=404,
+                    content="EP stats profiling is not enabled.",
+                )
+            eplb_stats_reset_frontend.enqueue_reset()
+            return Response(status_code=200, content="Success")
 
-    app.add_api_route(
-        "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
-    )
-    for api_type in settings.api_types:
-        for route_module in ROUTES[api_type]:
-            app.include_router(route_module.router)
+        app.add_api_route(
+            "/max_internal/eplb_stats_reset", eplb_stats_reset, methods=["POST"]
+        )
+
+        for api_type in settings.api_types:
+            for route_module in ROUTES[api_type]:
+                app.include_router(route_module.router)
 
     app.state.settings = settings
 

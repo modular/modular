@@ -123,8 +123,19 @@ LogicalResult FnMetaOriginDataAttr::verifyFuncType(
     if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
       return emitError() << "'byref_result' argument must be the last argument";
 
+    // An unresolved convention is only valid on an argument whose type is
+    // also unresolved.
+    if (conv == ArgConvention::Unresolved) {
+      if (!::isa<UnresolvedType>(argType))
+        return emitError() << "argument #" << i
+                           << " with convention 'unresolved' in signature type "
+                              "should be a `!lit.unresolved` but got: "
+                           << argType;
+      continue;
+    }
+
     // Verify argument conventions.
-    if (hasAddress(conv) && !::isa<RefType>(argType)) {
+    if (hasAddress(conv) && !::isa<RefType, UnresolvedType>(argType)) {
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
              << "' in signature type should be a `!lit.ref` but got: "

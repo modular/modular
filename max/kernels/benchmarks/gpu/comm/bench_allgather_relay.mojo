@@ -190,14 +190,17 @@ def main() raises:
     ]
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def in_tile(rank: Int, length: Int) {imm} -> InTileType:
         return TileTensor(in_ptrs[rank], row_major(length)).as_imm()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def out_tile(rank: Int, src: Int, length: Int) {imm} -> OutTileType:
         return TileTensor(out_ptrs[rank * GROUP + src], row_major(length))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_baseline(
         rank: Int,
         ctx: DeviceContext[],
@@ -245,6 +248,7 @@ def main() raises:
         ](length * size_of[dtype]())
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_relay(
         rank: Int,
         ctx: DeviceContext[],

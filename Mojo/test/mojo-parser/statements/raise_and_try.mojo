@@ -296,6 +296,33 @@ def merged_numeric_try():
         var converted: Float32 = err
 
 
+# CHECK-LABEL: lit.fn @"typed_except
+def typed_except():
+    # CHECK: %__try_error__ = lit.var.decl "__try_error__" synth : !lit.ref{{.*}}Int
+    # CHECK-NEXT: %err = lit.var.decl "err" var : !lit.ref{{.*}}Float32
+    try:
+        # CHECK: %[[INT_ERROR:.*]] = lit.ref.load {{.*}} : {{.*}}Int
+        # CHECK-NEXT: %[[FLOAT_ERROR:.*]] = lit.call tail {{.*}}SIMD::@"__init__{{.*}}(%[[INT_ERROR]])
+        # CHECK-NEXT: %[[FLOAT_ERROR_ALIAS:.*]] = kgen.rebind %[[FLOAT_ERROR]]
+        # CHECK-NEXT: lit.ref.store %[[FLOAT_ERROR_ALIAS]], %err : {{.*}}Float32
+        raise_int()
+    except Float32 __as err:
+        # CHECK: } except {
+        # CHECK-NEXT: %converted = lit.var.decl "converted" var : !lit.ref{{.*}}Float32
+        # CHECK-NEXT: %[[EXCEPT_ERROR:.*]] = lit.ref.load %err : {{.*}}Float32
+        # CHECK-NEXT: lit.ref.store %[[EXCEPT_ERROR]], %converted : {{.*}}Float32
+        var converted: Float32 = err
+
+
+# CHECK-LABEL: lit.fn @"inferred_except_as
+def inferred_except_as():
+    # CHECK: %err = lit.var.decl "err" var : !lit.ref{{.*}}Int
+    try:
+        raise_int()
+    except __as err:
+        var converted: Int = err
+
+
 struct FirstError(ErrorConversionTrait):
     def __init__(out self):
         pass
@@ -312,6 +339,39 @@ def raise_first_error() raises FirstError:
 
 def raise_second_error() raises SecondError:
     raise SecondError()
+
+
+# CHECK-LABEL: lit.fn @"multiple_typed_handlers
+def multiple_typed_handlers(first: Bool):
+    try:
+        if first:
+            # CHECK: lit.raise handler 0
+            raise_first_error()
+        else:
+            # CHECK: lit.raise handler 1
+            raise_second_error()
+    except FirstError __as error:
+        # CHECK: } except {
+        # CHECK: lit.ownership.use %error : !lit.ref<!FirstError
+        _ = error
+    except SecondError __as error:
+        # CHECK: } except {
+        # CHECK: lit.ownership.use %error_0 : !lit.ref<!SecondError
+        _ = error
+
+
+# CHECK-LABEL: lit.fn @"typed_handler_with_catch_all
+def typed_handler_with_catch_all(first: Bool):
+    try:
+        if first:
+            raise_first_error()
+        else:
+            raise_int()
+    except FirstError:
+        pass
+    except __as error:
+        # CHECK: lit.ownership.use %error : {{.*}}Int
+        _ = error
 
 
 # CHECK-LABEL: lit.fn @"fallback_to_error_try

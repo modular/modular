@@ -2123,6 +2123,7 @@ class StringParenWrapper(BaseStringSplitter, CustomSplitMapMixin):
         string_line = Line(
             mode=line.mode,
             depth=line.depth + 1,
+            indent_offset=line.indent_offset,
             inside_brackets=True,
             should_split_rhs=line.should_split_rhs,
             magic_trailing_comma=line.magic_trailing_comma,

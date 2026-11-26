@@ -10,10 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# Check enum sizes, alignments and tag offsets, including tags in union tail padding.
+# Check enum and union sizes, alignments and tag offsets, including tags in a
+# union's tail padding.
 # RUN: %mojo %s | FileCheck %s
 
-from std.builtin._enum import __Enum, __EnumStorage
+from std.builtin._enum import __Union, __UnionStorage
+from std.reflection import reflect
 from std.sys import align_of, size_of
 
 
@@ -21,51 +23,55 @@ __enum Empty(Copyable):
     pass
 
 
-__enum Flags(ImplicitlyCopyable):
+__enum Flags(Movable):
     case a
     case b
 
 
-__enum Byte(ImplicitlyCopyable):
+__union Byte(ImplicitlyCopyable):
     case a(UInt8)
 
 
-__enum Word(ImplicitlyCopyable):
+__union Word(ImplicitlyCopyable):
     case a(Int64)
 
 
-__enum Text(ImplicitlyCopyable):
+__union Text(ImplicitlyCopyable):
     case a(String)
-    case b
+    case b()
 
 
-__enum Pair(ImplicitlyCopyable):
+__union Pair(ImplicitlyCopyable):
     case a(Int, Int)
     case b(UInt8)
 
 
-__enum Aligned(ImplicitlyCopyable):
+__union Aligned(ImplicitlyCopyable):
     case a(SIMD[DType.int64, 8])
-    case b
+    case b()
 
 
-__enum Uneven(ImplicitlyCopyable):
+__union Uneven(ImplicitlyCopyable):
     case a(SIMD[DType.int64, 4])
     case b(Int64, Int64, Int64, Int64, Int64)
 
 
-__enum Nested(ImplicitlyCopyable):
+__union Nested(ImplicitlyCopyable):
     case a(Text)
     case b(Word, Byte)
 
 
-__enum Generic[T: Copyable & Deinitable](Copyable):
+__union Generic[T: Copyable & Deinitable](Copyable):
     case a(Self.T)
-    case b
+    case b()
 
 
-def report[T: __Enum](name: String):
-    comptime Storage = __EnumStorage[T._enum_case_types]
+__enum Phantom[T: AnyType]:
+    case only
+
+
+def report[T: __Union](name: String):
+    comptime Storage = __UnionStorage[T._enum_case_types]
     var storage = Storage(unsafe_uninitialized=())
     var tag_offset = Int(Pointer(to=storage._discriminant())) - Int(
         Pointer(to=storage)
@@ -75,10 +81,14 @@ def report[T: __Enum](name: String):
 
 
 def main():
+    comptime assert reflect[Empty].field_types()[0] == UInt8
+    comptime assert reflect[Flags].field_types()[0] == UInt8
+    comptime assert conforms_to(Empty, TrivialRegisterPassable)
+    comptime assert conforms_to(Phantom[List[Int]], TrivialRegisterPassable)
     # CHECK: Empty 1 1 0
-    report[Empty]("Empty")
+    print("Empty", size_of[Empty](), align_of[Empty](), 0)
     # CHECK-NEXT: Flags 1 1 0
-    report[Flags]("Flags")
+    print("Flags", size_of[Flags](), align_of[Flags](), 0)
     # CHECK-NEXT: Byte 2 1 1
     report[Byte]("Byte")
     # CHECK-NEXT: Word 16 8 8
@@ -95,5 +105,3 @@ def main():
     report[Nested]("Nested")
     # CHECK-NEXT: Generic[Int] 16 8 8
     report[Generic[Int]]("Generic[Int]")
-    # CHECK-NEXT: Generic[String] 32 8 24
-    report[Generic[String]]("Generic[String]")

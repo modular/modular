@@ -577,8 +577,9 @@ def whitespace(
         if t in OPENING_BRACKETS:
             return NO
 
-    elif p.type == syms.named_effect:
-        # No space before ( in named effects (e.g., abi("C") not abi ("C"))
+    elif p.type in {syms.named_effect, syms.accesses_clause}:
+        # No space before ( in named effects and access sets
+        # (e.g., abi("C") and __accesses("...")).
         if t == token.LPAR:
             return NO
 

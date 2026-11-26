@@ -100,6 +100,7 @@ def create_connector(
             local_block_store_endpoint=cfg.block_store_endpoint,
             devices=devices,
             params=params,
+            sequence_major_striping=cfg.sequence_major_striping,
         )
 
     # ``tiered`` is a backward-compatible alias for ``rust_tiered``, kept after

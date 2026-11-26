@@ -286,8 +286,8 @@ kgen.func @try_raise(%err: index) -> index {
   lit.try "try0" {
     %idx0 = index.constant 0
     pop.store %idx0, %0 : !kgen.pointer<index>
-    // CHECK: lit.try.raise "try0" %arg0, %idx0 : index, index
-    lit.try.raise "try0" %err : index
+    // CHECK: lit.try.raise "try0" handler 0 %arg0, %idx0 : index, index
+    lit.try.raise "try0" handler 0 %err : index
   // CHECK: except (%arg1: index, %arg2: index)
   } except (%e: index) {
     // CHECK: yield %arg2

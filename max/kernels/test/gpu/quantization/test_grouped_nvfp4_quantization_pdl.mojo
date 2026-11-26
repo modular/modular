@@ -82,17 +82,6 @@ comptime SENTINEL = 0xEE
 comptime SPARE_TILES = 2
 
 
-def _mut[
-    dt: DType
-](buf: DeviceBuffer[dt]) -> MutPointer[Scalar[dt], MutAnyOrigin]:
-    """Gives the launch a writable view of a buffer passed by reference."""
-    return (
-        buf.unsafe_ptr()
-        .unsafe_mut_cast[True]()
-        .unsafe_origin_cast[MutAnyOrigin]()
-    )
-
-
 def publish_after_delay[
     num_experts: Int
 ](
@@ -192,9 +181,9 @@ def _quantize[
     row_amax: Bool, N: Int, num_experts: Int
 ](
     ctx: DeviceContext,
-    out_buf: DeviceBuffer[out_dtype],
-    scales_buf: DeviceBuffer[scales_dtype],
-    row_scales_buf: DeviceBuffer[DType.bfloat16],
+    mut out_buf: DeviceBuffer[out_dtype],
+    mut scales_buf: DeviceBuffer[scales_dtype],
+    mut row_scales_buf: DeviceBuffer[DType.bfloat16],
     input_buf: DeviceBuffer[dtype],
     row_offsets: DeviceBuffer[DType.uint32],
     scales_offsets: DeviceBuffer[DType.uint32],
@@ -212,8 +201,8 @@ def _quantize[
         Idx[SF_ATOM_M[1]],
         Idx[SF_ATOM_K],
     )
-    var out_t = TileTensor(_mut(out_buf), row_major(total_tokens, Idx[N // 2]))
-    var scales_t = TileTensor(_mut(scales_buf), row_major(scales_shape))
+    var out_t = TileTensor(out_buf, row_major(total_tokens, Idx[N // 2]))
+    var scales_t = TileTensor(scales_buf, row_major(scales_shape))
     var input_t = TileTensor(input_buf, row_major(total_tokens, Idx[N]))
     var row_offsets_t = TileTensor(row_offsets, row_major(Idx[num_experts + 1]))
     var scales_offsets_t = TileTensor(
@@ -223,7 +212,7 @@ def _quantize[
         grouped_quantize_nvfp4_row_amax(
             out_t,
             scales_t,
-            TileTensor(_mut(row_scales_buf), row_major(total_tokens)),
+            TileTensor(row_scales_buf, row_major(total_tokens)),
             input_t,
             row_offsets_t,
             scales_offsets_t,

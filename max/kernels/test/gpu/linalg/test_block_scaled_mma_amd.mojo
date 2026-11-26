@@ -59,9 +59,11 @@ def _block_scaled_mma_smoke_kernel[
     ScaledLayout: TensorLayout,
     accum_width: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat,
+    baseline_origin: MutOrigin,
+    scaled_origin: MutOrigin,
 ](
-    baseline_out: TileTensor[.float32, BaselineLayout, MutAnyOrigin],
-    scaled_out: TileTensor[.float32, ScaledLayout, MutAnyOrigin],
+    baseline_out: TileTensor[.float32, BaselineLayout, baseline_origin],
+    scaled_out: TileTensor[.float32, ScaledLayout, scaled_origin],
 ):
     comptime assert accum_width == 4 or accum_width == 16, (
         "AMD block-scaled MMA smoke test only supports 4- or 16-lane"
@@ -104,9 +106,11 @@ def _fp6_padding_kernel[
     OnePadLayout: TensorLayout,
     accum_width: Int,
     matrix_format: CDNA4F8F6F4MatrixFormat,
+    zero_pad_origin: MutOrigin,
+    one_pad_origin: MutOrigin,
 ](
-    zero_pad_out: TileTensor[.float32, ZeroPadLayout, MutAnyOrigin],
-    one_pad_out: TileTensor[.float32, OnePadLayout, MutAnyOrigin],
+    zero_pad_out: TileTensor[.float32, ZeroPadLayout, zero_pad_origin],
+    one_pad_out: TileTensor[.float32, OnePadLayout, one_pad_origin],
 ):
     """Runs the same FP6 MFMA under two padding patterns; results must match."""
     comptime assert (
@@ -171,11 +175,13 @@ def _run_fp6_padding_check[
         type_of(one_pad_tt).LayoutType,
         accum_width,
         matrix_format,
+        zero_pad_tt.origin,
+        one_pad_tt.origin,
     ]
 
     ctx.enqueue_function[kernel](
-        zero_pad_tt.as_unsafe_any_origin(),
-        one_pad_tt.as_unsafe_any_origin(),
+        zero_pad_tt,
+        one_pad_tt,
         grid_dim=1,
         block_dim=warp_size,
     )
@@ -220,11 +226,13 @@ def _run_block_scaled_mma_amd_smoke[
         type_of(scaled_tt).LayoutType,
         accum_width,
         matrix_format,
+        baseline_tt.origin,
+        scaled_tt.origin,
     ]
 
     ctx.enqueue_function[kernel](
-        baseline_tt.as_unsafe_any_origin(),
-        scaled_tt.as_unsafe_any_origin(),
+        baseline_tt,
+        scaled_tt,
         grid_dim=1,
         block_dim=warp_size,
     )

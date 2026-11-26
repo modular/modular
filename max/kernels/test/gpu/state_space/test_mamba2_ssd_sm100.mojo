@@ -74,11 +74,11 @@ def softplus(x: Float32) -> Float32:
 
 
 def ref_state_kernel(
-    xbc: Pointer[BFloat16, MutAnyOrigin],
-    dt: Pointer[Float32, MutAnyOrigin],
-    cs: Pointer[Float32, MutAnyOrigin],
-    info: Pointer[Int32, MutAnyOrigin],
-    st: Pointer[Float32, MutAnyOrigin],
+    xbc: MutPointer[BFloat16, MutUntrackedOrigin],
+    dt: MutPointer[Float32, MutUntrackedOrigin],
+    cs: MutPointer[Float32, MutUntrackedOrigin],
+    info: MutPointer[Int32, MutUntrackedOrigin],
+    st: MutPointer[Float32, MutUntrackedOrigin],
     nh: Int32,
     g: Int32,
     slots: Int32,
@@ -117,14 +117,14 @@ def ref_state_kernel(
 
 
 def ref_out_kernel(
-    xbc: Pointer[BFloat16, MutAnyOrigin],
-    d: Pointer[BFloat16, MutAnyOrigin],
-    dt: Pointer[Float32, MutAnyOrigin],
-    cs: Pointer[Float32, MutAnyOrigin],
-    h: Pointer[BFloat16, MutAnyOrigin],
-    info: Pointer[Int32, MutAnyOrigin],
-    tok_slot: Pointer[Int32, MutAnyOrigin],
-    y: Pointer[Float32, MutAnyOrigin],
+    xbc: MutPointer[BFloat16, MutUntrackedOrigin],
+    d: MutPointer[BFloat16, MutUntrackedOrigin],
+    dt: MutPointer[Float32, MutUntrackedOrigin],
+    cs: MutPointer[Float32, MutUntrackedOrigin],
+    h: MutPointer[BFloat16, MutUntrackedOrigin],
+    info: MutPointer[Int32, MutUntrackedOrigin],
+    tok_slot: MutPointer[Int32, MutUntrackedOrigin],
+    y: MutPointer[Float32, MutUntrackedOrigin],
     t: Int32,
     nh: Int32,
     g: Int32,
@@ -348,11 +348,11 @@ def run(
     var st_ref = ctx.enqueue_create_buffer[DType.float32](nst)
     st.enqueue_fill(nan[DType.float32]())
     ctx.enqueue_function[ref_state_kernel](
-        k.xbc.unsafe_ptr(),
-        k.dt.unsafe_ptr(),
-        k.cs.unsafe_ptr(),
-        k.info.unsafe_ptr(),
-        st_ref.unsafe_ptr(),
+        k.xbc,
+        k.dt,
+        k.cs,
+        k.info,
+        st_ref,
         Int32(nh),
         Int32(g),
         Int32(k.slots),
@@ -394,14 +394,14 @@ def run(
     y.enqueue_fill(nan[DType.bfloat16]())
     if k.t > 0:
         ctx.enqueue_function[ref_out_kernel](
-            k.xbc.unsafe_ptr(),
-            k.d.unsafe_ptr(),
-            k.dt.unsafe_ptr(),
-            k.cs.unsafe_ptr(),
-            k.h.unsafe_ptr(),
-            k.info.unsafe_ptr(),
-            k.tok_slot.unsafe_ptr(),
-            y_ref.unsafe_ptr(),
+            k.xbc,
+            k.d,
+            k.dt,
+            k.cs,
+            k.h,
+            k.info,
+            k.tok_slot,
+            y_ref,
             Int32(k.t),
             Int32(nh),
             Int32(g),

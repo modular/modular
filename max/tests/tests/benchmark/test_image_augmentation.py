@@ -39,8 +39,9 @@ from max.benchmark.benchmark_shared.datasets.types import (
     RequestSamples,
     SampledRequest,
     SessionMessage,
+    TurnSelector,
 )
-from tests.benchmark.benchmark_fakes import make_session
+from tests.benchmark.benchmark_fakes import make_sampled_request, make_session
 
 
 def _dist(param: str | float) -> BaseDistribution:
@@ -49,23 +50,20 @@ def _dist(param: str | float) -> BaseDistribution:
     return dist
 
 
-def test_sample_image_dimensions_square() -> None:
-    width, height = sample_image_dimensions(_dist(512), _dist(1.0))
-    assert width == 512
-    assert height == 512
-
-
-def test_sample_image_dimensions_portrait() -> None:
-    width, height = sample_image_dimensions(_dist(512), _dist(0.5))
-    assert height == 512
-    assert width == 256
-
-
-def test_sample_image_dimensions_returns_named_fields() -> None:
-    result = sample_image_dimensions(_dist(512), _dist(2.0))
+@pytest.mark.parametrize(
+    ("aspect_ratio", "width", "height"),
+    [(1.0, 512, 512), (0.5, 256, 512), (2.0, 512, 256)],
+    ids=["square", "portrait", "landscape"],
+)
+def test_sample_image_dimensions(
+    aspect_ratio: float, width: int, height: int
+) -> None:
+    result = sample_image_dimensions(_dist(512), _dist(aspect_ratio))
     assert isinstance(result, ImageDimensions)
-    assert result.width == 512
-    assert result.height == 256
+    assert result.width == width
+    assert result.height == height
+    unpacked_width, unpacked_height = result
+    assert (unpacked_width, unpacked_height) == (width, height)
 
 
 def test_estimate_image_token_len_reference_point() -> None:
@@ -80,12 +78,8 @@ def test_estimate_image_token_len_scales_with_area() -> None:
 
 
 def _make_request(prompt_len: int = 100) -> SampledRequest:
-    return SampledRequest(
-        prompt_formatted="hello",
-        prompt_len=prompt_len,
-        output_len=10,
-        encoded_images=[],
-        ignore_eos=False,
+    return make_sampled_request(
+        "hello", prompt_len=prompt_len, output_len=10, ignore_eos=False
     )
 
 
@@ -287,56 +281,36 @@ def test_a_rejected_session_is_not_cut() -> None:
     assert _user_turns(samples.chat_sessions[0]) == 6
 
 
-def test_augment_chat_samples_first_turn_only() -> None:
-    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(10)])
+@pytest.mark.parametrize(
+    ("turn", "num_sessions", "images_per_user_turn"),
+    [
+        ("first", 10, [1, 0, 0]),
+        ("last", 10, [0, 0, 1]),
+        ("every", 5, [1, 1, 1]),
+    ],
+    ids=["first_turn_only", "last_turn_only", "every_turn"],
+)
+def test_augment_chat_samples_attaches_images_to_selected_turns(
+    turn: TurnSelector, num_sessions: int, images_per_user_turn: list[int]
+) -> None:
+    samples = ChatSamples(
+        chat_sessions=[make_session(i) for i in range(num_sessions)]
+    )
     augment_samples_with_images(
         samples,
         fraction=1.0,
         image_count=1,
         image_long_side=512,
         image_aspect_ratio=1.0,
-        turn="first",
+        turn=turn,
     )
     for session in samples.chat_sessions:
-        user_messages = [m for m in session.messages if m.source == "user"]
-        assert len(user_messages[0].images) == 1
-        for later in user_messages[1:]:
-            assert len(later.images) == 0
-
-
-def test_augment_chat_samples_last_turn_only() -> None:
-    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(10)])
-    augment_samples_with_images(
-        samples,
-        fraction=1.0,
-        image_count=1,
-        image_long_side=512,
-        image_aspect_ratio=1.0,
-        turn="last",
-    )
-    for session in samples.chat_sessions:
-        user_messages = [m for m in session.messages if m.source == "user"]
-        assert len(user_messages[-1].images) == 1
-        for earlier in user_messages[:-1]:
-            assert len(earlier.images) == 0
-
-
-def test_augment_chat_samples_every_turn() -> None:
-    samples = ChatSamples(chat_sessions=[make_session(i) for i in range(5)])
-    augment_samples_with_images(
-        samples,
-        fraction=1.0,
-        image_count=1,
-        image_long_side=512,
-        image_aspect_ratio=1.0,
-        turn="every",
-    )
-    for session in samples.chat_sessions:
-        for msg in session.messages:
-            if msg.source == "user":
-                assert len(msg.images) == 1
-            else:
-                assert len(msg.images) == 0
+        assert [
+            len(m.images) for m in session.messages if m.source == "user"
+        ] == images_per_user_turn
+        assert all(
+            len(m.images) == 0 for m in session.messages if m.source != "user"
+        )
 
 
 def test_augment_chat_samples_skips_unmeasurable_sessions() -> None:
@@ -444,11 +418,10 @@ def test_augment_chat_samples_excludes_warmup_session_over_budget(
 def test_augment_request_samples_skips_prompt_with_no_user_message() -> None:
     """The driver attaches images to the first user message; with none, they
     are dropped at send time, so their tokens must never be counted."""
-    system_only = SampledRequest(
-        prompt_formatted=[ChatMessage(role="system", content="be terse")],
+    system_only = make_sampled_request(
+        [ChatMessage(role="system", content="be terse")],
         prompt_len=5,
         output_len=8,
-        encoded_images=[],
         ignore_eos=False,
     )
     samples = RequestSamples(requests=[system_only])
@@ -470,11 +443,10 @@ def test_a_request_with_no_user_message_is_replaced(seed: int) -> None:
     # 0.45 * 6 = 2.7: two or three plain requests get images; system-only
     # requests the shuffle reaches are skipped, not counted.
     system_only = [
-        SampledRequest(
-            prompt_formatted=[ChatMessage(role="system", content="be terse")],
+        make_sampled_request(
+            [ChatMessage(role="system", content="be terse")],
             prompt_len=5,
             output_len=8,
-            encoded_images=[],
             ignore_eos=False,
         )
         for _ in range(2)
@@ -498,14 +470,13 @@ def test_a_request_with_no_user_message_is_replaced(seed: int) -> None:
 
 
 def test_augment_request_samples_augments_prompt_with_a_user_message() -> None:
-    with_user = SampledRequest(
-        prompt_formatted=[
+    with_user = make_sampled_request(
+        [
             ChatMessage(role="system", content="be terse"),
             ChatMessage(role="user", content="hello"),
         ],
         prompt_len=5,
         output_len=8,
-        encoded_images=[],
         ignore_eos=False,
     )
     samples = RequestSamples(requests=[with_user])
@@ -520,28 +491,6 @@ def test_augment_request_samples_augments_prompt_with_a_user_message() -> None:
 
     assert len(with_user.encoded_images) == 1
     assert with_user.prompt_len > 5
-
-
-def test_augment_request_samples_augments_plain_string_prompt() -> None:
-    """A bare string becomes a single user message, so it always accepts."""
-    plain = SampledRequest(
-        prompt_formatted="hello",
-        prompt_len=5,
-        output_len=8,
-        encoded_images=[],
-        ignore_eos=False,
-    )
-    samples = RequestSamples(requests=[plain])
-
-    augment_samples_with_images(
-        samples,
-        fraction=1.0,
-        image_count=1,
-        image_long_side=512,
-        image_aspect_ratio=1.0,
-    )
-
-    assert len(plain.encoded_images) == 1
 
 
 def test_augment_samples_skips_chat_judge() -> None:

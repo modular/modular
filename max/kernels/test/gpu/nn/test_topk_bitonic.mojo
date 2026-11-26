@@ -1718,10 +1718,6 @@ struct _MirrorBound(RowBound):
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "_MirrorBound"
-
 
 def _run_and_check_bounded[
     in_dtype: DType = .float32,

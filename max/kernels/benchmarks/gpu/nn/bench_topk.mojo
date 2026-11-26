@@ -1181,6 +1181,7 @@ def bench_dispatch[
     var iter0 = 0
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def do_bench(mut bb: Bencher) raises {mut iter0, imm}:
         @inline(.always)
         def launch(
@@ -1292,6 +1293,7 @@ def bench_gumbel_from_probs() raises:
                 )
 
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def bench_fn(mut bb: Bencher) raises {imm}:
                     @inline(.always)
                     def launch(dctx: DeviceContext[]) raises {imm}:

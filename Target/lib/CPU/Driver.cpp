@@ -37,12 +37,12 @@ M_driver_status_t M_driver_create(M_driver_version *version,
     return M_DRIVER_STATUS_INVALID_ARG;
   if (out_driver == nullptr)
     return M_DRIVER_STATUS_INVALID_ARG;
-  if (version->major != M_DRIVER_INTERFACE_VERSION_MAJOR)
-    return M_DRIVER_STATUS_INCOMPATIBLE_VERSION;
-
+  uint32_t const hostMajor = version->major;
   version->major = M_DRIVER_INTERFACE_VERSION_MAJOR;
   version->minor = M_DRIVER_INTERFACE_VERSION_MINOR;
   version->patch = M_DRIVER_INTERFACE_VERSION_PATCH;
+  if (hostMajor != M_DRIVER_INTERFACE_VERSION_MAJOR)
+    return M_DRIVER_STATUS_INCOMPATIBLE_VERSION;
 
   M_driver_driver_t driver = M_driver_driver::create();
   if (!driver)

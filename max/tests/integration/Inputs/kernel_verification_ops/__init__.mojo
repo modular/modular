@@ -605,7 +605,7 @@ struct FillFromHostScalar:
             ptr[unsafe_offset=tid] = value
 
         comptime block_dim = 256
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             fill_kernel,
             grid_dim=ceildiv(length, block_dim),
             block_dim=block_dim,

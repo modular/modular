@@ -19,6 +19,7 @@ from ..graph import Graph
 from ..type import DeviceRef, TensorType
 from ..value import TensorValue, TensorValueLike
 from .constant import constant
+from .validation import assert_same_device
 
 
 def group_norm(
@@ -96,6 +97,7 @@ def group_norm(
             "Expected input tensor with >=2 dimensions, got shape"
             f" {input.shape}"
         )
+    assert_same_device(input=input, gamma=gamma, beta=beta)
 
     return Graph.current._add_op_generated(
         mo.ReduceGroupNormOp,

@@ -83,6 +83,9 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
       M_DriverDeviceAllocatorRequestSizes;
   M_DriverStatus (*device_reset_allocator_peaks)(const M_DriverDevice *) =
       M_DriverDeviceResetAllocatorPeaks;
+  M_DriverStatus (*device_max_single_allocation_size)(const M_DriverDevice *,
+                                                      uint64_t *) =
+      M_DriverDeviceMaxSingleAllocationSize;
   M_DriverStatus (*device_get_attribute)(const M_DriverDevice *,
                                          M_DriverDeviceAttribute, int64_t *) =
       M_DriverDeviceGetAttribute;
@@ -244,7 +247,8 @@ int M_DriverCAPIHeaderIsConsumableFromC(void) {
          device_allocator_memory_info != NULL && device_get_attribute != NULL &&
          device_allocator_stats != NULL &&
          device_allocator_request_sizes != NULL &&
-         device_reset_allocator_peaks != NULL && device_stream != NULL &&
+         device_reset_allocator_peaks != NULL &&
+         device_max_single_allocation_size != NULL && device_stream != NULL &&
          stream_enqueue_host_function != NULL &&
          enable_all_peer_access != NULL && all_peer_access_enabled != NULL &&
          device_context_handle != NULL &&

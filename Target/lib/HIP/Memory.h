@@ -33,6 +33,8 @@ struct M_driver_memory {
       if (!hostAccessible)
         return M_DRIVER_STATUS_INVALID_ARG;
       *static_cast<void **>(value) = ptr;
+    } else if (name == M_DRIVER_MEMORY_PROPERTY_HOST_REACHABLE) {
+      *static_cast<bool *>(value) = hostAccessible;
     } else {
       return M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME;
     }

@@ -274,6 +274,10 @@ def KGEN_ArgConvention : I32EnumAttr<"ArgConvention",
   I32EnumAttrCase<"PackImmMem", 10, "pack_imm_mem">,
   I32EnumAttrCase<"PackMut", 11, "pack_mut">,
   I32EnumAttrCase<"PackOwnedMem", 12, "pack_owned_in_mem">,
+
+  // A special convention that ONLY exists in a partially resolved fn
+  // type.
+  I32EnumAttrCase<"Unresolved", 13, "unresolved">
 ]> {
   let cppNamespace = "M::KGEN";
 }
@@ -293,6 +297,10 @@ def KGEN_FnEffectsImpl : I16BitEnumAttr<"FnEffects", "Function effects", [
   /// Lowering must apply platform C ABI coercion (via CABIInfo) rather than
   /// the default Mojo calling convention.
   I16BitEnumAttrCaseBit<"CABI", 9, "cabi">,
+  /// The effects of this function are not known yet. This is only valid in
+  /// the signature of a partially typed lambda expression, before its body is
+  /// checked.
+  I16BitEnumAttrCaseBit<"Unresolved", 10, "unresolved">,
 ]> {
   let cppNamespace = "M::KGEN::impl";
   let genSpecializedAttr = 0;

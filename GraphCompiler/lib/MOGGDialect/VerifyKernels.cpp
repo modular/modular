@@ -918,12 +918,19 @@ LogicalResult declVerifyElementwiseFunction(KernelDeclOp decl,
   size_t operandsCount = 0;
   for (size_t i = 0, inputsCount = elemwiseFn.inputArguments.size();
        i < inputsCount; ++i) {
-    // The last argument might be an IndexList. Skip it — it is an
+    // The last argument might be the `Coord` index. Skip it -- it is an
     // elementwise-only concept.
-    if (i + 1 == inputsCount && elemwiseFn.takesIndexList())
+    if (i + 1 == inputsCount && elemwiseFn.takesIndex())
       continue;
     ++operandsCount;
     const KernelDeclOperandAdaptor &arg = elemwiseFn.inputArguments[i];
+    // A trailing `IndexList` is the index's old type: name the fix rather
+    // than report a non-SIMD operand.
+    if (i + 1 == inputsCount &&
+        arg.isOpaqueWithTypeName(kMojoInternalDpsIndexListTypeQualifiedName))
+      return decl->emitError()
+             << "Elementwise kernels take the element's index as a trailing "
+                "`Coord`, not an `IndexList`";
     if (!arg.isScalarType())
       return decl->emitError() << "Elementwise kernels must have SIMD operands";
     // Fused consumers of a load share its value, so an operand must not be

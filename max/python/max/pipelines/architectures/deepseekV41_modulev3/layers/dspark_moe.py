@@ -38,6 +38,8 @@ Sources: ``dspark_moe.py`` of the V2 port (activation quant 42-81, experts
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import numpy as np
 from max import functional as F
 from max._core.dialects import kgen
@@ -54,6 +56,7 @@ from max.nn.common_layers.quant_ops import (
     grouped_quantize_dynamic_block_scaled,
 )
 from max.nn.quant_config import ceildiv
+from max.nn.transparent_module import TransparentModule
 from max.tensor import Tensor
 from max.tensor.sharding import (
     AxisAssignment,
@@ -190,6 +193,71 @@ class _PackedExpertWeights(Module[[], None]):
         )
 
 
+class _CheckpointProjection(Module[[], None]):
+    weight: Tensor
+    scale: Tensor
+
+    def __init__(self, out_dim: int, in_dim: int) -> None:
+        super().__init__()
+        self.weight = Tensor.zeros([out_dim, in_dim // 2], dtype=DType.uint8)
+        self.scale = Tensor.zeros(
+            [out_dim, in_dim // 32], dtype=DType.float8_e8m0fnu
+        )
+
+    def forward(self) -> None:
+        raise NotImplementedError(
+            "Checkpoint projections run as a grouped stack"
+        )
+
+
+class _CheckpointExpert(Module[[], None]):
+    w1: _CheckpointProjection
+    w2: _CheckpointProjection
+    w3: _CheckpointProjection
+
+    def __init__(self, hidden: int, intermediate: int) -> None:
+        super().__init__()
+        self.w1 = _CheckpointProjection(intermediate, hidden)
+        self.w3 = _CheckpointProjection(intermediate, hidden)
+        self.w2 = _CheckpointProjection(hidden, intermediate)
+
+    def forward(self) -> None:
+        raise NotImplementedError("Checkpoint experts run as a grouped stack")
+
+
+class _CheckpointExperts(TransparentModule[[], None]):
+    """Exposes expert-number children directly below the expert container."""
+
+    def __init__(self, count: int, hidden: int, intermediate: int) -> None:
+        super().__init__()
+        self.count = count
+        for index in range(count):
+            setattr(self, str(index), _CheckpointExpert(hidden, intermediate))
+
+    def forward(self) -> None:
+        raise NotImplementedError("Checkpoint experts run as a grouped stack")
+
+
+@dataclass
+class _PackedProjection:
+    """Weight-only graph values in the grouped kernel's expected layout."""
+
+    weight: Tensor
+    weight_scale: Tensor
+
+    def interleaved(self) -> Tensor:
+        experts, rows, columns = (int(d) for d in self.weight_scale.shape)
+        return F.stack(
+            [
+                block_scales_interleave(
+                    scale.reshape([rows, columns]), sf_vector_size=32
+                )
+                for scale in self.weight_scale.split([1] * experts, axis=0)
+            ],
+            axis=0,
+        )
+
+
 def _ones(n: int, mesh: DeviceMesh) -> Tensor:
     # Keep this host scalar in the graph; ``F.full`` adds a broadcast launch.
     return F.constant(np.ones(n, np.float32), DType.float32, device=mesh)
@@ -257,16 +325,37 @@ class DSparkRoutedExperts(Module[[Tensor, Tensor, Tensor], Tensor]):
         self.hidden = config.hidden_size
         self.inter = config.moe_intermediate_size
         self.swiglu_limit = config.swiglu_limit
-        self.gate_up_proj = _PackedExpertWeights(
-            n_experts, 2 * config.moe_intermediate_size, config.hidden_size
-        )
-        self.down_proj = _PackedExpertWeights(
-            n_experts, config.hidden_size, config.moe_intermediate_size
+        self.raw_checkpoint_weights = config.raw_checkpoint_weights
+        if self.raw_checkpoint_weights:
+            self.checkpoint = _CheckpointExperts(
+                n_experts, config.hidden_size, config.moe_intermediate_size
+            )
+        else:
+            self.gate_up_proj = _PackedExpertWeights(
+                n_experts, 2 * config.moe_intermediate_size, config.hidden_size
+            )
+            self.down_proj = _PackedExpertWeights(
+                n_experts, config.hidden_size, config.moe_intermediate_size
+            )
+
+    def _projection(
+        self, gate_up: bool
+    ) -> _PackedProjection | _PackedExpertWeights:
+        if not self.raw_checkpoint_weights:
+            return self.gate_up_proj if gate_up else self.down_proj
+        weights, scales = [], []
+        for index in range(self.num_experts):
+            expert = getattr(self.checkpoint, str(index))
+            parts = (expert.w1, expert.w3) if gate_up else (expert.w2,)
+            weights.append(F.concat([part.weight for part in parts], axis=0))
+            scales.append(F.concat([part.scale for part in parts], axis=0))
+        return _PackedProjection(
+            F.stack(weights, axis=0), F.stack(scales, axis=0)
         )
 
     def _grouped(
         self,
-        proj: _PackedExpertWeights,
+        proj: _PackedExpertWeights | _PackedProjection,
         x: Tensor,
         a_offsets: Tensor,
         scale_offsets: Tensor,
@@ -326,7 +415,7 @@ class DSparkRoutedExperts(Module[[Tensor, Tensor, Tensor], Tensor]):
         h = F.silu(gate.cast(DType.float32)) * up.cast(DType.float32)
         h = h * slot_weight.unsqueeze(-1)
         return self._grouped(
-            self.down_proj, h, a_offsets, scale_offsets, expert_ids
+            self._projection(False), h, a_offsets, scale_offsets, expert_ids
         )
 
     def forward(self, x: Tensor, weights: Tensor, indices: Tensor) -> Tensor:
@@ -354,7 +443,11 @@ class DSparkRoutedExperts(Module[[Tensor, Tensor, Tensor], Tensor]):
         x_sorted = F.gather(x, slot_token, axis=0)
 
         gate_up = self._grouped(
-            self.gate_up_proj, x_sorted, a_offsets, scale_offsets, expert_ids
+            self._projection(True),
+            x_sorted,
+            a_offsets,
+            scale_offsets,
+            expert_ids,
         )
         down = self._activate_and_down(
             gate_up, slot_weight, a_offsets, scale_offsets, expert_ids

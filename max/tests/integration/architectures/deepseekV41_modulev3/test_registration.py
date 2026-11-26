@@ -14,9 +14,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import fields
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import NonCallableMock
 
 import numpy as np
@@ -26,6 +28,7 @@ from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
+from max.graph.weights import WeightsFormat
 from max.nn.kv_cache import KVCacheInputsPerDevice
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV41.arch import deepseekV41_arch
@@ -34,7 +37,11 @@ from max.pipelines.architectures.deepseekV41_modulev3.arch import (
     deepseekV41_modulev3_arch,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
+    V41Config,
     extra_input_names,
+)
+from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
+    DeepseekV41Config,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.registration import (
     DeepseekV41RequestState,
@@ -46,11 +53,16 @@ from max.pipelines.architectures.deepseekV41_modulev3.registration import (
 from max.pipelines.architectures.deepseekV41_modulev3.spec_adapters import (
     batch_trailing_buffers,
 )
+from max.pipelines.architectures.deepseekV41_modulev3.weight_adapters import (
+    convert_safetensor_state_dict,
+)
 from max.pipelines.context import TextContext
 from max.pipelines.context.tokens import TokenBuffer
 from max.pipelines.lib.interfaces.arch_config import ModelOutputConfig
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.role_contracts import DecoderInputs
+from max.pipelines.lib.weight_transform import WeightTransform
+from transformers import PretrainedConfig
 
 
 def _config() -> RegisteredDeepseekV41Config:
@@ -60,6 +72,7 @@ def _config() -> RegisteredDeepseekV41Config:
     text["engram_num_embeddings"] = []
     pipeline: Any = SimpleNamespace(
         model=SimpleNamespace(huggingface_config=hf, data_parallel_degree=1),
+        artifact_export=False,
         runtime=SimpleNamespace(
             max_batch_input_tokens=16,
             enable_chunked_prefill=True,
@@ -126,7 +139,7 @@ def test_finalization_consumes_adapter_sidecars_after_pinning(
     config = _config()
     pinned = config.engram_static_inputs
     token_map = np.arange(config.vocab_size, dtype=np.int32)
-    sidecar: Any = NonCallableMock(engram_tables=[object()])
+    sidecar = registration.AdapterResult({}, [cast(Any, object())])
     calls: list[str] = []
     monkeypatch.setattr(
         registration,
@@ -209,3 +222,176 @@ def test_the_registration_names_the_v41_format_spec() -> None:
     assert spec == deepseekV41_arch.format_spec
     assert isinstance(spec, Path)
     assert spec.is_file()
+
+
+def test_raw_checkpoint_state_is_named_without_deployment_inputs() -> None:
+    config = _config()
+    config.raw_checkpoint_weights = True
+    config.static_constants = registration.ConstantInputs(
+        input_types={}, buffers={}
+    )
+    constants = RegisteredDeepseekV41Decoder.constant_inputs(
+        config, devices=[CPU()]
+    )
+    assert not tree.leaves(constants.input_types)
+    assert not tree.leaves(constants.buffers)
+    store = DeepseekV41RequestState(config, max_batch_size=4, devices=[CPU()])
+    (group,) = store.input_types()
+    assert group.kind == "batch_context"
+    assert tuple(group) == (
+        "window_start",
+        "write_floor",
+        "image_token_mask",
+        "lookback_tokens",
+        "lookback_mask",
+        "window_rows",
+    )
+    batch = [TextContext(max_length=128, tokens=TokenBuffer(np.arange(3)))]
+    store.set_layout([batch], 1)
+    (values,) = store.prepare(batch)
+    assert isinstance(values, Mapping)
+    assert tuple(values) == tuple(group)
+    assert len(tree.leaves(values)) == len(tree.leaves(group))
+    lookback = values["lookback_tokens"]
+    window = values["window_rows"]
+    assert isinstance(lookback, Buffer)
+    assert isinstance(window, Buffer)
+    assert lookback.shape == (1, 3)
+    assert window.shape == (3,)
+
+
+def test_raw_checkpoint_finalization_needs_no_adapter_sidecar(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    config.raw_checkpoint_weights = True
+    token_map = np.arange(config.vocab_size, dtype=np.int32)
+    monkeypatch.setattr(
+        registration, "serving_token_map", lambda *args: token_map
+    )
+    monkeypatch.setattr(
+        registration,
+        "build_engram_static_inputs",
+        lambda *args: registration.ConstantInputs(input_types={}, buffers={}),
+    )
+    finalized = config.finalize(NonCallableMock(), {}, ModelOutputConfig())
+    assert finalized.token_map is token_map
+    assert finalized.raw_checkpoint_weights
+
+
+def test_converted_sidecars_keep_the_legacy_registered_weight_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = _config()
+    token_map = np.arange(config.vocab_size, dtype=np.int32)
+    sidecar = registration.AdapterResult({}, [])
+    monkeypatch.setattr(
+        registration, "serving_token_map", lambda *args: token_map
+    )
+    monkeypatch.setattr(
+        registration, "validate_engram_tables", lambda *args: None
+    )
+    monkeypatch.setattr(
+        registration,
+        "engram_static_inputs",
+        lambda *args: config.engram_static_inputs,
+    )
+    finalized = config.finalize(NonCallableMock(), sidecar, ModelOutputConfig())
+    assert not finalized.raw_checkpoint_weights
+    assert finalized.token_map is token_map
+
+
+@pytest.mark.parametrize("raw", [False, True])
+def test_a_weight_load_the_mode_did_not_ask_for_is_refused(raw: bool) -> None:
+    config = _config()
+    config.raw_checkpoint_weights = raw
+    state_dict = {} if not raw else registration.AdapterResult({}, [])
+    with pytest.raises(ValueError, match="raw checkpoint weights"):
+        config.finalize(NonCallableMock(), state_dict, ModelOutputConfig())
+
+
+# The bare-MEF extras after the KV leaves, in order: what Mach's bare
+# contract (mach/crates/engine-core/src/deepseek_v41_dspark_full_contract.rs,
+# pinned by mach/tools/deepseek-v41-contract) expects of the full checkpoint.
+_BARE_EXTRAS = [
+    "swa_begin",
+    "global_write_floor",
+    "image_token_mask",
+    "engram_lookback",
+    "engram_lookback_dead",
+    "engram_table_0_weight",
+    "engram_table_0_scale",
+    "engram_table_1_weight",
+    "engram_table_1_scale",
+    "engram_token_map",
+    "decoder_rows",
+]
+
+
+@pytest.mark.parametrize("artifact_export", [False, True])
+def test_only_an_artifact_export_loads_raw_weights_and_artifact_inputs(
+    monkeypatch: pytest.MonkeyPatch, artifact_export: bool
+) -> None:
+    """Serving and bare MEF exports (gen_mef) keep the adapter and its ABI.
+
+    The registry hands the pipeline the adapter unless the export is an
+    artifact, and the registered config's input mode follows the same flag,
+    so a bare export declares the inputs Mach's bare contract checks.
+    """
+    adapter = deepseekV41_modulev3_arch.checkpoint_adapters(
+        PretrainedConfig(), artifact_export=artifact_export
+    )[WeightsFormat.safetensors]
+    if artifact_export:
+        assert isinstance(adapter, WeightTransform)
+    else:
+        assert adapter is convert_safetensor_state_dict
+
+    base = _config()
+    trunk = DeepseekV41Config(
+        **{
+            item.name: getattr(base, item.name)
+            for item in fields(DeepseekV41Config)
+            if item.init
+        }
+    )
+    monkeypatch.setattr(registration, "check_parallel_layout", lambda _: None)
+    monkeypatch.setattr(
+        DeepseekV41Config,
+        "initialize",
+        classmethod(lambda cls, *args, **kwargs: trunk),
+    )
+    hf = hf_config("full")
+    pipeline: Any = SimpleNamespace(
+        model=SimpleNamespace(huggingface_config=hf),
+        artifact_export=artifact_export,
+    )
+    config = RegisteredDeepseekV41Config.initialize(pipeline, max_seq_len=128)
+    assert config.raw_checkpoint_weights is artifact_export
+    names = extra_input_names(
+        V41Config.from_hf(hf, artifact_export=artifact_export),
+        artifact=config.raw_checkpoint_weights,
+    )
+    if artifact_export:
+        assert "engram_token_map" not in names
+        assert "replay.kept_skip" in names
+    else:
+        assert names == _BARE_EXTRAS
+
+
+@pytest.mark.parametrize("explicit", [None, False, True])
+@pytest.mark.parametrize("artifact_export", [False, True])
+def test_artifact_export_turns_on_history_and_replay_unless_named(
+    explicit: bool | None, artifact_export: bool
+) -> None:
+    hf: Any = dict(hf_config("f1"))
+    text = dict(hf["text_config"])
+    if explicit is not None:
+        text.update(engram_lookback_history=explicit, decoder_replay=explicit)
+    hf["text_config"] = text
+    before = dict(text)
+    config = V41Config.from_hf(hf, artifact_export=artifact_export)
+    expected = artifact_export if explicit is None else explicit
+    assert config.engram_lookback_history is expected
+    assert config.decoder_replay is expected
+    # The checkpoint's config is read, never written.
+    assert text == before

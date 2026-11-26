@@ -88,7 +88,7 @@ TENSOR_CORE_ULP = 2.0**-11
 LAYER_REL_RMS = 16 * TENSOR_CORE_ULP
 
 MULTI_CHUNK_PREFILL_LENGTHS = (130, 67)
-"""Three and two of the gfx950 chunk kernel's 64-token chunks, with tails."""
+"""Five and three of the gfx950 chunk kernel's 32-token chunks, with tails."""
 CONTINUATION_DECODE_STEPS = 4
 
 CARRY_GATE_ARGUMENT = -6.0
@@ -518,7 +518,7 @@ def test_decode_continues_a_multi_chunk_prefill(
 ) -> None:
     """Float32 decode steps after a prefill that spans several chunks.
 
-    :data:`PREFILL_LENGTHS` fit inside one 64-token chunk; these lengths span
+    :data:`PREFILL_LENGTHS` fit inside one chunk; these lengths span
     several, with ragged tails. Each side decodes from the pools its own
     prefill left, so whatever error the prefill wrote into the state is
     carried into every step. On gfx950 that prefill is the bf16 chunk path and

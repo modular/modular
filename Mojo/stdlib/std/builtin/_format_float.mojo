@@ -799,10 +799,6 @@ def _umul128_upper64[
     ]()
 
 
-def _is_finite[exp_bits: Int](exponent: Int) -> Bool:
-    return exponent != (1 << exp_bits) - 1
-
-
 def _count_factors[
     CarrierDType: DType
 ](var n: Scalar[CarrierDType], a: Int) -> Int:

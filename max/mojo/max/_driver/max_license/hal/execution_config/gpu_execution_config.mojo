@@ -12,28 +12,41 @@
 # ===----------------------------------------------------------------------=== #
 """Placeholder configuration to start to prototype the API with."""
 
-from max.gpu.host import Dim
 from max.gpu.host import (
     ExecutionConfig,
     BlockExecutionConfig,
+    ConstantMemoryMapping,
+    Dim,
     GridBlockExecutionConfig,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
+from . import ConstantMemoryMappingExecutionConfig
 
 
-struct GPUExecutionConfiguration(
+struct GPUExecutionConfiguration[*, has_constant_memory: Bool = False](
     BlockExecutionConfig,
+    ConstantMemoryMappingExecutionConfig where has_constant_memory,
     Copyable,
     ExecutionConfig,
     GridBlockExecutionConfig,
     Movable,
     NearComputeGeneralPurposeScratchpadExecutionConfig,
 ):
-    """Describes the execution configuration of a GPU kernel launch."""
+    """Describes the execution configuration of a GPU kernel launch.
+
+    Parameters:
+        has_constant_memory: Whether the target supports constant memory
+            mappings. If so, the configuration holds them and conforms to
+            `ConstantMemoryMappingExecutionConfig`.
+    """
 
     var grid_dim: Dim
     var block_dim: Dim
     var shared_mem_bytes: Int
+
+    var constant_memory: (
+        List[ConstantMemoryMapping] if Self.has_constant_memory else NoneType
+    )
 
     def __init__(
         out self,
@@ -45,6 +58,24 @@ struct GPUExecutionConfiguration(
         self.grid_dim = grid_dim
         self.block_dim = block_dim
         self.shared_mem_bytes = shared_mem_bytes
+        comptime if Self.has_constant_memory:
+            self.constant_memory = []
+        else:
+            self.constant_memory = None
+
+    def __init__(
+        out self,
+        *,
+        var grid_dim: Dim,
+        var block_dim: Dim,
+        var constant_memory: List[ConstantMemoryMapping],
+        var shared_mem_bytes: Int = 0,
+    ) where Self.has_constant_memory:
+        """The 'all members' constructor with constant memory mappings."""
+        self.grid_dim = grid_dim
+        self.block_dim = block_dim
+        self.shared_mem_bytes = shared_mem_bytes
+        self.constant_memory = constant_memory^
 
     def __init__(out self, *, block_dim: Dim):
         """Initializes the execution config with the given block dimensions.
@@ -110,3 +141,28 @@ struct GPUExecutionConfiguration(
             usage: The amount of scratchpad to use in bytes.
         """
         self.shared_mem_bytes = usage
+
+    def get_constant_memory_mappings[
+        o: ImmOrigin
+    ](ref[o] self) -> Span[
+        ConstantMemoryMapping, o
+    ] where Self.has_constant_memory:
+        """Gets the constant memory mappings configured for the execution config.
+
+        Returns:
+            The constant memory mappings.
+        """
+        return rebind[Span[ConstantMemoryMapping, o]](
+            Span[ConstantMemoryMapping, _](self.constant_memory)
+        )
+
+    def set_constant_memory_mappings(
+        mut self,
+        var mappings: List[ConstantMemoryMapping],
+    ) where Self.has_constant_memory:
+        """Sets the constant memory mappings for the execution config.
+
+        Args:
+            mappings: The constant memory mappings to apply.
+        """
+        self.constant_memory = mappings^

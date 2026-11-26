@@ -212,3 +212,49 @@ def test_block_groups_follow_the_design() -> None:
         "reuse_r1": (8, 10),
         "reindex_r1": (9, 11),
     }
+
+
+def test_artifact_projection_keeps_checkpoint_parts() -> None:
+    """The artifact names stored tensors, never a host-concatenated leaf."""
+    from max.pipelines.architectures.deepseekV41_modulev3.layers.mxfp8_linear import (
+        ConcatenatedMXFP8Linear,
+    )
+
+    with (
+        abi_contract.virtual_devices(1),
+        F.lazy(),
+        default_device(make_mesh(1)),
+    ):
+        projection = ConcatenatedMXFP8Linear(64, ("wq_a", 32), ("wkv", 64))
+        held = {
+            name: tuple(int(d) for d in tensor.shape)
+            for name, tensor in projection.parameters
+        }
+    assert held == {
+        "wq_a.weight": (32, 64),
+        "wq_a.scale": (1, 2),
+        "wkv.weight": (64, 64),
+        "wkv.scale": (2, 2),
+    }
+
+
+def test_artifact_draft_experts_keep_checkpoint_parts() -> None:
+    from max.pipelines.architectures.deepseekV41_modulev3.layers.dspark_moe import (
+        _CheckpointExperts,
+    )
+
+    with (
+        abi_contract.virtual_devices(1),
+        F.lazy(),
+        default_device(make_mesh(1)),
+    ):
+        experts = _CheckpointExperts(2, 64, 32)
+        held = {
+            name: tuple(int(d) for d in tensor.shape)
+            for name, tensor in experts.parameters
+        }
+    assert len(held) == 12
+    for index in range(2):
+        assert held[f"{index}.w1.weight"] == (32, 32)
+        assert held[f"{index}.w3.scale"] == (32, 2)
+        assert held[f"{index}.w2.weight"] == (64, 16)

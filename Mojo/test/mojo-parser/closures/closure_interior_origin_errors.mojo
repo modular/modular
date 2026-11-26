@@ -26,7 +26,6 @@ struct MyList[T: AnyType](Movable where False):
     def __deinit__(deinit self):
         pass
 
-    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self,
     ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
@@ -55,6 +54,24 @@ def test_derive_and_capture_interior[O: Origin[mut=True]](ref [O] list: MyList[I
     inner()
 
 
+# A closure cannot be called when it captures a container immutably and a
+# mutable pointer to an element of that container.
+def test_capture_container_and_mutable_element[O: Origin[mut=True]](
+    ref [O] list: MyList[Int]
+):
+    var p = Pointer(to=list[])
+
+    @always_inline
+    def inner() {imm}:
+        _ = list
+        _ = p[]
+
+    # expected-error @below {{aliasing values passed immutably to '' argument and passed mutably to '' argument in '__call__' call}}
+    # expected-note @below {{'origin_of(O["element"])' memory accessed through reference embedded in value of type 'def() -> None'}}
+    inner()
+
+
 def main():
     var list = MyList[Int]()
     test_derive_and_capture_interior(list)
+    test_capture_container_and_mutable_element(list)

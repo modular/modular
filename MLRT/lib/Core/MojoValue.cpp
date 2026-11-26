@@ -18,6 +18,7 @@
 #include <cstdlib>
 
 using namespace M;
+using namespace M::MLRT;
 
 MojoValue::MojoValue(size_t size, size_t align, DestructorFn destructor)
     : MojoValue(allocateBuffer(size, align), destructor, /*owning=*/true,

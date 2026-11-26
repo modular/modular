@@ -226,6 +226,7 @@ def bench_reducescatter_2d[
         list_of_ctx[i].synchronize()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_iter_2d(
         mut b: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:
@@ -463,6 +464,7 @@ def bench_reducescatter[
         list_of_ctx[i].synchronize()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_iter(
         mut b: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_bufs, imm}:

@@ -450,6 +450,7 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
+    @__allow_legacy_any_origin_fields
     def _dispatch_flash_attention[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k, var v, imm}:

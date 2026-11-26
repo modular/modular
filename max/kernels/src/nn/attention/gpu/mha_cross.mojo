@@ -127,6 +127,7 @@ def _bmm0_bs[
                 batch, x, kv_head, 0
             )
 
+            @__allow_legacy_any_origin_fields
             def accum_fn[
                 width: Int
             ](offset: Int) {q, y, _num_heads, _depth, k_ptr, mut}:

@@ -324,11 +324,11 @@ kgen.func @reraise_in_try(%err: i32) {
     lit.try "try1" {
       // CHECK-NEXT: ^bb2:
       // CHECK: br ^bb3(%{{.*}} : i32)
-      lit.try.raise "try1" %err :i32
+      lit.try.raise "try1" handler 0 %err :i32
     } except (%arg0: i32) {
       // CHECK-NEXT: ^bb3(%{{.*}}: i32):
       // CHECK: br ^bb4(%{{.*}} : i32)
-      lit.try.raise "try0" %arg0 :i32
+      lit.try.raise "try0" handler 0 %arg0 :i32
     } else {
       hlcf.unreachable
     }
@@ -344,6 +344,27 @@ kgen.func @reraise_in_try(%err: i32) {
   }
   // CHECK-NEXT: ^bb5:
   // CHECK-NEXT: return
+  hlcf.return
+}
+
+// CHECK-LABEL: @second_try_handler
+kgen.func @second_try_handler(%err: i32) {
+  // CHECK: br ^[[TRY:bb[0-9]+]]
+  lit.try "try0" {
+    // CHECK: ^[[TRY]]:
+    // CHECK: br ^[[SECOND:bb[0-9]+]](%{{.*}} : i32)
+    lit.try.raise "try0" handler 1 %err : i32
+  } except (%first: i32) {
+    "handler.zero"(%first) : (i32) -> ()
+    lit.try.yield
+  } except (%second: i32) {
+    // CHECK: ^[[SECOND]](%{{.*}}: i32):
+    // CHECK: "handler.one"
+    "handler.one"(%second) : (i32) -> ()
+    lit.try.yield
+  } else {
+    hlcf.unreachable
+  }
   hlcf.return
 }
 

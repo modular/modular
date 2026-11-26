@@ -22,7 +22,7 @@
 #include "llvm/ADT/TypeSwitch.h"
 
 using namespace M;
-using namespace MEF;
+using namespace M::MLRT::MEF;
 
 //===----------------------------------------------------------------------===//
 // Dialect specification.

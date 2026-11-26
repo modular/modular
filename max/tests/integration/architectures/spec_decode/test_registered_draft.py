@@ -17,7 +17,7 @@ from __future__ import annotations
 import pickle
 from dataclasses import replace
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 from unittest.mock import Mock
 
 import numpy as np
@@ -44,11 +44,12 @@ from max.pipelines.architectures.eagle_llama3.model_config import (
     eagle_proposer,
 )
 from max.pipelines.architectures.llama3.llama3 import Llama3
-from max.pipelines.lib import GraphRole
+from max.pipelines.lib import GraphRole, registration_runtime
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.pipeline_variants import spec_decode_pipeline_model
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
+    _BatchProcessor,
     _builds_module,
     _module_builder,
     _proposer,
@@ -58,6 +59,8 @@ from max.pipelines.lib.registration_draft import (
     RegisteredDraftBuilder,
     TargetHiddenStates,
 )
+from max.pipelines.lib.registration_runtime import ConstantInputs
+from max.pipelines.lib.weight_transform import WeightEntry
 from max.pipelines.speculative import proposers, spec_adapters
 from max.pipelines.speculative.config import SpeculativeConfig
 from max.pipelines.speculative.draft_contracts import (
@@ -500,10 +503,13 @@ class _TargetBuilt(Exception):
 
 
 def _build_until_the_target(
-    monkeypatch: pytest.MonkeyPatch, **changes: Any
+    monkeypatch: pytest.MonkeyPatch,
+    target_builder: Any = None,
+    **changes: Any,
 ) -> tuple[SpecDecodePipelineModel, list[ModelLoadContext]]:
     """Builds a registered EAGLE pairing up to its target's construction.
 
+    With ``target_builder``, builds the target with it and finishes.
     Returns the model and the load contexts its target was built from.
     """
     config = _config()
@@ -533,6 +539,8 @@ def _build_until_the_target(
     def module_builder(arch: Any, role: GraphRole = GraphRole.DECODER) -> Any:
         if role == GraphRole.DRAFT:
             return RegisteredDraftBuilder(arch)
+        if target_builder is not None:
+            return target_builder
         return SimpleNamespace(build_module=build_target)
 
     for name, value in {
@@ -558,12 +566,18 @@ def _build_until_the_target(
                 get_text_config=lambda: text_config
             )
         ),
+        artifact_export=False,
     )
     pairing: Any = SimpleNamespace(
         target=SimpleNamespace(pipeline_model=object), draft=arch
     )
     model.pipeline_config = pipeline_config
     model.pairing = pairing
+    model.devices = []
+    model.compiled_modules = {}
+    processor: Any = object.__new__(_BatchProcessor)
+    processor._constant_inputs = None
+    model._batch_processor = processor
     arch_config = SimpleNamespace(
         kv_params=SimpleNamespace(children={"target": config.kv_params})
     )
@@ -582,9 +596,87 @@ def _build_until_the_target(
             )
         ),
     )
+    if target_builder is not None:
+        model._build_modules(Mock())
+        return model, target_contexts
     with pytest.raises(_TargetBuilt):
         model._build_modules(Mock())
     return model, target_contexts
+
+
+@pytest.mark.parametrize("virtual", [False, True])
+def test_the_targets_static_init_fills_the_buffers_its_batching_serves(
+    monkeypatch: pytest.MonkeyPatch, virtual: bool
+) -> None:
+    """A target whose constant inputs own their buffers and declare an
+    initializer: the export compiles and keeps the ``static_init`` graph,
+    names its weights under the target's own names, runs it once (never on
+    a virtual device), and the target's batching serves that same
+    instance."""
+    executed: list[tuple[object, ...]] = []
+    initializer = SimpleNamespace(
+        execute_raw=lambda *buffers: executed.append(buffers)
+    )
+    compiled: list[dict[GraphRole, object]] = []
+
+    def compile_and_init(session: object, specs: Any) -> Any:
+        compiled.append(dict(specs))
+        return {GraphRole.STATIC_INIT: initializer}
+
+    monkeypatch.setattr(
+        registration_runtime, "compile_and_init_graphs", compile_and_init
+    )
+    monkeypatch.setattr(
+        registration_runtime, "is_virtual_device_mode", lambda: virtual
+    )
+    table, spec = object(), object()
+    constants = ConstantInputs(
+        input_types={"table": TensorType(DType.int8, [4], DeviceRef.CPU())},
+        buffers={"table": cast(Any, table)},
+        initializer=cast(Any, spec),
+    )
+
+    class Target:
+        @classmethod
+        def constant_inputs(
+            cls, config: object, *, devices: object
+        ) -> ConstantInputs:
+            return constants
+
+    target_config = object()
+    entry = Mock(spec=WeightEntry)
+    model, _ = _build_until_the_target(
+        monkeypatch,
+        target_builder=SimpleNamespace(
+            build_module=lambda context: (Target(), target_config),
+            weight_entries=lambda context, config: [entry],
+        ),
+    )
+    assert compiled == [{GraphRole.STATIC_INIT: spec}]
+    assert model.compiled_modules[GraphRole.STATIC_INIT] is initializer
+    assert model.weight_naming[GraphRole.STATIC_INIT] == (entry,)
+    assert executed == ([] if virtual else [(table,)])
+    constants.initialize(cast(Any, initializer))
+    assert len(executed) == (0 if virtual else 1), "it runs once"
+
+    # The target's batching passes the buffers the initializer filled.
+    batching = SimpleNamespace(constant_inputs=None)
+    monkeypatch.setattr(
+        spec_decode_pipeline_model,
+        "_batching",
+        lambda arch: lambda config, runtime: batching,
+    )
+    processor: Any = model._batch_processor
+    processor.spec_config = SimpleNamespace(
+        target=target_config,
+        kv_params=None,
+        input_spec=SimpleNamespace(distributed=True, ep_tail=False),
+    )
+    processor._prepares_batches = False
+    processor._takes_images = False
+    processor._pairing = SimpleNamespace(target=None)
+    processor.runtime = None
+    assert processor._target_batching.constant_inputs is constants
 
 
 def test_registered_drafter_export_reaches_the_pipeline_model(

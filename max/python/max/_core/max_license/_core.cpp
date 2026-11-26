@@ -220,6 +220,7 @@ NB_MODULE(_core, m) {
   Python::bindProfilerModule(m.def_submodule("profiler"));
   Python::bindNIXLModule(m.def_submodule("nixl"));
   Python::bindSafetensorsModule(m.def_submodule("safetensors"));
+  Python::bindGGUFModule(m.def_submodule("gguf"));
   Python::bindXXHashModule(m.def_submodule("xxhash"));
   Python::bindXGrammarModule(m.def_submodule("xgrammar"));
   Python::bindMetricsModule(m.def_submodule("metrics"));

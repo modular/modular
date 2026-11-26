@@ -17,6 +17,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable
 from typing import Any
 
+from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph, GraphBlock
@@ -109,6 +110,11 @@ def cond(
             "The predicate for `ops.cond` must reside on CPU, but got a"
             f" tensor on {pred.device}. Transfer it explicitly with"
             " `ops.transfer_to(pred, CPU())`."
+        )
+    if pred.dtype != DType.bool or pred.rank != 0:
+        raise ValueError(
+            "The predicate for `ops.cond` must be a scalar bool tensor, but"
+            f" got {pred.type}."
         )
 
     out_types_list = list(out_types) if out_types is not None else []

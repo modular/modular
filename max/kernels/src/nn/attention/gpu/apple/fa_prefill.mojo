@@ -990,6 +990,7 @@ def fa_prefill_apple[
         comptime D = di * MMA_DIM
         if depth == D:
 
+            @__allow_legacy_any_origin_fields
             def _enqueue[sg: Int]() raises {var}:
                 comptime core_kernel = fa_prefill_apple_core[
                     q_type,

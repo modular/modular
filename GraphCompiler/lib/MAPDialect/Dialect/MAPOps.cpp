@@ -12,6 +12,7 @@
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOps.h"
+#include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MODialect/MOTypes.h"
 #include "GraphCompiler/MODialect/MOUtils.h"
 #include "GraphCompiler/MOGGDialect/Analysis/KernelDeclAdaptor.h"
@@ -19,6 +20,7 @@
 #include "GraphCompiler/MOGGDialect/Support/AsmSyntax.h"
 #include "GraphCompiler/MOSHDialect/MOSHAttrs.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
+#include "Mojo/KGENDialect/KGENOps.h"
 #include "Support/AssertStream.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "mlir/IR/Builders.h"
@@ -50,7 +52,7 @@ static bool isStaticOne(Attribute dim) {
 // numpy broadcast: `in`'s missing leading dims are dropped, its size-1 dims
 // pinned.
 std::optional<SmallVector<int64_t>>
-BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t>) {
   ViewSignatureAttr signature = getSpec().getSignature();
   MOSH::ShapeAttr in = signature.getIn(), out = signature.getOut();
   int64_t lead = out.getRank() - in.getRank();
@@ -59,7 +61,7 @@ BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
     if (in[d] == out[d + lead])
       result.push_back(dims[d + lead]);
     else if (isStaticOne(in[d]))
-      result.push_back(kPinnedCoordinate);
+      result.push_back(IndexTransformOpInterface::kPinnedCoordinate);
     else
       return std::nullopt;
   }
@@ -68,7 +70,7 @@ BroadcastIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
 
 // Only a reshape that adds or drops unit dims maps coordinates one to one.
 std::optional<SmallVector<int64_t>>
-ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t>) {
   ViewSignatureAttr signature = getSpec().getSignature();
   MOSH::ShapeAttr in = signature.getIn(), out = signature.getOut();
   auto nonUnitDims = [](MOSH::ShapeAttr shape) {
@@ -81,7 +83,8 @@ ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
   SmallVector<int64_t> inDims = nonUnitDims(in), outDims = nonUnitDims(out);
   if (inDims.size() != outDims.size())
     return std::nullopt;
-  SmallVector<int64_t> result(in.getRank(), kPinnedCoordinate);
+  SmallVector<int64_t> result(in.getRank(),
+                              IndexTransformOpInterface::kPinnedCoordinate);
   for (auto [inDim, outDim] : llvm::zip(inDims, outDims)) {
     if (in[inDim] != out[outDim])
       return std::nullopt;
@@ -90,8 +93,19 @@ ReshapeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
   return result;
 }
 
+// Each coordinate the slice moves must be `axis`'s.
 std::optional<SmallVector<int64_t>>
-TransposeIndexOp::mapLoopDims(ArrayRef<int64_t> dims) {
+SliceIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t> axis) {
+  SliceSpecAttr spec = getSpec();
+  for (auto [d, start, step] : llvm::enumerate(spec.getStarts().asArrayRef(),
+                                               spec.getSteps().asArrayRef()))
+    if ((start != 0 || step != 1) && dims[d] != axis)
+      return std::nullopt;
+  return llvm::to_vector(dims);
+}
+
+std::optional<SmallVector<int64_t>>
+TransposeIndexOp::mapLoopDims(ArrayRef<int64_t> dims, std::optional<int64_t>) {
   ArrayRef<int64_t> perm = getSpec().getPerm();
   SmallVector<int64_t> result(perm.size());
   for (auto [i, p] : llvm::enumerate(perm))
@@ -107,7 +121,7 @@ bool CallElementwiseOp::readsIndex() {
   auto decl = SymbolTable::lookupNearestSymbolFrom<MOGG::KernelDeclOp>(
       *this, getCalleeAttr());
   return !decl ||
-         MOGG::KernelDeclAdaptor(decl).elementwiseFunction->takesIndexList();
+         MOGG::KernelDeclAdaptor(decl).elementwiseFunction->takesIndex();
 }
 
 //===----------------------------------------------------------------------===//

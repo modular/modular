@@ -300,6 +300,7 @@ def bench_grouped_matmul[
     ctx.enqueue_copy(expert_ids_dev_buffer, expert_ids_host_ptr)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def epilogue_value_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var c_dev} -> None:
@@ -413,6 +414,7 @@ def bench_grouped_matmul[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_func_nvfp4(
             mut bench: Bencher,
         ) {
@@ -621,6 +623,7 @@ def bench_grouped_matmul[
         ).as_unsafe_any_origin()
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_func_mxf8f6f4(
             mut bench: Bencher,
         ) {
@@ -745,6 +748,7 @@ def bench_grouped_matmul[
         )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_func_fp8_1d2d(
             mut bench: Bencher,
         ) {
@@ -827,6 +831,7 @@ def bench_grouped_matmul[
     else:
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_func(
             mut bench: Bencher,
         ) {

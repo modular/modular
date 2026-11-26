@@ -11,10 +11,11 @@
 // limitations under the License.
 //===----------------------------------------------------------------------===//
 //
-// Fuses groups of declarative `mogg.routine`s, sequences and siblings alike,
-// into one routine whose body is a `mogg.graph_blob`, so that each group
-// launches as one device kernel. The fused routine has the operands and results
-// of every routine it fuses, and `OutlineRoutines` outlines it like any other.
+// Fuses groups of declarative and generated elementwise `mogg.routine`s,
+// sequences and siblings alike, into one routine whose body is a
+// `mogg.graph_blob`, so that each group launches as one device kernel. The
+// fused routine has the operands and results of every routine it fuses, and
+// `OutlineRoutines` outlines it like any other.
 //
 //===----------------------------------------------------------------------===//
 
@@ -54,7 +55,10 @@ ResultRange nonChainOutputs(RoutineOp routine) {
 
 // Whether `routine` can join a blob. `symbols` holds the kernel decls. It
 // needs all of:
-// - one call, to a declarative kernel on one device context;
+// - a device other than the host, which has no blob launch;
+// - one call: to a declarative kernel on one device context, or a generated
+//   elementwise loop (`mogg.call.foreach`);
+// - operands that a launch can take or its kernel can build;
 // - operands that are tensors, buffers it writes in place under its chain, and
 //   named dims;
 // - no result with a data-dependent shape;
@@ -62,6 +66,9 @@ ResultRange nonChainOutputs(RoutineOp routine) {
 //   runs once at init, and a blob runs on every execution.
 bool canJoinBlob(RoutineOp routine, SymbolTable &symbols,
                  const llvm::DenseSet<Value> &invariant) {
+  if (isHostPlaced(MO::getDeviceOrDefaultAny(routine)))
+    return false;
+
   // No result with a data-dependent shape.
   if (!routine.getOutputParamDecls().empty())
     return false;
@@ -96,20 +103,26 @@ bool canJoinBlob(RoutineOp routine, SymbolTable &symbols,
   if (!llvm::all_of(args.dims, isNamedDim) || args.contexts.size() != 1)
     return false;
 
-  // Exactly one call, to a declarative kernel on one device context.
-  CallOpaqueOp call;
+  // Exactly one call, and every other op builds an operand that a launch can
+  // take or its kernel can build.
+  Operation *call = nullptr;
   for (Operation &op : routine.getBody().front()) {
-    if (!op.hasTrait<CallLike>())
+    if (op.hasTrait<CallLike>()) {
+      if (call)
+        return false;
+      call = &op;
       continue;
-    if (call)
-      return false;
-    call = dyn_cast<CallOpaqueOp>(op);
-    if (!call)
+    }
+    auto operand = dyn_cast<LaunchOperandInterface>(op);
+    if (!operand || operand.getLaunchPlacement() == LaunchPlacement::HostOnly)
       return false;
   }
-  if (!call || call.getDeviceContexts().size() != 1)
+  if (isa_and_nonnull<CallForeachOp>(call))
+    return true;
+  auto opaque = dyn_cast_or_null<CallOpaqueOp>(call);
+  if (!opaque || opaque.getDeviceContexts().size() != 1)
     return false;
-  auto decl = symbols.lookup<KernelDeclOp>(call.getCallee());
+  auto decl = symbols.lookup<KernelDeclOp>(opaque.getCallee());
   return decl && decl.getExecuteDevice();
 }
 

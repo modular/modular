@@ -23,6 +23,8 @@
 #include "GraphCompiler/MOGGDialect/MOGGDialect.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "GraphCompiler/MOSHDialect/MOSHAttrs.h"
+#include "GraphCompiler/MOSHDialect/MOSHDialect.h"
+#include "GraphCompiler/MOSHDialect/MOSHOps.h"
 
 #include "mlir/IR/Builders.h"
 #include "llvm/ADT/SmallVector.h"
@@ -87,17 +89,44 @@ SmallVector<Operation *> matchViewChain(IterElementwiseOp op) {
   return transforms;
 }
 
+// Matches `x[0:n]` on a static input, where `n` is symbolic, and returns the
+// sliced dim. For `[1, 512] -> [n, 512]` the runtime slices dim 1, not dim 0,
+// so the start must be 0 for both to give the same view.
+std::optional<int64_t> matchSymbolicPrefixSliceDim(SliceSpecAttr spec) {
+  MOSH::ShapeAttr out = spec.getSignature().getOut();
+  SmallVector<int64_t> inDims = spec.getSignature().getIn().getIntDims();
+  SmallVector<int64_t> outDims = out.getIntDims();
+
+  uint64_t k = llvm::find_if(outDims, ShapedType::isDynamic) - outDims.begin();
+  if (k == outDims.size() || !MO::TensorType::isParameterizedDimParam(out[k]))
+    return std::nullopt;
+  for (auto [i, inDim] : llvm::enumerate(inDims)) {
+    if (i < k && (inDim != 1 || outDims[i] != 1))
+      return std::nullopt;
+    if (i > k && inDim != outDims[i])
+      return std::nullopt;
+  }
+
+  if (!llvm::all_of(spec.getStarts().asArrayRef(),
+                    [](int64_t start) { return start == 0; }) ||
+      !llvm::all_of(spec.getSteps().asArrayRef(),
+                    [](int64_t step) { return step == 1; }))
+    return std::nullopt;
+  return k;
+}
+
 // Returns the sliced dimension `k` if `slice` is a contiguous slice: every
 // dimension but `k` keeps its input's full extent, and `k`'s start/stop/step
-// are static with step 1. A slice with any symbolic dim takes the general
-// (already zero-copy) MAPToMOGG path instead.
+// are static with step 1. A slice with a symbolic extent goes to
+// `matchSymbolicPrefixSliceDim`.
 std::optional<int64_t> matchContiguousSliceDim(SliceIndexOp slice) {
   MAP::SliceSpecAttr spec = slice.getSpec();
   SmallVector<int64_t> inDims = spec.getSignature().getIn().getIntDims();
   SmallVector<int64_t> outDims = spec.getSignature().getOut().getIntDims();
-  if (llvm::any_of(inDims, ShapedType::isDynamic) ||
-      llvm::any_of(outDims, ShapedType::isDynamic))
+  if (llvm::any_of(inDims, ShapedType::isDynamic))
     return std::nullopt;
+  if (llvm::any_of(outDims, ShapedType::isDynamic))
+    return matchSymbolicPrefixSliceDim(spec);
 
   int64_t k = findContiguousSliceDim(inDims);
   for (auto [i, inDim] : llvm::enumerate(inDims))
@@ -155,8 +184,18 @@ bool raiseViewChain(IterElementwiseOp op, unsigned &numSlicesRaised,
           cast<MO::TensorType>(slice->getOperand(1).getType()).getDeviceRef();
       Value startK =
           MO::ConstantOp::create(builder, op.getLoc(), starts[k], hostDevice);
-      Value stopK =
-          MO::ConstantOp::create(builder, op.getLoc(), stops[k], hostDevice);
+      // A symbolic extent comes from a prefix, so it is also the stop.
+      TypedAttr extentK = spec.getSignature().getOut()[k];
+      Value stopK;
+      if (MOSH::ShapeAttr::getStaticDim(extentK)) {
+        stopK =
+            MO::ConstantOp::create(builder, op.getLoc(), stops[k], hostDevice);
+      } else {
+        Value extent =
+            MOSH::ParamToValueOp::create(builder, op.getLoc(), extentK);
+        stopK = MO::IndexToTensorOp::create(builder, op.getLoc(),
+                                            startK.getType(), extent);
+      }
       Type outType =
           isLast ? op.getResultTypes()[0]
                  : Type(curType.cloneWith(spec.getSignature().getOut()));

@@ -27,6 +27,11 @@
 //                                                 %s = mo.reduce.add(%e)
 //                                                 %y = %e * (1 / %s)
 //
+//   %q, %s = mo.composite                         %n = <rms_norm in f32>
+//     .rms_norm_fused_quantize_              =>   %m = mo.reduce.max(abs(%n))
+//     dynamic_scaled_fp8(%x, %w, %ub)             %s = min(%m, %ub) / fp8_max
+//                                                 %q = cast(clamp(%n / %s))
+//
 // Temporary, until no pattern depends on a composite (rms_norm + rope, for
 // example).
 //
@@ -88,6 +93,31 @@ TensorValue scalar(RewriterBase &rewriter, Location loc, ElementsAttr value,
   return castTo(rewriter, loc, f32, dtype);
 }
 
+// The same, from a float.
+TensorValue scalar(RewriterBase &rewriter, Location loc, float value,
+                   DType dtype, MO::TensorType like) {
+  return scalar(
+      rewriter, loc,
+      cast<ElementsAttr>(FloatArrayElementsAttr::get(
+          RankedTensorType::get({}, rewriter.getF32Type()), APFloat(value))),
+      dtype, like);
+}
+
+// `value` on `device`: a constant is built there again, anything else is
+// copied over. A null `device` keeps `value` where it is.
+TensorValue onDevice(RewriterBase &rewriter, Location loc, TensorValue value,
+                     DeviceRefAttr device) {
+  if (!device || value.getType().getDeviceRef() == device)
+    return value;
+  if (auto constant = value.getDefiningOp<ConstantOp>())
+    return ConstantOp::create(rewriter, loc, value.getType().cloneWith(device),
+                              constant.getValue());
+  return TransferOp::create(rewriter, loc, value, device,
+                            ChainCreateOp::create(rewriter, loc, ValueRange{}),
+                            /*alwaysElideSameDeviceCopy=*/false)
+      .getResult();
+}
+
 // The extent of `type`'s last dim as a rank-0 `dtype` tensor on its device: a
 // constant when static, else read from the shape on the host and copied over.
 TensorValue lastDimExtent(RewriterBase &rewriter, Location loc,
@@ -115,12 +145,7 @@ TensorValue lastDimExtent(RewriterBase &rewriter, Location loc,
                                      host, type.getMetadata()),
                  index),
              dtype);
-  if (device == host)
-    return value;
-  return TransferOp::create(rewriter, loc, value, device,
-                            ChainCreateOp::create(rewriter, loc, ValueRange{}),
-                            /*alwaysElideSameDeviceCopy=*/false)
-      .getResult();
+  return onDevice(rewriter, loc, value, device);
 }
 
 // TODO(GEX-3346): a target that wants a composite whole should register a
@@ -132,6 +157,41 @@ bool hasKernel(const MOGG::MojoRegistry &registry, Operation *op) {
               .getResolvedKernel(name,
                                  MOGG::MojoRegistry::getDeviceRefForOp(op))
               .isError();
+}
+
+// xa * rsqrt(reduce.add(xa * xa) / N + epsilon), the row normalized in
+// `xa`'s dtype, before the weight.
+TensorValue normalizeRows(RewriterBase &rewriter, Location loc, TensorValue xa,
+                          ElementsAttr epsilon) {
+  MO::TensorType type = xa.getType();
+  DType accum = type.getDtype();
+  TensorValue sum = ReduceAddOp::create(
+      rewriter, loc, MulOp::create(rewriter, loc, xa, xa), /*axis=*/-1);
+  MOSH::ShapeAttr rowShape = sum.getType().getShape();
+  TensorValue meanSquare = DivOp::create(
+      rewriter, loc, sum,
+      broadcastTo(rewriter, loc, lastDimExtent(rewriter, loc, type, accum),
+                  rowShape));
+  TensorValue variance = AddOp::create(
+      rewriter, loc, meanSquare,
+      broadcastTo(rewriter, loc, scalar(rewriter, loc, epsilon, accum, type),
+                  rowShape));
+  TensorValue inv =
+      RsqrtOp::create(rewriter, loc, variance.getType(), variance);
+  return MulOp::create(rewriter, loc, xa,
+                       broadcastTo(rewriter, loc, inv, type.getShape()));
+}
+
+// (cast(w, dtype) + cast(offset, dtype)), broadcast over `like`'s rows.
+TensorValue offsetWeight(RewriterBase &rewriter, Location loc,
+                         TensorValue weight, ElementsAttr offset, DType dtype,
+                         MO::TensorType like) {
+  MOSH::ShapeAttr weightShape = weight.getType().getShape();
+  TensorValue gamma = AddOp::create(
+      rewriter, loc, castTo(rewriter, loc, weight, dtype),
+      broadcastTo(rewriter, loc, scalar(rewriter, loc, offset, dtype, like),
+                  weightShape));
+  return broadcastTo(rewriter, loc, gamma, like.getShape());
 }
 
 // As the hand-written rms_norm computes it, in `accum` = get_accum_type[dtype]:
@@ -155,34 +215,11 @@ struct DecomposeRMSNorm final
     DType dtype = type.getDtype();
     DType accum = accumDType(dtype);
 
-    TensorValue xa = castTo(rewriter, loc, x, accum);
-    TensorValue sum = ReduceAddOp::create(
-        rewriter, loc, MulOp::create(rewriter, loc, xa, xa), /*axis=*/-1);
-    MOSH::ShapeAttr rowShape = sum.getType().getShape();
-    TensorValue meanSquare = DivOp::create(
-        rewriter, loc, sum,
-        broadcastTo(rewriter, loc, lastDimExtent(rewriter, loc, type, accum),
-                    rowShape));
-    TensorValue variance = AddOp::create(
-        rewriter, loc, meanSquare,
-        broadcastTo(rewriter, loc,
-                    scalar(rewriter, loc, op.getEpsilon(), accum, type),
-                    rowShape));
-    TensorValue inv =
-        RsqrtOp::create(rewriter, loc, variance.getType(), variance);
-    TensorValue normed = MulOp::create(
-        rewriter, loc, xa, broadcastTo(rewriter, loc, inv, type.getShape()));
-
-    TensorValue weight = op.getWeight();
-    MOSH::ShapeAttr weightShape = weight.getType().getShape();
+    TensorValue normed = normalizeRows(
+        rewriter, loc, castTo(rewriter, loc, x, accum), op.getEpsilon());
     DType weightDType = op.getMultiplyBeforeCast() ? accum : dtype;
-    TensorValue gamma =
-        AddOp::create(rewriter, loc, castTo(rewriter, loc, weight, weightDType),
-                      broadcastTo(rewriter, loc,
-                                  scalar(rewriter, loc, op.getWeightOffset(),
-                                         weightDType, type),
-                                  weightShape));
-    gamma = broadcastTo(rewriter, loc, gamma, type.getShape());
+    TensorValue gamma = offsetWeight(rewriter, loc, op.getWeight(),
+                                     op.getWeightOffset(), weightDType, type);
     TensorValue result =
         op.getMultiplyBeforeCast()
             ? castTo(rewriter, loc, MulOp::create(rewriter, loc, normed, gamma),
@@ -241,6 +278,109 @@ struct DecomposeSoftmax final
   const MOGG::MojoRegistry &registry;
 };
 
+// The FP8 quantize of `xa`, one scale per row, as the hand-written kernels
+// compute it, in `xa`'s dtype `accum` and the scales dtype `sdt`:
+//
+//   scale = min(cast(reduce.max(abs(xa)), sdt), cast(ub, sdt)) / fp8_max
+//   inv   = 1 / cast(scale, accum), or 0 where that is not finite
+//   q     = cast(clamp(xa * inv, -fp8_max, fp8_max), out)
+//
+// Returns `q` and the `[..., 1]` scales.
+std::pair<TensorValue, TensorValue>
+quantizePerRow(RewriterBase &rewriter, Location loc, TensorValue xa,
+               TensorValue scaleUb, MO::TensorType outType, DType scalesDType) {
+  MO::TensorType type = xa.getType();
+  DType accum = type.getDtype();
+  float fp8Max =
+      APFloat::getLargest(
+          cast<FloatType>(outType.getElementType()).getFloatSemantics())
+          .convertToFloat();
+
+  TensorValue max = ReduceMaxOp::create(
+      rewriter, loc, AbsOp::create(rewriter, loc, type, xa), /*axis=*/-1);
+  MOSH::ShapeAttr rowShape = max.getType().getShape();
+  TensorValue ub = castTo(rewriter, loc,
+                          onDevice(rewriter, loc, scaleUb, type.getDeviceRef()),
+                          scalesDType);
+  TensorValue scale = DivOp::create(
+      rewriter, loc,
+      MinOp::create(rewriter, loc, castTo(rewriter, loc, max, scalesDType),
+                    broadcastTo(rewriter, loc, ub, rowShape)),
+      broadcastTo(rewriter, loc,
+                  scalar(rewriter, loc, fp8Max, scalesDType, type), rowShape));
+
+  TensorValue inv = DivOp::create(
+      rewriter, loc,
+      broadcastTo(rewriter, loc, scalar(rewriter, loc, 1.0f, accum, type),
+                  rowShape),
+      castTo(rewriter, loc, scale, accum));
+  MO::TensorType maskType = inv.getType().cloneWith(DType::kBool);
+  TensorValue notFinite =
+      OrOp::create(rewriter, loc, IsInfOp::create(rewriter, loc, maskType, inv),
+                   IsNaNOp::create(rewriter, loc, maskType, inv));
+  inv = SelectOp::create(rewriter, loc, inv.getType(), notFinite,
+                         broadcastTo(rewriter, loc,
+                                     scalar(rewriter, loc, 0.0f, accum, type),
+                                     rowShape),
+                         inv);
+
+  TensorValue scaled = MulOp::create(
+      rewriter, loc, xa, broadcastTo(rewriter, loc, inv, type.getShape()));
+  TensorValue clamped = MinOp::create(
+      rewriter, loc,
+      MaxOp::create(rewriter, loc, scaled,
+                    broadcastTo(rewriter, loc,
+                                scalar(rewriter, loc, -fp8Max, accum, type),
+                                type.getShape())),
+      broadcastTo(rewriter, loc, scalar(rewriter, loc, fp8Max, accum, type),
+                  type.getShape()));
+  return {castTo(rewriter, loc, clamped, outType.getDtype()), scale};
+}
+
+// rms_norm (multiply_before_cast) then a per-token FP8 quantize, as the
+// hand-written fused kernel computes them: the normalized row stays in
+// `accum` = get_accum_type[dtype] between the two.
+//
+//   xa = cast(x, accum)
+//   n  = xa * inv * (cast(w, accum) + offset)                as rms_norm
+//   q, scale = quantizePerRow(n)
+//
+// The scales are the per-row scale, reshaped to the op's scales type.
+struct DecomposeRMSNormFusedQuantize final
+    : public OpRewritePattern<
+          Composite::RMSNormFusedQuantizeDynamicScaledFP8Op> {
+  DecomposeRMSNormFusedQuantize(MLIRContext *ctx,
+                                const MOGG::MojoRegistry &registry)
+      : OpRewritePattern(ctx), registry(registry) {}
+
+  LogicalResult
+  matchAndRewrite(Composite::RMSNormFusedQuantizeDynamicScaledFP8Op op,
+                  PatternRewriter &rewriter) const override {
+    if (hasKernel(registry, op))
+      return rewriter.notifyMatchFailure(op, "a kernel implements it");
+    Location loc = op.getLoc();
+    TensorValue x = cast<TensorValue>(op.getInput());
+    MO::TensorType type = x.getType();
+    DType accum = accumDType(type.getDtype());
+
+    TensorValue normed = MulOp::create(
+        rewriter, loc,
+        normalizeRows(rewriter, loc, castTo(rewriter, loc, x, accum),
+                      op.getEpsilon()),
+        offsetWeight(rewriter, loc, cast<TensorValue>(op.getWeight()),
+                     op.getWeightOffset(), accum, type));
+    auto scalesType = cast<MO::TensorType>(op.getScale().getType());
+    auto [output, scale] = quantizePerRow(
+        rewriter, loc, normed, cast<TensorValue>(op.getScaleUb()),
+        cast<MO::TensorType>(op.getOutput().getType()), scalesType.getDtype());
+    rewriter.replaceOp(op, {output, Static::ReshapeOp::create(
+                                        rewriter, loc, scalesType, scale)});
+    return mlir::success();
+  }
+
+  const MOGG::MojoRegistry &registry;
+};
+
 struct TmpDecomposeCompositesPass final
     : public MO::impl::TmpDecomposeCompositesBase<TmpDecomposeCompositesPass> {
   using Base::Base;
@@ -249,7 +389,9 @@ struct TmpDecomposeCompositesPass final
     MOGG::MojoRegistry registry(
         getOperation()->getParentOfType<mlir::ModuleOp>());
     RewritePatternSet patterns(&getContext());
-    patterns.add<DecomposeRMSNorm, DecomposeSoftmax>(&getContext(), registry);
+    patterns
+        .add<DecomposeRMSNorm, DecomposeRMSNormFusedQuantize, DecomposeSoftmax>(
+            &getContext(), registry);
     walkAndApplyPatterns(getOperation(), std::move(patterns));
   }
 };

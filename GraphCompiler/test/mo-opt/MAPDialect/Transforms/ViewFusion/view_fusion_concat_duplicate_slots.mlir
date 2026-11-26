@@ -33,8 +33,8 @@ mo.graph @concatThroughTwoSlots(%a: !mo.tensor<[8, 4], f32>, %b: !mo.tensor<[8, 
       outputs (%o0: !mo.tensor<[8, 8], f32>, %o1: !mo.tensor<[8, 8], f32>)
       index   (%j: !map.index<2>) -> (!mo.tensor<[8, 8], f32>, !mo.tensor<[8, 8], f32>) {
     %u = map.load %s0[%j] : !mo.tensor<[8, 8], f32>
-    %jt = map.index.transpose<#map.index.transpose.spec<[8, 8] -> [8, 8], perm = [1, 0]>>(%j, %p)
-        : (!map.index<2>, !mo.tensor<[2], si64>) -> !map.index<2>
+    %jt = map.index.transpose<#map.index.transpose.spec<[8, 8] -> [8, 8], perm = [1, 0]>>(%j)
+        : (!map.index<2>) -> !map.index<2>
     %w = map.load %s1[%jt] : !mo.tensor<[8, 8], f32>
     map.store %o0[%j] = %u : !mo.tensor<[8, 8], f32>
     map.store %o1[%j] = %w : !mo.tensor<[8, 8], f32>

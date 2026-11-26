@@ -164,6 +164,15 @@ diff --git a/cpp/earley_parser.cc b/cpp/earley_parser.cc
 diff --git a/cpp/earley_parser.h b/cpp/earley_parser.h
 --- a/cpp/earley_parser.h
 +++ b/cpp/earley_parser.h
+@@ -14,7 +14,7 @@
+ #include <vector>
+ 
+ #include "grammar_impl.h"
+-#include "support/compact_2d_array.h"
++#include "support/stable_compact_2d_array.h"
+ #include "support/utils.h"
+ #include "xgrammar/grammar.h"
+ 
 @@ -62,7 +62,8 @@ struct ParserState {
     * \brief A sequence_id value of kUnexpandedRuleStartSequenceId means a rule hasn't been
     * expanded.
@@ -174,6 +183,22 @@ diff --git a/cpp/earley_parser.h b/cpp/earley_parser.h
  
    /*!
     * \brief A parent_id value of kNoParent means this ParserState is the root of the parsing stack.
+@@ -253,13 +254,13 @@ class EarleyParser {
+    * \brief rule_id_to_completable_states[i][j] is the i pos j rule_id states. Earley
+    * parser needs it to complete.
+    */
+-  Compact2DArray<std::pair<int32_t, ParserState>> rule_id_to_completable_states_;
++  StableCompact2DArray<std::pair<int32_t, ParserState>> rule_id_to_completable_states_;
+ 
+   /*!
+    * \brief The states history. state_stack[i] is a vector storing the states after accepting the
+    * input[i-1].
+    */
+-  Compact2DArray<ParserState> scanable_state_history_;
++  StableCompact2DArray<ParserState> scanable_state_history_;
+ 
+   /*!
+    * \brief A temperate vector only used in Advance, used to add states in the
 diff --git a/cpp/fsm.cc b/cpp/fsm.cc
 --- a/cpp/fsm.cc
 +++ b/cpp/fsm.cc
@@ -12283,3 +12308,285 @@ index b6930d5..fe69fef 100644
          const std::string ch = "[^\\0-\\x1f]";
          return ch + RepeatExpr(spec.min_length, spec.max_length);
        }
+diff --git a/cpp/support/stable_compact_2d_array.h b/cpp/support/stable_compact_2d_array.h
+new file mode 100644
+--- /dev/null
++++ b/cpp/support/stable_compact_2d_array.h
+@@ -0,0 +1,277 @@
++/*!
++ * \file xgrammar/support/stable_compact_2d_array.h
++ */
++#ifndef XGRAMMAR_SUPPORT_STABLE_COMPACT_2D_ARRAY_H_
++#define XGRAMMAR_SUPPORT_STABLE_COMPACT_2D_ARRAY_H_
++
++#include <algorithm>
++#include <array>
++#include <cstdint>
++#include <memory>
++#include <tuple>
++#include <type_traits>
++#include <utility>
++#include <vector>
++
++#include "compact_2d_array.h"
++#include "logging.h"
++
++namespace xgrammar {
++
++namespace detail {
++
++/*!
++ * \brief Storage whose elements never move. Chunk k > kFirstLog holds indices [2^k, 2^(k+1));
++ * chunk kFirstLog holds [0, 2^(kFirstLog+1)). The capacities match a doubling vector's, but
++ * growing allocates the next chunk instead of copying the old ones.
++ */
++template <typename T, int kFirstLog = 6>
++class DoublingChunks {
++  // Elements are copy-constructed into raw storage and never destroyed.
++  static_assert(std::is_trivially_copy_constructible_v<T> && std::is_trivially_destructible_v<T>);
++
++ public:
++  DoublingChunks() = default;
++  DoublingChunks(const DoublingChunks&) = delete;
++  DoublingChunks& operator=(const DoublingChunks&) = delete;
++  DoublingChunks(DoublingChunks&& other) noexcept : base_(std::exchange(other.base_, {})) {}
++  DoublingChunks& operator=(DoublingChunks&& other) noexcept {
++    std::swap(base_, other.base_);
++    return *this;
++  }
++  ~DoublingChunks() {
++    for (int k = kFirstLog; k < 32; ++k) {
++      if (base_[k] != 0) std::allocator<T>().deallocate(At(Begin(k)), Size(k));
++    }
++  }
++
++  static int ChunkOf(uint32_t i) { return 31 - __builtin_clz(i | (1u << kFirstLog)); }
++  static uint32_t Begin(int k) { return (1u << k) & ~((2u << kFirstLog) - 1); }
++  static uint32_t Size(int k) { return k == kFirstLog ? 2u << kFirstLog : 1u << k; }
++
++  T* At(uint32_t i) const { return InChunk(ChunkOf(i), i); }
++  /*! \brief Element i, which must lie in chunk k. */
++  T* InChunk(int k, uint32_t i) const { return reinterpret_cast<T*>(base_[k]) + i; }
++
++  /*! \brief The slots from i to the end of i's chunk, allocating the chunk on first use. */
++  std::pair<T*, T*> Span(uint32_t i) {
++    const int k = ChunkOf(i);
++    if (base_[k] == 0) {
++      base_[k] = reinterpret_cast<uintptr_t>(std::allocator<T>().allocate(Size(k))) -
++                 uintptr_t{Begin(k)} * sizeof(T);
++    }
++    return {InChunk(k, i), InChunk(k, Begin(k) + Size(k))};
++  }
++
++  /*! \brief Like Span, but without allocating: an unallocated chunk gives an empty span. */
++  std::pair<T*, T*> SpanIfAllocated(uint32_t i) const {
++    const int k = ChunkOf(i);
++    if (base_[k] == 0) return {nullptr, nullptr};
++    return {InChunk(k, i), InChunk(k, Begin(k) + Size(k))};
++  }
++
++ private:
++  /*! \brief Chunk k's address minus Begin(k) elements, so element i is at base_[k] + i. */
++  std::array<uintptr_t, 32> base_{};
++};
++
++}  // namespace detail
++
++/*!
++ * \brief A Compact2DArray for append-only histories that grow without bound, such as the Earley
++ * parser's per-byte states. Rows before the latest never move, so an append costs O(row) at any
++ * length: a vector would copy the whole history each time it doubles. Each row lies inside one
++ * chunk; a row that does not fit in the rest of a chunk starts the next chunk that holds it, and
++ * the latest row moves each time it outgrows its chunk, into one at least twice its size.
++ */
++template <typename DataType>
++class StableCompact2DArray {
++  using Chunks = detail::DoublingChunks<DataType>;
++  using Ends = detail::DoublingChunks<uint32_t>;
++
++ public:
++  using Row = typename Compact2DArray<DataType>::Row;
++
++  StableCompact2DArray() = default;
++  StableCompact2DArray(const StableCompact2DArray& other) {
++    for (int32_t i = 0; i < other.size(); ++i) PushBack(other[i]);
++  }
++  StableCompact2DArray& operator=(const StableCompact2DArray& other) {
++    if (this != &other) *this = StableCompact2DArray(other);
++    return *this;
++  }
++  // Moves swap, so the source never points into chunks it no longer owns.
++  StableCompact2DArray(StableCompact2DArray&& other) noexcept { Swap(other); }
++  StableCompact2DArray& operator=(StableCompact2DArray&& other) noexcept {
++    Swap(other);
++    return *this;
++  }
++
++  int32_t size() const { return size_; }
++
++  // The hot members are forced inline: mask fill calls them for every byte of every candidate
++  // token, where a call per access is measurable, and the compiler declines to inline them.
++  __attribute__((always_inline)) Row operator[](int32_t i) const {
++    XGRAMMAR_DCHECK(i >= 0 && i < size_) << "StableCompact2DArray index " << i << " is out of bound";
++    if (i == size_ - 1) return Back();
++    if (i == size_ - 2) return {prev_data_, prev_len_};
++    return Older(i);
++  }
++
++  __attribute__((always_inline)) Row Back() const {
++    return {back_data_, static_cast<int32_t>(write_ - back_data_)};
++  }
++
++  __attribute__((always_inline)) int32_t PushBack(const DataType* new_data, int32_t new_data_len
++  ) {
++    if (new_data_len > limit_ - write_ || end_write_ == end_limit_) {
++      return PushBackSlow(new_data, new_data_len);
++    }
++    // Written rows stay put during the copy, so new_data may be one of ours. Most parser rows are
++    // empty, and skipping the copy call for them is measurable in mask fill.
++    if (new_data_len > 0) std::uninitialized_copy_n(new_data, new_data_len, write_);
++    return EndRow(write_, new_data_len, (size_ == 0 ? 0 : *back_end_) + new_data_len);
++  }
++
++  __attribute__((always_inline)) int32_t PushBack(const std::vector<DataType>& new_data) {
++    return PushBack(new_data.data(), static_cast<int32_t>(new_data.size()));
++  }
++
++  int32_t PushBack(const Row& row) { return PushBack(row.data, row.data_len); }
++
++  __attribute__((always_inline)) void PushBackInLatestRow(const DataType& new_data) {
++    XGRAMMAR_DCHECK(size_ > 0) << "Cannot push back in an empty StableCompact2DArray";
++    if (write_ == limit_) return PushBackInLatestRowSlow(new_data);
++    new (write_++) DataType(new_data);
++    ++*back_end_;
++  }
++
++  /*! \brief Pop the last cnt rows. Their chunks stay allocated, as a vector keeps capacity. */
++  void PopBack(int32_t cnt) {
++    size_ -= cnt;
++    if (size_ == 0) {
++      back_data_ = write_ = limit_ = nullptr;
++      end_write_ = end_limit_ = nullptr;
++      return;
++    }
++    back_end_ = ends_.At(size_ - 1);
++    std::tie(end_write_, end_limit_) = ends_.SpanIfAllocated(size_);
++    const uint32_t end = *back_end_;
++    const uint32_t prev_end = PrevEnd(size_ - 1, back_end_);
++    if (end == prev_end) {
++      // An empty latest row starts where its first element would go.
++      std::tie(write_, limit_) = data_.SpanIfAllocated(end);
++      back_data_ = write_;
++    } else {
++      const int k = Chunks::ChunkOf(end - 1);
++      back_data_ = data_.InChunk(k, std::max(prev_end, Chunks::Begin(k)));
++      write_ = data_.InChunk(k, end);
++      limit_ = data_.InChunk(k, Chunks::Begin(k) + Chunks::Size(k));
++    }
++    if (size_ >= 2) {
++      const Row prev = RowAt(size_ == 2 ? 0 : *ends_.At(size_ - 3), prev_end);
++      prev_data_ = const_cast<DataType*>(prev.data);
++      prev_len_ = prev.data_len;
++    }
++  }
++
++ private:
++  __attribute__((noinline)) Row Older(int32_t i) const {
++    const uint32_t* end = ends_.At(i);
++    return RowAt(PrevEnd(i, end), *end);
++  }
++
++  /*! \brief Makes [data, data + len) the latest row; it ends at end in data_'s index space. */
++  __attribute__((always_inline)) int32_t EndRow(DataType* data, int32_t len, uint32_t end) {
++    prev_data_ = back_data_;
++    prev_len_ = static_cast<int32_t>(write_ - back_data_);
++    back_data_ = data;
++    write_ = data + len;
++    back_end_ = end_write_++;
++    *back_end_ = end;
++    return size_++;
++  }
++
++  // The slow paths are out of line, so the parser's loops inline only the common case.
++  __attribute__((noinline)) int32_t PushBackSlow(const DataType* new_data, int32_t new_data_len) {
++    if (end_write_ == end_limit_) std::tie(end_write_, end_limit_) = ends_.Span(size_);
++    const uint32_t end = size_ == 0 ? 0 : *back_end_;
++    // An empty row takes no slot, so it allocates nothing.
++    if (new_data_len == 0) return EndRow(write_, 0, end);
++    const uint32_t begin = Fit(end, new_data_len);
++    DataType* data;
++    std::tie(data, limit_) = data_.Span(begin);
++    std::uninitialized_copy_n(new_data, new_data_len, data);
++    return EndRow(data, new_data_len, begin + new_data_len);
++  }
++
++  __attribute__((noinline)) void PushBackInLatestRowSlow(const DataType& new_data) {
++    const DataType value = new_data;
++    const int32_t len = static_cast<int32_t>(write_ - back_data_);
++    // The latest row filled its chunk: copy it, whole, to the first chunk that holds one more.
++    const uint32_t begin = Fit(*back_end_, len + 1);
++    DataType* data;
++    std::tie(data, limit_) = data_.Span(begin);
++    std::uninitialized_copy_n(back_data_, len, data);
++    back_data_ = data;
++    write_ = data + len;
++    new (write_++) DataType(value);
++    *back_end_ = begin + len + 1;
++  }
++
++  /*! \brief Where n elements from index begin on fit inside one chunk. */
++  static uint32_t Fit(uint32_t begin, uint32_t n) {
++    while (Chunks::ChunkOf(begin) != Chunks::ChunkOf(begin + n - 1)) {
++      begin = Chunks::Begin(Chunks::ChunkOf(begin) + 1);
++    }
++    return begin;
++  }
++
++  void Swap(StableCompact2DArray& other) noexcept {
++    std::swap(data_, other.data_);
++    std::swap(ends_, other.ends_);
++    std::swap(size_, other.size_);
++    std::swap(back_data_, other.back_data_);
++    std::swap(write_, other.write_);
++    std::swap(limit_, other.limit_);
++    std::swap(back_end_, other.back_end_);
++    std::swap(end_write_, other.end_write_);
++    std::swap(end_limit_, other.end_limit_);
++    std::swap(prev_data_, other.prev_data_);
++    std::swap(prev_len_, other.prev_len_);
++  }
++
++  /*! \brief The end of row i - 1, given where row i's end is stored. */
++  uint32_t PrevEnd(uint32_t i, const uint32_t* end) const {
++    if (i == 0) return 0;
++    return Ends::Begin(Ends::ChunkOf(i)) == i ? *ends_.At(i - 1) : end[-1];
++  }
++
++  /*! \brief A row that skipped the tail of a chunk starts at the beginning of its own chunk. */
++  Row RowAt(uint32_t prev_end, uint32_t end) const {
++    if (end == prev_end) return {nullptr, 0};
++    const int k = Chunks::ChunkOf(end - 1);
++    const uint32_t begin = std::max(prev_end, Chunks::Begin(k));
++    return {data_.InChunk(k, begin), static_cast<int32_t>(end - begin)};
++  }
++
++  Chunks data_;
++  /*! \brief ends_[i] is one past the last element of row i in data_. */
++  Ends ends_;
++  int32_t size_ = 0;
++  /*! \brief The latest row is [back_data_, write_); its chunk ends at limit_. */
++  DataType* back_data_ = nullptr;
++  DataType* write_ = nullptr;
++  DataType* limit_ = nullptr;
++  /*! \brief Where the latest row's end is stored, and the next free end slot of its chunk. */
++  uint32_t* back_end_ = nullptr;
++  uint32_t* end_write_ = nullptr;
++  uint32_t* end_limit_ = nullptr;
++  /*! \brief Row size_ - 2, which the parser reads almost as often as the latest row. */
++  DataType* prev_data_ = nullptr;
++  int32_t prev_len_ = 0;
++};
++
++}  // namespace xgrammar
++
++#endif  // XGRAMMAR_SUPPORT_STABLE_COMPACT_2D_ARRAY_H_

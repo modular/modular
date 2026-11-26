@@ -21,17 +21,30 @@ pinned bytes must equal an FP8 table of the same values bit for bit.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.driver import Buffer
+from max.driver import (
+    CPU,
+    Accelerator,
+    Buffer,
+    set_virtual_device_api,
+    set_virtual_device_count,
+    set_virtual_device_target_arch,
+)
 from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.type import Shape
 from max.graph.weights import WeightData
 from max.pipelines.architectures.deepseekV41_modulev3 import model as model_mod
+from max.pipelines.architectures.deepseekV41_modulev3.layers import (
+    engram_init,
+)
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     EngramTableFormat,
 )
@@ -282,3 +295,98 @@ def test_pipeline_adapter_refuses_an_undeclared_table_format(
             _checkpoint(state),
             _hf_config(ENGRAM_EMBED_KEYS if declared_mxfp4 else {}),
         )
+
+
+@pytest.fixture
+def virtual_sm100() -> Iterator[None]:
+    """A virtual B200 beside the host, as the artifact export compiles for.
+
+    The graph compiler validates host dtypes against the accelerator
+    target, so FP8 host data movement compiles only in a GPU session.
+    """
+    set_virtual_device_api("cuda")
+    set_virtual_device_target_arch("sm_100a")
+    set_virtual_device_count(1)
+    try:
+        yield
+    finally:
+        set_virtual_device_count(0)
+
+
+@pytest.mark.parametrize(
+    ("part", "packed"),
+    [("weight", False), ("weight", True), ("scale", False)],
+)
+def test_static_initializer_graph_compiles_for_fp8_tables(
+    part: str,
+    packed: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    virtual_sm100: None,
+) -> None:
+    """The initializer writes each table in its own fp8 dtype.
+
+    ``test_engram_static_init_gpu`` runs the same graph and checks its bytes.
+    """
+    monkeypatch.setattr(engram_init, "_CHUNK_ROWS", 5)
+    dtype, width = (
+        (DType.float8_e4m3fn, DIM)
+        if part == "weight"
+        else (DType.float8_e8m0fnu, SCALES)
+    )
+    source_dtype, source_width = (
+        (DType.uint8, width // 2) if packed else (dtype, width)
+    )
+    cpu = DeviceRef.CPU()
+    with Graph(
+        "engram_static_init",
+        input_types=[
+            BufferType(dtype, [ROWS, width], cpu),
+            TensorType(source_dtype, [ROWS, source_width], cpu),
+        ],
+    ) as graph:
+        destination, table = graph.inputs
+        engram_init._initialize_table(
+            destination.buffer, table.tensor, packed=packed
+        )
+        graph.output()
+    InferenceSession(devices=[CPU(), Accelerator()]).load(graph)
+
+
+@pytest.mark.parametrize("packed", [False, True])
+def test_static_buffers_carry_the_tables_fp8_dtypes(
+    packed: bool, virtual_sm100: None
+) -> None:
+    """The export declares the tables as the fp8 the Engram ops read."""
+    keys = ENGRAM_EMBED_KEYS if packed else {}
+    config: Any = SimpleNamespace(
+        pipeline_config=SimpleNamespace(
+            model=SimpleNamespace(huggingface_config=_hf_config(keys))
+        ),
+        text_config=SimpleNamespace(engram_head_dim=DIM),
+        engram_layer_ids=[LAYER],
+        engram_num_embeddings=[ROWS],
+        devices=[DeviceRef.CPU()],
+    )
+    prefix = f"layers.{LAYER}.engram.embed"
+    state = {f"{prefix}.weight": Mock(), f"{prefix}.scale": Mock()}
+    constants = engram_init.build_engram_static_inputs(config, state)
+    expected = {
+        "engram_table_0_weight": (DType.float8_e4m3fn, [ROWS, DIM]),
+        "engram_table_0_scale": (DType.float8_e8m0fnu, [ROWS, SCALES]),
+    }
+    input_types = constants.input_types
+    assert isinstance(input_types, Mapping)
+    declared = {}
+    for key, spec in input_types.items():
+        assert isinstance(spec, BufferType | TensorType)
+        declared[key] = (spec.dtype, [int(dim) for dim in spec.shape])
+    assert declared == expected
+    # The initializer writes buffers of the same dtypes, from the
+    # checkpoint's own: E4M3 codes (or packed E2M1 bytes) and E8M0 scales.
+    assert constants.initializer is not None
+    module: Any = constants.initializer.module
+    table = getattr(module.layers, str(LAYER)).engram.embed
+    assert table.weight.dtype == (
+        DType.uint8 if packed else DType.float8_e4m3fn
+    )
+    assert table.scale.dtype == DType.float8_e8m0fnu

@@ -32,11 +32,11 @@ from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
 def block_scaled_matmul_ref[
     output_dtype: DType
 ](
-    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: MutPointer[Scalar[output_dtype], MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmUntrackedOrigin],
+    b_ptr: ImmPointer[UInt8, ImmUntrackedOrigin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmUntrackedOrigin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmUntrackedOrigin],
+    c_ptr: MutPointer[Scalar[output_dtype], MutUntrackedOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,

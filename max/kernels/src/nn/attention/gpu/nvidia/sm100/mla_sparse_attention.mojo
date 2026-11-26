@@ -96,6 +96,7 @@ def mla_sparse_attention[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch_decode[MaskType: MHAMask](mask: MaskType) raises {imm}:
         mla_decode_sm100_dispatch[
             q.dtype,
@@ -173,6 +174,7 @@ def mla_sparse_attention_flat[
     var lengths = topk_lengths.as_imm()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch[SinkType: OptionalPointer](sink: SinkType) raises {imm}:
         mla_sparse_attention[
             num_heads=num_heads,

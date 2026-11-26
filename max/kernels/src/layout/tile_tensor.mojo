@@ -101,7 +101,7 @@ def _async_fill_value[dtype: DType, fill: Fill]() -> Optional[Scalar[dtype]]:
             return Scalar[dtype](0)
 
 
-__enum _IndexOrSlice[
+__union _IndexOrSlice[
     static: Int = -1,
     kept: Bool = False,
     start_index: Int = -1,
@@ -142,7 +142,7 @@ __enum _IndexOrSlice[
     case int(Int)
     case dynamic_slice(ContiguousSlice)
     case constant(ComptimeInt[Self.static])
-    case slice
+    case slice()
 
     @implicit
     @inline(.nodebug)
@@ -255,7 +255,7 @@ __enum _IndexOrSlice[
             stride: Always none; disambiguates from strided slices.
             __slice_literal__: Enables slice-literal subscript syntax.
         """
-        self = .slice
+        self = .slice()
 
     @inline(.nodebug)
     def __init__[
@@ -283,7 +283,7 @@ __enum _IndexOrSlice[
             stride: Always none; disambiguates from strided slices.
             __slice_literal__: Enables slice-literal subscript syntax.
         """
-        self = .slice
+        self = .slice()
 
     @inline(.nodebug)
     def __init__[
@@ -308,7 +308,7 @@ __enum _IndexOrSlice[
             stride: Always none; disambiguates from strided slices.
             __slice_literal__: Enables slice-literal subscript syntax.
         """
-        self = .slice
+        self = .slice()
 
     @inline(.nodebug)
     def __init__(
@@ -331,7 +331,7 @@ __enum _IndexOrSlice[
             stride: Always none; disambiguates from strided slices.
             __slice_literal__: Enables slice-literal subscript syntax.
         """
-        self = .slice
+        self = .slice()
 
     @inline(.nodebug)
     def __init__(
@@ -352,7 +352,7 @@ __enum _IndexOrSlice[
             stride: Always none; disambiguates from strided slices.
             __slice_literal__: Enables slice-literal subscript syntax.
         """
-        self = .slice
+        self = .slice()
 
     @inline(.nodebug)
     def __init__(
@@ -374,7 +374,7 @@ __enum _IndexOrSlice[
             stride: Always none; disambiguates from strided slices.
             __slice_literal__: Enables slice-literal subscript syntax.
         """
-        self = .slice
+        self = .slice()
 
     @inline(.nodebug)
     def __init__(
@@ -396,13 +396,13 @@ __enum _IndexOrSlice[
             stride: Always none; disambiguates from strided slices.
             __slice_literal__: Enables slice-literal subscript syntax.
         """
-        self = .slice
+        self = .slice()
 
     def is_slice(self) -> Bool:
         match self:
             case .dynamic_slice(_):
                 return True
-            case .slice:
+            case .slice():
                 return True
             case .int(_):
                 return False
@@ -412,7 +412,7 @@ __enum _IndexOrSlice[
     def unsafe_get_slice(self) -> ContiguousSlice:
         if case .dynamic_slice(s) = self:
             return s
-        if case .slice = self:
+        if case .slice() = self:
             var end: Optional[Int] = None
             if Self.end_index != -1:
                 end = Self.end_index
@@ -483,7 +483,7 @@ def _count_slice_dims[
         match slices[i]:
             case .dynamic_slice(_):
                 count += 1
-            case .slice:
+            case .slice():
                 count += 1
             case .int(_):
                 pass
@@ -508,9 +508,9 @@ def _kept_slice_axis_for_output[
                 return axis
             case .dynamic_slice(_):
                 kept_axes_seen += 1
-            case .slice if kept_axes_seen == out_axis:
+            case .slice() if kept_axes_seen == out_axis:
                 return axis
-            case .slice:
+            case .slice():
                 kept_axes_seen += 1
             case .int(_):
                 pass
@@ -549,7 +549,7 @@ def _slice_start[
     match slices[axis]:
         case .dynamic_slice(_):
             return slices[axis].unsafe_get_slice().start.or_else(0)
-        case .slice:
+        case .slice():
             return slices[axis].static_start
         case .int(_):
             return slices[axis].unsafe_get_index()
@@ -3910,7 +3910,9 @@ struct TileTensor[
         }
 
     @inline(.always)
-    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+    def to_device_buffer(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[Self.dtype]:
         """Convert the tensor to a `DeviceBuffer`.
 
         Works for tensors backed by either `DefaultEngine` or
@@ -3924,6 +3926,9 @@ struct TileTensor[
 
         Returns:
             A `DeviceBuffer` containing the tensor's data.
+
+        Raises:
+            If the driver refuses to wrap the tensor's memory.
         """
         comptime assert (
             Self.Engine == DefaultEngine[element_width=1]

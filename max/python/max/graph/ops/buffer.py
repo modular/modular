@@ -69,6 +69,15 @@ def buffer_load(x: BufferValue) -> TensorValue:
     return result.tensor
 
 
+def _check_store_source(destination: BufferValue, source: TensorValue) -> None:
+    if source.dtype != destination.dtype:
+        raise ValueError(
+            f"expected source to have dtype {destination.dtype}, but source"
+            f" had dtype {source.dtype}"
+        )
+    assert_same_device(destination=destination, source=source)
+
+
 def _with_buffer_shape(source: TensorValue, buffer: BufferValue) -> TensorValue:
     """Returns ``source`` typed with ``buffer``'s shape, as a store requires.
 
@@ -116,7 +125,9 @@ def buffer_store(destination: BufferValueLike, source: TensorValueLike) -> None:
         source: The tensor whose contents are copied into the buffer.
     """
     destination = BufferValue(destination)
-    source = _with_buffer_shape(TensorValue(source), destination)
+    source = TensorValue(source)
+    _check_store_source(destination, source)
+    source = _with_buffer_shape(source, destination)
     in_chain = Graph.current.device_chains[destination.device]
 
     output_chain = Graph.current._add_op_generated(
@@ -211,7 +222,7 @@ def buffer_store_slice(
     destination = BufferValue(destination)
     source = TensorValue(source)
 
-    assert_same_device(destination=destination, source=source)
+    _check_store_source(destination, source)
     in_chain = Graph.current.device_chains[destination.device]
 
     starts, stops, steps, unsqueezed_shape, squeezed_shape = (

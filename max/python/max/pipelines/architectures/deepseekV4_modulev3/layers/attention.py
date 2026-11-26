@@ -34,7 +34,7 @@ from max.tensor import Tensor
 from max.tensor.sharding import NamedMapping
 
 from ..model_config import DeepseekV4Config
-from .cache import KEY, DeepseekV4Cache, LayerIndex
+from .cache import DeepseekV4Cache, LayerIndex
 from .compressor import DeepseekV4Compressor
 from .csa import arange, compressed_stream, int32
 from .indexer import DeepseekV4Indexer
@@ -42,14 +42,14 @@ from .kernels import (
     block_diagonal_block_scaled_matmul,
     block_scales_interleave,
     device_architectures,
+    dsv4_qkv_prep_ragged,
     latent_sparse_attention_ragged,
     rope_quantize_dynamic_block_scaled,
     wo_a_mxfp8_supported,
 )
-from .norm import DeepseekV4RMSNorm, weightless_rms_normalize
+from .norm import DeepseekV4RMSNorm
 from .quantization import (
     dequantize_fp8_blocks,
-    fp8_qat_quantize,
     linear_for,
     shard_linear,
 )
@@ -158,23 +158,6 @@ class DeepseekV4Attention(Module[..., Tensor]):
         """This layer's place in the leaves, as constants."""
         return LayerIndex.constant(self.swa_layer, self.zone_layer)
 
-    def project(self, x: Tensor) -> tuple[Tensor, Tensor]:
-        """``(wq_a(x), wkv(x))`` sliced out of the one stacked projection."""
-        out = self.wqa_wkv(x)
-        width = int(out.shape[-1])
-        return out[..., : self.q_lora_rank], out[..., self.q_lora_rank : width]
-
-    def latent(self, kv: Tensor, freqs_cis: Tensor) -> Tensor:
-        """The KV latent from ``wkv(x)``: normed, rotated, FP8-simulated."""
-        rd = self.rope_head_dim
-        kv = apply_rope_tail(self.kv_norm(kv), freqs_cis, rd)
-        # Positive bounds: a ``:-rd`` slice here rolled the latent.
-        width = int(kv.shape[-1])
-        return F.concat(
-            [fp8_qat_quantize(kv[..., : width - rd]), kv[..., width - rd :]],
-            axis=-1,
-        )
-
     def _output_projection(self, o: Tensor, freqs_cis: Tensor) -> Tensor:
         """Projects the still-rotated ``[T, heads, head_dim]`` attention output.
 
@@ -260,19 +243,25 @@ class DeepseekV4Attention(Module[..., Tensor]):
         constants, so a shared subgraph reads its caller's leaves.
         """
         t = x.shape[0]
-        rd = self.rope_head_dim
         freqs_table = self.rope.freqs_cis_base(x.mesh)
         freqs_cis = F.gather(freqs_table, rows.positions, axis=0)
 
-        # Query: low-rank, normed, per-head normed again (weightless), rotated.
-        q_a, kv_a = self.project(x)
-        qr = self.q_norm(q_a)
-        q = self.wq_b(qr).reshape([t, self.n_heads, self.head_dim])
-        q = weightless_rms_normalize(q, self.eps)
-        q = apply_rope_tail(q, freqs_cis, rd)
-
-        kv = self.latent(kv_a, freqs_cis)
-        cache.swa.store(index.swa, KEY, kv, rows.offsets)
+        # Query: low-rank, normed, then per-head normed (weightless) and
+        # rotated in the same launch that norms, rotates, FP8-rounds and
+        # stores the KV latent, read from ``wqa_wkv`` at ``q_lora_rank``.
+        qkv_a = self.wqa_wkv(x)
+        qr = self.q_norm(qkv_a[..., : self.q_lora_rank])
+        q = dsv4_qkv_prep_ragged(
+            self.wq_b(qr).reshape([t, self.n_heads, self.head_dim]),
+            qkv_a,
+            self.kv_norm.weight,
+            freqs_table,
+            rows.offsets,
+            cache.swa.values,
+            index.swa,
+            kv_col=self.q_lora_rank,
+            epsilon=self.eps,
+        )
 
         if self.compressor is not None:
             ratio = self.compress_ratio

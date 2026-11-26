@@ -209,7 +209,7 @@ def _load_context(
             max_seq_len=256,
             max_batch_total_tokens=512,
             huggingface_config=hf,
-            start_ep=lambda ep: None,
+            start_ep=lambda ep: ep,
         ),
     )
 

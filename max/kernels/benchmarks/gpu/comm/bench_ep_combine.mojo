@@ -629,6 +629,7 @@ def bench_combine[
     ]
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_dispatch_async(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_async](
@@ -645,6 +646,7 @@ def bench_combine[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises {imm}:
         var ctx = list_of_ctx[dev_idx]
         ctx.enqueue_function[dispatch_wait](
@@ -736,6 +738,7 @@ def bench_combine[
         var output_2_tensor = get_output_2_tensor(dev_idx, slot_idx)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def store_output_2[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](coords: Coord, val: SIMD[dtype, width]) {var output_2_tensor}:
@@ -772,6 +775,7 @@ def bench_combine[
         var output_2_tensor = get_output_2_tensor(dev_idx, slot_idx)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def store_output_2[
             dtype: DType, width: SIMDLength, *, alignment: Int = 1
         ](coords: Coord, val: SIMD[dtype, width]) {var output_2_tensor}:

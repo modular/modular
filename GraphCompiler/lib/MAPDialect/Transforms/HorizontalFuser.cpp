@@ -14,11 +14,10 @@
 // Merges two sibling foreaches over the same index space that share an input
 // into one multi-output kernel, so the shared operand is loaded once. Unlike
 // the other fusers this pairs siblings rather than a producer with a consumer.
-// It also moves a consumer into its producer's epilogue when the producer's
-// result has other readers, which output fusion leaves alone; one that reads a
-// strided window of the result runs there under a `map.index.slice.select`.
-// An elementwise producer in that position merges with its consumer too,
-// keeping its store and handing the consumer the value it computed.
+// It also merges an elementwise producer whose result has other readers with
+// its consumer, keeping its store and handing the consumer the value it
+// computed; a consumer that reads a strided window of the result runs under a
+// `map.index.slice.select`. Opaque kernels take no part in either merge.
 //
 //===----------------------------------------------------------------------===//
 
@@ -29,6 +28,7 @@
 #include "GraphCompiler/MODialect/MOOps.h"
 #include "GraphCompiler/MOGGDialect/Support/FusionUtils.h"
 #include "GraphCompiler/Support/DataflowUtils.h"
+#include "Support/AssertStream.h"
 
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/PatternMatch.h"
@@ -228,196 +228,6 @@ SliceIndexOp matchSelectableSlice(BlockArgument fusionArg,
   return slice;
 }
 
-// The producer's own output store and each consumer of that result write one
-// element of the same index space, so they are siblings -- but one of them
-// sits inside the producer, where `fuse` cannot reach it. So the merge goes
-// the other way: the consumer moves into the producer's epilogue and stores
-// beside the store already there, which is the one the producer still owes the
-// readers fusion cannot absorb. Output fusion will not do this, since it takes
-// a result with a single reader.
-bool fuseEscapingReader(IterOpaqueOp &dst) {
-  for (unsigned idx = 0, e = dst.getNumNonChainResults(); idx < e; ++idx) {
-    Value res = dst->getResult(idx);
-    if (!isa<MO::TensorType>(res.getType()))
-      continue;
-
-    IterElementwiseOp src;
-    unsigned numConsumers = 0;
-    bool escapes = false;
-    for (OpOperand &use : res.getUses()) {
-      auto consumer = dyn_cast<IterElementwiseOp>(use.getOwner());
-      if (consumer && use.getOwner()->getBlock() == dst->getBlock()) {
-        ++numConsumers;
-        src = consumer;
-        continue;
-      }
-      escapes = true;
-    }
-    // Without an escaping reader this is a plain producer/consumer edge that
-    // output fusion already takes. More than one consumer waits for `fuse` to
-    // merge them with each other first, since moving one in would strand the
-    // other behind a producer it can no longer reach.
-    if (!escapes || numConsumers != 1)
-      continue;
-    if (src.getChain() || src.getHasReadEffect() || src.getHasWriteEffect())
-      continue;
-    if (llvm::count(src.getInputs(), res) != 1)
-      continue;
-    if (llvm::any_of(src->getResultTypes(),
-                     [](Type t) { return !isa<MO::TensorType>(t); }) ||
-        llvm::any_of(dst->getResultTypes(),
-                     [](Type t) { return !isa<MO::TensorType>(t); }))
-      continue;
-
-    IterEpilogueOp epilogueOp = dst.getEpilogueForResult(idx);
-    if (!epilogueOp)
-      continue;
-    Block &epilogueBody = epilogueOp.getBody().front();
-    SmallVector<StoreOp> epilogueStores = getOutputStores(epilogueBody);
-    Block &srcBody = src.getBody().front();
-    SmallVector<StoreOp> srcStores = getOutputStores(srcBody);
-    if (epilogueStores.size() != 1 || srcStores.size() != src.getNumResults())
-      continue;
-    // A concat select can't go into the epilogue: the kernel calls it at its
-    // own SIMD width, ignoring the select's width limit, so a vector could run
-    // from one input into the next.
-    if (holdsConcatSelect(src))
-      continue;
-    // A select in the consumer moves into the epilogue whole, so it must hold
-    // at the epilogue's store index.
-    if (llvm::any_of(
-            srcBody.getOps<SliceSelectOp>(), [&](SliceSelectOp select) {
-              return failed(SliceSelectOp::verifySpecAt(
-                  select.getSpec(), epilogueStores.front().getIndex()));
-            }))
-      continue;
-
-    // The consumer must read the fused operand at its own loop index -- the
-    // epilogue hands over one element, with no way to honor a transform --
-    // or through a strided slice of it, which a select inverts: the consumer
-    // then runs only where the slice selects the element, at its own index.
-    unsigned fusionArgIdx =
-        llvm::find(src.getInputs(), res) - src.getInputs().begin();
-    BlockArgument fusionArg = srcBody.getArgument(fusionArgIdx);
-    BlockArgument srcLoopIdx = srcBody.getArguments().back();
-    SliceIndexOp slice;
-    SliceSpecAttr sliceSpec;
-    if (!loadsOnlyAt(fusionArg, [&](Value i) { return i == srcLoopIdx; })) {
-      StoreOp epilogueStore = epilogueStores.front();
-      if (!isa<MO::TensorType>(epilogueStore.getTensor().getType()))
-        continue;
-      // The select would sit at the epilogue store's index, so the merge
-      // checks the select's rules there. They reject a transformed index,
-      // such as a fused reshape's, which can carry one stored vector across
-      // rows of the slice's input.
-      slice = matchSelectableSlice(fusionArg, srcLoopIdx, srcStores,
-                                   epilogueStore.getIndex());
-      if (!slice)
-        continue;
-      sliceSpec = slice.getSpec();
-    }
-    // Another operand reaching back through `dst` would make the merge a cycle.
-    if (llvm::any_of(src->getOperands(), [&](Value other) {
-          return other != res && dataflowGraphDependsOn(other, dst);
-        }))
-      continue;
-
-    IRRewriter rewriter(dst.getContext());
-    unsigned numDpsBefore = dst.getNumNonChainResults();
-    dst = growOutputs(dst, src->getResultTypes(), rewriter);
-    epilogueOp = dst.getEpilogueForResult(idx);
-    Block &body = epilogueOp.getBody().front();
-
-    StoreOp epilogueStore = getOutputStores(body).front();
-    Value val = epilogueStore.getValue();
-    Value storeIdx = epilogueStore.getIndex();
-    Location loc = epilogueStore.getLoc();
-
-    // The fused operand's block arg is a tensor; `val` is already the scalar
-    // `dst` produced for this element, so every load of it becomes `val`.
-    for (Operation *user : llvm::to_vector(fusionArg.getUsers())) {
-      auto load = cast<LoadOp>(user);
-      load.getResult().replaceAllUsesWith(val);
-      load.erase();
-    }
-    // The select takes over the slice, spec and all.
-    if (slice)
-      slice.erase();
-
-    // Every other input the body still reads becomes a capture, threaded
-    // through a new input of `dst` -- the epilogue is isolated from above. A
-    // slice's bounds tensors are no longer read, since the select carries them
-    // statically.
-    for (auto [i, input] : llvm::enumerate(src.getInputs())) {
-      if (i == fusionArgIdx || srcBody.getArgument(i).use_empty())
-        continue;
-      unsigned dstInputIdx = dst.getInputs().size();
-      dst.insertInputsAt(dstInputIdx, input);
-      epilogueOp.getCapturesMutable().append(
-          dst.getInputBlockArgs()[dstInputIdx]);
-      srcBody.getArgument(i).replaceAllUsesWith(
-          body.addArgument(input.getType(), input.getLoc()));
-    }
-
-    // The grown output block args are the consumer's destinations.
-    SmallVector<Value> caps;
-    Block::BlockArgListType outArgs = dst.getOutputBlockArgs();
-    for (unsigned i = 0, n = src->getNumResults(); i < n; ++i) {
-      BlockArgument outArg = outArgs[numDpsBefore + i];
-      epilogueOp.getCapturesMutable().append(outArg);
-      caps.push_back(body.addArgument(outArg.getType(), outArg.getLoc()));
-    }
-
-    // A store in a select keeps its place and its index, the select's
-    // argument; only its destination moves to the new capture. The whole
-    // stores are rebuilt at the consumer's index below.
-    SmallVector<std::pair<Value, Value>> wholeStores;
-    for (auto [store, cap] : llvm::zip_equal(getOutputStores(srcBody), caps)) {
-      if (store->getBlock() != &srcBody) {
-        store.getTensorMutable().assign(cap);
-        continue;
-      }
-      wholeStores.push_back({cap, store.getValue()});
-      store.erase();
-    }
-
-    // The producer's own store stays: it is what the escaping reader is owed.
-    // Through a slice, the consumer's body moves into a select, which runs it
-    // at the slice's index and only where the slice selects the element.
-    Block *consumerBody = &body;
-    Value consumerIdx = storeIdx;
-    if (sliceSpec) {
-      rewriter.setInsertionPointToEnd(&body);
-      auto select = SliceSelectOp::create(rewriter, loc, sliceSpec, storeIdx);
-      consumerBody =
-          rewriter.createBlock(&select.getBody(), select.getBody().end(),
-                               {storeIdx.getType()}, {loc});
-      consumerIdx = consumerBody->getArgument(0);
-    }
-    srcLoopIdx.replaceAllUsesWith(consumerIdx);
-    srcBody.eraseArguments(0, srcBody.getNumArguments());
-    rewriter.inlineBlockBefore(&srcBody, consumerBody, consumerBody->end());
-    rewriter.setInsertionPointToEnd(consumerBody);
-    for (auto [cap, storedVal] : wholeStores)
-      StoreOp::create(rewriter, loc, cap, consumerIdx, storedVal);
-
-    SmallVector<Value> replacements;
-    for (unsigned i = 0, n = src->getNumResults(); i < n; ++i)
-      replacements.push_back(dst->getResult(numDpsBefore + i));
-    src->replaceAllUsesWith(replacements);
-
-    dst.setFusionInfoAttr(MOGG::createFusionInfo<MOGG::FusionEpilogueAttr>(
-        dst.getContext(), {dst.getOperation(), src.getOperation()},
-        {static_cast<uint32_t>(idx)}));
-    dst->setLoc(
-        mlir::FusedLoc::get(dst.getContext(), {src->getLoc(), dst->getLoc()}));
-    src->erase();
-    IterOpInterface(dst).dedupeInputs(rewriter);
-    return true;
-  }
-  return false;
-}
-
 // The block argument `op`'s body reads its input `in` through. Body args are
 // [inputs..., outputs..., index], as MOToMAP builds them.
 BlockArgument inputArgFor(IterElementwiseOp op, Value in) {
@@ -443,7 +253,7 @@ BlockArgument inputArgFor(IterElementwiseOp op, Value in) {
 IterElementwiseOp fuse(IterElementwiseOp a, IterElementwiseOp b,
                        Value forwarded = {}, SliceIndexOp slice = {},
                        bool atA = false) {
-  assert((!slice || forwarded) && "a slice is how `b` reads `forwarded`");
+  ASSERT_STREAM(!slice || forwarded, "a slice is how `b` reads `forwarded`");
   // Merged inputs: `a`'s, then the ones only `b` carries. A shared operand
   // keeps `a`'s slot, which is what collapses the duplicate load.
   SmallVector<Value> inputs(a.getInputs());
@@ -576,7 +386,6 @@ bool readsOnlyThroughPrologue(IterOpaqueOp opaque, Value value) {
   return true;
 }
 
-// The elementwise counterpart of `fuseEscapingReader(IterOpaqueOp &)`:
 // `dstKernel`'s result has one foreach consumer, `srcKernel`, and other
 // readers too, so input fusion leaves the pair alone. They merge into one
 // kernel that stores the result for the other readers and hands `srcKernel`
@@ -755,9 +564,8 @@ struct FuseHorizontalPass
     // expose a new pair, so alternate until none of them fuses anything.
     while (true) {
       bool pairedSiblings = fuseSiblings(block);
-      bool mergedReaders = fuseEscapingReaders(block);
       bool mergedConsumers = fuseEscapingConsumers(block);
-      if (!pairedSiblings && !mergedReaders && !mergedConsumers)
+      if (!pairedSiblings && !mergedConsumers)
         break;
     }
   }
@@ -860,27 +668,6 @@ struct FuseHorizontalPass
       }
     }
     return fusedAny;
-  }
-
-  // Returns whether any consumer was merged.
-  bool fuseEscapingReaders(Block &block) {
-    bool mergedAny = false;
-    // Merging a consumer into a producer's epilogue rebuilds the producer, so
-    // the scan restarts after each one.
-    bool merged = true;
-    while (merged) {
-      merged = false;
-      auto opaques = llvm::to_vector(block.getOps<IterOpaqueOp>());
-      for (IterOpaqueOp dst : opaques) {
-        if (fuseEscapingReader(dst)) {
-          ++numKernelsFused;
-          merged = true;
-          mergedAny = true;
-          break;
-        }
-      }
-    }
-    return mergedAny;
   }
 
   // Returns whether any consumer was merged.

@@ -1,6 +1,5 @@
 load(
     "//bazel:api.bzl",
-    "modular_py_library",
     "modular_py_test",
     "requirement",
 )
@@ -117,20 +116,6 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures/idefics3",
-        requirement("torch"),
-        requirement("transformers"),
-    ],
-)
-
-modular_py_library(
-    name = "torch_utils",
-    testonly = True,
-    srcs = ["torch_utils.py"],
-    imports = [".."],
-    deps = [
-        "//max/tests/integration/test_common:storage",
-        "//max/tests/integration/test_common:test_data",
-        "//max/tests/integration/test_common:torch_utils",
         requirement("torch"),
         requirement("transformers"),
     ],

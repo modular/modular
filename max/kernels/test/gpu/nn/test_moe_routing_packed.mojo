@@ -14,7 +14,6 @@
 them."""
 
 from std.math import align_up
-from std.os import getenv
 from std.random import random_float64, random_ui64, seed
 from std.testing import assert_equal, assert_true
 from std.utils.coord import Coord
@@ -151,6 +150,14 @@ def indices_mismatches[
         ctx,
     )
     ctx.synchronize()
+    # The kernel reads `routing` only through the raw pointer in
+    # `PackedIndicesArgs`, so without a later use here Mojo's ASAP destruction
+    # frees the buffer as soon as the launch is enqueued, before the kernel
+    # runs. The caching allocator masks that use-after-free; the sanitizer's
+    # 1:1 allocator (`--//:gpu_disable_memory_manager`) reports it as an OOB
+    # read of `slot_group`'s `a.routing`. Kept past the sync, like the
+    # `_ = in_device` guard in test_rms_norm.mojo.
+    _ = routing
 
     # The model: groups in id order, slots ascending within a group.
     var csr = List[Int](length=groups + 1, fill=0)
@@ -206,15 +213,6 @@ def test_indices_packed[
     assert_equal(bad, 0, "packed indices differ from the model")
 
 
-def _redzone_allocator() -> Bool:
-    """Whether `MODULAR_DEBUG_DEVICE_ALLOCATOR=out-of-bounds` is set.
-
-    It aborts on any write past a buffer, including the one planted fault 2
-    makes on purpose.
-    """
-    return "out-of-bounds" in getenv("MODULAR_DEBUG_DEVICE_ALLOCATOR")
-
-
 def test_poison[poison: Int](ctx: DeviceContext) raises:
     """A planted fault of the kernel must make some case differ."""
     var bad = indices_mismatches[8, 32, poison](67, 256, 64, 0, ctx)
@@ -240,7 +238,4 @@ def main() raises:
         test_indices_packed[8, 32](53, 256, 32, ctx, skew=40)
         test_indices_packed[8, 32](1031, 256, 0, ctx)
         comptime for p in range(1, POISONS + 1):
-            if p == 2 and _redzone_allocator():
-                print("skipping planted fault 2: it overruns `order`")
-            else:
-                test_poison[p](ctx)
+            test_poison[p](ctx)

@@ -1787,6 +1787,7 @@ def flash_attention_dispatch[
                     # the split-K launch go through this one ladder, so their
                     # instantiation sets cannot drift. Returns whether a launch
                     # happened.
+                    @__allow_legacy_any_origin_fields
                     def launch_mha_decoding[
                         out_dtype: DType
                     ](
@@ -3866,6 +3867,7 @@ def mha_single_batch_pipelined[
     #   ```
     # Only the last iteration is doing boundary check.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int) {
@@ -5674,6 +5676,7 @@ def mha_decoding_single_batch_pipelined[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, seq_len: Int) {
@@ -6033,6 +6036,7 @@ def mha_splitk_reduce[
 
     # Keep captured Kahan state inlined across scalar-tail calls on Metal.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def accum_fn[
         simd_width: Int
     ](partition_idx: Int) {
@@ -6360,6 +6364,7 @@ def _bmm0_bs[
         )
         var accum_vec = SIMD[p_type, accum_width](0)
 
+        @__allow_legacy_any_origin_fields
         def accum_fn[
             width: Int
         ](offset: Int) {q, y, _num_heads, _depth, k_ptr, mut}:

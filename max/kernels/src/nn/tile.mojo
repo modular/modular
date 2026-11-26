@@ -12,12 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 """Implements the ONNX Tile operator, which replicates a tensor a specified number of times along each axis."""
 
-from layout import Coord, TileTensor, coord_to_index_list
+from layout import Coord, TileTensor
+from layout.coord import DynamicCoord
 from max.algorithm.functional import elementwise
 from max.gpu.host import DeviceContext
 from std.memory import unsafe_memcpy
 from std.sys.info import simd_width_of
-from std.utils import IndexList, StaticTuple
+from std.utils import StaticTuple
 
 # Note: This implementation supports tensors of any rank.
 
@@ -86,9 +87,9 @@ def _tile_cpu[
 
     # Extents and repeat counts, innermost axis first (the ONNX `repeats`
     # order is outermost-first).
-    var dims = IndexList[rank]()
-    var reps = IndexList[rank]()
-    var odims = IndexList[rank]()
+    var dims = Array[Int, rank](fill=0)
+    var reps = Array[Int, rank](fill=0)
+    var odims = Array[Int, rank](fill=0)
     comptime for axis in range(rank):
         dims[axis] = Int(input.dim(rank - 1 - axis))
         reps[axis] = Int(repeats[rank - 1 - axis])
@@ -96,8 +97,8 @@ def _tile_cpu[
 
     # Row-major offset step of each axis in the input and the output: the
     # product of every inner extent.
-    var in_stride = IndexList[rank]()
-    var out_stride = IndexList[rank]()
+    var in_stride = Array[Int, rank](fill=0)
+    var out_stride = Array[Int, rank](fill=0)
     in_stride[0] = 1
     out_stride[0] = 1
     comptime for axis in range(1, rank):
@@ -285,14 +286,12 @@ def _tile_gpu[
             # The framework may probe or fall back to other widths (the
             # scalar tail path); every width <= full_width stays within a
             # row because the inner extent divides by the launch width.
-            var out_coord = coord_to_index_list(output_index)
-            var in_coord = out_coord
+            var in_coord = DynamicCoord[.int, rank]()
             comptime for axis in range(rank):
-                in_coord[axis] = out_coord[axis] % Int(in_dims_t[axis])
-            output.store(
-                Coord(out_coord),
-                input.load[width=simd_width](Coord(in_coord)),
-            )
+                in_coord.replace_dynamic[axis](
+                    Int(output_index[axis]) % Int(in_dims_t[axis])
+                )
+            output.store(output_index, input.load[width=simd_width](in_coord))
 
         comptime if full_width > 1:
             if width == full_width:
@@ -323,14 +322,12 @@ def _tile_gpu[
             comptime assert simd_width == 1
             # `output_index` is the output's per-axis coordinate. The
             # source coordinate wraps each axis by the input's extent.
-            var output_coord = coord_to_index_list(output_index)
-            var input_index = output_coord
+            var input_index = DynamicCoord[.int, rank]()
             comptime for axis in range(rank):
-                input_index[axis] = output_coord[axis] % Int(in_dims_t[axis])
-            output.store(
-                Coord(output_coord),
-                input.load(Coord(input_index)),
-            )
+                input_index.replace_dynamic[axis](
+                    Int(output_index[axis]) % Int(in_dims_t[axis])
+                )
+            output.store(output_index, input.load(input_index))
 
         elementwise[
             simd_width=1,
@@ -374,7 +371,7 @@ def tile_shape[
 ](
     input_buf: TileTensor[input_type, ...],
     repeats_buf: TileTensor[repeats_type, ...],
-) raises -> IndexList[input_buf.rank]:
+) raises -> DynamicCoord[.int, input_buf.rank]:
     """
     Compute the output shape of a `tile` operation, and assert the inputs are
     compatible.
@@ -399,12 +396,12 @@ def tile_shape[
 
     # Compute and return the output shape. Negative repeats would produce a
     # negative dimension, so reject them here (zero stays valid, like NumPy).
-    var output_shape = IndexList[input_buf.rank]()
+    var output_shape = DynamicCoord[.int, input_buf.rank]()
 
     comptime for i in range(input_buf.rank):
         var repeat = Int(repeats_buf[i])
         if repeat < 0:
             raise Error("[tile] requires non-negative repeats")
-        output_shape[i] = Int(input_buf.dim(i)) * repeat
+        output_shape.replace_dynamic[i](Int(input_buf.dim(i)) * repeat)
 
     return output_shape

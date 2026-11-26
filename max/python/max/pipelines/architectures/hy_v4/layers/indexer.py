@@ -46,7 +46,7 @@ from ..model_config import HYV4Config
 from . import mxfp8
 from .functional_kernels import (
     mla_fp8_index_top_k_physical,
-    rope_ragged,
+    rope_rows,
     store_k_cache_ragged,
     store_k_scale_cache_ragged,
 )
@@ -95,8 +95,8 @@ class HYV4Indexer(Module[..., Tensor]):
     ``prev_topk_indices`` it is given.
 
     Args:
-        config: The model config; ``config.quant_config`` decides whether
-            ``wq_b`` is quantized.
+        config: The model config; ``config.projection_quant_config`` decides
+            whether ``wq_b`` is quantized.
         layer_idx: The decoder layer this indexer belongs to.
     """
 
@@ -114,13 +114,13 @@ class HYV4Indexer(Module[..., Tensor]):
             config.q_lora_rank,
             q_dim,
             bias=False,
-            quant_config=config.quant_config,
+            quant_config=config.projection_quant_config,
         )
         self.wk = QuantizedLinear(
             config.hidden_size,
             self.head_dim,
             bias=False,
-            quant_config=config.quant_config,
+            quant_config=config.projection_quant_config,
         )
         self.weights_proj = Linear(config.hidden_size, self.n_heads, bias=False)
         self.k_norm = LayerNorm(
@@ -137,6 +137,7 @@ class HYV4Indexer(Module[..., Tensor]):
         cache_layer: Tensor,
         mla_cache: PagedCacheValues,
         prev_topk_indices: Tensor | None = None,
+        token_rope: Tensor | None = None,
     ) -> Tensor:
         """Returns ``[tokens, index_topk]`` int32 physical MLA cache rows.
 
@@ -156,6 +157,8 @@ class HYV4Indexer(Module[..., Tensor]):
             mla_cache: The MLA latent cache the returned rows index.
             prev_topk_indices: The previous ``full`` layer's result; read
                 only by a ``shared`` layer.
+            token_rope: ``[tokens, qk_rope_head_dim]`` rows of each token
+                (M-RoPE), read in place of ``freqs_cis`` at cache positions.
         """
         if self.skip_topk:
             if prev_topk_indices is None:
@@ -165,16 +168,15 @@ class HYV4Indexer(Module[..., Tensor]):
                 )
             return prev_topk_indices
 
-        # The kernels run per device; under tensor parallelism every device
-        # computes the same replicated result.
+        # Under tensor parallelism every device computes the same replicated
+        # result. A per-token table holds one row per token of the batch.
+        if token_rope is None:
+            table, start_pos = freqs_cis, k_cache.cache_lengths
+        else:
+            table, start_pos = token_rope, input_row_offsets[:-1]
+
         def rope(t: Tensor) -> Tensor:
-            return rope_ragged(
-                t,
-                input_row_offsets,
-                k_cache.cache_lengths,
-                freqs_cis,
-                interleaved=True,
-            ).rebind_mapping(t.mapping)
+            return rope_rows(t, input_row_offsets, start_pos, table)
 
         q = mxfp8.matmul(qr, self.wq_b.weight).reshape(
             [-1, self.n_heads, self.head_dim]

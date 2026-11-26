@@ -52,11 +52,11 @@ comptime BLOCK = 128
 
 
 def late_producer(
-    src_a: MutPointer[Scalar[fp8_type], MutAnyOrigin],
-    dst_a: MutPointer[Scalar[fp8_type], MutAnyOrigin],
+    src_a: MutPointer[Scalar[fp8_type], MutUntrackedOrigin],
+    dst_a: MutPointer[Scalar[fp8_type], MutUntrackedOrigin],
     len_a: Int32,
-    src_s: MutPointer[Scalar[scales_type], MutAnyOrigin],
-    dst_s: MutPointer[Scalar[scales_type], MutAnyOrigin],
+    src_s: MutPointer[Scalar[scales_type], MutUntrackedOrigin],
+    dst_s: MutPointer[Scalar[scales_type], MutUntrackedOrigin],
     len_s: Int32,
 ):
     """Releases dependents at once, then publishes A and the A-scales late."""
@@ -72,8 +72,8 @@ def late_producer(
 
 
 def consumer(
-    src: MutPointer[Scalar[out_type], MutAnyOrigin],
-    dst: MutPointer[Scalar[out_type], MutAnyOrigin],
+    src: MutPointer[Scalar[out_type], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[out_type], MutUntrackedOrigin],
     length: Int32,
 ):
     """Copies the matmul output after waiting on it."""

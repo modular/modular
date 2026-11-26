@@ -246,8 +246,8 @@ struct FuncAttribute(Equatable, TrivialRegisterPassable):
         """Creates a MAX_DYNAMIC_SHARED_SIZE_BYTES function attribute.
 
         The maximum size in bytes of dynamically-allocated shared memory that
-        can be used by this function. If the user-specified dynamic shared memory
-        size is larger than this value, the launch will fail.
+        can be used by this function. It has no effect: loading a function already
+        sets the cap to the device max. Pass `shared_mem_bytes` at launch.
 
         Args:
             val: Maximum dynamic shared memory size in bytes.

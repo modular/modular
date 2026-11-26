@@ -88,9 +88,11 @@ def _packed_scale_word(
 def _pack_k_kernel[
     PackedLayout: TensorLayout,
     BroadcastLayout: TensorLayout,
+    packed_origin: MutOrigin,
+    broadcast_origin: MutOrigin,
 ](
-    packed_out: TileTensor[.float32, PackedLayout, MutAnyOrigin],
-    broadcast_out: TileTensor[.float32, BroadcastLayout, MutAnyOrigin],
+    packed_out: TileTensor[.float32, PackedLayout, packed_origin],
+    broadcast_out: TileTensor[.float32, BroadcastLayout, broadcast_origin],
 ):
     var lane = lane_id()
     var a_frag = SIMD[.uint8, 16](UInt8(0x21))
@@ -200,10 +202,12 @@ def test_pack_k_byte_index(ctx: DeviceContext) raises:
     comptime kernel = _pack_k_kernel[
         type_of(packed_tt).LayoutType,
         type_of(bcast_tt).LayoutType,
+        packed_tt.origin,
+        bcast_tt.origin,
     ]
     ctx.enqueue_function[kernel](
-        packed_tt.as_unsafe_any_origin(),
-        bcast_tt.as_unsafe_any_origin(),
+        packed_tt,
+        bcast_tt,
         grid_dim=1,
         block_dim=warp_size,
     )

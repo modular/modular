@@ -1011,12 +1011,14 @@ def mhc_pre_kernel[
         comptime width = _mhc_pre_vec[dtype]
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def load(i: Int, j: Int) {imm} -> SIMD[dtype, width]:
             return streams.load[width=width, alignment=16](
                 (t, j, (i * WARP_SIZE + lane) * width)
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def gamma_at(i: Int) {imm} -> SIMD[dtype, width]:
             return gamma.load[width=width, alignment=16](
                 ((i * WARP_SIZE + lane) * width,)

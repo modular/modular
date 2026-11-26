@@ -412,18 +412,6 @@ def test_non_row_major_layout[
     ](a_host, b_host, c_host, c_host_ref, ctx, rtol)
 
 
-def _mut_ptr(
-    buf: DeviceBuffer[DType.bfloat16],
-) -> MutPointer[Scalar[DType.bfloat16], MutAnyOrigin]:
-    # The intermediates live in a `List`, so indexing them yields an
-    # immutable view; the launch needs a mutable output tensor.
-    return (
-        buf.unsafe_ptr()
-        .unsafe_mut_cast[True]()
-        .unsafe_origin_cast[MutAnyOrigin]()
-    )
-
-
 def _launch_pdl_chain[
     pdl_level: PDLLevel, *, N: Int, K: Int
 ](
@@ -437,17 +425,21 @@ def _launch_pdl_chain[
     m: Int,
 ) raises:
     for i in range(len(xs)):
+        # The intermediates live in a `List`, so indexing them yields an
+        # immutable view; the launch needs a mutable output tensor.
+        var x_ptr = xs[i].unsafe_ptr().unsafe_mut_cast[True]()
+        var y_ptr = ys[i].unsafe_ptr().unsafe_mut_cast[True]()
         # (m, K) -> (m, N), then (m, N) -> (m, K): the second launch reads
         # what the first writes, so a wait placed too late shows up as a
         # mismatch against the PDL-off run.
         _batched_matmul_gpu[transpose_b=True, pdl_level=pdl_level](
-            TileTensor(_mut_ptr(xs[i]), row_major(b, m, Idx[N])),
+            TileTensor(x_ptr, row_major(b, m, Idx[N])),
             TileTensor(q, row_major(b, m, Idx[K])),
             TileTensor(w1, row_major(b, Idx[N], Idx[K])),
             ctx,
         )
         _batched_matmul_gpu[transpose_b=True, pdl_level=pdl_level](
-            TileTensor(_mut_ptr(ys[i]), row_major(b, m, Idx[K])),
+            TileTensor(y_ptr, row_major(b, m, Idx[K])),
             TileTensor(xs[i], row_major(b, m, Idx[N])),
             TileTensor(w2, row_major(b, Idx[K], Idx[N])),
             ctx,
@@ -524,7 +516,7 @@ def test_pdl_chain[
 
 
 def late_fill_kernel(
-    dst: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    dst: MutPointer[Scalar[DType.bfloat16], MutUntrackedOrigin],
     n: Int32,
     delay_seconds: Float64,
 ):
@@ -547,8 +539,8 @@ def late_fill_kernel(
 
 
 def copy_without_wait_kernel(
-    src: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
-    dst: MutPointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    src: MutPointer[Scalar[DType.bfloat16], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[DType.bfloat16], MutUntrackedOrigin],
     n: Int32,
 ):
     """Negative control: a PDL consumer that never calls

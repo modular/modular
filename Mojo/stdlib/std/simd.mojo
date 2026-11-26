@@ -81,7 +81,6 @@ from std.python import (
     PythonObject,
 )
 
-from std.utils import IndexList, StaticTuple
 from std.utils._visualizers import lldb_formatter_wrapping_type
 from std.utils.coord import CoordLike, Coord
 from std.utils.numerics import FPUtils
@@ -294,29 +293,29 @@ def _has_native_f8_support() -> Bool:
 
 
 @inline(.nodebug)
-def _rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
+def _rotate_mask[size: Int, shift: Int]() -> Array[SIMDLength, size]:
     """Mask for `SIMD.rotate_left[shift]()`; any sign of `shift`."""
-    var res = IndexList[size]()
+    var res = Array[SIMDLength, size](fill=0)
     for i in range(size):
         res[i] = (i + shift + size) % size
-    return res
+    return res^
 
 
 @inline(.nodebug)
-def _shift_mask[size: Int, shift: Int]() -> IndexList[size]:
+def _shift_mask[size: Int, shift: Int]() -> Array[SIMDLength, size]:
     """Mask for `SIMD.shift_{left,right}[shift]()`.
 
     Sign of `shift` selects direction (positive=left, negative=right);
     out-of-range lanes index `other`, which callers pass as zero.
     """
-    var res = IndexList[size]()
+    var res = Array[SIMDLength, size](fill=0)
     for i in range(size):
         var src = i + shift
         if 0 <= src < size:
             res[i] = src
         else:
             res[i] = size
-    return res
+    return res^
 
 
 # ===----------------------------------------------------------------------=== #
@@ -388,41 +387,39 @@ struct FastMathFlag(
     comptime fast = Self(8)
     """Enable all fast-math optimizations."""
 
-    # TODO: Use `@deprecated(use=...)` once it can name a sibling `comptime`
-    # member. Today it only resolves methods and module-level declarations.
-    @deprecated("Use `FastMathFlag.none` instead.")
+    @deprecated(use=none)
     comptime NONE = Self.none
     """Deprecated: The former name of `none`."""
 
-    @deprecated("Use `FastMathFlag.nnan` instead.")
+    @deprecated(use=nnan)
     comptime NNAN = Self.nnan
     """Deprecated: The former name of `nnan`."""
 
-    @deprecated("Use `FastMathFlag.ninf` instead.")
+    @deprecated(use=ninf)
     comptime NINF = Self.ninf
     """Deprecated: The former name of `ninf`."""
 
-    @deprecated("Use `FastMathFlag.nsz` instead.")
+    @deprecated(use=nsz)
     comptime NSZ = Self.nsz
     """Deprecated: The former name of `nsz`."""
 
-    @deprecated("Use `FastMathFlag.arcp` instead.")
+    @deprecated(use=arcp)
     comptime ARCP = Self.arcp
     """Deprecated: The former name of `arcp`."""
 
-    @deprecated("Use `FastMathFlag.contract` instead.")
+    @deprecated(use=contract)
     comptime CONTRACT = Self.contract
     """Deprecated: The former name of `contract`."""
 
-    @deprecated("Use `FastMathFlag.afn` instead.")
+    @deprecated(use=afn)
     comptime AFN = Self.afn
     """Deprecated: The former name of `afn`."""
 
-    @deprecated("Use `FastMathFlag.reassoc` instead.")
+    @deprecated(use=reassoc)
     comptime REASSOC = Self.reassoc
     """Deprecated: The former name of `reassoc`."""
 
-    @deprecated("Use `FastMathFlag.fast` instead.")
+    @deprecated(use=fast)
     comptime FAST = Self.fast
     """Deprecated: The former name of `fast`."""
 
@@ -2513,8 +2510,17 @@ struct SIMD[dtype: DType, length: SIMDLength](
             DType.float8_e5m2,
             DType.float8_e5m2fnuz,
         ):
-            # TODO(KERN-1488): use gpu (H100) instruction to convert from fp16 to fp8
-            return _convert_f32_to_float8[target](self.cast[DType.float32]())
+            # Only `f32 -> fp8` has a `pop.cast` lowering, so widen first.
+            comptime if Self.dtype != DType.float32:
+                return self.cast[DType.float32]().cast[target]()
+
+            # Unflagged, unlike the generic cast below: letting the optimizer
+            # contract around an fp8 conversion moves results past what the
+            # kernels' tolerances allow.
+            var narrowed = __mlir_op.`pop.cast`[
+                _type=SIMD[target, Self.length]._mlir_type
+            ](self._mlir_value)
+            return SIMD(mlir_value=narrowed)
 
         comptime if target == DType.float8_e8m0fnu:
             return _convert_f32_to_float8_ue8m0[target](
@@ -2542,9 +2548,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
                 target,
             )
 
-            comptime if target == DType.float16:
-                return _convert_float8_to_f16(self).cast[target]()
-            return _convert_float8_to_f32(self).cast[target]()
+            # Unflagged for the same reason as the narrowing cast above.
+            var widened = __mlir_op.`pop.cast`[
+                _type=SIMD[target, Self.length]._mlir_type
+            ](self._mlir_value)
+            return SIMD(mlir_value=widened)
 
         comptime if Self.dtype == DType.float8_e8m0fnu:
             return _convert_float8_ue8m0_to_f32[DType.float32](self).cast[
@@ -2964,13 +2972,14 @@ struct SIMD[dtype: DType, length: SIMDLength](
             output_size == mask.length
         ), "size of the mask must match the output SIMD size"
 
-        # FIXME: Support parameters on initializers better, removing __init__.
-        comptime tup = StaticTuple[SIMDLength, output_size].__init__[*mask]()
-        return self._shuffle_list[output_size, tup](other)
+        comptime array = Array[SIMDLength, output_size](
+            fill_with_unrolled=lambda [i: Int]() -> SIMDLength: mask[i]
+        )
+        return self._shuffle_list[output_size, array](other)
 
     @inline(.nodebug)
     def _shuffle_list[
-        output_size: SIMDLength, mask: StaticTuple[SIMDLength, output_size]
+        output_size: SIMDLength, mask: Array[SIMDLength, output_size]
     ](self, other: Self) -> SIMD[Self.dtype, output_size]:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -2994,7 +3003,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             ), "invalid index in the shuffle operation"
 
         var res = __mlir_op.`pop.simd.shuffle`[
-            mask=mask._mlir_value,
+            mask=mask._array,
             _type=SIMD[Self.dtype, output_size]._mlir_type,
         ](self._mlir_value, other._mlir_value)
         return SIMD[Self.dtype, output_size](mlir_value=res)
@@ -3033,7 +3042,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
         return self._shuffle_variadic[*mask](other)
 
     @inline(.nodebug)
-    def shuffle[mask: IndexList[Self.length, element_type=_]](self) -> Self:
+    def shuffle[mask: Array[SIMDLength, Self.length]](self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
         values must be within `2 * len(self)`.
@@ -3045,11 +3054,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A new vector with the same length as the mask where the value at
             position `i` is `(self)[permutation[i]]`.
         """
-        return self._shuffle_list[Self.length, mask.as_index_tuple()](self)
+        return self._shuffle_list[Self.length, mask](self)
 
     @inline(.nodebug)
     def shuffle[
-        mask: IndexList[Self.length, element_type=_]
+        mask: Array[SIMDLength, Self.length]
     ](self, other: Self) -> Self:
         """Shuffles (also called blend) the values of the current vector with
         the `other` value using the specified mask (permutation). The mask
@@ -3065,7 +3074,7 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A new vector with the same length as the mask where the value at
             position `i` is `(self + other)[permutation[i]]`.
         """
-        return self._shuffle_list[Self.length, mask.as_index_tuple()](other)
+        return self._shuffle_list[Self.length, mask](other)
 
     # Not an overload of shuffle because there is ambiguity
     # with def shuffle[*mask: Int](self, other: Self) -> Self:
@@ -3247,13 +3256,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
             A new vector `self_0, self_1, ..., self_n, other_0, ..., other_n`.
         """
 
-        def indices() -> StaticTuple[SIMDLength, 2 * Int(Self.length)]:
-            var res = StaticTuple[SIMDLength, 2 * Int(Self.length)](0)
-            for i in range(len(res)):
-                res[i] = i
-            return res
-
-        return self._shuffle_list[2 * Self.length, indices()](other)
+        comptime indices = Array[SIMDLength, 2 * Int(Self.length)](
+            fill_with=lambda (i: Int) -> SIMDLength: i
+        )
+        return self._shuffle_list[2 * Self.length, indices](other)
 
     @inline(.nodebug)
     def interleave(self, other: Self) -> SIMD[Self.dtype, Int(Self.length) * 2]:
@@ -3838,11 +3844,11 @@ struct SIMD[dtype: DType, length: SIMDLength](
         ```
         """
 
-        def indices() -> IndexList[Self.length]:
-            var res = IndexList[Self.length]()
+        def indices() -> Array[SIMDLength, Self.length]:
+            var res = Array[SIMDLength, Self.length](fill=0)
             for i in range(Self.length):
                 res[i] = Self.length - i - 1
-            return res
+            return res^
 
         return self.shuffle[mask=indices()]()
 
@@ -4101,264 +4107,6 @@ comptime _CastPluginHookFnType[target: DType] = def[
 
 
 @inline(.always)
-def _convert_float8_to_f32_scalar[
-    dtype: DType,
-    //,
-    result_dtype: DType,
-](x: Scalar[dtype]) -> Scalar[result_dtype]:
-    comptime FP8_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
-    comptime FP8_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
-    comptime FP32_EXPONENT_BIAS = FPUtils[result_dtype].exponent_bias()
-    comptime FP32_NUM_MANTISSA_BITS = FPUtils[result_dtype].mantissa_width()
-
-    var exp = FPUtils.get_exponent_biased(x)
-    var mantissa = FPUtils.get_mantissa(x)
-
-    if exp == 0 and mantissa != 0:
-        var subnormal_shift = FP8_NUM_MANTISSA_BITS - bit_width(mantissa)
-        exp -= subnormal_shift
-        mantissa <<= subnormal_shift + 1
-        mantissa &= FPUtils[dtype].mantissa_mask()
-
-    # TODO: To generalize this routine for float16, logic needs to be added
-    # to convert float8 numbers that are in the normal exponent range to
-    # float16 numbers that are in the subnormal exponent range. This is not
-    # a problem for float32/bfloat16 as the exponent range is wider than any
-    # currently supported float8 types.
-    comptime assert result_dtype != DType.float16
-
-    exp += FP32_EXPONENT_BIAS - FP8_EXPONENT_BIAS
-    mantissa <<= FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS
-
-    var result = Scalar[result_dtype](0)
-    result = FPUtils.set_exponent(result, exp)
-    result = FPUtils.set_mantissa(result, mantissa)
-
-    var x_bits = FPUtils.bitcast_to_uint(x)
-    var exp_mantissa = x_bits & type_of(x_bits)(
-        FPUtils[dtype].exponent_mantissa_mask()
-    )
-
-    if exp_mantissa == 0x00:
-        result = Scalar[result_dtype](0)
-
-    comptime if dtype in (DType.float8_e4m3fn, DType.float8_e5m2):
-        comptime if dtype == DType.float8_e4m3fn:
-            if exp_mantissa == 0x7F:
-                result = _nan[result_dtype]()
-        else:
-            if exp_mantissa == 0x7C:
-                result = _inf[result_dtype]()
-            elif exp_mantissa > 0x7C:
-                result = _nan[result_dtype]()
-
-    result = FPUtils.set_sign(result, FPUtils.get_sign(x))
-
-    comptime if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
-        if x_bits == 0x80:
-            result = _nan[result_dtype]()
-
-    return result
-
-
-@inline(.always)
-def _convert_float8_to_f32[
-    dtype: DType,
-    size: SIMDLength,
-](val: SIMD[dtype, size]) -> SIMD[.float32, size]:
-    comptime if CurrentPlugin.native_float8_cast[dtype, DType.float32]:
-        var res = __mlir_op.`pop.cast`[_type=SIMD[.float32, size]._mlir_type](
-            val._mlir_value
-        )
-        return SIMD[.float32, size](mlir_value=res)
-
-    elif CurrentPlugin.native_float8_cast[dtype, DType.float16]:
-        return _convert_float8_to_f16(val).cast[DType.float32]()
-
-    else:
-
-        @inline(.always)
-        def wrapper_fn[
-            input_dtype: DType, result_dtype: DType
-        ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
-            return _convert_float8_to_f32_scalar[result_dtype](val)
-
-        return _simd_apply[wrapper_fn, result_dtype=DType.float32](val)
-
-
-@inline(.always)
-def _convert_float8_to_f16[
-    dtype: DType,
-    size: SIMDLength,
-](val: SIMD[dtype, size]) -> SIMD[.float16, size]:
-    comptime if CurrentPlugin.native_float8_cast[dtype, DType.float16]:
-        # do not call `SIMD.cast` here; the inliner will diverge
-        var res = __mlir_op.`pop.cast`[_type=SIMD[.float16, size]._mlir_type](
-            val._mlir_value
-        )
-        return SIMD[.float16, size](mlir_value=res)
-    else:
-        return _convert_float8_to_f32(val).cast[DType.float16]()
-
-
-@inline(.always)
-def _convert_f32_to_float8[
-    dtype: DType,
-    size: SIMDLength,
-    //,
-    target: DType,
-](val: SIMD[dtype, size]) -> SIMD[target, size]:
-    comptime if CurrentPlugin.native_float8_cast[dtype, target]:
-        # do not call `SIMD.cast` here; the inliner will diverge
-        var res = __mlir_op.`pop.cast`[_type=SIMD[target, size]._mlir_type](
-            val._mlir_value
-        )
-        return SIMD(mlir_value=res)
-    else:
-
-        @inline(.always)
-        def wrapper_fn[
-            input_dtype: DType, result_dtype: DType
-        ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
-            return _convert_f32_to_float8_scalar[result_dtype](val)
-
-        return _simd_apply[wrapper_fn, result_dtype=target](val)
-
-
-@inline(.always)
-def _convert_f32_to_float8_scalar[
-    dtype: DType,
-    //,
-    target: DType,
-](x: Scalar[dtype]) -> Scalar[target]:
-    # software implementation rounds toward nearest even
-
-    def max_finite_byte() -> UInt8:
-        comptime if target == DType.float8_e4m3fn:
-            return UInt8(0x7E)
-        elif target in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
-            return UInt8(0x7F)
-        else:
-            comptime assert target == DType.float8_e5m2
-            return UInt8(0x7B)
-
-    comptime FP8_NUM_MANTISSA_BITS = FPUtils[target].mantissa_width()
-    comptime FP8_NUM_EXPONENT_BITS = FPUtils[target].exponent_width()
-    comptime FP32_NUM_BITS = bit_width_of[dtype]()
-    comptime FP8_EXPONENT_MASK: UInt8 = UInt8((1 << FP8_NUM_EXPONENT_BITS) - 1)
-    comptime FP8_MANTISSA_MASK: UInt8 = UInt8((1 << FP8_NUM_MANTISSA_BITS) - 1)
-    comptime FP8_EXPONENT_BIAS = FPUtils[target].exponent_bias()
-    comptime FP8_MIN_EXPONENT = 1 - FP8_EXPONENT_BIAS
-    comptime FP32_EXPONENT_BIAS = FPUtils[dtype].exponent_bias()
-    comptime FP32_NUM_MANTISSA_BITS = FPUtils[dtype].mantissa_width()
-    comptime FP8_MAX_FLT = max_finite_byte()
-
-    # Extract the bits in the FP32 type
-    var sign: UInt8 = UInt8(0x80) if FPUtils[dtype].get_sign(x) else UInt8(0x00)
-    var exp = Int32(FPUtils[dtype].get_exponent_biased(x)) - Int32(
-        FP32_EXPONENT_BIAS
-    )
-    var mantissa = Int32(FPUtils[dtype].get_mantissa(x))
-
-    # NaN => NaN
-    if _isnan(x):
-        comptime if target in (DType.float8_e4m3fn, DType.float8_e5m2):
-            return bitcast[target](UInt8(0x7F))
-        else:
-            comptime assert target in (
-                DType.float8_e4m3fnuz,
-                DType.float8_e5m2fnuz,
-            )
-            return bitcast[target](UInt8(0x80))
-
-    # Inf => MAX_FLT (satfinite)
-    if _isinf(x):
-        return bitcast[target](sign | FP8_MAX_FLT)
-
-    var sticky_bit: Int32 = 0
-
-    var u: UInt8
-    if abs(x) >= Scalar[dtype](_max_finite[target]()):
-        # satfinite
-        return bitcast[target](sign | FP8_MAX_FLT)
-    elif exp >= Int32(FP8_MIN_EXPONENT):
-        # normal fp32 to normal fp8
-        exp += Int32(FP8_EXPONENT_BIAS)
-        u = (
-            (exp.cast[DType.uint32]() & FP8_EXPONENT_MASK.cast[DType.uint32]())
-            << UInt32(FP8_NUM_MANTISSA_BITS)
-        ).cast[DType.uint8]()
-        u = (
-            u
-            | (
-                mantissa
-                >> Int32(FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
-            ).cast[DType.uint8]()
-        )
-    else:
-        # normal single-precision to subnormal float8-precision representation
-        var rshift: Int32 = Int32(FP8_MIN_EXPONENT) - exp
-        if rshift < Int32(FP32_NUM_BITS):
-            mantissa |= Int32(1 << Int32(FP32_NUM_MANTISSA_BITS))
-            sticky_bit = (
-                (mantissa & ((1 << rshift) - 1)).ne(0).cast[DType.int32]()
-            )
-            mantissa = mantissa >> rshift
-            u = (
-                mantissa
-                >> Int32(FP32_NUM_MANTISSA_BITS - FP8_NUM_MANTISSA_BITS)
-            ).cast[DType.uint8]() & FP8_MANTISSA_MASK
-        else:
-            mantissa = 0
-            u = 0
-
-    # round to nearest even
-    var NUM_BITS_SHIFT: Int32 = Int32(FP32_NUM_MANTISSA_BITS) - Int32(
-        FP8_NUM_MANTISSA_BITS + 1
-    )
-    var round_bit: Int32 = (mantissa >> NUM_BITS_SHIFT) & 1
-    sticky_bit |= (
-        (mantissa & ((1 << NUM_BITS_SHIFT) - 1)).ne(0).cast[DType.int32]()
-    )
-
-    if (round_bit and sticky_bit) or (round_bit and (u & 1)):
-        u = (u + 1).cast[DType.uint8]()
-
-    # Special case for dtypes that lack a representation for signed zero.
-    comptime if target in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
-        if u == 0:
-            return bitcast[target](UInt8(0))
-
-    return bitcast[target](sign | u)
-
-
-@inline(.always)
-def _convert_f32_to_float8_ue8m0_scalar[
-    dtype: DType,
-    //,
-    target: DType,
-](x: Scalar[dtype]) -> Scalar[target]:
-    """Convert float32 to float8_e8m0fnu (UE8M0).
-
-    This follows CUTLASS and rounds toward +infinity when mapping float32 to a
-    biased exponent byte.
-    """
-    if _isnan(x) or _isinf(x):
-        return bitcast[target, 1](UInt8(0xFF))
-
-    var x_uint32: UInt32 = bitcast[DType.uint32, 1](x)
-    var exp: UInt8 = UInt8(
-        (x_uint32 >> 23) & 0xFF
-    )  # Extract the 8 bit exponent
-    var mant: UInt32 = x_uint32 & 0x7FFFFF  # Extract the 23 bit mantissa
-
-    if (mant > 0) and (exp != 0xFE) and (not (exp == 0 and mant <= 0x00400000)):
-        exp = exp + 1
-
-    return bitcast[target, 1](exp)
-
-
-@inline(.always)
 def _convert_f32_to_float8_ue8m0[
     dtype: DType,
     size: SIMDLength,
@@ -4379,13 +4127,12 @@ def _convert_f32_to_float8_ue8m0[
         comptime if case .Some(f) = CurrentPlugin.cast_fn[dtype, target]:
             return f(val)
 
-    @inline(.always)
-    def wrapper_fn[
-        input_dtype: DType, result_dtype: DType
-    ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
-        return _convert_f32_to_float8_ue8m0_scalar[result_dtype](val)
-
-    return _simd_apply[wrapper_fn, result_dtype=target](val)
+    # The precompiled snippet rounds toward +infinity, as this conversion
+    # specifies.
+    var res = __mlir_op.`pop.cast`[_type=SIMD[target, size]._mlir_type](
+        val._mlir_value
+    )
+    return SIMD(mlir_value=res)
 
 
 @inline(.always)

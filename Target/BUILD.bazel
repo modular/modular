@@ -9,10 +9,12 @@ package(default_visibility = ["//MLRT:__subpackages__"])
 modular_cc_library(
     name = "DriverPlugin",
     srcs = [
+        "lib/DriverPlugin/DriverCreate.cpp",
         "lib/DriverPlugin/DriverPlugin.cpp",
         "lib/DriverPlugin/setup_driver_functions.inc",
     ],
     hdrs = [
+        "include/Target/DriverCreate.h",
         "include/Target/DriverPlugin.h",
     ],
     includes = ["include"],
@@ -97,7 +99,7 @@ modular_cc_test(
 # single-GPU CUDAPluginTest with a multi-GPU requirement.
 modular_cc_test(
     name = "CUDAPeerCopyTest",
-    size = "small",
+    size = "large",
     srcs = ["test/Fixture.h"],
     data = [":CUDAPlugin.so"],
     env = {
@@ -116,6 +118,33 @@ modular_cc_test(
     deps = [
         ":DriverPluginTests",
         "@tl_expected",
+    ],
+)
+
+# Needs two GPUs so that hiding one with `CUDA_VISIBLE_DEVICES` changes the
+# count. A separate binary, without `:DriverPluginTests`, so no other test
+# initializes CUDA before the variable is narrowed.
+modular_cc_test(
+    name = "CUDAVisibleDevicesTest",
+    size = "small",
+    srcs = [
+        "test/CUDAVisibleDevicesTest.cpp",
+        "test/Fixture.h",
+    ],
+    copts = ["-Wno-global-constructors"],
+    data = [":CUDAPlugin.so"],
+    env = {
+        "MODULAR_DRIVER_PLUGINS": "$(location :CUDAPlugin.so)",
+    },
+    gpu_constraints = [
+        "//:nvidia_gpu",
+        "//:has_multi_gpu",
+    ],
+    tags = ["gpu"],
+    visibility = ["//visibility:private"],
+    deps = [
+        "//SDK:HAL",
+        "@llvm-project//llvm:Support",
     ],
 )
 
@@ -269,27 +298,43 @@ modular_cc_binary(
     ],
 )
 
-modular_cc_test(
-    name = "CPUPluginTest",
-    size = "small",
-    srcs = [
-        "lib/CPU/Common.h",
-        "test/CPUPluginTest.cpp",
-        "test/Fixture.h",
-    ],
-    data = [":CPUPlugin.so"],
-    env = {
-        "MODULAR_DRIVER_PLUGINS": "$(location :CPUPlugin.so)",
-    },
-    visibility = ["//visibility:private"],
-    deps = [
-        ":DriverPluginTests",
-        ":Support",
-        "@dlpack",
-        "@llvm-project//llvm:Support",
-        "@tl_expected",
-    ],
-)
+_CPU_PLUGIN_TEST_ENV = {
+    "MODULAR_DRIVER_PLUGINS": "CPU@$(location :CPUPlugin.so)",
+}
+
+# `CPUPluginSharedContextsTest` runs the context-level cases
+# in the shared session, which no other host test reaches.
+[
+    modular_cc_test(
+        name = name,
+        size = "small",
+        srcs = [
+            "lib/CPU/Common.h",
+            "test/CPUPluginTest.cpp",
+            "test/Fixture.h",
+        ],
+        data = [":CPUPlugin.so"],
+        env = env,
+        visibility = ["//visibility:private"],
+        deps = [
+            ":DriverPluginTests",
+            ":Support",
+            "@dlpack",
+            "@llvm-project//llvm:Support",
+            "@tl_expected",
+        ],
+    )
+    for name, env in [
+        ("CPUPluginTest", _CPU_PLUGIN_TEST_ENV),
+        (
+            "CPUPluginSharedContextsTest",
+            dict(
+                _CPU_PLUGIN_TEST_ENV,
+                MODULAR_DRIVER_TEST_SHARE_CONTEXTS = "1",
+            ),
+        ),
+    ]
+]
 
 modular_cc_binary(
     name = "LegacyStubPlugin.so",
@@ -315,6 +360,22 @@ modular_cc_test(
     },
     visibility = ["//visibility:private"],
     deps = [":DriverPlugin"],
+)
+
+modular_cc_test(
+    name = "DriverCreateTest",
+    size = "small",
+    srcs = ["test/DriverCreateTest.cpp"],
+    data = [":LegacyStubPlugin.so"],
+    env = {
+        "LEGACY_STUB_PLUGIN": "$(rootpath :LegacyStubPlugin.so)",
+    },
+    visibility = ["//visibility:private"],
+    deps = [
+        ":DriverPlugin",
+        "//SDK:HAL",
+        "//Support:Base",
+    ],
 )
 
 modular_cc_library(

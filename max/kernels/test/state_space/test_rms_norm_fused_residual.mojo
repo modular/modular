@@ -146,6 +146,7 @@ def _run_rms_norm_fused_residual_cpu_impl[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def residual_read_fn[
         width: Int
     ](coords: Coord) {residual_output_immut} -> SIMD[dtype, width]:

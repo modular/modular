@@ -39,13 +39,20 @@ from max.gpu import (
     lane_id,
     warp_id,
 )
-from std.memory import unsafe_stack_allocation
 
 from max.gpu.compute.mma import mma
 from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu.sync import barrier
 
-from layout import Coord, TensorLayout, TensorEngine, TileTensor, row_major
+from layout import (
+    Coord,
+    ImmTileTensor,
+    MutTileTensor,
+    TensorLayout,
+    TensorEngine,
+    TileTensor,
+    row_major,
+)
 
 comptime _MFMA_K = 32
 comptime _TILE_N = 16
@@ -54,12 +61,14 @@ comptime _TILE_N = 16
 @__name(t"smallm_preshuffle_b_{b_type}_w{warps_per_block}_k{k_static}")
 def _smallm_preshuffle_b_kernel[
     b_type: DType,
+    dst_origin: MutOrigin,
+    src_origin: ImmOrigin,
     *,
     k_static: Int,
     warps_per_block: Int,
 ](
-    dst: MutPointer[Scalar[b_type], MutAnyOrigin],
-    src: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[b_type], dst_origin],
+    src: ImmPointer[Scalar[b_type], src_origin],
     n: Int32,
 ):
     """Permutes a row-major ``[n, k]`` weight into fragment-major order.
@@ -99,13 +108,15 @@ def _smallm_shuffle_a_kernel[
     a_type: DType,
     a_layout: TensorLayout,
     a_engine: TensorEngine,
+    dst_origin: MutOrigin,
+    a_origin: ImmOrigin,
     *,
     k_static: Int,
     warps_per_block: Int,
     m_tiles: Int,
 ](
-    dst: MutPointer[Scalar[a_type], MutAnyOrigin],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
+    dst: MutPointer[Scalar[a_type], dst_origin],
+    a: TileTensor[a_type, a_layout, a_origin, Engine=a_engine],
     m: Int32,
 ):
     """Permutes the activation ``[m, k]`` into fragment-major order per call.
@@ -159,6 +170,9 @@ def _gemm_smallm_streaming_kernel[
     b_type: DType,
     c_layout: TensorLayout,
     c_engine: TensorEngine,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
     *,
     k_static: Int,
     warps_per_block: Int,
@@ -166,9 +180,9 @@ def _gemm_smallm_streaming_kernel[
     a_in_regs: Bool,
     col_tiles: Int = 1,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],  # m * n
-    a_shuffled: ImmPointer[Scalar[a_type], ImmutAnyOrigin],
-    b_shuffled: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    c: TileTensor[c_type, c_layout, c_origin, Engine=c_engine],  # m * n
+    a_shuffled: ImmPointer[Scalar[a_type], a_origin],
+    b_shuffled: ImmPointer[Scalar[b_type], b_origin],
     m: Int32,
     n: Int32,
 ):
@@ -223,11 +237,11 @@ def _gemm_smallm_streaming_kernel[
     # stride is an odd multiple of 4 words: every ds_read_b128 phase of the
     # warp-0 reduction then hits all 64 LDS banks conflict-free.
     comptime lane_slot = (m_tiles * col_tiles + 1) * 4
-    var c_smem = unsafe_stack_allocation[
-        warps_per_block * WARP_SIZE * lane_slot,
-        DType.float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var c_smem_storage = Array[
+        Float32, warps_per_block * WARP_SIZE * lane_slot
+    ](uninitialized=True)
+    var c_smem = c_smem_storage.unsafe_ptr()
 
     # The runtime column loop exists only where its iterations reuse the
     # register-resident A. A runtime loop around the multi-tile body makes
@@ -369,8 +383,8 @@ def smallm_preshuffle_b[
     k_static: Int,
     warps_per_block: Int = 8,
 ](
-    dst: MutPointer[Scalar[b_type], MutAnyOrigin],
-    src: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
+    dst: MutPointer[Scalar[b_type], _],
+    src: ImmPointer[Scalar[b_type], _],
     n: Int,
     ctx: DeviceContext,
 ) raises:
@@ -385,7 +399,11 @@ def smallm_preshuffle_b[
     if n % _TILE_N != 0:
         raise Error("smallm_preshuffle_b requires n to be a multiple of 16")
     comptime kernel = _smallm_preshuffle_b_kernel[
-        b_type, k_static=k_static, warps_per_block=warps_per_block
+        b_type,
+        type_of(dst).origin,
+        type_of(src).origin,
+        k_static=k_static,
+        warps_per_block=warps_per_block,
     ]
     ctx.enqueue_function[kernel](
         dst,
@@ -411,10 +429,10 @@ def smallm_streaming_matmul[
     warps_per_block: Int = 8,
     max_grid_blocks: Int = 512,
 ](
-    c: TileTensor[c_type, c_layout, MutAnyOrigin, Engine=c_engine],
-    a: TileTensor[a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
-    b_shuffled: ImmPointer[Scalar[b_type], ImmutAnyOrigin],
-    a_scratch: MutPointer[Scalar[a_type], MutAnyOrigin],
+    c: MutTileTensor[c_type, c_layout, _, Engine=c_engine],
+    a: ImmTileTensor[a_type, a_layout, _, Engine=a_engine],
+    b_shuffled: ImmPointer[Scalar[b_type], _],
+    a_scratch: MutPointer[Scalar[a_type], _],
     m: Int,
     n: Int,
     ctx: DeviceContext,
@@ -435,6 +453,17 @@ def smallm_streaming_matmul[
     if m < 1 or m > 128:
         raise Error("smallm_streaming_matmul serves 1 <= m <= 128")
 
+    # The kernels only read these as device addresses. Untracked copies keep
+    # a caller's AnyOrigin values out of the closure captures.
+    var c_dev = type_of(c).OriginCastType[MutUntrackedOrigin](
+        c._unsafe_storage_cast[to_origin=MutUntrackedOrigin](), c.layout
+    )
+    var a_dev = type_of(a).OriginCastType[ImmUntrackedOrigin](
+        a._unsafe_storage_cast[to_origin=ImmUntrackedOrigin](), a.layout
+    )
+    var b_dev = b_shuffled.unsafe_origin_cast[ImmUntrackedOrigin]()
+    var scratch_dev = a_scratch.unsafe_origin_cast[MutUntrackedOrigin]()
+
     def _launch[
         m_tiles: Int, a_in_regs: Bool, col_tiles: Int = 1
     ]() raises {imm}:
@@ -442,13 +471,15 @@ def smallm_streaming_matmul[
             a_type,
             a_layout,
             a_engine,
+            type_of(scratch_dev).origin,
+            type_of(a_dev).origin,
             k_static=k_static,
             warps_per_block=warps_per_block,
             m_tiles=m_tiles,
         ]
         ctx.enqueue_function[shuffle_kernel](
-            a_scratch,
-            a,
+            scratch_dev,
+            a_dev,
             Int32(m),
             execution_config=GridBlockLaunchConfig(
                 grid_dim=ceildiv(m_tiles * _TILE_N * (k_static // 8), 256),
@@ -462,19 +493,20 @@ def smallm_streaming_matmul[
             b_type,
             c_layout,
             c_engine,
+            type_of(c_dev).origin,
+            ImmOrigin(type_of(scratch_dev).origin),
+            type_of(b_dev).origin,
             k_static=k_static,
             warps_per_block=warps_per_block,
             m_tiles=m_tiles,
             a_in_regs=a_in_regs,
             col_tiles=col_tiles,
         ]
-        var a_src = ImmPointer[Scalar[a_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_scratch)
-        )
+        var a_src = scratch_dev.as_imm()
         ctx.enqueue_function[kernel](
-            c,
+            c_dev,
             a_src,
-            b_shuffled,
+            b_dev,
             Int32(m),
             Int32(n),
             execution_config=GridBlockLaunchConfig(

@@ -314,11 +314,14 @@ def get_config_skip_fields(cls: type[BaseModel]) -> set[str]:
                 "sampling",
                 "profiling",
                 "lora",
+                "quant_config",
                 "speculative",
                 "runtime",
                 # Quantize sets this when writing a checkpoint, before
                 # the KV cache is built.
                 "export_only",
+                # max export sets this for the pipeline it builds.
+                "artifact_export",
             }
         )
     elif cls is PipelineRuntimeConfig:
@@ -461,6 +464,63 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @config_to_flag(ProfilingConfig)
     @config_to_flag(SamplingConfig)
     @config_to_flag(SpeculativeConfig)
+    @click.option(
+        "--quantization-format",
+        type=str,
+        default=None,
+        help=(
+            "On-the-fly quantizer format, such as ``nvfp4``. With "
+            "``--targets``, builds a QuantConfig (source=QUANTIZE) on the "
+            "pipeline config so those linears quantize inside the graph."
+        ),
+    )
+    @click.option(
+        "--targets",
+        type=str,
+        multiple=True,
+        default=(),
+        help=(
+            "Tensor-name regex of a linear to quantize (repeatable). "
+            "Required with ``--quantization-format``."
+        ),
+    )
+    @click.option(
+        "--error-report-dir",
+        type=click.Path(file_okay=False, path_type=pathlib.Path),
+        default=None,
+        help=(
+            "Directory for per-weight quantization error dumps from "
+            "on-the-fly quantizers. Sets QuantConfig.report_error."
+        ),
+    )
+    @click.option(
+        "--verbose/--no-verbose",
+        default=False,
+        help="Print the patched module before the on-the-fly quantizer count.",
+    )
+    @click.option(
+        "--mse-sweep-scales/--no-mse-sweep-scales",
+        default=False,
+        show_default=True,
+        help=(
+            "For NVFP4, search multipliers of each block's abs-max, from 0.25 to"
+            " 4.0 in steps of 0.1 and always including 1.0, and keep the scale"
+            " with the smallest quantization MSE. Off by default, which uses the"
+            " block's own abs-max. Other formats ignore this."
+        ),
+    )
+    @click.option(
+        "--source-format",
+        type=click.Choice(["bf16", "fp8"]),
+        default=None,
+        help=(
+            "Check that every targeted weight is stored as this: bf16 (native"
+            " precision) or fp8 (block-scaled float8_e4m3fn with"
+            " weight_scale_inv). A targeted weight stored as anything else is an"
+            " error that names the layer. Optional: when omitted, each weight is"
+            " handled by its own format."
+        ),
+    )
     @click.option(
         "--devices",
         is_flag=False,

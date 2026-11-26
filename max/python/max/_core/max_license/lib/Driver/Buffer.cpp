@@ -1181,11 +1181,16 @@ nb::object Python::Buffer::getMemoryItem(size_t idx, DType dtype) {
 // Sets an item of a given dtype at a given index. Currently supports
 // single-item sets.
 void Python::Buffer::setMemoryItem(size_t idx, DType dtype, nb::object &value) {
+  storeItem(storage->data(), idx, dtype, value);
+}
+
+void Python::Buffer::storeItem(void *storageData, size_t idx, DType dtype,
+                               nb::object &value) {
   switch (dtype.getValue()) {
   case DType::kBool: {
     // Allow setting bools from python ints or bools
     auto val = nb::int_(value);
-    auto data = reinterpret_cast<uint8_t *>(storage->data());
+    auto data = reinterpret_cast<uint8_t *>(storageData);
     data[idx] = nb::cast<uint8_t>(val);
     break;
   }
@@ -1193,7 +1198,7 @@ void Python::Buffer::setMemoryItem(size_t idx, DType dtype, nb::object &value) {
   case kDtype: {                                                               \
     using Ty = typename CXXTypeForDType<kDtype>::CXXType;                      \
     auto val = nb::cast<Ty>(value);                                            \
-    auto data = reinterpret_cast<Ty *>(storage->data());                       \
+    auto data = reinterpret_cast<Ty *>(storageData);                           \
     data[idx] = val;                                                           \
     break;                                                                     \
   }
@@ -1212,7 +1217,7 @@ void Python::Buffer::setMemoryItem(size_t idx, DType dtype, nb::object &value) {
   case kDtype: {                                                               \
     using Ty = typename CXXTypeForDType<kDtype>::CXXType;                      \
     Ty val = (Ty)nb::cast<float>(value);                                       \
-    auto data = reinterpret_cast<Ty *>(storage->data());                       \
+    auto data = reinterpret_cast<Ty *>(storageData);                           \
     data[idx] = val;                                                           \
     break;                                                                     \
   }
@@ -1222,7 +1227,7 @@ void Python::Buffer::setMemoryItem(size_t idx, DType dtype, nb::object &value) {
 #define SETTER_FOR_FLOAT8_SPECIAL(kDtype)                                      \
   case kDtype: {                                                               \
     using Ty = typename CXXTypeForDType<kDtype>::CXXType;                      \
-    auto data = reinterpret_cast<Ty *>(storage->data());                       \
+    auto data = reinterpret_cast<Ty *>(storageData);                           \
     data[idx] = Ty(nb::cast<float>(value));                                    \
     break;                                                                     \
   }

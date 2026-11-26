@@ -174,9 +174,8 @@ TEST_F(HALVirtualDeviceTest, NoPeerAccess) {
 // The api knob takes a `--target-accelerator` vendor name as a synonym for the
 // device API it belongs to, so a caller holding one does not have to rewrite
 // it (GEX-4019). Asserted on the resolved device rather than the knob: the
-// synonym is resolved in `CompilationDevice::create`, and `api()` reporting
-// the canonical name is what keeps every `api() == cudaAPI` comparison
-// downstream correct.
+// synonym is resolved in `Device::create`, and `api()` reporting the canonical
+// name is what keeps every `api() == cudaAPI` comparison downstream correct.
 TEST_F(HALVirtualDeviceTest, VendorNameIsASynonymForTheApi) {
   AsyncRT::setVirtualDeviceAPI("nvidia");
   DeviceRef device = virtualDevice();
@@ -186,6 +185,22 @@ TEST_F(HALVirtualDeviceTest, VendorNameIsASynonymForTheApi) {
   ASSIGN_NO_ERR(const char *, arch, device->getArchName());
   EXPECT_STREQ(arch, kVirtualArch);
 }
+
+#if MODULAR_HAL_DEVICE_CONTEXT
+// HAL-only: a plugin API has no compilation device under HAL, so the device
+// comes from the knobs alone. The api keeps its own name because kernel
+// registrations select on it.
+TEST_F(HALVirtualDeviceTest, PluginApiNeedsNoCompilationDevice) {
+  AsyncRT::setVirtualDeviceAPI("wombat42");
+  AsyncRT::setVirtualDeviceTargetArch("wombat_v1");
+  DeviceRef device = virtualDevice();
+  ASSERT_NE(device.getPointer(), nullptr);
+  EXPECT_EQ(device->api(), "wombat42");
+
+  ASSIGN_NO_ERR(const char *, arch, device->getArchName());
+  EXPECT_STREQ(arch, "wombat_v1");
+}
+#endif
 
 TEST_F(HALVirtualDeviceTest, AmdVendorNamesAreSynonymsForHip) {
   // Only the compilation device is built here: `Device::create` would need the

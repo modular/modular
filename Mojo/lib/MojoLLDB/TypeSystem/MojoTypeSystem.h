@@ -267,6 +267,9 @@ public:
   GetBitSize(lldb::opaque_compiler_type_t type,
              lldb_private::ExecutionContextScope *exeScope) override;
 
+  std::optional<uint64_t>
+  GetByteStride(lldb::opaque_compiler_type_t type) override;
+
   std::optional<size_t>
   GetTypeBitAlign(lldb::opaque_compiler_type_t type,
                   lldb_private::ExecutionContextScope *exeScope) override;

@@ -43,6 +43,7 @@ from .attention import (
 )
 from .block import _on_each_device
 from .mxfp8_linear import (
+    ConcatenatedMXFP8Linear,
     MXFP8Linear,
     Mxfp8Rows,
     _dense_op,
@@ -240,7 +241,13 @@ class DSparkAttention(Module[..., Tensor]):
         # ``wq_a`` and ``wkv`` read the same input, so the adapter stacks
         # them into one projection, as in the trunk's attention.
         self.q_lora_rank = config.q_lora_rank
-        self.wqa_wkv = MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
+        self.wqa_wkv = (
+            ConcatenatedMXFP8Linear(
+                config.hidden_size, ("wq_a", config.q_lora_rank), ("wkv", d)
+            )
+            if config.raw_checkpoint_weights
+            else MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
+        )
         self.q_norm = RMSNorm(config.q_lora_rank, eps=config.rms_norm_eps)
         self.wq_b = MXFP8Linear(config.q_lora_rank, heads * d)
         self.kv_norm = RMSNorm(d, eps=config.rms_norm_eps)

@@ -20,8 +20,8 @@
 /bazel/public-patches/llvm-elf-extractor-local-copy.patch @modular/sdlc
 /bazel/public-patches/llvm-machinefunction-sti-ref-to-ptr.patch @modular/sdlc
 /bazel/public-patches/llvm-revert-lldb-elf-section-name-string.patch @modular/sdlc
-/bazel/public-patches/llvm-lldb-macosx-objcxx-headers.patch @modular/sdlc
 /bazel/public-patches/llvm-softpromote-scalar-to-vector.patch @modular/sdlc
+/bazel/public-patches/llvm-optional-targets.patch @modular/hwenablement
 /bazel/public-patches/mistral-evals-0001-Check-health-endpoint-with-and-without-v1.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0002-Increase-request-parallelism.patch @modular/sdlc
 /bazel/public-patches/mistral-evals-0003-Accept-any-200-from-the-health-endpoint.patch @modular/sdlc
@@ -63,6 +63,7 @@
 /bazel/public-patches/nixl-libfabric-vmm-cuda-ctx.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-src-addr-peer-limit.patch @modular/runtime
 /bazel/public-patches/nixl-libfabric-reestablish-reply.patch @modular/runtime
+/bazel/public-patches/nixl-libfabric-parked-posts.patch @modular/runtime
 /bazel/public-patches/llvm-lldb-exports.patch @modular/mojo-tooling
 /bazel/public-patches/llvm-hexagon-qfp-pair-refill.patch @modular/mojo-compiler
 /bazel/public-patches/llvm-hexagon-store-merge-no-autohvx.patch @modular/mojo-compiler
@@ -81,8 +82,8 @@
 /max/CONTRIBUTING.md @modular/mojo-docs
 /max/docs/development.md @modular/mojo-docs @modular/max-serve
 /Mojo/BUILD.bazel @modular/mojo-compiler
-/Mojo/AGENTS.md @modular/stdlib
-/Mojo/CLAUDE.md @modular/stdlib
+/Mojo/AGENTS.md @modular/stdlib @modular/mojo-compiler
+/Mojo/CLAUDE.md @modular/stdlib @modular/mojo-compiler
 /Mojo/CONTRIBUTING.md @modular/stdlib
 /Mojo/README.md @modular/stdlib
 /Mojo/docs/site/ @modular/mojo-docs
@@ -133,7 +134,6 @@
 /max/BUILD.bazel @modular/sdlc
 /max/mojo/max/__init__.mojo @modular/stdlib @modular/kernels @copilot-pull-request-reviewer @modular/driver
 /max/mojo/max/_category_.json @modular/mojo-docs
-/max/mojo/max/_graph_blob.mojo @modular/stdlib @modular/runtime @copilot-pull-request-reviewer
 /max/mojo/max/BUILD.bazel @modular/stdlib
 /max/mojo/max/algorithm/ @modular/stdlib @modular/gpu-abstractions @copilot-pull-request-reviewer
 /max/mojo/max/benchmark/ @modular/stdlib @copilot-pull-request-reviewer

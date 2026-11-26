@@ -152,9 +152,10 @@ def discover_registered_dirs() -> list[str]:
                     if module is None:
                         continue
                     module = module.lstrip(".")
+                    package = module.split(".")[0]
                     if (
-                        module.split(".")[0].endswith("_modulev3")
-                        or module in UNLISTED_MODULES
+                        package.endswith("_modulev3")
+                        or package in UNLISTED_MODULES
                     ):
                         continue
                     modules.add(module)

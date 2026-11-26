@@ -109,7 +109,7 @@ TEST(DriverCApi, VersionMatchesTheHeader) {
                 (static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_MINOR) << 16) |
                 static_cast<uint32_t>(M_DRIVER_CAPI_VERSION_PATCH));
   EXPECT_EQ(version >> 24, 2u);
-  EXPECT_EQ((version >> 16) & 0xffu, 0u);
+  EXPECT_EQ((version >> 16) & 0xffu, 1u);
   EXPECT_EQ(version & 0xffffu, 0u);
 
   // The query returns no status, so it leaves the message of an earlier
@@ -2783,6 +2783,52 @@ TEST(DriverCApi, AcceleratorAllocatorMemoryInfoMatchesContext) {
             M_DRIVER_OK);
   if (before != M_DRIVER_MEMORY_UNKNOWN && after != M_DRIVER_MEMORY_UNKNOWN)
     EXPECT_LE(after, before);
+}
+
+namespace {
+
+/// The query's answer equals the device's own. The legacy and HAL fallbacks
+/// report the device's total memory, so a backend without a lower limit
+/// answers that rather than failing.
+void expectMaxSingleAllocationSizeMatchesDevice(M_DriverDevice *device,
+                                                DeviceContext &context) {
+  ErrorOr<size_t> expected = context.device().maxSingleAllocationSize();
+  uint64_t max = 0;
+  if (expected.isError()) {
+    EXPECT_EQ(M_DriverDeviceMaxSingleAllocationSize(device, &max),
+              M_DRIVER_RUNTIME_ERROR);
+    return;
+  }
+  ASSERT_EQ(M_DriverDeviceMaxSingleAllocationSize(device, &max), M_DRIVER_OK)
+      << lastError();
+  EXPECT_EQ(max, static_cast<uint64_t>(*expected));
+  EXPECT_EQ(M_DriverDeviceMaxSingleAllocationSize(device, nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+}
+
+} // namespace
+
+TEST(DriverCApi, CpuMaxSingleAllocationSizeMatchesDevice) {
+  DeviceHandle device;
+  ASSERT_TRUE(makeCpuDevice(device));
+  ErrorOr<DeviceContextRef> context =
+      DeviceContext::getOrCreate(M::Driver::Device::cpuAPI, 0);
+  ASSERT_FALSE(context.isError()) << context.getError();
+  expectMaxSingleAllocationSizeMatchesDevice(device.get(), **context);
+  EXPECT_EQ(M_DriverDeviceMaxSingleAllocationSize(nullptr, nullptr),
+            M_DRIVER_INVALID_ARGUMENT);
+}
+
+TEST(DriverCApi, AcceleratorMaxSingleAllocationSizeMatchesDevice) {
+  if (M_DriverAcceleratorCount() == 0)
+    GTEST_SKIP() << "no accelerator on this host";
+  DeviceHandle device;
+  ASSERT_EQ(M_DriverAcceleratorDeviceCreate(0, device.receive()), M_DRIVER_OK)
+      << lastError();
+  ErrorOr<DeviceContextRef> context =
+      DeviceContext::getOrCreate(M::Driver::Device::gpuAPI, 0);
+  ASSERT_FALSE(context.isError()) << context.getError();
+  expectMaxSingleAllocationSizeMatchesDevice(device.get(), **context);
 }
 
 #if MODULAR_HAL_DEVICE_CONTEXT

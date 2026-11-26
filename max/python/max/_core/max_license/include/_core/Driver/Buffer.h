@@ -190,6 +190,12 @@ struct Buffer {
   /// Sets item in buffer. Currently supports only single-element setting.
   void set(const nb::object &pyIdx, nb::object &value);
 
+  /// Converts a Python number to `dtype` and stores it as element `idx` of the
+  /// host array at `storageData`. This is the conversion `set` applies, exposed
+  /// so that other bindings fill raw host memory with identical rounding.
+  static void storeItem(void *storageData, size_t idx, DType dtype,
+                        nb::object &value);
+
   /// Gets slice of buffer. Does not currently support slicing with indexes
   /// lower than the buffer rank.
   Buffer get(const nb::object &pyIdx);

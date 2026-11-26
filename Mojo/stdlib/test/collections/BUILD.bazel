@@ -78,6 +78,7 @@ _ASAN_LINE_TABLES_ONLY = ["test_list.mojo"]
 # trace. Temporary, until crash-test slowness is fixed.
 _SKIP_EXTERNAL_CI = [
     "test_list_bounds_abort.mojo",
+    "test_list_shrink_negative_abort.mojo",
     "test_span_bounds_abort.mojo",
     "test_span_uninit_abort.mojo",
 ]

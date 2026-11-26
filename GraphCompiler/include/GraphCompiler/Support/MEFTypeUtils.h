@@ -25,18 +25,21 @@
 
 namespace M {
 
+namespace MLRT {
 class MEFFunctionType;
+} // namespace MLRT
 class ErrorOrSuccess;
 class QuantTensorSpec;
 
 /// Decodes a MEFFunctionType signature into input and output QuantTensorSpecs.
-MODULAR_CXX_EXPORT ErrorOrSuccess decodeQuantizedSignature(
-    MEFFunctionType signature, SmallVectorImpl<QuantTensorSpec> &inputSpecs,
-    SmallVectorImpl<QuantTensorSpec> &outputSpecs);
+MODULAR_CXX_EXPORT ErrorOrSuccess
+decodeQuantizedSignature(MLRT::MEFFunctionType signature,
+                         SmallVectorImpl<QuantTensorSpec> &inputSpecs,
+                         SmallVectorImpl<QuantTensorSpec> &outputSpecs);
 
 /// Decodes e.g. {argument_names = ["a", "b"], result_names = ["c"]} into
 /// `inputNames` and `outputNames`.
-ErrorOrSuccess decodeTensorNames(MEFDictionaryAttr attrDictionary,
+ErrorOrSuccess decodeTensorNames(MLRT::MEFDictionaryAttr attrDictionary,
                                  SmallVectorImpl<StringRef> &inputNames,
                                  SmallVectorImpl<StringRef> &outputNames);
 

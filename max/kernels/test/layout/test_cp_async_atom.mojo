@@ -22,10 +22,12 @@ from layout.atoms import (
     AddressEncoding,
     BarrierCompletion,
     BatchCompletion,
+    CompletionFamily,
     CounterCompletion,
 )
 from layout.atoms.b200.cp_async import CpAsyncBulk
 from layout.atoms.cp_async import CpAsync
+from layout.building_blocks import commit_batch, wait_batches
 from layout.owned_tensor import OwnedGPUTensor
 from layout.tma_async import SharedMemBarrier
 
@@ -40,9 +42,12 @@ def cp_async_kernel(
     CpAsync[.float32, 16]()(
         TileTensor(smem), TileTensor(src, row_major[1, 4]())
     )
-    CpAsync[.float32, 16].Completion.commit()
-    CpAsync[.float32, 16].Completion.wait[1]()
-    CpAsync[.float32, 16].Completion.wait()
+    # The atom only issues; this kernel, standing in for a building block,
+    # commits the group and waits on it.
+    comptime C = CpAsync[.float32, 16].Completion
+    commit_batch[C]()
+    wait_batches[C, 1]()
+    wait_batches[C]()
 
 
 def cp_async_bulk_kernel(
@@ -69,6 +74,7 @@ def test_cp_async_description() raises:
     assert_true(conforms_to(A.Completion, BatchCompletion))
     assert_false(conforms_to(A.Completion, CounterCompletion))
     assert_equal(A.Completion.max_pending, Int.MAX)
+    assert_equal(A.Completion.family, CompletionFamily.async_copy_group)
 
 
 def test_cp_async_bulk_description() raises:

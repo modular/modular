@@ -58,6 +58,7 @@ from std.utils.coord import Coord
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 def multicast_tma_wgmma_kernel[
     CLayout: TensorLayout,
+    c_origin: MutOrigin,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -79,7 +80,7 @@ def multicast_tma_wgmma_kernel[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, CLayout, MutAnyOrigin],
+    c: TileTensor[c_type, CLayout, c_origin],
     num_iters: Int,
 ):
     comptime assert c.rank == c.flat_rank == 2
@@ -394,8 +395,10 @@ def test_multicast_tma_wgmma[
         swizzle_mode=b_swizzle,
     ](ctx, b.device_tensor())
 
+    var c_dev = c.device_tensor()
     comptime kernel = multicast_tma_wgmma_kernel[
         type_of(row_major[M, N]()),
+        c_dev.origin,
         a_type,
         b_type,
         c_type,
@@ -419,7 +422,7 @@ def test_multicast_tma_wgmma[
     ctx.enqueue_function[kernel](
         a_tma_op,
         b_tma_op,
-        c.device_tensor().as_unsafe_any_origin(),
+        c_dev,
         K // BK,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(128),

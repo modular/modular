@@ -24,8 +24,8 @@
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
 #include "MLRT/lib/Driver/DeviceContext/AcceleratorArch.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "NVML.h"
 #include "Support/HashUtils.h"
 #include "Support/Profiling/Ranges.h"
@@ -37,6 +37,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/Threading.h"
+#include <algorithm>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -636,12 +637,45 @@ int CUDADevice::deviceCount() const {
   return *errOrCount;
 }
 
+// cuMemAllocHost's 4 KiB pages make GPU random access slow on GB10.
+// Write-combined memory avoids that and stays CPU-cached there, but is
+// CPU-uncached elsewhere, including Jetson Orin, which lacks host page tables.
+bool CUDADevice::useWriteCombinedHostAlloc() const {
+  std::call_once(writeCombinedHostAllocOnce_, [&]() {
+    auto hasAttribute = [&](CUdevice_attribute attr) {
+      int value = 0;
+      return driver_.cuDeviceGetAttribute(&value, attr, cudaDevice_) ==
+                 CUDADriver::SUCCESS &&
+             value != 0;
+    };
+    bool isIntegrated = hasAttribute(CUdevice_attribute::INTEGRATED);
+    bool readsHostPageTables = hasAttribute(
+        CUdevice_attribute::PAGEABLE_MEMORY_ACCESS_USES_HOST_PAGE_TABLES);
+    writeCombinedHostAllocCached_ = isIntegrated && readsHostPageTables;
+  });
+  return writeCombinedHostAllocCached_;
+}
+
+ErrorOrSuccess CUDADevice::hostAlloc(void **ptr, size_t byteSize) const {
+  if (useWriteCombinedHostAlloc()) {
+    constexpr unsigned int kPortable = 0x1;
+    constexpr unsigned int kDeviceMap = 0x2;
+    constexpr unsigned int kWriteCombined = 0x4;
+    // PORTABLE and DEVICEMAP match cuMemAllocHost's semantics.
+    CUDA_CHECK_ERR(driver_.cuMemHostAlloc(
+        ptr, byteSize, kPortable | kDeviceMap | kWriteCombined));
+  } else {
+    CUDA_CHECK_ERR(driver_.cuMemAllocHost_v2(ptr, byteSize));
+  }
+  return success();
+}
+
 ErrorOrSuccess CUDADevice::chunkAlloc(void **ptr, size_t byteSize,
                                       bool isHost) {
   assert(byteSize != 0);
   CUDA_WITH_DEV_ERR(*this);
   if (isHost) {
-    CUDA_CHECK_ERR(driver_.cuMemAllocHost_v2(ptr, byteSize));
+    RETURN_IF_ERROR(hostAlloc(ptr, byteSize));
   } else {
     CUDA_CHECK_ERR(driver_.cuMemAlloc_v2(ptr, byteSize));
   }
@@ -1840,9 +1874,9 @@ ErrorOrSuccess CUDADeviceContext::memAlloc(void **ptr, size_t byteSize,
     break;
   }
   case Device::AllocMode::HOST: {
-    // We must poll here since cuMemAllocHost_v2 is synchronous.
+    // We must poll here since host allocation is synchronous.
     POLL_PENDING_EVENTS(*this);
-    CUDA_CHECK_ERR(driver_.cuMemAllocHost_v2(ptr, byteSize));
+    RETURN_IF_ERROR(CUDADevice::cast(device()).hostAlloc(ptr, byteSize));
     break;
   }
   case Device::AllocMode::SYNC: {
@@ -2279,15 +2313,13 @@ setupCompilationOptions(StringRef debugLevel, int32_t optimizationLevel) {
 
 ErrorOr<DeviceFunctionRef>
 CUDADeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
-                                StringRef code, int32_t maxDynamicSharedBytes,
-                                StringRef debugLevel,
+                                StringRef code, StringRef debugLevel,
                                 int32_t optimizationLevel) {
   M_PROFILE_SPAN("CUDADeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   Device::FunctionCacheKey key{
       /*name=*/Device::FunctionCacheKey::moduleCacheName(moduleName, code),
       /*functionName=*/functionName.str(),
       /*debugLevel=*/debugLevel.str(),
-      /*maxDynamicSharedBytes=*/maxDynamicSharedBytes,
       /*optimizationLevel=*/optimizationLevel};
   DeviceFunctionCacheEntryRef entry = device().findInFunctionCache(key);
   if (entry.getPointer() != nullptr && !bypassFunctionCache_) {
@@ -2342,12 +2374,20 @@ CUDADeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
       CUfunction_attribute::FUNC_ATTRIBUTE_NON_PORTABLE_CLUSTER_SIZE_ALLOWED,
       1));
 
-  if (maxDynamicSharedBytes >= 0) {
-    CUDA_CHECK_ERR(driver_.cuFuncSetAttribute(
-        function,
-        CUfunction_attribute::FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
-        maxDynamicSharedBytes));
-  }
+  // CUDA caps dynamic shared memory at 48 KB by default. The cap only limits
+  // what a launch may ask for, so raise it to the device max once at load.
+  int optinBytes = 0;
+  CUDA_CHECK_ERR(driver_.cuDeviceGetAttribute(
+      &optinBytes, CUdevice_attribute::MAX_SHARED_MEMORY_PER_BLOCK_OPTIN,
+      CUDADevice::cast(device()).cudaDevice()));
+  int staticBytes = 0;
+  CUDA_CHECK_ERR(driver_.cuFuncGetAttribute(
+      &staticBytes, CUfunction_attribute::FUNC_ATTRIBUTE_SHARED_SIZE_BYTES,
+      function));
+  CUDA_CHECK_ERR(driver_.cuFuncSetAttribute(
+      function,
+      CUfunction_attribute::FUNC_ATTRIBUTE_MAX_DYNAMIC_SHARED_SIZE_BYTES,
+      std::max(optinBytes - staticBytes, 0)));
 
   // Allocate func outside of the lock region to reduce the time spent under
   // lock. If this functionName has been registered concurrently, then we will

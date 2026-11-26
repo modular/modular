@@ -816,3 +816,20 @@ def match_temporary_optional_payload():
         _ = payload
     case .None:
         pass
+
+
+# Keep bindings from dependent guard clauses valid in the guard continuation.
+struct GuardSearchable:
+    def find(self, start: Int = 0) -> Optional[Int]:
+        return Optional[Int](start)
+
+    def slice(self, start: Int, end: Int) -> String:
+        return String()
+
+
+def guard_dependent_bindings(searchable: GuardSearchable):
+    __guard case .Some(directive_idx) = searchable.find();
+      case .Some(line_end) = searchable.find(directive_idx) else:
+        return
+    var line = searchable.slice(directive_idx, line_end)
+    _ = line

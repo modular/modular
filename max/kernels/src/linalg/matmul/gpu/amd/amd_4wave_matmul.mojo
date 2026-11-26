@@ -34,7 +34,7 @@ through a single body: MMA shape and BK select on dtype.
 """
 
 from std.bit import log2_floor
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.sys import align_of, size_of, llvm_intrinsic
 from std.utils import StaticTuple
 from std.collections import Array
@@ -63,7 +63,10 @@ from pipeline.pipeline_dsl import ScheduleEntry
 from pipeline.program_builder import derive_safe_max_globals
 
 from structured_kernels.amd_tile_io import RegTileEpilogue, TileLoaderLDS
-from structured_kernels.amd_tile_io_conv import TileLoaderLDSIm2col
+from structured_kernels.amd_tile_io_conv import (
+    TileLoaderLDSIm2col,
+    TileLoaderLDSRscf,
+)
 
 from ....utils import (
     ElementwiseComputeFn,
@@ -1367,6 +1370,7 @@ struct AMD4WaveMatmul[
         has_residual: Bool = False,
         has_epilogue_fn: Bool = False,
         has_compute_fn: Bool = False,
+        b_rscf: Bool = False,
     ](
         a: TileTensor[Self.a_type, a_layout, ImmutAnyOrigin, Engine=a_engine],
         b: TileTensor[Self.b_type, b_layout, ImmutAnyOrigin, Engine=b_engine],
@@ -1417,10 +1421,15 @@ struct AMD4WaveMatmul[
                 chunk instead of the kernel.
             has_compute_fn: Whether `compute_fn` transforms each output
                 chunk before the residual add.
+            b_rscf: When True, `b` is the filter as stored in RSCF, a
+                row-major `[K_real, N]` matrix, and its sub-tiles are DMA'd
+                K-major and gathered with transposing LDS reads, so no
+                FRSC repack launch is needed. 16-bit inputs only.
 
         Args:
             a: Input tile-tensor for A (NHWC activations).
-            b: Input tile-tensor for B (filter, RSCF / FCRS shape).
+            b: Input tile-tensor for B: the FRSC filter `[N, K_padded]`, or
+                the RSCF filter `[K_real, N]` when `b_rscf` is set.
             c: Output tile-tensor for C (flattened M x C_out view).
             source_ptr: Pointer to the residual buffer (2D
                 `[M, C_out]`-aliased view of NHWC). Unused when
@@ -1468,8 +1477,12 @@ struct AMD4WaveMatmul[
         # M (GEMM) = N*H*W; read from C's row count. N (GEMM) = Cout (B rows).
         # K (GEMM) = K_filter (possibly K-padded; real K is R*S*C_in_used).
         var M = Int(c.dim[0]())
-        comptime N = type_of(b).static_shape[0]
-        comptime K = type_of(b).static_shape[1]
+        comptime N = type_of(b).static_shape[1 if b_rscf else 0]
+        comptime K = (
+            align_up(type_of(b).static_shape[0], 2 * Self.BK) if b_rscf else (
+                type_of(b).static_shape[1]
+            )
+        )
         # K-padding support: when conv_config.C_in > 0, the caller has zero-padded
         # the filter's trailing K to bring K_filter up to a multiple of
         # 2*BK. The "real" C_in is conv_config.C_in; the kernel uses it to set
@@ -1692,6 +1705,28 @@ struct AMD4WaveMatmul[
             k_anchor=split_id * K_per_split,
         )
 
+        # RSCF-direct B loader. Built in both modes so `load_b` can pick at
+        # comptime without unifying two loader types; the one that is not
+        # used is dead code. In FRSC mode its extents are the (unused) FRSC
+        # ones.
+        comptime _rscf_ok = b_rscf and not _is_fp8
+        comptime _rscf_F = N if b_rscf else 8
+        comptime if b_rscf:
+            comptime assert (
+                _rscf_ok and Self.MMA_N == 16 and Self.MMA_K == 32
+            ), "RSCF-direct B needs a 16-bit 16x16x32 MFMA"
+            comptime assert (
+                Self.BK == 64
+            ), "RSCF-direct B schedules 8 LDS reads per fragment load at BK=64"
+        var b_loader_rscf = TileLoaderLDSRscf[
+            Self.in_type,
+            Self.BK,
+            half_BN,
+            _rscf_F,
+            num_loading_warps=4,
+            active=_rscf_ok,
+        ](b_gmem, _warp_id, _lane_id, n_anchor=pid_n * BN)
+
         # === MMA operator (full warp tile, quadrant access via methods) ===
         var mma_op = QuadrantMmaOp[
             out_type=Self.accum_dtype,
@@ -1735,11 +1770,18 @@ struct AMD4WaveMatmul[
 
         @inline(.always)
         def load_b[stage: Int, which: Int](k: Int) {imm}:
-            b_loader.load_tile(
-                b_load_tiles[stage][which],
-                m_offset=which * half_BN,
-                k_offset=k,
-            )
+            comptime if b_rscf:
+                b_loader_rscf.load_tile(
+                    b_load_tiles[stage][which].unsafe_ptr(),
+                    n_offset=which * half_BN,
+                    k_offset=k,
+                )
+            else:
+                b_loader.load_tile(
+                    b_load_tiles[stage][which],
+                    m_offset=which * half_BN,
+                    k_offset=k,
+                )
 
         # === MMA tile lookup: [stage][subtile] -> SMEM tile ===
         var a_mma_tiles = (
@@ -1794,7 +1836,26 @@ struct AMD4WaveMatmul[
             # `KernelGeometry` bundles `is_fp8` + `lgkm_per_load_*` into
             # one comptime arg so they don't have to be threaded as
             # individual template params.
-            comptime schedule = build_schedule[geometry=Self._geometry](
+            # The transposing B read is two `ds_read_b64` per fragment where
+            # the FRSC path issues one `ds_read_b128`.
+            comptime base_geometry = Self._geometry
+            comptime geometry = KernelGeometry(
+                BM=base_geometry.BM,
+                BN=base_geometry.BN,
+                BK=base_geometry.BK,
+                MMA_M=base_geometry.MMA_M,
+                MMA_N=base_geometry.MMA_N,
+                MMA_K=base_geometry.MMA_K,
+                elem_bytes=base_geometry.elem_bytes,
+                simd_width=base_geometry.simd_width,
+                is_fp8=base_geometry.is_fp8,
+                vm_per_load_a=base_geometry.vm_per_load_a,
+                vm_per_load_b=base_geometry.vm_per_load_b,
+                lgkm_per_load_a=base_geometry.lgkm_per_load_a,
+                lgkm_per_load_b=base_geometry.lgkm_per_load_b
+                * (2 if b_rscf else 1),
+            )
+            comptime schedule = build_schedule[geometry=geometry](
                 sched_config, target
             )
 
@@ -1830,9 +1891,19 @@ struct AMD4WaveMatmul[
                             a_mma_tiles[entry.op.stage][entry.op.subtile]
                         )
                     case .MMA_LOAD_B:
-                        mma_op.load_b_quadrant[entry.op.subtile](
-                            b_mma_tiles[entry.op.stage][entry.op.subtile]
-                        )
+                        comptime if b_rscf:
+                            mma_op.load_b_quadrant_rscf[
+                                entry.op.subtile, half_BN
+                            ](
+                                b_load_tiles[entry.op.stage][
+                                    entry.op.subtile
+                                ].unsafe_ptr(),
+                                warp_id_n * (mma_tile_n // 16),
+                            )
+                        else:
+                            mma_op.load_b_quadrant[entry.op.subtile](
+                                b_mma_tiles[entry.op.stage][entry.op.subtile]
+                            )
                     case .MMA:
                         mma_op.mma_quadrant[entry.op.stage, entry.op.subtile]()
                     case _:

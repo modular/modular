@@ -234,6 +234,7 @@ def run_mha_prefill_v2_paged[
     if bench:
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_func(
             mut b: Bencher,
         ) raises {var cb_q, var cb_o, var k_operand, var v_operand, imm}:

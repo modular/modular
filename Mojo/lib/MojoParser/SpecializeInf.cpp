@@ -74,6 +74,8 @@ LogicalResult SpecializeInf::matchArgument(Type actualType,
   ParamMatcher matcher(expr, *this, /*allowImplicitConversions=*/false);
 
   switch (expectedConvention) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::OwnedReg:
   case ArgConvention::PackImmMem:
   case ArgConvention::PackMut:

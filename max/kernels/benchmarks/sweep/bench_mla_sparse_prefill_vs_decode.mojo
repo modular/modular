@@ -455,6 +455,7 @@ def run_decode_arms[
         var scalars_tt = args.gpu_tile_tensor()
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def decode_launch(launch_ctx: DeviceContext[]) raises {mut out_tt, imm}:
             _decode[heads, False](
                 out_tt,
@@ -469,6 +470,7 @@ def run_decode_arms[
             )
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def skip_launch(launch_ctx: DeviceContext[]) raises {mut out_tt, imm}:
             _decode[heads, True](
                 out_tt,
@@ -596,6 +598,7 @@ def run_dense[
     comptime config = _prefill_config[heads, TOP_K]()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def reference_launch(launch_ctx: DeviceContext[]) raises {mut ref_tt, imm}:
         comptime if cache == CACHE_FP8:
             mla_prefill_sparse_qkv_fp8[
@@ -739,6 +742,7 @@ def run_nvfp4[
         ),
     ).as_unsafe_any_origin()
 
+    @__allow_legacy_any_origin_fields
     def packed_cache(
         max_context: Int,
     ) raises {imm} -> PackedCollection.CacheType:
@@ -808,6 +812,7 @@ def run_nvfp4[
     comptime convert_config = _prefill_config[heads, 2 * TOP_K]()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def reference_launch(launch_ctx: DeviceContext[]) raises {mut ref_tt, imm}:
         mla_prefill_sparse_qkv_fp8[
             config=gather_config,
@@ -827,6 +832,7 @@ def run_nvfp4[
         )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def prefill_launch(launch_ctx: DeviceContext[]) raises {mut out_tt, imm}:
         mla_prefill_sparse_qkv_fp8[
             config=gather_config,
@@ -864,6 +870,7 @@ def run_nvfp4[
         for np in opts.nps:
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def convert_launch(
                 launch_ctx: DeviceContext[],
             ) raises {mut out_tt, imm}:

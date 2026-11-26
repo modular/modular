@@ -6,6 +6,7 @@ package(default_visibility = ["//max:consumers"])
 # Graph-free configs and graph helpers shared by max.nn and max.nn.legacy. Both
 # depend on this target, so it must import neither of them.
 _CORE_SRCS = [
+    "_graph_group.py",
     "_identity.py",
     "activation.py",
     "attention_mask.py",
@@ -22,11 +23,12 @@ modular_py_library(
     # target stays out of them; its examples run in its own test.
     test_docstring_examples = True,
     deps = [
+        requirement("typing-extensions"),
+        "//max/python/max:tree",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/support",
-        requirement("typing-extensions"),
     ],
 )
 
@@ -46,12 +48,9 @@ modular_py_library(
     ],
     docstring_example_shard_count = 4,
     docstring_example_test_rule = modular_eager_py_test,
-    # numpy and support are used transitively through max.nn.legacy, not directly
-    # imported by max.nn files.
-    ignore_extra_deps = [
-        requirement("numpy"),
-        "//max/python/max/support",
-    ],
+    # max.tensor and max.graph import max.nn.legacy lazily (signal buffers),
+    # and get it at runtime through this target.
+    ignore_extra_deps = ["//max/python/max/nn/legacy"],
     test_docstring_examples = True,
     deps = [
         requirement("numpy"),

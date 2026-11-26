@@ -26,7 +26,8 @@ from max.driver import CPU
 from max.dtype import DType
 from max.nn import Linear, Module, RMSNorm
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import DeviceMapping
 
@@ -45,7 +46,7 @@ class Glm5NextMTPLayer(Module[..., tuple[Tensor, Tensor]]):
     def __init__(
         self,
         config: Glm5NextConfig,
-        ep_batch_manager: EPBatchManager | None,
+        ep_config: EPConfig | None,
     ) -> None:
         layer_idx = config.num_hidden_layers
         quant_scheme = config.quant_scheme
@@ -57,7 +58,7 @@ class Glm5NextMTPLayer(Module[..., tuple[Tensor, Tensor]]):
         self.self_attn = Glm5NextSparseMLA(
             config, layer_idx, quant_scheme.attn_config(layer_idx)
         )
-        self.mlp = build_mlp(config, layer_idx, ep_batch_manager)
+        self.mlp = build_mlp(config, layer_idx, ep_config)
         self.input_layernorm = RMSNorm(
             config.hidden_size, eps=config.rms_norm_eps
         )
@@ -74,7 +75,7 @@ class Glm5NextMTPLayer(Module[..., tuple[Tensor, Tensor]]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         tail: KPoolTail,
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         prev_selection: Tensor | None,
         selection_lag: int,
     ) -> tuple[Tensor, Tensor]:
@@ -91,9 +92,7 @@ class Glm5NextMTPLayer(Module[..., tuple[Tensor, Tensor]]):
         )
         # The attention output is a sum of per-device partials.
         h = x + y.to(DeviceMapping.replicated(x.mesh))
-        y = feed_forward(
-            self.mlp, self.post_attention_layernorm(h), comm_buffers
-        )
+        y = feed_forward(self.mlp, self.post_attention_layernorm(h), ep)
         return h + y, selection
 
 
@@ -103,8 +102,8 @@ class Glm5NextMTP(Module[..., tuple[Tensor, Tensor]]):
     It embeds and projects through the target's embedding and head, so it
     holds neither: it takes the embedded tokens and returns the decoder
     output, which the caller projects through :attr:`shared_head_norm`. It
-    dispatches its experts through an expert-parallel manager of its own,
-    over the buffers its config's ``ep_config`` sizes.
+    dispatches its experts over the buffers its config's ``ep_config``
+    sizes.
 
     Raises:
         NotImplementedError: If the checkpoint does not share the draft's
@@ -119,11 +118,7 @@ class Glm5NextMTP(Module[..., tuple[Tensor, Tensor]]):
                 " implemented"
             )
         self.config = config
-        self.ep_batch_manager = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
+        self.ep_config = config.ep_config
         self.cache_layer_idx = len(config.sparse_attention_layers)
         """The draft's slot in the latent, indexer and tail ring caches, one
         past the target's sparse layers."""
@@ -137,7 +132,7 @@ class Glm5NextMTP(Module[..., tuple[Tensor, Tensor]]):
             self.eh_proj = Linear(
                 2 * config.hidden_size, config.hidden_size, bias=False
             )
-            self.decoder_layer = Glm5NextMTPLayer(config, self.ep_batch_manager)
+            self.decoder_layer = Glm5NextMTPLayer(config, self.ep_config)
             self.shared_head_norm = RMSNorm(
                 config.hidden_size, eps=config.rms_norm_eps
             )
@@ -161,7 +156,7 @@ class Glm5NextMTP(Module[..., tuple[Tensor, Tensor]]):
         tail: KPoolTail,
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         prev_selection: Tensor | None = None,
         selection_lag: int = 0,
     ) -> tuple[Tensor, Tensor]:
@@ -177,7 +172,8 @@ class Glm5NextMTP(Module[..., tuple[Tensor, Tensor]]):
             tail: The k-pool tail ring at the draft's layer.
             input_row_offsets: Offsets of each request's rows.
             freqs_cis: The target's padding rotary table.
-            comm_buffers: The expert-parallel buffers, or ``None``.
+            ep: The exchange's buffers, or ``None`` without expert
+                parallelism.
             prev_selection: A selection to reuse rather than run the indexer.
             selection_lag: Positions between the token ``prev_selection`` was
                 made for and this call's token.
@@ -201,7 +197,7 @@ class Glm5NextMTP(Module[..., tuple[Tensor, Tensor]]):
             input_row_offsets,
             freqs_cis,
             tail,
-            comm_buffers,
+            ep,
             prev_selection,
             selection_lag,
         )

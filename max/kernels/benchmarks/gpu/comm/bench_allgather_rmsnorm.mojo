@@ -89,12 +89,14 @@ def _launch_norm_full[
     var out_buf = TileTensor(out_ptr, row_major(Coord(rows, num_cols)))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[
         width: Int
     ](coords: Coord) {var in_buf} -> SIMD[in_dtype, width]:
         return in_buf.load[width=width](coords)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[in_dtype, width]) {var out_buf} -> None:
@@ -478,6 +480,7 @@ def bench_allgather_rmsnorm[
 
     # ===== Variant 1: all-gather only -> t_AG =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_ag_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_shards, imm}:
@@ -517,6 +520,7 @@ def bench_allgather_rmsnorm[
 
     # ===== Variant 2: standalone RMSNorm on a cold full tensor -> t_norm =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_norm_cold_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
@@ -545,6 +549,7 @@ def bench_allgather_rmsnorm[
 
     # ===== Variant 3: AG then RMSNorm on the live gathered output -> t_chained =
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_chained_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_shards, imm}:
@@ -594,6 +599,7 @@ def bench_allgather_rmsnorm[
 
     # ===== Variant 4: fused all-gather + RMSNorm kernel -> t_fused =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_shards, imm}:
@@ -625,6 +631,7 @@ def bench_allgather_rmsnorm[
 
     # ===== Variant 5: shape-gated dispatch =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_dispatch_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:

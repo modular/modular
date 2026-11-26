@@ -45,8 +45,8 @@ from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue
 from max.nn.common_layers.kv_cache import PagedCacheValues
+from max.nn.ep import init as ep_init
 from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.comm.ep import EPCommBuffers
 from max.nn.legacy.transformer import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import (
     as_graph_values,
@@ -164,14 +164,15 @@ class MistralLarge4BlockTarget:
 
     def _verify(self, batch: _Batch) -> Verified[list[Tensor], Tensor]:
         """Runs the verify over the merged window, on ``Tensor`` values."""
-        comm_buffers: EPCommBuffers | None = None
-        ep_batch_manager = self.target.ep_batch_manager
-        if ep_batch_manager is not None:
-            assert batch.ep_inputs is not None, (
-                "a target built with an EP batch manager must get the"
-                " graph's EP input buffers"
-            )
-            comm_buffers = ep_batch_manager.comm_buffers(batch.ep_inputs)
+        assert self.target.ep_config is None or batch.ep_inputs is not None, (
+            "a target built with an EP config must get the graph's EP input"
+            " buffers"
+        )
+        mesh = self.target.config.mesh
+        assert mesh is not None
+        ep = ep_init.flat_buffers(
+            self.target.ep_config, batch.ep_inputs or (), mesh
+        )
         # The paged-cache kernels take the same cache leaves as graph values,
         # so the buffers they write in place stay buffers through the round
         # trip. A leaf whose group this checkpoint has no owners for is not a
@@ -192,7 +193,7 @@ class MistralLarge4BlockTarget:
             batch.return_n_logits,
             batch.merged_offsets,
             kv_by_group,
-            comm_buffers=comm_buffers,
+            ep=ep,
         )
         # One concatenated tap tensor per rank, replicated over tensor
         # parallelism: the drafter's projection does not shard its columns, so
@@ -492,9 +493,9 @@ def verify(
 def ep_input_tree(target: Any) -> object | None:
     """Returns the group that names the target's EP buffers, if EP is on."""
     assert isinstance(target, MistralLarge4)
-    if target.ep_batch_manager is None:
+    if target.ep_config is None:
         return None
-    return target.ep_batch_manager.input_tree()
+    return ep_init.payload_types(target.ep_config)
 
 
 def block_proposer(
@@ -551,7 +552,7 @@ ADAPTER = TargetAdapter(
     # TP8 attention beside EP8 routed experts is one attention replica, so the
     # graph declares the EP collective buffers on an otherwise TP-only
     # signature: after the KV tree, with none of the data-parallel inputs.
-    ep_tail=lambda target: target.ep_batch_manager is not None,
+    ep_tail=lambda target: target.ep_config is not None,
     check=check,
     # Mach's Mistral Large 4 block layout has no in_thinking_phase slot: the
     # graph is 419 inputs (397 plus the 22-slot EP tail) with the signal

@@ -223,6 +223,7 @@ def execute_kv_cache_ragged_matmul[
     var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut b: Bencher,
     ) raises {

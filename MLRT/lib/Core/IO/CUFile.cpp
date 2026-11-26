@@ -34,7 +34,7 @@ static int abs(CUfileError_t err) { return abs((int)err.err); }
 #endif // MODULAR_LINUX
 
 using namespace M;
-using namespace M::IO;
+using namespace M::MLRT;
 
 /// This function must be called before any other cuFile API function.
 /// It initializes the cuFile library and driver resources.

@@ -215,6 +215,8 @@ State Graph::doAnalysis(BlockArgument arg) {
 /// arguments are both.
 static std::pair<bool, bool> getInOutFlags(ArgConvention conv) {
   switch (conv) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::ImmReg:
   case ArgConvention::OwnedReg:
     llvm_unreachable("these conventions should be treated as capturing");

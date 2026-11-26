@@ -22,7 +22,7 @@
 // per-argument `{role, fused, access, capabilities}` contract baked onto each
 // kernel decl's `execute` KernelFunctionAttr as the trailing
 // `tensor_arg_contracts` array. `access`/`capabilities` are integer bitmasks
-// of access forms (load = 1, store = 2, transform = 4; the empty set is 0).
+// of access forms (load = 1, store = 2, legacy_compute = 4; the empty set is 0).
 // This is the import-time half of the trait-lane
 // distill matrix; it folds in (and replaces) the former
 // import-tensor-arg-traits.mlir, and together with the rejection cases in
@@ -30,7 +30,7 @@
 // `TestTensorArgContract.cpp`. Non-trait args (the DeviceContext and the
 // implicit error/result refs) render as trailing `unit`.
 //
-// The fused-store / fused-transform / mutable-input-fused kernels distill
+// The fused-store / fused legacy compute / mutable-input-fused kernels distill
 // cleanly at import even though dense-only lowering does not yet handle them,
 // so they are asserted here (on the import run line) and intentionally do NOT
 // appear as `mo.graph` lowering cases below.
@@ -92,12 +92,12 @@
 // Output + Fused + Storable (CAPABILITY leaf) -> output/store/fused, cap=store.
 // IMPORT-DAG: registration = "trait_fused_store_capability"{{.*}}[{access = 2 : i32, capabilities = 2 : i32, fused = true, role = "output"}, unit, unit, unit]
 
-// --- Fused transform (compute-output slot) --- //
+// --- Fused legacy compute (compute-output slot) --- //
 
-// Output + Fused + _LegacyComputeOutput -> output/transform/fused, cap=0.
+// Output + Fused + _LegacyComputeOutput -> output/legacy_compute/fused, cap=0.
 // `_LegacyComputable` on a signature is rejected (see
 // infra-import-tensor-arg-traits-invalid.mlir).
-// IMPORT-DAG: registration = "trait_fused_transform_marker"{{.*}}[{access = 4 : i32, capabilities = 0 : i32, fused = true, role = "output"}, unit, unit, unit]
+// IMPORT-DAG: registration = "trait_fused_legacy_compute_marker"{{.*}}[{access = 4 : i32, capabilities = 0 : i32, fused = true, role = "output"}, unit, unit, unit]
 
 // --- MutableInput can both load and store (one access form at a time) --- //
 

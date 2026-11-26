@@ -369,7 +369,7 @@ def chunked_qkv_rope_store_paged_ragged[
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
     ), "Chunked QKV launch captures must support device encoding"
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,
@@ -849,7 +849,7 @@ def rope_qkv_store_paged_ragged[
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
     ), "RoPE QKV store launch captures must support device encoding"
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,
@@ -931,7 +931,7 @@ def k_rope_v_store_paged_ragged[
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
     ), "RoPE K/V store launch captures must support device encoding"
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,

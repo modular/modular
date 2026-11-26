@@ -8,9 +8,6 @@ modular_py_library(
     ignore_extra_deps = [
         # Used for speeding up HF downloads, not used directly
         requirement("hf-transfer"),
-        # Optional dep of max.graph, used for loading gguf files
-        # TODO: Possible this dep should be pushed elsewhere
-        requirement("gguf"),
         # Diffusers config files are loaded, but the package itself is not imported
         requirement("diffusers"),
     ],

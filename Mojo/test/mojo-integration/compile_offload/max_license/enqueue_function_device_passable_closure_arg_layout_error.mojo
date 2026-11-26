@@ -40,10 +40,6 @@ struct HostString(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
     ):
         encoder.encode(self.value, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "HostString"
-
 
 def apply_closure[
     closure_type: (def() -> None) & DevicePassable & ImplicitlyCopyable

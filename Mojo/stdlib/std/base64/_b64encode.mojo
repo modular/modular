@@ -30,7 +30,6 @@ from std.sys import llvm_intrinsic, simd_byte_width
 
 from std.memory import bitcast, unsafe_memcpy
 
-from std.utils import IndexList
 
 comptime Bytes = SIMD[.uint8, _]
 
@@ -63,13 +62,13 @@ def _6bit_to_byte[width: SIMDLength](input: Bytes[width]) -> Bytes[width]:
         64,
     ], "width must be between 4 and 64"
 
-    def indices() -> IndexList[width]:
+    def indices() -> Array[SIMDLength, width]:
         var perm = [1, 0, 2, 1]
-        var res = IndexList[width]()
+        var res = Array[SIMDLength, width](fill=0)
         for i in range(width // 4):
             for j in range(4):
                 res[4 * i + j] = 3 * i + perm[j]
-        return res
+        return res^
 
     @inline(.always)
     def combine[

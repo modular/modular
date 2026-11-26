@@ -358,6 +358,7 @@ def grouped_matmul_amd_kernel_launcher[
 
     # Takes this group's rows from 0; the epilogues take rows of all of `c`.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def group_epilogue_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {

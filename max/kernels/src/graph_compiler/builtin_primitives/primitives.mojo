@@ -38,7 +38,7 @@ from extensibility import (
 from std.collections import Array
 from max.gpu import block_idx
 from max.gpu.host import DeviceContext, DeviceBuffer, default_accelerator
-from max.gpu.host import GridBlockExecutionConfig
+from max.gpu.host import Dim, GridBlockExecutionConfig, GridBlockLaunchConfig
 from max.gpu.host import (
     DeviceGraph,
     DeviceGraphBuilder,
@@ -49,15 +49,6 @@ from max.gpu.host import (
 )
 from max.gpu.host import _DeviceContextPtr
 
-# A target can add `DeviceContext` methods as `__extension`s, which only an
-# import of a name brings in, and `mogg_launch_declarative` calls them.
-# TODO(DRIV-491): These are the legacy context's extensions, which don't apply
-# when `DeviceContext` is the HAL context. Once targets launch through the HAL
-# context, import their extensions through `max.gpu.host`, or drop this import
-# if HAL launches need none.
-from max.gpu.host._legacy.device_context import (
-    LegacyDeviceContext as _DeviceContextExtensions,
-)
 from max.gpu.host.info import is_accelerator, is_cpu, is_gpu
 from std.memory import OwnedPointer, MaybeUninit, alloc
 from std.builtin.device_passable import DevicePassable
@@ -71,7 +62,7 @@ from layout import (
     row_major,
     coord_to_index_list,
 )
-from layout.coord import ComptimeInt
+from layout.coord import ComptimeInt, DynamicCoord
 from layout.tile_io import (
     GenericToLocalTileCopier,
     LocalToGenericTileCopier,
@@ -99,6 +90,7 @@ from extensibility import (
 from std.utils import Index, IndexList, StaticTuple
 
 from max.runtime.async_value import AnyAsyncValueRef, _AsyncValuePtr
+from max._plugin import CurrentMaxPlugin, MaxPluginForTarget
 
 from .buffer_plan import BufferPlanState
 
@@ -224,7 +216,9 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
         ](storage^.take_handle(), ptr, n)
         return AnyAsyncValueRef(handle)
 
-    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[.int8]:
+    def to_device_buffer(
+        self, ctx: DeviceContext
+    ) raises -> DeviceBuffer[.int8]:
         """Wraps the view's memory in a non-owning `DeviceBuffer` for a copy.
 
         Rebuilds a fresh view from the origin-erased data pointer so the
@@ -236,6 +230,9 @@ struct OwnedByteBuffer(DeviceGraphInput, ImplicitlyCopyable, Movable):
 
         Returns:
             A non-owning `DeviceBuffer` over the view's memory.
+
+        Raises:
+            If the driver refuses to wrap the view's memory.
         """
         return MutByteBuffer(
             self.unsafe_ptr(), Index(self.size())
@@ -956,11 +953,7 @@ def mgp_buffer_plan[
     num_runtime_sizes: Int,
     //,
     alignments: Array[Int, num_static_sizes + num_runtime_sizes],
-    can_share: Array[
-        Int,
-        (num_static_sizes + num_runtime_sizes)
-        * (num_static_sizes + num_runtime_sizes),
-    ],
+    can_share: StaticString,
     static_sizes: Array[Int, num_static_sizes],
 ](runtime_sizes: Array[Int, num_runtime_sizes]) -> Tuple[
     Int, Array[Int, num_static_sizes + num_runtime_sizes]
@@ -975,15 +968,16 @@ def mgp_buffer_plan[
     where the first num_static_sizes allocations have compile-time known sizes,
     and the remaining num_runtime_sizes allocations have runtime sizes.
 
-    can_share is a flat NxN matrix (row-major) where can_share[i*N+j]=1 iff
-    allocations i and j have non-overlapping lifetimes and can therefore
-    occupy the same memory slot. N = num_static_sizes + num_runtime_sizes.
+    can_share is a string of NxN '0'/'1' digits in row-major order, where
+    digit i*N+j is 1 iff allocations i and j have non-overlapping lifetimes
+    and can therefore occupy the same memory slot.
+    N = num_static_sizes + num_runtime_sizes.
 
     Parameters:
         num_static_sizes: Number of allocations with static sizes.
         num_runtime_sizes: Number of allocations with runtime sizes.
         alignments: Alignment requirements for each allocation.
-        can_share: NxN sharing matrix (row-major, 0/1 values).
+        can_share: NxN sharing matrix (row-major, 0/1 values) as a digit string.
         static_sizes: Compile-time known sizes for first num_static_sizes allocations.
 
     Args:
@@ -1993,14 +1987,14 @@ def _reshape_nth_non_one_pos[
 @register_internal("mogg.index.reshape")
 @inline(.always)
 def mogg_index_reshape[
-    from_rank: Int,
-    //,
     to_rank: Int,
 ](
-    index: IndexList[from_rank],
+    index: Coord,
     from_shape: Coord[...],
     to_shape: Coord[...],
-) -> IndexList[to_rank]:
+) -> DynamicCoord[
+    DType.int, to_rank
+]:
     # Reindex `index` (a point in the from-shape) to the point in the to-shape
     # with the same row-major linear offset. Backs `mogg.index.reshape`: the
     # per-index (store-side) counterpart of the whole-tensor
@@ -2013,8 +2007,16 @@ def mogg_index_reshape[
     # check picks the cheapest reindexing the static dims allow, and any path
     # they fully determine reads no runtime extent, so the backend DCEs them
     # down to exactly the static code -- there is no separate primitive.
+    comptime from_rank = type_of(index).rank
+    comptime assert (
+        from_rank == type_of(from_shape).rank
+    ), "index must have from_shape's rank"
+    comptime assert (
+        to_rank == type_of(to_shape).rank
+    ), "to_rank must be to_shape's rank"
     comptime from_types = type_of(from_shape).element_types
     comptime to_types = type_of(to_shape).element_types
+    var out = DynamicCoord[DType.int, to_rank]()
 
     # Fast path: identity -- no remap. Guarded like the unit-shuffle path below:
     # with two or more dynamic non-1 dims, equal STATIC shapes don't imply equal
@@ -2025,7 +2027,9 @@ def mogg_index_reshape[
     comptime if _CoordTypesEqual[from_types, to_types] and (
         _reshape_num_dynamic_non_ones[from_types]() <= 1
     ):
-        return rebind[IndexList[to_rank]](index)
+        comptime for i in range(to_rank):
+            out.replace_dynamic[i](Scalar[DType.int](Int(index[i])))
+        return out
 
     # Fast path: from and to differ only by inserted/removed size-1 dims -- a
     # pure positional remap (the k-th non-1 dim of `to` takes the k-th non-1 dim
@@ -2038,17 +2042,14 @@ def mogg_index_reshape[
     comptime if _reshape_same_dropping_ones[from_types, to_types]() and (
         _reshape_num_dynamic_non_ones[from_types]() <= 1
     ):
-        var squeezed = IndexList[to_rank]()
         comptime for j in range(to_rank):
-            comptime if (
+            comptime if not (
                 to_types[j].is_static_value and to_types[j].static_value == 1
             ):
-                squeezed[j] = 0
-            else:
                 comptime k = _reshape_num_non_ones[to_types, j]()
                 comptime fp = _reshape_nth_non_one_pos[from_types, k]()
-                squeezed[j] = index[fp]
-        return squeezed
+                out.replace_dynamic[j](Scalar[DType.int](Int(index[fp])))
+        return out
 
     # General case, restricted to the DIFFERING middle: a collapse (merge) or
     # expand (split) touches only a contiguous run of dims, so a leading and
@@ -2060,53 +2061,64 @@ def mogg_index_reshape[
     comptime p = _reshape_common_prefix[from_types, to_types]()
     comptime s = _reshape_common_suffix[from_types, to_types, p]()
 
-    var out = IndexList[to_rank]()
     comptime for i in range(p):
-        out[i] = index[i]
+        out.replace_dynamic[i](Scalar[DType.int](Int(index[i])))
     comptime for i in range(s):
-        out[to_rank - 1 - i] = index[from_rank - 1 - i]
+        out.replace_dynamic[to_rank - 1 - i](
+            Scalar[DType.int](Int(index[from_rank - 1 - i]))
+        )
 
-    # Ravel the middle `from` dims to their shared row-major linear offset. The
-    # inner dims scale the stride (static extent where known, else the runtime
-    # one); the outermost middle dim only contributes its index, so its extent --
-    # even if dynamic -- is never read.
-    var linear: Int = 0
-    var from_stride: Int = 1
-    comptime for i in range(from_rank - s - 1, p, -1):
-        linear += index[i] * from_stride
-        comptime if from_types[i].is_static_value:
-            from_stride *= from_types[i].static_value
-        else:
-            from_stride *= Int(from_shape[i])
-    linear += index[p] * from_stride
+    # The prefix and suffix can cover all of one side, as in [4, D] -> [4] with
+    # D == 1 at runtime. The other side's middle dims then all have extent 1:
+    # with no `to` middle there is nothing left to write, and with no `from`
+    # middle the linear offset is 0.
+    comptime if p + s < to_rank:
+        # Ravel the middle `from` dims to their shared row-major linear
+        # offset. The inner dims scale the stride (static extent where known,
+        # else the runtime one); the outermost middle dim only contributes its
+        # index, so its extent -- even if dynamic -- is never read.
+        var linear: Int = 0
+        comptime if p + s < from_rank:
+            var from_stride: Int = 1
+            comptime for i in range(from_rank - s - 1, p, -1):
+                linear += Int(index[i]) * from_stride
+                comptime if from_types[i].is_static_value:
+                    from_stride *= from_types[i].static_value
+                else:
+                    from_stride *= Int(from_shape[i])
+            linear += Int(index[p]) * from_stride
 
-    # Unravel onto the middle `to` dims; the outermost takes the remaining
-    # quotient with no (redundant) modulo, so its extent is never read.
-    var to_stride: Int = 1
-    comptime for j in range(to_rank - s - 1, p, -1):
-        comptime if to_types[j].is_static_value:
-            comptime sd = to_types[j].static_value
-            out[j] = (linear // to_stride) % sd
-            to_stride *= sd
-        else:
-            out[j] = (linear // to_stride) % Int(to_shape[j])
-            to_stride *= Int(to_shape[j])
-    out[p] = linear // to_stride
+        # Unravel onto the middle `to` dims; the outermost takes the remaining
+        # quotient with no (redundant) modulo, so its extent is never read.
+        var to_stride: Int = 1
+        comptime for j in range(to_rank - s - 1, p, -1):
+            comptime if to_types[j].is_static_value:
+                comptime sd = to_types[j].static_value
+                out.replace_dynamic[j](
+                    Scalar[DType.int]((linear // to_stride) % sd)
+                )
+                to_stride *= sd
+            else:
+                out.replace_dynamic[j](
+                    Scalar[DType.int]((linear // to_stride) % Int(to_shape[j]))
+                )
+                to_stride *= Int(to_shape[j])
+        out.replace_dynamic[p](Scalar[DType.int](linear // to_stride))
     return out
 
 
 @register_internal("mogg.index.slice.select")
 @inline(.always)
 def mogg_index_slice_select[
-    rank: Int,
-    //,
     static_starts: Coord,
     static_steps: Coord,
 ](
-    index: IndexList[rank],
+    index: Coord,
     in_shape: Coord[...],
     out_shape: Coord[...],
-) -> Tuple[IndexList[rank], Bool]:
+) -> Tuple[
+    DynamicCoord[DType.int, type_of(index).rank], Bool
+]:
     """Maps an index into a slice's input to the index into its output.
 
     Backs `mogg.index.slice.select`, whose body runs at the returned index
@@ -2118,7 +2130,6 @@ def mogg_index_slice_select[
     unsliced costs nothing.
 
     Parameters:
-        rank: The rank of the slice's input and output.
         static_starts: The slice's start per dim, as written.
         static_steps: The slice's positive step per dim.
 
@@ -2131,9 +2142,15 @@ def mogg_index_slice_select[
         The index into the slice's output, and whether the slice selects
         `index` at all. The index means nothing where it does not.
     """
+    comptime rank = type_of(index).rank
+    comptime assert (
+        type_of(in_shape).rank == rank and type_of(out_shape).rank == rank
+    ), "index, in_shape and out_shape must have the same rank"
     comptime in_types = type_of(in_shape).element_types
     comptime out_types = type_of(out_shape).element_types
-    var result = index
+    var result = rebind[DynamicCoord[DType.int, rank]](
+        index.make_dynamic[DType.int]()
+    )
     var in_slice = True
     comptime for d in range(rank):
         comptime start = (
@@ -2174,35 +2191,25 @@ def mogg_index_slice_select[
                     s = max(start + in_dim, 0)
                 else:
                     s = start + in_dim
-            var offset = index[d] - s
+            var offset = Int(index[d]) - s
             comptime if step != 1:
                 in_slice = in_slice and offset % step == 0
             var j = offset // step
             # Unsigned, a negative index wraps past `out_dim`: one compare.
             in_slice = in_slice and UInt(j) < UInt(out_dim)
-            result[d] = j
+            result.replace_dynamic[d](Scalar[DType.int](j))
     return (result, in_slice)
 
 
 @register_internal("mogg.index.concat.select")
 @inline(.always)
 def mogg_index_concat_select[
-    rank: Int,
-    //,
     dtype: DType,
     width: Int,
-    num_inputs: Int,
     axis: Int,
-    static_sizes: Coord,
     InputsFnType: ImplicitlyCopyable
     & def[input_index: Int](Coord) -> SIMD[dtype, width],
-](
-    index: IndexList[rank],
-    inputs_fn: InputsFnType,
-    sizes: IndexList[num_inputs] = _reshape_types_sentinels[
-        num_inputs, static_sizes.element_types
-    ](),
-) -> SIMD[dtype, width]:
+](index: Coord, inputs_fn: InputsFnType, sizes: Coord) -> SIMD[dtype, width]:
     """Returns the `width` lanes of a concat at `index`, read from its inputs.
 
     Backs `mogg.index.concat.select`: picks the input holding `index`, as the
@@ -2213,53 +2220,41 @@ def mogg_index_concat_select[
     extent.
 
     Parameters:
-        rank: The rank of the concat's output.
         dtype: The element type the inputs yield.
         width: The number of lanes read.
-        num_inputs: The number of concat inputs.
         axis: The concat axis, normalized.
-        static_sizes: The axis extent of every input, where statically
-            known.
         InputsFnType: The type of `inputs_fn`.
 
     Args:
         index: An index into the concat's output.
         inputs_fn: Reads `width` lanes of input `input_index` at an index
             into that input.
-        sizes: The runtime axis extent of every input.
+        sizes: The axis extent of every input, static where known.
 
     Returns:
         The concat's `width` lanes at `index`.
     """
+    comptime rank = type_of(index).rank
+    comptime num_inputs = type_of(sizes).rank
+    comptime assert 0 <= axis < rank, "axis must be a dim of index"
     # Along the innermost axis a vector's lanes run along the concat axis, so
     # all of them must stay inside the input read; along an outer axis they
     # share the coordinate there.
     comptime lanes = width if axis == rank - 1 else 1
-    var k = index[axis]
+    var k = Int(index[axis])
     var offset = 0
     comptime for r in range(num_inputs - 1):
-        var size: Int
-        comptime if static_sizes.element_types[r].is_static_value:
-            size = static_sizes.element_types[r].static_value
-        else:
-            size = sizes[r]
+        var size = Int(sizes[r])
         if k - offset < size:
-            var in_index = index
-            in_index[axis] = k - offset
-            _assert_inside_concat_input[lanes](in_index[axis], size, r)
-            return inputs_fn[r](Coord(in_index))
+            _assert_inside_concat_input[lanes](k - offset, size, r)
+            return inputs_fn[r](
+                index.replace[axis](Scalar[DType.int](k - offset))
+            )
         offset += size
     # The last input holds whatever the others leave.
     comptime last = num_inputs - 1
-    var last_size: Int
-    comptime if static_sizes.element_types[last].is_static_value:
-        last_size = static_sizes.element_types[last].static_value
-    else:
-        last_size = sizes[last]
-    var in_index = index
-    in_index[axis] = k - offset
-    _assert_inside_concat_input[lanes](in_index[axis], last_size, last)
-    return inputs_fn[last](Coord(in_index))
+    _assert_inside_concat_input[lanes](k - offset, Int(sizes[last]), last)
+    return inputs_fn[last](index.replace[axis](Scalar[DType.int](k - offset)))
 
 
 @always_inline
@@ -2405,6 +2400,8 @@ def _foreach[
     comptime assert (
         simd_width & (simd_width - 1) == 0
     ), "simd_width must be a power of two"
+    # TODO(GEX-4610): `_graph_blob_foreach` copies this width selection; share
+    # it.
     comptime if MaxSimdWidth.is_static_value:
         comptime limit = MaxSimdWidth.static_value
         comptime width = simd_width if limit == 0 else min(
@@ -2433,15 +2430,203 @@ def _foreach[
                     return
 
 
+# A graph blob runs the device code of several calls as one launch on every
+# thread of the device. Its kernel runs each call only on the threads that
+# `_graph_blob_is_thread_active` accepts, and every thread waits at a
+# `_graph_blob_barrier` between calls. Each target implements these primitives
+# through its MAX plugin. On a target that doesn't, the host primitive is a
+# compile-time error, and so are the device primitives on a GPU; elsewhere,
+# such as in a kernel body elaborated for the host, the device primitives
+# abort.
+comptime _NO_GRAPH_BLOBS = (
+    "graph blobs are not supported on this target; leave"
+    " max-debug.graph-blob-max-calls unset or 0"
+)
+
+
+@register_internal("mogg.graph_blob.launch_config")
+def _graph_blob_launch_config(ctx: DeviceContext) -> GridBlockLaunchConfig:
+    """Returns the launch configuration for a graph blob on `ctx`'s device:
+    launch on every thread of every core.
+
+    Args:
+        ctx: The device context the blob launches on.
+
+    Returns:
+        The blob's launch configuration.
+    """
+    comptime plugin = MaxPluginForTarget[ctx.target]
+    comptime assert plugin._handles_graph_blobs, _NO_GRAPH_BLOBS
+    return plugin.whole_device_launch_config()
+
+
+# TODO(GEX-4497): Once a call can run on blocks with gaps between them, or on
+# some of each block's threads, the encoding depends on the target. Take it
+# from the calls' configuration type, which knows its target, rather than
+# from a lookup of the accelerator at run time.
+@register_internal("mogg.graph_blob.active_threads")
+def _graph_blob_active_threads(
+    grid_dim: Dim, block_dim: Dim, launch_grid_dim: Dim, launch_block_dim: Dim
+) raises -> Int32:
+    """Returns what a graph blob's kernel needs to know about a call
+    launched on `grid_dim` and `block_dim`, as a kernel argument.
+
+    The host computes it, where the device's MAX plugin doesn't apply. For
+    now every target encodes it the same way, because a call runs on the
+    first blocks of the launch, as many as its own grid has, and on all
+    threads of each.
+
+    Args:
+        grid_dim: The grid of the call's own launch configuration.
+        block_dim: The block dims of the call's own launch configuration.
+        launch_grid_dim: The grid of the blob's launch.
+        launch_block_dim: The block dims of the blob's launch.
+
+    Returns:
+        The number of blocks the call runs on.
+
+    Raises:
+        If the call's grid isn't one-dimensional or has more blocks than the
+        launch, or if its block dims aren't the launch's.
+    """
+    if grid_dim.y() * grid_dim.z() != 1:
+        raise Error(
+            "an op in a graph blob runs on a one-dimensional grid, but got ",
+            grid_dim,
+        )
+    if grid_dim.x() > launch_grid_dim.x():
+        raise Error(
+            "an op in a graph blob runs on at most ",
+            launch_grid_dim.x(),
+            " blocks, but got ",
+            grid_dim.x(),
+        )
+    if (
+        block_dim.x() != launch_block_dim.x()
+        or block_dim.y() != launch_block_dim.y()
+        or block_dim.z() != launch_block_dim.z()
+    ):
+        raise Error(
+            "an op in a graph blob runs every thread of its blocks, ",
+            launch_block_dim,
+            ", but got ",
+            block_dim,
+        )
+    return Int32(grid_dim.x())
+
+
+# TODO(GEX-4497): A call runs on the first blocks of the launch, as many as
+# its own grid has, with every thread of each, so a block count describes it.
+# Pass each call's own thread mask instead once an op needs a core set with
+# gaps or only some of a core's threads, as NeoDriver's configurations can
+# describe.
+@register_internal("mogg.graph_blob.is_thread_active")
+@always_inline
+def _graph_blob_is_thread_active(active: Int32) -> Bool:
+    """Returns whether the calling thread runs the call with `active`.
+
+    Args:
+        active: The call's `_graph_blob_active_threads`: the number of blocks
+            it runs on, from the start of the launch's grid.
+
+    Returns:
+        Whether the calling thread's block is one the call runs on.
+    """
+    comptime if CurrentMaxPlugin._handles_graph_blobs:
+        return CurrentMaxPlugin.graph_blob_is_thread_active(active)
+    else:
+        comptime assert not CompilationTarget().is_gpu(), _NO_GRAPH_BLOBS
+        abort(_NO_GRAPH_BLOBS)
+
+
+@register_internal("mogg.graph_blob.barrier")
+@always_inline
+def _graph_blob_barrier():
+    """Waits until every thread of every block in the launch reaches it.
+
+    Writes made before the barrier are visible to every thread after it. Every
+    thread the launch runs must call it, so it can't sit under a condition
+    that some threads skip.
+    """
+    comptime if CurrentMaxPlugin._handles_graph_blobs:
+        CurrentMaxPlugin.graph_blob_barrier()
+    else:
+        comptime assert not CompilationTarget().is_gpu(), _NO_GRAPH_BLOBS
+        abort(_NO_GRAPH_BLOBS)
+
+
+@register_internal("mogg.graph_blob.foreach")
+@always_inline
+def _graph_blob_foreach[
+    MaxSimdWidth: CoordLike = ComptimeInt[0],
+    //,
+    dtypes: StaticTuple[DType, _],
+](
+    shape: Coord,
+    func: Some[def[width: Int, alignment: Int = 1](Coord) -> None],
+    max_simd_width: MaxSimdWidth = MaxSimdWidth(),
+):
+    """Calls `func` on every index of `shape`, as a generated elementwise
+    kernel in a graph blob does.
+
+    Every thread of the launch calls it and runs its own share of the indices
+    through the target's MAX plugin; a thread with no share returns at once.
+    It doesn't wait for the other threads, so a call that reads what `func`
+    writes runs after a barrier.
+
+    The full SIMD width is that of `dtypes` on the target the kernel compiles
+    for, and must divide `max_simd_width`, as for `_foreach`. A static limit
+    caps the width at compile time to its largest power-of-two divisor. A
+    run-time one picks the widest of the full width, half of it, and so on
+    down to 1, that divides it.
+
+    Parameters:
+        MaxSimdWidth: The type of `max_simd_width`, static (`Idx[n]`) or
+            dynamic (`Scalar[DType.int]`).
+        dtypes: Every dtype the body touches.
+
+    Args:
+        shape: The indices to run `func` on.
+        func: The body, called with the index of the first element it covers,
+            at `width` elements of one row.
+        max_simd_width: A number every width must divide; 0, the default,
+            allows any width.
+    """
+    comptime if not CurrentMaxPlugin._handles_graph_blobs:
+        comptime assert not CompilationTarget().is_gpu(), _NO_GRAPH_BLOBS
+        abort(_NO_GRAPH_BLOBS)
+
+    comptime simd_width = get_simd_width_for_dtypes[
+        dtypes, CompilationTarget()
+    ]()
+    # `min(simd_width, limit & -limit)` divides the limit only when both are
+    # powers of two.
+    comptime assert (
+        simd_width & (simd_width - 1) == 0
+    ), "simd_width must be a power of two"
+    # TODO(GEX-4610): A copy of `_foreach`'s width selection; share it.
+    comptime if MaxSimdWidth.is_static_value:
+        comptime limit = MaxSimdWidth.static_value
+        comptime width = simd_width if limit == 0 else min(
+            simd_width, limit & -limit
+        )
+        CurrentMaxPlugin.elementwise_device_fn[width](func, shape)
+    else:
+        var limit = Int(max_simd_width.value())
+        comptime steps = Int(bit_width(Scalar[DType.int](simd_width)))
+        comptime for step in range(steps):
+            comptime width = simd_width >> step
+            if width == 1 or limit % width == 0:
+                CurrentMaxPlugin.elementwise_device_fn[width](func, shape)
+                return
+
+
 @inline(.always)
-def pow2_divisor_of_dims[rank: Int](dims: IndexList[rank]) -> Int:
+def pow2_divisor_of_dims(dims: Coord) -> Int:
     """Returns the largest power of two dividing every dim in `dims`.
 
     It is the lowest set bit of the dims' OR, which is also that of their
     GCD, without computing the GCD.
-
-    Parameters:
-        rank: The number of dims.
 
     Args:
         dims: The dims, read at run time.
@@ -2450,8 +2635,8 @@ def pow2_divisor_of_dims[rank: Int](dims: IndexList[rank]) -> Int:
         The power of two, or 0 when every dim is 0, which no width limits.
     """
     var bits = 0
-    comptime for i in range(rank):
-        bits |= dims[i]
+    comptime for i in range(type_of(dims).rank):
+        bits |= Int(dims[i])
     return bits & -bits
 
 
@@ -2836,19 +3021,18 @@ def _mogg_broadcast_view_strides[
 def mogg_tensor_create_broadcast[
     dtype: DType,
     in_rank: Int,
-    out_rank: Int,
     //,
     output_static_shape: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
-    output_shape: IndexList[out_rank],
+    output_shape: Coord,
 ) -> ManagedTensorSlice[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_coord_layout[
-        out_rank,
+        output_static_shape.rank,
         output_static_shape,
         _mogg_broadcast_view_strides[
-            out_rank,
+            output_static_shape.rank,
             in_rank,
             input.static_spec.static_layout._shape_types,
             input.static_spec.static_layout._stride_types,
@@ -2865,8 +3049,6 @@ def mogg_tensor_create_broadcast[
     Parameters:
         dtype: The element type of `input`.
         in_rank: The rank of `input`.
-        out_rank: The rank of the broadcast view (and of
-            `output_static_shape`).
         output_static_shape: The view's shape, where known at compile time.
 
     Args:
@@ -2875,9 +3057,10 @@ def mogg_tensor_create_broadcast[
             the rows of `[r, 1] -> [r, 4096]`, is known only here, and a view
             composed on top (a slice) clamps its bounds against it.
     """
+    comptime out_rank = output_static_shape.rank
     comptime assert (
-        out_rank == output_static_shape.rank
-    ), "out_rank must match output_static_shape's own rank"
+        type_of(output_shape).rank == out_rank
+    ), "output_shape must have output_static_shape's rank"
     comptime delta = out_rank - in_rank
     var new_strides = IndexList[out_rank]()
     comptime for i in range(out_rank):
@@ -2888,23 +3071,133 @@ def mogg_tensor_create_broadcast[
                 new_strides[i] = 0
             else:
                 new_strides[i] = input.stride_length[i - delta]()
-    return {input.unsafe_ptr(), output_shape, new_strides}
+    return {
+        input.unsafe_ptr(),
+        rebind[IndexList[out_rank]](coord_to_index_list(output_shape)),
+        new_strides,
+    }
+
+
+def _mogg_collapse_group_start[groups: Coord, g: Int]() -> Int:
+    """Returns the input dim where group `g` of a collapse view starts."""
+    var start = 0
+    comptime for i in range(g):
+        start += groups.element_types[i].static_value
+    return start
+
+
+def _mogg_collapse_view_strides[
+    out_rank: Int,
+    groups: Coord,
+    input_strides: TypeList[Trait=CoordLike, ...],
+]() -> IndexList[out_rank]:
+    """Each group's stride is its innermost input dim's, -1 where that isn't
+    known at compile time."""
+    comptime tv = _reshape_types_sentinels[
+        input_strides.length, input_strides
+    ]()
+    var strides = IndexList[out_rank]()
+    comptime for g in range(out_rank):
+        strides[g] = tv[
+            _mogg_collapse_group_start[groups, g]()
+            + groups.element_types[g].static_value
+            - 1
+        ]
+    return strides
+
+
+@register_internal("mogg.tensor.create.collapse")
+def mogg_tensor_create_collapse[
+    dtype: DType,
+    in_rank: Int,
+    //,
+    output_static_shape: Coord,
+    groups: Coord,
+    out_rank: Int = output_static_shape.rank,
+](
+    input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
+) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_coord_layout_and_alignment[
+        out_rank,
+        output_static_shape,
+        _mogg_collapse_view_strides[
+            out_rank, groups, input.static_spec.static_layout._stride_types
+        ](),
+    ](input.alignment),
+]:
+    """Backing primitive for `mogg.tensor.create.collapse`: a zero-copy view
+    of `input` whose dim `g` merges `groups[g]` consecutive dims of `input`.
+    Its extent is their product and its stride the group's innermost stride,
+    which is only right when, within each group, each dim's stride is the
+    next one's times its extent, or both are 0 (a broadcast). The graph
+    compiler only builds such views; this checks it, at compile time where
+    the strides are static.
+
+    Parameters:
+        dtype: The element type of `input`.
+        in_rank: The rank of `input`.
+        output_static_shape: The view's shape, where known at compile time.
+        groups: The number of `input` dims each view dim merges, in order.
+        out_rank: The view's rank. The graph compiler passes it as a literal:
+            a rank the parser can't fold, like one read off
+            `output_static_shape`,
+            doesn't unify with the same rank written elsewhere, as when a
+            variadic's views and a kernel's other tensors bind one `rank`.
+
+    Args:
+        input: The tensor to view.
+    """
+    comptime sv = _reshape_types_sentinels[
+        in_rank, input.static_spec.static_layout._shape_types
+    ]()
+    comptime tv = _reshape_types_sentinels[
+        in_rank, input.static_spec.static_layout._stride_types
+    ]()
+    var new_shape = IndexList[out_rank]()
+    var new_strides = IndexList[out_rank]()
+    comptime for g in range(out_rank):
+        comptime first = _mogg_collapse_group_start[groups, g]()
+        comptime last = first + groups.element_types[g].static_value - 1
+        comptime for d in range(first, last):
+            comptime stride = tv[d]
+            comptime next_stride = tv[d + 1]
+            comptime next_dim = sv[d + 1]
+            comptime if stride != -1 and next_stride != -1 and next_dim != -1:
+                comptime assert stride == next_stride * next_dim or (
+                    stride == 0 and next_stride == 0
+                ), "a collapse group's dims must lie one row after the other"
+            else:
+                debug_assert[assert_mode="safe"](
+                    input.stride_length[d]()
+                    == input.stride_length[d + 1]() * input.dim_size[d + 1]()
+                    or (
+                        input.stride_length[d]() == 0
+                        and input.stride_length[d + 1]() == 0
+                    ),
+                    "a collapse group's dims must lie one row after the other",
+                )
+        var extent = 1
+        comptime for d in range(first, last + 1):
+            extent *= input.dim_size[d]()
+        new_shape[g] = extent
+        new_strides[g] = input.stride_length[last]()
+    return {input.unsafe_ptr(), new_shape, new_strides}
 
 
 @register_internal("mogg.tensor.create.reshape")
 def mogg_tensor_create_reshape[
     dtype: DType,
     in_rank: Int,
-    out_rank: Int,
     //,
     output_static_shape: Coord,
 ](
     input: ManagedTensorSlice[dtype=dtype, rank=in_rank, ...],
-    output_shape: IndexList[out_rank],
+    output_shape: Coord,
 ) -> ManagedTensorSlice[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_row_major_coord_layout[
-        out_rank,
+        output_static_shape.rank,
         output_static_shape,
     ](),
 ]:
@@ -2920,16 +3213,9 @@ def mogg_tensor_create_reshape[
     stride to fall back on, so any dim not statically known has to be an
     honest runtime value here or every row past the first comes out wrong.
 
-    `out_rank` is inferred from `output_shape` itself, not from
-    `output_static_shape.rank` -- both name the same rank, but a
-    comptime-parameter argument type can't depend on another comptime
-    parameter's own derived value at inference time the way it can on a
-    plain `Int`.
-
     Parameters:
         dtype: The element type of `input`.
         in_rank: The rank of `input`.
-        out_rank: The rank of the reshaped view (and of `output_static_shape`).
         output_static_shape: The view's shape, where known at compile time
             (a `dyn` placeholder elsewhere); see the op's own MOGG tablegen
             doc for why a dynamic dim can't just be read off this alone.
@@ -2939,9 +3225,10 @@ def mogg_tensor_create_reshape[
         output_shape: The view's shape at runtime -- authoritative for every
             dim, not just the ones `output_static_shape` doesn't know.
     """
+    comptime out_rank = output_static_shape.rank
     comptime assert (
-        out_rank == output_static_shape.rank
-    ), "out_rank must match output_static_shape's own rank"
+        type_of(output_shape).rank == out_rank
+    ), "output_shape must have output_static_shape's rank"
     var view = reshape(input.to_tile_tensor[DType.int64](), output_shape)
     return {
         view._storage,
@@ -2975,6 +3262,19 @@ comptime _MoggTransposeStrideTypes[
 ]()
 
 
+comptime _MoggTransposeLayout[
+    rank: Int,
+    output_static_shape: Coord,
+    static_permutations: Coord,
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+] = Layout[
+    shape_types=output_static_shape.element_types,
+    stride_types=_MoggTransposeStrideTypes[
+        rank, static_permutations, input_stride_types
+    ],
+]
+
+
 @register_internal("mogg.tensor.create.transpose")
 def mogg_tensor_create_transpose[
     dtype: DType,
@@ -2990,13 +3290,11 @@ def mogg_tensor_create_transpose[
     io_spec=input.io_spec,
     static_spec=input.static_spec.with_tile_layout[
         rank,
-        Layout[
-            shape_types=output_static_shape.element_types,
-            stride_types=_MoggTransposeStrideTypes[
-                rank,
-                static_permutations,
-                input.static_spec.static_layout._stride_types,
-            ],
+        _MoggTransposeLayout[
+            rank,
+            output_static_shape,
+            static_permutations,
+            input.static_spec.static_layout._stride_types,
         ],
     ](),
 ]:
@@ -3023,9 +3321,7 @@ def mogg_tensor_create_transpose[
         input: The tensor to transpose.
         permutations: One-dimensional tensor giving `input`'s source
             dimension for each view dimension. Read only for the dimensions
-            `static_permutations` leaves dynamic; the `comptime if` below
-            elides the read entirely when every source is static, so a
-            fully-static transpose never touches this operand.
+            `static_permutations` leaves dynamic.
     """
     var new_shape = IndexList[rank]()
     var new_strides = IndexList[rank]()
@@ -3038,6 +3334,48 @@ def mogg_tensor_create_transpose[
             comptime src = static_permutations.element_types[i].static_value
             new_shape[i] = input.dim_size[src]()
             new_strides[i] = input.stride_length[src]()
+    return {input.unsafe_ptr(), new_shape, new_strides}
+
+
+def mogg_tensor_create_transpose[
+    dtype: DType,
+    rank: Int,
+    //,
+    output_static_shape: Coord,
+    static_permutations: Coord,
+](input: ManagedTensorSlice[dtype=dtype, rank=rank, ...]) -> ManagedTensorSlice[
+    io_spec=input.io_spec,
+    static_spec=input.static_spec.with_tile_layout[
+        rank,
+        _MoggTransposeLayout[
+            rank,
+            output_static_shape,
+            static_permutations,
+            input.static_spec.static_layout._stride_types,
+        ],
+    ](),
+]:
+    """Backing primitive for a `mogg.tensor.create.transpose` whose
+    permutation is fully known at compile time, so it takes no `permutations`
+    operand. A graph blob launch builds this view inside its kernel, where the
+    host's permutation tensor isn't readable.
+
+    Parameters:
+        dtype: The element type of `input`.
+        rank: The rank of `input` and of the returned view.
+        output_static_shape: The view's shape, where known at compile time.
+        static_permutations: The `input` dimension for each view dimension.
+            Every entry is static.
+
+    Args:
+        input: The tensor to transpose.
+    """
+    var new_shape = IndexList[rank]()
+    var new_strides = IndexList[rank]()
+    comptime for i in range(rank):
+        comptime src = static_permutations.element_types[i].static_value
+        new_shape[i] = input.dim_size[src]()
+        new_strides[i] = input.stride_length[src]()
     return {input.unsafe_ptr(), new_shape, new_strides}
 
 
@@ -3216,7 +3554,7 @@ def foreach_fusion_tile[
     var grid_m = shape[0] // TM
     var grid_n = shape[1] // TN
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         adapter,
         grid_dim=(grid_n, grid_m),
         block_dim=(TM * TN),
@@ -3305,3 +3643,49 @@ def view_copy_impl[
         ](x, idx)
 
     foreach[_trace_name=_trace_name](func, z, ctx)
+
+
+@inline(.always)
+def shape_func_result(
+    shape: Coord,
+) -> DynamicCoord[DType.int, type_of(shape).rank]:
+    """Returns a shape function's output shape as the graph compiler holds it.
+
+    The compiler types a shape function's result by its rank alone, so static
+    dims become runtime dims. The compiler takes the static dims from the
+    graph's own tensor types, not from this result.
+
+    Args:
+        shape: The shape the shape function returned.
+
+    Returns:
+        The dims of `shape`, each a runtime `Scalar[DType.int]`.
+    """
+    return rebind[DynamicCoord[DType.int, type_of(shape).rank]](
+        shape.make_dynamic[DType.int]()
+    )
+
+
+# TODO(GPUA-325): Remove this overload once no shape function returns an
+# `IndexList`.
+@inline(.always)
+def shape_func_result[
+    rank: Int, dtype: DType, //
+](shape: IndexList[rank, element_type=dtype]) -> DynamicCoord[DType.int, rank]:
+    """Returns a shape function's output shape as the graph compiler holds it.
+
+    This overload takes the `IndexList` a legacy shape function returns.
+
+    Parameters:
+        rank: The rank of `shape`.
+        dtype: The element type of `shape`.
+
+    Args:
+        shape: The shape the shape function returned.
+
+    Returns:
+        The dims of `shape`, each a runtime `Scalar[DType.int]`.
+    """
+    return rebind[DynamicCoord[DType.int, rank]](
+        shape_func_result(Coord(shape))
+    )

@@ -211,7 +211,7 @@ public:
 class TypeCheckedParamList {
 private:
   /// Private constructor - use the static create method instead.
-  TypeCheckedParamList(ASTDecl &declScope);
+  TypeCheckedParamList(ASTDecl &declScope, bool partial);
 
   /// Set when an implicit parameter can't be prepended to the list because of
   /// what its type depends on.
@@ -222,10 +222,15 @@ public:
   ASTDecl &declScope;
   SharedState &shared;
 
+  /// If set, a parameter without a type gets `!lit.unresolved` instead of
+  /// an error, so the type can be inferred from context later.
+  bool partial;
+
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation. Returns nullopt if type checking fails.
   static std::optional<TypeCheckedParamList>
-  create(ParsedParamList &parsedParams, ASTDecl &declScope);
+  create(ParsedParamList &parsedParams, ASTDecl &declScope,
+         bool partial = false);
 
   /// Emit the trailing `where` clauses parsed into `emittedBodyConstraints`.
   /// This cannot be performed at `create` because the body constraints may
@@ -309,6 +314,9 @@ public:
   /// absence of any abi annotation.
   bool hasExplicitABI = false;
   ExprNode *thrownTypeExpr = nullptr;
+  /// Whether the __unsafe_nested_origins_read_only access promise was
+  /// specified.
+  bool isNestedOriginsReadOnly = false;
 
   /// Location of the closing `)` of the argument list, if parenthesized. Used
   /// to anchor fix-its that insert effects such as `thin` after the arguments.
@@ -321,6 +329,10 @@ public:
   /// Parse the result specifier starting with a `->` if present.
   void parseResultIfPresent(ParserBase &p,
                             std::optional<size_t> stmtIndent = std::nullopt);
+
+  /// Parses the experimental `__accesses(...)` clause and records its access
+  /// promise for later function type construction.
+  ParseResult parseAccessesIfPresent(ParserBase &p);
 
   /// Returns true when a function type should be interpreted as a closure
   /// trait rather than a thin function pointer or legacy capturing function.
@@ -359,7 +371,9 @@ public:
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
                          const ExprNode *originExpr, DefASTDecl *fnDecl,
-                         StringAttr baseName);
+                         StringAttr baseName, bool partial = false);
+
+  bool partial;
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
 

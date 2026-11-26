@@ -424,7 +424,6 @@ DUMMY_LLAMA_ARCH = SupportedArchitecture(
         "deepseek-ai/DeepSeek-R1-Distill-Llama-8B",
         "deepseek-ai/deepseek-coder-6.7b-instruct",
         "meta-llama/Llama-3.1-8B-Instruct",
-        "meta-llama/Llama-3.2-1B-Instruct",
         "meta-llama/Llama-3.2-3B-Instruct",
         "meta-llama/Llama-Guard-3-8B",
         "modularai/Llama-3.1-8B-Instruct-GGUF",

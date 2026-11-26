@@ -549,6 +549,7 @@ def fa4_load[
     # `v_tma_op`, `config`. Caller owns `populate`, `smem_ptr`, and the
     # producer-pipeline acquire/step lifecycle.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _produce_k[
         partial: Bool,
         qk_stage: Int = 0,
@@ -919,6 +920,7 @@ def fa4_load[
         # The caller still owns `populate` (K computes `rows`, V reuses it)
         # and any interleaved Q TMA.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _emit_k[
             partial: Bool,
             with_q: Bool = False,
@@ -960,6 +962,7 @@ def fa4_load[
                 kv_pipeline.state.step()
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _emit_v[
             partial: Bool, acquire: Bool = True
         ](

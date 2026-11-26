@@ -22,8 +22,8 @@
 # The endpoint can be MAX, vLLM, SGLang or any other engine: the runner never
 # starts or stops it. It does watch it, because Harbor keeps going when the
 # engine dies and records every later trial as a reward-0 failure. If the
-# endpoint stops answering, the runner stops Harbor and exits 2, and the run is
-# not a measurement.
+# endpoint stops answering, the runner stops Harbor, scores the trials that
+# finished, writes INVALID and exits 2: the run is not a measurement.
 #
 # Why opencode: Terminus-2 sends no native tool calls, so it cannot exercise the
 # engine's tool-call parsing; Codex needs /v1/responses streaming. opencode's
@@ -63,6 +63,11 @@
 #   --agent-timeout-multiplier X
 #                         Scales each task's agent timeout (Harbor option). A
 #                         trial that times out is still valid.
+#   --agent-setup-timeout-multiplier X
+#                         Scales each task's agent setup timeout, the time to
+#                         install opencode in the task container (default: 3).
+#                         Concurrent trials slow the installs, and a timeout
+#                         is a harness failure.
 #   --build-timeout-multiplier X
 #                         Scales each task's environment build timeout
 #                         (default: 3). Harbor serializes identical builds, so
@@ -112,6 +117,7 @@ runtime="podman"
 max_fill=8
 agent_timeout_mult=""
 build_timeout_mult=3
+agent_setup_timeout_mult=3
 endpoint_grace=60
 serve_config=""
 baseline=""
@@ -135,6 +141,7 @@ while [[ $# -gt 0 ]]; do
     --max-fill-passes) max_fill="$2"; shift 2 ;;
     --agent-timeout-multiplier) agent_timeout_mult="$2"; shift 2 ;;
     --build-timeout-multiplier) build_timeout_mult="$2"; shift 2 ;;
+    --agent-setup-timeout-multiplier) agent_setup_timeout_mult="$2"; shift 2 ;;
     --endpoint-grace) endpoint_grace="$2"; shift 2 ;;
     --serve-config) serve_config="$2"; shift 2 ;;
     --baseline) baseline="$(realpath "$2")"; shift 2 ;;
@@ -347,6 +354,7 @@ harbor_cmd=(harbor run -p "$TASKS" -e "$runtime" -a opencode -m "gate/$model"
   -o "$JOBS" --yes)
 [[ -n "$agent_timeout_mult" ]] && harbor_cmd+=(--agent-timeout-multiplier "$agent_timeout_mult")
 harbor_cmd+=(--environment-build-timeout-multiplier "$build_timeout_mult")
+harbor_cmd+=(--agent-setup-timeout-multiplier "$agent_setup_timeout_mult")
 
 # Runs Harbor in its own process group and stops it once the endpoint has
 # failed health checks for --endpoint-grace seconds; shorter outages are tolerated. Returns 2 when the endpoint went down.
@@ -374,10 +382,57 @@ watched() {
   return 0
 }
 
-log "model=$model endpoint=$agent_base k=$k n=$n out=$out_dir"
-watched "$out_dir/harbor_main.log" "${harbor_cmd[@]}" -k "$k" -n "$n" "${exclude_args[@]}" "${task_args[@]}" --job-name main || exit 2
+# Writes meta.json and scores every trial that finished, as results.jsonl and
+# score.json.
+finalize() {
+  python3 - "$out_dir/meta.json" "$base" "$model" "$serve_config" \
+    "$DATASET_REPO@$DATASET_COMMIT" "$HARBOR_VERSION" "opencode@$OPENCODE_VERSION" \
+    "$k" "$n" "$output_cap" "$context" "$reasoning_effort" "$temperature" "$top_p" \
+    "$thinking" "$(IFS=,; echo "${includes[*]}")" "$pass" "$TASKS" "${excludes[@]}" <<'PY' || return 1
+import json, sys
+from pathlib import Path
+(out, endpoint, model, serve_config, dataset, harbor, agent, k, n, cap, context,
+ effort, temperature, top_p, thinking, subset, fill_passes, tasks_dir,
+ *excluded) = sys.argv[1:]
+# The tasks the run set out to score, so a report can count one that never
+# produced a valid trial. Every task in the dataset is recorded too, so an
+# uploaded row's task index is the same in full and subset runs.
+dataset_tasks = sorted(p.parent.name for p in Path(tasks_dir).glob("*/task.toml"))
+planned = set(dataset_tasks)
+planned -= set(excluded)
+if subset:
+    planned &= set(subset.split(","))
+json.dump({
+    "endpoint": endpoint, "model": model, "serve_config": serve_config,
+    "dataset": dataset, "harbor": harbor, "agent": agent, "k": int(k),
+    "n_concurrent": int(n), "output_cap": int(cap), "context": int(context),
+    "reasoning_effort": effort or None,
+    "temperature": float(temperature) if temperature else None,
+    "top_p": float(top_p) if top_p else None,
+    "thinking": thinking or None, "excluded_tasks": excluded,
+    "task_subset": subset.split(",") if subset else None,
+    "planned_tasks": sorted(planned),
+    "dataset_tasks": dataset_tasks,
+    "fill_passes": int(fill_passes),
+}, open(out, "w"), indent=2)
+PY
+  python3 "$SCORER" score --jobs-dir "$JOBS" --out-dir "$out_dir" -k "$k" \
+    --output-cap "$output_cap" --meta "$out_dir/meta.json" || return 1
+  log "results: $out_dir/score.json"
+}
 
+# The trials that finished before the endpoint went down are still scored, so
+# they reach the report; INVALID marks the run as not a measurement.
+endpoint_lost() {
+  finalize || log "scoring the finished trials failed"
+  echo "reason=endpoint_down" > "$out_dir/INVALID"
+  exit 2
+}
+
+log "model=$model endpoint=$agent_base k=$k n=$n out=$out_dir"
 pass=0
+watched "$out_dir/harbor_main.log" "${harbor_cmd[@]}" -k "$k" -n "$n" "${exclude_args[@]}" "${task_args[@]}" --job-name main || endpoint_lost
+
 while [[ $pass -lt $max_fill ]]; do
   short="$out_dir/missing_$((pass + 1)).txt"
   # Excluded tasks are never run, so drop them from the shortfall.
@@ -398,41 +453,11 @@ while [[ $pass -lt $max_fill ]]; do
     include_args=()
     for t in "${names[@]}"; do include_args+=(-i "$t"); done
     watched "$out_dir/harbor_fill${pass}_k$need.log" \
-      "${harbor_cmd[@]}" -k "$need" -n "$n" "${include_args[@]}" --job-name "fill${pass}-k$need" || exit 2
+      "${harbor_cmd[@]}" -k "$need" -n "$n" "${include_args[@]}" --job-name "fill${pass}-k$need" || endpoint_lost
   done
 done
 
-python3 - "$out_dir/meta.json" "$base" "$model" "$serve_config" \
-  "$DATASET_REPO@$DATASET_COMMIT" "$HARBOR_VERSION" "opencode@$OPENCODE_VERSION" \
-  "$k" "$n" "$output_cap" "$context" "$reasoning_effort" "$temperature" "$top_p" \
-  "$thinking" "$(IFS=,; echo "${includes[*]}")" "$pass" "$TASKS" "${excludes[@]}" <<'PY'
-import json, sys
-from pathlib import Path
-(out, endpoint, model, serve_config, dataset, harbor, agent, k, n, cap, context,
- effort, temperature, top_p, thinking, subset, fill_passes, tasks_dir,
- *excluded) = sys.argv[1:]
-# The tasks the run set out to score, so a report can count one that never
-# produced a valid trial.
-planned = {p.parent.name for p in Path(tasks_dir).glob("*/task.toml")}
-planned -= set(excluded)
-if subset:
-    planned &= set(subset.split(","))
-json.dump({
-    "endpoint": endpoint, "model": model, "serve_config": serve_config,
-    "dataset": dataset, "harbor": harbor, "agent": agent, "k": int(k),
-    "n_concurrent": int(n), "output_cap": int(cap), "context": int(context),
-    "reasoning_effort": effort or None,
-    "temperature": float(temperature) if temperature else None,
-    "top_p": float(top_p) if top_p else None,
-    "thinking": thinking or None, "excluded_tasks": excluded,
-    "task_subset": subset.split(",") if subset else None,
-    "planned_tasks": sorted(planned),
-    "fill_passes": int(fill_passes),
-}, open(out, "w"), indent=2)
-PY
-python3 "$SCORER" score --jobs-dir "$JOBS" --out-dir "$out_dir" -k "$k" \
-  --output-cap "$output_cap" --meta "$out_dir/meta.json"
-log "results: $out_dir/score.json"
+finalize
 
 # A run with no valid trial, or with tasks still short of k, is not a measurement.
 read -r scored _ < <(python3 -c '

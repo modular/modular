@@ -17,9 +17,10 @@ decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt NEWLINE | comptime_stmt | import_stmt)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test ['else' test]
+accesses_clause: '__accesses' '(' STRING ')'
 # Mojo terms: metaparams [..] = parameter list; parameters (..) = argument list;
 # captures {..} = capture list (production names kept from black's Python grammar).
-funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* ':' suite
+funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* [accesses_clause] ':' suite
 global_effects: global_effect_keyword*
 global_effect_keyword: 'raises' [raises_type] | 'escaping' | 'capturing'
 # `raises_type` lists allowed shapes after `raises` in global_effects. It
@@ -142,10 +143,14 @@ comptime_stmt: COMPTIME (comptime_assert_stmt_body NEWLINE | alias_stmt_body NEW
 
 compound_stmt: if_stmt | while_stmt | for_stmt | try_stmt | with_stmt | funcdef | classdef | decorated | async_stmt | match_stmt | guard_stmt | comptime_stmt
 async_stmt: ASYNC (funcdef | with_stmt | for_stmt)
-if_stmt: 'if' if_condition ':' suite ('elif' if_condition ':' suite)* ['else' ':' suite]
+if_stmt: 'if' if_condition (':' suite | ';' conditional_if_clause_tail) ('elif' if_condition (':' suite | ';' conditional_if_clause_tail))* ['else' ':' suite]
 if_condition: namedexpr_test | "case" patterns '=' namedexpr_test
+conditional_if_clause_tail: (inline_if_conditions ':' suite | multiline_if_conditions ':' suite DEDENT)
+inline_if_conditions: if_condition (';' if_condition)*
+multiline_if_conditions: NEWLINE INDENT if_condition (';' NEWLINE if_condition)*
 while_stmt: 'while' if_condition ':' suite ['else' ':' suite]
-guard_stmt: '__guard' if_condition 'else' ':' suite
+guard_stmt: '__guard' if_condition ('else' ':' suite | ';' conditional_guard_clause_tail)
+conditional_guard_clause_tail: (inline_if_conditions 'else' ':' suite | multiline_if_conditions 'else' ':' suite DEDENT)
 for_stmt: 'for' exprlist 'in' testlist_star_expr ':' suite ['else' ':' suite]
 try_stmt: ('try' ':' suite
            ((except_clause ':' suite)+
@@ -155,7 +160,7 @@ try_stmt: ('try' ':' suite
 with_stmt: 'with' asexpr_test (',' asexpr_test)*  ':' suite
 
 # NB compile.c makes sure that the default except clause is last
-except_clause: 'except' ['*'] [test [(',' | 'as') test]]
+except_clause: 'except' ['*'] ['as' test | '__as' test | test [(',' | 'as' | '__as') test]]
 suite: simple_stmt | NEWLINE INDENT stmt+ DEDENT
 
 # Backward compatibility cruft to support:
@@ -223,7 +228,7 @@ testlist_gexp: (namedexpr_test|star_expr) ( old_comp_for | (',' (namedexpr_test|
 # name) picks the reading, and both format identically, so the merge is benign. Only
 # `[` / `{` / `->` are unique to the Mojo branch; a bare NAME / `*` / `**` stays
 # exclusively Python — making the whole production a superset of Python's form.
-lambdef: 'lambda' ([metaparams] [parameters [named_effect*] [global_effects]] [captures] ['->' result_type] | [varargslist]) ':' test
+lambdef: 'lambda' ([metaparams] [parameters [named_effect*] [global_effects]] [captures] ['->' result_type] (where_clause)* [accesses_clause] | [varargslist]) ':' test
 trailer: '(' [arglist] ')' | '{' [dictsetmaker] '}' | '[' [subscriptlist] ']' | '.' NAME
 subscriptlist: (subscript|star_expr) (',' (subscript|star_expr))* [',']
 subscript: test [':=' test] | [test] ':' [test] [sliceop] | test ['=' [test] ':' [test] [sliceop]] | test ['=' test] | '**' test
@@ -256,7 +261,7 @@ typeconv: (['*'|convention] ['*'|'**'] typeconvexpr [':' ['*'|'**'] test]) | '/'
 # whose result type is a function type must parenthesize it to keep a trailing
 # `where` of its own; the grammar accepts them on any function type and leaves
 # the `thin` restriction to the compiler.
-functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test] (where_clause)*
+functype: [ASYNC] 'def' [metaparams] '(' [typeconv (',' typeconv)*] [','] ')' named_effect* [global_effects] [captures] ['[' test ']'] ['->' test] (where_clause)* [accesses_clause]
 # `__generator_type[Idx: Int] ToT` — Mojo generator type literal (`!lit.generator`).
 generatortype: GENERATOR_TYPE [metaparams] type_test
 

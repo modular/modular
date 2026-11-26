@@ -137,8 +137,10 @@ class CommonTextGenPipeline(GenAIPipeline):
         token doing per-chunk RPCs.
         """
         tokens = await self.tokenizer.encode(req.messages)
-        gen_tokens = await self.model.decode(req.text, tokens)
+        gen_tokens = await self.model.decode(
+            req.text.model_copy(update={"stop": None}), tokens
+        )
         text = await self.tokenizer.decode_stream(gen_tokens, True)
         return await self.parser.parse_stream(
-            text, req.tools_enabled, req.tool_schemas()
+            text, req.tools_enabled, req.tool_schemas(), req.text.stop
         )

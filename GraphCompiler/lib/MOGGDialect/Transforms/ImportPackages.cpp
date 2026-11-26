@@ -37,15 +37,16 @@
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Threading.h"
 #include "mlir/Parser/Parser.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/SourceMgr.h"
 #include <optional>
-#include <sstream>
 
 using namespace M;
 using namespace MOGG;
@@ -63,8 +64,9 @@ namespace {
 /// must match `LIT::StructType::getParamValues()` in length, or
 /// `computeValueParams` asserts.
 ///
-/// Extend this when a `shape`/`elementwise` function returns another
-/// parameterised stdlib struct (today `SIMD` and `IndexList`).
+/// Extend this when an `elementwise` function returns another parameterised
+/// stdlib struct (today `SIMD`). Shape functions don't need an entry: their
+/// result mapping is never read.
 static llvm::ArrayRef<llvm::StringRef>
 getStdlibStructParamNames(mlir::SymbolRefAttr symbol) {
   // Slot names and order must match `getParamValues()` exactly, including
@@ -99,8 +101,8 @@ getStdlibStructParamNames(mlir::SymbolRefAttr symbol) {
 /// Non-struct types and parameterless structs get a UnitAttr placeholder.
 ///
 /// `strict` controls parameterised structs that fit neither path:
-///   - `true`: emit an error at `loc` and return null. For `shape` /
-///     `elementwise` result types, whose mapping is always consumed.
+///   - `true`: emit an error at `loc` and return null. For `elementwise`
+///     result types, whose mapping is always consumed.
 ///   - `false`: fall back to a UnitAttr placeholder. For argument types, where
 ///     opaque-parameter inference only reads MO::OpaqueType entries, so tensor
 ///     and device-context types fall through harmlessly.
@@ -188,18 +190,27 @@ static mlir::StringAttr
 getFullyResolvedMojoName(KGEN::LIT::ASTDeclInterface op) {
   mlir::MLIRContext *ctx = op->getContext();
   llvm::SmallVector<std::string> names;
+  names.reserve(8);
   do {
-    names.push_back(op.getDeclName().str());
+    // A package's `__init__` is addressed by the package's own name, so it
+    // contributes no component: `builtin_kernels.monoids.ReduceSum`, not
+    // `builtin_kernels.monoids.__init__.ReduceSum`. Every name built from a
+    // Mojo declaration drops it, so they still compare equal -- see
+    // `buildOpaqueSymbol`.
+    if (op.getDeclName() != "__init__")
+      names.push_back(op.getDeclName().str());
   } while (
       (op = mlir::dyn_cast<KGEN::LIT::ASTDeclInterface>(op->getParentOp())));
 
-  std::stringstream ss;
-  ss << names.back();
+  llvm::SmallString<64> name;
+  name.append(names.back());
   names.pop_back();
-  for (auto name : llvm::reverse(names))
-    ss << "." << name;
+  for (const std::string &component : llvm::reverse(names)) {
+    name.push_back('.');
+    name.append(component);
+  }
 
-  return mlir::StringAttr::get(ctx, ss.str());
+  return mlir::StringAttr::get(ctx, name);
 }
 
 static mlir::StringAttr
@@ -806,7 +817,9 @@ static void buildOpaqueTypeMapping(mlir::ModuleOp pkg,
     mlir::Operation *parentOp = structOp->getParentOp();
     while (parentOp) {
       if (auto fileMod = mlir::dyn_cast<KGEN::LIT::FileModuleOp>(parentOp)) {
-        parentNames.push_back(fileMod.getSymName());
+        // Dropped for the same reason as in `getFullyResolvedMojoName`.
+        if (fileMod.getSymName() != "__init__")
+          parentNames.push_back(fileMod.getSymName());
         parentOp = fileMod->getParentOp();
       } else if (auto pkg = mlir::dyn_cast<KGEN::LIT::PackageOp>(parentOp)) {
         parentNames.push_back(pkg.getSymName());
@@ -932,12 +945,25 @@ struct ImportPackagesPass
       return StringRef(lhs.mojoName) < StringRef(rhs.mojoName);
     });
 
-    llvm::sort(primitives, [](const ScannedPrimitiveFunction &lhs,
-                              const ScannedPrimitiveFunction &rhs) {
-      auto lhsName = getFullyResolvedMojoName(lhs.func);
-      auto rhsName = getFullyResolvedMojoName(rhs.func);
-      return StringRef(lhsName) < StringRef(rhsName);
-    });
+    // Resolve each primitive's fully-qualified Mojo name once: building it in
+    // the comparator rebuilt a stringstream on every comparison.
+    SmallVector<std::pair<mlir::StringAttr, unsigned>> primitiveNames;
+    primitiveNames.reserve(primitives.size());
+    for (unsigned index = 0; index < primitives.size(); ++index)
+      primitiveNames.emplace_back(
+          getFullyResolvedMojoName(primitives[index].func), index);
+    llvm::sort(primitiveNames,
+               [](const std::pair<mlir::StringAttr, unsigned> &lhs,
+                  const std::pair<mlir::StringAttr, unsigned> &rhs) {
+                 return StringRef(lhs.first) < StringRef(rhs.first);
+               });
+    // Reorder `primitives` to match, so `primitiveNames[i]` stays the
+    // precomputed name of `primitives[i]`.
+    SmallVector<ScannedPrimitiveFunction> sortedPrimitives;
+    sortedPrimitives.reserve(primitives.size());
+    for (const auto &[name, index] : primitiveNames)
+      sortedPrimitives.push_back(primitives[index]);
+    primitives = std::move(sortedPrimitives);
 
     buildOpaqueTypeMapping(pkg, opaqueTypeMapping);
 
@@ -1221,9 +1247,11 @@ struct ImportPackagesPass
       }
       // Trait-bound shape-function tensor arguments distill with
       // `isShapeFunc=true`: no io-role, bound by `Tensor` or `TileTensorable`.
+      // Nothing reads a shape function's result params, so a result type with
+      // no slot-name mapping, such as `Coord`, is accepted.
       auto sfFunctionAttr = buildFunctionAttr(
           sf.func, /*computeResultParams=*/true,
-          /*strictResultParams=*/true, /*distillTraitArgs=*/true,
+          /*strictResultParams=*/false, /*distillTraitArgs=*/true,
           /*isShapeFunc=*/true);
       if (failed(sfFunctionAttr)) {
         sawFailure = true;
@@ -1234,14 +1262,15 @@ struct ImportPackagesPass
           /*sym_visibility=*/nullptr, sf.registration, *sfFunctionAttr));
     }
 
-    for (auto &prim : primitives) {
+    for (unsigned index = 0; index < primitives.size(); ++index) {
+      ScannedPrimitiveFunction &prim = primitives[index];
       llvm::StringRef registration = prim.registration.strref();
       if (!seenPrimitives.insert(registration).second)
         continue;
 
       // sym_name is the fully-qualified Mojo source name, as for KernelDeclOp,
       // so each primitive's Mojo function needs a unique one.
-      mlir::StringAttr symName = getFullyResolvedMojoName(prim.func);
+      mlir::StringAttr symName = primitiveNames[index].first;
       // Primitives are identified by registration string, so skip the
       // slot-name mapping (it fails for wrapper tensor structs like
       // ManagedTensorSlice). They accept any arguments, so skip the trait
@@ -1312,23 +1341,43 @@ struct ImportPackagesPass
     // module).
     bool loadBuiltIns = !append;
     if (loadBuiltIns) {
-      auto builtInPathsOr = getBuiltInKernelPackagePaths(ctx);
-      if (builtInPathsOr.isError()) {
+      auto builtInPackagesOr = getBuiltInKernelPackages(ctx);
+      if (builtInPackagesOr.isError()) {
         module.emitError("failed to resolve built-in kernel package paths");
         signalPassFailure();
         return;
       }
+      llvm::SmallVector<BuiltInKernelPackage> builtIns =
+          builtInPackagesOr.takeValue();
 
-      for (const auto &path : builtInPathsOr.takeValue()) {
-        OwningOpRef<ModuleOp> pkg = loadPackageModule(ctx, path, module);
+      // Recorded for `EmitMojo`, which imports each one. Resolving them is
+      // this pass's job, so the names travel with the module rather than
+      // being resolved a second time.
+      llvm::SmallVector<mlir::Attribute> packageNames;
+      for (const BuiltInKernelPackage &package : builtIns)
+        packageNames.push_back(builder.getStringAttr(package.name));
+      module->setAttr(kBuiltInKernelPackagesAttrName,
+                      builder.getArrayAttr(packageNames));
+
+      // One bytecode parse per package, and a package knows nothing of the
+      // others, so the parses run together. `emitDecls` writes the shared
+      // module, so it stays serial and in path order: the registry's
+      // contents, and the error a duplicate registration reports, do not
+      // depend on which parse finished first.
+      llvm::SmallVector<OwningOpRef<ModuleOp>> pkgs(builtIns.size());
+      mlir::parallelFor(ctx, 0, builtIns.size(), [&](size_t i) {
+        pkgs[i] = loadPackageModule(ctx, builtIns[i].path, module);
+      });
+      for (const OwningOpRef<ModuleOp> &pkg : pkgs) {
         if (!pkg) {
           signalPassFailure();
           return;
         }
+      }
+      for (OwningOpRef<ModuleOp> &pkg : pkgs)
         emitDecls(builder, symbolTable, *pkg, seenBuiltinRegistrations,
                   seenPrimitives, seenShapeFunctions, opaqueTypeMapping,
                   /*isUserDefined=*/false);
-      }
     }
 
     // Load user-supplied packages (mojo-pkg-paths). In append mode this is

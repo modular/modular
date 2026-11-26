@@ -27,8 +27,8 @@ modular_py_binary(
     testonly = True,
     srcs = ["gen_external_checkpoints.py"],
     deps = [
+        "//max/python/max:_core",
         requirement("torch"),
-        requirement("gguf"),
         requirement("click"),
         requirement("numpy"),
         requirement("safetensors"),

@@ -610,6 +610,18 @@ M_DriverStatus M_DriverDeviceResetAllocatorPeaks(const M_DriverDevice *device) {
 #endif
 }
 
+M_DriverStatus
+M_DriverDeviceMaxSingleAllocationSize(const M_DriverDevice *device,
+                                      uint64_t *out_max) {
+  if (device == nullptr || out_max == nullptr)
+    return fail(M_DRIVER_INVALID_ARGUMENT, "device or out_max is null");
+  ErrorOr<size_t> max = contextOf(*device).device().maxSingleAllocationSize();
+  if (max.isError())
+    return fail(max, "M_DriverDeviceMaxSingleAllocationSize");
+  *out_max = static_cast<uint64_t>(*max);
+  return succeed();
+}
+
 M_DriverStatus M_DriverDeviceGetAttribute(const M_DriverDevice *device,
                                           M_DriverDeviceAttribute attribute,
                                           int64_t *out) {

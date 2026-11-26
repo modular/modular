@@ -40,7 +40,7 @@ from max.gpu.primitives.cluster import (
     elect_one_sync,
 )
 from max.gpu.host.nvidia.tma import TensorMapSwizzle
-from max.gpu import block_idx, lane_id
+from max.gpu import block_idx, grid_dim, lane_id
 from max.gpu.memory import (
     async_copy,
     external_memory,
@@ -83,7 +83,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import SharedMemBarrier
 
 from std.utils.coord import Coord
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -131,7 +130,10 @@ from ..structured_kernels.tile_scheduler_splitk import (
 from linalg.structuring import SMemPtr
 from linalg.matmul.gpu.profiler import MatmulProfileWarp
 from comm import Signal
-from comm.sync import _multi_gpu_barrier
+from comm.sync import (
+    _multi_gpu_tile_barrier_end,
+    _multi_gpu_tile_barrier_start,
+)
 
 # Import shared kernel components from kernel_common
 from structured_kernels.kernel_common import (
@@ -1528,7 +1530,7 @@ struct BlackwellMatmulSM100Kernel[
     comptime Bias1DTile = TileTensor[
         Self.c_type,
         type_of(Self.Bias1DTileLayout),
-        ImmutAnyOrigin,
+        ImmUntrackedOrigin,
         Engine=Self.BiasEngine,
     ]
 
@@ -1727,7 +1729,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         rank_sigs: Optional[
             Array[
                 MutPointer[Signal, MutAnyOrigin],
@@ -1801,7 +1803,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         epilogue_fn: EpilogueFnType,
     ):
         """Kernel entry point for SM100 matmul that stores its output
@@ -1877,7 +1879,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         rank_sigs: Optional[
             Array[
                 MutPointer[Signal, MutAnyOrigin],
@@ -1947,7 +1949,7 @@ struct BlackwellMatmulSM100Kernel[
         bias_1d_tile: Self.Bias1DTile,
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
         rank_sigs: Optional[
             Array[
                 MutPointer[Signal, MutAnyOrigin],
@@ -2310,6 +2312,14 @@ struct BlackwellMatmulSM100Kernel[
 
         comptime if not Self.config.use_tma_epilogue_load:
             if WarpRole.is_epilogue():
+                # A closure can read what the predecessor grid writes, such as
+                # a residual. These warps skip the load warp's wait, and the
+                # barriers after that wait do not keep their read-only loads
+                # below it (see `wait_on_dependent_grids`).
+                comptime if Self.pdl_level > PDLLevel.OFF and (
+                    has_epilogue_fn or has_compute_fn
+                ):
+                    wait_on_dependent_grids()
                 Self.EpilogueCtx.Sync.wait()  # wait for MMA to publish TMEM addr
 
                 var tmem = Self.Tmem.from_shared(smem.pipelines.tmem_addr())
@@ -2325,17 +2335,22 @@ struct BlackwellMatmulSM100Kernel[
 
                 var epi_iter = scheduler.work_iterator()
 
-                # Pre-barrier: ensure all peers' output buffers are ready
+                # Pre-barrier: every peer has started this launch, so its
+                # output buffer is zeroed. Synced on ranks, not block ids:
+                # CLC cancels a different set of blocks on each rank.
+                var tile_barrier_base = Scalar[Signal.flag_t](0)
                 comptime if Self.output_writer_type.needs_sync:
-                    _multi_gpu_barrier[
+                    # The base is final only once the previous launch completed.
+                    comptime if Self.pdl_level > PDLLevel.OFF:
+                        wait_on_dependent_grids()
+                    tile_barrier_base = _multi_gpu_tile_barrier_start[
                         Self.num_c_tma_descriptors,
-                        is_start=True,
                         named_barrier_threads=Self.EPILOGUE_THREADS,
                     ](rank_sigs.value(), rank_sigs.value()[my_rank], my_rank)
 
+                # Tiles this block wrote; the tile barrier counts them.
+                var tile_idx = 0
                 with epi_ctx:  # signals TMEM dealloc on exit
-                    var tile_idx = 0
-
                     for current in epi_iter:
                         with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
                             with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
@@ -2353,16 +2368,27 @@ struct BlackwellMatmulSM100Kernel[
                                 )
                         tile_idx += 1
 
-                # Post-barrier: ensure all peers have finished reduce-add writes.
-                # Use a named barrier scoped to the 4 epilogue warps (128 threads).
-                # Note this is only safe because epilogue warps are 0-3...
+                # Post-barrier: count this block's tiles. The rank's last block
+                # waits until every peer finished adding into this rank's
+                # buffer. Named barrier scoped to the 4 epilogue warps; only
+                # safe because epilogue warps are 0-3, which include the
+                # threads 0..ngpus-1 that talk to the peers.
                 comptime if Self.output_writer_type.needs_sync:
-                    _multi_gpu_barrier[
+                    _multi_gpu_tile_barrier_end[
                         Self.num_c_tma_descriptors,
-                        is_start=False,
-                        need_fence=True,
                         named_barrier_threads=Self.EPILOGUE_THREADS,
-                    ](rank_sigs.value(), rank_sigs.value()[my_rank], my_rank)
+                    ](
+                        rank_sigs.value(),
+                        rank_sigs.value()[my_rank],
+                        my_rank,
+                        tile_barrier_base,
+                        Scalar[Signal.flag_t](tile_idx),
+                        # The CLC scheduler gives each grid slot's tile to
+                        # exactly one block, so a launch has one tile per slot.
+                        Scalar[Signal.flag_t](
+                            grid_dim.x * grid_dim.y * grid_dim.z
+                        ),
+                    )
 
         else:
             if WarpRole.is_epilogue():
@@ -2512,7 +2538,7 @@ struct BlackwellMatmulSM100Kernel[
         lock_ptr: MutPointer[UInt8, AnyOrigin[mut=True]],
         cluster_dim: StaticTuple[Int32, 3],
         mnk: StaticTuple[UInt32, 3],
-        workspace: Span[UInt64, MutAnyOrigin],
+        workspace: Span[UInt64, MutUntrackedOrigin],
     ):
         """Split-K kernel entry point for better parallelism on small problems.
 
@@ -2540,6 +2566,10 @@ struct BlackwellMatmulSM100Kernel[
             mnk: Problem dimensions (M, N, K).
             workspace: Workspace buffer for profiling/scheduling.
         """
+        comptime assert not Self.output_writer_type.needs_sync, (
+            "split-K has no cross-rank barrier; the reduce-scatter writer"
+            " needs the run() path"
+        )
         Self.validate_constraints()
 
         # Access shared memory via bitcast
@@ -2594,7 +2624,7 @@ struct BlackwellMatmulSM100Kernel[
         # Scheduler owns CLC throttle pipeline internally
         var scheduler = TileSchedulerSplitK[
             num_stages=Self.config.num_clc_pipeline_stages,
-            reduction_tile_shape=Index(Self.BM, Self.MMA_N, Self.BK),
+            reduction_tile_shape=(Self.BM, Self.MMA_N, Self.BK),
             cluster_shape=Self.config.cluster_shape,
             block_swizzle_size=Self.config.block_swizzle_size,
             rasterize_order=Self.config.raster_order,

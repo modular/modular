@@ -23,11 +23,11 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
-from typing import Any, ClassVar, Literal
+from typing import Any, Literal
 
-from max import tree
 from max.graph import BufferType, TensorType, TensorValue
-from typing_extensions import Self, TypeVar
+from max.nn._graph_group import EPPayload, GraphGroup
+from typing_extensions import TypeVar
 
 __all__ = [
     "BatchContext",
@@ -48,6 +48,7 @@ __all__ = [
     "SparseIndices",
     "SpecDecode",
     "SpecDecodeOutputs",
+    "StaticBuffers",
     "TPSignals",
     "TokenBitmask",
     "VisionEmbeddings",
@@ -61,7 +62,6 @@ __all__ = [
     "vision_outputs",
 ]
 
-_K = TypeVar("_K", bound=str)
 _V = TypeVar("_V")
 # A ModuleV3 graph's groups hold tensor layouts and tensors in place of
 # graph-API types and values, and a step packs some groups with its buffers.
@@ -75,44 +75,6 @@ _ScratchT = TypeVar("_ScratchT", default=tuple[BufferType, ...])
 _ContextT = TypeVar("_ContextT", default=tuple[TensorType, ...])
 _SpecT = TypeVar("_SpecT", default=TensorType | tuple[TensorType, ...])
 _BitmaskT = TypeVar("_BitmaskT", default=TensorType | BufferType)
-
-
-class GraphGroup(OrderedDict[_K, _V]):
-    """The named graph inputs or outputs of one feature, in graph order.
-
-    An ``OrderedDict`` keeps insertion order when flattened, where a plain
-    ``dict`` would sort its keys. Each subclass fixes the names and values it
-    holds.
-    """
-
-    kind: ClassVar[str | None] = None
-    """Identifies the feature wherever the group sits in a tree."""
-
-    def __init_subclass__(cls, **kwargs: object) -> None:
-        super().__init_subclass__(**kwargs)
-        # A kind names one class, so a subclass that inherits its base's kind
-        # leaves the registration to the base.
-        if "kind" in cls.__dict__ and cls.kind is not None:
-            tree.kind(cls.kind)(cls)
-
-    def __new__(cls, *args: object, **kwargs: object) -> Self:
-        """Creates the group, rejecting a subclass with no ``kind``."""
-        if cls.kind is None:
-            raise TypeError(
-                f"{cls.__qualname__} has no kind, so an exported graph could"
-                " not name it: subclass GraphGroup with a kind"
-            )
-        return super().__new__(cls)
-
-    def __tree_flatten__(self) -> tuple[Mapping[_K, _V], None]:
-        return self, None
-
-    @classmethod
-    def __tree_unflatten__(cls, meta: None, children: Mapping[_K, _V]) -> Self:
-        # Not through ``__init__``, which a subclass may make keyword-only.
-        group = cls.__new__(cls)
-        OrderedDict.update(group, children)
-        return group
 
 
 class RaggedBatch(GraphGroup[str, TensorType | tuple[TensorType, ...]]):
@@ -242,18 +204,46 @@ class ItemPositions(GraphGroup[str, TensorValue]):
 
 
 class BatchContext(GraphGroup[str, _ContextT]):
-    """Host scalars summarizing the batch's context lengths.
+    """Host-planned context lengths, token bounds and row selection for a step.
 
-    Each field holds one scalar per replica or one per device.
+    The engine stages each entry by its name. Host entries, a list of which
+    is indexed by device:
 
-    ``length`` is an ``int32``: the replica's rows' cached and new tokens,
-    each row rounded up to a page, summed. MLA prefill sizes its buffers
-    from it.
+    - ``length``, ``int32``: the replica's rows' cached and new tokens, each
+      row rounded up to a page, summed. MLA prefill sizes its buffers from
+      it.
+    - ``total_length``, ``uint32``: a bound on the KV positions the step
+      writes: at least the replica's rows' cached and new tokens, summed,
+      plus each decode row's drafts and later steps. A sparse-attention
+      prefill plan sizes its buffers from it with no bounds check.
 
-    ``total_length`` is a ``uint32`` bound on the KV positions the step
-    writes: at least the replica's rows' cached and new tokens, summed, plus
-    each decode row's drafts and later steps. A sparse-attention prefill plan
-    sizes its buffers from it with no bounds check.
+    Device entries, on the first device unless noted:
+
+    - ``window_start`` and ``write_floor``, ``int32 [rows]``: per-request
+      token bounds. No request resumes below a window restart, so both are
+      zero, as MAX Serve stages them.
+    - ``window_rows``, ``uint8``: extent only. Its length is each row's new
+      tokens capped at the shared cache window, summed; its bytes are zero.
+    - ``lookback_tokens``, ``int64 [rows, depth]``: each row's ``depth``
+      tokens before its first new token, newest first, ``-1`` before the
+      sequence start. ``depth`` is static, 1 to 3.
+    - ``lookback_mask``, ``uint8 [rows, depth]``: 1 where that predecessor
+      must not feed token-history features (an image placeholder). It needs
+      ``lookback_tokens``.
+    - ``lookback_source``, ``int64 [rows]``: ``-1`` reads
+      ``lookback_tokens``; a nonnegative value is the row the request sat
+      at in the step still in flight, whose history the graph recorded
+      there. It needs ``lookback_tokens``.
+    - ``image_token_mask``, ``uint8 [merged rows]``: 1 where a token of a
+      row's new tokens, then its verify drafts, sits in an image span.
+    - ``replay_skip``, ``int32 [rows]``: the merged rows dropped from each
+      row's front; none.
+    - ``replay_row_indices``, ``int32``, and ``replay_offsets``,
+      ``uint32``: one per replica, on its first device: its kept rows'
+      merged rows, counted from its first merged row, and the cumulative
+      kept rows over its rows, from 0.
+    - ``replay_longest``, ``uint8``: one per replica, on its first device,
+      extent only: its length is the replica's longest kept span.
     """
 
     kind = "batch_context"
@@ -270,10 +260,14 @@ class DecoderGraphScratch(GraphGroup[str, _ScratchT]):
     kind = "decoder_scratch"
 
 
-class EPPayload(GraphGroup[str, tuple[TensorType | BufferType, ...]]):
-    """Expert-parallel communication state, built once at startup."""
+class StaticBuffers(GraphGroup[str, Any]):
+    """Named deployment buffers filled by the static initializer at startup.
 
-    kind = "ep_payload"
+    Their static shapes and bytes are shared by the initializer and every
+    serving graph. CPU buffers are pinned and stay owned until GPU work drains.
+    """
+
+    kind = "static_buffers"
 
 
 class EPLBProfile(GraphGroup[str, tuple[BufferType, ...]]):

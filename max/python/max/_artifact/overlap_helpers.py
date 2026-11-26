@@ -10,18 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Builds the overlap helper graphs and the artifact component that stores them.
+"""Builds the overlap helper graphs.
 
-The helpers feed each decode step's tokens on the device.
+The helpers feed each decode step's tokens on the device. An artifact stores
+them as roles of its ``model`` component (:class:`HelperRole`), hashed like
+every other graph; ``gen_overlap_helpers`` writes the same graphs beside a
+registry MEF under the file names below.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from enum import Enum
 from functools import partial
-from pathlib import Path
+from typing import Any
 
+from max import tree
 from max.driver import Device
 from max.dtype import DType
 from max.engine import InferenceSession
@@ -41,23 +46,20 @@ from max.nn.kv_cache import (
     MultiKVCacheParams,
     RecurrentStateParams,
 )
-from typing_extensions import Self
+from max.tensor.compilation import CompiledCallable
+from max.tensor.sharding import TensorLayout
+from max.tensor.sharding.types import as_layout
 
-from .value_types import (
-    ArtifactError,
-    ArtifactFile,
-    ArtifactType,
-    FileWriter,
-)
+from .value_types import ArtifactError
 
 # Token buffers and indices are int64 to match the engine's token dtype
 # and the scheduler's slot-index type.
 _TOK = DType.int64
 
-# The names a serving engine looks for the helpers by, in an artifact or
-# beside a model MEF, where each carries the MEF's stem. The first five hold no
-# geometry, so the shared name, as `gen_overlap_helpers` writes them, serves any
-# export that has no file of its own.
+# The names a registry engine looks for the helpers by beside a model MEF,
+# where each carries the MEF's stem. The first five hold no geometry, so the
+# shared name, as `gen_overlap_helpers` writes them, serves any export that has
+# no file of its own.
 REALIZE_MEF = "overlap-realize-future-tokens.mef"
 REALIZE_INPLACE_MEF = "overlap-realize-future-tokens-inplace.mef"
 REALIZE_DRAFTS_MEF = "overlap-realize-draft-tokens.mef"
@@ -253,20 +255,30 @@ def spec_realize_inplace_graph_name(
     return f"spec_realize_inplace_tp{tp}_kv{kv_groups}{suffix}_narrow"
 
 
-def spec_realize_mixed_inplace_graph_name(dp: int, kv_groups: int) -> str:
+def spec_realize_mixed_inplace_graph_name(
+    dp: int,
+    kv_groups: int,
+    next_draft_dtype: DType = DType.int32,
+    positions: bool = False,
+) -> str:
     """Name of the mixed-step fused spec feed for a ``(dp, kv_groups)`` geometry.
 
     Same destination ABI as :func:`spec_realize_inplace_dp_graph_name`, plus the
-    per-previous-row offsets the bonus token lands at. The engine requires the
-    name, so it can never wire a decode feed built for one geometry in the
-    mixed step's place. The ``_i32drafts`` suffix is not a parameter: only the
-    V4.1 export, whose fused graph emits int32 drafts, arms a mixed step.
+    per-previous-row offsets the bonus token lands at. A registry engine
+    requires the name, so it can never wire a decode feed built for one
+    geometry in the mixed step's place.
     """
-    return f"spec_realize_mixed_inplace_dp{dp}_kv{kv_groups}_i32drafts"
+    suffix = "_i32drafts" if next_draft_dtype == DType.int32 else ""
+    if positions:
+        suffix += "_positions"
+    return f"spec_realize_mixed_inplace_dp{dp}_kv{kv_groups}{suffix}"
 
 
 def spec_realize_inplace_dp_graph_name(
-    dp: int, kv_groups: int, next_draft_dtype: DType = DType.int64
+    dp: int,
+    kv_groups: int,
+    next_draft_dtype: DType = DType.int64,
+    positions: bool = False,
 ) -> str:
     """Returns the name of the data-parallel fused spec feed.
 
@@ -281,9 +293,12 @@ def spec_realize_inplace_dp_graph_name(
     inputs. The name is the only thing that can tell the builds apart, so a
     non-default draft dtype is spelled into it; the engine requires the
     loaded MEF to declare the one its geometry spells. The ``_narrow`` suffix
-    is the TP build's.
+    is the TP build's, and ``_positions`` marks the build that also advances
+    3-axis positions.
     """
     suffix = "" if next_draft_dtype == DType.int64 else "_i32drafts"
+    if positions:
+        suffix += "_positions"
     return f"spec_realize_inplace_dp{dp}_kv{kv_groups}{suffix}_narrow"
 
 
@@ -308,8 +323,71 @@ def _feed_drafts(
     )
 
 
+def _advance_positions(
+    dest_positions: BufferValue, increments: TensorValue
+) -> None:
+    """Advances each row's window of 3-axis positions by its increment.
+
+    A verify step's rows each hold a window of ``k + 1`` positions::
+
+        dest_positions[:, curr, :] += increments[curr]
+    """
+    current = ops.buffer_load(dest_positions)
+    rows = current.shape[1]
+    window = rows // Dim("curr_batch")
+    windows = current.rebind([3, window * Dim("curr_batch")]).reshape(
+        [3, "curr_batch", window]
+    )
+    shifted = windows + ops.reshape(increments, [1, -1, 1])
+    ops.buffer_store(
+        dest_positions,
+        shifted.reshape([3, window * Dim("curr_batch")]).rebind([3, rows]),
+    )
+
+
+def _advance_packed_positions(
+    dest_positions: BufferValue,
+    increments: TensorValue,
+    token_offsets: TensorValue,
+    width: Dim,
+) -> None:
+    """Advances each fed row's window of 3-axis positions in a mixed step.
+
+    A mixed step packs a prompt row's whole chunk beside the verify rows'
+    ``k + 1`` windows, so the windows are not equal and a row index does not
+    say where one starts. Each previous row's verify window starts at the
+    token offset its bonus token lands at and spans ``width`` positions::
+
+        dest_positions[:, offsets[p] : offsets[p] + width] += increments[p]
+
+    A row with no current match carries the skip sentinel, the token count,
+    so its whole window is out of range and skipped; a prompt row is never
+    fed and keeps the positions the host staged.
+    """
+    current = ops.buffer_load(dest_positions)
+    tokens = current.shape[1]
+    device = token_offsets.device
+    steps = ops.range(0, width, 1, out_dim=width, dtype=_TOK, device=device)
+    window_offsets = ops.unsqueeze(token_offsets, -1) + ops.unsqueeze(steps, 0)
+    window_increments = ops.broadcast_to(
+        ops.unsqueeze(increments, -1), ["prev_batch", width]
+    )
+    zeros = ops.broadcast_to(
+        ops.constant(0, dtype=_TOK, device=device), [tokens]
+    )
+    per_token = scatter_nd_skip_oob_indices(
+        input=zeros,
+        updates=window_increments.reshape([-1]),
+        indices=window_offsets.reshape([-1, 1]),
+    )
+    ops.buffer_store(dest_positions, current + ops.unsqueeze(per_token, 0))
+
+
 def _build_spec_realize_inplace(
-    device_refs: list[DeviceRef], kv_groups: int, positions: bool = False
+    device_refs: list[DeviceRef],
+    kv_groups: int,
+    positions: bool = False,
+    name: str | None = None,
 ) -> Graph:
     """Graph: the whole spec-overlap device feed, in place, in one dispatch.
 
@@ -355,7 +433,8 @@ def _build_spec_realize_inplace(
     enter the input list only as a product: ``--tp 1 --kv-groups 2`` and
     ``--tp 2 --kv-groups 1`` declare the same eight inputs but place and group
     the cache destinations differently, so arity alone cannot tell the engine it
-    was handed the wrong helper.
+    was handed the wrong helper. ``name`` replaces that name for an engine
+    that requires another.
     """
     dev0 = device_refs[0]
     dest_types: list[BufferType] = [
@@ -374,7 +453,10 @@ def _build_spec_realize_inplace(
         TensorType(_TOK, ["prev_batch"], dev0),  # prev_to_curr_map
     ]
     with Graph(
-        spec_realize_inplace_graph_name(len(device_refs), kv_groups, positions),
+        name
+        or spec_realize_inplace_graph_name(
+            len(device_refs), kv_groups, positions
+        ),
         input_types=[*dest_types, *prev_types],
     ) as graph:
         n_dest = len(dest_types)
@@ -427,20 +509,8 @@ def _build_spec_realize_inplace(
                 ).cast(DType.uint32)
                 ops.buffer_store(dest, bumped)
         if positions:
-            dest_positions = graph.inputs[2 + n_cache].buffer
-            current = ops.buffer_load(dest_positions)
-            # A verify step's rows each hold a window of k + 1 positions.
-            rows = current.shape[1]
-            window = rows // Dim("curr_batch")
-            windows = current.rebind([3, window * Dim("curr_batch")]).reshape(
-                [3, "curr_batch", window]
-            )
-            shifted = windows + ops.reshape(batch_increments, [1, -1, 1])
-            ops.buffer_store(
-                dest_positions,
-                shifted.reshape([3, window * Dim("curr_batch")]).rebind(
-                    [3, rows]
-                ),
+            _advance_positions(
+                graph.inputs[2 + n_cache].buffer, batch_increments
             )
 
         # No tensor outputs; `output()` packs the device chain, which is what
@@ -455,11 +525,13 @@ def _build_spec_realize_inplace_dp(
     kv_groups: int,
     next_draft_dtype: DType = _TOK,
     packed_token_offsets: bool = False,
+    positions: bool = False,
+    name: str | None = None,
 ) -> Graph:
-    """Graph: the block spec-overlap device feed for a data-parallel export.
+    """Graph: the spec-overlap device feed, sliced by data-parallel replica.
 
-    A DP block export (MiMo-V2.6-Flash at EP8/DP8) serves each attention
-    replica's rows on that replica's devices, so the ``cache_lengths``
+    A data-parallel export serves each attention replica's rows on that
+    replica's devices, so the ``cache_lengths``
     destinations hold one replica's rows, not the whole batch the TP build's
     do. The increment is still one global scatter — the row map and the
     previous step's outputs are global — but each (group, device)
@@ -479,19 +551,35 @@ def _build_spec_realize_inplace_dp(
     cannot tell a DP build from a TP one at the same device count, nor one
     replica split from another.
 
+    At one replica the slice is the whole batch, so the build serves a
+    tensor-parallel export with the same inputs as a data-parallel one, and
+    at one KV group it serves an engine that keeps one cache-length buffer
+    per device for all its caches.
+
     ``next_draft_dtype`` is the dtype the served model's fused graph emits
-    its ``next_draft_tokens`` at (int32 for DeepSeek-V4.1, int64 for the
-    rest). The destination stays the engine's int64 draft input either
-    way; an int32 source is widened at the scatter.
+    its ``next_draft_tokens`` at. The destination stays the engine's int64
+    draft input either way; a narrower source is widened at the scatter.
 
     ``packed_token_offsets`` builds the mixed step's feed: the same
     destinations and the same row-indexed drafts and cache bump, plus one
     input holding, per previous row, the token offset its bonus token lands
     at. A mixed step packs a prompt row's whole chunk into the token input, so
     a row index is not a token offset there.
+
+    With ``positions`` the step also takes ``[3, merged_seq_len]`` position
+    ids (M-RoPE) after the cache destinations, each row's window advanced by
+    its increment, as in :func:`_build_spec_realize_inplace`. The mixed build
+    finds each verify row's window at its token offset
+    (:func:`_advance_packed_positions`), since prompt chunks make the windows
+    unequal. ``name``
+    replaces the geometry's name for an engine that requires another.
+
+    Input order: ``dest_tokens``, ``dest_draft``, ``dest_cache`` (group-major,
+    device-minor), ``dest_positions`` when built with them, then
+    ``prev_num_accepted``, ``prev_next_tokens``, ``prev_next_draft``,
+    ``prev_to_curr_map``, the token offsets for the mixed build, and the
+    ``[dp + 1]`` replica row bounds on the host.
     """
-    # The mixed name always says `_i32drafts`, so its drafts must be int32.
-    assert not packed_token_offsets or next_draft_dtype == DType.int32
     n_devices = len(device_refs)
     if data_parallel_degree < 1 or n_devices % data_parallel_degree:
         raise ValueError(
@@ -516,6 +604,8 @@ def _build_spec_realize_inplace_dp(
                     DType.uint32, [f"replica_{i // per_replica}_batch"], dev
                 )
             )
+    if positions:
+        dest_types.append(BufferType(_TOK, [3, "merged_seq_len"], dev0))
     prev_types = [
         TensorType(_TOK, ["prev_batch"], dev0),  # num_accepted
         TensorType(_TOK, ["prev_batch"], dev0),  # next_tokens
@@ -531,18 +621,22 @@ def _build_spec_realize_inplace_dp(
     prev_types.append(
         TensorType(_TOK, [data_parallel_degree + 1], DeviceRef.CPU())
     )
-    name = (
-        spec_realize_mixed_inplace_graph_name(data_parallel_degree, kv_groups)
-        if packed_token_offsets
-        else spec_realize_inplace_dp_graph_name(
-            data_parallel_degree, kv_groups, next_draft_dtype
+    if name is None:
+        name = (
+            spec_realize_mixed_inplace_graph_name(
+                data_parallel_degree, kv_groups, next_draft_dtype, positions
+            )
+            if packed_token_offsets
+            else spec_realize_inplace_dp_graph_name(
+                data_parallel_degree, kv_groups, next_draft_dtype, positions
+            )
         )
-    )
     with Graph(name, input_types=[*dest_types, *prev_types]) as graph:
         n_dest = len(dest_types)
+        n_cache = kv_groups * n_devices
         dest_tokens = graph.inputs[0].buffer
         dest_draft = graph.inputs[1].buffer
-        dest_cache = [graph.inputs[2 + i].buffer for i in range(n_dest - 2)]
+        dest_cache = [graph.inputs[2 + i].buffer for i in range(n_cache)]
         prev_num_accepted = graph.inputs[n_dest].tensor
         prev_next_tokens = graph.inputs[n_dest + 1].tensor
         prev_next_draft = graph.inputs[n_dest + 2].tensor
@@ -565,7 +659,7 @@ def _build_spec_realize_inplace_dp(
                 indices=token_indices,
             ),
         )
-        # The int32 draft source (V4.1) widens here; the int64 default casts
+        # A narrower draft source widens here; the int64 default casts
         # nothing.
         draft_updates = (
             prev_next_draft
@@ -603,91 +697,20 @@ def _build_spec_realize_inplace_dp(
                     DType.uint32
                 )
                 ops.buffer_store(dest, bumped)
+        if positions and packed_token_offsets:
+            # The verify rows' windows are `k + 1` wide, beside prompt
+            # chunks of any length.
+            _advance_packed_positions(
+                graph.inputs[2 + n_cache].buffer,
+                prev_num_accepted + one,
+                graph.inputs[n_dest + 4].tensor,
+                dest_draft.shape[1] + 1,
+            )
+        elif positions:
+            _advance_positions(graph.inputs[2 + n_cache].buffer, increments)
 
         # No tensor outputs; `output()` packs the device chain, which is what
         # orders the stores against the replay that reads the buffers.
-        graph.output()
-    return graph
-
-
-def _build_m3_dp_spec_realize_inplace(
-    device_refs: list[DeviceRef], data_parallel_degree: int = 2
-) -> Graph:
-    """Builds feedback for global tokens and eight replica-local cache buffers.
-
-    This is the shared-cache feed: an engine that shares each device's
-    cache-length buffer across all its KV groups loads it, at one replica
-    for a fused MTP graph.
-    Each destination is updated once; replica slices follow the current batch,
-    even when request matching crosses replicas or a replica is empty. The
-    graph is named for the replica count, which the engine checks: the input
-    count is the same at every degree.
-    """
-    if len(device_refs) != 8:
-        raise ValueError("the shared-cache feed requires eight devices")
-    if data_parallel_degree < 1 or 8 % data_parallel_degree:
-        raise ValueError(
-            "the shared-cache feed needs a replica count dividing eight"
-        )
-    per_replica = len(device_refs) // data_parallel_degree
-    dev0 = device_refs[0]
-    destinations = [
-        BufferType(_TOK, ["curr_batch"], dev0),
-        BufferType(_TOK, ["curr_batch", "k"], dev0),
-        *[
-            BufferType(DType.uint32, [f"replica_{i // per_replica}_batch"], dev)
-            for i, dev in enumerate(device_refs)
-        ],
-    ]
-    sources = [
-        TensorType(_TOK, ["prev_batch"], dev0),
-        TensorType(_TOK, ["prev_batch"], dev0),
-        TensorType(_TOK, ["prev_batch", "k"], dev0),
-        TensorType(_TOK, ["prev_batch"], dev0),
-        TensorType(_TOK, [data_parallel_degree + 1], DeviceRef.CPU()),
-    ]
-    with Graph(
-        f"m3_dp{data_parallel_degree}_spec_realize_inplace",
-        input_types=[*destinations, *sources],
-    ) as graph:
-        accepted, tokens, drafts, mapping, splits = [
-            value.tensor for value in graph.inputs[len(destinations) :]
-        ]
-        indices = ops.unsqueeze(mapping, axis=-1)
-        for slot, updates in ((0, tokens), (1, drafts)):
-            dest = graph.inputs[slot].buffer
-            ops.buffer_store(
-                dest,
-                scatter_nd_skip_oob_indices(
-                    input=ops.buffer_load(dest),
-                    updates=updates,
-                    indices=indices,
-                ),
-            )
-        zeros = ops.broadcast_to(
-            ops.constant(0, dtype=_TOK, device=dev0), ["curr_batch"]
-        )
-        increments = scatter_nd_skip_oob_indices(
-            input=zeros, updates=accepted + 1, indices=indices
-        )
-        for i, dev in enumerate(device_refs):
-            replica = i // per_replica
-            local = ops.slice_tensor(
-                increments,
-                [
-                    (
-                        slice(splits[replica], splits[replica + 1]),
-                        f"replica_{replica}_batch",
-                    )
-                ],
-            )
-            if dev != dev0:
-                local = ops.transfer_to(local, dev)
-            dest = graph.inputs[2 + i].buffer
-            ops.buffer_store(
-                dest,
-                (ops.buffer_load(dest).cast(_TOK) + local).cast(DType.uint32),
-            )
         graph.output()
     return graph
 
@@ -759,55 +782,67 @@ def _on_device_zero(
 class SpecFeed:
     """The geometry an in-place spec feed is built for.
 
-    ``m3_dp`` selects the shared-cache build, ``dp`` the block build that
-    slices each device's cache-length bump by replica, and neither the
-    tensor-parallel build. The engine names the build it needs from the
-    geometry it serves and refuses any other.
+    ``dp`` selects the build that slices each device's cache-length bump by
+    replica; 0 the tensor-parallel build, which takes no replica bounds. An
+    engine names the build it needs from the geometry it serves and refuses
+    any other.
     """
 
     tp: int
+    """The devices the feed spans, every replica's."""
     kv_groups: int
+    """The cache-length destinations per device."""
     dp: int = 0
-    m3_dp: int = 0
     next_draft_dtype: DType = DType.int64
     positions: bool = False
-    """Whether the tensor-parallel build also advances 3-axis positions."""
+    """Whether the feed also advances 3-axis positions."""
+    graph_name: str | None = None
+    """The name to build the graph under, for an engine that requires one
+    other than the geometry's."""
 
     def build(self) -> Callable[[list[DeviceRef]], Graph]:
         """Returns the builder of the feed's graph across ``tp`` devices."""
-        if self.m3_dp:
-            return partial(
-                _build_m3_dp_spec_realize_inplace,
-                data_parallel_degree=self.m3_dp,
-            )
         if self.dp:
             return partial(
                 _build_spec_realize_inplace_dp,
                 data_parallel_degree=self.dp,
                 kv_groups=self.kv_groups,
                 next_draft_dtype=self.next_draft_dtype,
+                positions=self.positions,
+                name=self.graph_name,
             )
         return partial(
             _build_spec_realize_inplace,
             kv_groups=self.kv_groups,
             positions=self.positions,
+            name=self.graph_name,
         )
 
     def mixed_build(self) -> Callable[[list[DeviceRef]], Graph] | None:
-        """Returns the mixed-step feed's builder.
+        """Returns the mixed-step feed's builder for a registry engine.
 
-        Returns ``None`` when the engine never arms a mixed chain for this
-        geometry.
+        Returns ``None`` when a registry engine never arms a mixed chain for
+        this geometry: it arms one only for a data-parallel feed whose
+        drafts are int32. An artifact ships the mixed feed of every
+        speculative export (:func:`artifact_helper_builds`).
         """
-        # Only an export with int32 drafts arms the mixed feed.
         if not self.dp or self.next_draft_dtype != DType.int32:
             return None
+        return self.packed_build()
+
+    def packed_build(self) -> Callable[[list[DeviceRef]], Graph]:
+        """Returns the builder of the mixed-step feed.
+
+        It also takes the token offset each previous row's bonus token lands
+        at.
+        """
         return partial(
             _build_spec_realize_inplace_dp,
-            data_parallel_degree=self.dp,
+            data_parallel_degree=max(self.dp, 1),
             kv_groups=self.kv_groups,
-            next_draft_dtype=DType.int32,
+            next_draft_dtype=self.next_draft_dtype,
             packed_token_offsets=True,
+            positions=self.positions,
         )
 
 
@@ -824,101 +859,49 @@ def attention_cache_count(params: CacheLeafParamInterface) -> int:
     return 0 if isinstance(params, RecurrentStateParams) else 1
 
 
-def export_spec_feeds(
-    kv_params: CacheLeafParamInterface,
-    *,
-    n_devices: int,
-    data_parallel_degree: int,
-    next_draft_dtype: DType,
-    may_share_cache_lengths: bool,
-    kv_groups: int | None = None,
-    positions: bool = False,
-) -> tuple[SpecFeed, SpecFeed | None]:
-    """Sizes the in-place spec feeds a speculative export's engine may load.
-
-    The first is sized by the export's devices, KV groups and draft dtype.
-    The second is the shared-cache feed, for an engine that bumps one
-    cache-length buffer per device for every KV group. The export cannot
-    tell which of the two its engine takes, so one that may share its cache
-    lengths, such as a fused MTP graph, ships both, and the engine loads the
-    one its geometry names. Only an eight-device export can take the
-    shared-cache feed.
-
-    Args:
-        kv_params: The export's KV parameter tree.
-        n_devices: The devices the export is compiled for.
-        data_parallel_degree: The export's attention replicas.
-        next_draft_dtype: The dtype of the fused graph's
-            ``next_draft_tokens`` output.
-        may_share_cache_lengths: Whether the export's engine may share its
-            cache lengths across KV groups.
-        kv_groups: The KV groups its engine feeds, for an export that
-            records a count of its own. Defaults to the attention caches in
-            ``kv_params``.
-        positions: Whether the fused graph takes 3-axis (M-RoPE) positions,
-            which the tensor-parallel feed then advances too.
-
-    Returns:
-        The feed sized by the export's geometry, and the shared-cache feed
-        or ``None``.
-    """
-    feed = SpecFeed(
-        tp=n_devices,
-        kv_groups=(
-            attention_cache_count(kv_params) if kv_groups is None else kv_groups
-        ),
-        dp=data_parallel_degree if data_parallel_degree > 1 else 0,
-        next_draft_dtype=next_draft_dtype,
-        positions=positions,
-    )
-    shared = (
-        SpecFeed(tp=n_devices, kv_groups=1, m3_dp=max(data_parallel_degree, 1))
-        if may_share_cache_lengths
-        and n_devices == 8
-        and 8 % max(data_parallel_degree, 1) == 0
-        else None
-    )
-    return feed, shared
-
-
 @dataclass(frozen=True)
 class HelperBuild:
     """One overlap helper an export ships, and how to build it."""
 
     name: str
-    """The file name the engine looks for the helper by."""
+    """The file name a registry engine looks for the helper by, or the
+    helper's role in an artifact."""
     n_devices: int
     """The devices the graph spans."""
     build: Callable[[list[DeviceRef]], Graph]
     """Returns the graph across the first ``n_devices`` devices."""
 
 
+_PLAIN_HELPERS: tuple[tuple[Callable[[DeviceRef], Graph], str], ...] = (
+    (_build_realize_future_tokens, REALIZE_MEF),
+    (_build_realize_future_tokens_inplace, REALIZE_INPLACE_MEF),
+    (_build_realize_draft_tokens, REALIZE_DRAFTS_MEF),
+    (_build_update_cache_lengths, UPDATE_CACHE_LENGTHS_MEF),
+    (_build_realize_spec_next_tokens, REALIZE_SPEC_TOKENS_MEF),
+)
+
+
 def helper_builds(
     spec_feed: SpecFeed | None, shared_feed: SpecFeed | None = None
 ) -> list[HelperBuild]:
-    """Returns every overlap helper an engine serving one export may load.
+    """Returns every overlap helper a registry engine may load for an export.
 
-    The single-device helpers compile against device 0 alone; the spec
+    Each is named by the file name the engine looks for it by. The single-device helpers compile against device 0 alone; the spec
     feeds write one cache-length destination per device, so they span every
     device.
 
     Args:
         spec_feed: The in-place spec feed of a speculative export, or
             ``None``.
-        shared_feed: Its shared-cache feed, or ``None``.
+        shared_feed: The feed an engine that shares one cache-length buffer
+            per device across its KV groups loads instead, or ``None``.
 
     Returns:
         The helpers, plain ones first.
     """
     builds = [
         HelperBuild(name, 1, partial(_on_device_zero, build))
-        for build, name in (
-            (_build_realize_future_tokens, REALIZE_MEF),
-            (_build_realize_future_tokens_inplace, REALIZE_INPLACE_MEF),
-            (_build_realize_draft_tokens, REALIZE_DRAFTS_MEF),
-            (_build_update_cache_lengths, UPDATE_CACHE_LENGTHS_MEF),
-            (_build_realize_spec_next_tokens, REALIZE_SPEC_TOKENS_MEF),
-        )
+        for build, name in _PLAIN_HELPERS
     ]
     if spec_feed is not None:
         builds.append(
@@ -948,69 +931,118 @@ def helper_builds(
     return builds
 
 
-@dataclass(frozen=True)
-class OverlapHelpers:
-    """The ``overlap_helpers`` component: the overlap helper MEFs.
+class HelperRole(str, Enum):
+    """The roles of an artifact's overlap helpers.
 
-    Each is stored at the artifact's root under the name a serving engine
-    looks for it by, which :func:`helper_builds` lists.
-
-    Args:
-        files: Each helper's MEF, keyed by file name: its path, or a
-            function that writes it.
+    An artifact's ``model`` component stores the helpers under these roles,
+    beside the pipeline's own graphs.
     """
 
-    files: Mapping[str, Path | FileWriter]
+    REALIZE_FUTURE_TOKENS = "realize_future_tokens"
+    """This step's tokens, the previous step's sampled tokens, and where each
+    previous row lands, to the realized tokens."""
 
-    def __serialize__(self) -> Mapping[str, ArtifactType]:
-        """Returns each helper's file, keyed by its name."""
-        return {
-            name: ArtifactFile(name, content)
-            for name, content in sorted(self.files.items())
-        }
+    REALIZE_FUTURE_TOKENS_INPLACE = "realize_future_tokens_inplace"
+    """:attr:`REALIZE_FUTURE_TOKENS` writing its first input, for a captured
+    step."""
 
-    @classmethod
-    def __deserialize__(cls, value: Mapping[str, ArtifactType]) -> Self:
-        """Rebuilds the component written by :meth:`__serialize__`.
+    SPEC_REALIZE_INPLACE = "spec_realize_inplace"
+    """A verify step's whole device feed in one graph, in place: tokens,
+    drafts, every (KV group, device) cache length and, for an M-RoPE graph,
+    positions. Sliced by replica; see :func:`_build_spec_realize_inplace_dp`
+    for its inputs."""
 
-        Raises:
-            ArtifactError: If a helper is not a file.
-        """
-        files: dict[str, Path | FileWriter] = {}
-        for name, file in value.items():
-            if not isinstance(file, ArtifactFile) or not isinstance(
-                file.content, Path
-            ):
-                raise ArtifactError(f"overlap helper {name} must be a file")
-            files[name] = file.content
-        return cls(files)
+    SPEC_REALIZE_MIXED_INPLACE = "spec_realize_mixed_inplace"
+    """:attr:`SPEC_REALIZE_INPLACE` for a mixed prefill and verify step,
+    which also takes the token offset each bonus token lands at."""
 
-    @classmethod
-    def compile(
-        cls, devices: Sequence[Device], builds: Sequence[HelperBuild]
-    ) -> Self:
-        """Compiles each helper for the first of ``devices`` it spans.
 
-        Args:
-            devices: The devices the export is compiled for.
-            builds: The helpers, from :func:`helper_builds`.
+_PLAIN_ROLES: dict[HelperRole, Callable[[DeviceRef], Graph]] = {
+    HelperRole.REALIZE_FUTURE_TOKENS: _build_realize_future_tokens,
+    HelperRole.REALIZE_FUTURE_TOKENS_INPLACE: (
+        _build_realize_future_tokens_inplace
+    ),
+}
 
-        Returns:
-            The component, which exports each MEF when it is written.
 
-        Raises:
-            ArtifactError: If a helper spans more devices than the export.
-        """
-        files: dict[str, Path | FileWriter] = {}
-        for helper in builds:
-            if helper.n_devices > len(devices):
-                raise ArtifactError(
-                    f"overlap helper {helper.name} spans {helper.n_devices}"
-                    f" devices; the export has {len(devices)}"
-                )
-            span = list(devices[: helper.n_devices])
-            graph = helper.build([DeviceRef.from_device(d) for d in span])
-            files[helper.name] = (
-                InferenceSession(devices=span).compile(graph).export_mef
+def artifact_helper_builds(spec_feed: SpecFeed | None) -> list[HelperBuild]:
+    """Returns the overlap helpers an artifact stores, named by role.
+
+    Every export gets the plain token feeds. A speculative one also gets its
+    in-place verify and mixed-step feeds, both built sliced by replica, so
+    one input list serves every parallel layout.
+
+    Args:
+        spec_feed: The geometry of a speculative export's feeds, or
+            ``None``.
+
+    Returns:
+        The helpers, plain ones first.
+    """
+    builds = [
+        HelperBuild(role.value, 1, partial(_on_device_zero, build))
+        for role, build in _PLAIN_ROLES.items()
+    ]
+    if spec_feed is None:
+        return builds
+    sliced = SpecFeed(
+        tp=spec_feed.tp,
+        kv_groups=spec_feed.kv_groups,
+        dp=max(spec_feed.dp, 1),
+        next_draft_dtype=spec_feed.next_draft_dtype,
+        positions=spec_feed.positions,
+    )
+    builds += [
+        HelperBuild(
+            HelperRole.SPEC_REALIZE_INPLACE.value, sliced.tp, sliced.build()
+        ),
+        HelperBuild(
+            HelperRole.SPEC_REALIZE_MIXED_INPLACE.value,
+            sliced.tp,
+            sliced.packed_build(),
+        ),
+    ]
+    return builds
+
+
+def compile_helpers(
+    devices: Sequence[Device], builds: Sequence[HelperBuild]
+) -> dict[str, CompiledCallable[..., Any]]:
+    """Compiles each helper for the first of ``devices`` it spans.
+
+    Args:
+        devices: The devices the export is compiled for.
+        builds: The helpers, from :func:`artifact_helper_builds`.
+
+    Returns:
+        Each helper's graph keyed by its name, as a callable that describes
+        the graph and exports its MEF.
+
+    Raises:
+        ArtifactError: If a helper spans more devices than the export.
+    """
+    compiled: dict[str, CompiledCallable[..., Any]] = {}
+    for helper in builds:
+        if helper.n_devices > len(devices):
+            raise ArtifactError(
+                f"overlap helper {helper.name} spans {helper.n_devices}"
+                f" devices; the export has {len(devices)}"
             )
-        return cls(files)
+        span = list(devices[: helper.n_devices])
+        graph = helper.build([DeviceRef.from_device(d) for d in span])
+        in_layouts, in_tree = tree.flatten(
+            (tuple(as_layout(value.type) for value in graph.inputs), {}),
+            leaf=TensorLayout,
+        )
+        out_layouts, out_tree = tree.flatten(
+            tree.map(as_layout, graph.output_tree), leaf=TensorLayout
+        )
+        compiled[helper.name] = CompiledCallable.from_compiled(
+            InferenceSession(devices=span).compile(graph),
+            None,
+            in_layouts,
+            in_tree,
+            out_layouts,
+            out_tree,
+        )
+    return compiled

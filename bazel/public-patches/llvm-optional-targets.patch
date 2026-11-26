@@ -1,0 +1,105 @@
+Adds optional LLVM targets to the Bazel overlay.
+
+An optional target's libraries (<T>Info, <T>UtilsAndDesc, <T>CodeGen, ...)
+are declared, but the target stays out of the AllTargets* aggregates, the
+LLVM shared library's roots, Targets.def and the LLVM_HAS_<T>_TARGET defines,
+so only targets that depend on its libraries explicitly link them. The
+per-target declaration loop reads llvm_all_target_lib_list; every other
+reader keeps llvm_target_lib_list, which now lists builtin targets only. For
+SPIRV, SPIRVAPI.cpp is left out because it needs the initializer
+declarations that only Targets.def provides; its SPIRVTranslate* wrappers
+have no other caller.
+
+On an LLVM bump: refresh the hunks if they stop applying; if upstream adds
+another per-target declaration loop, point it at llvm_all_target_lib_list
+(other readers stay builtin-only); if SPIRVAPI.cpp gains callers, revisit the
+exclusion. Drop this patch once upstream supports optional targets, or once
+no target is optional.
+
+diff --git a/utils/bazel/configure.bzl b/utils/bazel/configure.bzl
+index f3bd939..1204efa 100644
+--- a/utils/bazel/configure.bzl
++++ b/utils/bazel/configure.bzl
+@@ -190,11 +190,15 @@ def _llvm_configure_impl(repository_ctx):
+         executable = False,
+     )
+ 
+-    # Create a starlark file with the requested LLVM targets.
++    # Create a starlark file with the requested LLVM targets. Optional targets
++    # get their libraries but no place in the default aggregates, the LLVM
++    # shared library or the .def files; only explicit dependents link them.
+     llvm_targets = repository_ctx.attr.targets
++    llvm_optional_targets = repository_ctx.attr.optional_targets
+     repository_ctx.file(
+         "llvm/targets.bzl",
+-        content = "llvm_targets = " + str(llvm_targets),
++        content = "llvm_targets = " + str(llvm_targets) + "\n" +
++                  "llvm_optional_targets = " + str(llvm_optional_targets) + "\n",
+         executable = False,
+     )
+ 
+@@ -214,5 +218,6 @@ llvm_configure = repository_rule(
+     implementation = _llvm_configure_impl,
+     attrs = {
+         "targets": attr.string_list(default = DEFAULT_TARGETS),
++        "optional_targets": attr.string_list(default = []),
+     },
+ )
+diff --git a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+index 78b3c1a..5ad5ee4 100644
+--- a/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
++++ b/utils/bazel/llvm-project-overlay/llvm/BUILD.bazel
+@@ -18,7 +18,7 @@ load(":driver.bzl", "generate_driver_selects", "generate_driver_tools_def", "llv
+ load(":dylib.bzl", "llvm_dylib_deps")
+ load(":enum_targets_gen.bzl", "enum_targets_gen")
+ load(":instrumentor.bzl", "INSTRUMENTOR_RUNTIME_HELPER")
+-load(":targets.bzl", "llvm_targets")
++load(":targets.bzl", "llvm_optional_targets", "llvm_targets")
+ 
+ package(
+     default_visibility = ["//visibility:public"],
+@@ -2733,7 +2733,7 @@ cc_library(
+     ],
+ )
+ 
+-llvm_target_lib_list = [lib for lib in [
++llvm_all_target_lib_list = [lib for lib in [
+     {
+         "name": "AArch64",
+         "short_name": "AArch64",
+@@ -4106,7 +4106,12 @@ llvm_target_lib_list = [lib for lib in [
+             ),
+         ],
+     },
+-] if lib["name"] in llvm_targets]
++] if lib["name"] in llvm_targets + llvm_optional_targets]
++
++# Builtin targets only: the aggregates and the LLVM shared library read this
++# list, so optional targets get their libraries but only explicit dependents
++# link them.
++llvm_target_lib_list = [t for t in llvm_all_target_lib_list if t["name"] in llvm_targets]
+ 
+ cc_library(
+     name = "x86_target_layering_problem_hdrs",
+@@ -4503,6 +4508,12 @@ gentbl_cc_library(
+                 "lib/Target/" + target["name"] + "/*.cpp",
+                 "lib/Target/" + target["name"] + "/*.h",
+             ],
++            # SPIRVAPI.cpp calls the LLVMInitializeSPIRV* functions that only
++            # TargetSelect.h declares, through Targets.def, which lists builtin
++            # targets only. Its SPIRVTranslate* wrappers have no other caller.
++            exclude = ["lib/Target/SPIRV/SPIRVAPI.cpp"] if (
++                target["name"] == "SPIRV" and target["name"] in llvm_optional_targets
++            ) else [],
+             allow_empty = True,
+         ),
+         hdrs = ["lib/Target/" + target["name"] + "/" + target["short_name"] + ".h"],
+@@ -4656,7 +4667,7 @@ gentbl_cc_library(
+             ":" + target["name"] + "UtilsAndDesc",
+         ],
+     )],
+-] for target in llvm_target_lib_list]
++] for target in llvm_all_target_lib_list]
+ 
+ cc_library(
+     name = "AllTargetsCodeGens",

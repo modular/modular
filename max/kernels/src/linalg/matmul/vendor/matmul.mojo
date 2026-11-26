@@ -13,7 +13,7 @@
 
 """Vendor-backed matrix multiplication dispatch for TileTensor operands."""
 
-from std.sys import simd_width_of, size_of
+from std.sys import get_defined_bool, simd_width_of, size_of
 
 from max.algorithm import elementwise
 from max.gpu.host import DeviceContext, get_gpu_target
@@ -26,6 +26,18 @@ from ...utils import (
     ElementwiseEpilogueFn,
 )
 from .blas import matmul as vendor_matmul
+
+comptime _VENDOR_BLAS_ZERO_OUTPUT = get_defined_bool[
+    "VENDOR_BLAS_ZERO_OUTPUT", False
+]()
+"""Whether to zero the vendor matmul's output before the epilogue reads it.
+
+The initcheck lane sets this: compute-sanitizer does not instrument cuBLAS's
+Blackwell GEMM kernels, so their writes leave no shadow and the epilogue
+reports every output byte as uninitialized. Zeroing the output starts the
+shadow initialized, so the lane still gates on the reads MAX performs. Other
+builds skip it, since it costs the output in traffic. Precedent:
+`VENDOR_BLAS_ZERO_WORKSPACE` in `linalg/matmul/vendor/blas.mojo`."""
 
 
 def _epilogue_simd_size[c_type: DType]() -> Int:
@@ -119,6 +131,8 @@ def matmul[
     comptime simd_size = _epilogue_simd_size[c_type]()
 
     var scratch = ctx.enqueue_create_buffer[c_type](c.num_elements())
+    comptime if _VENDOR_BLAS_ZERO_OUTPUT:
+        ctx.enqueue_memset(scratch, Scalar[c_type](0))
     var c_tt = TileTensor(scratch, row_major(c.layout.shape_coord()))
 
     def epilogue_wrapper[

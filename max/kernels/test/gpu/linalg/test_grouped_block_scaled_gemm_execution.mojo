@@ -449,9 +449,6 @@ def test_grouped_kernel_single_group[
         print(t"  FAILED (max_diff= {max_diff} , avg_diff= {avg_diff} )")
         raise Error("Grouped kernel output does not match cuBLAS")
 
-    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = Pointer(to=a_ptrs_host).as_unsafe_any_origin()[]
-
 
 def test_grouped_kernel_multi_group_same_ptr[
     MType: CoordLike,
@@ -741,9 +738,6 @@ def test_grouped_kernel_multi_group_same_ptr[
         raise Error(
             "Grouped kernel (multi-group same ptr) does not match cuBLAS"
         )
-
-    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = Pointer(to=avg_diff).as_unsafe_any_origin()[]
 
 
 def test_grouped_kernel_two_groups_different_ptrs[
@@ -1114,9 +1108,6 @@ def test_grouped_kernel_two_groups_different_ptrs[
     else:
         print("  FAILED (group outputs do not match cuBLAS)")
         raise Error("Multi-group different pointers test failed")
-
-    # FIXME(MSTDL-2742): HostBuffer is origin incorrect.
-    _ = Pointer(to=passed).as_unsafe_any_origin()[]
 
 
 def main() raises:

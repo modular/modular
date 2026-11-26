@@ -20,6 +20,7 @@ package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "create_venv.py",
+    "libLLVM.map",
     "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])
@@ -359,6 +360,7 @@ toolchain(
 # global state. See ../docs/dynamic-linking.md.
 cc_shared_library(
     name = "LLVMSupport",
+    additional_linker_inputs = [":libLLVM.map"],
     exports_filter = [
         "@llvm-project//llvm:__subpackages__",
         "@llvm-project//third-party:__subpackages__",
@@ -368,7 +370,10 @@ cc_shared_library(
     ],
     user_link_flags = select({
         # Matches libLLVM.
-        "@platforms//os:linux": ["-Wl,-Bsymbolic-functions"],
+        "@platforms//os:linux": [
+            "-Wl,-Bsymbolic-functions",
+            "-Wl,--version-script,$(location :libLLVM.map)",
+        ],
         "//conditions:default": [],
     }),
     deps = [

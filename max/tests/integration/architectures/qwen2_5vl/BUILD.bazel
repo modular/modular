@@ -2,7 +2,6 @@
 
 load(
     "//bazel:api.bzl",
-    "modular_py_library",
     "modular_py_test",
     "requirement",
 )
@@ -112,26 +111,6 @@ modular_py_test(
         requirement("torch"),
         requirement("numpy"),
         requirement("transformers"),
-    ],
-)
-
-modular_py_library(
-    name = "generate_utils",
-    testonly = True,
-    srcs = ["generate_utils.py"],
-    imports = [".."],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    deps = [
-        "//max/tests/integration/test_common:storage",
-        "//max/tests/integration/test_common:test_data",
-        "//max/tests/integration/test_common:torch_utils",
-        requirement("numpy"),
-        requirement("pillow"),
-        requirement("requests"),
-        requirement("torch"),
-        requirement("torchvision"),
-        requirement("transformers"),
-        requirement("qwen-vl-utils"),  # Used by qwen2.5-vl.
     ],
 )
 

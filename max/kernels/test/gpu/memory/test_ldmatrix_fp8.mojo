@@ -146,25 +146,15 @@ def check_ldmatrix_fp8[
     comptime BLOCK_DIM = 16
 
     # Create TileTensors for the naive kernel.
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function
-    # requires exact type matches).
+    # matmul_kernel_naive takes immutable a/b.
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
+    var a_tt = TileTensor(a_device, row_major(M, K)).as_imm()
     var b_tt = TileTensor(
-        ImmPointer[Scalar[input_type], ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(N, K),
-    )  # N x K for transpose_b=True
+        b_device, row_major(N, K)
+    ).as_imm()  # N x K for transpose_b=True
 
     comptime kernel = matmul_kernel_naive[
         DType.float32,

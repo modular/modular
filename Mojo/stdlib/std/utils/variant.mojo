@@ -639,7 +639,6 @@ struct Variant[*Ts: AnyType](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem_param__[
         T: AnyType
@@ -790,10 +789,6 @@ struct Variant[*Ts: AnyType](
         if not self.isa[T]():
             abort("taking the wrong type!")
 
-        return self._storage^.unwrap[T]()
-
-    @inline(.always)
-    def _unsafe_unchecked_unwrap[T: Movable](deinit self) -> T:
         return self._storage^.unwrap[T]()
 
     @inline(.always)
@@ -959,7 +954,6 @@ struct Variant[*Ts: AnyType](
         Self._check[T]()
         return self._storage.isa[T]()
 
-    @__unsafe_nested_origins_read_only
     def unsafe_get[
         T: AnyType
     ](ref self) -> ref[Self._InteriorOrigin[origin_of(self)]] T:

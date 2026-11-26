@@ -23,6 +23,8 @@ permissions:
 
 jobs:
   check-pr-target:
+    # The Merged-status backfill reopens landed PRs as modularbot; skip them.
+    if: github.event.action != 'reopened' || github.actor != 'modularbot'
     name: Check PR target branch
 
     runs-on: ubuntu-latest

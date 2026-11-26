@@ -48,8 +48,6 @@ modular_py_test(
         "TESTDATA_DIRECTORY": "max/tests/tests/graph/testdata",
     },
     ignore_extra_deps = [
-        # Needed for loading gguf files, doesn't get pulled by default
-        requirement("gguf"),
     ],
     imports = ["."],
     mojo_deps = [
@@ -79,7 +77,6 @@ modular_py_test(
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
         "//max/python/max/nn/legacy",
-        requirement("gguf"),
         requirement("hypothesis"),
         requirement("numpy"),
         requirement("torch"),

@@ -24,8 +24,8 @@
 #include "MLRT/Driver/DeviceContext/LaunchTraceRegistry.h"
 #include "MLRT/lib/Driver/DeviceContext/AcceleratorArch.h"
 #include "MLRT/lib/Driver/DeviceContext/HostMemoryInfo.h"
-#include "MLRT/lib/Driver/DeviceContext/MemoryManager.h"
 #include "MLRT/lib/Driver/DeviceContext/PinnedCompletionFlag.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "Support/ErrorOr.h"
 #include "Support/HashUtils.h"
 #include "Support/max_license/Profiling/ProfileRange.h"
@@ -1976,15 +1976,13 @@ HIPDeviceContext::memmapFileImpl(const std::filesystem::path &filename) const {
 
 ErrorOr<DeviceFunctionRef>
 HIPDeviceContext::loadFunction(StringRef moduleName, StringRef functionName,
-                               StringRef code, int32_t maxDynamicSharedBytes,
-                               StringRef debugLevel,
+                               StringRef code, StringRef debugLevel,
                                int32_t optimizationLevel) {
   M_PROFILE_SPAN("HIPDeviceContext::loadFunction", M_PROFILE_COLOR_PURPLE);
   Device::FunctionCacheKey key{
       /*name=*/Device::FunctionCacheKey::moduleCacheName(moduleName, code),
       /*functionName=*/functionName.str(),
       /*debugLevel=*/debugLevel.str(),
-      /*maxDynamicSharedBytes=*/maxDynamicSharedBytes,
       /*optimizationLevel=*/optimizationLevel};
   DeviceFunctionCacheEntryRef entry = device().findInFunctionCache(key);
   if (entry.getPointer() != nullptr) {

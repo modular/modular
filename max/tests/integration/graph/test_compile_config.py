@@ -90,7 +90,7 @@ def test_compile_config_use_logger(
     # We need to capture the output and check that it matches.
     captured = capfd.readouterr()
     assert (
-        "ERROR" in captured.out
+        "error" in captured.out
         and "::: I'm a custom Mojo function!\n" in captured.out
     )
 

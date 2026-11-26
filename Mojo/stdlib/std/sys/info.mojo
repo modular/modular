@@ -744,9 +744,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             True if the target is an accelerator and False otherwise.
         """
         comptime match Self.stdlib_plugin.device_kind:
-            case .cpu:
+            case .cpu():
                 return False
-            case .gpu:
+            case .gpu():
                 return True
             case .other(_, accelerates):
                 return accelerates
@@ -763,9 +763,9 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
             True if the target is a GPU and False otherwise.
         """
         comptime match Self.stdlib_plugin.device_kind:
-            case .cpu:
+            case .cpu():
                 return False
-            case .gpu:
+            case .gpu():
                 return True
             case .other(_, _):
                 return False
@@ -869,14 +869,6 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
         return self._is_nvidia_gpu_any[_SM_100X_ARCHS]()
 
     @inline(.nodebug)
-    def _is_sm_101x(self) -> Bool:
-        return self._is_nvidia_gpu_any[_SM_101X_ARCHS]()
-
-    @inline(.nodebug)
-    def _is_sm_103x(self) -> Bool:
-        return self._is_nvidia_gpu_any[_SM_103X_ARCHS]()
-
-    @inline(.nodebug)
     def _is_sm_110x(self) -> Bool:
         return self._is_nvidia_gpu_any[_SM_110X_ARCHS]()
 
@@ -902,12 +894,7 @@ struct CompilationTarget[_mlir_value: _TargetType = _current_target(), //](
 
     @inline(.nodebug)
     def _is_sm_100x_or_newer(self) -> Bool:
-        return (
-            self._has_blackwell_tcgen05()
-            or self._is_sm_100x()
-            or self._is_sm_103x()
-            or self._is_sm_110x_or_newer()
-        )
+        return self._has_blackwell_tcgen05() or self._is_sm_110x_or_newer()
 
     @inline(.nodebug)
     def _is_sm_110x_or_newer(self) -> Bool:
@@ -1022,24 +1009,6 @@ def _accelerator_arch() -> StaticString:
     )
 
 
-@inline(.nodebug)
-@deprecated("use CompilationTarget.is_triple instead")
-def is_triple[
-    name: StringLiteral, target: CompilationTarget = CompilationTarget.current()
-]() -> Bool:
-    """Returns True if the target triple of the compiler matches the input and
-    False otherwise.
-
-    Parameters:
-      name: The name of the triple value.
-      target: The triple value to be checked against.
-
-    Returns:
-        True if the triple matches and False otherwise.
-    """
-    return target.is_triple[name]()
-
-
 comptime _SM_80X_ARCHS: List[StaticString] = ["sm_80", "sm_86", "sm_89"]
 comptime _SM_90X_ARCHS: List[StaticString] = ["sm_90", "sm_90a"]
 comptime _SM_100X_ARCHS: List[StaticString] = ["sm_100", "sm_100a"]
@@ -1061,11 +1030,6 @@ def _is_sm_100x() -> Bool:
 
 
 @inline(.nodebug)
-def _is_sm_110x() -> Bool:
-    return CompilationTarget.current()._is_sm_110x()
-
-
-@inline(.nodebug)
 def _is_sm_9x_or_newer() -> Bool:
     return CompilationTarget.current()._is_sm_9x_or_newer()
 
@@ -1073,11 +1037,6 @@ def _is_sm_9x_or_newer() -> Bool:
 @inline(.nodebug)
 def _is_sm_100x_or_newer() -> Bool:
     return CompilationTarget.current()._is_sm_100x_or_newer()
-
-
-@inline(.nodebug)
-def _is_sm_120x_or_newer() -> Bool:
-    return CompilationTarget.current()._is_sm_120x_or_newer()
 
 
 @inline(.nodebug)
@@ -1377,38 +1336,6 @@ def _is_amd_cdna() -> Bool:
         or _is_amd_mi355x()
         or _is_amd_mi455x()
     )
-
-
-@deprecated("Use `Endian.native() == .little` instead.")
-@inline(.nodebug)
-def is_little_endian[
-    target: CompilationTarget = CompilationTarget.current()
-]() -> Bool:
-    """Returns True if the target's endianness is little and False otherwise.
-
-    Parameters:
-        target: The target architecture.
-
-    Returns:
-        True if the target is little endian and False otherwise.
-    """
-    return Endian.native[target]() == .little
-
-
-@deprecated("Use `Endian.native() == .big` instead.")
-@inline(.nodebug)
-def is_big_endian[
-    target: CompilationTarget = CompilationTarget.current()
-]() -> Bool:
-    """Returns True if the target's endianness is big and False otherwise.
-
-    Parameters:
-        target: The target architecture.
-
-    Returns:
-        True if the target is big endian and False otherwise.
-    """
-    return Endian.native[target]() == .big
 
 
 struct Endian(EnumLike, Equatable, TrivialRegisterPassable, Writable):

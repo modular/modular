@@ -32,7 +32,6 @@ from max.gpu.host import DeviceBuffer, DeviceContext
 from max.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
 # ===------------------------------------------------------------------===#
@@ -40,13 +39,19 @@ from std.utils.numerics import get_accum_type
 # ===------------------------------------------------------------------===#
 
 
-def block_swizzle(
-    block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)
+def block_swizzle[
+    dtype: DType, //
+](
+    block_idx: Tuple[Scalar[dtype], Scalar[dtype]],
+    grid_dim: type_of(block_idx),
 ) -> type_of(block_idx):
     """Remaps a linear block index into a swizzled two-dimensional block coordinate.
 
     Applies CUTLASS-style block swizzling along the N dimension to improve L2
     cache locality for tall-and-narrow matmul grids.
+
+    Parameters:
+        dtype: The integer type of the block coordinates.
 
     Args:
         block_idx: The original two-dimensional block coordinate.
@@ -60,10 +65,11 @@ def block_swizzle(
 
 @inline(.always)
 def _block_swizzle_by_scale[
-    scale0: Int
-](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
-    block_idx
-):
+    dtype: DType, //, scale0: Int
+](
+    block_idx: Tuple[Scalar[dtype], Scalar[dtype]],
+    grid_dim: type_of(block_idx),
+) -> type_of(block_idx):
     """
     Block swizzling based on https://github.com/NVIDIA/cutlass/blob/main/include/cutlass/gemm/threadblock/threadblock_swizzle.h
 
@@ -77,33 +83,29 @@ def _block_swizzle_by_scale[
 
     This helps when N is very large e.g. 1024 x 32768 x 3072 in Replit 3B.
     """
-    var scale = Scalar[block_idx.element_type](scale0)
+    var scale = Scalar[dtype](scale0)
     # basically num_partitions = 2^3 = 8
     var num_partitions = 1 << Int(scale)
     # while griddim_x not divisible by num_partitions, reduce scale till scale is 0
-    while (
-        grid_dim.data[0] & Scalar[block_idx.element_type](num_partitions - 1)
-    ) and scale > 0:
+    while (grid_dim[0] & Scalar[dtype](num_partitions - 1)) and scale > 0:
         scale -= 1
         num_partitions = 1 << Int(scale)
 
     # bx is the x coordinate of the block
     # by is the y coordinate of the block
-    # bx = block_idx.data[0] >> scale
-    var bx = block_idx.data[0] >> scale
-    var by = (block_idx.data[1] << scale) + (
-        (block_idx.data[0])
-        & Scalar[block_idx.element_type]((1 << Int(scale)) - 1)
+    var bx = block_idx[0] >> scale
+    var by = (block_idx[1] << scale) + (
+        block_idx[0] & Scalar[dtype]((1 << Int(scale)) - 1)
     )
 
     # for the number of rows of overflow, we want to move to next stripe
     # So if one overflow occurs and a stripe is six blocks wide, we slide bx six places to the right.
     # where a stripe is determined by remaining blocks of x
     # bx is now 5 + 1 * rows in a stripe or width of stripe
-    bx = bx + by // grid_dim.data[1] * (grid_dim.data[0] >> scale)
-    by = by % grid_dim.data[1]
+    bx = bx + by // grid_dim[1] * (grid_dim[0] >> scale)
+    by = by % grid_dim[1]
 
-    return {Int(bx), Int(by)}
+    return (bx, by)
 
 
 # ===------------------------------------------------------------------===#
@@ -461,15 +463,18 @@ def select_config[
     var min_num_waves = Int.MAX
     var min_work_per_SM = Int.MAX
 
-    comptime _128x128_4 = Index(128, 128, _bk_base[a_type](), 4)
-    comptime _256x64_4 = Index(64, 256, _bk_base[a_type](), 4)
+    comptime _128x128_4 = (128, 128, _bk_base[a_type](), 4)
+    comptime _256x64_4 = (64, 256, _bk_base[a_type](), 4)
     # Only enable this when the target is exactly A100. We use A100 properties
     # for target="gpu" (default) on A10, L4. This avoids breaking tests there.
     # The tile is skipped in the loop for exceeding shared memory capacity when
     # sm_80 is present in target.
-    comptime _256x128_3 = Index(
-        128, 256, 2 * _bk_base[a_type](), 3
-    ) if gpu_info == A100 else Index(1024, 1024, 1024, 1024)
+    comptime _256x128_3 = (
+        128,
+        256,
+        2 * _bk_base[a_type](),
+        3,
+    ) if gpu_info == A100 else (1024, 1024, 1024, 1024)
 
     comptime opt_list = [_128x128_4, _256x64_4, _256x128_3]
 

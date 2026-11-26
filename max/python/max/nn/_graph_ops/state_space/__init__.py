@@ -30,6 +30,7 @@ from .gated_delta import (
 )
 from .gated_group_rmsnorm import gated_group_rmsnorm
 from .kimi_delta import (
+    has_blackwell_tcgen05,
     kda_chunk,
     kda_chunk_conv,
     kda_chunk_is_registered,
@@ -68,6 +69,7 @@ __all__ = [
     "gated_delta_recurrence_verify_ring_fwd",
     "gated_delta_state_fold",
     "gated_group_rmsnorm",
+    "has_blackwell_tcgen05",
     "kda_chunk",
     "kda_chunk_conv",
     "kda_chunk_is_registered",

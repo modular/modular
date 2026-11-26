@@ -10,11 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Shared Kimi K2.5 fuzz fixtures.
+"""Kimi K2.5 fuzz fixtures.
 
-Schemas and payload shapes that are referenced from more than one
-scenario (so the production-observed input lives in one place; if the
-captured shape ever changes, both scenarios update together).
+Schemas and payload shapes captured from production, kept apart from
+the scenarios that use them so the observed input lives in one place.
 """
 
 from __future__ import annotations

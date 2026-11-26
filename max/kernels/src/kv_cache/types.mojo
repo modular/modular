@@ -2136,10 +2136,6 @@ struct ContinuousBatchingKVCache[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "ContinuousBatchingKVCache"
-
     @inline(.always)
     def _get_idx_tuple(
         self, block_idx: Int, head_idx: Int, tok_idx: Int, head_dim_idx: Int
@@ -2928,10 +2924,6 @@ struct PagedKVCache[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "PagedKVCache"
 
     def __init__(
         out self,

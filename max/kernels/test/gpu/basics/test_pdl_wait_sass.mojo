@@ -52,9 +52,9 @@ comptime ROW = 256
 
 
 def consumer(
-    table: ImmPointer[Int32, ImmutAnyOrigin],
-    payload: ImmPointer[Float32, ImmutAnyOrigin],
-    output: MutPointer[Float32, MutUntrackedOrigin],
+    table: ImmPointer[Int32, _],
+    payload: ImmPointer[Float32, _],
+    output: MutPointer[Float32, _],
 ):
     """Reads a table and the row it names through immutable pointers."""
     wait_on_dependent_grids()
@@ -65,8 +65,8 @@ def consumer(
 
 
 def canary(
-    table: ImmPointer[Int32, ImmutAnyOrigin],
-    output: MutPointer[Int32, MutUntrackedOrigin],
+    table: ImmPointer[Int32, _],
+    output: MutPointer[Int32, _],
 ):
     """Reads the table through an immutable pointer before the wait."""
     # The store keeps the load above the call: LLVM may sink an unused

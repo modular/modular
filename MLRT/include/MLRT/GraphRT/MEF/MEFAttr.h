@@ -22,7 +22,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace M {
+namespace M::MLRT {
 
 //===----------------------------------------------------------------------===//
 // MEFDecoder
@@ -74,8 +74,10 @@ struct MEFDecoder<ArrayRef<EltType>> {
 };
 
 template <>
-struct MEFDecoder<MEF::TypeKind> {
-  static ErrorOr<MEF::TypeKind> decode(MEF::TypeKind value) { return value; }
+struct MEFDecoder<MLRT::MEF::TypeKind> {
+  static ErrorOr<MLRT::MEF::TypeKind> decode(MLRT::MEF::TypeKind value) {
+    return value;
+  }
 };
 
 #ifndef __clang__
@@ -122,9 +124,9 @@ public:
 
   /// Given a pointer to the start of attribute value, return the attribute
   /// kind.
-  static MEF::AttributeKind getAttrKind(const uint8_t *value) {
+  static MLRT::MEF::AttributeKind getAttrKind(const uint8_t *value) {
     // The attribute kind is encoded in the byte before the attribute value.
-    return static_cast<MEF::AttributeKind>(*(value - 1));
+    return static_cast<MLRT::MEF::AttributeKind>(*(value - 1));
   }
 
   /// Check that the dynamic attribute kind encoded into the MEF file matches
@@ -157,8 +159,8 @@ public:
   explicit MEFAttr(const uint8_t *value, ArrayRef<uint8_t> attrSection)
       : BaseClass(*reinterpret_cast<const T *>(value), attrSection) {
     // Check that the C++ type matches the encoded type for the attribute.
-    static_assert(MEF::AttrKindForCXXType<T>::kind !=
-                      MEF::AttributeKind::kInvalid &&
+    static_assert(MLRT::MEF::AttrKindForCXXType<T>::kind !=
+                      MLRT::MEF::AttributeKind::kInvalid &&
                   "C++ type passed to MEFAttr isn't supported");
     assert(value >= attrSection.begin() &&
            "MEF datum not within bounds of the MEF Attribute Section");
@@ -167,7 +169,8 @@ public:
 
   static bool matchesAttrKind(const uint8_t *pointer,
                               const uint8_t *attrSectionEnd) {
-    return BaseClass::getAttrKind(pointer) == MEF::AttrKindForCXXType<T>::kind;
+    return BaseClass::getAttrKind(pointer) ==
+           MLRT::MEF::AttrKindForCXXType<T>::kind;
   }
 };
 
@@ -193,7 +196,7 @@ public:
 
   static bool matchesAttrKind(const uint8_t *pointer,
                               const uint8_t *attrSectionEnd) {
-    return BaseClass::getAttrKind(pointer) == MEF::AttributeKind::kString;
+    return BaseClass::getAttrKind(pointer) == MLRT::MEF::AttributeKind::kString;
   }
 };
 
@@ -217,8 +220,9 @@ public:
   static bool matchesAttrKind(const uint8_t *pointer,
                               const uint8_t *attrSectionEnd) {
     // If the element type matches, this matches.
-    MEF::AttributeKind kind = BaseClass::getAttrKind(pointer);
-    return kind == MEF::getArrayOf(MEF::AttrKindForCXXType<T>::kind);
+    MLRT::MEF::AttributeKind kind = BaseClass::getAttrKind(pointer);
+    return kind ==
+           MLRT::MEF::getArrayOf(MLRT::MEF::AttrKindForCXXType<T>::kind);
   }
 
   size_t size() const { return this->get().size(); }
@@ -250,7 +254,8 @@ public:
 
   static bool matchesAttrKind(const uint8_t *pointer,
                               const uint8_t *attrSectionEnd) {
-    return BaseClass::getAttrKind(pointer) == MEF::AttributeKind::kSymbolRef;
+    return BaseClass::getAttrKind(pointer) ==
+           MLRT::MEF::AttributeKind::kSymbolRef;
   }
 };
 
@@ -282,7 +287,7 @@ public:
   static bool matchesAttrKind(const uint8_t *pointer,
                               const uint8_t *attrSectionEnd) {
     auto dynType = MEFType(pointer, attrSectionEnd);
-    return BaseClass::getAttrKind(pointer) == MEF::AttributeKind::kType &&
+    return BaseClass::getAttrKind(pointer) == MLRT::MEF::AttributeKind::kType &&
            MEFTypeClass::classof(&dynType);
   }
 };
@@ -359,7 +364,7 @@ public:
   }
 
   /// Return the AttributeKind for this attribute.
-  MEF::AttributeKind getAttrKind() const {
+  MLRT::MEF::AttributeKind getAttrKind() const {
     return MEFAttrCommon::getAttrKind(get());
   }
 
@@ -375,13 +380,14 @@ public:
   template <typename ValueType>
   ErrorOrSuccess decode(ValueType *result) const {
     using EncodedType = typename llvm::function_traits<
-        decltype(&M::MEFDecoder<ValueType>::decode)>::template arg_t<0>;
+        decltype(&M::MLRT::MEFDecoder<ValueType>::decode)>::template arg_t<0>;
     using InnerType =
         typename Detail::MEFAttrDynCastRet<EncodedType>::InnerType;
 
     auto rawAttrValue = dyn_cast<InnerType>(this);
     if (!rawAttrValue)
-      return Error("type mismatch, have " + MEF::getAsString(getAttrKind()) +
+      return Error("type mismatch, have " +
+                   MLRT::MEF::getAsString(getAttrKind()) +
                    " but caller expected " + llvm::getTypeName<ValueType>());
 
     // If this is a C type like int8_t then look through the attr, otherwise
@@ -440,7 +446,7 @@ public:
 
   static bool matchesAttrKind(const uint8_t *pointer,
                               const uint8_t *attrSectionEnd) {
-    return BaseClass::getAttrKind(pointer) == MEF::AttributeKind::kList;
+    return BaseClass::getAttrKind(pointer) == MLRT::MEF::AttributeKind::kList;
   }
 
   /// Provides an iterator on the List. Because we don't want to allocate
@@ -529,7 +535,8 @@ public:
 
   static bool matchesAttrKind(const uint8_t *pointer,
                               const uint8_t *attrSectionEnd) {
-    return BaseClass::getAttrKind(pointer) == MEF::AttributeKind::kDictionary;
+    return BaseClass::getAttrKind(pointer) ==
+           MLRT::MEF::AttributeKind::kDictionary;
   }
 
   /// Provides something for the Iterator to dereference. Conceptually, this is
@@ -648,6 +655,6 @@ private:
 
 using MEFDictionaryAttr = MEFAttr<Detail::Dictionary>;
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEF_MEFATTR_H

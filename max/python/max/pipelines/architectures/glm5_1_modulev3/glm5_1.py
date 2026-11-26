@@ -23,7 +23,6 @@ from max.nn import Module
 from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.mesh_axis import DP
 from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import (
@@ -40,7 +39,9 @@ from ..deepseekV3_2_modulev3.deepseekV3_2 import (
 from .model_config import Glm5_1Config
 
 
-class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
+class Glm5_1Decoder(
+    Module[[DecoderInputs], DecoderOutputs | tuple[Tensor, ...]]
+):
     """GLM-5.x's sparse-MLA decoder, shared with DeepSeek-V3.2.
 
     It runs tensor-parallel attention over a ``tp`` mesh, one attention
@@ -52,29 +53,32 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
     graph_name: ClassVar[str] = "DeepseekV3_2"
     supports_data_parallel: ClassVar[bool] = True
     supports_multi_device_replicas: ClassVar[bool] = True
+    supports_pipeline_stages: ClassVar[bool] = True
 
     def __init__(self, config: Glm5_1Config) -> None:
         super().__init__()
         if config.mesh is None:
             raise ValueError("GLM-5.x needs a mesh: apply the runtime first")
-        self.ep_batch_manager = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
+        self.ep_config = config.ep_config
         # Quantized checkpoints keep norms, biases and embeddings in bf16.
         dtype = (
             DType.bfloat16 if config.quant_config is not None else config.dtype
         )
         with default_dtype(dtype):
             self.language_model = DeepseekV3_2TextModel(
-                config, self.ep_batch_manager
+                config, config.ep_config
             )
         self.config = config
         self.kv_params = config.kv_params
 
-    def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
-        """Runs the decoder over the batch."""
+    def forward(
+        self, inputs: DecoderInputs
+    ) -> DecoderOutputs | tuple[Tensor, ...]:
+        """Runs the decoder over the batch.
+
+        A pipeline stage before the last returns each device's hidden
+        states, which the next stage takes as its stage boundary.
+        """
         mesh = self.config.mesh
         assert mesh is not None
         assert inputs.batch_context_lengths is not None
@@ -113,12 +117,6 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
             leaves = tree.leaves(kv_tree[name], leaf=KVCacheInputsPerDevice)
             return PagedCacheValues.from_upstream(leaves, kv_mapping)
 
-        comm_buffers: EPCommBuffers | None = None
-        if self.ep_batch_manager is not None:
-            assert inputs.ep is not None
-            comm_buffers = self.ep_batch_manager.comm_buffers(
-                [x._graph_value for x in tree.leaves(inputs.ep)]
-            )
         hisparse = hisparse_inputs_from_values(
             self.config,
             [x._graph_value for x in tree.leaves(inputs.hisparse or ())],
@@ -132,7 +130,14 @@ class Glm5_1Decoder(Module[[DecoderInputs], DecoderOutputs]):
             batch_context_length,
             data_parallel_splits,
             input_row_offsets_i64,
-            comm_buffers,
+            inputs.ep,
             hisparse,
+            boundary=(
+                None
+                if inputs.stage_boundary is None
+                else list(inputs.stage_boundary)
+            ),
         )
+        if not self.language_model.last:
+            return outputs
         return self.language_model.module_outputs(outputs)

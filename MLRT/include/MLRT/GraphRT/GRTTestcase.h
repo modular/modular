@@ -18,7 +18,7 @@
 #include "Support/LLVMForwardDecls.h"
 #include "llvm/ADT/StringRef.h"
 
-namespace M {
+namespace M::MLRT {
 class MEFInvokable;
 class PrimitiveDescriptor;
 
@@ -45,6 +45,6 @@ private:
   StringRef name;
   MEFInvokable *body;
 };
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_GRTTESTCASE_H

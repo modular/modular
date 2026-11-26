@@ -29,11 +29,7 @@ from std.sys import CompilationTarget, is_gpu
 # ===-----------------------------------------------------------------------===#
 
 # Enums used in time.h 's glibc
-comptime _CLOCK_REALTIME = 0
 comptime _CLOCK_MONOTONIC = 1 if CompilationTarget.is_linux() else 6
-comptime _CLOCK_PROCESS_CPUTIME_ID = 2 if CompilationTarget.is_linux() else 12
-comptime _CLOCK_THREAD_CPUTIME_ID = 3 if CompilationTarget.is_linux() else 16
-comptime _CLOCK_MONOTONIC_RAW = 4
 
 # Constants
 comptime _NSEC_PER_USEC = 1000

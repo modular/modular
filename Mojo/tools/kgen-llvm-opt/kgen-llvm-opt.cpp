@@ -234,7 +234,6 @@ static std::string fixTargetTriple(StringRef triple) {
 }
 
 int main(int argc, char **argv) {
-  static codegen::RegisterCodeGenFlags cfg;
   CLOptions clOptions(argc, argv);
   InitLLVM llvm(argc, argv);
 
@@ -282,10 +281,13 @@ int main(int argc, char **argv) {
   // Register the Target and CPU printer for --version.
   cl::AddExtraVersionPrinter(sys::printDefaultTargetAndDetectedCPU);
 
-  cl::ParseCommandLineOptions(
-      argc, argv, "llvm .bc -> .bc modular optimizer and analysis printer\n");
-
   LLVMContext context;
+  if (!cl::parseCommandLineOptions(
+          context.getLibraryOptions(), codegen::getToolOptions(),
+          ArrayRef(argv, argc),
+          "llvm .bc -> .bc modular optimizer and analysis printer\n", &errs()))
+    return 1;
+
   SMDiagnostic err;
   std::unique_ptr<Module> module;
   auto setDataLayout = [&](StringRef irTriple,
@@ -400,8 +402,8 @@ int main(int argc, char **argv) {
   if (moduleTriple.getArch()) {
     const TargetOptions options =
         codegen::getTargetOptions(context.getLibraryOptions(), moduleTriple);
-    cpuStr = codegen::getCPUStr();
-    featuresStr = codegen::getFeaturesStr();
+    cpuStr = codegen::getCPUStr(context.getLibraryOptions());
+    featuresStr = codegen::getFeaturesStr(context.getLibraryOptions());
     Expected<std::unique_ptr<TargetMachine>> expectedTM =
         codegen::createTargetMachineForTriple(context.getLibraryOptions(),
                                               moduleTriple,

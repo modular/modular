@@ -321,6 +321,31 @@ def test_a_modulev3_graph_runs_as_its_forward(
     assert set(run.weights) == {"weight"}
 
 
+@pytest.mark.parametrize(
+    ("kwargs", "expected"), [({}, False), ({"tile_based_fusion": True}, True)]
+)
+def test_a_compile_passes_tile_based_fusion_through(
+    session: InferenceSession,
+    monkeypatch: pytest.MonkeyPatch,
+    kwargs: dict[str, bool],
+    expected: bool,
+) -> None:
+    seen: list[bool] = []
+    compile_ = session.compile_reusing_mefs
+
+    def spy(model: Any, **spied: Any) -> Any:
+        seen.append(spied["tile_based_fusion"])
+        # The CPU has no tile-based lowering, so compile without it.
+        return compile_(model, custom_extensions=spied["custom_extensions"])
+
+    monkeypatch.setattr(session, "compile_reusing_mefs", spy)
+    graphs = compile_and_init_graphs(
+        session, {GraphRole.DECODER: _v3_spec("scale_tile", 3.0)}, **kwargs
+    )
+    assert seen == [expected]
+    assert _run(graphs[GraphRole.DECODER].engine_model) == [3.0, 3.0]
+
+
 def test_a_modulev3_graph_takes_no_group(session: InferenceSession) -> None:
     with pytest.raises(ValueError, match="no group"):
         compile_and_init_graphs(

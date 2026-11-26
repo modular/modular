@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+# Touched to bust a stale CI cache entry; safe to remove.
+
 """Weight-loading utilities for MAX graphs.
 
 Defines the weight container interfaces, adapters for common weight formats,
@@ -20,8 +22,8 @@ construction.
 
 from .format import WeightsFormat, weights_format
 from .load import load_weights
+from .load_gguf import GGUFWeights
 from .load_safetensors import SafetensorWeights
-from .loader_wrappers import GGUFWeights
 from .weights import WeightData, Weights, WeightsAdapter
 
 __all__ = [

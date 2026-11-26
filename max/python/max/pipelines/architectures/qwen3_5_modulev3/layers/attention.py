@@ -48,7 +48,13 @@ from max.nn.quant_config import QuantConfig
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, Partial
 
-from .linear import Projection, ProjectionTensors, matmul, stacked_matmul
+from .linear import (
+    Projection,
+    ProjectionTensors,
+    matmul,
+    stacked_matmul,
+    weight_rows,
+)
 from .norm import RMSNorm, rms_norm_scaled
 
 __all__ = ["Qwen3_5Attention"]
@@ -115,8 +121,8 @@ def _attention_core(
 ) -> Tensor:
     """Runs one device's heads and returns its ``o_proj`` partial sums."""
     total_seq_len = x.shape[0]
-    q_dim = int(qkv[0].weight.shape[0])
-    kv_dim = int(qkv[1].weight.shape[0])
+    q_dim = weight_rows(qkv[0].weight)
+    kv_dim = weight_rows(qkv[1].weight)
     n_heads = q_dim // (2 * head_dim)
     n_kv_heads = kv_dim // head_dim
     norm = functools.partial(rms_norm_scaled, eps=norm_eps)

@@ -123,8 +123,8 @@ mo.graph @real_kernel_fused_dynamic(%a: !mo.tensor<[batch, 2], f32>, %b: !mo.ten
 // CHECK:      struct OutputStoreFunctor{{[0-9_]*}}[[[SPEC:[a-zA-Z0-9_]+]]: {{.*}}StaticTensorSpec[DType.float32, _, ...]](OutputStoreFusion, TrivialRegisterPassable):
 // CHECK-NEXT:     @__allow_legacy_any_origin_fields
 // CHECK-NEXT:     var [[PTRF:[a-zA-Z0-9_]+]]: Pointer[Scalar[DType.float32], MutAnyOrigin]
-// CHECK-NEXT:     var [[SHF:[a-zA-Z0-9_]+]]: std.utils.IndexList[Self.[[SPEC]].rank]
-// CHECK-NEXT:     var [[STF:[a-zA-Z0-9_]+]]: std.utils.IndexList[Self.[[SPEC]].rank]
+// CHECK-NEXT:     var [[SHF:[a-zA-Z0-9_]+]]: std.utils.coord.DynamicCoord[DType.int, Self.[[SPEC]].rank]
+// CHECK-NEXT:     var [[STF:[a-zA-Z0-9_]+]]: std.utils.coord.DynamicCoord[DType.int, Self.[[SPEC]].rank]
 // CHECK:          @inline(.always)
 // CHECK-NEXT:     def __call__[dtype : DType, rank : Int, simd_width : Int, element_alignment : Int = 1](self, idx: layout.Coord, value: SIMD[dtype, simd_width]):
 // CHECK-NEXT:         var [[REBOUND:.*]] = rebind[SIMD[DType.float32, simd_width]](value)
@@ -146,26 +146,26 @@ mo.graph @real_kernel_fused_dynamic(%a: !mo.tensor<[batch, 2], f32>, %b: !mo.ten
 // CHECK:      struct OutputStoreFunctor{{[0-9_]*}}[[[SPEC0:[a-zA-Z0-9_]+]]: {{.*}}StaticTensorSpec[DType.float32, _, ...], [[SPEC1:[a-zA-Z0-9_]+]]: {{.*}}StaticTensorSpec[DType.float32, _, ...]](OutputStoreFusion, TrivialRegisterPassable):
 // CHECK-NEXT:     @__allow_legacy_any_origin_fields
 // CHECK-NEXT:     var {{.*}}: Pointer[Scalar[DType.float32], MutAnyOrigin]
-// CHECK-NEXT:     var {{.*}}: std.utils.IndexList[Self.[[SPEC0]].rank]
-// CHECK-NEXT:     var {{.*}}: std.utils.IndexList[Self.[[SPEC0]].rank]
+// CHECK-NEXT:     var {{.*}}: std.utils.coord.DynamicCoord[DType.int, Self.[[SPEC0]].rank]
+// CHECK-NEXT:     var {{.*}}: std.utils.coord.DynamicCoord[DType.int, Self.[[SPEC0]].rank]
 // CHECK-NEXT:     @__allow_legacy_any_origin_fields
 // CHECK-NEXT:     var {{.*}}: Pointer[Scalar[DType.float32], MutAnyOrigin]
-// CHECK-NEXT:     var {{.*}}: std.utils.IndexList[Self.[[SPEC1]].rank]
-// CHECK-NEXT:     var {{.*}}: std.utils.IndexList[Self.[[SPEC1]].rank]
+// CHECK-NEXT:     var {{.*}}: std.utils.coord.DynamicCoord[DType.int, Self.[[SPEC1]].rank]
+// CHECK-NEXT:     var {{.*}}: std.utils.coord.DynamicCoord[DType.int, Self.[[SPEC1]].rank]
 // CHECK:          def __call__[dtype : DType, rank : Int, simd_width : Int, element_alignment : Int = 1](self, idx: layout.Coord, value: SIMD[dtype, simd_width]):
 // CHECK-NEXT:         var [[REBOUND2:.*]] = rebind[SIMD[DType.float32, simd_width]](value)
 // CHECK-NEXT:         var [[LOADED:.*]] = {{.*}}simd_load_from_tensor_pointer[static_spec = Self.[[SPEC1]], simd_width = simd_width, element_alignment = element_alignment](self.{{.*}}, self.{{.*}}, self.{{.*}}, {{.*}})
 // CHECK-NEXT:         var [[SUM:.*]] = testing_kernels.testing_kernels.AddElementwise.elementwise[dtype = DType.float32]([[REBOUND2]], [[LOADED]])
 // CHECK-NEXT:         {{.*}}simd_store_into_tensor_pointer[static_spec = Self.[[SPEC0]], simd_width = simd_width, element_alignment = element_alignment](self.{{.*}}, self.{{.*}}, self.{{.*}}, {{.*}}, rebind[SIMD[{{.*}}, simd_width]]([[SUM]]))
 
-// A kernel declaring `_LegacyComputeOutput` gets a TRANSFORM functor: it
-// conforms to `TransformFusion`, its `__call__` RETURNS the transformed value
-// rather than storing it, and a `_MoggTransformFusionTensor` wraps it. The
+// A kernel declaring `_LegacyComputeOutput` gets a LEGACY COMPUTE functor: it
+// conforms to `LegacyComputeFusion`, its `__call__` RETURNS the computed value
+// rather than storing it, and a `_MoggLegacyComputeTensor` wraps it. The
 // primary kernel performs the one store. All `def ..._mogg(...)` functions are
 // emitted before any struct definitions, so these three land in different
 // sections; match them order-independently.
-// COMPUTE-DAG: _MoggTransformFusionTensor[
-// COMPUTE-DAG: struct TransformFunctor{{[0-9_]*}}[{{.*}}](TransformFusion, TrivialRegisterPassable):
+// COMPUTE-DAG: _MoggLegacyComputeTensor[
+// COMPUTE-DAG: struct LegacyComputeFunctor{{[0-9_]*}}[{{.*}}](LegacyComputeFusion, TrivialRegisterPassable):
 // COMPUTE-DAG: def __call__[{{.*}}](self, idx: {{.*}}, value: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
 
 mo.graph @compute_lambda(%a: !mo.tensor<[2, 2], f32>, %b: !mo.tensor<[2, 2], f32>, %bias: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {

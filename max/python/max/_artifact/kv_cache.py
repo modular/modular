@@ -356,7 +356,7 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
                     "scratch": region.scratch,
                 }
                 for region in cache.regions
-            ]
+            ],
         }
     attention: dict[str, ArtifactType] = {
         "dtype": cache.dtype.name,
@@ -498,7 +498,7 @@ def _mha(value: dict[str, ArtifactType], cls: type[MHAKVCache]) -> MHAKVCache:
         leaves=_tuple(_leaf)(obj["leaves"]),
         # An artifact exported before the field reads as unsplit.
         context_parallel=decode_optional(_context_parallel)(
-            obj.get("context_parallel")
+            obj["context_parallel"]
         ),
     )
 
@@ -525,14 +525,10 @@ def _mla(value: dict[str, ArtifactType]) -> MLAKVCache:
         speculative_method=decode_optional(_str)(obj["speculative_method"]),
         num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
-        # An artifact written before the field existed reads as dense.
-        sparse_kv_form=decode_optional(_sparse_kv_form)(
-            obj.get("sparse_kv_form")
-        ),
-        dispatch_unread=_bool(obj.get("dispatch_unread", False)),
-        # An artifact exported before the field reads as unsplit.
+        sparse_kv_form=decode_optional(_sparse_kv_form)(obj["sparse_kv_form"]),
+        dispatch_unread=_bool(obj["dispatch_unread"]),
         context_parallel=decode_optional(_context_parallel)(
-            obj.get("context_parallel")
+            obj["context_parallel"]
         ),
     )
 

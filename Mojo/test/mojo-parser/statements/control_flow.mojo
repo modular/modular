@@ -102,6 +102,50 @@ def test_if_case_or(a: Int, b: Int):
         var miss: Int
 
 
+# CHECK-LABEL: lit.fn @"test_if_multiple_clauses
+# CHECK:       hlcf.if
+# CHECK:         hlcf.match {
+# CHECK:           %{{.*}} = lit.var.decl "value"
+# CHECK:           hlcf.match.complete
+# CHECK:         } else {
+# CHECK:           %miss = lit.var.decl "miss"
+def test_if_multiple_clauses(enabled: Bool, opt: Optional[Int]):
+    if enabled;
+        case .Some(value) = opt;
+        value > 0:
+        _ = value
+    else:
+        var miss: Int
+
+
+# CHECK-LABEL: lit.fn @"test_if_multiple_clauses_elif
+# CHECK:       hlcf.if
+# CHECK:         hlcf.match {
+# CHECK:           hlcf.match.complete
+# CHECK:         } else {
+# CHECK:           hlcf.if
+# CHECK:             %elif_arm = lit.var.decl "elif_arm"
+def test_if_multiple_clauses_elif(
+    enabled: Bool, value: Optional[Int], fallback: Bool, also_fallback: Bool
+):
+    if enabled;
+      case .Some(value) = value:
+        _ = value
+    elif fallback;
+      also_fallback:
+        var elif_arm: Int
+    else:
+        var else_arm: Int
+
+
+# CHECK-LABEL: lit.fn @"test_comptime_if_multiple_clauses
+# CHECK:       hlcf.comptime.if
+def test_comptime_if_multiple_clauses[T: AnyType, enabled: Bool]():
+    comptime if enabled;
+      case == Int = T:
+        pass
+
+
 # CHECK-LABEL: lit.fn @"test_constant
 def test_constant(a: Bool) -> Bool:
     # CHECK: [[FOUR:%.*]] = kgen.param.constant{{.*}}4

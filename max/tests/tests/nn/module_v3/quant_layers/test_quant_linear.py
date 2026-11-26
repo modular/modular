@@ -280,7 +280,7 @@ def test_linear_nvfp4_fake_quant_parameters(
 
         assert isinstance(layer.weight, NVFP4TensorQuantizer)
         assert list(layer.weight.shape) == [_FFN_DIM, _HIDDEN_DIM]
-        assert layer.weight._tensor.dtype == DType.bfloat16
+        assert layer.weight._weight.dtype == DType.bfloat16
         assert {name for name, _ in layer.parameters} == {"weight", "bias"}
 
 

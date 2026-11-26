@@ -175,6 +175,7 @@ def _flag_diff(
             )
 
 
+@__allow_legacy_any_origin_fields
 def _launch_collective[
     kind: Int, ngpus: Int, pdl_level: PDLLevel
 ](

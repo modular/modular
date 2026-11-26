@@ -300,12 +300,34 @@ def MAP_IndexTransformOpInterface : OpInterface<"IndexTransformOpInterface"> {
 
           broadcast [M, 1] -> [M, N]:  [0, kPinnedCoordinate]
           broadcast [N] -> [M, N]:     [1]
-          transpose, perm [1, 0]:      [1, 0]}],
+          transpose, perm [1, 0]:      [1, 0]
+
+        With `axis`, a coordinate of loop dimension `axis` may also move
+        along it and still report `axis`, as a slice along a row moves it.}],
       "std::optional<::llvm::SmallVector<int64_t>>", "mapLoopDims",
-      (ins "::llvm::ArrayRef<int64_t>":$dims), [{}],
+      (ins "::llvm::ArrayRef<int64_t>":$dims,
+           "std::optional<int64_t>":$axis), [{}],
       "return std::nullopt;"
     >,
   ];
+
+  let extraClassDeclaration = [{
+    /// In `mapLoopDims`, a coordinate that is 0 for every element.
+    static constexpr int64_t kPinnedCoordinate = -1;
+
+    /// The loop dimension each coordinate of `index` is (see `mapLoopDims`),
+    /// following the index transforms from `loopIdx`. Nullopt when one of them
+    /// doesn't map loop dimensions.
+    ///
+    /// With `rowAxis`, the coordinate of loop dimension `rowAxis` may also
+    /// move along it, through a slice or a concat select on it, and still
+    /// reports that dimension. Pass it only when that coordinate's value
+    /// doesn't matter, as for a read of a per-row value, whose broadcast pins
+    /// it.
+    static std::optional<::llvm::SmallVector<int64_t>>
+    traceLoopDims(::mlir::Value index, ::mlir::Value loopIdx,
+                  std::optional<int64_t> rowAxis = std::nullopt);
+  }];
 }
 
 def MAP_DynamicShapeIndexOpInterface
@@ -349,14 +371,53 @@ def MAP_StrideViewOpInterface : OpInterface<"StrideViewOpInterface"> {
   ];
 }
 
+def MAP_FlattenableOpInterface : OpInterface<"FlattenableOpInterface"> {
+  let description = [{
+    An op `map-flatten-shapes` has to understand to merge the dims of the kernel
+    it is in, or of the views the kernel reads: a select in a kernel body, a
+    strided view of a kernel's tensor, or an index op. In an epilogue,
+    `map.index.reshape` merges its in-shape, the shape the epilogue's
+    tensors are read in.
+
+    An op without the interface that computes an index (see `computesIndex`)
+    keeps its loop from being flattened.
+  }];
+
+  let cppNamespace = "::M::MAP";
+
+  let methods = [
+    InterfaceMethod<
+      "Clears `merges[d]` for each pair of loop dims (d, d+1) this op needs "
+      "kept apart. By default every pair stays apart: an op that takes a "
+      "merge says so, so implementing the interface for its layout alone "
+      "never lets a loop it is in merge dims it doesn't rewrite.",
+      "void", "canFlattenDims", (ins "::llvm::MutableArrayRef<bool>":$merges),
+      [{}], [{ ::llvm::fill(merges, false); }]
+    >,
+    InterfaceMethod<
+      "Rewrites the op for the driver's groups. Called only for groups "
+      "`canFlattenDims` allows, so it can't fail.",
+      "void", "flatten", (ins "::M::MAP::FlattenDriver &":$driver),
+      [{}], [{ return; }]
+    >,
+    InterfaceMethod<
+      "The layout of this view, given its input's (nullopt when the input's "
+      "is unknown); nullopt when it can't be told.",
+      "std::optional<::M::MAP::Layout>", "getOutputLayout",
+      (ins "std::optional<::M::MAP::Layout>":$inputLayout),
+      [{}], [{ return std::nullopt; }]
+    >,
+  ];
+}
+
 def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
   let description = [{
     An op in a fused kernel body (`map.iter.elementwise.body` or
     `map.iter.rowwise.body`) that limits the SIMD width the kernel may run at,
     or whose regions see an index other than the kernel's own.
 
-    `getMaxSimdWidth` returns a limit, a number every width must divide (see
-    `MAP::GCDAttr`), for the op and everything nested in its regions,
+    `getMaxSimdWidth` returns a SIMD width, a number every width must divide
+    (see `MAP::GCDAttr`), for the op and everything nested in its regions,
     stated for the index the op itself sees; null means no limit. An op
     implementing the interface vouches for
     its regions' index arguments: it translates what its regions require into
@@ -366,7 +427,7 @@ def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
     Every other index in a kernel body, an op's index result or the index
     argument of a region of an op without the interface, is index computation
     the width inference can't follow, and limits the width to 1 (see
-    `getMaxSimdWidth(Region &)`).
+    `MaxSimdWidthInterface::ofRegion`).
   }];
 
   let cppNamespace = "::M::MAP";
@@ -378,11 +439,20 @@ def MAP_MaxSimdWidthInterface : OpInterface<"MaxSimdWidthInterface"> {
       [{}], [{
         ::llvm::SmallVector<::mlir::TypedAttr> widths;
         for (::mlir::Region &region : $_op->getRegions())
-          widths.push_back(::M::MAP::getMaxSimdWidth(region));
+          widths.push_back(
+              ::M::MAP::MaxSimdWidthInterface::ofRegion(region));
         return ::M::MAP::GCDAttr::getSimplified($_op->getContext(), widths);
       }]
     >,
   ];
+
+  let extraClassDeclaration = [{
+    /// The SIMD width `region`'s ops need, stated for `region`'s own index:
+    /// the GCD of what each op implements the interface for requires, and 1
+    /// for index computation the width inference can't follow. Null for no
+    /// limit; not in normal form.
+    static ::mlir::TypedAttr ofRegion(::mlir::Region &region);
+  }];
 }
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPOPINTERFACES_TD

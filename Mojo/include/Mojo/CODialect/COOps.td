@@ -62,18 +62,31 @@ def CO_SuspendOp : COOp<"suspend", [
     must resume the coroutine at some point. This operation can only be used
     inside an async function.
 
+    `state` is the value the coroutine's state field holds while it is
+    suspended here. The async lowering assigns it once, before it builds any
+    ramp or resume function, so every ramp, the resume function and the final
+    `llvm.switch` agree without having to re-derive the ordering. State 0 is
+    reserved for the initial entry.
+
     Example:
 
     ```mlir
     co.suspend (%hdl) {
       co.resume %hdl
       co.suspend.end
-    }
+    } <state = 1>
     ```
   }];
 
+  let arguments = (ins OptionalAttr<I32Attr>:$state);
   let regions = (region AnyRegion:$body);
-  let assemblyFormat = "custom<SuspendBody>($body) attr-dict";
+  let assemblyFormat = "custom<SuspendBody>($body) prop-dict attr-dict";
+  let builders = [
+    // Suspension points are created before the lowering numbers them.
+    OpBuilder<(ins), [{
+      build($_builder, $_state, /*state=*/::mlir::IntegerAttr());
+    }]>
+  ];
   let hasVerifier = 1;
 }
 

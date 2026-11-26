@@ -268,6 +268,16 @@ static thread_local size_t localWorkerIDInTLS = 0;
 /// SIZE_MAX if this thread is not a worker of a DelegateWorkQueue.
 static thread_local size_t globalWorkerIDInTLS = SIZE_MAX;
 
+/// Returns the system's identifier for the current thread. It is read once per
+/// thread because `llvm::get_threadid()` is a system call on Linux, and
+/// getOwningWorkQueueThread runs for every local task and await.
+static uint64_t getCurrentThreadID() {
+  static thread_local uint64_t threadIDInTLS = 0;
+  if (LLVM_UNLIKELY(threadIDInTLS == 0))
+    threadIDInTLS = llvm::get_threadid();
+  return threadIDInTLS;
+}
+
 /// Wrapper around an std::thread created for each worker thread, or
 /// a placeholder for the 'main' thread.
 struct WorkQueueThread {
@@ -384,7 +394,7 @@ struct WorkQueueThread {
       // We can leave localWorkerIDInTLS as zero.
       // Remember the caller is to be our 'main' thread, and will call
       // await to process work items.
-      uint64_t id = llvm::get_threadid();
+      uint64_t id = getCurrentThreadID();
       assert(id && "get_threadid returned zero for the main thread");
       threadID.store(id, std::memory_order_relaxed);
     } else {
@@ -542,7 +552,7 @@ void WorkQueueThread::runOnThread() {
 
   // Capture the worker's thread id so we can distinguish worker threads
   // from different work queues.
-  uint64_t id = llvm::get_threadid();
+  uint64_t id = getCurrentThreadID();
   assert(id && "get_threadid returned zero for a worker thread");
   threadID.store(id, std::memory_order_relaxed);
 
@@ -934,7 +944,7 @@ private:
 
     // Relaxed is enough: a thread only matches the ID it stored itself.
     if (worker->threadID.load(std::memory_order_relaxed) !=
-        llvm::get_threadid())
+        getCurrentThreadID())
       // A 'foreign' thread.
       return nullptr;
 

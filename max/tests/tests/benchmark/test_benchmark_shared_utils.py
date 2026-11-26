@@ -401,16 +401,19 @@ def test_parse_comma_separated_none_with_explicit_default() -> None:
 # ---- is_castable_to_int ----
 
 
-def test_is_castable_to_int_valid() -> None:
-    assert is_castable_to_int("42") is True
-    assert is_castable_to_int("-1") is True
-    assert is_castable_to_int("0") is True
-
-
-def test_is_castable_to_int_invalid() -> None:
-    assert is_castable_to_int("hello") is False
-    assert is_castable_to_int("3.14") is False
-    assert is_castable_to_int("") is False
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("42", True),
+        ("-1", True),
+        ("0", True),
+        ("hello", False),
+        ("3.14", False),
+        ("", False),
+    ],
+)
+def test_is_castable_to_int(value: str, expected: bool) -> None:
+    assert is_castable_to_int(value) is expected
 
 
 # ---- int_or_none ----
@@ -654,3 +657,30 @@ def test_wait_for_server_ready_no_base_url_sends_no_auth(
     request = urlopen.call_args.args[0]
     assert request.full_url == "http://localhost:8000/health"
     assert request.get_header("Authorization") is None
+
+
+@pytest.mark.parametrize(
+    ("backend", "path", "expected_url"),
+    [
+        ("tokenspeed", None, "http://localhost:8000/readiness"),
+        ("tokenspeed-chat", None, "http://localhost:8000/readiness"),
+        ("vllm", None, "http://localhost:8000/health"),
+        ("tokenspeed", "v1/models", "http://localhost:8000/v1/models"),
+    ],
+)
+def test_wait_for_server_ready_polls_the_backends_readiness_route(
+    mocker: MockerFixture,
+    backend: str,
+    path: str | None,
+    expected_url: str,
+) -> None:
+    urlopen = mocker.patch(
+        "urllib.request.urlopen", return_value=_mock_response(200)
+    )
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.0])
+
+    wait_for_server_ready(
+        "localhost", 8000, path, timeout_s=60, backend=backend
+    )
+
+    assert urlopen.call_args.args[0].full_url == expected_url

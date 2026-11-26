@@ -96,6 +96,14 @@ public:
   ErrorOr<KernelDeclOp> getResolvedKernel(llvm::StringRef name,
                                           DeviceInfoAttr deviceInfo) const;
 
+  /// Returns whether a kernel registered under `name` is selected for the
+  /// device `deviceLabel`:`deviceId` of a graph in `graphModule`. Matches the
+  /// device info that `graphModule` carries when it has a
+  /// `mo.device_info_mapping`, since a registry over kernel decls alone knows
+  /// a device only by its label.
+  bool resolvesKernel(llvm::StringRef name, mlir::ModuleOp graphModule,
+                      llvm::StringRef deviceLabel, int64_t deviceId) const;
+
   /// Finds each op whose selection is ambiguous on some device, over all
   /// representative devices of its registrations. With `builtinsOnly`, only
   /// built-in registrations take part, as in a registry with no user
@@ -211,8 +219,21 @@ ErrorOrSuccess verifyCustomOp(const MojoRegistry &registry,
 /// ops. Backs the public C API `MAXG_verifyCustomOp`.
 ErrorOrSuccess verifyCustomOp(mlir::ModuleOp kernelDecls, mlir::Operation *op);
 
-/// Resolves the paths of the built-in packages (`kernels`, `primitives`) that
+/// One precompiled built-in package: the dotted name it imports under, and the
+/// `.mojoc` it was read from. `builtin_kernels` is a namespace rather than a
+/// package, so one entry of `kMoggRequiredKernelModuleNames` yields one of
+/// these per package under it.
+struct BuiltInKernelPackage {
+  std::string name;
+  std::string path;
+};
+
+/// Resolves the built-in packages (`kernels`, `primitives`) that
 /// `--mogg-import-packages` loads. See also `getKernelPackagePathsForCacheKey`.
+ErrorOr<llvm::SmallVector<BuiltInKernelPackage>>
+getBuiltInKernelPackages(mlir::MLIRContext *ctx);
+
+/// The paths of the above, for callers that need no names.
 ErrorOr<llvm::SmallVector<std::string>>
 getBuiltInKernelPackagePaths(mlir::MLIRContext *ctx);
 

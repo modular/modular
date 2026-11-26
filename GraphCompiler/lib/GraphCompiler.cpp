@@ -56,11 +56,12 @@
 #include "mlir/Support/Timing.h"
 
 using namespace M;
+using namespace M::MLRT;
 using namespace MO;
 
 void M::MO::loadDialects(mlir::DialectRegistry &registry) {
   registry.insert<MO::MODialect, MOSH::MOSHDialect, MOGG::MOGGDialect,
-                  MGP::MGPDialect, GRT::GRTDialect, RMO::RMODialect,
+                  MGP::MGPDialect, MLRT::GRT::GRTDialect, RMO::RMODialect,
                   MAP::MAPDialect>();
   M::registerAllKGENDialects(registry);
   M::registerKGENToLLVMTranslation(registry);
@@ -260,6 +261,7 @@ void M::MO::buildMoPipeline(mlir::OpPassManager &pm,
     pm.addPass(MO::createConstantFoldPass(cacheDir, kernelLibraryPaths));
 
   pm.addPass(MO::createHoistConstantSubgraphsIntoParent());
+  pm.addNestedPass<MO::GraphOp>(MO::createHoistConstantsOutOfIf());
   pm.addNestedPass<MO::GraphOp>(mlir::createCSEPass());
 
   SymbolicOptimizationOptions symbolicOptimizationOpts;
@@ -336,6 +338,8 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
   pm.addNestedPass<GraphOp>(MAP::createReductionLoopInvariantCodeMotion());
+  // Map phases may hoist the same row value, and map-rcse needs one copy.
+  pm.addNestedPass<GraphOp>(mlir::createCSEPass());
   pm.addNestedPass<GraphOp>(MAP::createReductionCSE());
 
   // After fusion settles, give every fused-output epilogue a real store pointer
@@ -360,7 +364,9 @@ void M::MO::buildMapPipeline(mlir::OpPassManager &pm,
   // the duplicate captures.
   pm.addNestedPass<GraphOp>(mlir::createCSEPass());
   pm.addNestedPass<GraphOp>(mlir::createCanonicalizerPass());
-  // Last, once views are hoisted out of the loop bodies.
+  // Last, once views are hoisted out of the loop bodies; the width is
+  // inferred on the flattened loops.
+  pm.addNestedPass<GraphOp>(MAP::createFlattenShapes());
   pm.addNestedPass<GraphOp>(MAP::createInferMaxSimdWidth());
 }
 

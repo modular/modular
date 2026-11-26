@@ -61,7 +61,6 @@ from max.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.memory import Pointer, alloc
 from std.memory.alloc import unsafe_alloc
 from std.random import random_float64, random_ui64, seed, rand
-from std.simd import _convert_f32_to_float8_scalar
 
 from layout import Idx, TileTensor, row_major
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -509,9 +508,11 @@ def _test_swiglu_dispatch[
                 0, align_up(K, SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
             ):
                 if idx1 < K:
-                    var scale_value = _convert_f32_to_float8_scalar[
-                        scales_dtype
-                    ]((1 << random_ui64(0, 2)).cast[.float32]())
+                    var scale_value = (
+                        (1 << random_ui64(0, 2))
+                        .cast[.float32]()
+                        .cast[scales_dtype]()
+                    )
                     set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                         a_scales_tensor_host, idx0, idx1, scale_value
                     )
@@ -561,7 +562,7 @@ def _test_swiglu_dispatch[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     comptime n_groups_b = ceildiv(N, SF_MN_GROUP_SIZE)
     var b_scales_perm_tt = TileTensor(
         shared.b_scales_perm,
@@ -573,11 +574,11 @@ def _test_swiglu_dispatch[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         shared.expert_scales,
         row_major(Int64(num_experts)),
-    ).as_unsafe_any_origin()
+    )
 
     # ============================================================
     # REF: manual chain (matmul -> fused_silu_nvfp4_interleaved).
@@ -598,11 +599,7 @@ def _test_swiglu_dispatch[
             num_active_experts,
             total_num_tokens,
             ctx,
-            a_row_scales=RealRowScales(
-                rebind[Pointer[BFloat16, ImmutAnyOrigin]](
-                    row_scales_device.unsafe_ptr()
-                )
-            ),
+            a_row_scales=RealRowScales(row_scales_device.unsafe_ptr().as_imm()),
         )
     else:
         grouped_matmul_nvfp4_dispatch[transpose_b=transpose_b](
@@ -695,9 +692,9 @@ def _test_swiglu_dispatch[
             NVFP4_SF_VECTOR_SIZE,
             activation,
         ](
-            O_test_tensor.as_unsafe_any_origin().unsafe_ptr(),
-            S_test_tensor.as_unsafe_any_origin().unsafe_ptr(),
-            input_scales_tensor.as_imm().as_unsafe_any_origin().unsafe_ptr(),
+            O_test_tensor.unsafe_ptr(),
+            S_test_tensor.unsafe_ptr(),
+            input_scales_tensor.as_imm().unsafe_ptr(),
         )
         grouped_matmul_block_scaled[
             transpose_b=transpose_b,
@@ -741,11 +738,7 @@ def _test_swiglu_dispatch[
             num_active_experts,
             total_num_tokens,
             ctx,
-            a_row_scales=RealRowScales(
-                rebind[Pointer[BFloat16, ImmutAnyOrigin]](
-                    row_scales_device.unsafe_ptr()
-                )
-            ),
+            a_row_scales=RealRowScales(row_scales_device.unsafe_ptr().as_imm()),
         )
     else:
         grouped_matmul_swiglu_nvfp4_dispatch[

@@ -9,6 +9,7 @@ modular_nanobind_library(
         "driver.cpp",
         "dtype.cpp",
         "engine.cpp",
+        "gguf.cpp",
         "graph.cpp",
         "metrics.cpp",
         "nixl.cpp",

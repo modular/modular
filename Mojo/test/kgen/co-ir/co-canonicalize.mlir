@@ -110,3 +110,23 @@ kgen.func @await_invoke(%arg0: !kgen.pointer<i1> byref_error, %arg1: !kgen.point
   %1:3 = co.await %0, %arg1, %arg0 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> (i1, index, index)
   hlcf.return %1#0, %1#1, %1#2 : i1, index, index
 }
+
+// COM: The awaited region must not be inlined when its result types disagree
+// COM: with the await's result types: substituting across the mismatch yields
+// COM: invalid IR, which `hlcf.return` then rejects (MOCO-5033).
+// CHECK-LABEL: kgen.func @await_execute_result_type_mismatch
+kgen.func @await_execute_result_type_mismatch(
+    %arg0: !kgen.pointer<i1> byref_error,
+    %arg1: !kgen.pointer<index> byref_result) throws|async -> i1 {
+  // CHECK: co.execute : !kgen.scalar<bool>
+  %0 = co.execute : !kgen.scalar<bool> (%e: !kgen.pointer<i1> byref_error,
+                                        %r: !kgen.pointer<index> byref_result) {
+    %true = index.bool.constant true
+    %c = pop.cast_from_builtin %true : i1 to !kgen.scalar<bool>
+    hlcf.return %c : !kgen.scalar<bool>
+  }
+  // CHECK: co.await %{{.*}} : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> i1
+  %1 = co.await %0, %arg1, %arg0 : (!co.routine, !kgen.pointer<index>, !kgen.pointer<i1>) -> i1
+  // CHECK: hlcf.return %{{.*}} : i1
+  hlcf.return %1 : i1
+}

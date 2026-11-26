@@ -131,6 +131,7 @@ def mojo_library(
             docs_hosted_on_mojolang = docs_hosted_on_mojolang,
             show_stability_markers = show_stability_markers,
             stability_doc_url = stability_doc_url,
+            import_path = import_path,
             copts = ignore_deprecated_copts,
             visibility = visibility,
             tags = [ALLOW_UNUSED_TAG] + tags,

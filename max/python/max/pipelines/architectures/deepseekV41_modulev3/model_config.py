@@ -431,10 +431,18 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     max_seq_len: int
     quantization_encoding: SupportedEncoding | None = None
     data_parallel_degree: int = 1
+    replicate_spec_head: bool = False
+    """Load a full LM head per DP rank for replica-local speculative logits."""
+    raw_checkpoint_weights: bool = False
+    """Declare stored checkpoint tensors; weight-only transforms run in init."""
     routed_expert_format: RoutedExpertFormat = RoutedExpertFormat.NVFP4
     return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN
     return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE
     max_batch_rows: int = 0
+    artifact_export: bool = False
+    """``PipelineConfig.artifact_export``: the pipeline is built for a
+    pipeline artifact, whose graphs take the decoder replay rows and the
+    Engram lookback history unless the text config names them."""
     """The most token rows one forward carries, DSpark drafts included.
 
     Sizes the RoPE tables' padding tail (:func:`forward_row_bound`); ``0``
@@ -529,6 +537,7 @@ class DeepseekV41Config(ArchConfigWithKVCache):
     # token map by input name, and the trunk's extras the fused graph takes
     # past the canonical tail.
     engram_static_inputs: dict[str, Buffer] = field(default_factory=dict)
+
     dspark_trailing_inputs: list[tuple[str, TensorType | BufferType]] = field(
         default_factory=list
     )
@@ -679,7 +688,9 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             num_draft_tokens = drafts or 0
         config = huggingface_config.to_dict()
         return interface.build_kv_params(
-            config=interface.V41Config.from_hf(config),
+            config=interface.V41Config.from_hf(
+                config, artifact_export=pipeline_config.artifact_export
+            ),
             kv_cache_config=kv_cache_config,
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
@@ -815,6 +826,12 @@ class DeepseekV41Config(ArchConfigWithKVCache):
             quantization_encoding=quantization_encoding,
             data_parallel_degree=model_config.data_parallel_degree,
             max_batch_rows=forward_row_bound(pipeline_config, max_seq_len),
+            artifact_export=pipeline_config.artifact_export,
+            replicate_spec_head=(
+                pipeline_config.speculative is not None
+                and pipeline_config.speculative.draft_head_parallelism
+                == "replica"
+            ),
             routed_expert_format=RoutedExpertFormat.of(hf_config),
             has_vision=interface.has_vision_tower(hf_config),
             vision=vision_config(pipeline_config),

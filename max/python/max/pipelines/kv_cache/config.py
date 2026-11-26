@@ -269,6 +269,16 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Whether the disk tier's reads and writes bypass the page cache (O_DIRECT)."""
 
+    sequence_major_striping: bool = Field(
+        default=False,
+        description=(
+            "Place new blocks with the same request placement key in one "
+            "dkv storage region per TP shard. Existing blocks keep their "
+            "original placement."
+        ),
+    )
+    """Whether the dkv connector groups new placements by request key."""
+
     block_store_endpoint: str | None = Field(
         default=None,
         description=(

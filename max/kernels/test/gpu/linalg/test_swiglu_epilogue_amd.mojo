@@ -321,7 +321,7 @@ def _run_case[
         num_active,
         ctx,
         -1,
-        c_sc_d.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+        c_sc_d.unsafe_ptr(),
         UInt32(0),
     )
 
@@ -534,9 +534,7 @@ def _run_dispatch_case[
         estimated_total_m=total_tokens,
         decode_grid_m_cap=decode_grid_m_cap,
         decode_grid_m_rows=max_tokens,
-        c_scales_ptr=c_sc_slot_d.unsafe_ptr().unsafe_origin_cast[
-            MutAnyOrigin
-        ](),
+        c_scales_ptr=c_sc_slot_d.unsafe_ptr(),
         c_scales_max_padded_m=slot_stride,
     )
 
