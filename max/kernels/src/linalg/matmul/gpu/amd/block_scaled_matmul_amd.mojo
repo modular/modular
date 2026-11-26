@@ -1389,6 +1389,7 @@ struct BlockScaledMatmulAMD[
         var k_scale_counter = split_id * tiles_per_split
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def load_tiles_from_dram() {mut k_counter, imm}:
             """Load one BK-wide tile from DRAM to register buffers."""
             var a_block = a_blockrow.tile[Self.BM, A_BK_BYTES](0, k_counter)
@@ -1476,6 +1477,7 @@ struct BlockScaledMatmulAMD[
                     store_b()
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def load_scales_from_dram() {mut k_scale_counter, imm}:
             """Cooperatively read one BK iteration's scale tiles to registers.
 

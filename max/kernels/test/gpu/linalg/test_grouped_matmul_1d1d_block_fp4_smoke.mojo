@@ -182,7 +182,7 @@ def _test_grouped_1d1d_block_fp4_impl[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_sf_buf,
         row_major(
@@ -193,7 +193,7 @@ def _test_grouped_1d1d_block_fp4_impl[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
 
     # Launch kernel
     comptime mma_shape = (128 * cta_group, mma_n, 32)
@@ -385,7 +385,7 @@ def _test_grouped_1d1d_mixed_experts[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_sf_buf.unsafe_ptr().unsafe_bitcast[Scalar[sf_dtype]](),
         row_major(
@@ -396,7 +396,7 @@ def _test_grouped_1d1d_mixed_experts[
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
 
     comptime mma_shape = (128 * cta_group, mma_n, 32)
     comptime config = BlockScaledMatmulConfig[

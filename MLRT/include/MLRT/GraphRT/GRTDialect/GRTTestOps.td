@@ -24,7 +24,7 @@ include "mlir/IR/SymbolInterfaces.td"
 
 def TestcaseOp : GRTOp<"testcase",
           [SymbolName, SymbolVisibility, Symbol, IsolatedFromAbove,
-           SingleBlockImplicitTerminator<"MEF::OutputOp">]> {
+           SingleBlockImplicitTerminator<"MLRT::MEF::OutputOp">]> {
   let summary = "A GRT testcase";
   let description = [{
     The 'grt.testcase' op provides a container that takes no arguments and can

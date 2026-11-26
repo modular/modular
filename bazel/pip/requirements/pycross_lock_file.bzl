@@ -61,7 +61,6 @@ PINS = {
     "flashinfer-python": "flashinfer-python@multiple",
     "flask": "flask@3.0.3",
     "flask-compress": "flask-compress@1.24",
-    "gguf": "gguf@0.17.1",
     "google-auth": "google-auth@2.48.0",
     "google-cloud-bigquery": "google-cloud-bigquery@3.40.1",
     "google-cloud-core": "google-cloud-core@2.4.1",
@@ -5991,9 +5990,58 @@ def targets():
 
     _gguf_0_17_1_deps = [
         ":numpy@multiple",
-        ":pyyaml@6.0.3",
         ":tqdm@multiple",
-    ]
+    ] + select({
+        ":_env_python_3.10_aarch64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.10_x86_64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.11_aarch64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.11_x86_64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.12_aarch64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.12_x86_64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.13_aarch64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.13_x86_64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.14_aarch64-unknown-linux-gnu-freethreaded": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.14_x86_64-unknown-linux-gnu-freethreaded": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.15_aarch64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.15_aarch64-unknown-linux-gnu-freethreaded": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.15_x86_64-unknown-linux-gnu": [
+            ":pyyaml@6.0.3",
+        ],
+        ":_env_python_3.15_x86_64-unknown-linux-gnu-freethreaded": [
+            ":pyyaml@6.0.3",
+        ],
+        "//conditions:default": [],
+    })
 
     native.alias(
         name = "_wheel_gguf@0.17.1",

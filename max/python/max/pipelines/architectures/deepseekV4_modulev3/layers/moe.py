@@ -55,6 +55,7 @@ from .kernels import (
     moe_create_indices_with_slots,
     moe_router_group_limited,
     quantize_dynamic_scaled_float8_grouped_mx,
+    quantize_dynamic_scaled_float8_grouped_mx_gather,
 )
 from .quantization import linear_for
 
@@ -208,16 +209,25 @@ def _interleaved_scales(weight_scale: Tensor) -> Tensor:
 
 
 def _quantize_rows_for_w4a8(
-    x: Tensor, a_offsets: Tensor, scale_offsets: Tensor, scale_rows: DimLike
+    x: Tensor,
+    a_offsets: Tensor,
+    scale_offsets: Tensor,
+    scale_rows: DimLike,
+    row_index: Tensor | None = None,
 ) -> tuple[Tensor, Tensor]:
     """``act_quant(x, 128, "ue8m0")``, stored in the GEMM's scale tiles.
 
     Each scale is repeated 4x for K/32 and written at the scale-tile row the
     grouped GEMM reads for its slot (``a_offsets`` / ``scale_offsets`` as the
-    GEMM gets them).
+    GEMM gets them). With ``row_index``, the rows are ``x[row_index]``, read
+    in place.
     """
-    return quantize_dynamic_scaled_float8_grouped_mx(
-        x.cast(DType.bfloat16), a_offsets, scale_offsets, scale_rows
+    if row_index is None:
+        return quantize_dynamic_scaled_float8_grouped_mx(
+            x.cast(DType.bfloat16), a_offsets, scale_offsets, scale_rows
+        )
+    return quantize_dynamic_scaled_float8_grouped_mx_gather(
+        x.cast(DType.bfloat16), row_index, a_offsets, scale_offsets, scale_rows
     )
 
 
@@ -256,11 +266,13 @@ def _grouped(
     scale_offsets: Tensor,
     scale_rows: DimLike,
     expert_ids: Tensor,
+    row_index: Tensor | None = None,
 ) -> Tensor:
     n_experts = int(weight.shape[0])
     quantized, a_scales = _quantize_rows_for_w4a8(
-        x, a_offsets, scale_offsets, scale_rows
+        x, a_offsets, scale_offsets, scale_rows, row_index
     )
+    rows = x.shape[0] if row_index is None else row_index.shape[0]
     ones_f32 = F.constant(
         np.ones(n_experts, np.float32), DType.float32, device=x.device
     )
@@ -273,7 +285,7 @@ def _grouped(
         scale_offsets,
         expert_ids,
         ones_f32,
-        _usage_stats(x.shape[0], n_experts),
+        _usage_stats(rows, n_experts),
         out_type=DType.bfloat16,
     )
 
@@ -335,7 +347,12 @@ def _routed_body(
     scale_offsets = scale_offsets[0:n_local]
     expert_ids = expert_ids[0:n_local]
 
-    def grouped(h: Tensor, weight: Tensor, scale: Tensor) -> Tensor:
+    def grouped(
+        h: Tensor,
+        weight: Tensor,
+        scale: Tensor,
+        row_index: Tensor | None = None,
+    ) -> Tensor:
         return _grouped(
             h,
             weight,
@@ -344,11 +361,16 @@ def _routed_body(
             scale_offsets,
             padded,
             expert_ids,
+            row_index,
         )
 
-    x_sorted = F.gather(x, slot_token, axis=0)
-    gate_up_out = grouped(x_sorted, gate_up, gate_up_scale)
-    gate, up = gate_up_out.split([spec.inter, spec.inter], axis=1)
+    # The slots' token rows are read in place by the quantize, not gathered.
+    gate_up_out = grouped(x, gate_up, gate_up_scale, slot_token)
+    # Slices, not ``split``: casting both outputs of a split lets the graph
+    # compiler hoist one float32 cast over the whole GEMM output, a kernel of
+    # its own; sliced, the SwiGLU fuses into the down quantize.
+    gate = gate_up_out[:, : spec.inter]
+    up = gate_up_out[:, spec.inter :]
     h = _clamped_swiglu(gate, up, spec.swiglu_limit)
     h = h * slot_weight.unsqueeze(-1)
     down_out = grouped(h, down, down_scale)

@@ -32,7 +32,6 @@ from sybil.text import LineNumberOffsets
 #: Paths under ``max/python/max`` that are never collected.
 COLLECT_EXCLUDES = (
     "serve/schemas/",  # generated
-    "graph/weights/load_gguf.py",  # hard top-level ``import gguf``
     # benchmark/benchmark_shared/server_metrics.py has a module-level import
     # cycle, and Sybil imports each document's module directly; the benchmark
     # tree's examples are illustrative, so skip the whole directory.

@@ -490,6 +490,7 @@ struct KVMmaOp[
                         Self.MMA_K, Self.MMA_M, Self.BN, Self.BK
                     ](bk_tile, Int(k), Int(i))
 
+                    @__allow_legacy_any_origin_fields
                     def _read_half[
                         half_idx: Int
                     ]() {imm} -> SIMD[Self.in_type, 4]:

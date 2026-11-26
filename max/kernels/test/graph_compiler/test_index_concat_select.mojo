@@ -20,7 +20,6 @@ does: `width` lanes when every extent is a multiple of it, one otherwise.
 
 from builtin_primitives.primitives import mogg_index_concat_select
 from layout import Coord, Idx
-from std.utils import IndexList
 from std.testing import TestSuite, assert_equal
 
 
@@ -44,9 +43,7 @@ def _concat_inputs[
     return result
 
 
-def _check_rows[
-    width: Int, num_inputs: Int, static_sizes: Coord
-](sizes: List[Int], runtime: IndexList[num_inputs]) raises:
+def _check_rows[width: Int](sizes: List[Int], extents: Coord) raises:
     # Shaped like the closure the graph compiler emits around the regions.
     def inputs[input_index: Int](i: Coord) {var} -> SIMD[DType.int32, width]:
         return _concat_inputs[input_index, width](i)
@@ -59,35 +56,31 @@ def _check_rows[
             var got = mogg_index_concat_select[
                 dtype=DType.int32,
                 width=width,
-                num_inputs=num_inputs,
                 axis=1,
-                static_sizes=static_sizes,
-            ](IndexList[2](row, col), inputs, runtime)
+            ](Coord(Int(row), Int(col)), inputs, extents)
             for lane in range(width):
                 assert_equal(got[lane], _expected(row, col + lane, sizes))
 
 
 def test_static() raises:
-    _check_rows[8, 2, Coord(Idx[16], Idx[24])]([16, 24], IndexList[2](16, 24))
+    _check_rows[8]([16, 24], Coord(Idx[16], Idx[24]))
 
 
 def test_static_unaligned() raises:
     # A split at 13: the launch runs one-element vectors.
-    _check_rows[1, 2, Coord(Idx[13], Idx[19])]([13, 19], IndexList[2](13, 19))
+    _check_rows[1]([13, 19], Coord(Idx[13], Idx[19]))
 
 
 def test_dynamic() raises:
-    _check_rows[4, 2, Coord(Int(-1), Int(-1))]([12, 20], IndexList[2](12, 20))
+    _check_rows[4]([12, 20], Coord(Int(12), Int(20)))
 
 
 def test_dynamic_unaligned() raises:
-    _check_rows[1, 2, Coord(Int(-1), Int(-1))]([13, 19], IndexList[2](13, 19))
+    _check_rows[1]([13, 19], Coord(Int(13), Int(19)))
 
 
 def test_three_inputs() raises:
-    _check_rows[4, 3, Coord(Idx[4], Int(-1), Idx[12])](
-        [4, 8, 12], IndexList[3](4, 8, 12)
-    )
+    _check_rows[4]([4, 8, 12], Coord(Idx[4], Int(8), Idx[12]))
 
 
 def test_outer_axis() raises:
@@ -100,10 +93,8 @@ def test_outer_axis() raises:
         var got = mogg_index_concat_select[
             dtype=DType.int32,
             width=8,
-            num_inputs=2,
             axis=0,
-            static_sizes=Coord(Int(-1), Int(-1)),
-        ](IndexList[2](row, 0), inputs, IndexList[2](3, 2))
+        ](Coord(Int(row), Int(0)), inputs, Coord(Int(3), Int(2)))
         var r = 0 if row < 3 else 1
         var in_row = row if row < 3 else row - 3
         for lane in range(8):

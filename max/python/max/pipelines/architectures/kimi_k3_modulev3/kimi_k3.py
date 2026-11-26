@@ -51,6 +51,7 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
     """
 
     graph_name: ClassVar[str] = "KimiK3Model"
+    consumes_vision: ClassVar[bool] = True
 
     def __init__(self, config: KimiK3Config) -> None:
         super().__init__()
@@ -96,7 +97,7 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
         self._reads_context_length = config.mla_latent_cache
 
     def forward(self, inputs: DecoderInputs) -> DecoderOutputs:
-        """Runs the tower; it reads the exchange off the tail of its inputs."""
+        """Runs the tower over the batch."""
         assert inputs.batch_context_lengths is not None
         return self.model(
             inputs.tokens,
@@ -108,5 +109,13 @@ class KimiK3Decoder(Module[[DecoderInputs], DecoderOutputs]):
                 if self._reads_context_length
                 else ()
             ),
-            *(tree.leaves(inputs.ep) if inputs.ep is not None else ()),
+            ep=inputs.ep,
+            image_embeddings=(
+                inputs.vision.embeddings if inputs.vision is not None else None
+            ),
+            image_token_indices=(
+                inputs.vision.scatter_indices
+                if inputs.vision is not None
+                else None
+            ),
         )

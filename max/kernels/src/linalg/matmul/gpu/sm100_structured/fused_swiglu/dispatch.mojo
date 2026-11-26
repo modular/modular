@@ -44,10 +44,10 @@ comptime _FALLBACK_ROWS_PER_WARP = 4
 def _matmul_swiglu_fallback[
     has_bias: Bool
 ](
-    output: MutPointer[BFloat16, MutAnyOrigin],
-    activation: ImmPointer[BFloat16, ImmutAnyOrigin],
-    weight: ImmPointer[BFloat16, ImmutAnyOrigin],
-    bias: ImmPointer[BFloat16, ImmutAnyOrigin],
+    output: MutPointer[BFloat16, MutUntrackedOrigin],
+    activation: ImmPointer[BFloat16, ImmUntrackedOrigin],
+    weight: ImmPointer[BFloat16, ImmUntrackedOrigin],
+    bias: ImmPointer[BFloat16, ImmUntrackedOrigin],
     m_arg: Int64,
     h_arg: Int64,
     k_arg: Int64,
@@ -113,12 +113,13 @@ def _matmul_swiglu_fallback[
 def matmul_swiglu_dispatch_sm100[
     config: FusedSwiGLUMatmulConfig[_, _, _, True],
     pdl_level: PDLLevel = PDLLevel(0),
+    bias_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c_out: TileTensor[mut=True, .bfloat16, ...],
     a: TileTensor[mut=False, .bfloat16, ...],
     b: TileTensor[mut=False, .bfloat16, ...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[ImmPointer[BFloat16, ImmutAnyOrigin]] = None,
+    bias_ptr: OptionalReg[ImmPointer[BFloat16, bias_origin]] = {},
 ) raises:
     """Dispatch fused GEMM+SwiGLU to SM100 kernel with given config.
 
@@ -129,6 +130,7 @@ def matmul_swiglu_dispatch_sm100[
               specialize the kernel.
         pdl_level: Programmatic Dependency Launch level controlling
               inter-grid overlap on the launch (defaults to ``PDLLevel.OFF``).
+        bias_origin: Origin of ``bias_ptr`` (inferred).
 
     Args:
         c_out: [M, H] BF16 output tensor (H = N/2).
@@ -148,13 +150,13 @@ def matmul_swiglu_dispatch_sm100[
 
     # When config.use_bias=False, c_out.ptr is a valid dummy (bias never
     # accessed).
-    var bias_ptr_c = rebind[ImmPointer[Scalar[config.c_type], ImmutAnyOrigin]](
-        c_out.ptr
-    )
+    var bias_ptr_c = rebind[
+        ImmPointer[Scalar[config.c_type], ImmUntrackedOrigin]
+    ](c_out.ptr)
     comptime if config.use_bias:
-        bias_ptr_c = rebind[ImmPointer[Scalar[config.c_type], ImmutAnyOrigin]](
-            bias_ptr.value()
-        )
+        bias_ptr_c = rebind[
+            ImmPointer[Scalar[config.c_type], ImmUntrackedOrigin]
+        ](bias_ptr.value())
     var bias_tile = TileTensor(bias_ptr_c, row_major(Int(b.dim[0]())))
     comptime if config.AB_swapped:
         # Swap inputs so the kernel sees A = W (b) and B = X (a). The
@@ -176,12 +178,13 @@ def matmul_swiglu_dispatch_sm100[
 def matmul_swiglu_dispatch_sm100_bf16[
     pdl_level: PDLLevel = PDLLevel.ON,
     has_bias: Bool = False,
+    bias_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c_out: TileTensor[mut=True, ...],
     a: TileTensor[address_space=.GENERIC, ...],
     b: TileTensor[...],
     ctx: DeviceContext,
-    bias_ptr: OptionalReg[ImmPointer[BFloat16, ImmutAnyOrigin]] = None,
+    bias_ptr: OptionalReg[ImmPointer[BFloat16, bias_origin]] = {},
 ) raises:
     """Auto-dispatch fused GEMM+SwiGLU on SM100 using shape-based tuning table.
 
@@ -198,6 +201,7 @@ def matmul_swiglu_dispatch_sm100_bf16[
         has_bias: Whether the kernel consumes ``bias_ptr`` as a bias vector
               (defaults to False). When False, ``bias_ptr`` is ignored and
               the selected config is built with ``use_bias=False``.
+        bias_origin: Origin of ``bias_ptr`` (inferred).
 
     Args:
         c_out: [M, H] BF16 output tensor (H = N/2).
@@ -219,9 +223,9 @@ def matmul_swiglu_dispatch_sm100_bf16[
     var out_row_stride = Int(c_out.dynamic_stride(0))
     var out_col_stride = Int(c_out.dynamic_stride(1))
     # When has_bias=False, c_out.ptr is a valid dummy (bias never accessed).
-    var bias_base = rebind[ImmPointer[BFloat16, ImmutAnyOrigin]](c_out.ptr)
+    var bias_base = rebind[ImmPointer[BFloat16, ImmUntrackedOrigin]](c_out.ptr)
     comptime if has_bias:
-        bias_base = bias_ptr.value()
+        bias_base = bias_ptr.value().unsafe_origin_cast[ImmUntrackedOrigin]()
     # TMA needs aligned, dense tensors. The fallback avoids transient scratch
     # that could be reused while a captured device graph still references it.
     var requires_fallback = (
@@ -244,13 +248,13 @@ def matmul_swiglu_dispatch_sm100_bf16[
         comptime warps_per_block = threads // WARP_SIZE
         var work_count = ceildiv(m, _FALLBACK_ROWS_PER_WARP) * h
         ctx.enqueue_function[_matmul_swiglu_fallback[has_bias]](
-            MutPointer[BFloat16, MutAnyOrigin](
+            MutPointer[BFloat16, MutUntrackedOrigin](
                 unsafe_from_address=Int(c_out.ptr)
             ),
-            ImmPointer[BFloat16, ImmutAnyOrigin](
+            ImmPointer[BFloat16, ImmUntrackedOrigin](
                 unsafe_from_address=Int(a.ptr)
             ),
-            ImmPointer[BFloat16, ImmutAnyOrigin](
+            ImmPointer[BFloat16, ImmUntrackedOrigin](
                 unsafe_from_address=Int(b.ptr)
             ),
             bias_base,

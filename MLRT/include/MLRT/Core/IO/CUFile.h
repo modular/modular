@@ -20,7 +20,7 @@
 #include <filesystem>
 #include <unistd.h>
 
-namespace M::IO {
+namespace M::MLRT {
 /// A wrapper around the NVIDIA GPUDirect Storage (GDS) cuFile API
 /// for performing direct I/O between storage and GPU memory.
 struct CUFile {
@@ -57,6 +57,6 @@ private:
   void *handle = nullptr;
 #endif // MODULAR_LINUX
 };
-}; // namespace M::IO
+}; // namespace M::MLRT
 
 #endif // MLRT_CORE_IO_CUFILE_H

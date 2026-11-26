@@ -174,6 +174,7 @@ from ._label_scoring import BatchLabelScorer
 from .spec_decode_pipeline_model import (
     SpecDecodePipelineModel,
     _UnifiedSpecDecodeModelMixin,
+    extra_output_count,
 )
 from .structured_output_overlap import StructuredOutputOverlapState
 from .text_generation import (
@@ -2847,6 +2848,7 @@ class OverlapTextGenerationPipeline(
             max_cache_length_upper_bound=self._effective_max_cache_length,
             max_batch_size=max_capture_batch_size,
             num_speculative_tokens=num_speculative_tokens,
+            skip_output_count=extra_output_count(self._pipeline_config),
             widths_by_batch_size=self._spec_width_policy.widths_by_batch_size(
                 max_capture_batch_size
             ),

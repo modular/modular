@@ -108,7 +108,8 @@ void SimplifyCF::walkPreorder(Region &region) {
         walkPreorder(tryOp.getTryRegion());
       }
       // Visit the rest of the regions.
-      walkPreorder(tryOp.getExceptRegion());
+      for (Region &exceptRegion : tryOp.getExceptRegions())
+        walkPreorder(exceptRegion);
       walkPreorder(tryOp.getElseRegion());
       return WalkResult::skip();
     }

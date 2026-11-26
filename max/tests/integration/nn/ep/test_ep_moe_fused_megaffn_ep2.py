@@ -45,7 +45,7 @@ What this exercises that the kernel harness cannot:
 
 The optional pilot (``EP2_FUSED_PILOT=1``) times captured SHIP vs captured FULL
 replays, paired and interleaved, on two cells per format. It is a small
-current-mode pilot, not a campaign.
+diagnostic, not part of the gate.
 """
 
 from __future__ import annotations
@@ -491,9 +491,10 @@ def _assert_structure(
     ship_init: EPCommInitializer,
     ship_has_side_stream: bool,
     ship_combine_send: bool,
+    n_layers: int = N_LAYERS,
 ) -> None:
     assert (
-        fused_ir.count('symbol = "mega_ffn.ep_fused"') == N_LAYERS * N_DEVICES
+        fused_ir.count('symbol = "mega_ffn.ep_fused"') == n_layers * N_DEVICES
     )
     for op in (
         "ep.dispatch_async",
@@ -567,11 +568,44 @@ def _assert_finite(
         )
 
 
+def _report_row(
+    ref: torch.Tensor, out: torch.Tensor, rows: int, where: str
+) -> None:
+    """Prints one rank's agreement with ``ref``: worst row and the whole."
+
+    The gate's evidence is a cosine against a bound; a derivation needs the
+    distribution, so the knob and the chain probe print the worst row and the
+    whole rank rather than asserting.
+    """
+    r, o = ref[:rows].float(), out[:rows].float()
+    cos = torch.nn.functional.cosine_similarity(r, o, dim=-1)
+    rel = ((r - o).norm() / r.norm().clamp_min(1e-30)).item()
+    print(
+        f"COS {where}: cos {cos.min().item():.6f} rel {rel:.4e}"
+        f" mean_cos {cos.mean().item():.6f}",
+        flush=True,
+    )
+
+
+_COS_FLOOR_NVFP4 = 0.9999
+"""Worst-row cosine of the same one-layer comparison on both arms; their only
+difference is the intermediate's NVFP4 re-quantization."""
+_REL_BOUND_NVFP4 = 8e-3
+"""The same comparison as a worst-row relative L2 error, with margin for the
+shift that the second layer's already-different input adds. The pair with the
+cosine is needed because a cosine cannot see a row's scale: a row times 1.01
+scores 1.0."""
+_EXACT_FORMATS = ("mxfp8",)
+"""Formats whose two paths carry the same quantisation steps, so their
+comparison is exact rather than bounded."""
+
+
 def _compare(
     ref: list[torch.Tensor],
     out: list[torch.Tensor],
     lengths: list[int],
     where: str,
+    fmt: str = "nvfp4",
 ) -> int:
     exact = 0
     for i, (r, o) in enumerate(zip(ref, out, strict=True)):
@@ -580,11 +614,41 @@ def _compare(
             continue
         assert torch.isfinite(o).all(), f"{where} rank {i}: non-finite output"
         assert o.abs().max() > 0, f"{where} rank {i}: all-zero output"
-        cos = torch.nn.functional.cosine_similarity(r, o, dim=-1)
-        assert cos.min() > 0.9999, (
-            f"{where} rank {i}: cosine {cos.min().item():.6f}"
-        )
         exact += int(torch.equal(r, o))
+        if os.environ.get("EP2_COS_REPORT", "0") == "1":
+            _report_row(r, o, lengths[i], f"{where} rank {i}")
+            continue
+        if fmt in _EXACT_FORMATS:
+            assert torch.equal(r, o), (
+                f"{where} rank {i}: {int((r != o).sum())} of {r.numel()}"
+                " values differ, and this format's two paths carry the same"
+                " quantisation steps, so the comparison is exact"
+            )
+            continue
+        r32, o32 = r.float(), o.float()
+        cos = torch.nn.functional.cosine_similarity(r32, o32, dim=-1)
+        rel = (r32 - o32).norm(dim=-1) / r32.norm(dim=-1).clamp_min(1e-30)
+        assert cos.min() > _COS_FLOOR_NVFP4, (
+            f"{where} rank {i}: worst-row cosine {cos.min().item():.6f}"
+            f" against the one-layer floor {_COS_FLOOR_NVFP4}"
+        )
+        if os.environ.get("EP2_ROW_REPORT", "0") == "1":
+            worst = int(rel.argmax())
+            q = torch.quantile(rel, torch.tensor([0.5, 0.99], dtype=rel.dtype))
+            print(
+                f"ROW {where} rank {i}: worst row {worst} of {len(rel)}"
+                f" rel {rel[worst].item():.3e} median {q[0].item():.3e}"
+                f" p99 {q[1].item():.3e} max {rel.max().item():.3e}"
+                f" cos_at_worst {cos[worst].item():.6f}",
+                flush=True,
+            )
+        assert rel.max() <= _REL_BOUND_NVFP4, (
+            f"{where} rank {i}: worst-row relative L2 error"
+            f" {rel.max().item():.3e} (row {int(rel.argmax())} of {len(rel)})"
+            f" against the one-layer bound {_REL_BOUND_NVFP4:.1e}"
+            " (a cosine cannot see a row's scale); set EP2_ROW_REPORT=1 for"
+            " the per-row distribution"
+        )
     return exact
 
 
@@ -664,6 +728,21 @@ def test_ep2_ship_reference_repeats(fmt: str, layers: int) -> None:
         )
 
 
+def _per_layer_totals(load: list[list[list[int]]]) -> list[int]:
+    """Sums a per-device tally's experts into one total per layer."""
+    totals = [0] * len(load[0])
+    for device in load:
+        for layer, row in enumerate(device):
+            totals[layer] += sum(row)
+    return totals
+
+
+def _assert_tally_row(got: list[int], ref: list[int], where: str) -> None:
+    """Checks one layer's per-expert tally against its own router's picks."""
+    assert len(got) == len(ref), (where, len(got), len(ref))
+    assert got == ref, f"{where}: tally {got} != its own routing {ref}"
+
+
 @_needs_ep2[0]
 @_needs_ep2[1]
 @_needs_ep2[2]
@@ -673,9 +752,14 @@ def test_ep2_fused_counts_expert_load_like_shipping(fmt: str) -> None:
 
     The fused MoE counts in its own arrival wait, not the shipping dispatch's,
     so it is checked against the shipping chain (whose tally
-    ``test_ep_expert_load.py`` checks against host-computed routes): same
-    weights, routes and inputs give the same per-(layer, local expert) running
-    totals, over every cell and generation.
+    ``test_ep_expert_load.py`` checks against host-computed routes). Layer 1
+    gets the same token rows in both arms, so its per-expert tallies must
+    match exactly. Layer 2's input is each arm's own layer-1 output, which
+    differs by one re-quantization, so routing can legitimately differ; each
+    arm's layer-2 row must instead equal the picks its own one-layer graph
+    makes on that layer's input. A row keeps its own layer's counts, so an
+    accumulated row cannot hide a wrong-row bug, and each layer's total must
+    be exactly tokens * TOP_K.
     """
     devices = [Accelerator(i) for i in range(N_DEVICES)]
     devices_ref = [DeviceRef(d.label, d.id) for d in devices]
@@ -702,6 +786,30 @@ def test_ep2_fused_counts_expert_load_like_shipping(fmt: str) -> None:
         shared=shared,
         count_expert_load=True,
     )
+    # One-layer graphs, one per arm, provide layer 2's reference. The stack
+    # loads the same weights in every layer, so a one-layer graph is that
+    # arm's layer-2 graph too; the tally delta across its two runs isolates
+    # the second layer's picks.
+    refs: dict[str, tuple[Model, EPCommInitializer]] = {}
+    for arm, fused_arm in (("shipping", False), ("fused", True)):
+        model, init, _ = _build_arm(
+            fmt,
+            fused_arm,
+            wrapped,
+            session,
+            devices_ref,
+            f"{arm.upper()}_EL1",
+            n_layers=1,
+            shared=shared,
+            count_expert_load=True,
+        )
+        refs[arm] = (model, init)
+    layer2_ref = {
+        arm: [
+            [0] * len(load.to(CPU()).to_numpy()[0]) for load in init.expert_load
+        ]
+        for arm, (_, init) in refs.items()
+    }
     tokens = 0
     for cell, lengths in CELLS.items():
         for gen in range(N_GENERATIONS):
@@ -712,19 +820,68 @@ def test_ep2_fused_counts_expert_load_like_shipping(fmt: str) -> None:
             ship.execute(*xs, *ship_init.model_inputs())
             fused.execute(*xs, *fused_init.model_inputs())
             tokens += sum(lengths)
+            for arm, (one, one_init) in refs.items():
+                # Layer 1: the token rows.
+                y1 = _snapshot(one.execute(*xs, *one_init.model_inputs()))
+                for d in devices:
+                    d.synchronize()
+                before = [
+                    b.to(CPU()).to_numpy().tolist()
+                    for b in one_init.expert_load
+                ]
+                # Layer 2: the same one-layer graph on its own layer-1 output.
+                y1_bufs = [
+                    Buffer.from_dlpack(t.to(torch.bfloat16).contiguous()).to(
+                        devices[i]
+                    )
+                    for i, t in enumerate(y1)
+                ]
+                one.execute(*y1_bufs, *one_init.model_inputs())
+                for d in devices:
+                    d.synchronize()
+                after = [
+                    b.to(CPU()).to_numpy().tolist()
+                    for b in one_init.expert_load
+                ]
+                for i in range(N_DEVICES):
+                    for expert, (new, old) in enumerate(
+                        zip(after[i][0], before[i][0], strict=True)
+                    ):
+                        layer2_ref[arm][i][expert] += new - old
     for d in devices:
         d.synchronize()
 
-    ship_load = [b.to(CPU()).to_numpy() for b in ship_init.expert_load]
-    fused_load = [b.to(CPU()).to_numpy() for b in fused_init.expert_load]
+    ship_load = [b.to(CPU()).to_numpy().tolist() for b in ship_init.expert_load]
+    fused_load = [
+        b.to(CPU()).to_numpy().tolist() for b in fused_init.expert_load
+    ]
+    # Layer 1 has identical input in both arms, so its per-expert tally must
+    # match exactly; a wrong-row or wrong-expert fused counter shows here.
     for i in range(N_DEVICES):
-        assert (ship_load[i] == fused_load[i]).all(), (
-            f"{fmt} rank {i}: fused tally {fused_load[i].tolist()} != shipping"
-            f" {ship_load[i].tolist()}"
+        assert ship_load[i][0] == fused_load[i][0], (
+            f"{fmt} rank {i}: layer 1 fused tally"
+            f" {fused_load[i][0]} != shipping {ship_load[i][0]}"
         )
-    # Every token picks TOP_K experts in every layer.
-    per_layer = sum(t.sum(axis=1) for t in fused_load)
-    assert per_layer.tolist() == [tokens * TOP_K] * N_LAYERS
+    # Serving keeps a layer's tally in its own row, so an accumulated row
+    # would hide a wrong-row bug. Counts are exact integers: each row, from
+    # either arm, must sum to tokens * TOP_K exactly.
+    expected = [tokens * TOP_K] * N_LAYERS
+    for load, arm in ((ship_load, "shipping"), (fused_load, "fused")):
+        assert len(load[0]) == N_LAYERS, (fmt, arm, len(load[0]))
+        assert _per_layer_totals(load) == expected, (
+            f"{fmt} {arm} per-layer totals {_per_layer_totals(load)}"
+            f" != {expected}"
+        )
+    if N_LAYERS > 1:
+        # Layer 2's routing is each arm's own: a moved pick keeps the row sum
+        # but fails this comparison, which is why both checks are needed.
+        for load, arm in ((ship_load, "shipping"), (fused_load, "fused")):
+            for i in range(N_DEVICES):
+                _assert_tally_row(
+                    load[i][1],
+                    layer2_ref[arm][i],
+                    f"{fmt} {arm} rank {i} layer 2 vs its own routing",
+                )
 
 
 @_needs_ep2[0]
@@ -756,34 +913,68 @@ def test_ep2_fused_mode_vs_ship(fmt: str, mode: str) -> None:
         shared=shared,
     )
     fused, init, _ = _build_arm(
-        fmt, True, wrapped, session, devices_ref, "FULL_M", shared=shared
+        fmt,
+        True,
+        wrapped,
+        session,
+        devices_ref,
+        "FULL_M",
+        n_layers=1,
+        shared=shared,
     )
     key = 500
     for cell, lengths in CELLS.items():
-        bufs = [
-            Buffer.from_dlpack(
-                torch.zeros(n, HIDDEN_DIM, dtype=torch.bfloat16)
-            ).to(devices[i])
-            for i, n in enumerate(lengths)
+        # One stable carrier per layer: a captured graph binds its input
+        # objects, so each layer's input is created once per cell and
+        # rewritten in place, not rebuilt per generation.
+        carriers = [
+            [
+                Buffer.from_dlpack(
+                    torch.zeros(n, HIDDEN_DIM, dtype=torch.bfloat16)
+                ).to(devices[i])
+                for i, n in enumerate(lengths)
+            ]
+            for _ in range(N_LAYERS)
         ]
-        outs: list[Buffer] | None = None
-        key += 1
+        bufs = carriers[0]
+        outs: dict[int, list[Buffer]] = {}
+        # One capture key per layer: the key is bound to its input signature,
+        # so consecutive cells must not collide either.
+        key += N_LAYERS
         for gen in range(N_GENERATIONS):
             xs = _inputs(lengths, gen, f"{fmt}{cell}")
             for i, x in enumerate(xs):
                 bufs[i].inplace_copy_from(Buffer.from_dlpack(x).to(devices[i]))
+            # Per layer, on identical input: both arms are handed the same
+            # tensor, so every row is comparable. A two-layer comparison across
+            # arms would ask a question the design answers: the intermediates
+            # differ by one re-quantization, so a later layer's top-k near-ties
+            # flip and a flipped row is not comparable at all.
+            cur: list[Buffer] = bufs
+            for layer in range(N_LAYERS):
+                where = f"{fmt} {cell} gen {gen} layer {layer + 1} {mode}"
+                ref = _snapshot(ship.execute(*cur, *ship_init.model_inputs()))
+                _assert_finite(ref, lengths, where + " shipping reference")
+                if mode == "eager":
+                    got = _snapshot(fused.execute(*cur, *init.model_inputs()))
+                else:
+                    if key + layer not in outs:
+                        outs[key + layer] = fused.capture(
+                            key + layer, *cur, *init.model_inputs()
+                        )
+                    fused.replay(key + layer, *cur, *init.model_inputs())
+                    got = _snapshot(outs[key + layer])
+                _assert_finite(got, lengths, where + " fused")
+                _compare(ref, got, lengths, where, fmt)
+                if layer + 1 < N_LAYERS:
+                    cur = carriers[layer + 1]
+                    for i, t in enumerate(ref):
+                        cur[i].inplace_copy_from(
+                            Buffer.from_dlpack(
+                                t.to(torch.bfloat16).contiguous()
+                            ).to(devices[i])
+                        )
             where = f"{fmt} {cell} gen {gen} {mode}"
-            ref = _ship_reference(ship, ship_init, bufs)
-            _assert_finite(ref, lengths, where + " shipping reference")
-            if mode == "eager":
-                got = _snapshot(fused.execute(*bufs, *init.model_inputs()))
-            else:
-                if outs is None:
-                    outs = fused.capture(key, *bufs, *init.model_inputs())
-                fused.replay(key, *bufs, *init.model_inputs())
-                got = _snapshot(outs)
-            _assert_finite(got, lengths, where + " fused")
-            _compare(ref, got, lengths, where)
             # The reference again, after the fused arm ran on this generation.
             ref2 = _ship_reference(ship, ship_init, bufs)
             _assert_finite(
@@ -793,8 +984,15 @@ def test_ep2_fused_mode_vs_ship(fmt: str, mode: str) -> None:
                 assert torch.equal(ref[i], ref2[i]), (
                     f"{where} rank {i}: the shipping arm's output changed after the fused arm ran"
                 )
+        bound = (
+            "byte-identical"
+            if fmt in _EXACT_FORMATS
+            else f"prototype-free one-layer bound: cosine > {_COS_FLOOR_NVFP4}"
+            f", relative L2 <= {_REL_BOUND_NVFP4:.1e}"
+        )
         print(
-            f"{fmt} {cell} {mode}: {N_GENERATIONS} generations, fused == shipping",
+            f"{fmt} {cell} {mode}: {N_GENERATIONS} generations x {N_LAYERS}"
+            f" layers, each layer compared on identical input, {bound}",
             flush=True,
         )
 
@@ -802,9 +1000,10 @@ def test_ep2_fused_mode_vs_ship(fmt: str, mode: str) -> None:
 def _graph_replay_body(
     fmt: str, max_tpr: int, cells: dict[str, list[int]]
 ) -> int:
-    """One capture per workspace replayed across generations and both parities
-    on ``cells`` at capacity ``max_tpr``, bit-exact against the eager
-    one-layer shipping reference; then the capacity refusal at ``max_tpr + 1``.
+    """One capture per workspace and layer replayed across generations and
+    both parities on ``cells`` at capacity ``max_tpr``, each layer compared on
+    identical input against the eager one-layer shipping reference; then the
+    capacity refusal at ``max_tpr + 1``.
     Returns the token block EP init reported for the workspace."""
     devices = [Accelerator(i) for i in range(N_DEVICES)]
     devices_ref = [DeviceRef(d.label, d.id) for d in devices]
@@ -830,6 +1029,7 @@ def _graph_replay_body(
         session,
         devices_ref,
         "FULL_A",
+        n_layers=1,
         shared=shared,
         max_tpr=max_tpr,
     )
@@ -840,6 +1040,7 @@ def _graph_replay_body(
         session,
         devices_ref,
         "FULL_B",
+        n_layers=1,
         shared=shared,
         max_tpr=max_tpr,
     )
@@ -849,6 +1050,7 @@ def _graph_replay_body(
         ship_init,
         ship_has_side_stream=shared,
         ship_combine_send=_ship_combine_send(fmt),
+        n_layers=1,
     )
     # Two EP instances: two cache keys (their ep.init receive-count
     # buffers), so two workspaces, each of the size the host plan query
@@ -869,64 +1071,94 @@ def _graph_replay_body(
     total = 0
     key = 100
     for cell, lengths in cells.items():
-        # Fixed device buffers per cell: a captured graph binds them, and the
-        # generations below rewrite them in place.
-        bufs = [
-            Buffer.from_dlpack(
-                torch.zeros(n, HIDDEN_DIM, dtype=torch.bfloat16)
-            ).to(devices[i])
-            for i, n in enumerate(lengths)
+        # Fixed device buffers per cell and layer: a captured graph binds its
+        # input objects, and the generations below rewrite them in place.
+        carriers = [
+            [
+                Buffer.from_dlpack(
+                    torch.zeros(n, HIDDEN_DIM, dtype=torch.bfloat16)
+                ).to(devices[i])
+                for i, n in enumerate(lengths)
+            ]
+            for _ in range(N_LAYERS)
         ]
+        bufs = carriers[0]
         nan_bufs = [
             Buffer.from_dlpack(
                 torch.full((n, HIDDEN_DIM), float("nan"), dtype=torch.bfloat16)
             ).to(devices[i])
             for i, n in enumerate(lengths)
         ]
-        arms = [("A", fused_a, init_a, key), ("B", fused_b, init_b, key + 1)]
-        key += 2
-        outs: dict[str, list[Buffer]] = {}
-        prev: dict[str, list[torch.Tensor]] = {}
+        arms = [
+            ("A", fused_a, init_a, key),
+            ("B", fused_b, init_b, key + N_LAYERS),
+        ]
+        key += 2 * N_LAYERS
+        outs: dict[tuple[str, int], list[Buffer]] = {}
+        prev: dict[tuple[str, int], list[torch.Tensor]] = {}
         for gen in range(N_GENERATIONS):
             xs = _inputs(lengths, gen, f"{fmt}{cell}")
             for i, x in enumerate(xs):
                 bufs[i].inplace_copy_from(Buffer.from_dlpack(x).to(devices[i]))
-            ref = _ship_reference(ship, ship_init, bufs)
-            _assert_finite(
-                ref, lengths, f"{fmt} {cell} gen {gen} shipping reference"
-            )
-            for arm, model, init, k in arms:
-                if gen == 0:
-                    # Instantiate ONCE; every later generation is a replay of
-                    # this graph with the inputs rewritten in place.
-                    outs[arm] = model.capture(k, *bufs, *init.model_inputs())
-                # Canary: an unwritten token row stays NaN.
-                for i, o in enumerate(outs[arm]):
-                    if lengths[i] > 0:
-                        o.inplace_copy_from(nan_bufs[i])
-                model.replay(k, *bufs, *init.model_inputs())
-                got = _snapshot(outs[arm])
-                where = f"{fmt} {cell} gen {gen} workspace {arm}"
-                exact += _compare(ref, got, lengths, where)
-                total += sum(1 for n in lengths if n > 0)
-                if arm in prev:
-                    # Fresh output: the inputs changed, so must the result.
-                    changed = any(
-                        lengths[i] > 0 and not torch.equal(prev[arm][i], got[i])
-                        for i in range(N_DEVICES)
+            cur: list[Buffer] = bufs
+            for layer in range(N_LAYERS):
+                ref = _snapshot(ship.execute(*cur, *ship_init.model_inputs()))
+                _assert_finite(
+                    ref,
+                    lengths,
+                    f"{fmt} {cell} gen {gen} layer {layer + 1}"
+                    " shipping reference",
+                )
+                for arm, model, init, k in arms:
+                    if gen == 0:
+                        # Instantiate ONCE per layer; every later generation
+                        # is a replay of this graph with the inputs rewritten
+                        # in place.
+                        outs[arm, layer] = model.capture(
+                            k + layer, *cur, *init.model_inputs()
+                        )
+                    # Canary: an unwritten token row stays NaN.
+                    for i, o in enumerate(outs[arm, layer]):
+                        if lengths[i] > 0:
+                            o.inplace_copy_from(nan_bufs[i])
+                    model.replay(k + layer, *cur, *init.model_inputs())
+                    got = _snapshot(outs[arm, layer])
+                    where = (
+                        f"{fmt} {cell} gen {gen} layer {layer + 1}"
+                        f" workspace {arm}"
                     )
-                    assert changed, (
-                        f"{where}: output identical to the previous generation"
-                    )
-                prev[arm] = got
+                    exact += _compare(ref, got, lengths, where, fmt)
+                    total += sum(1 for n in lengths if n > 0)
+                    if (arm, layer) in prev:
+                        # Fresh output: the inputs changed, so must the
+                        # result.
+                        changed = any(
+                            lengths[i] > 0
+                            and not torch.equal(prev[arm, layer][i], got[i])
+                            for i in range(N_DEVICES)
+                        )
+                        assert changed, (
+                            f"{where}: output identical to the previous"
+                            " generation"
+                        )
+                    prev[arm, layer] = got
+                if layer + 1 < N_LAYERS:
+                    cur = carriers[layer + 1]
+                    for i, t in enumerate(ref):
+                        cur[i].inplace_copy_from(
+                            Buffer.from_dlpack(
+                                t.to(torch.bfloat16).contiguous()
+                            ).to(devices[i])
+                        )
         print(
-            f"{fmt} {cell}: {N_GENERATIONS} generations x 2 workspaces replayed,"
-            f" all matched the eager shipping arm",
+            f"{fmt} {cell}: {N_GENERATIONS} generations x {N_LAYERS} layers"
+            f" x 2 workspaces replayed, all matched the eager shipping arm",
             flush=True,
         )
     print(
-        f"{fmt}: fused (captured, replayed) == shipping (eager) bit-exactly on"
-        f" {exact}/{total} (cell, generation, workspace, rank) checks",
+        f"{fmt}: fused (captured, replayed) matched shipping (eager) on"
+        f" {total} (cell, generation, layer, workspace, rank) checks,"
+        f" {exact}/{total} byte-identical",
         flush=True,
     )
 
@@ -946,9 +1178,9 @@ def _graph_replay_body(
     first = next(iter(cells.values()))
     xs = _inputs(first, 99, fmt)
     ok = [Buffer.from_dlpack(x).to(devices[i]) for i, x in enumerate(xs)]
-    ref = _ship_reference(ship, ship_init, ok)
+    ref = _ship_reference(ship, ship_init, ok, n_layers=1)
     got = _snapshot(fused_a.execute(*ok, *init_a.model_inputs()))
-    _compare(ref, got, first, f"{fmt} post-refusal")
+    _compare(ref, got, first, f"{fmt} post-refusal", fmt)
     return token_block
 
 
@@ -1155,7 +1387,7 @@ def test_ep2_fused_and_shipping_share_an_ep_instance() -> None:
     session = InferenceSession(devices=devices)
     wrapped = _weights(fmt)
     fused, init, _ = _build_arm(
-        fmt, True, wrapped, session, devices_ref, "FULL_S"
+        fmt, True, wrapped, session, devices_ref, "FULL_S", n_layers=1
     )
     ship_s, _, ship_s_ir = _build_arm(
         fmt,
@@ -1182,10 +1414,26 @@ def test_ep2_fused_and_shipping_share_an_ep_instance() -> None:
             xs = _inputs(lengths, gen, f"shared{cell}")
             for i, x in enumerate(xs):
                 bufs[i].inplace_copy_from(Buffer.from_dlpack(x).to(devices[i]))
+            cur = bufs
+            for layer in range(N_LAYERS):
+                where = f"{cell} gen {gen} layer {layer + 1}"
+                ref = _snapshot(ship.execute(*cur, *ship_init.model_inputs()))
+                got = _snapshot(fused.execute(*cur, *init.model_inputs()))
+                _compare(
+                    ref,
+                    got,
+                    lengths,
+                    where + " fused on the shared instance",
+                    fmt,
+                )
+                cur = [
+                    Buffer.from_dlpack(t.to(torch.bfloat16).contiguous()).to(
+                        devices[i]
+                    )
+                    for i, t in enumerate(ref)
+                ]
             where = f"{cell} gen {gen}"
             ref = _ship_reference(ship, ship_init, bufs)
-            got = _snapshot(fused.execute(*bufs, *init.model_inputs()))
-            _compare(ref, got, lengths, where + " fused on the shared instance")
             shared_ref = _ship_reference(ship_s, init, bufs)
             for i in range(N_DEVICES):
                 assert torch.equal(ref[i], shared_ref[i]), (
@@ -1240,7 +1488,7 @@ def test_ep2_fused_nsys_subject(fmt: str) -> None:
         fused.replay(11, *bufs, *init.model_inputs())
     for d in devices:
         d.synchronize()
-    _compare(ref, _snapshot(outs), lengths, f"{fmt} nsys FULL replay")
+    _compare(ref, _snapshot(outs), lengths, f"{fmt} nsys FULL replay", fmt)
     outs1 = ship1.capture(12, *bufs, *ship1_init.model_inputs())
     for _ in range(n_rep):
         ship1.replay(12, *bufs, *ship1_init.model_inputs())
@@ -1599,3 +1847,198 @@ def test_ep2_fused_pilot(fmt: str) -> None:
     if out:
         with open(os.path.join(out, f"pilot_{fmt}.json"), "w") as f:
             json.dump(results, f, indent=1)
+
+
+# ----------------------------------------------------------------------------
+# Chaining probe: is a two-layer graph the same as its one-layer graph twice?
+# ----------------------------------------------------------------------------
+@pytest.mark.parametrize("fmt", FORMATS)
+def test_ep2_chain_probe(fmt: str) -> None:
+    """Diagnosis for the two-layer comparison.
+
+    The gate compares a two-layer fused graph against the shipping chain's
+    one-layer graph executed twice. This asks the same question of each arm
+    against *itself*, so a difference belongs to the layer chaining rather
+    than to the other arm: each two-layer graph, once, against its own
+    one-layer graph run twice with the outputs fed back. It also runs the
+    two-layer shipping graph to see whether it reproduces the non-finite
+    output the reference helper is written around.
+    """
+    devices = [Accelerator(i) for i in range(N_DEVICES)]
+    devices_ref = [DeviceRef(d.label, d.id) for d in devices]
+    session = InferenceSession(devices=devices)
+    wrapped = _weights(fmt)
+    shared = fmt == "nvfp4"
+    arms: dict[tuple[str, int], tuple[Model, EPCommInitializer]] = {}
+    for name, fused in (("fused", True), ("ship", False)):
+        for n_layers in (1, 2):
+            model, init, _ = _build_arm(
+                fmt,
+                fused,
+                wrapped,
+                session,
+                devices_ref,
+                f"{name.upper()}_L{n_layers}",
+                n_layers=n_layers,
+                shared=shared,
+            )
+            arms[(name, n_layers)] = (model, init)
+
+    for cell, lengths in CELLS.items():
+        for gen in range(2):
+            xs = _inputs(lengths, gen, f"{fmt}{cell}probe")
+            seed_bufs = [
+                Buffer.from_dlpack(
+                    torch.zeros(n, HIDDEN_DIM, dtype=torch.bfloat16)
+                ).to(devices[i])
+                for i, n in enumerate(lengths)
+            ]
+            for i, x in enumerate(xs):
+                seed_bufs[i].inplace_copy_from(
+                    Buffer.from_dlpack(x).to(devices[i])
+                )
+            for name in ("fused", "ship"):
+                one_model, one_init = arms[(name, 1)]
+                two_model, two_init = arms[(name, 2)]
+                # The two-layer graph, one execution.
+                two = _snapshot(
+                    two_model.execute(*seed_bufs, *two_init.model_inputs())
+                )
+                bad = _first_nonfinite(two, lengths)
+                if bad is not None:
+                    print(
+                        f"NONFINITE {name} {fmt} {cell} gen {gen}"
+                        f" two-layer {bad}",
+                        flush=True,
+                    )
+                # The one-layer graph, twice, feeding the outputs back.
+                cur = list(seed_bufs)
+                for step in range(2):
+                    one = _snapshot(
+                        one_model.execute(*cur, *one_init.model_inputs())
+                    )
+                    bad = _first_nonfinite(one, lengths)
+                    if bad is not None:
+                        print(
+                            f"NONFINITE {name} {fmt} {cell} gen {gen}"
+                            f" one-layer step {step + 1} {bad}",
+                            flush=True,
+                        )
+                        break
+                    cur = [
+                        Buffer.from_dlpack(
+                            t.to(torch.bfloat16).contiguous()
+                        ).to(devices[i])
+                        for i, t in enumerate(one)
+                    ]
+                where = (
+                    f"{name} {fmt} {cell} gen {gen}"
+                    " two-layer-vs-one-layer-twice"
+                )
+                _report_pair(two, one, lengths, where)
+                # A gate, not a print: chaining is exact in both arms and both
+                # formats, so the two-layer graph must reproduce its own
+                # one-layer graph run twice, byte for byte.
+                for i, (a, b) in enumerate(zip(two, one, strict=True)):
+                    assert torch.equal(a[: lengths[i]], b[: lengths[i]]), (
+                        f"{where} rank {i}: the two-layer graph differs from"
+                        " its one-layer graph run twice"
+                    )
+
+
+def _first_nonfinite(out: list[torch.Tensor], lengths: list[int]) -> str | None:
+    """Describes the first non-finite row of ``out``, or ``None``."""
+    for i, t in enumerate(out):
+        rows = t[: lengths[i]]
+        bad = (~torch.isfinite(rows)).any(dim=-1).nonzero().flatten()
+        if bad.numel():
+            row = int(bad[0])
+            return (
+                f"rank {i} tensor {i} row {row} of {lengths[i]}"
+                f" first bad value {rows[row].tolist()[:4]}"
+            )
+    return None
+
+
+def _report_pair(
+    ref: list[torch.Tensor],
+    out: list[torch.Tensor],
+    lengths: list[int],
+    where: str,
+) -> None:
+    """Prints one comparison's per-rank worst row and whole-rank agreement."""
+    for i, (r, o) in enumerate(zip(ref, out, strict=True)):
+        if lengths[i] == 0:
+            continue
+        _report_row(r, o, lengths[i], f"{where} rank {i}")
+
+
+@pytest.mark.parametrize(
+    ("name", "perturb", "message"),
+    [
+        (
+            "scaled row",
+            lambda t: t.index_put_((torch.tensor([2]),), t[2:3] * 1.01),
+            "relative L2",
+        ),
+        (
+            "half-zeroed row",
+            lambda t: t.index_put_(
+                (torch.tensor([2]), torch.arange(HIDDEN_DIM // 2, HIDDEN_DIM)),
+                torch.zeros(HIDDEN_DIM // 2),
+            ),
+            "cosine",
+        ),
+    ],
+)
+def test_ep2_comparison_catches_a_planted_row(
+    name: str, perturb: Callable[[torch.Tensor], object], message: str
+) -> None:
+    """The gate's comparison must fail on one perturbed row of one arm.
+
+    Two faults a real regression would take, each caught by one half of the
+    pair: a row scaled by 1.01 leaves the cosine at 1.0 and only the relative
+    error sees it, and a row with half its values zeroed turns the cosine. Both
+    must also fail a format whose comparison is exact.
+    """
+    ref = [torch.ones(4, HIDDEN_DIM, dtype=torch.float32)]
+    planted = [ref[0].clone()]
+    perturb(planted[0])
+    cos = torch.nn.functional.cosine_similarity(
+        ref[0], planted[0], dim=-1
+    ).min()
+    rel = ((ref[0] - planted[0]).norm(dim=-1) / ref[0].norm(dim=-1)).max()
+    with pytest.raises(AssertionError, match=message) as caught:
+        _compare(ref, planted, [4], f"planted {name}", "nvfp4")
+    print(
+        f"PLANTED {name}: cosine {cos.item():.6f}, worst-row relative L2"
+        f" {rel.item():.3e} against the {_REL_BOUND_NVFP4:.1e} bound; caught"
+        f" by {message}: {caught.value}",
+        flush=True,
+    )
+    with pytest.raises(AssertionError, match="exact"):
+        _compare(ref, planted, [4], f"planted {name}", "mxfp8")
+
+
+def test_ep2_tally_catches_a_moved_pick() -> None:
+    """A moved tally pick must fail the own-routing check, not the row sum.
+
+    The row-sum check cannot see this fault: moving one pick to another expert
+    leaves the row's total unchanged. The own-routing check must reject it.
+    """
+    ref_row = [0] * 16
+    ref_row[2] = 3
+    ref_row[5] = 2
+    got_row = list(ref_row)
+    got_row[2] -= 1
+    got_row[7] += 1
+    assert _per_layer_totals([[got_row]]) == _per_layer_totals([[ref_row]])
+    with pytest.raises(AssertionError, match="own routing"):
+        _assert_tally_row(got_row, ref_row, "planted moved pick")
+    print(
+        "PLANTED moved pick: row total"
+        f" {sum(got_row)} unchanged and accepted by the row-sum check;"
+        " expert 2 lost one pick and expert 7 gained it, which the"
+        " own-routing check rejects",
+        flush=True,
+    )

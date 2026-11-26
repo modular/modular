@@ -1539,6 +1539,27 @@ kgen.func @simd_insertelement2() -> (!kgen.simd<2, si8>) {
   hlcf.return %2 : !kgen.simd<2, si8>
 }
 
+// Inserting into uninitialized memory works for the pointer-sized dtypes too.
+// CHECK-LABEL: @simd_insertelement_index_uninit
+kgen.func @simd_insertelement_index_uninit() -> (!kgen.simd<2, index>, !kgen.simd<2, uindex>, !kgen.simd<2, address>) {
+  // CHECK-DAG: %[[IDX:.*]] = kgen.param.constant: simd<2, index> = <<1099511627776, 0>>
+  // CHECK-DAG: %[[UIDX:.*]] = kgen.param.constant: simd<2, uindex> = <<0, 30>>
+  // CHECK-DAG: %[[ADDR:.*]] = kgen.param.constant: simd<2, address> = <<0, 5>>
+  // CHECK: hlcf.return %[[IDX]], %[[UIDX]], %[[ADDR]]
+  %idx0 = kgen.param.constant: scalar<index> = <0>
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, index> = <#interp.uninitmem : !kgen.simd<2, index>>
+  %1 = kgen.param.constant: scalar<index> = <1099511627776>
+  %2 = pop.simd.insertelement %1, %0[%idx0] : !kgen.simd<2, index>
+  %3 = kgen.param.constant: simd<2, uindex> = <#interp.uninitmem : !kgen.simd<2, uindex>>
+  %4 = kgen.param.constant: scalar<uindex> = <30>
+  %5 = pop.simd.insertelement %4, %3[%idx1] : !kgen.simd<2, uindex>
+  %6 = kgen.param.constant: simd<2, address> = <#interp.uninitmem : !kgen.simd<2, address>>
+  %7 = kgen.param.constant: scalar<address> = <5>
+  %8 = pop.simd.insertelement %7, %6[%idx1] : !kgen.simd<2, address>
+  hlcf.return %2, %5, %8 : !kgen.simd<2, index>, !kgen.simd<2, uindex>, !kgen.simd<2, address>
+}
+
 // CHECK-LABEL: @simd_shuffle
 kgen.func @simd_shuffle() -> !kgen.simd<2, si8> {
   // CHECK-NEXT: <3, 2>
@@ -1848,20 +1869,59 @@ kgen.func @offset_of_offset(%arg0: !kgen.pointer<index>) -> !kgen.pointer<index>
   hlcf.return %1 : !kgen.pointer<index>
 }
 
+// A constant offset inside the array folds into the array.gep.
 // CHECK-LABEL: @array_gep_offset
-kgen.func @array_gep_offset(%arg1: !pop.array<4, index>, %arg2: !kgen.scalar<index>) -> index {
-  // CHECK: %0 = pop.stack_allocation 1 x array<4, index>
+kgen.func @array_gep_offset(%arg0: !kgen.pointer<array<4, index>>) -> !kgen.pointer<index> {
+  // CHECK: %[[C3:.+]] = kgen.param.constant: scalar<index> = <3>
+  // CHECK: %[[G:.+]] = pop.array.gep %arg0[%[[C3]]] : <array<4, index>>
+  // CHECK-NOT: pop.offset
+  // CHECK: return %[[G]]
   %0 = kgen.param.constant: scalar<index> = <0>
-  %array = pop.stack_allocation 1 x array<4, index>
-  // CHECK-NEXT: pop.store %arg0, %0
-  pop.store %arg1, %array : !kgen.pointer<array<4, index>>
-  %gep = pop.array.gep %array[%0] : <array<4, index>>
-  // Fold gep+offset into just gep.
-  // CHECK: %1 = pop.array.gep %0[%arg1]
-  // CHECK: %2 = pop.load %1
-  %offset = pop.offset %gep[%arg2] : !kgen.pointer<index>
-  %load = pop.load %offset : !kgen.pointer<index>
-  hlcf.return %load : index
+  %3 = kgen.param.constant: scalar<index> = <3>
+  %gep = pop.array.gep %arg0[%0] : <array<4, index>>
+  %offset = pop.offset %gep[%3] : !kgen.pointer<index>
+  hlcf.return %offset : !kgen.pointer<index>
+}
+
+// A dynamic offset can go past the end of the array, so it must not fold into
+// the array.gep.
+// CHECK-LABEL: @array_gep_dynamic_offset
+kgen.func @array_gep_dynamic_offset(%arg0: !kgen.pointer<array<4, index>>, %arg1: !kgen.scalar<index>) -> !kgen.pointer<index> {
+  // CHECK: %[[G:.+]] = pop.array.gep %arg0[
+  // CHECK: %[[O:.+]] = pop.offset %[[G]][%arg1]
+  // CHECK: return %[[O]]
+  %0 = kgen.param.constant: scalar<index> = <0>
+  %gep = pop.array.gep %arg0[%0] : <array<4, index>>
+  %offset = pop.offset %gep[%arg1] : !kgen.pointer<index>
+  hlcf.return %offset : !kgen.pointer<index>
+}
+
+// A constant offset past the end of the array must not fold into the
+// array.gep.
+// CHECK-LABEL: @array_gep_out_of_bounds_offset
+kgen.func @array_gep_out_of_bounds_offset(%arg0: !kgen.pointer<array<4, index>>) -> !kgen.pointer<index> {
+  // CHECK: %[[C4:.+]] = kgen.param.constant: scalar<index> = <4>
+  // CHECK: %[[G:.+]] = pop.array.gep %arg0[
+  // CHECK: %[[O:.+]] = pop.offset %[[G]][%[[C4]]]
+  // CHECK: return %[[O]]
+  %0 = kgen.param.constant: scalar<index> = <0>
+  %4 = kgen.param.constant: scalar<index> = <4>
+  %gep = pop.array.gep %arg0[%0] : <array<4, index>>
+  %offset = pop.offset %gep[%4] : !kgen.pointer<index>
+  hlcf.return %offset : !kgen.pointer<index>
+}
+
+// A bitcast from a one-element array pointer becomes `array.gep %p[0]`. A
+// dynamic offset from it must stay an offset. If it folds into the array.gep,
+// the index of the one-element array is then replaced by zero.
+// CHECK-LABEL: @array1_bitcast_dynamic_offset
+kgen.func @array1_bitcast_dynamic_offset(%arg0: !kgen.pointer<array<1, index>>, %arg1: !kgen.scalar<index>) -> !kgen.pointer<index> {
+  // CHECK: %[[G:.+]] = pop.array.gep %arg0[
+  // CHECK: %[[O:.+]] = pop.offset %[[G]][%arg1]
+  // CHECK: return %[[O]]
+  %0 = pop.pointer.bitcast %arg0 : !kgen.pointer<array<1, index>> to !kgen.pointer<index>
+  %1 = pop.offset %0[%arg1] : !kgen.pointer<index>
+  hlcf.return %1 : !kgen.pointer<index>
 }
 
 // CHECK-LABEL: @large_int_memory_leak
@@ -2353,6 +2413,53 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     // CHECK: hlcf.return %[[RES]] : !kgen.scalar<uindex>
     hlcf.return %6 : !kgen.scalar<uindex>
   }
+
+  // 1099511627776 (2^40) truncates to 0 at 32 bits, so these fold only when
+  // the target's index bit width is known.
+  // CHECK-LABEL: @index_min_max
+  kgen.func @index_min_max() -> (!kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>) {
+    // CHECK-DAG: %[[SMALL:.*]] = kgen.param.constant: scalar<index> = <11>
+    // CHECK-DAG: %[[LARGE:.*]] = kgen.param.constant: scalar<index> = <1099511627776>
+    // CHECK-DAG: %[[USMALL:.*]] = kgen.param.constant: scalar<uindex> = <3>
+    // CHECK-DAG: %[[ULARGE:.*]] = kgen.param.constant: scalar<uindex> = <1099511627776>
+    // CHECK: hlcf.return %[[SMALL]], %[[LARGE]], %[[USMALL]], %[[ULARGE]]
+    %small = kgen.param.constant: scalar<index> = <11>
+    %large = kgen.param.constant: scalar<index> = <1099511627776>
+    %usmall = kgen.param.constant: scalar<uindex> = <3>
+    %ularge = kgen.param.constant: scalar<uindex> = <1099511627776>
+    %0 = pop.min %small, %large : !kgen.scalar<index>
+    %1 = pop.max %small, %large : !kgen.scalar<index>
+    %2 = pop.min %ularge, %usmall : !kgen.scalar<uindex>
+    %3 = pop.max %ularge, %usmall : !kgen.scalar<uindex>
+    hlcf.return %0, %1, %2, %3 : !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>
+  }
+}
+
+// -----
+
+// Without target info, pop.min and pop.max on index values still fold only when
+// 32-bit and 64-bit arithmetic agree.
+// CHECK-LABEL: @index_min_max_no_target_info
+kgen.func @index_min_max_no_target_info() -> (!kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>) {
+  // CHECK-DAG: %[[SMALL:.*]] = kgen.param.constant: scalar<index> = <11>
+  // CHECK-DAG: %[[MID:.*]] = kgen.param.constant: scalar<index> = <1048576>
+  // CHECK-DAG: %[[MIN:.*]] = pop.min %{{.*}} : !kgen.scalar<index>
+  // CHECK-DAG: %[[MAX:.*]] = pop.max %{{.*}} : !kgen.scalar<index>
+  // CHECK-DAG: %[[UMIN:.*]] = pop.min %{{.*}} : !kgen.scalar<uindex>
+  // CHECK-DAG: %[[UMAX:.*]] = pop.max %{{.*}} : !kgen.scalar<uindex>
+  // CHECK: hlcf.return %[[MIN]], %[[SMALL]], %[[MAX]], %[[MID]], %[[UMIN]], %[[UMAX]]
+  %small = kgen.param.constant: scalar<index> = <11>
+  %large = kgen.param.constant: scalar<index> = <1099511627776>
+  %mid = kgen.param.constant: scalar<index> = <1048576>
+  %0 = pop.min %small, %large : !kgen.scalar<index>
+  %1 = pop.min %small, %mid : !kgen.scalar<index>
+  %2 = pop.max %small, %large : !kgen.scalar<index>
+  %3 = pop.max %small, %mid : !kgen.scalar<index>
+  %usmall = kgen.param.constant: scalar<uindex> = <11>
+  %ularge = kgen.param.constant: scalar<uindex> = <1099511627776>
+  %4 = pop.min %usmall, %ularge : !kgen.scalar<uindex>
+  %5 = pop.max %usmall, %ularge : !kgen.scalar<uindex>
+  hlcf.return %0, %1, %2, %3, %4, %5 : !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<index>, !kgen.scalar<uindex>, !kgen.scalar<uindex>
 }
 
 // -----

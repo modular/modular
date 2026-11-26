@@ -30,6 +30,7 @@ from typing import TYPE_CHECKING, Any
 from max import functional as F
 from max.dtype import DType
 from max.graph import TensorValue
+from max.nn.ep import init as ep_init
 from max.nn.outputs import ReturnHiddenStates
 from max.pipelines.speculative._tensor_compat import as_graph_values
 from max.pipelines.speculative.block_driver import (
@@ -41,6 +42,7 @@ from max.pipelines.speculative.block_driver import (
 from max.pipelines.speculative.driver import TensorAdapter
 from max.pipelines.speculative.spec_adapters.target_adapter import (
     TargetAdapter,
+    always_takes_prefill_rows,
 )
 from max.pipelines.speculative.spec_target import Verified
 from max.pipelines.speculative.unified_graph_ops import mask_padded_tail
@@ -100,12 +102,14 @@ class BeamBlockTarget:
         """Runs the target over the batch's merged rows: logits and taps."""
         assert isinstance(batch, BlockBatch)
         target = self.target
-        comm = None
-        if target.ep_batch_manager is not None:
-            assert batch.ep_inputs is not None, (
-                "an expert-parallel target needs the graph's EP buffers"
-            )
-            comm = target.ep_batch_manager.comm_buffers(list(batch.ep_inputs))
+        assert target.ep_config is None or batch.ep_inputs is not None, (
+            "an expert-parallel target needs the graph's EP buffers"
+        )
+        ep = ep_init.flat_buffers(
+            target.ep_config,
+            [Tensor.from_graph_value(v) for v in batch.ep_inputs or ()],
+            target.mesh,
+        )
         caches = {
             FULL: list(batch.kv_collections),
             SLIDING: list(batch.passthrough_kv[SLIDING]),
@@ -114,7 +118,7 @@ class BeamBlockTarget:
             Tensor.from_graph_value(batch.merged_tokens),
             Tensor.from_graph_value(batch.merged_offsets),
             [caches[name] for name in target.kv_params.children],
-            comm,
+            ep,
             taps=self.target_layer_ids,
         )
         # Each request scores its trailing `count` rows; the count is a host
@@ -289,8 +293,9 @@ def verify(
 def ep_input_tree(target: Any) -> object | None:
     """Returns the group that names the EP buffers past the graph's tail."""
     assert isinstance(target, Beam)
-    manager = target.ep_batch_manager
-    return None if manager is None else manager.input_tree()
+    if target.ep_config is None:
+        return None
+    return ep_init.payload_types(target.ep_config)
 
 
 def block_proposer(
@@ -316,6 +321,7 @@ ADAPTER = TargetAdapter(
     verify=verify,
     block_proposer=block_proposer,
     ep_input_tree=ep_input_tree,
+    verify_takes_prefill_rows=always_takes_prefill_rows,
     # Mach's block adapter binds no `in_thinking_phase`, and Beam serves with
     # a reasoning parser, which would otherwise declare it.
     relaxed_thinking_acceptance=False,

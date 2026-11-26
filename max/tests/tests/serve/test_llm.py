@@ -1187,6 +1187,41 @@ async def test_fully_stripped_chunks_are_billed_once(
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "token_lists",
+    [
+        pytest.param([[THINK_END_TOKEN_ID, 30]], id="close_with_content"),
+        pytest.param([[THINK_END_TOKEN_ID], [30]], id="close_then_content"),
+        pytest.param([[THINK_END_TOKEN_ID]], id="close_only"),
+    ],
+)
+async def test_skipped_reasoning_reports_zero_reasoning_tokens(
+    token_lists: list[list[int]],
+) -> None:
+    """A reply that skips thinking bills its bare ``</think>`` as a plain
+    completion token, not a reasoning token.
+
+    With the think span opened by the template (here: the prompt ends in
+    ``<think>``; MiniMax adaptive mode prefills nothing but behaves the same)
+    a model that chooses not to think closes it at once. The parser strips
+    that delimiter, so the reply has no reasoning text; billing it as a
+    reasoning token reported reasoning_tokens=1 against an empty
+    reasoning_content, which clients read as inconsistent. The token was
+    still generated, so completion_tokens keeps counting it.
+    """
+    chunks = await _run_reasoning_pipeline(
+        _make_responses(token_lists),
+        prompt_tokens=[99, THINK_START_TOKEN_ID],
+    )
+
+    assert all(chunk.decoded_reasoning_tokens is None for chunk in chunks)
+    assert sum(chunk.reasoning_token_count or 0 for chunk in chunks) == 0
+    assert sum(chunk.token_count for chunk in chunks) == sum(
+        len(tokens) for tokens in token_lists
+    )
+
+
 def test_merge_outputs_concatenates_token_ids() -> None:
     """``all_tokens`` folds chunks into one output; ids must concatenate.
 

@@ -33,10 +33,6 @@ struct _HostBuffer(DevicePassable, TrivialRegisterPassable):
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "_HostBuffer"
-
 
 # Fields differ from `_HostBuffer`'s, so `_is_implicitly_encodable_to` rejects
 # it; only the acceptor lets a `_HostBuffer` fill it.
@@ -66,10 +62,6 @@ struct _HostPair(DevicePassable, TrivialRegisterPassable):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode(self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "_HostPair"
 
 
 struct _DevicePair(TrivialRegisterPassable):

@@ -25,20 +25,12 @@ import click
 from pipeline_matrix import PipelineEntry, entries_to_matrix, filter_entries
 
 CONFIGS_DIR = Path("max/tests/integration/accuracy/dataset_eval_configs")
-# Switch to llama once llama is fixed in dataset eval.
-SMOKE_TEST_PIPELINE = "sentence-transformers/all-mpnet-base-v2"
+SMOKE_TEST_PIPELINE = "google/gemma-4-26B-A4B-it"
 
 
 PIPELINES: list[PipelineEntry] = [
     PipelineEntry(
-        pipeline="meta-llama/Meta-Llama-3-8B-Instruct",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="OpenGVLab/InternVL3-8B-Instruct",
+        pipeline="meta-llama/Llama-3.1-8B-Instruct",
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
@@ -49,52 +41,6 @@ PIPELINES: list[PipelineEntry] = [
         runner="modrunner-b200",
         gpu_flag="--devices gpu:0",
         instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="sentence-transformers/all-mpnet-base-v2",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="LiquidAI/LFM2.5-1.2B-Instruct",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        # LFM2 requires batch_size=1 (SSM/conv state can't be batched across
-        # sequences in the same way as pure-attention models), so all evaluation
-        # tasks run sequentially rather than in parallel batches.  3 hours
-        # instead of the usual 2 hours accounts for that serialization overhead.
-        timeout=180,
-    ),
-    PipelineEntry(
-        pipeline="Qwen/Qwen2.5-VL-3B-Instruct",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="Qwen/Qwen2.5-VL-7B-Instruct",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="OpenGVLab/InternVL3-38B-Instruct",
-        runner="modrunner-b200-2x",
-        gpu_flag="--devices gpu:0,1",
-        instance_type="bm.gpu.b200.2",
-        timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="Qwen/Qwen2.5-VL-32B-Instruct",
-        runner="modrunner-b200-2x",
-        gpu_flag="--devices gpu:0,1",
-        instance_type="bm.gpu.b200.2",
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
@@ -147,46 +93,11 @@ PIPELINES: list[PipelineEntry] = [
         timeout=120,  # 2 hours
     ),
     PipelineEntry(
-        pipeline="deepseek-ai/DeepSeek-R1-longbench-v2",
-        runner="modrunner-b200-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=390,  # 6.5 hours
-    ),
-    PipelineEntry(
-        pipeline="deepseek-ai/DeepSeek-V3.1-Terminus",
-        runner="modrunner-b200-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=90,  # 1.5 hours
-    ),
-    PipelineEntry(
-        pipeline="nvidia/DeepSeek-V3.1-NVFP4-longbench-v2",
-        runner="modrunner-b200-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=390,  # 6.5 hours
-    ),
-    PipelineEntry(
-        pipeline="nvidia/DeepSeek-V3.1-NVFP4-fp8kv-longbench-v2",
-        runner="modrunner-b200-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=390,  # 6.5 hours
-    ),
-    PipelineEntry(
-        pipeline="tencent/Hy4-preview-FP8",
+        pipeline="tencent/Hy4-FP8",
         runner="modrunner-b200-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=120,  # 2 hours
-    ),
-    PipelineEntry(
-        pipeline="nvidia/Kimi-K2.7-Code-NVFP4-ep-tp-eagle3-longbench-v2",
-        runner="modrunner-b200-8x",
-        gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
-        instance_type="bm.gpu.b200.8",
-        timeout=390,  # 6.5 hours
     ),
 ]
 

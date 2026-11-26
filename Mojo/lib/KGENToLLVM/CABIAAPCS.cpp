@@ -95,6 +95,9 @@ std::optional<CoercionInfo> AAPCSABIInfo::classifyHomogeneousAggregate(
 CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
                                                 mlir::Location loc,
                                                 bool isVariadicArg) const {
+  if (isZeroSize(type))
+    return CoercionInfo::ignore();
+
   // Arrays should be passed indirectly, as per the C specification
   mlir::Type llvmType = convertType(type);
   if (isa<mlir::LLVM::LLVMArrayType>(llvmType))
@@ -138,9 +141,12 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
   // ARM64 AAPCS: A struct that is not a homogeneous aggregate goes in GPRs
   // (integer registers), whatever the types of its fields.
 
-  // RULE 2: 1-8 byte non-HFA structs → coerce to iN
+  // RULE 2: 1-8 byte non-HFA structs → coerce to iN, or to i64 on Darwin
+  // A struct argument takes a whole 8-byte slot (AAPCS64 B.5). Linux gives any
+  // iN a full slot on the stack, but Darwin gives an iN only its own size, so
+  // iN would be too small there.
   if (size <= 8) {
-    return CabiUtils::classifySmallIntegerStruct(size, ctx);
+    return CabiUtils::classifySmallIntegerStruct(isDarwin ? 8 : size, ctx);
   }
 
   // RULE 3: 9-16 byte non-HFA structs → two-register passing
@@ -153,6 +159,9 @@ CoercionInfo AAPCSABIInfo::classifyArgumentType(mlir::Type type,
 
 CoercionInfo AAPCSABIInfo::classifyReturnType(mlir::Type type,
                                               mlir::Location loc) const {
+  if (isZeroSize(type))
+    return CoercionInfo::ignore();
+
   // Only types that convert to an LLVM struct need C ABI classification
   auto structType = dyn_cast<mlir::LLVM::LLVMStructType>(convertType(type));
   if (!structType) {
@@ -229,6 +238,8 @@ unsigned AAPCSABIInfo::argGPRUsage(const CoercionInfo &info,
     return info.useByval ? 0 : 1;
   case ABIArgClass::SSE:
     return 0; // Homogeneous aggregate: V registers or the stack
+  case ABIArgClass::Ignore:
+    return 0;
   case ABIArgClass::NoClass:
     break; // Identity arg: derive usage from the LLVM type below.
   default:

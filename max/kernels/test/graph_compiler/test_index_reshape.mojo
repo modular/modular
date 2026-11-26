@@ -23,7 +23,6 @@ primitive costs what a dedicated static one would.
 
 from builtin_primitives.primitives import mogg_index_reshape
 from layout import Coord, Idx
-from std.utils import IndexList
 from std.testing import TestSuite, assert_equal
 
 
@@ -34,9 +33,9 @@ def test_static_collapse() raises:
     for i in range(2):
         for j in range(3):
             var got = mogg_index_reshape[to_rank=1](
-                IndexList[2](i, j), from_shape, to_shape
+                Coord(Int(i), Int(j)), from_shape, to_shape
             )
-            assert_equal(got[0], i * 3 + j)
+            assert_equal(Int(got[0]), i * 3 + j)
 
 
 def test_inner_dynamic_relinearizes() raises:
@@ -49,10 +48,10 @@ def test_inner_dynamic_relinearizes() raises:
         for j in range(3):
             var linear = i * 3 + j
             var got = mogg_index_reshape[to_rank=2](
-                IndexList[2](i, j), from_shape, to_shape
+                Coord(Int(i), Int(j)), from_shape, to_shape
             )
-            assert_equal(got[0], linear // 2)
-            assert_equal(got[1], linear % 2)
+            assert_equal(Int(got[0]), linear // 2)
+            assert_equal(Int(got[1]), linear % 2)
 
 
 def test_inner_dynamic_with_dynamic_batch() raises:
@@ -65,10 +64,10 @@ def test_inner_dynamic_with_dynamic_batch() raises:
         for i in range(2):
             for j in range(2):
                 var got = mogg_index_reshape[to_rank=2](
-                    IndexList[3](b, i, j), from_shape, to_shape
+                    Coord(Int(b), Int(i), Int(j)), from_shape, to_shape
                 )
-                assert_equal(got[0], b)
-                assert_equal(got[1], i * 2 + j)
+                assert_equal(Int(got[0]), b)
+                assert_equal(Int(got[1]), i * 2 + j)
 
 
 def test_unit_insert_single_dynamic() raises:
@@ -82,13 +81,13 @@ def test_unit_insert_single_dynamic() raises:
         for i in range(2):
             for j in range(2):
                 var got = mogg_index_reshape[to_rank=5](
-                    IndexList[3](b, i, j), from_shape, to_shape
+                    Coord(Int(b), Int(i), Int(j)), from_shape, to_shape
                 )
-                assert_equal(got[0], b)
-                assert_equal(got[1], 0)
-                assert_equal(got[2], i)
-                assert_equal(got[3], j)
-                assert_equal(got[4], 0)
+                assert_equal(Int(got[0]), b)
+                assert_equal(Int(got[1]), 0)
+                assert_equal(Int(got[2]), i)
+                assert_equal(Int(got[3]), j)
+                assert_equal(Int(got[4]), 0)
 
 
 def test_multi_dynamic_reorder_is_not_a_noop() raises:
@@ -102,10 +101,10 @@ def test_multi_dynamic_reorder_is_not_a_noop() raises:
         for j in range(3):
             var linear = i * 3 + j
             var got = mogg_index_reshape[to_rank=2](
-                IndexList[2](i, j), from_shape, to_shape
+                Coord(Int(i), Int(j)), from_shape, to_shape
             )
-            assert_equal(got[0], linear // 2)
-            assert_equal(got[1], linear % 2)
+            assert_equal(Int(got[0]), linear // 2)
+            assert_equal(Int(got[1]), linear % 2)
 
 
 def test_multi_dynamic_unit_insert_is_correct() raises:
@@ -117,11 +116,50 @@ def test_multi_dynamic_unit_insert_is_correct() raises:
     for i in range(2):
         for j in range(3):
             var got = mogg_index_reshape[to_rank=3](
-                IndexList[2](i, j), from_shape, to_shape
+                Coord(Int(i), Int(j)), from_shape, to_shape
             )
-            assert_equal(got[0], 0)
-            assert_equal(got[1], i)
-            assert_equal(got[2], j)
+            assert_equal(Int(got[0]), 0)
+            assert_equal(Int(got[1]), i)
+            assert_equal(Int(got[2]), j)
+
+
+def test_dropped_dynamic_unit_dim() raises:
+    # [4, D] -> [4] with D == 1 at runtime. The static prefix covers all of
+    # `to`, so no `to` dim is left to relinearize.
+    comptime from_shape = Coord(Idx[4], Int(1))
+    comptime to_shape = Coord(Idx[4])
+    for i in range(4):
+        var got = mogg_index_reshape[to_rank=1](
+            Coord(Int(i), Int(0)), from_shape, to_shape
+        )
+        assert_equal(Int(got[0]), i)
+
+
+def test_dropped_dynamic_unit_dim_keeps_suffix() raises:
+    # [4, D, 8] -> [4, 8] with D == 1 at runtime. The prefix and suffix cover
+    # all of `to`; the suffix dim must keep its index.
+    comptime from_shape = Coord(Idx[4], Int(1), Idx[8])
+    comptime to_shape = Coord(Idx[4], Idx[8])
+    for i in range(4):
+        for j in range(8):
+            var got = mogg_index_reshape[to_rank=2](
+                Coord(Int(i), Int(0), Int(j)), from_shape, to_shape
+            )
+            assert_equal(Int(got[0]), i)
+            assert_equal(Int(got[1]), j)
+
+
+def test_inserted_dynamic_unit_dim() raises:
+    # [4] -> [4, D] with D == 1 at runtime. The static prefix covers all of
+    # `from`, so the new dim's index is 0.
+    comptime from_shape = Coord(Idx[4])
+    comptime to_shape = Coord(Idx[4], Int(1))
+    for i in range(4):
+        var got = mogg_index_reshape[to_rank=2](
+            Coord(Int(i)), from_shape, to_shape
+        )
+        assert_equal(Int(got[0]), i)
+        assert_equal(Int(got[1]), 0)
 
 
 def main() raises:

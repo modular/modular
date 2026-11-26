@@ -213,11 +213,13 @@ static LogicalResult rotate(LoopOp loop, IfOp ifOp,
   }
 
   SmallVector<Value> inits;
+  DenseMap<Value, BlockArgument> carriedArgs;
   for (Value value : carried) {
     // The op has effects, so its copy was kept rather than dropped.
     Value init = peeled.lookup(value);
     inits.push_back(init);
     BlockArgument arg = body.addArgument(value.getType(), value.getLoc());
+    carriedArgs[value] = arg;
     // The movers keep reading each other: the second copy comes from them.
     rewriter.replaceUsesWithIf(value, arg, staysInBody);
   }
@@ -230,7 +232,18 @@ static LogicalResult rotate(LoopOp loop, IfOp ifOp,
   for (auto [arg, carriedBack] :
        llvm::zip(body.getArguments(), continueOp.getOperands()))
     next.map(arg, carriedBack);
-  copyLeadingOps(next);
+  // An op that stays ahead of the test now reads the block argument a mover's
+  // result became, which holds this iteration's value. Its copy here reads the
+  // next iteration's instead: the copy of that mover, made just before it.
+  for (Operation *op : leading) {
+    if (!copied.contains(op))
+      continue;
+    rewriter.clone(*op, next);
+    for (Value result : op->getResults()) {
+      if (BlockArgument arg = carriedArgs.lookup(result))
+        next.map(arg, next.lookup(result));
+    }
+  }
 
   SmallVector<Value> yielded;
   for (Value value : carried)

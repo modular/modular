@@ -119,20 +119,35 @@ def _gated_activation_ops(
     """Computes ``activation.fused_activation`` on ``[gate | up]`` rows.
 
     Graph ops do the work, matching the fused kernels' math.
+
+    Raises:
+        ValueError: If ``gated_activation_fn`` is set; these ops compute only
+            ``fused_activation``.
+        NotImplementedError: If ``fused_activation`` has no graph-op form.
     """
+    if activation.gated_activation_fn is not None:
+        raise ValueError(
+            "a gated_activation_fn is not supported on the graph-op"
+            " activation path"
+        )
     moe_dim = int(gate_up.shape[1]) // 2
     gate = gate_up[:, :moe_dim]
     up = gate_up[:, moe_dim:]
-    if activation.fused_activation == "gelu_tanh":
+    name = activation.fused_activation
+    if name == "gelu_tanh":
         return ops.gelu(gate, approximate="tanh") * up
-    if activation.fused_activation not in ("silu", "swigluoai"):
+    if name not in ("silu", "silu_post_clamp", "swigluoai"):
         raise NotImplementedError(
-            f"no graph-op form of the {activation.fused_activation!r} activation"
+            f"no graph-op form of the {name!r} activation"
         )
-    if activation.limit != 0.0:
-        gate = ops.min(gate, activation.limit)
-        up = ops.min(ops.max(up, -activation.limit), activation.limit)
-    if activation.fused_activation == "swigluoai":
+    limit = activation.limit
+    if limit != 0.0:
+        up = ops.min(ops.max(up, -limit), limit)
+    if name == "silu_post_clamp":
+        return ops.min(ops.silu(gate), limit) * up
+    if limit != 0.0:
+        gate = ops.min(gate, limit)
+    if name == "swigluoai":
         return gate * ops.sigmoid(gate * activation.alpha) * (up + 1.0)
     return ops.silu(gate) * up
 

@@ -273,6 +273,7 @@ class ServeGraphCaptureRunner:
         max_cache_length_upper_bound: int,
         max_batch_size: int,
         num_speculative_tokens: int = 0,
+        skip_output_count: int = 0,
         widths_by_batch_size: Sequence[Sequence[int]] | None = None,
     ) -> None:
         # A ModuleV3 callable adds its signal buffers to every call of its
@@ -304,6 +305,9 @@ class ServeGraphCaptureRunner:
         # Dispatch resolution + probe lengths live on the KV cache params.
         self._kv_params = kv_params
         self._is_spec_decode = num_speculative_tokens > 0
+        # The scores and per-row verify outputs sit ahead of any
+        # distribution; from_buffers skips them.
+        self._skip_output_count = skip_output_count
 
         # ``batch_size -> verify widths``. Only a batch size's own row is
         # reachable, so only that row is probed there.
@@ -456,7 +460,8 @@ class ServeGraphCaptureRunner:
                         outputs = ModelOutputs(*output_buffers)
                     else:
                         outputs = UnifiedEagleOutputs.from_buffers(
-                            output_buffers
+                            output_buffers,
+                            skip=self._skip_output_count,
                         )
                     # Graph-capture warmup keeps many output handles alive. Drop
                     # Python-side ownership so later captures can reuse the same

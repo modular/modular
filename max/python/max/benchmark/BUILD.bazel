@@ -22,6 +22,7 @@ modular_py_library(
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/benchmark/benchmark_shared:model_csv",
         "//max/python/max/profiler",
+        requirement("aiohttp"),
         requirement("cyclopts"),
         requirement("jinja2"),
         requirement("numpy"),
@@ -29,6 +30,7 @@ modular_py_library(
         requirement("tiktoken"),
         requirement("transformers"),
         requirement("requests"),
+        requirement("uvloop"),
     ],
 )
 

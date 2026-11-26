@@ -117,6 +117,28 @@ comptime _SCORES_BUDGET_BYTES = (
 comptime _SCORES_DTYPE = DType.bfloat16
 
 
+def indexer_max_keys(
+    max_context_length: Int, max_new_tokens: Int, kpool: Int
+) -> Int:
+    """Returns the bound on the candidate keys an indexer scores per token.
+
+    The score row stride is this rounded up to whole 16-byte groups of the
+    score dtype. `PERSISTENT_TOPK_MAX_N` is a multiple of every such group, so
+    the rounding never moves a row across it, and a caller may test this
+    count against it in place of the stride.
+
+    Args:
+        max_context_length: The host bound on the batch's cache lengths.
+        max_new_tokens: The batch's most query tokens per request.
+        kpool: Tokens one pooled key covers.
+
+    Returns:
+        The key count, before the stride's rounding and before a
+        context-parallel rank's share.
+    """
+    return (max_context_length + max_new_tokens) // kpool
+
+
 trait IndexerTopk:
     """Selects each indexer score row's top-k key positions.
 
@@ -643,15 +665,6 @@ struct BlockTopKScoreHook[block_size: Int](IndexerScoreHook):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"BlockTopKScoreHook"`.
-        """
-        return "BlockTopKScoreHook"
-
 
 struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
     """Drops every key whose block of `block_size` keys a row does not keep.
@@ -792,15 +805,6 @@ struct BlockTopKMaskScoreHook[block_size: Int](IndexerScoreHook):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"BlockTopKMaskScoreHook"`.
-        """
-        return "BlockTopKMaskScoreHook"
 
 
 struct _IndexerSink[R: SparseIndexRemap, write_logical: Bool](TopkSink):
@@ -997,15 +1001,6 @@ struct _IndexerRowBound[
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"_IndexerRowBound"`.
-        """
-        return "_IndexerRowBound"
-
 
 struct _CPIndexerSink[
     R: SparseIndexRemap, write_logical: Bool, in_dtype: DType
@@ -1187,15 +1182,6 @@ struct _CPIndexerRowBound[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"_CPIndexerRowBound"`.
-        """
-        return "_CPIndexerRowBound"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -2171,7 +2157,9 @@ def _mla_indexer_paged_impl[
     # `ceildiv(max_num_keys, 128)`, so a depth landing in a 128-key tile's last
     # `scores_align - 1` columns reads as one tile deeper.
     comptime scores_align = _elems_per_16b[scores_dt]()
-    var max_keys = (Int(k_cache.max_context_length()) + max_new_tokens) // kpool
+    var max_keys = indexer_max_keys(
+        Int(k_cache.max_context_length()), max_new_tokens, kpool
+    )
     comptime if cp_size > 1:
         # A context-parallel rank holds, and so scores, only its local slots.
         max_keys = ContextParallelLayout[cp_size, cp_interleave].max_local_len(

@@ -59,6 +59,7 @@ from eval_runner import (
 )
 from inference_server_harness import RunningServer, start_server
 from pydantic import BaseModel, ConfigDict, Field
+from reasoning_parser_selection import get_reasoning_parser_arg
 from requests.structures import CaseInsensitiveDict
 
 URL = "http://127.0.0.1:8000/v1/chat/completions"
@@ -91,12 +92,10 @@ def _metrics_url(framework: str) -> str:
 # the same paths from the installed package in ``.venv-serve``.
 #
 # Values are fully spelled-out so they can be copy-pasted into a CLI invocation:
-#   max serve --config-file max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml
+#   max serve --config-file max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml
 # fmt: off
 MODEL_RECIPES = CaseInsensitiveDict({
     "RecursiveSI/flint": "max/pipelines/architectures/flint/recipes/flint_bf16_1x_b200.yaml",
-    "deepseek-ai/DeepSeek-V2-Lite-Chat__modulev3": "max/pipelines/architectures/deepseekV2_modulev3/recipes/deepseekv2_lite.yaml",
-    "deepseek-ai/DeepSeek-V3.1-Terminus": "max/pipelines/architectures/deepseekV3/recipes/terminus_8x_b200.yaml",
     "deepseek-ai/DeepSeek-V4-Flash-0731__modulev3": "max/pipelines/architectures/deepseekV4_modulev3/recipes/flash_0731_fp8_tp2_b200.yaml",
     "deepseek-ai/DeepSeek-V4-Flash-0731__tp2": "max/pipelines/architectures/deepseekV4/recipes/flash_0731_fp8_tp2_b200.yaml",
     "deepseek-ai/DeepSeek-V4.1-Flash-1017": "max/pipelines/architectures/deepseekV41/recipes/flash_1017_mxfp4_dp4_ep4_dspark_4x_b200.yaml",
@@ -118,26 +117,12 @@ MODEL_RECIPES = CaseInsensitiveDict({
     "meta-llama/Llama-3.1-8B-Instruct__eagle": "max/pipelines/architectures/llama3/recipes/llama31_8b_eagle.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": "max/pipelines/architectures/llama3_modulev3/recipes/llama31_8b.yaml",
     "meta-llama/Llama-3.1-8B-Instruct__rust_tiered_kvconnector": "max/pipelines/architectures/llama3/recipes/llama31_8b_rust_tiered_kvconnector.yaml",
-    "microsoft/Phi-3.5-mini-instruct__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi35_mini.yaml",
-    "microsoft/phi-4__modulev3": "max/pipelines/architectures/phi3_modulev3/recipes/phi4.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_8x_b200.yaml",
-    "poolside/Laguna-S-2.1-NVFP4": "max/pipelines/architectures/laguna/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
-    "poolside/Laguna-S-2.1-NVFP4__modulev3": "max/pipelines/architectures/laguna_modulev3/recipes/laguna_s_2_1_nvfp4_1x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_mtp_tpep_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_ar_8x_b200.yaml",
-    "nvidia/DeepSeek-V3.1-NVFP4__tptp": "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tptp_8x_b200.yaml",
     "nvidia/GLM-5.2-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml",
     "RadixArk/GLM-5.3-NVFP4__mtp_tpep": "max/pipelines/architectures/glm5_1/recipes/glm_5_3_nvfp4_tp_ep_8x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_4x_b200.yaml",
     "zai-org/GLM-5.3-Flash__tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3-Flash__mtp_tpep_mi355": "max/pipelines/architectures/glm5_next/recipes/glm_5_3_flash_fp8_mtp_tp_ep_2x_mi355.yaml",
     "zai-org/GLM-5.3__fp8_tpep_mi355": "max/pipelines/architectures/glm5_1_modulev3/recipes/glm_5_3_fp8_tp_ep_8x_mi355.yaml",
-    "amd/Kimi-K2.7-Code-MXFP4": "max/pipelines/architectures/kimik2_5/recipes/mxfp4_kimi_k2_7_code_8x_mi355.yaml",
-    "nvidia/Kimi-K2.7-Code-NVFP4": "max/pipelines/architectures/kimik2_5/recipes/nvfp4_kimi_k2_7_code_eagle_tpep_8x_b200.yaml",
-    "nvidia/Kimi-K2.7-Code-NVFP4__modulev3": "max/pipelines/architectures/kimik2_5_modulev3/recipes/nvfp4_kimi_k2_7_code_b200.yaml",
     "moonshotai/Kimi-K3": "max/pipelines/architectures/kimi_k3_modulev3/recipes/tp8_mxfp4_fp8kv_8x_mi355.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_bf16.yaml",
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3": "max/pipelines/architectures/nemotron_h_modulev3/recipes/lightning_nvfp4.yaml",
@@ -220,9 +205,8 @@ VARIANT_REPOS: Mapping[str, tuple[str, ...]] = {
     "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4__modulev3_dspark_mixed": (
         "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4-DSpark",
     ),
-    "poolside/Laguna-S-2.1-NVFP4": ("poolside/Laguna-S-2.1-DFlash-NVFP4",),
-    "poolside/Laguna-S-2.1-NVFP4__modulev3": (
-        "poolside/Laguna-S-2.1-DFlash-NVFP4",
+    "reflection/Beam-1.0-501B-A23B-NVFP4__dflash2": (
+        "reflection/Beam-1.0-501B-A23B-DFlash2",
     ),
 }
 
@@ -241,8 +225,11 @@ SERVERS: dict[
 
 # TODO Refactor this to a model list/matrix specifying type of model
 def is_vision_model(model: str) -> bool:
-    """Check if the model supports vision tasks."""
+    """Returns whether the model serves images in its smoke route."""
     model = model.casefold()
+    # Kimi-K3's DSpark export has no vision graph.
+    if model.split("__", 1)[0] == "moonshotai/kimi-k3":
+        return not model.endswith("__dspark")
     # gemma-4-12B is served text-only in MAX (gemma4_unified arch), and Mach
     # serves its pipeline-parallel variants (`__pp`, `__pp_mtp`) text-only.
     if any(
@@ -254,22 +241,47 @@ def is_vision_model(model: str) -> bool:
         for kw in (
             "gemma-3",
             "gemma-4",
-            "idefics",
+            "hy4-fp8",
             "inkling",
-            "internvl",
-            "kimi-k2",
-            "kimi-vl",
             "minimax-m3",
             "muse-glimmer",
             "muse-spark",
-            "olmocr",
-            "pixtral",
-            "qwen2.5-vl",
             "qwen3-vl",
             "qwen3.5",
             "vision",
         )
     )
+
+
+CASCADE_FRAMEWORKS = ("max", "max-ci", "mach-ci")
+
+
+def cascade_gate(framework: str, cascade: bool) -> None:
+    """Refuse a Cascade recipe on a framework that cannot serve it."""
+    if cascade and framework not in CASCADE_FRAMEWORKS:
+        raise ValueError(
+            f"Cascade is only supported for MAX and Mach, not {framework}"
+        )
+
+
+def runs_vision(model: str, cascade: bool) -> bool:
+    """Whether the run sends images.
+
+    TODO(SERVSYS-1330): run the vision task with Cascade once it accepts
+    images.
+    """
+    return is_vision_model(model) and not cascade
+
+
+def tasks_for(
+    model: str, cascade: bool, override: tuple[str, ...]
+) -> list[str]:
+    """The eval tasks this run uses."""
+    if override:
+        return list(override)
+    if runs_vision(model, cascade):
+        return [VISION_TASK, TEXT_TASK]
+    return [TEXT_TASK]
 
 
 def _inside_bazel() -> bool:
@@ -515,6 +527,8 @@ def get_server_cmd(
         "vllm.entrypoints.openai.api_server",
         "--host",
         "0.0.0.0",
+        "--safetensors-load-strategy",
+        "prefetch",
         "--max-model-len",
         "auto",
         "--limit-mm-per-prompt.video",
@@ -522,6 +536,9 @@ def get_server_cmd(
         "--limit-mm-per-prompt.audio",
         "0",
     ]
+    if parser := get_reasoning_parser_arg(framework, model):
+        server_args = VLLM if framework == "vllm" else SGLANG
+        server_args += ["--reasoning-parser", parser]
     # vLLM's KV cache sizing misses Inkling's mamba conv cache and OOMs.
     if "inkling" in model.casefold():
         VLLM += ["--gpu-memory-utilization", "0.8"]
@@ -782,7 +799,7 @@ def smoke_test(
     lm_eval_metadata: str | None,
 ) -> None:
     """
-    Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
+    Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.1-8B-Instruct
 
     This command asks 320 questions against the model behind the given hf_model_path.
     It runs the provided framework (defaulting to MAX serve) in the background,
@@ -810,8 +827,8 @@ def smoke_test(
         raise ValueError(f"{framework} serves its own config, not a recipe")
     hf_model_path, recipe_path = resolve_model_path(model, recipe_path)
     cascade = recipe_path is not None and _load_recipe(recipe_path).cascade
-    if cascade and framework not in ("max", "max-ci"):
-        raise ValueError(f"Cascade is only supported for MAX, not {framework}")
+    cascade_gate(framework, cascade)
+    vision = runs_vision(model, cascade)
     # A recipe can serve its weights under another name; requests must use it.
     served = hf_model_path
     if recipe_path:
@@ -825,7 +842,7 @@ def smoke_test(
         # A variant selects how the server serves its base repo, which
         # requests name.
         served = model.split("__", 1)[0]
-        serving = SERVERS[framework](model, timeout, is_vision_model(model))
+        serving = SERVERS[framework](model, timeout, vision)
     else:
         cmd, server_env = get_server_cmd(
             framework,
@@ -839,13 +856,7 @@ def smoke_test(
         logger.info(f"Starting server with command:\n {shlex.join(cmd)}")
         serving = start_server(cmd, timeout, env_overrides=server_env)
 
-    if override_tasks:
-        tasks = list(override_tasks)
-    # TODO(SERVSYS-1330): Run the vision task with Cascade once it accepts images.
-    elif is_vision_model(model) and not cascade:
-        tasks = [VISION_TASK, TEXT_TASK]
-    else:
-        tasks = [TEXT_TASK]
+    tasks = tasks_for(model, cascade, override_tasks)
 
     results = []
     all_samples = []

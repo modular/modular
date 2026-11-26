@@ -325,6 +325,7 @@ def pv_ts_batched_kernel[
     # All 4 warps store to the SAME address a_tmem (datapaths=32); the hardware
     # subpartition routes warp g's store to quarter g (no per-warp offset). This
     # single packed P feeds ALL depth-tile MMAs (P is depth-independent).
+    @__allow_legacy_any_origin_fields
     def frag_at(j: Int) {imm} -> UInt32:
         var pair = SIMD[OP_TYPE, 2]()
         pair[0] = p_input[row, g * PART_KEYS + 2 * j]

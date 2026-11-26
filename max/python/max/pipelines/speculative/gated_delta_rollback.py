@@ -42,10 +42,11 @@ engine supplies both for the live leaves and the ring alike.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, Dim, TensorValue, ops
+from max.graph import BufferValue, DeviceRef, Dim, DimLike, TensorValue, ops
 from max.nn._graph_ops.state_space import (
     gated_delta_conv1d_verify_fwd,
     gated_delta_state_fold,
@@ -55,10 +56,12 @@ from .ragged_token_merger import _shape_to_scalar
 
 __all__ = [
     "ConvReplayInputs",
+    "ReplicaAcceptInputs",
     "accepted_lengths",
     "accepted_row_plan",
     "fold_state_pools",
     "replay_conv_pools",
+    "replica_accept_inputs",
     "ring_accepted_lengths",
     "window_row_plan",
 ]
@@ -82,11 +85,13 @@ class ConvReplayInputs(Protocol):
         ...
 
 
-def _window_lengths(merged_offsets: TensorValue) -> TensorValue:
+def _window_lengths(
+    merged_offsets: TensorValue, batch_dim: DimLike = "batch_size"
+) -> TensorValue:
     """Returns the ``[batch]`` row lengths of the verified sequence."""
     offsets = merged_offsets.cast(DType.int64)
-    return ops.rebind(offsets[1:], ["batch_size"]) - ops.rebind(
-        offsets[:-1], ["batch_size"]
+    return ops.rebind(offsets[1:], [batch_dim]) - ops.rebind(
+        offsets[:-1], [batch_dim]
     )
 
 
@@ -94,6 +99,8 @@ def accepted_lengths(
     merged_offsets: TensorValue,
     num_accepted: TensorValue,
     num_draft_tokens: TensorValue,
+    *,
+    batch_dim: DimLike = "batch_size",
 ) -> TensorValue:
     """Returns the ``[batch]`` rows of the verify window each request keeps.
 
@@ -104,14 +111,17 @@ def accepted_lengths(
         merged_offsets: ``[batch + 1]`` offsets of the verified sequence.
         num_accepted: ``[batch]`` accepted draft tokens per request.
         num_draft_tokens: Scalar ``K``, zero on a prefill.
+        batch_dim: The batch's dimension: ``batch_size`` for the whole
+            batch, a replica's own under data parallelism
+            (:func:`replica_accept_inputs`).
 
     Returns:
         ``[batch]`` int64 accepted row counts.
     """
     return (
-        _window_lengths(merged_offsets)
+        _window_lengths(merged_offsets, batch_dim)
         - num_draft_tokens
-        + num_accepted.cast(DType.int64).rebind(["batch_size"])
+        + num_accepted.cast(DType.int64).rebind([batch_dim])
     )
 
 
@@ -156,6 +166,7 @@ def accepted_row_plan(
     device: DeviceRef,
     *,
     plan_rows: Dim | None = None,
+    batch_dim: DimLike = "batch_size",
 ) -> tuple[TensorValue, TensorValue]:
     """Plans the replay's gather indices and ragged offsets.
 
@@ -181,13 +192,16 @@ def accepted_row_plan(
         device: Device the plan is built on.
         plan_rows: Length of the index vector, at least the accepted total.
             Defaults to ``total_rows``.
+        batch_dim: The batch's dimension, as :func:`accepted_lengths`.
 
     Returns:
         ``(row_indices, replay_offsets)``: which row of the verify's per-token
         tensors feeds each replay row, and the ragged offsets over them.
     """
-    starts = ops.rebind(merged_offsets.cast(DType.int64)[:-1], ["batch_size"])
-    accepted = accepted_lengths(merged_offsets, num_accepted, num_draft_tokens)
+    starts = ops.rebind(merged_offsets.cast(DType.int64)[:-1], [batch_dim])
+    accepted = accepted_lengths(
+        merged_offsets, num_accepted, num_draft_tokens, batch_dim=batch_dim
+    )
     return _row_plan(
         starts,
         None,
@@ -195,6 +209,7 @@ def accepted_row_plan(
         total_rows,
         plan_rows if plan_rows is not None else total_rows,
         device,
+        batch_dim,
     )
 
 
@@ -240,6 +255,7 @@ def _row_plan(
     total_rows: Dim,
     out_rows: Dim,
     device: DeviceRef,
+    batch_dim: DimLike = "batch_size",
 ) -> tuple[TensorValue, TensorValue]:
     """Returns the replay rows of ``accepted`` and their ragged offsets."""
     replay_offsets = ops.concat(
@@ -251,7 +267,13 @@ def _row_plan(
     )
     return (
         _ragged_source_rows(
-            starts, stride, replay_offsets, total_rows, out_rows, device
+            starts,
+            stride,
+            replay_offsets,
+            total_rows,
+            out_rows,
+            device,
+            batch_dim,
         ),
         replay_offsets,
     )
@@ -264,6 +286,7 @@ def _ragged_source_rows(
     total_rows: Dim,
     out_rows: Dim,
     device: DeviceRef,
+    batch_dim: DimLike = "batch_size",
 ) -> TensorValue:
     """Returns the source row of each of ``out_rows`` ragged output rows.
 
@@ -280,6 +303,7 @@ def _ragged_source_rows(
         stride: When given, each request's rows are one ``stride + 1``
             slot apart, so request ``r`` starts at ``r * (stride + 1)``
             and ``starts`` must be ``None``.
+        batch_dim: The batch's dimension, as :func:`accepted_lengths`.
 
     Returns:
         ``[out_rows]`` int64 source rows.
@@ -302,7 +326,7 @@ def _ragged_source_rows(
         ops.constant(1, DType.int64, device=device), ends.shape
     )
     ends_per_pos = ops.scatter_add(pos * 0, ones, ends, axis=0)
-    last_row = _shape_to_scalar(Dim("batch_size"), device) - 1
+    last_row = _shape_to_scalar(Dim(batch_dim), device) - 1
     row_of_pos = ops.min(
         ops.rebind(ops.cumsum(ends_per_pos, axis=0)[:-1], [out_rows]),
         last_row,
@@ -428,3 +452,89 @@ def fold_state_pools(
             num_accepted=accepted_per_dev[device_idx],
             verify_width=verify_width,
         )
+
+
+@dataclass(frozen=True)
+class ReplicaAcceptInputs:
+    """One data-parallel replica's share of a verify's accept.
+
+    Under data parallelism each replica verifies only its own requests, so
+    each rolls its own state back over its own rows. These are the batch-wide
+    accept inputs cut to the replica's requests, rebased and placed on its
+    device, ready for :func:`accepted_lengths` and :func:`accepted_row_plan`
+    with ``batch_dim``.
+    """
+
+    merged_offsets: TensorValue
+    """``[batch_dim + 1]`` offsets of the replica's verified rows, from 0."""
+    num_accepted: TensorValue
+    """``[batch_dim]`` accepted draft tokens of the replica's requests."""
+    num_draft_tokens: TensorValue
+    """Scalar ``K`` on :attr:`device`."""
+    batch_dim: Dim
+    """The replica's request count, named per replica."""
+    device: DeviceRef
+    """The replica's device, which every value lives on."""
+
+
+def replica_accept_inputs(
+    merged_offsets_per_dev: Sequence[TensorValue],
+    num_accepted_per_dev: Sequence[TensorValue],
+    num_draft_tokens: Dim,
+    data_parallel_splits: TensorValue,
+    prefix: str = "rollback",
+) -> list[ReplicaAcceptInputs]:
+    """Cuts a verify's batch-wide accept into each replica's.
+
+    Device ``i`` is replica ``i``: one attention replica per device, as every
+    data-parallel rollback runs today. The bounds are host values and each
+    device cuts its own copies, so the cut costs no device sync and moves no
+    data between devices: a peer copy would merge the devices' capture
+    sequences under device graph capture.
+
+    Args:
+        merged_offsets_per_dev: The batch's ``[batch + 1]`` verify offsets on
+            each device.
+        num_accepted_per_dev: ``[batch]`` accepted draft tokens, in batch
+            order, on each device (broadcast, as the driver broadcasts its
+            per-device inputs).
+        num_draft_tokens: The verify's draft width ``K``.
+        data_parallel_splits: ``[replicas + 1]`` int64 first request of each
+            replica, then the batch size, on the host.
+        prefix: Prepended to the per-replica dimensions' names. Every rollback
+            in one graph that cuts the batch needs its own.
+
+    Raises:
+        ValueError: If the offsets and counts don't both come one per device.
+    """
+    if len(merged_offsets_per_dev) != len(num_accepted_per_dev):
+        raise ValueError(
+            f"{len(merged_offsets_per_dev)} offset tensors and"
+            f" {len(num_accepted_per_dev)} accepted counts: a replica rollback"
+            " takes both on every device"
+        )
+    per_replica = []
+    for replica, (offsets, num_accepted) in enumerate(
+        zip(merged_offsets_per_dev, num_accepted_per_dev, strict=True)
+    ):
+        device = offsets.device
+        first = data_parallel_splits[replica]
+        last = data_parallel_splits[replica + 1]
+        batch_dim = Dim(f"{prefix}_batch_{replica}")
+        offsets = ops.slice_tensor(
+            offsets.cast(DType.int64),
+            [(slice(first, last + 1), f"{prefix}_offsets_{replica}")],
+        )
+        accepted = ops.slice_tensor(
+            num_accepted, [(slice(first, last), batch_dim)]
+        )
+        per_replica.append(
+            ReplicaAcceptInputs(
+                merged_offsets=offsets - offsets[0],
+                num_accepted=accepted,
+                num_draft_tokens=_shape_to_scalar(num_draft_tokens, device),
+                batch_dim=batch_dim,
+                device=device,
+            )
+        )
+    return per_replica

@@ -26,6 +26,7 @@
 #include "MLRT/Driver/DeviceContext/ErrorMacros.h"
 #include "Metal/MetalDriver.h"
 #include "Support/ErrorOr.h"
+#include "Target/DriverCreate.h"
 #include "llvm/ADT/ScopeExit.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -67,21 +68,25 @@ std::optional<std::string> queryHALPluginArch(const DriverPluginEntry &plugin) {
       ::dlsym(lib, "M_driver_create"));
   auto destroy = reinterpret_cast<M_driver_destroy_func_ptr_t>(
       ::dlsym(lib, "M_driver_destroy"));
+  auto statusMessage = reinterpret_cast<M_driver_status_message_func_ptr_t>(
+      ::dlsym(lib, "M_driver_status_message"));
   auto property = reinterpret_cast<M_driver_property_func_ptr_t>(
       ::dlsym(lib, "M_driver_property"));
   auto deviceGet = reinterpret_cast<M_driver_device_get_func_ptr_t>(
       ::dlsym(lib, "M_driver_device_get"));
   auto deviceProperty = reinterpret_cast<M_driver_device_property_func_ptr_t>(
       ::dlsym(lib, "M_driver_device_property"));
-  if (!create || !destroy || !property || !deviceGet || !deviceProperty)
+  if (!create || !destroy || !statusMessage || !property || !deviceGet ||
+      !deviceProperty)
     return std::nullopt;
 
-  M_driver_version version{M_DRIVER_INTERFACE_VERSION_MAJOR,
-                           M_DRIVER_INTERFACE_VERSION_MINOR,
-                           M_DRIVER_INTERFACE_VERSION_PATCH};
-  M_driver_driver_t driver = nullptr;
-  if (create(&version, &driver) != M_DRIVER_STATUS_SUCCESS || !driver)
+  // The runtime loader reports a plugin that fails here; this query only
+  // looks for one that works.
+  ErrorOr<M_driver_driver_t> driverOr =
+      Plugin::createDriver(plugin.path, create, destroy, statusMessage);
+  if (driverOr.isError())
     return std::nullopt;
+  M_driver_driver_t driver = driverOr.get();
   auto destroyDriver = llvm::scope_exit([&] { destroy(driver); });
 
   // Plugins spell their api in any case ("CUDA", "Metal", "cpu").

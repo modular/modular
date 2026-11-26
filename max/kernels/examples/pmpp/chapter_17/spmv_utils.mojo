@@ -38,10 +38,6 @@ struct COOMatrix[
     ):
         encoder.encode_fields[Self.device_type](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "COOMatrix"
-
     def __init__(
         out self,
         nnz: Int,
@@ -82,10 +78,6 @@ struct CSRMatrix[
     ):
         encoder.encode_fields[Self.device_type](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "CSRMatrix"
-
     def __init__(
         out self,
         rows: Int,
@@ -120,10 +112,6 @@ struct ELLMatrix[col_idx_origin: ImmOrigin, value_origin: ImmOrigin](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self.device_type](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "ELLMatrix"
 
     def __init__(
         out self,
@@ -162,10 +150,6 @@ struct CSCMatrix[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self.device_type](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "CSCMatrix"
 
     def __init__(
         out self,

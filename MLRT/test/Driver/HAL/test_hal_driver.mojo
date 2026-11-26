@@ -125,7 +125,7 @@ def test_completion_flag_round_trip() raises:
     comptime Ext = type_of(dev[].extensions())
     comptime if conforms_to(Ext, SupportsCompletionFlagV1):
         ref ext = dev[].extensions()
-        __guard case .Some(flags) = ext.completion_flag() else:
+        guard case .Some(flags) = ext.completion_flag() else:
             raise Error("in-tree plugin lacks completion flags")
         var raw = dev[].raw_driver()
         var ctx = dev[].get_context()
@@ -147,7 +147,7 @@ def test_completion_flag_round_trip() raises:
         assert_equal(flags.load(raw[], flag), 5)
 
         comptime if conforms_to(Ext, SupportsCompletionFlagResetV1):
-            __guard case .Some(reset) = ext.completion_flag_reset() else:
+            guard case .Some(reset) = ext.completion_flag_reset() else:
                 raise Error("reset tier lacks the reset symbol")
             reset.reset(raw[], flag)
             assert_equal(flags.load(raw[], flag), 0)

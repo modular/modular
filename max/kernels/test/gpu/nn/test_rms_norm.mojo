@@ -66,7 +66,11 @@ def run_rms_norm_gpu[
 
     var param_shape = Index(cols)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    # FIXME: This test normalizes in place, but origin tracking cannot express
+    # that each element is loaded before it is overwritten.
+    var data_buf = TileTensor(
+        data_d, row_major(Coord(shape))
+    ).unsafe_origin_cast[MutUntrackedOrigin]()
     var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
     comptime epsilon = Float32(0.001)
     comptime weight_offset = Float32(0.0)
@@ -143,7 +147,11 @@ def run_rms_norm_gpu_static_dims[
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](cols)
 
-    var data_buf = TileTensor(data_d, row_major(shape))
+    # FIXME: This test normalizes in place, but origin tracking cannot express
+    # that each element is loaded before it is overwritten.
+    var data_buf = TileTensor(data_d, row_major(shape)).unsafe_origin_cast[
+        MutUntrackedOrigin
+    ]()
     var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
     comptime epsilon = Float32(0.001)
     comptime weight_offset = Float32(0.0)
@@ -210,7 +218,11 @@ def run_rms_norm_gpu_zero_rows[dtype: DType](ctx: DeviceContext) raises:
     ctx.enqueue_copy(data_d, data_h)
     ctx.enqueue_copy(gamma_d, gamma_h)
 
-    var data_buf = TileTensor(data_d, row_major(Coord(Index(0, cols))))
+    # FIXME: This test normalizes in place, but origin tracking cannot express
+    # that each element is loaded before it is overwritten.
+    var data_buf = TileTensor(
+        data_d, row_major(Coord(Index(0, cols)))
+    ).unsafe_origin_cast[MutUntrackedOrigin]()
     var gamma = TileTensor(gamma_d, row_major(Coord(Index(cols))))
 
     @inline(.always)

@@ -4,7 +4,7 @@
 // result variable is declared with the result's own type. Declaring it as an
 // MGP async value -- the only shape this emitter had -- does not compile.
 
-// CHECK: var [[VAR:[a-z_0-9]+]]: std.utils.IndexList[
+// CHECK: var [[VAR:[a-z_0-9]+]]: std.utils.coord.DynamicCoord[DType.int,
 // CHECK:   try:
 // CHECK:     [[VAR]] =
 // CHECK:   except

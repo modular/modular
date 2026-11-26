@@ -18,14 +18,17 @@ Verifies correct behavior for:
   - No interpolation with temporal embedding (t>1)
   - Bicubic interpolation (constant field preserved)
   - Multiple videos with mixed shapes (GPU vs host reference)
+  - Bilinear interpolation, including temporal and 1x1 grids and captured
+    BF16 rounding ties
 """
 
-from std.math import clamp, floor, sin, cos
+from std.math import clamp, floor, sin, cos, max, min
+from std.memory import bitcast
 
 from max.gpu.host import DeviceContext
 from layout import Idx, TileTensor, row_major
 from nn.learnable_2d_interp_pos_emb import learnable_2d_interp_pos_emb
-from std.testing import assert_almost_equal
+from std.testing import assert_almost_equal, assert_equal
 
 
 def test_no_interp_no_temporal[dtype: DType](ctx: DeviceContext) raises:
@@ -483,6 +486,204 @@ def test_sincos_embed(ctx: DeviceContext) raises:
     )
 
 
+def test_bilinear_rectangular[dtype: DType](ctx: DeviceContext) raises:
+    """Checks rectangular, native, temporal, and 1x1 grids."""
+    comptime H = 4
+    comptime W = 6
+    comptime dim = 7
+    comptime N = 5
+    comptime num_frames = 2
+    comptime L = 7 * 9 + 2 * 3 + H * W + num_frames * 3 * 5 + 1
+    var x = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var weight = ctx.enqueue_create_host_buffer[dtype](H * W * dim)
+    var grids = ctx.enqueue_create_host_buffer[.int64](N * 3)
+    var time = ctx.enqueue_create_host_buffer[.float32](num_frames * dim)
+    var actual = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var expected = ctx.enqueue_create_host_buffer[dtype](L * dim)
+    var x_tt = TileTensor(x, row_major[L, dim]())
+    var weight_tt = TileTensor(weight, row_major[H, W, dim]())
+    var grids_tt = TileTensor(grids, row_major[N, 3]())
+    var expected_tt = TileTensor(expected, row_major[L, dim]())
+    for i in range(L * dim):
+        x[i] = Scalar[dtype](Float32(i % 17 - 8) / 32.0)
+    for y in range(H):
+        for x_pos in range(W):
+            for d in range(dim):
+                weight_tt[y, x_pos, d] = Scalar[dtype](
+                    Float32((y * 7 + x_pos * x_pos + d * 3) % 23) / 16.0
+                )
+    for i in range(num_frames * dim):
+        time[i] = Float32(i % 5 - 2) / 8.0
+    grids_tt[0, 0] = 1
+    grids_tt[0, 1] = 7
+    grids_tt[0, 2] = 9
+    grids_tt[1, 0] = 1
+    grids_tt[1, 1] = 2
+    grids_tt[1, 2] = 3
+    grids_tt[2, 0] = 1
+    grids_tt[2, 1] = H
+    grids_tt[2, 2] = W
+    grids_tt[3, 0] = num_frames
+    grids_tt[3, 1] = 3
+    grids_tt[3, 2] = 5
+    grids_tt[4, 0] = 1
+    grids_tt[4, 1] = 1
+    grids_tt[4, 2] = 1
+    var offset = 0
+    for image in range(N):
+        var t = Int(grids_tt[image, 0])
+        var h = Int(grids_tt[image, 1])
+        var w = Int(grids_tt[image, 2])
+        # Scale first, as the kernel and ATen do, so inexact scales round
+        # the same way.
+        var scale_h = Float32(H) / Float32(h)
+        var scale_w = Float32(W) / Float32(w)
+        for frame in range(t):
+            for y in range(h):
+                for x_pos in range(w):
+                    var sy = max((Float32(y) + 0.5) * scale_h - 0.5, 0.0)
+                    var sx = max((Float32(x_pos) + 0.5) * scale_w - 0.5, 0.0)
+                    var y0 = Int(floor(sy))
+                    var x0 = Int(floor(sx))
+                    var y1 = min(y0 + 1, H - 1)
+                    var x1 = min(x0 + 1, W - 1)
+                    var dy = sy - Float32(y0)
+                    var dx = sx - Float32(x0)
+                    for d in range(dim):
+                        var w00 = Float32(weight_tt[y0, x0, d])
+                        var w01 = Float32(weight_tt[y0, x1, d])
+                        var w10 = Float32(weight_tt[y1, x0, d])
+                        var w11 = Float32(weight_tt[y1, x1, d])
+                        var top = (w01 - w00).fma(dx, w00)
+                        var bottom = (w11 - w10).fma(dx, w10)
+                        var position = Scalar[dtype](
+                            (bottom - top).fma(dy, top)
+                        )
+                        var time_val: Float32 = 0
+                        if t > 1:
+                            time_val = time[frame * dim + d]
+                        expected_tt[offset, d] = Scalar[dtype](
+                            Float32(x_tt[offset, d])
+                            + Float32(position)
+                            + time_val
+                        )
+                    offset += 1
+    var x_dev = ctx.enqueue_create_buffer[dtype](L * dim)
+    var weight_dev = ctx.enqueue_create_buffer[dtype](H * W * dim)
+    var grids_dev = ctx.enqueue_create_buffer[.int64](N * 3)
+    var time_dev = ctx.enqueue_create_buffer[.float32](num_frames * dim)
+    var output_dev = ctx.enqueue_create_buffer[dtype](L * dim)
+    ctx.enqueue_copy(x_dev, x)
+    ctx.enqueue_copy(weight_dev, weight)
+    ctx.enqueue_copy(grids_dev, grids)
+    ctx.enqueue_copy(time_dev, time)
+    learnable_2d_interp_pos_emb[bilinear=True](
+        TileTensor(output_dev, row_major[L, dim]()),
+        TileTensor(x_dev, row_major[L, dim]()),
+        TileTensor(weight_dev, row_major[H, W, dim]()),
+        TileTensor(grids_dev, row_major[N, 3]()),
+        TileTensor(time_dev, row_major[num_frames, dim]()),
+        ctx,
+    )
+    ctx.enqueue_copy(actual, output_dev)
+    ctx.synchronize()
+    for i in range(L * dim):
+        assert_almost_equal(actual[i], expected[i], atol=1e-5)
+
+
+def test_bilinear_bfloat16_rounding(ctx: DeviceContext) raises:
+    """Requires interpolation to round before cancellation with the input."""
+    comptime dtype = DType.bfloat16
+    comptime H = 2
+    comptime W = 2
+    comptime dim = 1
+    comptime L = 16
+    var x = ctx.enqueue_create_buffer[dtype](L)
+    x.enqueue_fill(-1)
+    var weight = ctx.enqueue_create_host_buffer[dtype](H * W)
+    weight[0] = 1
+    weight[1] = 1.0078125
+    weight[2] = 1
+    weight[3] = 1.0078125
+    var grids = ctx.enqueue_create_host_buffer[.int64](3)
+    grids[0] = 1
+    grids[1] = 4
+    grids[2] = 4
+    var weight_dev = ctx.enqueue_create_buffer[dtype](H * W)
+    var grids_dev = ctx.enqueue_create_buffer[.int64](3)
+    var time = ctx.enqueue_create_buffer[.float32](dim)
+    time.enqueue_fill(0)
+    var output = ctx.enqueue_create_buffer[dtype](L)
+    var actual = ctx.enqueue_create_host_buffer[dtype](L)
+    ctx.enqueue_copy(weight_dev, weight)
+    ctx.enqueue_copy(grids_dev, grids)
+    learnable_2d_interp_pos_emb[bilinear=True](
+        TileTensor(output, row_major[L, dim]()),
+        TileTensor(x, row_major[L, dim]()),
+        TileTensor(weight_dev, row_major[H, W, dim]()),
+        TileTensor(grids_dev, row_major[1, 3]()),
+        TileTensor(time, row_major[1, dim]()),
+        ctx,
+    )
+    ctx.enqueue_copy(actual, output)
+    ctx.synchronize()
+    for row in range(4):
+        for col in range(4):
+            var expected = Scalar[dtype](0.0 if col < 2 else 0.0078125)
+            assert_equal(actual[row * 4 + col], expected)
+
+
+def test_bilinear_bfloat16_lerp_order[
+    source_height: Int, source_width: Int, target_height: Int, target_width: Int
+](
+    ctx: DeviceContext,
+    source_col: Int,
+    output_index: Int,
+    corners: SIMD[DType.float32, 4],
+    input_value: Float32,
+    expected_bits: UInt16,
+) raises:
+    """Checks BF16 interpolation ties against captured reference outputs."""
+    comptime dtype = DType.bfloat16
+    comptime L = target_height * target_width
+    var x = ctx.enqueue_create_buffer[dtype](L)
+    x.enqueue_fill(Scalar[dtype](input_value))
+    var weight = ctx.enqueue_create_host_buffer[dtype](
+        source_height * source_width
+    )
+    for i in range(source_height * source_width):
+        weight[i] = 0
+    weight[source_col] = Scalar[dtype](corners[0])
+    weight[source_col + 1] = Scalar[dtype](corners[1])
+    weight[source_width + source_col] = Scalar[dtype](corners[2])
+    weight[source_width + source_col + 1] = Scalar[dtype](corners[3])
+    var grids = ctx.enqueue_create_host_buffer[.int64](3)
+    grids[0] = 1
+    grids[1] = Int64(target_height)
+    grids[2] = Int64(target_width)
+    var weight_dev = ctx.enqueue_create_buffer[dtype](
+        source_height * source_width
+    )
+    var grids_dev = ctx.enqueue_create_buffer[.int64](3)
+    var time = ctx.enqueue_create_buffer[.float32](1)
+    time.enqueue_fill(0)
+    var output = ctx.enqueue_create_buffer[dtype](L)
+    var actual = ctx.enqueue_create_host_buffer[dtype](L)
+    ctx.enqueue_copy(weight_dev, weight)
+    ctx.enqueue_copy(grids_dev, grids)
+    learnable_2d_interp_pos_emb[bilinear=True](
+        TileTensor(output, row_major[L, 1]()),
+        TileTensor(x, row_major[L, 1]()),
+        TileTensor(weight_dev, row_major[source_height, source_width, 1]()),
+        TileTensor(grids_dev, row_major[1, 3]()),
+        TileTensor(time, row_major[1, 1]()),
+        ctx,
+    )
+    ctx.enqueue_copy(actual, output)
+    ctx.synchronize()
+    assert_equal(bitcast[DType.uint16](actual[output_index]), expected_bits)
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_sincos_embed(ctx)
@@ -490,4 +691,32 @@ def main() raises:
         test_no_interp_with_temporal[.float32](ctx)
         test_bicubic_constant_field[.float32](ctx)
         test_multi_video[.float32](ctx)
+        test_bilinear_rectangular[.float32](ctx)
+        test_bilinear_rectangular[.bfloat16](ctx)
+        test_bilinear_rectangular[.float16](ctx)
+        test_bilinear_bfloat16_rounding(ctx)
+        # Captured PyTorch GPU outputs; weighted sums round across these ties.
+        test_bilinear_bfloat16_lerp_order[4, 2, 5, 1](
+            ctx,
+            0,
+            1,
+            SIMD[DType.float32, 4](
+                0.0267333984375, 0.0169677734375, 0.038818359375, 0.015869140625
+            ),
+            -0.1376953125,
+            0xBDE6,
+        )
+        test_bilinear_bfloat16_lerp_order[2, 4, 1, 3](
+            ctx,
+            2,
+            2,
+            SIMD[DType.float32, 4](
+                0.0244140625,
+                0.0206298828125,
+                -0.0115966796875,
+                -0.00946044921875,
+            ),
+            -0.0634765625,
+            0xBD6C,
+        )
     print("All learnable_2d_interp_pos_emb tests passed!")

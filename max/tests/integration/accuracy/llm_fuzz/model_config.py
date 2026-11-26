@@ -111,12 +111,6 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         tags=["model:hy_v4"],
         description="Hy4 model-specific tests",
     ),
-    "kimi-k2.5": ModelProfile(
-        name="kimi-k2.5",
-        default_port=8200,
-        tags=["model:kimi-k2.5"],
-        description="Kimi K2.5 model-specific tests",
-    ),
     "glm-5.1": ModelProfile(
         name="glm-5.1",
         default_port=8100,
@@ -182,12 +176,6 @@ MODEL_PROFILES: dict[str, ModelProfile] = {
         default_port=8091,
         tags=["model:deepseek_v4"],
         description="DeepSeek-V4-Flash-0731",
-    ),
-    "laguna": ModelProfile(
-        name="laguna",
-        default_port=8091,
-        tags=["model:laguna"],
-        description="Laguna S-2.1 on Mach",
     ),
 }
 

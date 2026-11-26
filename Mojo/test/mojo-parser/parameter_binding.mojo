@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# RUN: %parse-mojo-isolated -split-input-file %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 
 @fieldwise_init
@@ -79,7 +79,7 @@ struct MySpan[
     pass
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 def defaulted_slice_param[param: StringSpan = "world"]() -> String:
@@ -94,7 +94,7 @@ def use_defaulted_slice_param():
     var _ = defaulted_slice_param()
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 comptime KE = Movable & Deinitable
 

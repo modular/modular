@@ -8,6 +8,12 @@
 // A `!mogg.dim` is optionally named after its source dynamic dim (`%d0` prints
 // as `!mogg.dim<D0>`); a bare `!mogg.dim` (`%dim`) carries no name. Both
 // round-trip (the named form is checked on the `shape.create` below).
+
+#kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
+mogg.kernel.decl @kernel registration = "test.kernel" execute = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @bare registration = "test.bare" execute = #kf struct_params = [] is_user_defined = false
+mogg.kernel.decl @inner registration = "test.inner" execute = #kf struct_params = [] is_user_defined = false
+
 func.func @codegen_ops(%ptr: !mogg.pointer, %dim: !mogg.dim,
                        %d0: !mogg.dim<D0>,
                        %ctx: !mogg.context, %ab: !mogg.async<!mgp.buffer>,

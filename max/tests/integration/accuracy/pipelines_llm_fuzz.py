@@ -555,7 +555,6 @@ def _redacted(cmd: Sequence[str]) -> list[str]:
         " --exclude. Use scenario:test for a single test."
     ),
 )
-@click.option("--k2vv-mode", type=str, default="")
 @click.option("--circuit-breaker", type=int, default=None)
 @click.option("--extra-fuzz-arg", "extra_fuzz_args", multiple=True)
 @click.option(
@@ -603,7 +602,6 @@ def main(
     model_profile: str | None,
     scenarios: str,
     exclude: str,
-    k2vv_mode: str,
     circuit_breaker: int | None,
     extra_fuzz_args: Sequence[str],
     output_dir: Path,
@@ -673,8 +671,6 @@ def main(
         fuzz_cmd.extend(["--scenarios", scenarios])
     if exclude:
         fuzz_cmd.extend(["--exclude", exclude])
-    if k2vv_mode:
-        fuzz_cmd.extend(["--k2vv-mode", k2vv_mode])
     if circuit_breaker is not None:
         fuzz_cmd.extend(["--circuit-breaker", str(circuit_breaker)])
     fuzz_cmd.extend(extra_fuzz_args)

@@ -54,7 +54,7 @@ from layout import (
 )
 from layout.coord import DynamicCoord
 from layout.layout import Layout
-from std.memory import ThinAllocation, dealloc, unsafe_stack_allocation
+from std.memory import ThinAllocation, dealloc
 from std.memory.alloc import Layout as AllocLayout
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
@@ -81,12 +81,14 @@ static shared memory which is 32k."""
 def block_reduce[
     dtype: DType, max_warps_per_block: Int
 ](val: Scalar[dtype]) -> Scalar[dtype]:
-    var m2_shared = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=.SHARED
-    ]()
-    var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var m2_shared_storage = Array[Scalar[dtype], max_warps_per_block](
+        uninitialized=True
+    )
+    var m2_shared = m2_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var m2_broadcast_storage = Array[Scalar[dtype], 1](uninitialized=True)
+    var m2_broadcast = m2_broadcast_storage.unsafe_ptr()
 
     var warp_m2 = warp.sum(val)
 
@@ -122,14 +124,22 @@ def block_reduce_dual_sum[
     Scalar[dtype], Scalar[dtype]
 ]:
     """Combined block reduction for two sums using only 2 barriers."""
-    var shared0 = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=.SHARED
-    ]()
-    var shared1 = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=.SHARED
-    ]()
-    var broadcast0 = unsafe_stack_allocation[1, dtype, address_space=.SHARED]()
-    var broadcast1 = unsafe_stack_allocation[1, dtype, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var shared0_storage = Array[Scalar[dtype], max_warps_per_block](
+        uninitialized=True
+    )
+    var shared0 = shared0_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var shared1_storage = Array[Scalar[dtype], max_warps_per_block](
+        uninitialized=True
+    )
+    var shared1 = shared1_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var broadcast0_storage = Array[Scalar[dtype], 1](uninitialized=True)
+    var broadcast0 = broadcast0_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var broadcast1_storage = Array[Scalar[dtype], 1](uninitialized=True)
+    var broadcast1 = broadcast1_storage.unsafe_ptr()
 
     var warp_sum0 = warp.sum(val0)
     var warp_sum1 = warp.sum(val1)
@@ -233,24 +243,28 @@ def welford_block_all_reduce[
     mut res_m2: Scalar[dtype],
     mut res_count: Scalar[dtype],
 ):
-    var mean_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=.SHARED
-    ]()
-    var m2_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=.SHARED
-    ]()
-    var count_shared = unsafe_stack_allocation[
-        WARP_SIZE, dtype, address_space=.SHARED
-    ]()
-    var mean_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=.SHARED
-    ]()
-    var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=.SHARED
-    ]()
-    var count_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var mean_shared_storage = Array[Scalar[dtype], WARP_SIZE](
+        uninitialized=True
+    )
+    var mean_shared = mean_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var m2_shared_storage = Array[Scalar[dtype], WARP_SIZE](uninitialized=True)
+    var m2_shared = m2_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var count_shared_storage = Array[Scalar[dtype], WARP_SIZE](
+        uninitialized=True
+    )
+    var count_shared = count_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var mean_broadcast_storage = Array[Scalar[dtype], 1](uninitialized=True)
+    var mean_broadcast = mean_broadcast_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var m2_broadcast_storage = Array[Scalar[dtype], 1](uninitialized=True)
+    var m2_broadcast = m2_broadcast_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var count_broadcast_storage = Array[Scalar[dtype], 1](uninitialized=True)
+    var count_broadcast = count_broadcast_storage.unsafe_ptr()
 
     var warp_idx = warp_id()
     var lane_idx = lane_id()
@@ -822,10 +836,6 @@ def rms_norm_gpu_block[
         )
 
 
-# `input_fn` and `output_fn` run on the device, so they must copy (`{var}`)
-# what they capture. Callers may norm in place, with both callbacks capturing
-# the same buffer: every element is read before the thread reading it writes it.
-@__unsafe_nested_origins_read_only
 def rms_norm_gpu[
     dtype: DType,
     InputFnType: ImplicitlyCopyable
@@ -1396,9 +1406,6 @@ def _rms_norm_input_alignment[
         return align_of[SIMD[dtype, width]]()
 
 
-# The KV cache norms run in place: `input_0_fn` and `output_fn` may capture
-# the same cache. Every element is read before the thread reading it writes it.
-@__unsafe_nested_origins_read_only
 @inline(.always)
 def _rms_norm_impl[
     dtype: DType,
@@ -3081,8 +3088,8 @@ def rms_norm_quantize_dynamic_scaled_fp8[
     `output` is `[rows, num_cols]` FP8 and `scales` is
     `[num_cols // group_size, rows]` (row `r`'s scale for column group `g`
     at `scales[g, r]`; a padded trailing scale column is left untouched).
-    Per-token scales (`group_size == num_cols`) stay on
-    `rms_norm_fused_quantize_dynamic_scaled_fp8`.
+    Per-token scales (`group_size == num_cols`) take the graph compiler's
+    generated kernel instead.
     """
     comptime assert output.rank == 2, "expected rank-2 output"
     comptime assert scales.rank == 2, "expected rank-2 scales"
@@ -3142,7 +3149,7 @@ def rms_norm_quantize_dynamic_scaled_fp8[
             weight_offset,
             scale_ub.cast[scales_dtype](),
         )
-        ctx.enqueue_function(
+        ctx.enqueue_closure(
             kernel,
             grid_dim=(num_rows, 1, 1),
             block_dim=num_threads,

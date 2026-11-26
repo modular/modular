@@ -49,7 +49,6 @@ query interval data, particularly for finding overlaps.
 """
 
 
-from std.builtin.string_literal import StaticString
 from std.memory.alloc import alloc, dealloc, ThinAllocation, Layout
 from std.os import abort
 
@@ -520,7 +519,7 @@ struct IntervalTree[
         assert Bool(self._root), "node is not set"
         var rotation_node_nn = rotation_node.value()
         var rotation_right_child = rotation_node_nn[].right()
-        __guard case .Some(rotation_right_child_nn) = rotation_right_child else:
+        guard case .Some(rotation_right_child_nn) = rotation_right_child else:
             abort("right child is not set")
         rotation_node_nn[].right() = rotation_right_child_nn[].left()
 
@@ -590,7 +589,7 @@ struct IntervalTree[
         assert Bool(self._root), "root node is not set"
         var rotation_node_nn = rotation_node.value()
         var rotation_left_child = rotation_node_nn[].left()
-        __guard case .Some(rotation_left_child_nn) = rotation_left_child else:
+        guard case .Some(rotation_left_child_nn) = rotation_left_child else:
             abort("left child node is not set")
         rotation_node_nn[].left() = rotation_left_child_nn[].right()
 
@@ -839,114 +838,6 @@ struct IntervalTree[
             # Recursively draw left and right subtrees
             self._draw_helper(writer, node[].left(), next_indent, False)
             self._draw_helper(writer, node[].right(), next_indent, True)
-
-    @inline(.never)
-    def _draw3[w: Writer](self, mut writer: w) raises:
-        """Draws the interval tree in a simple ASCII tree format.
-
-        Creates a text representation of the tree using ASCII characters, with each node
-        indented according to its depth. Uses '├─' and '└─' characters to show the tree
-        structure.
-
-        Parameters:
-            w: The writer type that implements the Writer trait.
-
-        Args:
-            writer: The writer to output the tree visualization to.
-        """
-        # Handle empty tree case
-        if not self._root:
-            return writer.write("Empty")
-
-        var work_list = Deque[Tuple[Self._IntervalNodePointer, String, Bool]]()
-        work_list.append((self._root, String(), True))
-
-        while work_list:
-            var node, indent, is_last = work_list.pop()
-            if case .Some(node) = node:
-                writer.write(indent)
-                if is_last:
-                    writer.write("├─ ")
-                    indent += "   "
-                else:
-                    writer.write("└─ ")
-                    indent += "|  "
-                writer.write(node[], "\n")
-                work_list.append((node[].left(), indent, False))
-                work_list.append((node[].right(), indent, True))
-
-    @inline(.never)
-    def _draw2[w: Writer](self, mut writer: w) raises:
-        """Draws the interval tree in a visual ASCII art format.
-
-        Creates a grid representation of the tree with nodes and connecting branches.
-        Each level of the tree is separated by 3 rows vertically.
-        Nodes are connected by '/' and '\' characters for left and right children.
-
-        Parameters:
-            w: The writer type that implements the Writer trait.
-
-        Args:
-            writer: The writer to output the tree visualization to.
-        """
-        # Handle empty tree case
-        if not self._root:
-            return writer.write("Empty")
-
-        # Calculate dimensions needed for the grid
-        var height = self.depth()
-        var width = 2**height - 1
-
-        # Create 2D grid of spaces to hold the tree visualization
-        # Each row is a list of single character strings
-        var grid = List[List[String]]()
-        for _ in range(3 * height):
-            var row = List[String]()
-            for _ in range(4 * width):
-                row.append(" ")  # Initialize with spaces
-            grid.append(row^)
-
-        var work_list = Deque[Tuple[Self._IntervalNodePointer, Int, Int, Int]]()
-        work_list.append((self._root, 0, 0, width))
-
-        while work_list:
-            # Recursively fills the grid with node values and connecting branches.
-            var node, level, left, right = work_list.pop()
-            if case .Some(node) = node:
-                # Calculate position for current node
-                var mid = (left + right) // 2  # Center point between boundaries
-                var pos_x = mid * 4  # Scale x position for readability
-                var pos_y = level * 3  # Scale y position for branch drawing
-
-                # Draw the current node's value
-                var node_str = String(node[])
-                var start_pos = max(
-                    0, pos_x - node_str.byte_length() // 2
-                )  # Center the node text
-                var i = 0
-                for char in node_str.codepoints():
-                    grid[pos_y][start_pos + i] = String(char)
-                    i += 1
-
-                # Add drawing left branch to the worklist.
-                if node[].left():
-                    for y in range(1, 3):
-                        # Draw left branch
-                        grid[pos_y + y][pos_x - 2 * y + 1] = "/"
-                    work_list.append((node[].left(), level + 1, left, mid))
-
-                # Add drawing right branch to the worklist.
-                if node[].right():
-                    for y in range(1, 3):
-                        # Draw right branch
-                        grid[pos_y + y][pos_x + 2 * y] = "\\"
-                    work_list.append((node[].right(), level + 1, mid, right))
-
-        # Output the completed grid row by row
-        for row in grid:
-            var row_str = String(StaticString("").join(row).rstrip())
-            if row_str:
-                writer.write(row_str, "\n")
 
     def depth(self) -> Int:
         """Returns the depth of the interval tree.

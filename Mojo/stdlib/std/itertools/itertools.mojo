@@ -890,12 +890,8 @@ def take_while[
         print(num)  # Prints: 1, 2, 3, 4
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
     return {
-        rebind_var[_TakeWhileIterator[Function].InnerIteratorType](
-            iter(iterable)
-        ),
+        iter(iterable),
         predicate^,
     }
 
@@ -1048,12 +1044,8 @@ def drop_while[
         print(num)  # Prints: 5, 6, 1, 2
     ```
     """
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
     return {
-        rebind_var[_DropWhileIterator[Function].InnerIteratorType](
-            iter(iterable)
-        ),
+        iter(iterable),
         predicate^,
     }
 
@@ -1273,10 +1265,8 @@ def take[
     # Unlike `drop` and `take_while`, `take` has no `Deinitable`
     # constraint on the element type: it never discards an element, it just
     # stops yielding once `count` is reached.
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
     return _TakeIterator(
-        rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
+        iter(iterable),
         count=count,
     )
 
@@ -1415,10 +1405,8 @@ def drop[
     ```
     """
     assert count >= 0, "The `count` argument must be non-negative"
-    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
-    # substituted through associated types right.
     return _DropIterator(
-        rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
+        iter(iterable),
         count=count,
     )
 

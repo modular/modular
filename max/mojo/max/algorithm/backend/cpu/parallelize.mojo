@@ -15,7 +15,6 @@
 from std.math import ceildiv
 from std.os import abort
 from std.utils.coord import Coord
-from std.utils.index import IndexList
 
 from max.runtime.asyncrt import parallelism_level
 from max.runtime import tracing
@@ -255,27 +254,3 @@ def parallelize_over_rows[
         func(start_row, end_row)
 
     sync_parallelize(task_func, num_workers, ctx)
-
-
-def parallelize_over_rows[
-    FuncType: def(Int, Int) -> None,
-](
-    func: FuncType,
-    shape: IndexList,
-    axis: Int,
-    grain_size: Int,
-    ctx: Optional[DeviceContext.CPU] = None,
-):
-    """Parallelize func over non-axis dims of shape.
-
-    Parameters:
-        FuncType: The body function type.
-
-    Args:
-        func: The closure carrying the captured state of the body function.
-        shape: Shape to parallelize over.
-        axis: Rows are slices along the axis dimension of shape.
-        grain_size: The minimum number of elements to warrant using an additional thread.
-        ctx: Optional CPU DeviceContext to execute the work on.
-    """
-    parallelize_over_rows(func, Coord(shape), axis, grain_size, ctx)

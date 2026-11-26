@@ -438,6 +438,7 @@ def test_only_a_returned_replay_submission_reaches_finalize(
     batching.__dict__["_target_batching"] = dsv41
     model = object.__new__(SpecDecodePipelineModel)
     model._batch_processor = batching
+    model.pipeline_config = Mock(speculative=None)
     model.model = Mock()
     model.replay_model = Mock()
     model.replay_model.execute.return_value = [Mock(), Mock(), Mock()]

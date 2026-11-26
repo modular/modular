@@ -26,8 +26,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 
-from std.utils.index import Index, IndexList
-
 
 def is_benchmark() -> Bool:
     for arg in argv():
@@ -187,7 +185,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=matmul_config,
         ](
-            IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+            (Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
             a_tensor,
             b_tensor,
             epilogue_fn,

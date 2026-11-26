@@ -299,6 +299,7 @@ def _run_case[
         # locals reach the device as host-stack pointers and the stores land
         # out of bounds.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def mx_epilogue[
             width: Int
         ](row: Int, col: Int, val: SIMD[in_dtype, width]) {
@@ -334,6 +335,7 @@ def _run_case[
         # This branch owes the SAME outputs as the fused one; dropping the
         # `quantize_mx_amd` leaves them stale and arm A catches it (verified).
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def two_launch_with_quant() raises {imm}:
             comptime if not route_two_launch:
                 # Poison: `threshold = full_bytes` forces the fused branch, so

@@ -1,4 +1,4 @@
-// RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_pkg" --mo-to-map --map-fuse-kernels --map-rlicm --map-rcse | FileCheck %s
+// RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_pkg" --mo-to-map --map-fuse-kernels --map-rlicm --cse --map-rcse | FileCheck %s
 
 // The row computes the value every phase computes from the input the first
 // fold reduces once per element, in a `map.iter.tile`. Of the candidates, the
@@ -118,4 +118,107 @@ mo.graph @scaled(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32> {
   %m = mo.mul(%x, %cb) : !mo.tensor<[8, 128], f32>
   %s = mo.reduce.add(%m) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
   mo.output %s : !mo.tensor<[8, 1], f32>
+}
+
+// Rotate-half after a reduction: the map phase computes x * sum at its element
+// and, in the select's regions, at its partner in the other half of the row.
+// That value becomes a shared cache, which the regions read 8 elements away.
+// CHECK-LABEL: mo.graph @rotateHalfShares
+// CHECK:         map.iter.reduce
+// CHECK:         %[[C:.*]] = map.iter.cache index (%[[K:.*]]: !map.index<2>) -> f32 {
+// CHECK:           map.call.elementwise @builtin_kernels.elementwise.Mul(%[[K]],
+// CHECK:         } {shared = true}
+// CHECK:         map.iter.map index (%[[J:.*]]: !map.index<2>) {
+// CHECK:           map.iter.cache.load %[[C]][%[[J]]] : !map.index<2>, f32
+// CHECK:           map.index.concat.select
+// CHECK:             map.iter.cache.load %[[C]][%[[J]]] offset(8) : !map.index<2>, f32
+// CHECK:             map.iter.cache.load %[[C]][%[[J]]] offset(-8) : !map.index<2>, f32
+// CHECK-NOT:     map.load
+// CHECK:       mo.output
+mo.graph @rotateHalfShares(%x: !mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 16], f32> {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 1], f32>
+  %sb = mo.static.broadcast_to(%s) : !mo.tensor<[4, 1], f32> -> !mo.tensor<[4, 16], f32>
+  %y = mo.mul(%x, %sb) : !mo.tensor<[4, 16], f32>
+  %start1 = mo.constant <#M.dense_array<0, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %start2 = mo.constant <#M.dense_array<0, 8> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop1 = mo.constant <#M.dense_array<4, 8> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop2 = mo.constant <#M.dense_array<4, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %step = mo.constant <#M.dense_array<1, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %y1 = mo.slice(%y, %start1, %stop1, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %y2 = mo.slice(%y, %start2, %stop2, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %ny2 = mo.negative(%y2) : !mo.tensor<[4, 8], f32>
+  %r = mo.concat[1] (%ny2, %y1) : (!mo.tensor<[4, 8], f32>, !mo.tensor<[4, 8], f32>) -> !mo.tensor<[4, 16], f32>
+  %o = mo.add(%y, %r) : !mo.tensor<[4, 16], f32>
+  mo.output %o : !mo.tensor<[4, 16], f32>
+}
+
+// A value the regions compute with no load is cheaper to compute again than
+// to share: the row gets no cache.
+// CHECK-LABEL: mo.graph @rotateHalfOfRowValue
+// CHECK-NOT:     map.iter.cache
+// CHECK:       mo.output
+mo.graph @rotateHalfOfRowValue(%x: !mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 16], f32> {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 1], f32>
+  %sb = mo.static.broadcast_to(%s) : !mo.tensor<[4, 1], f32> -> !mo.tensor<[4, 16], f32>
+  %start1 = mo.constant <#M.dense_array<0, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %start2 = mo.constant <#M.dense_array<0, 8> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop1 = mo.constant <#M.dense_array<4, 8> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop2 = mo.constant <#M.dense_array<4, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %step = mo.constant <#M.dense_array<1, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %y1 = mo.slice(%sb, %start1, %stop1, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %y2 = mo.slice(%sb, %start2, %stop2, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %ny2 = mo.negative(%y2) : !mo.tensor<[4, 8], f32>
+  %r = mo.concat[1] (%ny2, %y1) : (!mo.tensor<[4, 8], f32>, !mo.tensor<[4, 8], f32>) -> !mo.tensor<[4, 16], f32>
+  %o = mo.mul(%x, %r) : !mo.tensor<[4, 16], f32>
+  mo.output %o : !mo.tensor<[4, 16], f32>
+}
+
+// Rotate-half of two values, x * sum and x * x: their copies would need two
+// caches, and a row has one, so it gets none.
+// CHECK-LABEL: mo.graph @rotateHalfOfTwo
+// CHECK-NOT:     map.iter.cache
+// CHECK:       mo.output
+mo.graph @rotateHalfOfTwo(%x: !mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 16], f32> {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 1], f32>
+  %sb = mo.static.broadcast_to(%s) : !mo.tensor<[4, 1], f32> -> !mo.tensor<[4, 16], f32>
+  %y = mo.mul(%x, %sb) : !mo.tensor<[4, 16], f32>
+  %z = mo.mul(%x, %x) : !mo.tensor<[4, 16], f32>
+  %start1 = mo.constant <#M.dense_array<0, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %start2 = mo.constant <#M.dense_array<0, 8> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop1 = mo.constant <#M.dense_array<4, 8> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop2 = mo.constant <#M.dense_array<4, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %step = mo.constant <#M.dense_array<1, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %y1 = mo.slice(%y, %start1, %stop1, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %y2 = mo.slice(%y, %start2, %stop2, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %z1 = mo.slice(%z, %start1, %stop1, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %z2 = mo.slice(%z, %start2, %stop2, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[4, 8], f32>
+  %ry = mo.concat[1] (%y2, %y1) : (!mo.tensor<[4, 8], f32>, !mo.tensor<[4, 8], f32>) -> !mo.tensor<[4, 16], f32>
+  %rz = mo.concat[1] (%z2, %z1) : (!mo.tensor<[4, 8], f32>, !mo.tensor<[4, 8], f32>) -> !mo.tensor<[4, 16], f32>
+  %a = mo.add(%y, %ry) : !mo.tensor<[4, 16], f32>
+  %b = mo.add(%z, %rz) : !mo.tensor<[4, 16], f32>
+  %o = mo.add(%a, %b) : !mo.tensor<[4, 16], f32>
+  mo.output %o : !mo.tensor<[4, 16], f32>
+}
+
+// A concat over the rows, not along them: the select's regions read x two
+// rows away, which no offset along the row reaches, so the row gets no cache.
+// CHECK-LABEL: mo.graph @swapRowsGetsNoCache
+// CHECK-NOT:     map.iter.cache
+// CHECK:         map.iter.map index
+// CHECK:           map.index.concat.select<#map.index.concat.spec<[2, 16], [2, 16] -> [4, 16], axis = 0>>
+// CHECK:       mo.output
+mo.graph @swapRowsGetsNoCache(%x: !mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 16], f32> {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[4, 16], f32>) -> !mo.tensor<[4, 1], f32>
+  %sb = mo.static.broadcast_to(%s) : !mo.tensor<[4, 1], f32> -> !mo.tensor<[4, 16], f32>
+  %y = mo.mul(%x, %sb) : !mo.tensor<[4, 16], f32>
+  %start1 = mo.constant <#M.dense_array<0, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %start2 = mo.constant <#M.dense_array<2, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop1 = mo.constant <#M.dense_array<2, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop2 = mo.constant <#M.dense_array<4, 16> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %step = mo.constant <#M.dense_array<1, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %x1 = mo.slice(%x, %start1, %stop1, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[2, 16], f32>
+  %x2 = mo.slice(%x, %start2, %stop2, %step) : (!mo.tensor<[4, 16], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[2, 16], f32>
+  %c = mo.concat[0] (%x2, %x1) : (!mo.tensor<[2, 16], f32>, !mo.tensor<[2, 16], f32>) -> !mo.tensor<[4, 16], f32>
+  %o = mo.add(%y, %c) : !mo.tensor<[4, 16], f32>
+  mo.output %o : !mo.tensor<[4, 16], f32>
 }

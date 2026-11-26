@@ -1,3 +1,4 @@
+load("@mojo//:mojo.bzl", "BUILTIN_KERNEL_MODULES")
 load("//bazel:api.bzl", "pkg_files")
 
 package(default_visibility = ["//max:consumers"])
@@ -13,28 +14,30 @@ _EXCLUDED_GRAPH_COMPILER_LIBS = (
 _GRAPH_COMPILER_LIBS = [
     lib
     for lib in subpackages(include = ["*"])
-    if lib not in _EXCLUDED_GRAPH_COMPILER_LIBS
+    if lib not in _EXCLUDED_GRAPH_COMPILER_LIBS and lib != "builtin_kernels"
 ]
+
+# `builtin_kernels` is a namespace, so its Bazel package holds one target per
+# module rather than one named after the directory. Its docs nest under it, so
+# the docsite path matches the import path.
+_DOCS = {
+    "//max/kernels/src/graph_compiler/" + lib + ":" + lib + ".docs": lib
+    for lib in _GRAPH_COMPILER_LIBS
+} | {
+    "//max/kernels/src/graph_compiler/builtin_kernels:" + module + ".docs": "builtin_kernels/" + module
+    for module in BUILTIN_KERNEL_MODULES
+}
 
 pkg_files(
     name = "docs",
-    srcs = [
-        "//max/kernels/src/graph_compiler/" + lib + ":" + lib + ".docs"
-        for lib in _GRAPH_COMPILER_LIBS
-    ],
-    renames = {
-        "//max/kernels/src/graph_compiler/" + lib + ":" + lib + ".docs": lib
-        for lib in _GRAPH_COMPILER_LIBS
-    },
+    srcs = _DOCS.keys(),
+    renames = _DOCS,
     tags = ["manual"],
 )
 
 filegroup(
     name = "mojodoc_json",
-    srcs = [
-        "//max/kernels/src/graph_compiler/" + lib + ":" + lib + ".docs"
-        for lib in _GRAPH_COMPILER_LIBS
-    ],
+    srcs = _DOCS.keys(),
     output_group = "mojodoc_json",
     tags = ["manual"],
 )

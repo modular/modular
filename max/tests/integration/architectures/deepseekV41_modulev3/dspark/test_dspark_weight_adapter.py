@@ -435,7 +435,9 @@ def test_the_draft_checkpoint_weights_bind_the_adapter_s_output(
     )
     context: Any = SimpleNamespace(
         pipeline_config=SimpleNamespace(
-            speculative=SimpleNamespace(speculative_method="dspark"),
+            speculative=SimpleNamespace(
+                speculative_method="dspark", draft_score_source="head_free"
+            ),
             draft_model=None,
             model=SimpleNamespace(
                 huggingface_config=SimpleNamespace(n_mtp_layers=STAGES),

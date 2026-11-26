@@ -75,5 +75,10 @@ Functions
    :toctree: generated
    :template: autosummary/function.rst
 
+   gather_prefix_rows
    gather_variable_rows
+   gather_verify_prefix
+   mesh_verify_lengths
+   replica_size
+   slice_requests
    tensor_compat_verify

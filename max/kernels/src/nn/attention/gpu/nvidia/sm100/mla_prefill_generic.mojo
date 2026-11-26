@@ -14,7 +14,7 @@
 from std.sys import size_of, get_defined_bool
 from std.math import ceildiv
 from nn.attention.mha_operand import MHAOperand
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     SeqInfo,
     TransientScheduler,
@@ -275,7 +275,7 @@ __extension SM100MLA:
         var seq_info: SeqInfo = get_seq_info[
             Self.BM,
             Self.num_q_heads,
-            Self.MaskType.get_type_name() == "CausalMask",
+            Self.MaskType == CausalMask,
         ](batch_size, pack.max_seq_len, pack.valid_length, pack.partition)
 
         comptime cfg_1q = Self.config.switch_1q_config()
@@ -1012,6 +1012,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_rope_smem_ptr(
                 idx: UInt32,
             ) {imm} -> SharedMemPointer[Scalar[KRopeType.dtype]]:
@@ -1028,6 +1029,7 @@ __extension SM100MLA:
                 ]().unsafe_offset(idx * UInt32(rope_stage_elems))
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_v_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
@@ -1043,6 +1045,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_fused[
                 partial: Bool,
                 with_q: Bool = False,
@@ -1522,6 +1525,7 @@ __extension SM100MLA:
             comptime produce_k_split_mbar_type = type_of(k0_mbar)
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_split[
                 partial: Bool,
                 with_q: Bool = False,
@@ -2120,6 +2124,7 @@ __extension SM100MLA:
             # byte-identical. Captures pipeline_v/consumer_s0/pipeline_o0/
             # s0_tmem/o0_tmem from this scope (mirrors `_advance_kv`).
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _pv_into_o0(
                 mut s_phase: UInt32, mut c_scale: UInt32, e: Int32
             ) {mut pipeline_o0, mut pipeline_v, imm}:
@@ -2830,7 +2835,7 @@ def _mla_prefill_sm100_valid_length_dispatch[
         comptime SchedulerType = TransientScheduler[
             UInt32(cfg.BM),
             UInt32(cfg.num_q_heads),
-            flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+            flip_prompt_idx=MaskType == CausalMask,
         ]
 
         comptime SM100MLAType = SM100MLA[

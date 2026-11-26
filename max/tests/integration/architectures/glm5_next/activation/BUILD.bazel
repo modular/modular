@@ -23,3 +23,9 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/glm5_next",
     ],
 )
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
+)

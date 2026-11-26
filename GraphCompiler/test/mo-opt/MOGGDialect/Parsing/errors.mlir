@@ -6,21 +6,24 @@ func.func @build_graph_missing_decl(
     %in: !mogg.tensor,
     %b: !mgp.device_graph.builder) {
   // expected-error@+1 {{'missing.kernel' does not refer to a kernel.decl op}}
-  mogg.call.build_graph["missing.kernel"]
+  mogg.call.build_graph @missing.kernel
       inputs(%in : !mogg.tensor)
-      builder(%b) moOpName = "mo.matmul"
+      builder(%b)
   return
 }
 
 // -----
 
+#kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
+mogg.kernel.decl @k registration = "test.k" execute = #kf struct_params = [] is_user_defined = false
+
 // A mogg.graph_blob is the one launch of the calls it holds, so it can't hold
 // another.
 func.func @nested_graph_blob(%ctx: !mogg.context) {
-  // expected-error@+1 {{calls kernels only through 'mogg.call.opaque', but holds 'mogg.graph_blob'}}
+  // expected-error@+1 {{calls kernels only through 'mogg.call.opaque' and 'mogg.call.foreach', but holds 'mogg.graph_blob'}}
   mogg.graph_blob {
     mogg.graph_blob {
-      mogg.call.opaque @missing.kernel context(%ctx : !mogg.context)
+      mogg.call.opaque @k context(%ctx : !mogg.context)
     }
   }
   return
@@ -37,22 +40,28 @@ func.func @empty_graph_blob() {
 
 // -----
 
+#kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
+mogg.kernel.decl @k registration = "test.k" execute = #kf struct_params = [] is_user_defined = false
+
 // A mogg.graph_blob is one launch, on one device context.
 func.func @graph_blob_call_on_two_contexts(%ctx0: !mogg.context, %ctx1: !mogg.context) {
   // expected-error@+1 {{calls each kernel on one device context}}
   mogg.graph_blob {
-    mogg.call.opaque @missing.kernel context(%ctx0, %ctx1 : !mogg.context, !mogg.context)
+    mogg.call.opaque @k context(%ctx0, %ctx1 : !mogg.context, !mogg.context)
   }
   return
 }
 
 // -----
 
+#kf = #mogg.kernel_function<!lit.generator<() -> i1>, [], [], []>
+mogg.kernel.decl @k registration = "test.k" execute = #kf struct_params = [] is_user_defined = false
+
 func.func @graph_blob_two_contexts(%ctx0: !mogg.context, %ctx1: !mogg.context) {
   // expected-error@+1 {{calls kernels on more than one device context}}
   mogg.graph_blob {
-    mogg.call.opaque @missing.kernel context(%ctx0 : !mogg.context)
-    mogg.call.opaque @missing.kernel context(%ctx1 : !mogg.context)
+    mogg.call.opaque @k context(%ctx0 : !mogg.context)
+    mogg.call.opaque @k context(%ctx1 : !mogg.context)
   }
   return
 }
@@ -94,5 +103,23 @@ func.func @execute_device_not_declarative(%ctx: !mogg.context, %cfg: !mogg.launc
       mogg.call.execute_device @builtin_kernels.monoids.ReduceSum
     }
   }
+  return
+}
+
+// -----
+
+// A static permutation reads no permutations operand.
+func.func @transpose_static_with_permutations(%input: !mogg.tensor, %perm: !mogg.tensor) {
+  // expected-error@+1 {{takes a permutations operand only when some static permutation is dynamic}}
+  %0 = mogg.tensor.create.transpose(%input, %perm) <elementType = f32, mut = false, outShape = #mosh<ape[3, 2]> : !mosh.ape, staticPermutations = array<i64: 1, 0>> : !mogg.tensor
+  return
+}
+
+// -----
+
+// A run-time permutation is read from the permutations operand.
+func.func @transpose_dynamic_without_permutations(%input: !mogg.tensor) {
+  // expected-error@+1 {{takes a permutations operand only when some static permutation is dynamic}}
+  %0 = mogg.tensor.create.transpose(%input) <elementType = f32, mut = false, outShape = #mosh<ape[3, 2]> : !mosh.ape, staticPermutations = array<i64: -9223372036854775808, 0>> : !mogg.tensor
   return
 }

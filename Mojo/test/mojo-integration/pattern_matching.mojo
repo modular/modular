@@ -13,19 +13,13 @@
 
 # RUN: %mojo %s | FileCheck %s
 
-"""End-to-end pattern matching: literals, tuples, structs, Optional, enums,
-and comptime match."""
+# Checks:
+# 1. Match literal, tuple, struct and EnumLike subjects.
+# 2. Borrow and consume payloads with linear lifecycle methods.
+# 3. Evaluate patterns and matches at compile time.
 
 from std.collections import List, Optional
 from std.os import abort
-
-
-__enum Token(ImplicitlyCopyable):
-    """A tiny lexer token for pattern matching."""
-
-    case eof
-    case identifier(String)
-    case integer(Int)
 
 
 @fieldwise_init
@@ -52,6 +46,16 @@ struct NonMovablePayload(Deinitable, not Movable):
 
     def take(deinit self) -> Int:
         return self.value
+
+
+struct FirstError(Writable):
+    def __init__(out self):
+        pass
+
+
+struct SecondError(Writable):
+    def __init__(out self):
+        pass
 
 
 # ===----------------------------------------------------------------------=== #
@@ -94,9 +98,37 @@ def take_optional_non_movable_payload() -> Int:
 
 
 def describe_guard_optional(opt: Optional[Int]) -> String:
-    __guard case .Some(value) = opt else:
+    guard case .Some(value) = opt else:
         return "none"
     return String("some:", value)
+
+
+def classify_if_clauses(enabled: Bool, opt: Optional[Int]) -> String:
+    if enabled; case .Some(value) = opt; value > 0:
+        return String("positive:", value)
+    elif enabled; case .Some(value) = opt; value <= 0:
+        return String("nonpositive:", value)
+    else:
+        return "unavailable"
+
+
+def describe_guard_clauses(enabled: Bool, opt: Optional[Int]) -> String:
+    guard enabled; case .Some(value) = opt; value > 0 else:
+        return "unavailable"
+    return String("positive:", value)
+
+
+def handle_multiple_errors(first: Bool) -> String:
+    try:
+        if first:
+            raise FirstError()
+        raise SecondError()
+    except FirstError __as error:
+        _ = error
+        return "first"
+    except Error __as error:
+        _ = error
+        return "second"
 
 
 def make_linear_payload_pair() -> Tuple[LinearPayload, LinearPayload]:
@@ -119,16 +151,6 @@ def take_transferred_linear_payload_pair() -> Int:
     var second = LinearPayload(41)
     var (left, right) = (first^, second^)
     return left^.take() + right^.take()
-
-
-def describe_token(tok: Token) -> String:
-    match tok:
-        case .eof:
-            return "eof"
-        case .identifier(name):
-            return String("id:", name)
-        case .integer(value):
-            return String("int:", value)
 
 
 def classify_int(x: Int) -> String:
@@ -232,6 +254,19 @@ def classify_if_case_type[T: AnyType]() -> String:
         return "string"
     else:
         return "other"
+
+
+def classify_comptime_if_clauses[T: AnyType, enabled: Bool]() -> String:
+    comptime if enabled; case == Int = T:
+        return "integer"
+    else:
+        return "other"
+
+
+def classify_comptime_guard_clauses[T: AnyType, enabled: Bool]() -> String:
+    comptime guard enabled; case == Int = T else:
+        return "other"
+    return "integer"
 
 
 def classify_comptime_if_case_pair[pair: Tuple[Int, Int]]() -> String:
@@ -360,19 +395,19 @@ def classify_comptime_as[x: Int]() -> String:
 
 
 def classify_comptime_guard[pair: Tuple[Int, Int]]() -> String:
-    comptime __guard case (0, value) = pair else:
+    comptime guard case (0, value) = pair else:
         return "miss"
     return String("hit:", value)
 
 
 def comptime_guard_does_not_fall_through[condition: Bool]():
-    comptime __guard case True = condition else:
+    comptime guard case True = condition else:
         return
     comptime assert False, "shouldn't get instantiated"
 
 
 def comptime_guard_does_not_enter_else[condition: Bool]():
-    comptime __guard case True = condition else:
+    comptime guard case True = condition else:
         comptime assert False, "shouldn't happen"
 
 
@@ -427,25 +462,42 @@ def test_guard():
     print(describe_guard_optional(Optional[Int](None)))
 
 
-def test_enum_like_token():
-    # CHECK-LABEL: == test_enum_like_token
-    print("== test_enum_like_token")
+def test_conditional_clauses():
+    # CHECK-LABEL: == test_conditional_clauses
+    print("== test_conditional_clauses")
 
-    # CHECK: eof
-    print(describe_token(Token.eof))
-    # CHECK: id:main
-    print(describe_token(Token.identifier("main")))
-    # CHECK: int:99
-    print(describe_token(Token.integer(99)))
+    # CHECK: positive:4
+    print(classify_if_clauses(True, Optional(4)))
+    # CHECK: nonpositive:0
+    print(classify_if_clauses(True, Optional(0)))
+    # CHECK: unavailable
+    print(classify_if_clauses(False, Optional(4)))
 
-    match Token.identifier("x"):
-        case Token.eof:
-            print("explicit-eof")
-        case .identifier(var name):
-            # CHECK: explicit-id: x
-            print("explicit-id:", name)
-        case Token.integer(_):
-            print("explicit-int")
+    # CHECK: positive:4
+    print(describe_guard_clauses(True, Optional(4)))
+    # CHECK: unavailable
+    print(describe_guard_clauses(True, Optional(0)))
+    # CHECK: unavailable
+    print(describe_guard_clauses(False, Optional(4)))
+
+    # CHECK: integer
+    print(classify_comptime_if_clauses[Int, True]())
+    # CHECK: other
+    print(classify_comptime_if_clauses[Int, False]())
+    # CHECK: integer
+    print(classify_comptime_guard_clauses[Int, True]())
+    # CHECK: other
+    print(classify_comptime_guard_clauses[String, True]())
+
+
+def test_multiple_except():
+    # CHECK-LABEL: == test_multiple_except
+    print("== test_multiple_except")
+
+    # CHECK: first
+    print(handle_multiple_errors(True))
+    # CHECK: second
+    print(handle_multiple_errors(False))
 
 
 def test_literals_guards_or():
@@ -691,7 +743,8 @@ def test_comptime_match():
 def main():
     test_optional()
     test_guard()
-    test_enum_like_token()
+    test_conditional_clauses()
+    test_multiple_except()
     test_literals_guards_or()
     test_tuples_and_structs()
     test_lists()

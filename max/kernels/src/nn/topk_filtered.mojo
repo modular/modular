@@ -57,7 +57,7 @@ from max.gpu.host import (
     FuncAttribute,
     default_accelerator,
 )
-from std.memory import bitcast, unsafe_stack_allocation
+from std.memory import bitcast
 from std.math import sqrt
 from std.utils.static_tuple import StaticTuple
 from structured_kernels.trace_buf import NullTrace
@@ -65,6 +65,7 @@ from structured_kernels.trace_buf import NullTrace
 from nn.attention.gpu.mla_index_fp8 import IndexerTopk
 from nn.topk_bitonic import (
     PERSISTENT_TOPK_MAX_N,
+    persistent_topk_is_single_block,
     RowBound,
     TopkSink,
     _HSEL_BINS,
@@ -388,7 +389,9 @@ def _filtered_select[
     # [0] split bin, [1] keys strictly above it, [2] keys in it, [3] kept-key
     # cursor, [4] output cursor, [5] tie-list cursor, [6] threshold column,
     # [7] ties taken per step.
-    var ctl = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var ctl_storage = Array[UInt32, 8](uninitialized=True)
+    var ctl = ctl_storage.unsafe_ptr()
 
     # The bound: the m-th largest score of a strided sample, m five standard
     # deviations above the sample's expected count above the K-th score. Its
@@ -816,7 +819,7 @@ def filtered_topk_block_split[
     if rows == 0:
         return
     comptime if default_accelerator().is_nvidia_gpu():
-        if N > PERSISTENT_TOPK_MAX_N and N > FILTER_MIN_RATIO * K:
+        if not persistent_topk_is_single_block(N) and N > FILTER_MIN_RATIO * K:
             var sm_count = ctx.device().multiprocessor_count()
             if rows >= sm_count:
                 var fallback = ctx.enqueue_create_buffer[.uint8](rows)

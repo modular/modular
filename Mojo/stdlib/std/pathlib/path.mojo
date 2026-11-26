@@ -29,6 +29,7 @@ print(p)  # a/b/c.txt
 """
 
 import std.os
+from std.io import IOError
 import std.format._utils as fmt
 from std.os import PathLike, listdir, stat_result
 from std.ffi import c_char, external_call
@@ -86,7 +87,7 @@ def _dir_of_current_file() raises -> Path:
 
 @inline(.never)
 def _dir_of_current_file_impl(file_name: StaticString) raises -> Path:
-    __guard case .Some(i) = file_name.rfind(DIR_SEPARATOR) else:
+    guard case .Some(i) = file_name.rfind(DIR_SEPARATOR) else:
         return Path(".")
     if i == 0:
         return Path(DIR_SEPARATOR)
@@ -441,7 +442,7 @@ struct Path(
         with open(self, "r") as f:
             return f.read()
 
-    def read_bytes(self) raises -> List[Byte]:
+    def read_bytes(self) raises IOError -> List[Byte]:
         """Returns content of the file as bytes.
 
         Returns:
@@ -464,9 +465,12 @@ struct Path(
         ```
         """
         with open(self, "r") as f:
-            return f.read_bytes()
+            try:
+                return f.read_bytes()
+            except e:
+                raise e._with_subject(.path(self.path))
 
-    def write_text[T: Writable](self, value: T) raises:
+    def write_text[T: Writable](self, value: T) raises IOError:
         """Writes the value to the file as text.
 
         Parameters:
@@ -493,7 +497,7 @@ struct Path(
         with open(self, "w") as f:
             f.write(value)
 
-    def write_bytes(self, bytes: Span[Byte, _]) raises:
+    def write_bytes(self, bytes: Span[Byte, _]) raises IOError:
         """Writes bytes to the file.
 
         Args:
@@ -596,7 +600,7 @@ struct Path(
 
         return result
 
-    def listdir(self) raises -> List[Path]:
+    def listdir(self) raises IOError -> List[Path]:
         """Gets the list of entries contained in the path provided.
 
         Returns:

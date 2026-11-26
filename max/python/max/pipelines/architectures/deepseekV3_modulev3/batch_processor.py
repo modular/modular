@@ -22,8 +22,8 @@ from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn.kv_cache import KVCacheInputs
 from max.nn.kv_cache.cache_params import KVCacheParamInterface
-from max.nn.legacy.comm.ep import EPCommInitializer
 from max.pipelines.context import TextContext
+from max.pipelines.lib.ep_initializer import EPInitializerLike
 from max.pipelines.lib.interfaces.arch_config import ArchConfig
 from max.pipelines.lib.interfaces.batch_processor import (
     BatchProcessorRuntime,
@@ -45,7 +45,7 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         self, config: ArchConfig, runtime: BatchProcessorRuntime
     ) -> None:
         super().__init__(config, runtime)
-        self._ep_comm_initializer: EPCommInitializer | None = None
+        self._ep_comm_initializer: EPInitializerLike | None = None
         dp_degree = runtime.pipeline_config.model.data_parallel_degree
         self._batch_context_lengths = [
             Buffer.zeros(shape=[1], dtype=DType.int32)
@@ -56,7 +56,7 @@ class DeepseekV3ModuleV3BatchProcessor(DeepseekV2ModuleV3BatchProcessor):
         )
 
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: EPInitializerLike | None
     ) -> None:
         """Wires EP buffers created during model ``load_model``."""
         self._ep_comm_initializer = initializer

@@ -21,6 +21,7 @@
 #include "Mojo/ToolCommon/DriverOptions.h"
 #include "Mojo/ToolCommon/FrontendOptions.h"
 #include "Mojo/ToolCommon/InitAllDialects.h"
+#include "Mojo/ToolCommon/OptionNormalizers.h"
 #include "Support/Driver/DriverSupport.h"
 #include "Support/Driver/OptionMarshalling.h"
 
@@ -56,6 +57,7 @@ static int doc(const State &subcommandState) {
 
   DriverOptions driverOptions;
   KGEN::FrontendOptions frontendOptions;
+  SmallVector<std::string> outputNamespace;
   MarshallingErrors errors;
 #define MOJO_OPTION_WITH_MARSHALLING(...)                                      \
   PARSE_OPTION_WITH_MARSHALLING(args, errors, __VA_ARGS__)
@@ -116,7 +118,7 @@ static int doc(const State &subcommandState) {
   // surfaced to users.
   if (!generateMojoDocJSON(*pathOrErr, context, frontendOptions,
                            driverOptions.includePaths, state.diagnosticFormat,
-                           out->os()))
+                           out->os(), outputNamespace))
     return state.reportError("could not generate documentation");
 
   out->keep();

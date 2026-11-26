@@ -24,7 +24,7 @@
 #include "Support/SymbolExport.h"
 #include "mlir/IR/Builders.h"
 
-namespace M {
+namespace M::MLRT {
 
 /// This class represents an unknown type encoded into a MEF file, it can be
 /// dynamically casted to other types for processing.
@@ -38,7 +38,7 @@ public:
   MEFType(const MEFType &) = default;
   MEFType &operator=(const MEFType &) = default;
 
-  MEF::TypeKind getKind() const { return MEF::TypeKind(*pointer); }
+  MLRT::MEF::TypeKind getKind() const { return MLRT::MEF::TypeKind(*pointer); }
 
   /// All MEFType's are MEFType's!
   static bool classof(const MEFType *type) { return true; }
@@ -115,7 +115,7 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::function;
+    return type->getKind() == MLRT::MEF::TypeKind::function;
   }
 };
 
@@ -138,7 +138,7 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::tensor;
+    return type->getKind() == MLRT::MEF::TypeKind::tensor;
   }
 };
 
@@ -160,7 +160,7 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::quantized;
+    return type->getKind() == MLRT::MEF::TypeKind::quantized;
   }
 };
 
@@ -184,20 +184,20 @@ public:
 
   static bool classof(const MEFType *type) {
     assert(type != nullptr);
-    return type->getKind() == MEF::TypeKind::quantizedPerAxis;
+    return type->getKind() == MLRT::MEF::TypeKind::quantizedPerAxis;
   }
 };
 
-} // namespace M
+} // namespace M::MLRT
 
 namespace llvm {
 
 template <typename T>
-struct CastInfo<T, ::M::MEFType>
-    : public CastIsPossible<T, ::M::MEFType>,
-      public DefaultDoCastIfPossible<std::optional<T>, ::M::MEFType,
-                                     CastInfo<T, ::M::MEFType>> {
-  static std::optional<T> doCast(const ::M::MEFType &f) {
+struct CastInfo<T, ::M::MLRT::MEFType>
+    : public CastIsPossible<T, ::M::MLRT::MEFType>,
+      public DefaultDoCastIfPossible<std::optional<T>, ::M::MLRT::MEFType,
+                                     CastInfo<T, ::M::MLRT::MEFType>> {
+  static std::optional<T> doCast(const ::M::MLRT::MEFType &f) {
     return T(f.getPointer(), f.getAttrEnd());
   }
   static std::optional<T> castFailed() { return std::nullopt; }

@@ -2,9 +2,9 @@
 
 # BEGIN_GENERATED
 # NOTE: Use 'update-llvm' to update these values
-LLVM_COMMIT = "eaabd239f5d23639eaf4d1d3a49ae90261c53b00"
+LLVM_COMMIT = "b5fcb3287aeaab770cd82da153ab8f785101fc45"
 
-LLVM_SHA = "a6b4730f6fae684a10f5437f20b81f14c2f2b5e40ada727478a186db4dc2eb59"
+LLVM_SHA = "6b712e62773696a65e3bb0dfc5e6646b8a023bdd91c3540cdeaff3151ca27ccf"
 # END_GENERATED
 
 PATCHES = [
@@ -29,12 +29,6 @@ PATCHES = [
     # ConstString is still enough to avoid the crash.
     # TODO(MOTO-1590): drop once the ownership is sound across DSO boundaries.
     "//bazel/public-patches:llvm-revert-lldb-elf-section-name-string.patch",
-    # The overlay's lldb:HostMacOSXObjCXX lists the objcxx headers in
-    # non_arc_srcs, but Bazel's objc_library rejects header files there
-    # ("source file ... is misplaced here") because that attribute is only
-    # for .m/.mm sources compiled without ARC. The headers are just inputs
-    # for the .mm files, so list them in srcs instead.
-    "//bazel/public-patches:llvm-lldb-macosx-objcxx-headers.patch",
     # llvm/llvm-project#225158 gives the llvm_libxml2_enabled config_setting
     # group visibility to clang, lld/test and lldb, but leaves its match_any
     # members private. Bazel checks the members' visibility from the consuming

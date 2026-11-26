@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Verify that a failing assert prints the error message and file location.
-# RUN: not %mojo %s 2>&1 | FileCheck %s
+# RUN: not --crash %mojo %s 2>&1 | FileCheck %s
 
 
 def main():

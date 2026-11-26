@@ -164,10 +164,6 @@ struct SsdMi355Params(DevicePassable, ImplicitlyCopyable):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "SsdMi355Params"
-
 
 @fieldwise_init
 struct Item(TrivialRegisterPassable):

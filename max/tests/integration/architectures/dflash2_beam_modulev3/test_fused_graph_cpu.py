@@ -24,7 +24,8 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from beam_dflash2_fixtures import (
@@ -33,19 +34,31 @@ from beam_dflash2_fixtures import (
     build_parts,
     fake_weights,
     graph_name,
+    pipeline_config,
 )
 from max import functional as F
 from max._artifact.value_types import treedef_to_json
-from max.driver import CPU
+from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef
+from max.graph.type import Shape
+from max.graph.weights import WeightData, WeightsFormat
 from max.nn import _graph_ops as kernels
 from max.pipelines.architectures.dflash2_beam_modulev3.model_config import (
     dflash2_beam_draft_width,
 )
+from max.pipelines.lib.graph_specs import GraphRole
 from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
+    _module_builder,
+    _Pairing,
     _SpecDecodeModuleV3PipelineModel,
+    _weight_entries,
     spec_decode_architecture,
+)
+from max.pipelines.lib.weight_transform import (
+    CheckpointRole,
+    WeightEntry,
+    apply_weight_entries,
 )
 from max.pipelines.speculative import spec_adapters
 from max.tensor import default_device, default_dtype
@@ -163,6 +176,69 @@ def test_the_drafter_binds_its_checkpoint_names(
         if not (m := re.match(r"layers\.(\d+)\.", name)) or int(m[1]) < 2
     }
     assert {name for name in names if name.startswith("draft.")} == expected
+
+
+def test_the_fused_artifact_names_both_checkpoints(
+    staged: tuple[StagedGraph[Any, Any], str, set[str]],
+) -> None:
+    _, _, names = staged
+    config = pipeline_config()
+    assert config.draft_model is not None
+    pairing = _Pairing.from_pipeline_config(config)
+    data = WeightData(
+        data=Buffer.zeros((1,), DType.bfloat16),
+        name="unused",
+        dtype=DType.bfloat16,
+        shape=Shape([1]),
+    )
+    entries: list[WeightEntry] = []
+    checkpoints = {}
+    for role, arch in (
+        (CheckpointRole.TARGET, pairing.target),
+        (CheckpointRole.DRAFT, pairing.draft),
+    ):
+        hf_config = (
+            config.model.huggingface_config
+            if role == CheckpointRole.TARGET
+            else config.draft_model.huggingface_config
+        )
+        adapter = arch.checkpoint_adapters(hf_config, artifact_export=True)[
+            WeightsFormat.safetensors
+        ]
+        context = cast(Any, SimpleNamespace(adapter=adapter))
+        builder = _module_builder(
+            arch,
+            GraphRole.DECODER
+            if role == CheckpointRole.TARGET
+            else GraphRole.DRAFT,
+        )
+        module_entries = _weight_entries(builder, context, None)
+        assert module_entries, f"{role} leaves the fused graph unnamed"
+        assert {entry.checkpoint for entry in module_entries} == {role}
+        prefix = f"{role.value}."
+        entries.extend(entry.with_prefix(prefix) for entry in module_entries)
+        checkpoint = {
+            name.removeprefix(prefix): data
+            for name in names
+            if name.startswith(prefix)
+        }
+        if role == CheckpointRole.TARGET:
+            checkpoint = {
+                "model."
+                + name.replace(".mlp.gate.gate_score.", ".mlp.gate."): value
+                for name, value in checkpoint.items()
+            }
+        checkpoints[role] = checkpoint
+    bound = apply_weight_entries(entries, cast(Any, checkpoints))
+    assert set(bound) == names
+    assert all(value is data for value in bound.values())
+
+
+def test_a_draft_without_rules_keeps_the_fused_graph_unnamed() -> None:
+    pairing = _Pairing.from_pipeline_config(pipeline_config())
+    builder = _module_builder(pairing.draft, GraphRole.DRAFT)
+    context = cast(Any, SimpleNamespace(adapter=None))
+    assert _weight_entries(builder, context, None) == []
 
 
 def test_the_trace_carries_the_verify_and_the_drafter(

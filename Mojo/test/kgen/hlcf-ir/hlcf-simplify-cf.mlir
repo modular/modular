@@ -258,7 +258,7 @@ kgen.func @erase_trivial_try() {
 kgen.func @raise_in_try(%arg0: index) {
   // CHECK-NEXT: lit.try
   lit.try "try0" {
-    lit.try.raise "try0" %arg0 : index
+    lit.try.raise "try0" handler 0 %arg0 : index
   } except (%e: index) {
     lit.try.yield
   } else {
@@ -273,7 +273,7 @@ kgen.func @nested_raise(%arg0: index) {
   // CHECK-NEXT: lit.try
   lit.try "try0" {
     hlcf.loop {
-      lit.try.raise "try0" %arg0 : index
+      lit.try.raise "try0" handler 0 %arg0 : index
     }
     lit.try.yield
   } except (%e: index) {
@@ -300,8 +300,8 @@ kgen.func @raise_in_else(%arg0: index) {
     } else {
       // CHECK-NEXT: baz.op
       "baz.op"() : () -> ()
-      // CHECK-NEXT: lit.try.raise "try0" %arg0
-      lit.try.raise "try0" %arg0 : index
+      // CHECK-NEXT: lit.try.raise "try0" handler 0 %arg0
+      lit.try.raise "try0" handler 0 %arg0 : index
     }
     lit.try.yield
   // CHECK-NEXT: except

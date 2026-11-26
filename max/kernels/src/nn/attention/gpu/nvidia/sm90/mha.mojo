@@ -84,7 +84,7 @@ from nn.attention.gpu.nvidia.sm90.attention import (
     q_tma_fused,
     q_tma_prefill,
 )
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHASchedulerSynchronization,
@@ -285,8 +285,7 @@ def mha_sm90_dispatch[
             comptime SchedulerType = TransientScheduler[
                 UInt32(scheduler_tile_shape),
                 UInt32(num_scheduler_heads),
-                flip_prompt_idx=not decoding
-                and MaskType.get_type_name() == "CausalMask",
+                flip_prompt_idx=not decoding and MaskType == CausalMask,
             ]
             var scheduler: SchedulerType = SchedulerType()
             _mha_sm90_sink_dispatch[
@@ -436,8 +435,7 @@ def mha_sm90_dispatch[
             comptime SchedulerType = TransientScheduler[
                 UInt32(scheduler_tile_shape),
                 UInt32(num_scheduler_heads),
-                flip_prompt_idx=not decoding
-                and MaskType.get_type_name() == "CausalMask",
+                flip_prompt_idx=not decoding and MaskType == CausalMask,
             ]
             var scheduler: SchedulerType = SchedulerType()
             _mha_sm90_sink_dispatch[
@@ -1669,6 +1667,7 @@ def _mha_sm90[
             warpgroup_fence(p_reg_tile)
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def p_mul_v(read_idx: UInt32, read_phase: UInt32) {imm}:
             var v_smem_sub = v_tile(read_idx)
             produced_mbar_kv[read_idx].wait(read_phase)
@@ -1748,6 +1747,7 @@ def _mha_sm90[
                 old_rowsum[Coord(Idx[row])] = new
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def write_output(
             position: PositionType,
             q_idx: UInt32,

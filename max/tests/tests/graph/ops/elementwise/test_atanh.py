@@ -12,7 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 """test the max.graph python bindings."""
 
-from conftest import GraphBuilder, tensor_types
+import pytest
+from conftest import GraphBuilder, dtypes, tensor_types
 from hypothesis import given
 from hypothesis import strategies as st
 from max.dtype import DType
@@ -30,3 +31,15 @@ def test_atanh_same_type(
         (x,) = graph.inputs
         op = atanh(x)
         assert op.type == tensor_type
+
+
+@given(
+    tensor_type=tensor_types(dtypes=dtypes.filter(lambda d: not d.is_float()))
+)
+def test_atanh_rejects_non_float(
+    graph_builder: GraphBuilder, tensor_type: TensorType
+) -> None:
+    with graph_builder(input_types=[tensor_type]) as graph:
+        (x,) = graph.inputs
+        with pytest.raises(ValueError, match="requires a floating-point input"):
+            atanh(x)

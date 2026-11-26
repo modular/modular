@@ -55,7 +55,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       %cond1 = llvm.call @getElementFromContext(%someContinuation) : (!llvm.ptr) -> i1
       llvm.call @print(%cond1) : (i1) -> ()
 	    co.suspend.end
-    }
+    } <state = 1>
     %cond1 = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.call @print(%cond1) : (i1) -> ()
     llvm.br ^bb3
@@ -109,11 +109,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       %cond1 = llvm.call @getElementFromContext(%someContinuation) : (!llvm.ptr) -> i1
       llvm.call @print(%cond1) : (i1) -> ()
 	    co.suspend.end
-    }
+    } <state = 1>
     %someContinuation2 = llvm.call @anotherTask() : () -> !llvm.ptr
     co.suspend {
       co.suspend.end
-    }
+    } <state = 2>
     %cond1 = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.call @print(%cond1) : (i1) -> ()
     llvm.br ^bb3
@@ -232,7 +232,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %someContinuation2 = llvm.call @anotherTask() : () -> !llvm.ptr
     co.suspend {
       co.suspend.end
-    }
+    } <state = 1>
     %cond1 = llvm.call @getElementFromContext(%continuation) : (!llvm.ptr) -> i1
     llvm.call @print(%cond1) : (i1) -> ()
     llvm.cond_br %cond1, ^bb3, ^bb5
@@ -305,7 +305,7 @@ llvm.func internal @exec_async_closure_0_resume(%arg0: !llvm.ptr) attributes {co
     llvm.br ^bb3
   ^bb3:  // 2 preds: ^bb1, ^bb2
     co.suspend.end
-  }
+  } <state = 1>
   llvm.return
 }
 
@@ -356,7 +356,7 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
       llvm.br ^bb1(%5 : i64)
     ^bb5:  // pred: ^bb3
       co.suspend.end
-    }
+    } <state = 1>
     llvm.return
   }
 }

@@ -80,10 +80,10 @@ def arg_nonzero[
         var j: Int = 0
         for i in range(numel):
             var indices = _get_start_indices_of_nth_subvolume[0](
-                i, coord_to_index_list(input_buffer.layout.shape_coord())
+                i, input_buffer.layout.shape_coord()
             )
-            var offset = input_buffer.layout(Coord(indices))
-            if input_buffer[Coord(indices)] != 0:
+            var offset = input_buffer.layout(indices)
+            if input_buffer[indices] != 0:
                 var out_row = j
                 j += 1
 

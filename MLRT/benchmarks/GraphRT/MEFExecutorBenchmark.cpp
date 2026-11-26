@@ -38,6 +38,7 @@
 #include <string>
 
 using namespace M;
+using namespace M::MLRT;
 using namespace M::AsyncRT;
 using bazel::tools::cpp::runfiles::Runfiles;
 

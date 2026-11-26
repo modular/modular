@@ -17,7 +17,7 @@
 include "mlir/IR/OpBase.td"
 
 def NonStrictInterface : OpInterface<"NonStrictInterface"> {
-  let cppNamespace = "::M::MEF";
+  let cppNamespace = "::M::MLRT::MEF";
 
   let description = [{
     This interface indicates to the MEF execution engine that the op may be

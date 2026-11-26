@@ -1,24 +1,111 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_run_binary_test")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_run_binary_test", "mojo_binary")
 
 package(default_visibility = ["//visibility:private"])
 
+# The `.mojo` files here are Python extension modules with no `main()`, so
+# every rule names its sources instead of globbing. Sources that several rules
+# share go through a filegroup or library, because the duplicate-source lint
+# rejects a file listed directly in two rules of one package.
+
+filegroup(
+    name = "fast_primes_src",
+    srcs = ["fast_primes.mojo"],
+)
+
+filegroup(
+    name = "fast_stats_src",
+    srcs = ["fast_stats.mojo"],
+)
+
+modular_py_library(
+    name = "primes",
+    srcs = ["primes.py"],
+    imports = ["."],
+)
+
+_NO_SANITIZERS = select({
+    "//:asan": ["@platforms//:incompatible"],
+    "//:ubsan": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
+# The page's `main.py`, run as written.
 modular_py_binary(
-    name = "factorial",
+    name = "main",
     srcs = ["main.py"],
-    data = ["mojo_module.mojo"],
+    data = [":fast_primes_src"],
     imports = ["."],
     main = "main.py",
-    target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//:ubsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
+    target_compatible_with = _NO_SANITIZERS,
+    deps = [
+        ":primes",
+        "@mojo//:python",
+    ],
+)
+
+modular_run_binary_test(
+    name = "main_test",
+    binary = "main",
+)
+
+# The page's `report.py`, run as written.
+modular_py_binary(
+    name = "report",
+    srcs = ["report.py"],
+    data = [":fast_stats_src"],
+    imports = ["."],
+    main = "report.py",
+    target_compatible_with = _NO_SANITIZERS,
     deps = [
         "@mojo//:python",
     ],
 )
 
 modular_run_binary_test(
-    name = "factorial_test",
-    binary = "factorial",
+    name = "report_test",
+    binary = "report",
+)
+
+# The claims suite, driven from Python. `compile_checks/` holds modules that
+# `test.py` copies out and imports to check what does and doesn't compile.
+modular_py_binary(
+    name = "interop",
+    srcs = ["test.py"],
+    data = [
+        "edges_module.mojo",
+        ":fast_primes_src",
+        ":fast_stats_src",
+    ] + glob(["compile_checks/*.mojo"]),
+    imports = ["."],
+    main = "test.py",
+    target_compatible_with = _NO_SANITIZERS,
+    deps = [
+        ":primes",
+        "@mojo//:python",
+    ],
+)
+
+modular_run_binary_test(
+    name = "interop_test",
+    binary = "interop",
+)
+
+# The Mojo-side claims, importing the page's modules directly.
+mojo_binary(
+    name = "tests",
+    srcs = [
+        "tests.mojo",
+        ":fast_primes_src",
+        ":fast_stats_src",
+    ],
+    deps = [
+        "@mojo//:std",
+    ],
+)
+
+modular_run_binary_test(
+    name = "tests_test",
+    size = "small",
+    binary = "tests",
+    target_compatible_with = _NO_SANITIZERS,
 )

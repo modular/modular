@@ -35,9 +35,10 @@ def MOGG_KernelCallInterface : OpInterface<"KernelCallInterface"> {
       "return $_op.getKernelParamAttr();"
     >,
     InterfaceMethod<
-      "Returns the sym_name of the kernel decl this op references.",
-      "mlir::StringAttr", "getKernelSymNameAttr", (ins),
-      "return $_op.getKernelSymNameAttr();"
+      "Returns the symbol reference of the kernel decl this op calls.",
+      "mlir::FlatSymbolRefAttr", "getKernelCallee", (ins),
+      /*methodBody=*/[{}],
+      /*defaultImplementation=*/[{ return $_op.getCalleeAttr(); }]
     >,
   ];
 }

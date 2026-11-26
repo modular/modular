@@ -33,11 +33,13 @@ from max.nn._graph_ops import (
 )
 from max.nn._graph_ops.sampling import AcceptanceSampler, LogitPenalties
 
+from .draft_prefix import merge_draft_prefixes
 from .ragged_token_merger import (
     RaggedTokenMerger,
     _shape_to_scalar,
     compute_host_merged_offsets,
 )
+from .verify_budget import unverified_draft_placeholders
 
 __all__ = [
     "accept_and_pick_next_tokens",
@@ -124,16 +126,26 @@ def gather_accepted_hidden_states(
     signal_buffers: Sequence[BufferValue],
     device: DeviceRef,
     split_prefix: str,
+    verify_lengths: TensorValue | None = None,
 ) -> list[TensorValue]:
     """Gather each request's hidden state at its last accepted position."""
     n_devs = len(all_hs)
     last_idx = merged_offsets[1:] - 1
-    num_draft_sentinel_gpu = _shape_to_scalar(num_draft_tokens, device)
-    last_accepted_idx = (
-        ops.rebind(last_idx, ["batch_size"])
-        - num_draft_sentinel_gpu.broadcast_to(["batch_size"])
-        + num_accepted
-    )
+    if verify_lengths is None:
+        num_draft_sentinel_gpu = _shape_to_scalar(num_draft_tokens, device)
+        last_accepted_idx = (
+            ops.rebind(last_idx, ["batch_size"])
+            - num_draft_sentinel_gpu.broadcast_to(["batch_size"])
+            + num_accepted
+        )
+    else:
+        # A per-row step verifies k_r drafts, so the window's end backs off
+        # by each row's own length, not the static draft count.
+        last_accepted_idx = (
+            ops.rebind(last_idx, ["batch_size"])
+            - ops.cast(verify_lengths, DType.int64)
+            + ops.cast(num_accepted, DType.int64)
+        )
     # Per-device gather at accepted positions. Broadcast indices once, then
     # either slice by DP splits (DP mode, each device holds its local batch
     # shard) or gather directly (TP mode, each device holds a full replica).
@@ -251,7 +263,9 @@ def merge_tokens_and_host_offsets(
     merged_tokens = ops.rebind(merged_tokens, ["merged_seq_len"])
     merged_offsets = ops.rebind(merged_offsets, ["input_row_offsets_len"])
     host_merged_offsets = (
-        compute_host_merged_offsets(host_input_row_offsets, draft_tokens)
+        compute_host_merged_offsets(
+            host_input_row_offsets, draft_tokens.shape[1]
+        )
         if host_input_row_offsets is not None
         else None
     )
@@ -273,12 +287,18 @@ def accept_and_pick_next_tokens(
     token_bitmasks: TensorValue | None = None,
     draft_probs_full: TensorValue | None = None,
     penalties: LogitPenalties | None = None,
+    verify_lengths: TensorValue | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue]:
     """Run acceptance sampling and pick the next token at the first reject."""
     # AcceptanceSampler defaults in_thinking_phase to None, so passing it
     # through unconditionally is equivalent to omitting it for eagle/dflash.
+    # The argmax verdicts reject a masked draft id under a real verdict,
+    # so they take the placeholders; a synthetic rate refuses the pair.
+    takes_lengths = acceptance_sampler.draft_proposal == "sampled"
     num_accepted, recovered, bonus = acceptance_sampler(
-        draft_tokens,
+        unverified_draft_placeholders(draft_tokens, verify_lengths)
+        if verify_lengths is not None and not takes_lengths
+        else draft_tokens,
         logits,
         seed=seed,
         temperature=temperature,
@@ -290,6 +310,7 @@ def accept_and_pick_next_tokens(
         token_bitmasks=token_bitmasks,
         draft_probs_full=draft_probs_full,
         penalties=penalties,
+        verify_lengths=verify_lengths if takes_lengths else None,
     )
     # concat([recovered, bonus]) -> [batch, K+1]; gather_nd picks the token at
     # index num_accepted[b] per batch element (target argmax at first reject).
@@ -308,13 +329,43 @@ def shift_corrected_tokens(
     input_row_offsets: TensorValue,
     recovered: TensorValue,
     bonus: TensorValue,
+    verify_lengths: TensorValue | None = None,
+    packed: Dim | None = None,
 ) -> TensorValue:
-    """Re-merge with target-corrected tokens and shift for the draft input."""
-    corrected_merged, corrected_offsets = merger(
-        tokens, input_row_offsets, recovered
+    """Re-merge with target-corrected tokens and shift for the draft input.
+
+    With ``verify_lengths`` set, each row's corrected sequence is the prompt
+    plus its first ``k_r`` recovered tokens, and the token appended at its
+    end is the target's token at slot ``k_r``.
+    """
+    if verify_lengths is None or packed is None:
+        corrected_merged, corrected_offsets = merger(
+            tokens, input_row_offsets, recovered
+        )
+        corrected_merged = ops.rebind(corrected_merged, ["merged_seq_len"])
+        corrected_offsets = ops.rebind(
+            corrected_offsets, ["input_row_offsets_len"]
+        )
+        return eagle_prefill_shift_tokens(
+            corrected_merged, corrected_offsets, bonus.reshape((-1,))
+        )
+    corrected_merged, corrected_offsets = merge_draft_prefixes(
+        tokens,
+        input_row_offsets,
+        recovered,
+        verify_lengths,
+        packed,
     )
+    # Slot k_r of [recovered | bonus] is the target's token the row
+    # commits at its first unverified position.
+    target_tokens = ops.concat([recovered, bonus], axis=1)
+    shift_next_tokens = ops.gather_nd(
+        target_tokens,
+        ops.unsqueeze(verify_lengths, axis=-1),
+        batch_dims=1,
+    ).reshape((-1,))
     corrected_merged = ops.rebind(corrected_merged, ["merged_seq_len"])
     corrected_offsets = ops.rebind(corrected_offsets, ["input_row_offsets_len"])
     return eagle_prefill_shift_tokens(
-        corrected_merged, corrected_offsets, bonus.reshape((-1,))
+        corrected_merged, corrected_offsets, shift_next_tokens
     )

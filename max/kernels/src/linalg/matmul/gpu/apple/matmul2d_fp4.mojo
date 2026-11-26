@@ -64,7 +64,6 @@ from std.math import ceildiv
 from max.gpu.sync import barrier
 from max.gpu.compute.arch.mma_apple import _mma_apple_transposable
 from max.gpu.host import DeviceContext, GridBlockLaunchConfig
-from std.memory import unsafe_stack_allocation
 
 from layout import Idx, TensorEngine, TileTensor
 from layout.coord import Coord
@@ -599,6 +598,7 @@ struct Matmul2dFp4[
 
     @__name(t"apple_matmul2d_fp4_run_{Self.c_type}")
     @staticmethod
+    @__allow_legacy_any_origin_fields
     def run[
         c_layout: TensorLayout,
         a_layout: TensorLayout,
@@ -832,9 +832,11 @@ struct Matmul2dFp4[
         # TileTensor view so the cooperative decode store and the per-SG B read
         # are TileTensor indexed (`b_view[n, col]`), in-bounds by construction --
         # no raw SMEM pointer arithmetic.
-        var b_sm = unsafe_stack_allocation[
-            BN * BK, Scalar[Self.in_type], address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var b_sm_storage = Array[Scalar[Self.in_type], BN * BK](
+            uninitialized=True
+        )
+        var b_sm = b_sm_storage.unsafe_ptr()
         var b_view = TileTensor(b_sm, Layout(Coord(BN, BK), Coord(BK, Idx[1])))
 
         var a_rc = Array[_, 8](
@@ -882,6 +884,7 @@ struct Matmul2dFp4[
         var is_m_edge = tg_m_end > M
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def _kloop[bounded: Bool]() {mut accs, imm}:
             var k0 = 0
             while k0 < K:

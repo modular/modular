@@ -154,6 +154,7 @@ comptime OStoreT[depth: Int] = RaggedTMA3DTile[
 # GPU kernel: inject known O_p into TMEM, run the two-level combine + TMA egress.
 # ---------------------------------------------------------------------------
 @__llvm_arg_metadata(o_store, `nvvm.grid_constant`)
+@__allow_legacy_any_origin_fields
 def combine_kernel[
     depth: Int,
 ](

@@ -58,7 +58,13 @@ def update_gpu_logits(session: InferenceSession) -> Model:
 
 
 class TestApplyLogitsProcessorsGPU:
-    """Test suite for apply_logits_processors function."""
+    """Test suite for apply_logits_processors function.
+
+    A processor is handed one sequence's rows, `batch_logits[start:end, :]`,
+    so a row's bytes decide how the view is aligned. The vocabularies here are
+    16 wide, a whole 64-byte row, as every real one is; a narrower row hands
+    the kernel a view aligned less than its allocation.
+    """
 
     def create_context_batch(
         self, update_gpu_logits: Model
@@ -111,14 +117,14 @@ class TestApplyLogitsProcessorsGPU:
 
         device = Accelerator()
         logits = Buffer.from_numpy(
-            np.arange(10).reshape(2, 5).astype(np.float32)
+            np.arange(32).reshape(2, 16).astype(np.float32)
         ).to(device)
 
         apply_logits_processors(
             self.create_context_batch(update_gpu_logits), logits, None
         )
         final_array = logits.to_numpy()
-        expected_array = np.arange(10).reshape(2, 5)
+        expected_array = np.arange(32).reshape(2, 16)
         expected_array[0, :] += 3
         expected_array[1, :] -= 1
 
@@ -133,7 +139,7 @@ class TestApplyLogitsProcessorsGPU:
         # and 2 logits are returned for the second context.
         device = Accelerator()
         logits = Buffer.from_numpy(
-            np.arange(30).reshape(5, 6).astype(np.float32)
+            np.arange(80).reshape(5, 16).astype(np.float32)
         ).to(device)
         logit_offsets = Buffer.from_numpy(
             np.array([0, 3, 5]).astype(np.uint32)
@@ -143,7 +149,7 @@ class TestApplyLogitsProcessorsGPU:
             self.create_context_batch(update_gpu_logits), logits, logit_offsets
         )
         final_array = logits.to_numpy()
-        expected_array = np.arange(30).reshape(5, 6)
+        expected_array = np.arange(80).reshape(5, 16)
         expected_array[0:3, :] += 3
         expected_array[3:5, :] -= 1
         assert np.all(final_array == expected_array)
@@ -155,7 +161,7 @@ class TestApplyLogitsProcessorsGPU:
 
         device = Accelerator()
         logits = Buffer.from_numpy(
-            np.arange(10).reshape(2, 5).astype(np.float32),
+            np.arange(32).reshape(2, 16).astype(np.float32),
         ).to(device)
         logit_offsets = Buffer.from_numpy(
             np.array([0, 3, 5]).astype(np.uint32)
@@ -182,7 +188,7 @@ class TestApplyLogitsProcessorsGPU:
 
         apply_logits_processors(context_batch, logits, logit_offsets, [add_one])
         final_array = logits.to_numpy()
-        expected_array = np.arange(10).reshape(2, 5)
+        expected_array = np.arange(32).reshape(2, 16)
         expected_array[:] += 1
 
         assert np.all(final_array == expected_array)

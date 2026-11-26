@@ -19,9 +19,7 @@
 #
 from std.collections.string import StaticString
 from max.gpu.host import DeviceContext
-from std.utils import IndexList
 
-from layout import coord_to_index_list
 
 import extensibility
 from extensibility import (
@@ -252,10 +250,10 @@ struct TraitDenseAndFusedInputs:
 # Distillation matrix (IMPORT-only): one kernel per remaining valid
 # `{role, fused, access, capabilities}` contract the distiller produces. These
 # back the `IMPORT-DAG` baked-contract assertions in infra-lower-tensor-arg-traits.mlir
-# and replace the deleted gtest distill cases. The fused-store / fused-transform
-# / mutable-input-fused kernels import (distill) cleanly even though dense-only
-# lowering does not yet handle them, so they appear ONLY on the IMPORT run line,
-# never as graph cases.
+# and replace the deleted gtest distill cases. The fused-store / fused legacy
+# compute / mutable-input-fused kernels import (distill) cleanly even though
+# dense-only lowering does not yet handle them, so they appear ONLY on the
+# IMPORT run line, never as graph cases.
 # ===----------------------------------------------------------------------=== #
 
 
@@ -299,10 +297,10 @@ struct TraitFusedStoreCapability:
         pass
 
 
-# Fused transform via the `_LegacyComputeOutput` slot on an Output:
-# output/transform/fused, capabilities = 0.
-@extensibility.register("trait_fused_transform_marker")
-struct TraitFusedTransformMarker:
+# Fused legacy compute via the `_LegacyComputeOutput` slot on an Output:
+# output/legacy_compute/fused, capabilities = 0.
+@extensibility.register("trait_fused_legacy_compute_marker")
+struct TraitFusedLegacyComputeMarker:
     @staticmethod
     def execute(
         z: Some[Output & Fused & _LegacyComputeOutput], ctx: DeviceContext
@@ -367,8 +365,8 @@ struct TraitNonFusedLoadStoreCapability:
 # This is the positive counterpart to the shape-fn disallows in
 # tensor_arg_trait_invalid_stubs (io-role / Fused / Loadable).
 @extensibility.register_shape_function("trait_tensor_shape_fn")
-def trait_tensor_shape_fn[T: Tensor](x: T) -> IndexList[T.rank]:
-    return rebind[IndexList[T.rank]](coord_to_index_list(x.shape()))
+def trait_tensor_shape_fn[T: Tensor](x: T) -> type_of(x.shape()):
+    return x.shape()
 
 
 # The `TileTensorable` bound: a shape function may read data as well as
@@ -377,9 +375,9 @@ def trait_tensor_shape_fn[T: Tensor](x: T) -> IndexList[T.rank]:
 @extensibility.register_shape_function("trait_tile_tensorable_shape_fn")
 def trait_tile_tensorable_shape_fn[
     T: TileTensorable
-](x: T) -> IndexList[T.rank]:
+](x: T) -> type_of(x.shape()):
     _ = x.to_tile_tensor()
-    return rebind[IndexList[T.rank]](coord_to_index_list(x.shape()))
+    return x.shape()
 
 
 # `Input & TileTensorable & Stable`: a slot-backed read-only input. Distills to

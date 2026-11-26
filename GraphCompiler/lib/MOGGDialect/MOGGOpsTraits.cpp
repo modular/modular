@@ -70,7 +70,19 @@ Value RoutineOp::getOutputChain() {
   return isa<MO::ChainType>(last.getType()) ? last : Value();
 }
 
-bool CallBuildGraphOp::isThrows() { return getIsThrows(); }
+bool CallBuildGraphOp::isThrows(mlir::SymbolTable &symbolTable) {
+  // Raises iff the callee's `build_graph` signature does, as in
+  // `CallOpaqueOp::isThrows`.
+  auto decl = symbolTable.lookup<KernelDeclOp>(getCallee());
+  if (!decl)
+    return false;
+  KernelDeclAdaptor adaptor(decl);
+  if (!adaptor.buildGraphFunction || !adaptor.buildGraphFunction->attr)
+    return false;
+  // `isThrows` is non-const on the signature; copy it to a local to call it.
+  auto sig = adaptor.buildGraphFunction->attr.getSignature();
+  return sig.isThrows();
+}
 
 //===----------------------------------------------------------------------===//
 // FuncOp
@@ -80,7 +92,7 @@ OutputOp FuncOp::getBodyTerminator() {
   return cast<OutputOp>(getBodyBlock().getTerminator());
 }
 
-bool FuncOp::isThrows() {
+bool FuncOp::isThrows(mlir::SymbolTable &symbolTable) {
   // `AddTryExceptBlocks` always gives a MOGG stub the `mogg.raise` that renders
   // its error context. Answering without a body walk also keeps
   // `mogg.call`'s `isThrows` off a stub another thread is rewriting, and
@@ -88,15 +100,15 @@ bool FuncOp::isThrows() {
   // kernels.
   if (getAbi() == ABIKind::MOGG)
     return true;
-  return llvm::any_of(getBodyBlock().getOps<MOGG::EmitsMojoInterface>(),
-                      [](auto emitMojoOp) { return emitMojoOp.isThrows(); });
+  return llvm::any_of(
+      getBodyBlock().getOps<MOGG::EmitsMojoInterface>(),
+      [&](auto emitMojoOp) { return emitMojoOp.isThrows(symbolTable); });
 }
 
-bool CallOpaqueOp::isThrows() {
+bool CallOpaqueOp::isThrows(mlir::SymbolTable &symbolTable) {
   // Raises iff the callee's execute signature does, as in
   // `CallExecuteOp::isThrows`.
-  auto decl = mlir::SymbolTable::lookupNearestSymbolFrom<KernelDeclOp>(
-      *this, getCalleeAttr());
+  auto decl = symbolTable.lookup<KernelDeclOp>(getCallee());
   if (!decl)
     return false;
   KernelDeclAdaptor adaptor(decl);
@@ -110,24 +122,24 @@ bool CallOpaqueOp::isThrows() {
   return sig.isThrows();
 }
 
-bool CallExecuteDeviceOp::isThrows() { return true; }
+bool CallExecuteDeviceOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool CallExecuteConfigurationOp::isThrows() { return true; }
+bool CallExecuteConfigurationOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool GraphBlobActiveThreadsOp::isThrows() { return true; }
+bool GraphBlobActiveThreadsOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool GraphBlobLaunchOp::isThrows() { return true; }
+bool GraphBlobLaunchOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool CallRowwiseOp::isThrows() { return true; }
+bool CallRowwiseOp::isThrows(mlir::SymbolTable &) { return true; }
 
 RowwiseTileOp CallRowwiseOp::getTile() {
   auto loads = getBody().front().getOps<RowwiseTileOp>();
   return loads.empty() ? RowwiseTileOp() : *loads.begin();
 }
 
-bool CallForeachTileOp::isThrows() { return true; }
+bool CallForeachTileOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool CallForeachOp::isThrows() { return true; }
+bool CallForeachOp::isThrows(mlir::SymbolTable &) { return true; }
 
 void RoutineOp::getEffects(
     SmallVectorImpl<mlir::MemoryEffects::EffectInstance> &effects) {
@@ -204,57 +216,43 @@ LogicalResult AsyncUnpackOp::inferReturnTypes(
 // CallOp
 //===----------------------------------------------------------------------===//
 
-FuncOp CallOp::getCallee() {
-  mlir::SymbolTable symTable(getOperation()->getParentOfType<ModuleOp>());
-  return dyn_cast_or_null<FuncOp>(symTable.lookup(getName()));
-}
-
-bool CallOp::isThrows() {
-  auto callee = getCallee();
-  return callee && callee.isThrows();
-}
-
-//===----------------------------------------------------------------------===//
-// CallAsyncOp
-//===----------------------------------------------------------------------===//
-
-FuncOp CallAsyncOp::getCallee() {
-  mlir::SymbolTable symTable(getOperation()->getParentOfType<ModuleOp>());
-  return dyn_cast_or_null<FuncOp>(symTable.lookup(getName()));
+bool CallOp::isThrows(mlir::SymbolTable &symbolTable) {
+  auto callee = symbolTable.lookup<FuncOp>(getName());
+  return callee && callee.isThrows(symbolTable);
 }
 
 //===----------------------------------------------------------------------===//
 // AsyncJoinOp
 //===----------------------------------------------------------------------===//
 
-bool AsyncJoinOp::isThrows() { return true; }
+bool AsyncJoinOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool CallShapeOp::isThrows() { return getIsThrows(); }
+bool CallShapeOp::isThrows(mlir::SymbolTable &) { return getIsThrows(); }
 
 //===----------------------------------------------------------------------===//
 // WithTraceOp
 //===----------------------------------------------------------------------===//
 
-bool WithTraceOp::isThrows() { return true; }
+bool WithTraceOp::isThrows(mlir::SymbolTable &) { return true; }
 
 //===----------------------------------------------------------------------===//
 // ProfileScopeBeginOp / ProfileScopeEndOp
 //===----------------------------------------------------------------------===//
 
-bool ProfileScopeBeginOp::isThrows() { return true; }
+bool ProfileScopeBeginOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool ProfileScopeEndOp::isThrows() { return true; }
+bool ProfileScopeEndOp::isThrows(mlir::SymbolTable &) { return true; }
 
 //===----------------------------------------------------------------------===//
 // RaiseOp
 //===----------------------------------------------------------------------===//
 
-bool RaiseOp::isThrows() { return true; }
+bool RaiseOp::isThrows(mlir::SymbolTable &) { return true; }
 
-bool TryOp::isThrows() {
-  auto regionThrows = [](Region &region) {
+bool TryOp::isThrows(mlir::SymbolTable &symbolTable) {
+  auto regionThrows = [&](Region &region) {
     return llvm::any_of(region.front().getOps<MOGG::EmitsMojoInterface>(),
-                        [](auto op) { return op.isThrows(); });
+                        [&](auto op) { return op.isThrows(symbolTable); });
   };
   return regionThrows(getTryRegion()) && regionThrows(getExceptRegion());
 }
@@ -285,9 +283,8 @@ LaunchPlacement TensorCreateBroadcastOp::getLaunchPlacement() {
 
 // A run-time permutation is read from `$permutations` on the host.
 LaunchPlacement TensorCreateTransposeOp::getLaunchPlacement() {
-  return llvm::none_of(getStaticPermutations(), ShapedType::isDynamic)
-             ? LaunchPlacement::Kernel
-             : LaunchPlacement::HostOnly;
+  return getPermutations() ? LaunchPlacement::HostOnly
+                           : LaunchPlacement::Kernel;
 }
 
 // The starts, stops and steps are read on the host.

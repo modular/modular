@@ -71,7 +71,7 @@ struct RaiseContext {
                             const ExprNode *sourceExpr);
 
   /// Records an error propagation terminator for deferred try type unification.
-  void recordRaiseSite(MLValue errorSlot, Operation *terminator,
+  void recordRaiseSite(MLValue errorSlot, LIT::RaiseOp terminator,
                        Operation *sourceOperation, SMLoc sourceLoc);
 
   /// Converts deferred errors to a common slot, optionally constrained to
@@ -79,6 +79,18 @@ struct RaiseContext {
   /// no error was raised and no type was specified.
   MLValue finalizeErrorSlots(IREmitter &emitter, ASTType requiredErrorType = {},
                              bool isSlotRequired = false);
+
+  /// Routes errors convertible to `requiredErrorType` to `handlerIndex`.
+  /// Returns the handler's error slot and whether any raise can reach it.
+  std::pair<MLValue, bool>
+  finalizeErrorSlotsForHandler(IREmitter &emitter, ASTType requiredErrorType,
+                               size_t handlerIndex);
+
+  /// Routes all pending raises to the catch-all handler.
+  void selectCatchAllHandler(size_t handlerIndex);
+
+  /// Returns the distinct error types that no handler has consumed.
+  SmallVector<ASTType> getPendingErrorTypes() const;
 
   /// Returns whether this context writes directly to a fixed error slot or
   /// collects all the raised temporaries and processes them at finalization
@@ -100,10 +112,13 @@ private:
 
   struct RaiseSite {
     MLValue errorSlot;
-    Operation *terminator;
+    LIT::RaiseOp terminator;
     Operation *sourceOperation;
     SMLoc sourceLoc;
   };
+
+  /// Routes `sites` to `handlerIndex`.
+  void selectHandler(ArrayRef<RaiseSite> sites, size_t handlerIndex);
 
   Operation *opForRaise;
   SmallVector<MLValue, 2> errorSlots;
@@ -616,6 +631,13 @@ public:
   /// value in the specified destination.  This returns an RValue if
   /// there is no consuming dest, otherwise a BValue.
   CValue emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest);
+
+  /// Copy a reference outside the default address space to a new owned value
+  /// in the default address space, where argument conventions take values.
+  /// Emits an error and returns null if the type is not provably trivially
+  /// copyable.
+  RValue emitCopyFromNonDefaultAddressSpace(ASTExprAnd<AnyValue> value,
+                                            ExprContext context);
 
   /// Given a value with a known type, emit a store to the specified LValue.
   /// This returns an borrowed reference to the value after it is done.

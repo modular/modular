@@ -22,12 +22,12 @@
 #include "MLRT/GraphRT/MEFDialect/MEFDialect.h"
 #include "Support/LLVMCompilerForwardDecls.h"
 
-namespace M {
+namespace M::MLRT {
 // Add all the MLIR dialects to the provided registry.
 inline void registerAllGraphRTDialects(DialectRegistry &registry) {
-  registry.insert<MEF::MEFDialect, GRT::GRTDialect>();
+  registry.insert<MLRT::MEF::MEFDialect, MLRT::GRT::GRTDialect>();
 }
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_INITALLDIALECTS_H

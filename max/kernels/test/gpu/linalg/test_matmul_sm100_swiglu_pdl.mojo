@@ -76,8 +76,8 @@ comptime POISON = Scalar[dtype](-7)
 
 
 def slow_producer(
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length: Int64,
     spins: Int32,
 ):
@@ -98,7 +98,7 @@ def slow_producer(
 
 
 def tmem_hog(
-    ends: MutPointer[UInt64, MutAnyOrigin],
+    ends: MutPointer[UInt64, MutUntrackedOrigin],
     hold_ns: UInt64,
 ):
     """Releases its dependents on entry, then holds all of TMEM for `hold_ns`.
@@ -123,7 +123,7 @@ def tmem_hog(
 
 
 def launch_stamp(
-    stamp: MutPointer[UInt64, MutAnyOrigin],
+    stamp: MutPointer[UInt64, MutUntrackedOrigin],
 ):
     """Releases its dependents on entry and records when it became resident."""
     launch_dependent_grids()
@@ -133,8 +133,8 @@ def launch_stamp(
 
 
 def consumer(
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length: Int64,
 ):
     """Waits for its predecessor, then copies `src` to `dst`."""
@@ -241,9 +241,7 @@ def _launch_swiglu[
     var c_t = TileTensor(_mut(c), row_major(m, Idx[N // 2]))
     var a_t = TileTensor(a, row_major(m, Idx[K])).as_imm()
     var w_t = TileTensor(w, row_major(Idx[N], Idx[K])).as_imm()
-    var bias_ptr = ImmPointer[BFloat16, ImmutAnyOrigin](
-        unsafe_from_address=Int(bias.unsafe_ptr())
-    )
+    var bias_ptr = bias.unsafe_ptr().as_imm()
     matmul_swiglu_dispatch_sm100[config, pdl_level](
         c_t, a_t, w_t, ctx, OptionalReg(bias_ptr)
     )

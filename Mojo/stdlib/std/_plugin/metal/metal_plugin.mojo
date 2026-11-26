@@ -190,7 +190,7 @@ struct MetalPlugin(StdPlugin):
 
 
 struct MetalPluginHooks[target: CompilationTarget](PluginHooks):
-    comptime device_kind = TargetDeviceKind.gpu
+    comptime device_kind = TargetDeviceKind.gpu()
 
     comptime gpu_id_fn[name: StaticString, dim: StaticString]: OptionalReg[
         _GPUIdPluginHookFnType
@@ -219,6 +219,9 @@ struct MetalPluginHooks[target: CompilationTarget](PluginHooks):
     comptime lowers_subvector_intrinsics: Bool = False
 
     comptime has_generic_address_space: Bool = False
+
+    # FIXME(MSTDL-1888): Enable assertions on Apple GPU.
+    comptime supports_assertions: Bool = False
 
     comptime prefetch_fn[
         address_space: AddressSpace, params: PrefetchOptions

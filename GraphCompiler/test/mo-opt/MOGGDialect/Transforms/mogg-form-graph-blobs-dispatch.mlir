@@ -1,5 +1,10 @@
-// RUN: mo-opt %s --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
+// RUN: mo-opt %s --mlir-very-unsafe-disable-verifier-on-parsing \
+// RUN:   --mogg-import-packages="mojo-pkg-paths=%kernel_api_test_lib" \
 // RUN:   --mogg-form-graph-blobs="max-calls=100" | FileCheck %s
+//
+// The `mogg.call.opaque` names a kernel declaration that only exists once
+// `--mogg-import-packages` has run, so parse-time verification is disabled;
+// every pass still verifies its output.
 
 // A fused routine is deferred if any routine it fuses is.
 // CHECK-LABEL: mo.graph @one_deferred

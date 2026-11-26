@@ -146,7 +146,7 @@ struct _LinkedListIter[
     def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        __guard case .Some(var curr) = self.curr else:
+        guard case .Some(var curr) = self.curr else:
             raise StopIteration()
         comptime if Self.forward:
             self.curr = curr[].next()
@@ -442,7 +442,7 @@ struct LinkedList[ElementType: Movable](
         Raises:
             If the operation fails.
         """
-        __guard case .Some(var nn) = self._tail else:
+        guard case .Some(var nn) = self._tail else:
             raise "Pop on empty list."
         var node = nn.unsafe_take_pointee()
         self._tail = node.prev()
@@ -481,7 +481,7 @@ struct LinkedList[ElementType: Movable](
         var idx = index(i)
         var current = self._get_node_ptr(idx)
 
-        __guard case .Some(nn) = current else:
+        guard case .Some(nn) = current else:
             raise Error("Invalid index for pop: ", idx)
         var node = nn.unsafe_take_pointee()
         if case .Some(prev_node) = node.prev():
@@ -508,7 +508,7 @@ struct LinkedList[ElementType: Movable](
         Notes:
             Time Complexity: O(1).
         """
-        __guard case .Some(var nn) = self._tail else:
+        guard case .Some(var nn) = self._tail else:
             return Optional[Self.ElementType]()
         var node = nn.unsafe_take_pointee()
         self._tail = node.prev()
@@ -543,7 +543,7 @@ struct LinkedList[ElementType: Movable](
         """
         var current = self._get_node_ptr(index(i))
 
-        __guard case .Some(nn) = current else:
+        guard case .Some(nn) = current else:
             return Optional[Self.ElementType]()
         var node = nn.unsafe_take_pointee()
         if case .Some(prev_node) = node.prev():
@@ -790,7 +790,6 @@ struct LinkedList[ElementType: Movable](
             nn[].value.__hash__(hasher)
             curr = nn[].next()
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def get_nth[
         I: Indexer

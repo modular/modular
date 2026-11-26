@@ -450,6 +450,7 @@ def _flash_attention_dispatch[
     var k = kv_cache.get_key_cache(Int(layer_idx))
     var v = kv_cache.get_value_cache(Int(layer_idx))
 
+    @__allow_legacy_any_origin_fields
     def _dispatch_flash_attention[
         mask_t: MHAMask
     ](mask: mask_t) raises {var k, var v, imm}:
@@ -3149,7 +3150,11 @@ def rms_norm_kv_cache_ragged_paged[
 
     # Rank of ragged tensors of shape (total_seq_len, num_heads, head_dim).
     comptime rank = 3 if per_head_norm else 2
-    var k_cache = kv_collection.get_key_cache(Int(layer_idx))
+    # FIXME: RMSNorm reads and writes this cache in place, but origin tracking
+    # cannot express that each element is loaded before it is overwritten.
+    var k_cache = kv_collection.get_key_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
     var kv_params = k_cache.kv_params
     comptime rms_norm_cols = gamma.static_shape[0]
 
@@ -3288,7 +3293,11 @@ def rms_norm_value_cache_ragged_paged[
     ), "input_row_offsets must be rank 1"
 
     comptime rank = 3 if per_head_norm else 2
-    var v_cache = kv_collection.get_value_cache(Int(layer_idx))
+    # FIXME: RMSNorm reads and writes this cache in place, but origin tracking
+    # cannot express that each element is loaded before it is overwritten.
+    var v_cache = kv_collection.get_value_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
     var kv_params = v_cache.kv_params
     comptime rms_norm_cols = gamma.static_shape[0]
 

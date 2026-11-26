@@ -29,6 +29,7 @@
 #include <cassert>
 
 using namespace M;
+using namespace M::MLRT;
 
 #define DEBUG_TYPE "mef"
 
@@ -376,7 +377,7 @@ static ErrorOrSuccess decodePrimitiveTables(
   }
 
   // Align to where the invokable body is.
-  if (decoder.bodyReader.alignTo(MEF::kPrimitiveEntryAlignment))
+  if (decoder.bodyReader.alignTo(MLRT::MEF::kPrimitiveEntryAlignment))
     return std::move(*decoder.mefFormatError);
 
   body = ArrayRef((const uint32_t *)decoder.bodyReader.data(),
@@ -418,7 +419,7 @@ void MEFExecutor::execute(const MEFInvokableImpl &invokable,
                           MutableArrayRef<AnyAsyncValueRef> arguments,
                           MutableArrayRef<AnyAsyncValueRef> results,
                           ArrayRef<unsigned> resultRegIndex) {
-  M_PROFILE_RANGE("MEFExecutor::execute", M_PROFILE_COLOR_RED);
+  M_PROFILE_SPAN("MEFExecutor::execute", M_PROFILE_COLOR_RED);
   // Now that the executor is all set up and ready to go, kick off the ready
   // primitives.
 
@@ -558,8 +559,8 @@ void MEFExecutor::processArgumentsPseudo(
 /// from the end of the vector to the start - worklist style.
 void MEFExecutor::decrementOperandsNotReadyCounts(
     SmallVectorImpl<uint32_t> &primitiveIDWorklist) {
-  M_PROFILE_RANGE("MEFExecutor::decrementOperandsNotReadyCounts",
-                  M_PROFILE_COLOR_RED);
+  M_PROFILE_SPAN("MEFExecutor::decrementOperandsNotReadyCounts",
+                 M_PROFILE_COLOR_RED);
 
   RunnablePrimitiveDescriptorBuilder frame(cpuDevice, mefFile->attributes,
                                            *this);
@@ -582,11 +583,11 @@ void MEFExecutor::decrementOperandsNotReadyCounts(
 
     // Decode the primitive record.
     static_assert(
-        MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
+        MLRT::MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
         "size of uint32_t must evenly divide kPrimitiveEntryAlignment");
     PrimitiveDecoder decoder(
         &funcBody[primitives[primitiveID].offset *
-                  (MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
+                  (MLRT::MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
 
     // Find the implementation of this primitive.
     auto invokableImpl = mefFile->primitives[decoder.opcode];
@@ -699,7 +700,8 @@ void MEFExecutor::processUsedByRecords(
     AnyAsyncValueRef result, AsyncValue *registerVal, ArrayRef<uint32_t> users,
     uint32_t totalUserRefCount,
     SmallVectorImpl<uint32_t> &primitiveIDWorklist) {
-  M_PROFILE_RANGE("MEFExecutor::processUsedByRecords", M_PROFILE_COLOR_RED);
+  M_PROFILE_TRACY_ZONE("MEFExecutor::processUsedByRecords",
+                       M_PROFILE_COLOR_RED);
 
   assert(users.size() <= totalUserRefCount &&
          "totalUserRefCount is primitive users + mef.output");
@@ -809,7 +811,7 @@ MEFInvokableImpl::decode(const EncodedLocation &loc) const {
 void MEFInvokableImpl::invoke(MutableArrayRef<AnyAsyncValueRef> arguments,
                               MutableArrayRef<AnyAsyncValueRef> results,
                               CPUDevice &cpuDevice) const {
-  M_PROFILE_RANGE("MEFInvokableImpl::invoke", M_PROFILE_COLOR_RED);
+  M_PROFILE_SPAN("MEFInvokableImpl::invoke", M_PROFILE_COLOR_RED);
 
   ASSERT_STREAM(arguments.size() == getNumArgs(),
                 << "incorrect number of argument to an invokable. "
@@ -906,10 +908,11 @@ ErrorOrSuccess MEFInvokableImpl::walkPrimitives(
       owner->attributes, const_cast<MEFInvokableImpl &>(*this));
   for (auto offset : primitiveOffsets) {
     static_assert(
-        MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
+        MLRT::MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
         "size of uint32_t must evenly divide kPrimitiveEntryAlignment");
     PrimitiveDecoder primDecoder(
-        &funcBody[offset * (MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
+        &funcBody[offset *
+                  (MLRT::MEF::kPrimitiveEntryAlignment / sizeof(uint32_t))]);
 
     // Pull out the primitive name.
     StringRef primitiveName;

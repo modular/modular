@@ -99,11 +99,15 @@ def run_one_case(
     comptime epsilon = Float32(0.001)
     comptime weight_offset = Float32(0.0)
 
+    # FIXME: RMS normalization reads and writes this buffer in phases that
+    # origin tracking cannot express, so hide the input closure's alias.
+    var data_buf_untracked = data_buf.unsafe_origin_cast[MutUntrackedOrigin]()
+
     @inline(.always)
     def input_fn[
         width: Int
-    ](coords: Coord) {var data_buf} -> SIMD[rn_type, width]:
-        return data_buf.load[width=width](coords)
+    ](coords: Coord) {var data_buf_untracked} -> SIMD[rn_type, width]:
+        return data_buf_untracked.load[width=width](coords)
 
     @inline(.always)
     def identity_output_fn[

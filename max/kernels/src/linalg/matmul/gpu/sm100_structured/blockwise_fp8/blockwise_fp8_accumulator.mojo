@@ -29,6 +29,7 @@ from std.math.uutils import umod, ufloordiv
 
 from max.gpu import WARP_SIZE, lane_id, warp_id as get_warp_id
 from max.gpu.sync import syncwarp
+import max.gpu.primitives.warp as warp
 from layout import (
     DefaultEngine,
     TensorLayout,
@@ -443,3 +444,305 @@ struct BlockwiseFP8Accumulator[
                         self.lower[stage, offset + 1] += (
                             frags.lower[offset + 1] * lower_scale
                         )
+
+
+# =============================================================================
+# BlockwiseFP8BScales - a tile's B scales held across K blocks
+# =============================================================================
+
+
+struct BlockwiseFP8BScales[
+    accum_type: DType,
+    MMA_N: Int,
+    n_scale_granularity: Int,
+](TrivialRegisterPassable):
+    """A work tile's B scales for 32 K blocks, one per lane of each warp.
+
+    Loading each K block's B scale from global memory after the MMA-done
+    wait puts a dependent memory round trip in every K block of the
+    epilogue. This loads a chunk of 32 K blocks per lane up front (and the
+    next chunk one chunk ahead) and hands each K block its scale by warp
+    shuffle. The values are the same loads, so results are unchanged bit
+    for bit. The tile must lie inside one B-scale block along N.
+
+    Parameters:
+        accum_type: Accumulator data type (float32).
+        MMA_N: Rows of B covered by the tile (the swap-AB tile's MMA M).
+        n_scale_granularity: B-scale N-direction block size.
+    """
+
+    comptime chunk = WARP_SIZE
+
+    var idx: Int
+    var num_iters: Int
+    var cur: Scalar[Self.accum_type]
+    var nxt: Scalar[Self.accum_type]
+
+    @inline(.always)
+    def __init__[
+        b_scales_dtype: DType,
+        b_scales_layout: TensorLayout,
+        b_scales_engine: TensorEngine,
+    ](
+        out self,
+        b_scales: TileTensor[
+            b_scales_dtype,
+            b_scales_layout,
+            ImmutAnyOrigin,
+            Engine=b_scales_engine,
+        ],
+        bn: Int,
+        num_iters: Int,
+    ):
+        """Locate the tile's B-scale row and load the first two chunks.
+
+        Args:
+            b_scales: B-scale factors, indexed by (N block, K block).
+            bn: Index of the tile along B's rows (N).
+            num_iters: Number of K blocks.
+        """
+        comptime assert (
+            Self.n_scale_granularity % Self.MMA_N == 0
+        ), "the tile must lie inside one B-scale block"
+        self.idx = bn * Self.MMA_N // Self.n_scale_granularity
+        self.num_iters = num_iters
+        self.cur = 0.0
+        self.nxt = 0.0
+        self._load(b_scales, 0)
+        self.cur = self.nxt
+        if num_iters > Self.chunk:
+            self._load(b_scales, Self.chunk)
+
+    @inline(.always)
+    def _load[
+        b_scales_dtype: DType,
+        b_scales_layout: TensorLayout,
+        b_scales_engine: TensorEngine,
+    ](
+        mut self,
+        b_scales: TileTensor[
+            b_scales_dtype,
+            b_scales_layout,
+            ImmutAnyOrigin,
+            Engine=b_scales_engine,
+        ],
+        k_base: Int,
+    ):
+        var k = k_base + Int(lane_id())
+        if k < self.num_iters:
+            self.nxt = rebind[Scalar[Self.accum_type]](
+                b_scales.load((self.idx, k)).cast[Self.accum_type]()
+            )
+
+    @inline(.always)
+    def advance[
+        b_scales_dtype: DType,
+        b_scales_layout: TensorLayout,
+        b_scales_engine: TensorEngine,
+    ](
+        mut self,
+        b_scales: TileTensor[
+            b_scales_dtype,
+            b_scales_layout,
+            ImmutAnyOrigin,
+            Engine=b_scales_engine,
+        ],
+        k_iter: Int,
+    ):
+        """At a chunk boundary, rotate in the prefetched chunk and fetch the next.
+
+        Args:
+            b_scales: B-scale factors, indexed by (N block, K block).
+            k_iter: Current K block.
+        """
+        if k_iter > 0 and umod(k_iter, Self.chunk) == 0:
+            self.cur = self.nxt
+            if k_iter + Self.chunk < self.num_iters:
+                self._load(b_scales, k_iter + Self.chunk)
+
+    @inline(.always)
+    def get(self, k_iter: Int) -> Scalar[Self.accum_type]:
+        """Return the B scale of K block `k_iter`.
+
+        Args:
+            k_iter: Current K block.
+        """
+        return warp.shuffle_idx(self.cur, UInt32(umod(k_iter, Self.chunk)))
+
+
+# =============================================================================
+# BlockwiseFP8SwapAccumulator - register accumulator for the swap-AB tile
+# =============================================================================
+
+
+struct BlockwiseFP8SwapAccumulator[
+    accum_type: DType,
+    MMA_M: Int,
+    MMA_N: Int,
+    cluster_size: Int,
+](TrivialRegisterPassable):
+    """Register accumulator for a MMA_M x MMA_N swap-AB tile (C^T).
+
+    The MMA's A operand is MMA_M weight rows (TMEM lanes; each epilogue warp
+    owns MMA_M / 4 of them in 16-lane halves) and its B operand `MMA_N`
+    activation rows (TMEM columns). Per K tile each element gets
+    `partial * (a_scale[column] * b_scale)` added in K order, the same
+    expression as the non-swapped accumulator, with the activation scale now
+    per column and one weight-block scale per tile.
+
+    Parameters:
+        accum_type: Accumulator data type (float32).
+        MMA_M: Weight rows per tile (UMMA M), 64 or 128.
+        MMA_N: Activation rows per tile (UMMA N), 8 or 16.
+        cluster_size: CTAs per cluster (arrivals on the input stage).
+    """
+
+    comptime reps = Self.MMA_N // 8
+    # 16-lane halves per warp: M=64 puts 16 rows in each warp's lanes, M=128
+    # puts 32.
+    comptime halves = Self.MMA_M // 64
+    # Per 8-column repeat a thread holds rows (r, r + 8) x columns (c, c + 1).
+    comptime per_rep = 4
+    comptime half_size = Self.reps * Self.per_rep
+    comptime size = Self.halves * Self.half_size
+
+    var acc: SIMD[Self.accum_type, Self.size]
+
+    @inline(.always)
+    def __init__(out self):
+        self.acc = SIMD[Self.accum_type, Self.size](0.0)
+
+    @inline(.always)
+    def promote[
+        group: Int,
+        num_pipeline_stages: Int,
+        opc: OutputPipelineConfig,
+        num_input_stages: Int,
+        a_scales_dtype: DType,
+        a_scales_dim0: Int,
+        a_scales_dim1: Int,
+    ](
+        mut self,
+        b_scale: SIMD[Self.accum_type, group],
+        a_scales_tiles: SMemTileArray2DRowMajor[
+            a_scales_dtype,
+            a_scales_dim0,
+            a_scales_dim1,
+            num_pipeline_stages,
+        ],
+        epi_stage: EpilogueKStage[
+            opc,
+            num_input_stages,
+        ],
+    ):
+        """Scale and add a group of K-tile partials, in K order.
+
+        Parameters:
+            group: K tiles per pipeline stage.
+            num_pipeline_stages: Number of A-scale SMEM tiles.
+            opc: Output pipeline configuration.
+            num_input_stages: Number of input pipeline stages.
+            a_scales_dtype: A-scales element type.
+            a_scales_dim0: A-scales tile rows.
+            a_scales_dim1: A-scales tile columns.
+
+        Args:
+            b_scale: Per K tile, the tile's weight-block scale.
+            a_scales_tiles: Pipeline of activation-scale tiles in SMEM.
+            epi_stage: Epilogue K-stage handle.
+        """
+        comptime assert (
+            a_scales_dtype == Self.accum_type and Self.accum_type == .float32
+        ), "Only support float32 scales and accumulators"
+        var col0 = UInt32(umod(lane_id(), 4)) * 2
+        var first_tile = epi_stage.input_stage_index * UInt32(group)
+
+        # Activation scale per (K tile, repeat, column), read before the
+        # input stage is released.
+        var a_sc = SIMD[Self.accum_type, group * Self.reps * 2]()
+        comptime for g in range(group):
+            var a_scales_smem = a_scales_tiles[first_tile + UInt32(g)]
+            comptime for r in range(Self.reps):
+                comptime for i in range(2):
+                    a_sc[(g * Self.reps + r) * 2 + i] = a_scales_smem[
+                        0, UInt32(r * 8 + i) + col0
+                    ].cast[Self.accum_type]()
+
+        syncwarp()
+        if lane_id() < Self.cluster_size:
+            epi_stage.arrive_input()
+        syncwarp()
+
+        var tmem = TmemAddress(UInt32(epi_stage.output_stage.tmem.offset()))
+        var upper = tmem.load_upper[
+            Self.accum_type,
+            group * Self.half_size,
+            16,
+            256,
+            group * Self.reps,
+        ]()
+        var lower = upper.copy()
+        comptime if Self.halves == 2:
+            lower = tmem.load_lower[
+                Self.accum_type,
+                group * Self.half_size,
+                16,
+                256,
+                group * Self.reps,
+            ]()
+        TmemFragments[Self.accum_type, Self.half_size].wait_load()
+
+        comptime for g in range(group):
+            comptime for h in range(Self.halves):
+                comptime for r in range(Self.reps):
+                    comptime for j in range(2):
+                        comptime for i in range(2):
+                            comptime e = r * Self.per_rep + j * 2 + i
+                            var scale = (
+                                a_sc[(g * Self.reps + r) * 2 + i] * b_scale[g]
+                            )
+                            var p = (
+                                upper[g * Self.half_size + e] if h
+                                == 0 else lower[g * Self.half_size + e]
+                            )
+                            self.acc[h * Self.half_size + e] += p * scale
+
+    @inline(.always)
+    def store[
+        c_type: DType
+    ](
+        self,
+        c_ptr: MutPointer[Scalar[c_type], MutUntrackedOrigin],
+        problem_shape: StaticTuple[Int32, 3],
+        n0: Int,
+        m0: Int,
+    ):
+        """Write the tile to row-major C (M x N), transposing C^T.
+
+        Args:
+            c_ptr: Base of C.
+            problem_shape: `(M, N, K)` of the matmul.
+            n0: First weight row (C column) of the tile.
+            m0: First activation row (C row) of the tile.
+        """
+        var M = Int(problem_shape[0])
+        var N = Int(problem_shape[1])
+        var n_base = (
+            n0
+            + Int(get_warp_id()) * 16 * Self.halves
+            + Int(ufloordiv(lane_id(), 4))
+        )
+        var m_base = m0 + Int(umod(lane_id(), 4)) * 2
+        comptime for h in range(Self.halves):
+            comptime for r in range(Self.reps):
+                comptime for j in range(2):
+                    comptime for i in range(2):
+                        var n = n_base + h * 16 + j * 8
+                        var m = m_base + r * 8 + i
+                        if m < M and n < N:
+                            c_ptr[m * N + n] = self.acc[
+                                h * Self.half_size
+                                + r * Self.per_rep
+                                + j * 2
+                                + i
+                            ].cast[c_type]()

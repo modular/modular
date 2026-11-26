@@ -29,6 +29,7 @@ from max.dtype import DType
 from max.functional import (
     allgather_rms_norm,
     allreduce_rms_norm,
+    allreduce_sum,
     reduce_scatter_rms_norm,
     transfer_to,
 )
@@ -37,6 +38,7 @@ from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
+    Placement,
     Replicated,
     Sharded,
 )
@@ -197,3 +199,74 @@ def test_allgather_rms_norm(rows: int) -> None:
     for i in range(MESH_2.num_devices):
         _assert_close(gathered.local_shards[i], full)
         _assert_close(normed.local_shards[i], _rms_norm(full, gamma_values))
+
+
+# Plain collectives on a mesh that repeats each GPU along one axis, and on a
+# mesh with a device that has no signal buffer.
+
+MIXED = DeviceMesh(
+    devices=(Accelerator(0), Accelerator(0), Accelerator(1), Accelerator(1)),
+    mesh_shape=(2, 2),
+    axis_names=("dp", "tp"),
+)
+
+
+def _float32_shards(
+    fragments: list[np.ndarray],
+    mesh: DeviceMesh,
+    placements: tuple[Placement, ...],
+) -> Tensor:
+    return Tensor._from_shards(
+        tuple(
+            Tensor(fragment).to(device).driver_tensor
+            for fragment, device in zip(fragments, mesh.devices, strict=True)
+        ),
+        DeviceMapping(mesh, placements),
+    )
+
+
+def test_collectives_across_and_within_gpus_of_a_mixed_mesh() -> None:
+    """Along ``dp`` each group holds both GPUs and runs the kernel; along
+    ``tp`` each group holds one GPU twice and sums on it."""
+    rng = np.random.default_rng(1)
+    a, b = (rng.standard_normal((5, 8)).astype(np.float32) for _ in range(2))
+    across = _float32_shards([a, a, b, b], MIXED, (Partial(), Replicated()))
+    summed = allreduce_sum(across, "dp")
+    assert summed.placements == (Replicated(), Replicated())
+    for shard in summed.local_shards:
+        np.testing.assert_allclose(shard.to_numpy(), a + b, rtol=1e-5)
+    within = _float32_shards([a, b, a, b], MIXED, (Replicated(), Partial()))
+    summed = allreduce_sum(within, "tp")
+    for shard in summed.local_shards:
+        np.testing.assert_allclose(shard.to_numpy(), a + b, rtol=1e-5)
+    rows = rng.standard_normal((6, 8)).astype(np.float32)
+    split = transfer_to(
+        Tensor(rows), DeviceMapping(MIXED, (Sharded(0), Replicated()))
+    )
+    gathered = transfer_to(
+        split, DeviceMapping(MIXED, (Replicated(), Replicated()))
+    )
+    np.testing.assert_allclose(gathered.to_numpy(), rows)
+    # Over both axes a group holds each GPU twice.
+    with pytest.raises(ValueError, match="group of distinct devices"):
+        allreduce_sum(
+            _float32_shards([a, a, a, a], MIXED, (Partial(), Partial())),
+            ("dp", "tp"),
+        )
+
+
+def test_collectives_on_a_cpu_and_a_gpu() -> None:
+    """The CPU has no signal buffer, so each group computes on its first
+    device and moves the results back."""
+    mesh = DeviceMesh(
+        devices=(CPU(), Accelerator(0)), mesh_shape=(2,), axis_names=("tp",)
+    )
+    rng = np.random.default_rng(2)
+    a, b = (rng.standard_normal((8, 8)).astype(np.float32) for _ in range(2))
+    summed = allreduce_sum(_float32_shards([a, b], mesh, (Partial(),)), "tp")
+    for shard, device in zip(summed.local_shards, mesh.devices, strict=True):
+        assert shard.device == device
+        np.testing.assert_allclose(shard.to_numpy(), a + b, rtol=1e-5)
+    rows = transfer_to(Tensor(a), DeviceMapping(mesh, (Sharded(0),)))
+    columns = transfer_to(rows, DeviceMapping(mesh, (Sharded(1),)))
+    np.testing.assert_allclose(columns.local_shards[1].to_numpy(), a[:, 4:])

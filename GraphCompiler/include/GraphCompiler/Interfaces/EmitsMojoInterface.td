@@ -22,15 +22,20 @@ def EmitsMojoInterface : OpInterface<"EmitsMojoInterface"> {
   }];
 
   let cppNamespace = "::M::MOGG";
+  let cppIncludes = ["mlir/IR/SymbolTable.h"];
 
   let methods = [
     InterfaceMethod<
       "Return the body of the kernel, which should be the code we will compile",
       "mlir::LogicalResult", "emitMojo", (ins "M::MOGG::EmitMojoState&":$state)
     >,
-    InterfaceMethod<
-      "Return a boolean to indicate whether the emitted code raises exceptions.",
-      "bool", "isThrows", (ins), [{}], [{ return false; }]
+    InterfaceMethod<[{
+      Return a boolean to indicate whether the emitted code raises exceptions.
+      `symbolTable` resolves any symbol this op names, so a caller threads one
+      table through a whole walk instead of rebuilding it per op.
+    }],
+      "bool", "isThrows", (ins "mlir::SymbolTable&":$symbolTable), [{}],
+      [{ return false; }]
     >,
   ];
 }

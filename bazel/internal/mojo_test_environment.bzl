@@ -84,7 +84,7 @@ def _mojo_test_environment_implementation(ctx):
     driver_plugins = getattr(toolchain, "runtime_env", {}).get("MODULAR_DRIVER_PLUGINS", "")
     driver_plugin_runfiles = ctx.runfiles(files = getattr(toolchain, "extra_runfiles", []))
 
-    _, transitive_mojodeps, data_ccdeps = collect_mojoinfo(ctx.attr.data)
+    dep_import_paths, transitive_mojodeps, data_ccdeps = collect_mojoinfo(ctx.attr.data)
     if not transitive_mojodeps:
         return [
             CcInfo(),  # Requirement of py_test
@@ -103,12 +103,14 @@ def _mojo_test_environment_implementation(ctx):
         ]
 
     # The import_paths when used as runfiles like this differs from the standard ones
+    # `import_path` is the package's root relative to its own directory, so a
+    # namespace package, whose name is the directory holding it, resolves from
+    # the directory above. Taking the dirname alone would hide it.
     import_paths = sets.make()
-    for pkg in transitive_mojodeps.to_list():
-        if ctx.attr.short_path:
-            sets.insert(import_paths, paths.dirname(pkg.short_path))
-        else:
-            sets.insert(import_paths, paths.dirname(pkg.path))
+    for entry in dep_import_paths.to_list():
+        pkg = entry.package
+        directory = paths.dirname(pkg.short_path if ctx.attr.short_path else pkg.path)
+        sets.insert(import_paths, paths.normalize(paths.join(directory, entry.import_path)))
 
     transitive_runfiles = []
     for target in ctx.attr.data:

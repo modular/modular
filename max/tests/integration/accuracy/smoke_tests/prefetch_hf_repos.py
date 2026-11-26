@@ -15,6 +15,7 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "click>=8,<9",
+#   # Keep in sync with HF_HUB_VERSION in serveSmokeTestBase.yaml.
 #   "huggingface_hub==1.8.0",
 #   "pydantic>=2.0,<3",
 #   "pyyaml",

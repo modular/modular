@@ -35,19 +35,21 @@ using namespace MGP;
 using namespace M;
 using namespace MGP;
 
-bool DeviceGraphCacheOp::isThrows() { return true; }
+bool DeviceGraphCacheOp::isThrows(mlir::SymbolTable &) { return true; }
 
 // The `mgp_device_graph_alloc` primitive raises (it allocates a buffer).
-bool DeviceGraphAllocOp::isThrows() { return true; }
+bool DeviceGraphAllocOp::isThrows(mlir::SymbolTable &) { return true; }
 
 // `recording_context()` raises (it asks the driver for a recording context).
-bool DeviceGraphRecordingContextOp::isThrows() { return true; }
+bool DeviceGraphRecordingContextOp::isThrows(mlir::SymbolTable &) {
+  return true;
+}
 
 bool DeviceGraphDependenciesOp::producesNewNodes() {
   return !getBuilderBlockArgument().use_empty();
 }
 
-bool DeviceGraphDependenciesOp::isThrows() { return true; }
+bool DeviceGraphDependenciesOp::isThrows(mlir::SymbolTable &) { return true; }
 
 //===----------------------------------------------------------------------===//
 // DeviceGraphStableCreateOp
@@ -71,14 +73,14 @@ bool DeviceGraphStableCreateOp::mayAlias(size_t operandIndex,
   return operandIndex == getTensorMutable().getOperandNumber();
 }
 
-bool DeviceGraphStableGetOp::isThrows() { return true; }
+bool DeviceGraphStableGetOp::isThrows(mlir::SymbolTable &) { return true; }
 
 //===----------------------------------------------------------------------===//
 // DeviceGraphAddInputOp
 //===----------------------------------------------------------------------===//
 
 // `add_input` raises (it allocates the stable location).
-bool DeviceGraphAddInputOp::isThrows() { return true; }
+bool DeviceGraphAddInputOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult DeviceGraphAddInputOp::inferReturnTypes(
     MLIRContext *context, std::optional<Location> /*location*/, Adaptor adaptor,
@@ -101,7 +103,7 @@ LogicalResult DeviceGraphAddInputOp::inferReturnTypes(
 // DeviceGraphStablePlaceOp
 //===----------------------------------------------------------------------===//
 
-bool DeviceGraphStablePlaceOp::isThrows() { return true; }
+bool DeviceGraphStablePlaceOp::isThrows(mlir::SymbolTable &) { return true; }
 
 //===----------------------------------------------------------------------===//
 // DeviceGraphStableTensorOp
@@ -118,4 +120,6 @@ LogicalResult DeviceGraphStableTensorOp::inferReturnTypes(
   return success();
 }
 
-bool DeviceGraphCollectiveCreateOp::isThrows() { return true; }
+bool DeviceGraphCollectiveCreateOp::isThrows(mlir::SymbolTable &) {
+  return true;
+}

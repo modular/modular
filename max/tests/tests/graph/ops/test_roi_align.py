@@ -13,6 +13,8 @@
 """Tests for the roi_align graph op."""
 
 import pytest
+from conftest import mismatched_devices
+from hypothesis import given
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
 
@@ -118,3 +120,19 @@ class TestRoiAlignGraphOp:
                 ops.roi_align(
                     x, rois, output_height=3, output_width=3, mode="SUM"
                 )
+
+    @given(devices=mismatched_devices())
+    def test_device_mismatch(
+        self, devices: tuple[DeviceRef, DeviceRef]
+    ) -> None:
+        """Raises ValueError when input and rois are on different devices."""
+        input_device, rois_device = devices
+        input_type = TensorType(DType.float32, [1, 8, 8, 2], input_device)
+        rois_type = TensorType(DType.float32, [3, 5], rois_device)
+
+        with Graph(
+            "roi_align_device_mismatch", input_types=[input_type, rois_type]
+        ) as graph:
+            x, rois = graph.inputs[0].tensor, graph.inputs[1].tensor
+            with pytest.raises(ValueError, match="same device"):
+                ops.roi_align(x, rois, output_height=2, output_width=2)

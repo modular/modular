@@ -40,13 +40,6 @@ def _lanes_per_head(kv_params: KVCacheStaticParams) -> Int:
     return max(kv_params.k_head_size(), kv_params.v_head_size) // 8
 
 
-# HACK: K/V views share the collection's mutable origins but write disjoint
-# planes (or, in a split cache, disjoint columns of one plane), which the
-# exclusivity checker cannot prove. As in
-# `_rope_split_store_ragged_impl`, disable nested-origin checks until the K/V
-# views have provably disjoint origins. This also covers mutable `q_output`,
-# which must be disjoint from the cache planes and projection inputs.
-@__unsafe_nested_origins_read_only
 def chunked_qkv_rope_store_kernel[
     qk_head_dim: Int, v_head_dim: Int, chunk_padding: Int = 0
 ](
@@ -331,8 +324,13 @@ def chunked_qkv_rope_store_paged_ragged[
         raise Error("Invalid cache layer")
     if Int(row_offsets.dim[0]()) < 1:
         raise Error("Ragged offsets must contain an initial offset")
-    var k_cache = collection.get_key_cache(Int(layer_idx))
-    var v_cache = collection.get_value_cache(Int(layer_idx))
+    # FIXME: K/V are disjoint planes of one allocation, and Q output is a
+    # separate allocation, but origin tracking cannot express either fact.
+    var k_cache = collection.get_key_cache(Int(layer_idx)).unsafe_origin_cast()
+    var v_cache = collection.get_value_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
+    var q_output_untracked = q_output.unsafe_origin_cast[MutUntrackedOrigin]()
     comptime cache_t = type_of(k_cache)
     comptime total_heads = Int(
         q_output.static_shape[1]
@@ -350,7 +348,7 @@ def chunked_qkv_rope_store_paged_ragged[
         var freqs,
         var k_cache,
         var v_cache,
-        var q_output,
+        var q_output_untracked,
         var value_scale,
     }:
         with PDL():
@@ -362,14 +360,14 @@ def chunked_qkv_rope_store_paged_ragged[
                 freqs,
                 k_cache,
                 v_cache,
-                q_output,
+                q_output_untracked,
                 value_scale,
             )
 
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
     ), "Chunked QKV launch captures must support device encoding"
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,
@@ -491,13 +489,6 @@ def _load_scaled_v_head[
     return (val.cast[DType.float32]() * value_scale).cast[DType.bfloat16]()
 
 
-# HACK: the K/V views share the collection's mutable origins but write
-# disjoint planes, which the exclusivity checker cannot prove. As in
-# `chunked_qkv_rope_store_kernel` above and `_rope_split_store_ragged_impl`,
-# disable nested-origin checks until the views have provably disjoint origins.
-# This also covers `q_output`, which must be disjoint from the cache planes and
-# the projection inputs.
-@__unsafe_nested_origins_read_only
 def rope_qkv_store_kernel[
     freq_dtype: DType
 ](
@@ -654,9 +645,6 @@ def rope_qkv_store_kernel[
         )
 
 
-# The same disjoint-plane argument as `rope_qkv_store_kernel`, without the
-# output it also cannot see past.
-@__unsafe_nested_origins_read_only
 def k_rope_v_store_kernel[
     freq_dtype: DType
 ](
@@ -809,8 +797,13 @@ def rope_qkv_store_paged_ragged[
         raise Error("Invalid cache layer")
     if Int(row_offsets.dim[0]()) < 1:
         raise Error("Ragged offsets must contain an initial offset")
-    var k_cache = collection.get_key_cache(Int(layer_idx))
-    var v_cache = collection.get_value_cache(Int(layer_idx))
+    # FIXME: K/V are disjoint planes of one allocation, and Q output is a
+    # separate allocation, but origin tracking cannot express either fact.
+    var k_cache = collection.get_key_cache(Int(layer_idx)).unsafe_origin_cast()
+    var v_cache = collection.get_value_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
+    var q_output_untracked = q_output.unsafe_origin_cast[MutUntrackedOrigin]()
     comptime cache_t = type_of(k_cache)
     comptime total_heads = Int(
         q_output.static_shape[1]
@@ -830,7 +823,7 @@ def rope_qkv_store_paged_ragged[
         var freqs,
         var k_cache,
         var v_cache,
-        var q_output,
+        var q_output_untracked,
         var value_scale,
     }:
         with PDL():
@@ -842,14 +835,14 @@ def rope_qkv_store_paged_ragged[
                 freqs,
                 k_cache,
                 v_cache,
-                q_output,
+                q_output_untracked,
                 value_scale,
             )
 
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
     ), "RoPE QKV store launch captures must support device encoding"
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,
@@ -899,8 +892,12 @@ def k_rope_v_store_paged_ragged[
         raise Error("Invalid cache layer")
     if Int(row_offsets.dim[0]()) < 1:
         raise Error("Ragged offsets must contain an initial offset")
-    var k_cache = collection.get_key_cache(Int(layer_idx))
-    var v_cache = collection.get_value_cache(Int(layer_idx))
+    # FIXME: K/V are disjoint planes of one allocation, but origin tracking
+    # cannot express that fact.
+    var k_cache = collection.get_key_cache(Int(layer_idx)).unsafe_origin_cast()
+    var v_cache = collection.get_value_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
     comptime cache_t = type_of(k_cache)
     comptime total_heads = 2 * cache_t.kv_params.num_heads
     comptime lanes_per_head = _lanes_per_head(cache_t.kv_params)
@@ -931,7 +928,7 @@ def k_rope_v_store_paged_ragged[
     comptime assert conforms_to(
         type_of(kernel), DevicePassable
     ), "RoPE K/V store launch captures must support device encoding"
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(count, 128),
         block_dim=128,

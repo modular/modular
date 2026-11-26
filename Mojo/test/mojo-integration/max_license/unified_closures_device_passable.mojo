@@ -34,10 +34,6 @@ struct HostInt(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
     ):
         encoder.encode(self.value * 2, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "HostInt"
-
 
 struct HostString(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
     comptime device_type: AnyType = SIMD[.uint8, 4]
@@ -64,10 +60,6 @@ struct HostString(DevicePassable, ImplicitlyCopyable, TrivialRegisterPassable):
         comptime for i in range(4):
             device_value[i] += 1
         encoder.encode(device_value, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "HostString"
 
 
 def host_string_device_image(value: HostString) -> SIMD[.uint8, 4]:

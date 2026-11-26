@@ -725,12 +725,12 @@ struct _GuardedBuffer[dtype: DType](Movable):
         )
         if self._base == -1:
             raise Error("mmap failed")
-        var guard = external_call["mprotect", Int32](
+        var guard_value = external_call["mprotect", Int32](
             Int(self._base + _GUARD_PAGE_BYTES),
             Int(_GUARD_PAGE_BYTES),
             no_access,
         )
-        if guard != 0:
+        if guard_value != 0:
             raise Error("mprotect failed")
         self.ptr = Pointer[Scalar[Self.dtype], MutUntrackedOrigin](
             unsafe_from_address=self._base + _GUARD_PAGE_BYTES - bytes

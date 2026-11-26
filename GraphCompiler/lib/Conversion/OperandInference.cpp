@@ -119,13 +119,13 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
   static const char *argumentKind = matchOperands ? "input" : "output";
 
   // Launch arguments (the `execute` device context, the `build_graph` graph
-  // builder) have no MO operand; skipping them by kind lets one mapping serve
-  // every function variant of a kernel.
-  auto skipLaunchArgument =
+  // builder) and workspace buffers have no MO operand; skipping them by kind
+  // lets one mapping serve every function variant of a kernel.
+  auto skipNonOperand =
       [](const llvm::SmallVector<KernelDeclOperandAdaptor> &operands,
          uint64_t &idx) -> std::optional<KernelDeclOperandAdaptor> {
     while (idx < operands.size()) {
-      if (!operands[idx].isLaunchArgument())
+      if (operands[idx].isOperand())
         return operands[idx];
       ++idx;
     }
@@ -158,7 +158,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
   }
 
   while (true) {
-    auto kernelType = skipLaunchArgument(kernelOperands, kernelIndex);
+    auto kernelType = skipNonOperand(kernelOperands, kernelIndex);
     if (!kernelType.has_value())
       break;
     if (kernelType->isVariadicTensorType())
@@ -194,11 +194,11 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
 
   // A `TensorTuple` may bind no operands; `ConformCallOperands` hands it an
   // empty tuple.
-  auto skipLaunchArgumentAndEmptyTensorTuple =
+  auto skipNonOperandAndEmptyTensorTuple =
       [&](uint64_t &idx) -> std::optional<KernelDeclOperandAdaptor> {
     while (true) {
       std::optional<KernelDeclOperandAdaptor> arg =
-          skipLaunchArgument(kernelOperands, idx);
+          skipNonOperand(kernelOperands, idx);
       if (!arg || variadicSize != 0 || !arg->isTraitTensorTupleType())
         return arg;
       ++idx;
@@ -212,7 +212,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
 
   while (true) {
     auto moType = skipChainType(values.getTypes(), moOpIndex);
-    auto kernelType = skipLaunchArgumentAndEmptyTensorTuple(kernelIndex);
+    auto kernelType = skipNonOperandAndEmptyTensorTuple(kernelIndex);
 
     if (!moType.has_value() || !kernelType.has_value())
       break;
@@ -252,7 +252,7 @@ matchOperandsOrResultsKernelDecl(ValueRange values,
   }
 
   if (matchingVariadicTensor)
-    skipLaunchArgument(kernelOperands, ++kernelIndex);
+    skipNonOperand(kernelOperands, ++kernelIndex);
 
   bool moOpEnd = moOpIndex == values.size();
   bool kernelEnd = kernelIndex == kernelOperands.size();

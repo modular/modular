@@ -2446,7 +2446,7 @@ kgen.generator @comptime_if_elif_else_arm() -> index {
 
 // CHECK-LABEL: kgen.func @downcast_in_trait_list_layout
 // CHECK-NOT: kgen.rebind
-kgen.generator @downcast_in_trait_list_layout(%arg0: !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] isParamPack layout>) {
-  %0 = kgen.rebind %arg0 : !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] isParamPack layout> to !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !BaseTrait] isParamPack layout>
+kgen.generator @downcast_in_trait_list_layout(%arg0: !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] layout>) {
+  %0 = kgen.rebind %arg0 : !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.type<array<1, i1>> : !BaseTrait] layout> to !kgen.struct<:!kgen.param_list<!lit.trait<@BaseTrait>> [#kgen.downcast<#kgen.type<array<1, i1>> : !kgen.type> : !BaseTrait] layout>
   hlcf.return
 }

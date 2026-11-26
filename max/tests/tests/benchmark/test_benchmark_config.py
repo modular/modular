@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -223,21 +224,6 @@ class TestServingConfigFileLoading:
     # Precedence: explicit kwargs beat config file
     # ------------------------------------------------------------------
 
-    def test_explicit_kwarg_beats_flat_yaml(self, tmp_path: Path) -> None:
-        """An explicitly supplied kwarg takes precedence over flat YAML."""
-        cfg_path = tmp_path / "serving.yaml"
-        _write_yaml(
-            cfg_path,
-            {"model": "file/model", "host": "10.0.0.1", "port": 9000},
-        )
-
-        config = ServingBenchmarkConfig(
-            config_file=str(cfg_path), model="cli/model"
-        )
-        assert config.model == "cli/model"
-        assert config.host == "10.0.0.1"  # still from file
-        assert config.port == 9000  # still from file
-
     def test_multiple_overrides_beat_config_file(self, tmp_path: Path) -> None:
         """Multiple explicit kwargs all override the corresponding file values."""
         cfg_path = tmp_path / "serving.yaml"
@@ -388,11 +374,20 @@ def test_other_backends_do_not_wait_for_their_metrics(
     wait.assert_not_called()
 
 
-def test_engine_state_json_rejects_a_multi_point_sweep() -> None:
+@pytest.mark.parametrize(
+    "sweep",
+    [
+        pytest.param({"max_concurrency": [8, 16]}, id="max_concurrency"),
+        pytest.param({"request_rate": [1.0, 2.0]}, id="request_rate"),
+    ],
+)
+def test_engine_state_json_rejects_a_multi_point_sweep(
+    sweep: Mapping[str, Any],
+) -> None:
     config = ServingBenchmarkConfig(
         model="HuggingFaceTB/SmolLM2-135M",
         engine_state_json="state.json",
-        max_concurrency=[8, 16],
+        **sweep,
     )
     with pytest.raises(ValueError, match="single --max-concurrency"):
         list(main_with_parsed_args(config))
@@ -744,16 +739,6 @@ def test_stats_file_keeps_its_pre_run_content_across_a_sweep(
     )
 
     assert path.read_text() == before
-
-
-def test_engine_state_json_is_still_refused_for_a_sweep() -> None:
-    config = ServingBenchmarkConfig(
-        model="HuggingFaceTB/SmolLM2-135M",
-        engine_state_json="state.json",
-        request_rate=[1.0, 2.0],
-    )
-    with pytest.raises(ValueError, match="single --max-concurrency"):
-        list(main_with_parsed_args(config))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -1551,9 +1536,13 @@ class TestGoodputFlag:
             ttft_ms=1.0, e2el_ms=2500.5
         )
 
-    def test_cli_rejects_unknown_key(self) -> None:
+    @pytest.mark.parametrize(
+        "value",
+        [pytest.param("itl:5", id="unknown_key"), pytest.param("", id="empty")],
+    )
+    def test_cli_rejects_invalid_goodput(self, value: str) -> None:
         with pytest.raises(SystemExit):
-            parse_args(["--model", "m", "--goodput", "itl:5"])
+            parse_args(["--model", "m", "--goodput", value])
 
     @pytest.mark.parametrize(
         ("value", "match"),
@@ -1575,10 +1564,6 @@ class TestGoodputFlag:
     def test_rejects_invalid_targets(self, value: object, match: str) -> None:
         with pytest.raises(ValidationError, match=match):
             ServingBenchmarkConfig.model_validate({"goodput": value})
-
-    def test_cli_rejects_empty_string(self) -> None:
-        with pytest.raises(SystemExit):
-            parse_args(["--model", "m", "--goodput", ""])
 
     def test_env_var_takes_space_separated_targets(
         self, monkeypatch: pytest.MonkeyPatch

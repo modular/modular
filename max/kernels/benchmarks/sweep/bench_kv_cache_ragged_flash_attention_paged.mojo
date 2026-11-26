@@ -465,6 +465,7 @@ def run_config(
     h.timer.lap("config_setup")
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def kernel_launch(
         launch_ctx: DeviceContext[], copy: Int
     ) raises {mut out_tt, imm}:

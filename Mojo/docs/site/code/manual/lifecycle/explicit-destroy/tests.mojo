@@ -202,9 +202,9 @@ def test_cleanup_order_with_a_guard() raises:
     var events = List[String]()
     var log = recorder(events)
 
-    var guard = MutexGuard(log)
+    var guard_value = MutexGuard(log)
     record(log, "critical section")
-    guard^.unlock()  # the lock releases exactly here
+    guard_value^.unlock()  # the lock releases exactly here
 
     var expected = ["locked", "critical section", "unlocked"]
     for i in range(len(expected)):

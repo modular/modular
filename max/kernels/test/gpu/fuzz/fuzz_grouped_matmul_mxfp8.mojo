@@ -258,7 +258,6 @@ def run_one_case(
     var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
         b_scales_shape.product()
     )
-    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_shape.product()
@@ -357,7 +356,7 @@ def run_one_case(
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
@@ -368,10 +367,10 @@ def run_one_case(
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_device, row_major(Idx[num_experts])
-    ).as_unsafe_any_origin()
+    )
 
     grouped_matmul_block_scaled[transpose_b=transpose_b, config=matmul_config](
         c_tensor,
@@ -656,7 +655,6 @@ def _run_batch_composition(
     var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
         b_scales_shape.product()
     )
-    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_shape.product()
@@ -781,7 +779,7 @@ def _run_batch_composition(
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var b_scales_tt = TileTensor(
         b_scales_device,
         row_major(
@@ -792,10 +790,10 @@ def _run_batch_composition(
             Idx[SF_ATOM_M[1]],
             Idx[SF_ATOM_K],
         ),
-    ).as_unsafe_any_origin()
+    )
     var expert_scales_tt = TileTensor(
         expert_scales_device, row_major(Idx[num_experts])
-    ).as_unsafe_any_origin()
+    )
 
     grouped_matmul_block_scaled[transpose_b=transpose_b, config=matmul_config](
         c_tensor,

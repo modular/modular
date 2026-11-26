@@ -582,7 +582,7 @@ Attribute ParameterEvaluator::doReplace(Attribute attr, size_t depth) {
           bindParams.getContext(), cast<TypedAttr>(newGenerator),
           ParamsBindingArrayAttr::get(bindParams.getContext(),
                                       params.getBoundMask(), newBoundValues),
-          bindParams.getDischarged(), getEvaluationContext());
+          bindParams.getDischarged(), newType, getEvaluationContext());
       if (!result)
         return nullptr;
       assert(isEqualCanon(result.getType(), newType) &&

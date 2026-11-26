@@ -463,6 +463,12 @@ bool ParametricIREvaluator::getElabErrorIncludePrelude() {
 
 FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
     ContextuallyEvaluatedAttrInterface attr) {
+  // A tabulate with a constant count expands by binding only its own index, so
+  // references that escape its generator stay symbolic in the elements.
+  if (auto tabulate = dyn_cast<ParamListTabulateAttr>(attr))
+    if (!EscapingReferenceFinder::check(tabulate.getCount()))
+      return tabulate.evaluateWithContext(*this);
+
   // Don't try to evaluate a parameter operator that still contains parametric
   // things in it, since it may be transitory.
   if (EscapingReferenceFinder::check(attr))

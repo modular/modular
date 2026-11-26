@@ -23,6 +23,7 @@ from ..graph import Graph
 from ..shape import Shape, ShapeLike
 from ..type import TensorType
 from ..value import StrongTensorValueLike, TensorValue
+from .validation import assert_same_device
 
 
 def broadcast_to(
@@ -85,6 +86,7 @@ def broadcast_to(
         if out_dims is None:
             message = f"must pass out_dims with tensor value shape {shape}"
             raise ValueError(message)
+        assert_same_device(x=x, shape=shape)
 
         return Graph.current._add_op_generated(
             mo.BroadcastToOp,

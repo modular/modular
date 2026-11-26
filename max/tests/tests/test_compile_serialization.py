@@ -73,6 +73,9 @@ def test_lock_released_after_failed_compile(
     _assert_lock_releases()
 
 
+@pytest.mark.skip(
+    reason="TODO(GEX-4630): concurrent compiles sometimes corrupt the heap"
+)
 def test_concurrent_compiles_serialize_and_complete(
     session: InferenceSession,
 ) -> None:

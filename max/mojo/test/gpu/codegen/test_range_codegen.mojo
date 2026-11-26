@@ -100,11 +100,11 @@ def _innermost_loop_body(asm: String) raises -> String:
     var lines = asm.split("\n")
     for i in range(len(lines)):
         var line = lines[i].strip()
-        __guard case .Some(branch) = line.find("bra") else:
+        guard case .Some(branch) = line.find("bra") else:
             continue
-        __guard case .Some(label_start) = line.find("$", branch) else:
+        guard case .Some(label_start) = line.find("$", branch) else:
             continue
-        __guard case .Some(label_end) = line.find(";", label_start) else:
+        guard case .Some(label_end) = line.find(";", label_start) else:
             continue
         var label = String(line[byte=label_start:label_end].strip(), ":")
         for j in range(i):
@@ -218,11 +218,11 @@ def test_signed_ranges_never_divide[target: CompilationTarget]() raises:
 
 
 def _amd_directive(asm: String, directive: String) raises -> Int:
-    __guard case .Some(start) = asm.find(directive) else:
+    guard case .Some(start) = asm.find(directive) else:
         raise Error(t"no `{directive}` in:\n{asm}")
     var line_end = asm.find("\n", start).or_else(asm.byte_length())
     var line = asm[byte=start:line_end]
-    __guard case .Some(colon) = line.find(":") else:
+    guard case .Some(colon) = line.find(":") else:
         raise Error(t"no value after `{directive}`")
     return Int(String(line[byte = colon + 1 :].strip()))
 

@@ -34,10 +34,6 @@ struct _HostBuffer(DevicePassable, TrivialRegisterPassable):
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "_HostBuffer"
-
 
 # Accepts a `_HostBuffer` but claims a slot wider than the 8 bytes it encodes.
 struct _WideView(DeviceArgAcceptor, TrivialRegisterPassable):

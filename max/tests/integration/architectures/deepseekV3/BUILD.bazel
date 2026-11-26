@@ -64,3 +64,9 @@ modular_py_test(
         "//max/python/max/pipelines/weights",
     ],
 )
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
+)

@@ -13,17 +13,25 @@
 
 #include "Support/Configuration.h"
 #include "Support/Profiling/Ranges.h"
+#include "Support/Profiling/TraceActivity.h"
 #include "_core/Graph/Bindings.h"
 #include "_core/Profiler/Trace.h"
 #include "nanobind/nanobind.h"
+#include "nanobind/stl/map.h"
+#include "nanobind/stl/optional.h"
 #include "nanobind/stl/string.h"
 #include "nanobind/stl/string_view.h"
+#include "nanobind/stl/tuple.h"
+#include "nanobind/stl/vector.h"
 
 #include <atomic>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <string_view>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -118,6 +126,67 @@ std::string stopCapture(const std::string &outputPath) {
   if (!wasRecording)
     return "no capture was recording";
   return M::Profiling::lastTraceError();
+}
+
+// One activity of a collected capture, owning its strings so it outlives the
+// plugin's visitor call.
+struct CapturedActivity {
+  std::string name;
+  std::string category;
+  int64_t startNs;
+  int64_t durationNs;
+  int64_t device;
+  int64_t resource;
+  int32_t threadId;
+  int64_t correlationId;
+  int64_t externalId;
+};
+
+struct CapturedTrace {
+  std::vector<CapturedActivity> activities;
+  std::map<std::string, std::string> metadata;
+  std::string error;
+};
+
+CapturedTrace stopCaptureActivities(const std::optional<std::string> &path) {
+  CapturedTrace captured;
+  std::lock_guard<std::mutex> lock(captureMutex());
+  if (!std::exchange(gOwnsCapture, false)) {
+    captured.error = "start_capture() started no capture";
+    return captured;
+  }
+  const bool wasRecording = isCaptureRecording();
+  bool collected = false;
+  {
+    std::optional<ScopedConfigOverride> output;
+    if (path)
+      output.emplace("max-debug.profiling-output-path", *path);
+    collected = M::Profiling::disableCollecting(
+        [&](llvm::ArrayRef<M::Profiling::TraceActivity> activities,
+            llvm::ArrayRef<M::Profiling::TraceMetadataField> metadata) {
+          captured.activities.reserve(activities.size());
+          for (const M::Profiling::TraceActivity &a : activities)
+            captured.activities.push_back({a.name.str(), a.category.str(),
+                                           a.startNs, a.durationNs, a.device,
+                                           a.resource, a.threadId,
+                                           a.correlationId, a.externalId});
+          // The first value set for a key wins, as in the trace file.
+          for (const M::Profiling::TraceMetadataField &f : metadata)
+            captured.metadata.try_emplace(f.key.str(), f.jsonValue.str());
+        },
+        /*save=*/path.has_value());
+    if (!collected)
+      M::Profiling::disable();
+    M::Profiling::waitForTrace();
+  }
+  if (!collected)
+    captured.error = "the loaded profiler plugin cannot hand back a capture "
+                     "in memory";
+  else if (!wasRecording)
+    captured.error = "no capture was recording";
+  else
+    captured.error = M::Profiling::lastTraceError();
+  return captured;
 }
 
 } // namespace
@@ -264,6 +333,66 @@ void M::Graph::Python::bindProfilerModule(nb::module_ m) {
       Returns:
           An empty string on success, otherwise why the trace is missing or
           incomplete.
+  )nbdoc");
+
+  nb::class_<CapturedActivity>(m, "TraceActivity", R"nbdoc(
+      One activity of a capture: a host range, a runtime call, or device work.
+
+      The fields are the trace file's, except that times are in nanoseconds.
+  )nbdoc")
+      .def_ro("name", &CapturedActivity::name)
+      .def_ro("category", &CapturedActivity::category, R"nbdoc(
+          The activity's type, as the trace file's ``cat`` field names it.
+
+          For example ``user_annotation``, ``kernel`` or ``gpu_memcpy``.
+      )nbdoc")
+      .def_ro("start_ns", &CapturedActivity::startNs, R"nbdoc(
+          Start time, in nanoseconds since the Unix epoch.
+      )nbdoc")
+      .def_ro("duration_ns", &CapturedActivity::durationNs)
+      .def_ro("device", &CapturedActivity::device, R"nbdoc(
+          The device for device work; the process for host activities.
+      )nbdoc")
+      .def_ro("resource", &CapturedActivity::resource, R"nbdoc(
+          The stream for device work; the thread track for host activities.
+      )nbdoc")
+      .def_ro("thread_id", &CapturedActivity::threadId)
+      .def_ro("correlation_id", &CapturedActivity::correlationId)
+      .def_ro("external_id", &CapturedActivity::externalId, R"nbdoc(
+          The ID of the range the activity is correlated to, or 0 if none.
+
+          The trace file stores it as the activity's ``External id``.
+      )nbdoc");
+
+  m.def(
+      "stop_capture_activities",
+      [](std::optional<std::string> output_path)
+          -> std::tuple<std::vector<CapturedActivity>,
+                        std::map<std::string, std::string>, std::string> {
+        CapturedTrace captured;
+        {
+          nb::gil_scoped_release release;
+          captured = stopCaptureActivities(output_path);
+        }
+        return {std::move(captured.activities), std::move(captured.metadata),
+                std::move(captured.error)};
+      },
+      nb::arg("output_path") = nb::none(), R"nbdoc(
+      Stops the capture :func:`start_capture` started, returning its trace.
+
+      As :func:`stop_capture`, but the trace comes back in memory, so it can
+      be read without a trace file. Device work is included only for the
+      vendors the profiler records.
+
+      Args:
+          output_path: Where to also save the trace, expanded like
+              ``MODULAR_MAX_DEBUG_PROFILING_OUTPUT_PATH``, or None to save
+              nothing.
+
+      Returns:
+          The trace's activities; its top-level metadata, each value raw
+          JSON, such as ``MAX dropped range spans``; and an empty string on
+          success, otherwise why the trace is missing or incomplete.
   )nbdoc");
 
   m.def(

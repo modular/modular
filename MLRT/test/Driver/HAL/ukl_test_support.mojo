@@ -77,13 +77,12 @@ comptime _PluginConfig[spec: DeviceSpec]: ExecutionConfig = _Hooks[
 ].ExecutionConfigType[DeviceRef(spec, 0, private=())]
 
 comptime LaunchConfig[spec: DeviceSpec]: ExecutionConfig = (
-    _PluginConfig[spec] if (
-        _Hooks[spec].Launcher.launches_config
-        and not conforms_to(_PluginConfig[spec], GridBlockExecutionConfig)
-    ) else GridBlockLaunchConfig
+    GridBlockLaunchConfig if conforms_to(
+        _PluginConfig[spec], GridBlockExecutionConfig
+    ) else _PluginConfig[spec]
 )
-"""The plugin's own config when its launcher takes one that isn't grid/block
-shaped, and a portable grid/block config otherwise."""
+"""The plugin's own config when it isn't grid/block shaped, and a portable
+grid/block config otherwise."""
 
 
 def launch_config[

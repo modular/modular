@@ -62,6 +62,10 @@ int64_t CABIInfo::getTypeABIAlign(mlir::Type type) const {
   return align;
 }
 
+bool CABIInfo::isZeroSize(mlir::Type type) const {
+  return dataLayout.getTypeAllocSize(convertType(type)) == 0;
+}
+
 int64_t CABIInfo::getNaturalTypeABIAlign(mlir::Type type) const {
   auto structType = dyn_cast<StructType>(type);
   if (!structType)
@@ -169,6 +173,9 @@ mlir::LLVM::LLVMFunctionType SignatureClassification::getFunctionType(
     paramTypes.push_back(ptrType);
   for (auto [coercion, type] :
        llvm::zip(llvm::ArrayRef(args).take_front(numFixedArgs), argTypes)) {
+    if (coercion.isIgnore())
+      continue;
+
     if (coercion.isIdentity()) {
       paramTypes.push_back(type);
     } else if (coercion.useIndirect) {
@@ -186,7 +193,7 @@ mlir::LLVM::LLVMFunctionType SignatureClassification::getFunctionType(
   }
 
   mlir::Type resultType;
-  if (ret.useSRet) {
+  if (ret.useSRet || ret.isIgnore()) {
     resultType = mlir::LLVM::LLVMVoidType::get(ctx);
   } else if (ret.isTwoRegister()) {
     assert(ret.coercedType && ret.coercedSecondType &&
@@ -226,6 +233,8 @@ llvm::SmallVector<mlir::NamedAttrList> SignatureClassification::getParamAttrs(
   unsigned paramIdx = getLLVMParamIndex(0);
   for (auto [argIdx, coercion] :
        llvm::enumerate(llvm::ArrayRef(args).take_front(numArgs))) {
+    if (coercion.isIgnore())
+      continue;
     mlir::Type type = argTypes[argIdx];
     if (argAttrs && argIdx < argAttrs.size()) {
       if (auto dict = dyn_cast<mlir::DictionaryAttr>(argAttrs[argIdx]))

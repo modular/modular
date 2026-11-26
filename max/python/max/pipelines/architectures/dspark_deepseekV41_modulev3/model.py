@@ -20,8 +20,10 @@ from dataclasses import dataclass, fields
 from max.dtype import DType
 from max.graph.weights import WeightData, Weights
 from max.nn.kv_cache import KVCacheParamInterface
+from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
 from max.pipelines.lib.registration_draft import DraftRegistration
+from max.pipelines.lib.weight_transform import WeightTransform
 from max.tensor import default_dtype, defaults
 from transformers import AutoConfig
 
@@ -50,6 +52,7 @@ class DSparkDeepseekV41ModuleV3DraftConfig(DeepseekV41Config):
     """The trunk's config, with the RoPE the stages read off its checkpoint."""
 
     rope: RopeParams | None = None
+    confidence_head: bool = False
 
 
 class DSparkDeepseekV41Draft(DSparkDrafter):
@@ -67,6 +70,7 @@ class DSparkDeepseekV41Draft(DSparkDrafter):
                 config,
                 defaults()[1],
                 rope=config.rope,
+                load_confidence_head=config.confidence_head,
                 data_parallel_degree=config.data_parallel_degree,
             )
 
@@ -98,6 +102,8 @@ def configure_dspark_draft(
     # The trunk's mesh rule, so the stages place their rows on the axis the
     # trunk's split shards.
     trunk.data_parallel_degree = pipeline_config.model.data_parallel_degree
+    trunk.raw_checkpoint_weights = isinstance(context.adapter, WeightTransform)
+    speculative = pipeline_config.speculative
     return DSparkDeepseekV41ModuleV3DraftConfig(
         **{f.name: getattr(trunk, f.name) for f in fields(trunk)},
         rope=RopeParams.from_text_config(
@@ -105,18 +111,24 @@ def configure_dspark_draft(
                 pipeline_config.model.huggingface_config
             )
         ),
+        confidence_head=(
+            speculative is not None and speculative.draft_score_source == "head"
+        ),
     )
 
 
 def convert_dspark_modulev3_safetensor_state_dict(
     state_dict: dict[str, Weights],
     huggingface_config: AutoConfig,
+    pipeline_config: PipelineConfig,
     **unused_kwargs: object,
 ) -> dict[str, WeightData]:
     """Returns the checkpoint's ``mtp.*`` weights, named as the stages name them.
 
-    The trunk's weights load through the trunk's own adapter.
+    The trunk's weights load through the trunk's own adapter. Only the
+    ``head`` score source loads the confidence head; every other build drops it.
     """
+    speculative = pipeline_config.speculative
     prefix = f"{DSPARK_MODULE_PREFIX}."
     return {
         name.removeprefix(prefix): value
@@ -124,6 +136,10 @@ def convert_dspark_modulev3_safetensor_state_dict(
             state_dict,
             num_stages=num_dspark_stages(
                 DeepseekV41Config.get_text_config(huggingface_config)
+            ),
+            load_confidence_head=(
+                speculative is not None
+                and speculative.draft_score_source == "head"
             ),
         ).items()
     }

@@ -43,6 +43,13 @@
 
 namespace M::Profiling {
 
+struct TraceActivity;
+struct TraceMetadataField;
+
+// Receives a stopped trace's activities and metadata; see disableCollecting.
+using TraceVisitor = function_ref<void(ArrayRef<TraceActivity> activities,
+                                       ArrayRef<TraceMetadataField> metadata)>;
+
 namespace Detail {
 // Implementation-detail master enable flag. Read via the inline
 // ``isEnabled()`` accessor below — direct callers must not store() to it;
@@ -120,6 +127,8 @@ struct RangeSink {
   // Returns whether the caller must pair it with rangeEnd; false when the
   // attached profiler predates span-only ranges.
   bool (*rangeBeginSpanOnly)(StringRef name, uint32_t color);
+  // Returns false without disabling when the attached profiler predates it.
+  bool (*disableCollecting)(TraceVisitor visitor, bool save);
 };
 
 // Why a sink is being requested; the integration decides per request kind
@@ -218,6 +227,15 @@ MODULAR_CXX_EXPORT void step();
 // independently.
 MODULAR_CXX_EXPORT void enable();
 MODULAR_CXX_EXPORT void disable();
+
+// As disable(), but hands the stopped trace to `visitor` (records in
+// TraceActivity.h) before returning, and writes the trace file only when
+// `save` is set, so a caller can read a capture in process. The visitor is
+// not called when no trace was live, nor when the trace could not be read,
+// which lastTraceError() then reports. A repeating step window's earlier bursts
+// are still written to their files. Returns false, leaving the profiler
+// enabled, when the attached profiler predates this call.
+MODULAR_CXX_EXPORT bool disableCollecting(TraceVisitor visitor, bool save);
 
 // Activate a deferred trace subscription: enable() only records intent,
 // because the profiler backend has a vendor-specific readiness ordering that

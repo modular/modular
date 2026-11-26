@@ -63,6 +63,7 @@
 #include "mlir/Support/IndentedOstream.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/Support/Process.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include <Support/LLVMForwardDecls.h>
 
@@ -1301,6 +1302,83 @@ lookupMembersInDecls(SmallVectorImpl<ASTDecl *> &memberDecls,
   return success();
 }
 
+/// Return the stdlib's `IsTriviallyDeinitable[type]` as a scalar boolean
+/// proposition, or null without a stdlib. Emits an internal error and returns
+/// null if the stdlib does not declare it as expected.
+static TypedAttr getIsTriviallyDeinitable(ASTType type, SMLoc loc,
+                                          SharedState &shared) {
+  if (!shared.hasBuiltinModule())
+    return {};
+  ModuleASTDecl &traits =
+      shared.importModule({"std", "traits"}, /*currentPackage=*/nullptr, loc);
+  LookupResult lookup =
+      shared.lookupAndResolveDecl("IsTriviallyDeinitable", loc, traits,
+                                  /*searchParentScopes=*/false);
+  AliasASTDecl *alias = nullptr;
+  if (lookup.isSuccess() && !lookup.getIfSuccess().empty())
+    alias = dyn_cast<AliasASTDecl>(lookup.getIfSuccess().front());
+  TypedAttr predicate = alias ? alias->getOp().getValueAttr() : TypedAttr();
+  auto generator =
+      predicate ? sugarDynCast<GeneratorType>(predicate.getType()) : nullptr;
+  if (!generator || generator.getInputParamTypes().size() != 1) {
+    shared.emitError(loc, "internal error: 'std.traits' must declare "
+                          "'IsTriviallyDeinitable' as a comptime value with "
+                          "one parameter");
+    return {};
+  }
+
+  // A type parameter is referenced as the parameter itself.
+  TypedAttr typeValue = PValue(type).get();
+  if (auto paramType = sugarDynCast<ParamType>(type.mlirType))
+    typeValue = PValue(paramType.getParam()).get();
+
+  // `T: AnyType` takes the type as a value of its trait type.
+  TypedAttr argument = typeValue;
+  if (auto trait = sugarDynCast<TraitType>(generator.getInputParamTypes()[0]))
+    argument = UpcastAttr::get(trait, typeValue);
+
+  MLIRContext *ctx = predicate.getContext();
+  return LIT::StructExtractAttr::get(
+      BindParamsAttr::get(ctx, predicate, {argument},
+                          &shared.getEvaluationContext()),
+      StringAttr::get(ctx, "_mlir_value"),
+      SIMDAttr::getScalarBool(ctx, true).getType());
+}
+
+/// A variable outside the default address space may be one memory address
+/// shared by many threads. Each thread runs the variable's implicit destructor,
+/// so its type must be trivially deinitable. This is checked like a `where`
+/// clause: in generic code, the enclosing scope must establish it.
+static void checkAddressSpaceVarType(ASTType varType, TypedAttr addrSpace,
+                                     StringRef name, SMLoc loc,
+                                     const ExprNode *expr, ASTDecl &scope,
+                                     IREmitter &emitter) {
+  SharedState &shared = emitter.shared;
+  TypedAttr isTrivial = getIsTriviallyDeinitable(varType, loc, shared);
+  if (!isTrivial)
+    return;
+
+  TypedAttr assumptions = scope.getScopeAssumptions();
+  // Match the form `where` clause assumptions take.
+  TypedAttr proposition = getCanonicalAttr(deShortCircuitCond(isTrivial));
+  TriBool verdict = isPropositionImplied(proposition, assumptions);
+  if (verdict.isTrue())
+    return;
+
+  auto diag = emitter.emitError(loc, "variable '");
+  diag << name << "' in address space "
+       << ASTType::getAddressSpaceForDisplay(addrSpace)
+       << " must have a trivially deinitable type";
+  if (verdict.isFalse()) {
+    diag << ", not " << varType;
+  } else {
+    std::string typeName;
+    llvm::raw_string_ostream(typeName) << varType;
+    diag << "; add 'where IsTriviallyDeinitable[" << typeName << "]'";
+  }
+  diag << expr->getRange();
+}
+
 ExprNode::ELVIITResult
 DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                               ASTDecl &lookupScope, ExprDest &dest,
@@ -1362,6 +1440,11 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     // `EC_TupleElement`.
     if (dest.getContext() != EC_TupleElement)
       varType = maybeRefineTypeWithAssumptions(varType, emitter.declScope);
+
+    if (TypedAttr addrSpace = dest.getPatternAddressSpace()) {
+      checkAddressSpaceVarType(varType, addrSpace, spelling, loc, expr,
+                               emitter.declScope, emitter);
+    }
 
     // For bind/ref patterns, wrap with placeholder origin (replaced at store
     // time). The ultimate reference will be a !lit.ref<!lit.ref<T>> but we
@@ -1533,6 +1616,16 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return emitter.emitCResult(result, expr, dest);
   }
 
+  // Detect reference to a IRValue with unresolved type.
+  if (auto cv = decl->getIfIRValue();
+      cv && isa<UnresolvedType>(cv.getRValueType())) {
+    auto diag = emitter.emitError(loc, "reference to value '")
+                << spelling << "' with an unspecified type";
+    diag.attachNote(decl->getLoc())
+        << "specify the type for '" << spelling << "'";
+    return {};
+  }
+
   // Error if this is a direct reference to a parameter declared on an enclosing
   // struct.  It should use Self.param.
   if (auto pvalue = decl->getIfIRValue().getIfPValue()) {
@@ -1651,9 +1744,10 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   // If this is a reference to a value from an outer function scope, record
   // the capture.
   if (needsCapture) {
-    emitter.shared.addCaptureToScope(
-        *nearestEscapingFnOrNone, declRef,
-        Capture(value, CaptureConvention::kConventionRead, spelling));
+    emitter.shared.addCaptureToScope(*nearestEscapingFnOrNone, declRef,
+                                     Capture(value,
+                                             CaptureConvention::kConventionRead,
+                                             spelling, expr->getLoc()));
   }
 
   return emitter.emitCResult(value, expr, dest);
@@ -4915,7 +5009,57 @@ AnyValue ChainedCmpOpNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
 }
 
 AnyValue LambdaNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
-  return emitter.getDeclResolver().resolveAnonymousClosure(this, emitter, dest);
+  // Type-check the signature in its own scope. The closure's param and arg
+  // decls are rebuilt from the result when the closure is resolved.
+  auto &signatureDecl = emitter.getDeclResolver().createFunctionTypeDecl(
+      getLoc(), emitter.declScope);
+  signatureDecl.setExplicitParamScope();
+  // TODO: Remove the environment toggle after lambdas are fully migrated to
+  // partial parsing.
+  static const bool doPartialParsing =
+      llvm::sys::Process::GetEnv("MOJO_LAMBDA_PARTIAL_PARSING") == "1";
+
+  ParsedParamList parsedParamList;
+  parsedParamList.params = llvm::to_vector(parsedParams);
+  std::optional<TypeCheckedParamList> paramListOrError =
+      TypeCheckedParamList::create(parsedParamList, signatureDecl,
+                                   /*partial=*/doPartialParsing);
+  if (!paramListOrError)
+    return {};
+  TypeCheckedParamList &paramList = *paramListOrError;
+
+  ParsedArgumentList argList;
+  argList.parsedArgs = llvm::to_vector(parsedArgs);
+  argList.resultArg = resultArg;
+  argList.effects = effects;
+  argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
+  argList.isParsingClosure = true;
+
+  TypeCheckedFnSignature tcSignature(paramList, argList, /*originExpr=*/nullptr,
+                                     /*fnDecl=*/nullptr, StringAttr(),
+                                     /*partial=*/doPartialParsing);
+
+  FnTypeGeneratorType signature = tcSignature.getFnTypeGeneratorType();
+  if (!signature)
+    return {};
+  for (const ParsedArgument &arg : tcSignature.argList.parsedArgs)
+    if (arg.isErroneous)
+      return {};
+  signature = signature.replaceImplicitOriginsWithIndexes(
+      tcSignature.implicitOriginDecls);
+
+  if (doPartialParsing) {
+    return LambdaUValue::create(getLoc(), signature, parsedParams, parsedArgs,
+                                body, captures, hasExplicitCaptureList,
+                                captureAllByConvention);
+  } else {
+    auto lambda = LambdaUValue::create(
+        getLoc(), signature, parsedParams, parsedArgs, body, captures,
+        hasExplicitCaptureList, captureAllByConvention);
+    return emitter.emitResult(
+        lambda.emitAsCValue(emitter, lambda.getPartialSignature(), false),
+        lambda.getBodyExpr(), dest);
+  }
 }
 
 AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
@@ -4941,6 +5085,8 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.resultArg = resultArg;
   argList.effects = effects;
   argList.isThin = isThin;
+  argList.isUnsafeNestedOriginsReadOnly = isUnsafeNestedOriginsReadOnly;
+  argList.isNestedOriginsReadOnly = isNestedOriginsReadOnly;
   argList.isParsingClosure = !isThin;
   argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
 

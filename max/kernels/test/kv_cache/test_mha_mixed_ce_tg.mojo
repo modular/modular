@@ -254,12 +254,14 @@ def execute_ragged_flash_attention() raises:
 
     # "true CE" execution
     print("true")
+    # FIXME: K/V are disjoint views of one allocation, but origin tracking
+    # cannot express that attention only reads both views.
     flash_attention_kv_cache(
         true_ce_q_ragged.as_imm(),
         true_ce_row_offsets.as_imm(),
         true_ce_row_offsets.as_imm(),
-        true_ce_kv_collection.get_key_cache(layer_idx),
-        true_ce_kv_collection.get_value_cache(layer_idx),
+        true_ce_kv_collection.get_key_cache(layer_idx).unsafe_origin_cast(),
+        true_ce_kv_collection.get_value_cache(layer_idx).unsafe_origin_cast(),
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
         true_ce_output,
@@ -267,12 +269,14 @@ def execute_ragged_flash_attention() raises:
 
     # "mixed CE" execution
     print("mixed")
+    # FIXME: K/V are disjoint views of one allocation, but origin tracking
+    # cannot express that attention only reads both views.
     flash_attention_kv_cache(
         mixed_ce_q_ragged.as_imm(),
         mixed_ce_row_offsets.as_imm(),
         mixed_ce_row_offsets.as_imm(),
-        mixed_ce_kv_collection.get_key_cache(layer_idx),
-        mixed_ce_kv_collection.get_value_cache(layer_idx),
+        mixed_ce_kv_collection.get_key_cache(layer_idx).unsafe_origin_cast(),
+        mixed_ce_kv_collection.get_value_cache(layer_idx).unsafe_origin_cast(),
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
         mixed_ce_output,

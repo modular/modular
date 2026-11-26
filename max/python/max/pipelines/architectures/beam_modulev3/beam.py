@@ -23,7 +23,6 @@ from collections.abc import Callable, Collection, Sequence
 from typing import ClassVar
 
 from max import functional as F
-from max import tree
 from max.driver import CPU
 from max.dtype import DType
 from max.graph import BufferValue, DimLike, TensorValue
@@ -32,12 +31,12 @@ from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
 from max.nn.common_layers.linear import ColumnParallelLinear
 from max.nn.common_layers.rotary_embedding import RotaryEmbedding
 from max.nn.embedding import Embedding
+from max.nn.ep import EPBuffers
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.outputs import ReturnLogits
 from max.nn.sequential import ModuleList
 from max.pipelines.architectures.gemma4_modulev3.layers.rms_norm import (
@@ -116,15 +115,10 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
             )
         kv_params = config.kv_params
         assert isinstance(kv_params, MultiKVCacheParams)
-        ep_batch_manager = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
         self.return_logits = return_logits
         self.kv_params = kv_params
         self.mesh = config.mesh
-        self.ep_batch_manager = ep_batch_manager
+        self.ep_config = config.ep_config
         self.use_subgraphs = config.use_subgraphs
         self.logit_softcapping = config.final_logit_softcapping
 
@@ -169,7 +163,7 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
                 leaf = kv_params.children[layer_type]
                 assert isinstance(leaf, KVCacheParams)
                 layers.append(
-                    BeamTransformerBlock(config, i, leaf, ep_batch_manager)
+                    BeamTransformerBlock(config, i, leaf, config.ep_config)
                 )
             self.layers = ModuleList(layers)
         self._layer_types = list(config.layer_types)
@@ -181,18 +175,11 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
                 "Beam scores variable logits only in a speculative verify."
             )
         kv_inputs = iter(kv_input_values(inputs.kv))
-        comm_buffers = (
-            self.ep_batch_manager.comm_buffers(
-                [x._graph_value for x in tree.leaves(inputs.ep)]
-            )
-            if self.ep_batch_manager is not None
-            else None
-        )
         h, input_row_offsets, _ = self.run_layers(
             inputs.tokens,
             inputs.input_row_offsets,
             self.kv_params.unflatten_basic_kv_tree(kv_inputs),
-            comm_buffers,
+            inputs.ep,
         )
 
         # The logits are replicated after the vocabulary gather, and the
@@ -215,7 +202,7 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
         kv_leaves: Sequence[
             Sequence[KVCacheInputsPerDevice[TensorValue, BufferValue]]
         ],
-        comm_buffers: EPCommBuffers | None,
+        ep: EPBuffers | None,
         taps: Collection[int] = (),
     ) -> tuple[Tensor, Tensor, list[Tensor]]:
         """Runs the decoder stack over a ragged batch.
@@ -225,7 +212,7 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
             input_row_offsets: Their row offsets, on one device.
             kv_leaves: Each KV child's per-device caches, in the order of
                 ``kv_params.children``.
-            comm_buffers: The EP buffers, for expert-parallel experts.
+            ep: The exchange's buffers, for expert-parallel experts.
             taps: The layers whose output residual streams to return.
 
         Returns:
@@ -282,7 +269,7 @@ class Beam(Module[[DecoderInputs], DecoderOutputs]):
                 F.constant(
                     residual_scales(idx)[2:], DType.float32, device=kv_mapping
                 ),
-                comm_buffers,
+                ep,
             )
             if idx in taps:
                 tapped.append(h)

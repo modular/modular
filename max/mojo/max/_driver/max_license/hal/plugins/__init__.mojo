@@ -38,6 +38,8 @@ from std.memory import (
 
 from ..status import (
     STATUS_SUCCESS,
+    STATUS_BAD_DRIVER,
+    STATUS_INCOMPATIBLE_VERSION,
     STATUS_UNKNOWN_ERROR,
     STATUS_UNKNOWN_PROPERTY_NAME,
     STATUS_UNKNOWN_SYMBOL,
@@ -160,12 +162,43 @@ comptime M_DRIVER_INTERFACE_VERSION_PATCH: UInt32 = 0
 
 
 @fieldwise_init
-struct DriverVersion(TrivialRegisterPassable):
+struct DriverVersion(TrivialRegisterPassable, Writable):
     """Mirrors C `M_driver_version { uint32_t major, minor, patch; }`."""
 
     var major: UInt32
     var minor: UInt32
     var patch: UInt32
+
+    def accepts(self, plugin: Self) -> Bool:
+        """Reports whether a host at this version may use a plugin at `plugin`.
+
+        The rule is the one `M_driver_version` documents in
+        `SDK/include/HAL/M_driver_common.h`: equal major versions, and a plugin
+        minor version at least the host's.
+
+        Args:
+            plugin: The version the plugin implements.
+
+        Returns:
+            True if the plugin's version is compatible with this one.
+        """
+        return plugin.major == self.major and plugin.minor >= self.minor
+
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the version as `major.minor.patch`.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(self.major, ".", self.minor, ".", self.patch)
+
+
+comptime HOST_DRIVER_VERSION = DriverVersion(
+    major=M_DRIVER_INTERFACE_VERSION_MAJOR,
+    minor=M_DRIVER_INTERFACE_VERSION_MINOR,
+    patch=M_DRIVER_INTERFACE_VERSION_PATCH,
+)
+"""The driver interface version this build implements."""
 
 
 comptime DriverHandle = ExternalHandle[M_driver_driver]
@@ -375,10 +408,10 @@ struct RawPlugin(Movable):
                 raise e^
 
     def __init__(
-        out self, var lib: OwnedDLHandle, so_path: String
+        out self, var lib: OwnedDLHandle, *, name: String, so_path: String
     ) raises HALError:
         self._lib = lib^
-        self.name = so_path
+        self.name = name
         self.so_path = so_path
         var handle = self._lib.borrow()
 
@@ -388,28 +421,100 @@ struct RawPlugin(Movable):
         ](handle, so_path)
 
     def _create_init_driver(mut self) raises HALError -> DriverHandle:
-        var handle = MaybeUninit[DriverHandle]()
-        var version = DriverVersion(
-            major=M_DRIVER_INTERFACE_VERSION_MAJOR,
-            minor=M_DRIVER_INTERFACE_VERSION_MINOR,
-            patch=M_DRIVER_INTERFACE_VERSION_PATCH,
-        )
-
+        """Creates the plugin's driver, following the `M_driver_create`
+        contract in `SDK/include/HAL/M_driver_driver.h`.
+        """
+        var version = HOST_DRIVER_VERSION
+        var handle = MaybeUninit(OptionalReg[DriverHandle]())
         var status = self.base.create.get()(
-            ImmPointer(to=version),
-            OutParam[DriverHandle](to=handle),
+            MutPointer(to=version),
+            OutParam[OptionalReg[DriverHandle]](to=handle),
         )
-        if status != STATUS_SUCCESS:
+        var driver = handle.unsafe_assume_init()
+
+        if status == STATUS_INCOMPATIBLE_VERSION or (
+            status == STATUS_SUCCESS
+            and not HOST_DRIVER_VERSION.accepts(version)
+        ):
+            if case .Some(d) = driver:
+                _ = self.base.destroy.get()(d)
+            # A plugin built before the header required the write-back refuses
+            # without one, which would otherwise read as the host's own
+            # version.
+            if (
+                status == STATUS_INCOMPATIBLE_VERSION
+                and version.major == HOST_DRIVER_VERSION.major
+                and version.minor == HOST_DRIVER_VERSION.minor
+                and version.patch == HOST_DRIVER_VERSION.patch
+            ):
+                raise HALError(
+                    STATUS_INCOMPATIBLE_VERSION,
+                    message=String(
+                        t"driver plugin '{self.so_path}' rejected this build's"
+                        t" driver interface {HOST_DRIVER_VERSION} without"
+                        t" reporting the version it implements"
+                    ),
+                )
             raise HALError(
-                status,
+                STATUS_INCOMPATIBLE_VERSION,
                 message=String(
-                    t"failed to initialise driver plugin from {self.so_path}"
+                    t"driver plugin '{self.so_path}' implements driver"
+                    t" interface {version}, which is incompatible with this"
+                    t" build's {HOST_DRIVER_VERSION}: the major versions must"
+                    t" match and the plugin's minor version must be at least"
+                    t" this build's"
                 ),
             )
 
-        var driver_handle = handle.unsafe_assume_init()
+        if status != STATUS_SUCCESS:
+            var detail = String("the plugin returned no handle to describe it")
+            if case .Some(d) = driver:
+                detail = self.status_message(d, status).message
+                _ = self.base.destroy.get()(d)
+            raise HALError(
+                status,
+                message=String(
+                    t"driver plugin '{self.so_path}' failed to create its"
+                    t" driver: {detail}"
+                ),
+            )
 
-        return driver_handle
+        if case .Some(d) = driver:
+            return d
+        raise HALError(
+            STATUS_BAD_DRIVER,
+            message=String(
+                t"driver plugin '{self.so_path}' reported success from"
+                t" M_driver_create without a driver"
+            ),
+        )
+
+    def status_message(self, driver: DriverHandle, status: Int64) -> HALError:
+        """Retrieves the plugin's message for `status` through `driver`.
+
+        `driver` may be a handle that a failed `M_driver_create` returned only
+        to describe its failure.
+        """
+        var buf = List[Int8](length=1024, fill=0)
+        var ret = self.base.status_message.get()(
+            driver,
+            status,
+            MutPointer(to=buf.unsafe_ptr()[]),
+            Int64(len(buf)),
+        )
+        if ret != STATUS_SUCCESS:
+            return HALError(
+                status, message="(problem retrieving status message)"
+            )
+        try:
+            return HALError(
+                status,
+                message=CStringSpan(
+                    unsafe_from_ptr=Pointer(to=buf[0]).unsafe_bitcast[c_char]()
+                ),
+            )
+        except:
+            return HALError(status, message="(failed to decode status message)")
 
 
 trait RawPluginComponent(Deinitable, HALPluginConstructable, Movable):

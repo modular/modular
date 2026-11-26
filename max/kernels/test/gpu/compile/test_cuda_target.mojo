@@ -64,9 +64,9 @@ def _verify_parameterized_on_cuda(asm: StringSpan) raises -> None:
     var store = asm.find("st.param.b64")
     if not store:
         store = asm.find("st.param::func.b64")
-    __guard case .Some(start) = store else:
+    guard case .Some(start) = store else:
         raise Error("expected a `st.param` store in the assembly")
-    __guard case .Some(end) = asm.find(";", start) else:
+    guard case .Some(end) = asm.find(";", start) else:
         raise Error("expected a `;` after the `st.param` store")
     var instruction_str = asm[byte=start:end]
     # Make sure 42 appears somewhere in the instruction

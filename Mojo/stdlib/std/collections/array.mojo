@@ -358,8 +358,13 @@ struct Array[T: AnyType, length: Int](
     # ===------------------------------------------------------------------===#
 
     @inline(.always)
-    def __init__(out self, *, uninitialized: Bool):
+    def __init__[
+        address_space: AddressSpace, //
+    ](out[address_space] self, *, uninitialized: Bool):
         """Create an Array with uninitialized memory.
+
+        Parameters:
+            address_space: The address space of the array.
 
         Args:
             uninitialized: A boolean to indicate if the array should be
@@ -731,10 +736,18 @@ struct Array[T: AnyType, length: Int](
 
     @stable(since="1.0")
     @inline(.always)
-    def __getitem__(ref self, idx: Int, /) -> ref[self] Self.T:
+    def __getitem__[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref[origin, address_space] self, idx: Int, /) -> ref[
+        origin, address_space
+    ] Self.T:
         """Gets a reference to the element at the given index.
 
         Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
+
+        Parameters:
+            origin: The origin of the reference to self.
+            address_space: The address space of the array.
 
         Args:
             idx: The index to access (0 to len-1).
@@ -757,14 +770,22 @@ struct Array[T: AnyType, length: Int](
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, length=len(self))
+        check_bounds(idx, length=Self.length)
         return self._unchecked_get(idx)
 
     @inline(.always)
-    def __getitem__(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
+    def __getitem__[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref[origin, address_space] self, idx: Some[Indexer]) -> ref[
+        origin, address_space
+    ] Self.T:
         """Gets a reference to the element at the given index.
 
         Subscripting calls this method: `arr[3]` invokes `arr.__getitem__(3)`.
+
+        Parameters:
+            origin: The origin of the reference to self.
+            address_space: The address space of the array.
 
         Args:
             idx: The index to access (0 to len-1).
@@ -785,7 +806,7 @@ struct Array[T: AnyType, length: Int](
             This method provides array-style indexing access to elements in the
             Array. The index is bounds-checked at runtime.
         """
-        check_bounds(index(idx), length=len(self))
+        check_bounds(index(idx), length=Self.length)
         return self._unchecked_get(idx)
 
     @inline(.always)
@@ -823,11 +844,15 @@ struct Array[T: AnyType, length: Int](
 
     @stable(since="1.0")
     @inline(.always)
-    def __getitem_param__[idx: Int, /](ref self) -> ref[self] Self.T:
+    def __getitem_param__[
+        origin: Origin, address_space: AddressSpace, //, idx: Int, /
+    ](ref[origin, address_space] self) -> ref[origin, address_space] Self.T:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
 
         Parameters:
+            origin: The origin of the reference to self.
+            address_space: The address space of the array.
             idx: The compile-time constant index to access (0 to len-1).
 
         Returns:
@@ -854,12 +879,17 @@ struct Array[T: AnyType, length: Int](
 
     @inline(.always)
     def __getitem_param__[
-        idx: Some[Indexer & Deinitable]
-    ](ref self) -> ref[self] Self.T:
+        origin: Origin,
+        address_space: AddressSpace,
+        //,
+        idx: Some[Indexer & Deinitable],
+    ](ref[origin, address_space] self) -> ref[origin, address_space] Self.T:
         """Gets a reference to the element at the given index with compile-time
         bounds checking.
 
         Parameters:
+            origin: The origin of the reference to self.
+            address_space: The address space of the array.
             idx: The compile-time constant index to access (0 to len-1).
 
         Returns:
@@ -887,12 +917,18 @@ struct Array[T: AnyType, length: Int](
         return self._unchecked_get(materialize[idx]())
 
     @inline(.always)
-    def _unchecked_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
+    def _unchecked_get[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref[origin, address_space] self, idx: Some[Indexer]) -> ref[
+        origin, address_space
+    ] Self.T:
         var ptr = __mlir_op.`pop.array.gep`(
             Pointer(to=self._array)._get_kgen_pointer(),
             index(idx)._mlir_value,
         )
-        return Pointer[_, origin_of(self)](_mlir_value=ptr)[]
+        return Pointer[_, origin, address_space=address_space](
+            _mlir_value=ptr
+        )[]
 
     @inline(.always)
     def concat(
@@ -1084,8 +1120,16 @@ struct Array[T: AnyType, length: Int](
     # ===------------------------------------------------------------------===#
 
     @inline(.always)
-    def unsafe_get(ref self, idx: Some[Indexer]) -> ref[self] Self.T:
+    def unsafe_get[
+        origin: Origin, address_space: AddressSpace, //
+    ](ref[origin, address_space] self, idx: Some[Indexer]) -> ref[
+        origin, address_space
+    ] Self.T:
         """Gets a reference to an element without bounds checking.
+
+        Parameters:
+            origin: The origin of the reference to self.
+            address_space: The address space of the array.
 
         Args:
             idx: The index of the element to get. Must be non-negative and in
@@ -1110,7 +1154,7 @@ struct Array[T: AnyType, length: Int](
             This is an unsafe method that skips bounds checking for performance.
             Users should prefer `__getitem__` instead for safety.
         """
-        check_bounds[cpu_default=False](index(idx), length=len(self))
+        check_bounds[cpu_default=False](index(idx), length=Self.length)
         return self._unchecked_get(idx)
 
     @inline(.always)

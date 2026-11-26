@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import tanh
+from std.memory import bitcast
 from std.random import randn, seed
+from std.sys import bit_width_of
 
-from test_utils.math import compare, libm_call
-from std.testing import assert_almost_equal, TestSuite
+from test_utils.math import compare, libm_call, ulp_diff
+from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 comptime tanh_libm = libm_call["tanhf", "tanh"]
 
@@ -180,6 +182,31 @@ def test_direct() raises:
     assert_almost_equal(
         tanh(0.5 * f64x4), F64x4(0.0, 0.244918659, 0.462117165, 0.635149002)
     )
+
+
+def _test_tanh_16bit[dtype: DType]() raises where dtype.is_floating_point():
+    comptime assert bit_width_of[dtype]() == 16
+    for bits in range(1 << 16):
+        var x = bitcast[dtype](UInt16(bits))
+        if x != x:
+            continue
+        var want = tanh_libm(x.cast[.float64]()).cast[dtype]()
+        assert_equal(ulp_diff(tanh(x), want), 0, String(t"tanh({x})"))
+
+
+def test_tanh_bf16() raises:
+    _test_tanh_16bit[.bfloat16]()
+
+
+def test_tanh_16bit_comptime() raises:
+    comptime f16 = tanh(Float16(9))
+    comptime bf16 = tanh(BFloat16(8))
+    assert_equal(f16, 1)
+    assert_equal(bf16, 1)
+
+
+def test_tanh_f16() raises:
+    _test_tanh_16bit[.float16]()
 
 
 def test_tanh_libm() raises:

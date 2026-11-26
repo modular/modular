@@ -34,12 +34,12 @@ def is_partial(x: Tensor) -> bool:
 
 
 class HYV4MLP(Module[[Tensor], Tensor]):
-    """``down(silu(gate(x)) * up(x))``, unclamped, gate and up in one GEMM.
+    """``down(silu(gate(x)) * up(x))``, unclamped, MXFP8, block FP8 or BF16.
 
     Only the routed experts clamp their SwiGLU (``swiglu_limit``); the dense
-    layer-0 MLP and the shared expert do not. ``gate_proj`` and ``up_proj``
-    load as stored and are stacked in the graph once sharded, so each rank
-    stacks its own ``[gate_r; up_r]`` rows.
+    layer-0 MLP and the shared expert do not. MXFP8 ``gate_proj`` and
+    ``up_proj`` load as stored and are stacked in the graph once sharded,
+    so each rank stacks its own ``[gate_r; up_r]`` rows for one GEMM.
     """
 
     def __init__(
@@ -47,6 +47,7 @@ class HYV4MLP(Module[[Tensor], Tensor]):
         hidden_dim: int,
         feed_forward_length: int,
         quant_config: QuantConfig | None,
+        out_dim: int | None = None,
     ) -> None:
         super().__init__()
         self.gate_proj = QuantizedLinear(
@@ -63,7 +64,7 @@ class HYV4MLP(Module[[Tensor], Tensor]):
         )
         self.down_proj = QuantizedLinear(
             feed_forward_length,
-            hidden_dim,
+            out_dim or hidden_dim,
             bias=False,
             quant_config=quant_config,
         )
@@ -85,10 +86,15 @@ class HYV4MLP(Module[[Tensor], Tensor]):
         gate, up, down = (
             p.weight for p in (self.gate_proj, self.up_proj, self.down_proj)
         )
-        assert isinstance(gate, MXFP8Tensor) and isinstance(up, MXFP8Tensor)
-        assert isinstance(down, MXFP8Tensor)
-        gate_up = mxfp8.matmul(x, mxfp8.concat_rows([gate, up]))
-        return mxfp8.swiglu_matmul(gate_up, down)
+        if isinstance(down, MXFP8Tensor):
+            assert isinstance(gate, MXFP8Tensor)
+            assert isinstance(up, MXFP8Tensor)
+            gate_up = mxfp8.matmul(x, mxfp8.concat_rows([gate, up]))
+            return mxfp8.swiglu_matmul(gate_up, down)
+        # BF16, or block FP8 (the DFly2 drafter).
+        return mxfp8.matmul(
+            F.silu(mxfp8.matmul(x, gate)) * mxfp8.matmul(x, up), down
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """Runs the SwiGLU feed-forward over ``x``."""

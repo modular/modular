@@ -63,7 +63,7 @@ def MGPDialect : Dialect {
   let dependentDialects = [
     "mlir::index::IndexDialect",
     "::M::MDialect",
-    "::M::MEF::MEFDialect",
+    "::M::MLRT::MEF::MEFDialect",
   ];
 
   let extraClassDeclaration = [{

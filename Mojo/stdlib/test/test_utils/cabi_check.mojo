@@ -176,7 +176,7 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if T == UInt8 or T == Int8:
             return None
-        __guard case .Some(scalar_name) = _c_scalar_name[T]() else:
+        guard case .Some(scalar_name) = _c_scalar_name[T]() else:
             raise Error(t"unexpected SIMD type: {TName}")
         return String(t"{scalar_name} *ptr")
 
@@ -186,7 +186,7 @@ def _c_field_decl[T: AnyType]() raises -> Optional[String]:
         # Enable field-type checks for 8-bit types
         comptime if ElementType == UInt8 or ElementType == Int8:
             return None
-        __guard case .Some(scalar_name) = _c_scalar_name[ElementType]() else:
+        guard case .Some(scalar_name) = _c_scalar_name[ElementType]() else:
             raise Error(t"unsupported array type: {TName}")
         return String(t"{scalar_name} (*ptr)[{T._cabi_length}]")
 
@@ -262,7 +262,7 @@ def struct_checks[T: AnyType]() raises -> String:
         )
         var c_type = _cfield_of[T, i]().c_type
         match c_type:
-            case .default:
+            case .default():
                 out += _implied_type_check[types[i]](name, field)
             case _:
                 out += String(
@@ -284,14 +284,14 @@ def _c_type_decl(c_type: CType) raises -> String:
         array type.
 
     Raises:
-        If `c_type` is `.default`, which spells no type.
+        If `c_type` is `.default()`, which spells no type.
     """
     match c_type:
         case .type(name):
             return String(t"{name} *ptr")
         case .array(name, count):
             return String(t"{name} (*ptr)[{count}]")
-        case .default:
+        case .default():
             raise Error("CType.default spells no C type")
 
 
@@ -311,7 +311,7 @@ def _implied_type_check[
                 t" {field})"
             )
         case _:
-            __guard case .Some(decl) = _c_field_decl[FieldType]() else:
+            guard case .Some(decl) = _c_field_decl[FieldType]() else:
                 return String()
             return String(
                 t"\nMOJO_CHECK_CABI_FIELD_TYPE({name}, struct {name},"

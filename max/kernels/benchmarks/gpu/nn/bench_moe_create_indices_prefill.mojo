@@ -67,6 +67,7 @@ def run(ctx: DeviceContext, tokens: Int) raises:
     var ua = TileTensor(stats_a, row_major[2]())
     var ub = TileTensor(stats_b, row_major[2]())
 
+    @__allow_legacy_any_origin_fields
     def single_cta() raises {imm}:
         comptime kernel = moe_create_indices_kernel[
             DType.int32,
@@ -104,6 +105,7 @@ def run(ctx: DeviceContext, tokens: Int) raises:
             block_dim=512,
         )
 
+    @__allow_legacy_any_origin_fields
     def production() raises {imm}:
         moe_create_indices(
             ob,

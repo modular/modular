@@ -20,8 +20,6 @@ from extensibility import Input, Output, Tensor, TileTensorable
 
 from layout import Coord
 from std.sys import align_of
-from std.utils.coord import coord_to_index_list
-from std.utils.index import IndexList
 
 from state_space.rms_norm_fused_residual import (
     _rms_norm_fused_residual_cpu_entry,
@@ -235,7 +233,7 @@ def rms_norm_fused_residual_shape[
     weight_offset: Scalar[dtype=dtype],
     dropout_p: Scalar[dtype=dtype],
     seed: Scalar[dtype=DType.uint64],
-) -> IndexList[type_of(input).rank]:
+) -> type_of(input.shape()):
     """Returns the output shape for the `rms_norm_fused_residual` op.
 
     The fused RMS-norm-plus-residual op preserves the input shape; both the
@@ -267,6 +265,4 @@ def rms_norm_fused_residual_shape[
     comptime assert (
         type_of(gamma).dtype == dtype
     ), "gamma dtype must match the scalar dtype"
-    return rebind[IndexList[type_of(input).rank]](
-        coord_to_index_list(input.shape())
-    )
+    return input.shape()

@@ -33,6 +33,7 @@
 #include "llvm/Support/SourceMgr.h"
 
 using namespace M;
+using namespace M::MLRT;
 using namespace M::AsyncRT;
 using mlir::MLIRContext;
 

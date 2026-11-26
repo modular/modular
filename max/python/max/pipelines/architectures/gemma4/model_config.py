@@ -338,6 +338,7 @@ class Gemma4TextConfig(Gemma3Config):
         huggingface_config: AutoConfig,
         *,
         max_seq_len: int,
+        allow_kv_head_replication: bool = False,
     ) -> Self:
         """Builds the text config from the pipeline and HuggingFace configs.
 
@@ -345,6 +346,9 @@ class Gemma4TextConfig(Gemma3Config):
             pipeline_config: The MAX Engine pipeline configuration.
             huggingface_config: HuggingFace text model configuration.
             max_seq_len: The maximum sequence length the config allows.
+            allow_kv_head_replication: Whether the KV cache may repeat each
+                KV head on a group of devices when there are more devices
+                than heads.
 
         Returns:
             An initialized Gemma4TextConfig instance.
@@ -429,6 +433,7 @@ class Gemma4TextConfig(Gemma3Config):
                 devices=device_refs,
                 kv_cache_config=kv_cache_config,
                 cache_dtype=cache_dtype,
+                allow_kv_head_replication=allow_kv_head_replication,
             ),
             # Gemma4-specific fields
             vocab_size_per_layer_input=huggingface_config.vocab_size_per_layer_input,
@@ -593,6 +598,9 @@ class Gemma4ForConditionalGenerationConfig(
         "float16",
         "float4_e2m1fnx2",
     }
+    ALLOW_KV_HEAD_REPLICATION: ClassVar[bool] = False
+    """Whether the attention repeats each KV head on a group of devices when
+    there are more devices than heads."""
 
     devices: list[DeviceRef]
     """Devices to run the model with."""
@@ -656,8 +664,9 @@ class Gemma4ForConditionalGenerationConfig(
             num_layers=int(huggingface_config.text_config.num_hidden_layers)
         )
 
-    @staticmethod
+    @classmethod
     def construct_kv_params(
+        cls,
         huggingface_config: AutoConfig,
         pipeline_config: PipelineConfig,
         devices: list[DeviceRef],
@@ -682,6 +691,7 @@ class Gemma4ForConditionalGenerationConfig(
             devices=devices,
             kv_cache_config=kv_cache_config,
             cache_dtype=cache_dtype,
+            allow_kv_head_replication=cls.ALLOW_KV_HEAD_REPLICATION,
         )
 
     @classmethod
@@ -794,6 +804,7 @@ class Gemma4ForConditionalGenerationConfig(
             pipeline_config=pipeline_config,
             huggingface_config=hf_text_config,
             max_seq_len=max_seq_len,
+            allow_kv_head_replication=cls.ALLOW_KV_HEAD_REPLICATION,
         )
 
         kv_params = cls.construct_kv_params(

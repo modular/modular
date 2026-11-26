@@ -67,19 +67,21 @@ FnMetaOriginDataAttr FnMetaOriginDataAttr::get(MLIRContext *context) {
   return FnMetaOriginDataAttr::get(
       context, /*numImplicitOriginDecls=*/0,
       /*captureOrigins=*/OriginSetAttr::get(context, {}),
-      /*isNestedOriginsReadOnly=*/false,
-      /*definesInteriorOrigins=*/false);
+      /*definesInteriorOrigins=*/false,
+      /*isUnsafeNestedOriginsReadOnly=*/false,
+      /*isEnforcedNestedOriginsReadOnly=*/false);
 }
 
-FnMetaOriginDataAttr FnMetaOriginDataAttr::get(MLIRContext *ctx,
-                                               size_t numImplicitOriginDecls,
-                                               TypedAttr captureOrigins,
-                                               bool isNestedOriginsReadOnly,
-                                               bool definesInteriorOrigins) {
+FnMetaOriginDataAttr
+FnMetaOriginDataAttr::get(MLIRContext *ctx, size_t numImplicitOriginDecls,
+                          TypedAttr captureOrigins, bool definesInteriorOrigins,
+                          bool isUnsafeNestedOriginsReadOnly,
+                          bool isEnforcedNestedOriginsReadOnly) {
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
   return Base::get(ctx, numImplicitOriginDecls, captureOrigins,
-                   isNestedOriginsReadOnly, definesInteriorOrigins);
+                   definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
+                   isEnforcedNestedOriginsReadOnly);
 }
 
 SmallVector<VariadicKind>
@@ -123,8 +125,19 @@ LogicalResult FnMetaOriginDataAttr::verifyFuncType(
     if (conv == ArgConvention::ByRefResult && i != values.getNumInputs() - 1)
       return emitError() << "'byref_result' argument must be the last argument";
 
+    // An unresolved convention is only valid on an argument whose type is
+    // also unresolved.
+    if (conv == ArgConvention::Unresolved) {
+      if (!::isa<UnresolvedType>(argType))
+        return emitError() << "argument #" << i
+                           << " with convention 'unresolved' in signature type "
+                              "should be a `!lit.unresolved` but got: "
+                           << argType;
+      continue;
+    }
+
     // Verify argument conventions.
-    if (hasAddress(conv) && !::isa<RefType>(argType)) {
+    if (hasAddress(conv) && !::isa<RefType, UnresolvedType>(argType)) {
       return emitError()
              << "argument #" << i << " with convention '" << stringifyEnum(conv)
              << "' in signature type should be a `!lit.ref` but got: "
@@ -143,7 +156,8 @@ FnMetaOriginDataAttr::addCaptureOrigins(TypedAttr origins) {
       OriginSetUnionAttr::get(origins, type)};
   return get(getContext(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
-             getIsNestedOriginsReadOnly(), getDefinesInteriorOrigins());
+             getDefinesInteriorOrigins(), getIsUnsafeNestedOriginsReadOnly(),
+             getIsEnforcedNestedOriginsReadOnly());
 }
 
 void FnMetaOriginDataAttr::printFuncTypeBody(AsmPrinter &p,
@@ -171,8 +185,11 @@ bool FnMetaOriginDataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
 
   return getNumImplicitOriginDecls() == other.getNumImplicitOriginDecls() &&
          getCaptureOrigins() == other.getCaptureOrigins() &&
-         getIsNestedOriginsReadOnly() == other.getIsNestedOriginsReadOnly() &&
-         getDefinesInteriorOrigins() == other.getDefinesInteriorOrigins();
+         getIsUnsafeNestedOriginsReadOnly() ==
+             other.getIsUnsafeNestedOriginsReadOnly() &&
+         getDefinesInteriorOrigins() == other.getDefinesInteriorOrigins() &&
+         getIsEnforcedNestedOriginsReadOnly() ==
+             other.getIsEnforcedNestedOriginsReadOnly();
 }
 
 //===----------------------------------------------------------------------===//

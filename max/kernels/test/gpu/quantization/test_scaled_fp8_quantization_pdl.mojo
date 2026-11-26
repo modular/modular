@@ -69,11 +69,11 @@ comptime scales_dtype = DType.float32
 def late_producer[
     dtype: DType
 ](
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length: Int32,
-    src_limit: MutPointer[UInt32, MutAnyOrigin],
-    dst_limit: MutPointer[UInt32, MutAnyOrigin],
+    src_limit: MutPointer[UInt32, MutUntrackedOrigin],
+    dst_limit: MutPointer[UInt32, MutUntrackedOrigin],
 ):
     """Releases dependents at once, then publishes the activations late."""
     launch_dependent_grids()
@@ -90,8 +90,8 @@ def late_producer[
 def consumer[
     dtype: DType
 ](
-    src: MutPointer[Scalar[dtype], MutAnyOrigin],
-    dst: MutPointer[Scalar[dtype], MutAnyOrigin],
+    src: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    dst: MutPointer[Scalar[dtype], MutUntrackedOrigin],
     length: Int32,
 ):
     """Copies a quantizer output after waiting on it."""
@@ -103,7 +103,7 @@ def consumer[
         dst[i] = src[i]
 
 
-def overlap_probe(waited_ns: MutPointer[UInt64, MutAnyOrigin]):
+def overlap_probe(waited_ns: MutPointer[UInt64, MutUntrackedOrigin]):
     """Records how long this grid was resident before its predecessor finished.
     """
     var start = global_perf_counter_ns()

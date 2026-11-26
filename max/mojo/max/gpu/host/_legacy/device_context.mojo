@@ -52,7 +52,7 @@ from std.sys.compile import DebugLevel, OptimizationLevel
 from std.sys.info import CompilationTarget
 from std.sys.defines import _is_bool_like
 
-from std.reflection import call_location, get_linkage_name, SourceLocation
+from std.reflection import call_location, SourceLocation
 from std.builtin.rebind import downcast
 from std.builtin.device_passable import (
     DevicePassable,
@@ -77,13 +77,6 @@ from std.utils._serialize import _serialize_elements
 from std.utils.static_tuple import StaticTuple
 
 from ..info import _device_type_encoder_target
-from max._driver.max_license.device_context_dispatch.device_context import (
-    DeviceContext,
-    use_legacy_backend,
-)
-from max._driver.max_license.device_context_dispatch.device_function import (
-    DeviceFunction,
-)
 from max._plugin import MaxPluginForTarget
 
 from ..info import get_gpu_info, default_accelerator
@@ -106,19 +99,14 @@ from .._launch_args import DeviceFunctionWrapper, _IdentityWrapper, DenseArgs
 
 from ..launch_config import (
     ClusterExecutionConfig,
-    ClusterLaunchConfig,
     ExecutionConfig,
     GridBlockExecutionConfig,
     GridBlockLaunchConfig,
-    NearComputeGeneralPurposeScratchpadExecutionConfig,
     _supports_cluster_launch,
 )
 from ..nvidia.launch_config import (
     ClusterAttributeLaunchConfig,
     GridBlockAttributeLaunchConfig,
-    LaunchAttributeHolderExecutionConfig,
-    _CLUSTER_DIM_ATTRIBUTE_ERROR,
-    _holds_cluster_dim_attribute,
 )
 
 from max.gpu.host._driver_handles import (
@@ -142,7 +130,6 @@ from max.gpu.host._driver_common import (
     _string_from_owned_charptr,
     _DumpPath,
     _checked,
-    _check_dim_in_range,
     StreamPriorityRange,
 )
 
@@ -755,7 +742,6 @@ struct LegacyHostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         #   target used by this runtime DeviceContext instance?
         return LegacyDeviceContext(ctx_ptr)
 
-    @__unsafe_nested_origins_read_only
     def as_span[
         origin: Origin, //
     ](ref[origin] self) -> Span[
@@ -783,520 +769,28 @@ struct LegacyHostBuffer[dtype: DType](ImplicitlyCopyable, Sized, Writable):
         )
 
 
-struct LegacyDevicePointer[
-    mut: Bool,
-    //,
-    dtype: DType,
-    origin: Origin[mut=mut],
-](
-    DevicePassable,
-    DevicePointerLike,
-    Equatable,
-    ImplicitlyCopyable,
-    TrivialRegisterPassable,
-    Writable,
-):
-    """A host-side representation of a pointer to device memory that resides
-    within a `DeviceBuffer`.
-
-    A `DevicePointer` is a non-owning borrow of a `DeviceBuffer`; it must not
-    outlive the buffer it points into.
-
-    - Supports pointer arithmetic which may result in a new `DevicePointer`
-      instance referring to the same `DeviceBuffer` with a new offset.
-    - Supports equality comparison and ordering of `DevicePointer`s pointing
-      into the same `DeviceBuffer`.
-    - May support accessing device pointer address on supported hardware.
-    - Does not support load/store operations.
-
-    At the device function execution boundary a `DevicePointer` is transformed
-    into a `Pointer` on the device at the point of being handed over to
-    the device driver.
-
-    Parameters:
-        mut: Whether the borrow of the underlying `DeviceBuffer` is mutable
-            (inferred from `origin`).
-        dtype: Data dtype to be stored in the pointer.
-        origin: The origin of the borrowed `DeviceBuffer`.
-    """
-
-    var _buffer: Pointer[LegacyDeviceBuffer[Self.dtype], Self.origin]
-    var _offset: Int
-    var _size: Int
+@fieldwise_init
+struct _LegacyBufferArg[dtype: DType](DevicePointerLike, Movable):
+    """What a `DeviceTypeEncoder` reads from a `LegacyDeviceBuffer` kernel
+    argument: its start address and, for Metal, its C++ buffer handle."""
 
     comptime PointeeType: AnyType = Scalar[Self.dtype]
-    """DevicePointerLike encoded pointer pointee type."""
 
-    # ===------------------------------------------------------------------=== #
-    # Constructors
-    # ===------------------------------------------------------------------=== #
+    var _ptr: Pointer[Scalar[Self.dtype], MutUntrackedOrigin]
+    var _handle: OpaquePointer[MutUntrackedOrigin]
 
-    def __init__(
-        out self, ref[Self.origin] buffer: LegacyDeviceBuffer[Self.dtype]
-    ) raises:
-        """Constructs a `DevicePointer` referencing the start of `buffer`.
-
-        Args:
-            buffer: The `DeviceBuffer` this pointer references. Must outlive
-                the resulting `DevicePointer`.
-
-        Raises:
-            If `buffer` has size 0.
-        """
-        var size = len(buffer)
-        if size == 0:
-            raise Error("DevicePointer: size of DeviceBuffer must not be 0")
-        self._buffer = Pointer(to=buffer)
-        self._offset = 0
-        self._size = size
-
-    def __init__(
-        out self,
-        ref[Self.origin] buffer: LegacyDeviceBuffer[Self.dtype],
-        offset: Int,
-    ) raises:
-        """Constructs a `DevicePointer` into `buffer` at `offset` with `size`
-        elements in range.
-
-        Args:
-            buffer: The `DeviceBuffer` this pointer references. Must outlive
-                the resulting `DevicePointer`.
-            offset: Element offset from the start of `buffer`.
-
-        Raises:
-            If `buffer` has size 0, or if `offset` is outside the half-open
-            range `[0, len(buffer))`.
-        """
-        var size = len(buffer)
-        if size == 0:
-            raise Error("DevicePointer: invalid DeviceBuffer of size '0'")
-        if offset < 0 or offset >= size:
-            raise Error(
-                t"DevicePointer: invalid offset '{offset}' for DeviceBuffer of"
-                t" size '{size}'"
-            )
-        self._buffer = Pointer(to=buffer)
-        self._offset = offset
-        self._size = size
-
-    # ===------------------------------------------------------------------=== #
-    # Accessors
-    # ===------------------------------------------------------------------=== #
-
-    def buffer(self) -> ref[Self.origin] LegacyDeviceBuffer[Self.dtype]:
-        """Returns a reference to the `DeviceBuffer` this pointer references.
-
-        The reference is non-owning; the underlying `DeviceBuffer` must
-        outlive `self`.
+    def unsafe_ptr(ref self) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
+        """Returns the buffer's start address.
 
         Returns:
-            A reference to the referenced `DeviceBuffer`.
+            The device address of the buffer's first element.
         """
-        return self._buffer[]
-
-    def offset(self) -> Int:
-        """Returns the element offset from the start of the owning buffer.
-
-        Returns:
-            The element offset.
-        """
-        return self._offset
-
-    @doc_hidden
-    def unsafe_ptr(
-        ref self,
-    ) -> Pointer[Scalar[Self.dtype], MutAnyOrigin]:
-        """Returns the raw device pointer, if supported by the target.
-
-        On targets that expose raw device pointers (for example CUDA and HIP),
-        this returns the underlying address adjusted by the current offset.
-        On targets that do not (for example Metal), this raises an error.
-
-        Returns:
-            The raw device pointer.
-        """
-        # TODO: GEX-3693: Assert/raise when target doesn't support raw device
-        # pointer access
-        # `DeviceBuffer.unsafe_ptr()` now ties its mutability to the borrow of
-        # the buffer; force mutable to preserve this helper's `MutAnyOrigin`
-        # contract.
-        return (
-            (self._buffer[].unsafe_ptr().unsafe_offset(self._offset))
-            .unsafe_mut_cast[True]()
-            .as_unsafe_any_origin()
-        )
+        return self._ptr.as_unsafe_any_origin()
 
     def _buffer_handle(
         ref self,
     ) -> Optional[OpaquePointer[MutUntrackedOrigin]]:
-        return Optional(
-            self._buffer[]._handle.value().unsafe_bitcast[NoneType]()
-        )
-
-    # ===------------------------------------------------------------------=== #
-    # Origin and mutability casts
-    # ===------------------------------------------------------------------=== #
-
-    # `origin` appears only in the `_buffer` field's type parameters, never in
-    # any field's layout, so the casts below reinterpret the whole handle, as
-    # `Span.as_imm` does.
-    comptime _OriginCastType[
-        target_mut: Bool, //, target_origin: Origin[mut=target_mut]
-    ] = LegacyDevicePointer[Self.dtype, target_origin]
-
-    @always_inline("builtin")
-    def unsafe_mut_cast[
-        target_mut: Bool
-    ](self) -> Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]:
-        """Changes the mutability of the borrow of the `DeviceBuffer`.
-
-        To unconditionally drop mutability use `as_imm`.
-
-        Parameters:
-            target_mut: Mutability of the resulting `DevicePointer`.
-
-        Returns:
-            A `DevicePointer` referencing the same `DeviceBuffer` at the same
-            offset, but with the newly specified mutability.
-
-        Safety:
-            Casting an immutable borrow to mutable claims mutation rights the
-            caller does not hold, which defeats exclusivity checking: mutating
-            the `DeviceBuffer` through the result while another borrow of it is
-            live is undefined behavior. Prefer binding the mutability at the
-            function signature level, for example taking a
-            `DevicePointer[mut=True, dtype, _]` argument over an unbound
-            `DevicePointer[dtype, _]`.
-        """
-        return rebind[
-            Self._OriginCastType[Self.origin.unsafe_mut_cast[target_mut]()]
-        ](self)
-
-    @always_inline("builtin")
-    def unsafe_origin_cast[
-        target_origin: Origin[mut=Self.mut]
-    ](self) -> Self._OriginCastType[target_origin]:
-        """Changes the origin of the borrow of the `DeviceBuffer`.
-
-        To unconditionally discard the origin use `as_unsafe_any_origin`.
-
-        Parameters:
-            target_origin: Origin of the resulting `DevicePointer`.
-
-        Returns:
-            A `DevicePointer` referencing the same `DeviceBuffer` at the same
-            offset, but with the newly specified origin.
-
-        Safety:
-            The result names `target_origin` rather than the `DeviceBuffer` it
-            refers into, so the lifetime checker no longer keeps that buffer
-            alive; using the result once the buffer is destroyed is undefined
-            behavior. Prefer parameterizing the origin at the function level
-            over casting it.
-        """
-        return rebind[Self._OriginCastType[target_origin]](self)
-
-    @always_inline("builtin")
-    def as_imm(self) -> Self._OriginCastType[ImmOrigin(Self.origin)]:
-        """Changes the borrow of the `DeviceBuffer` to immutable.
-
-        Unlike `unsafe_mut_cast` this is always safe: dropping mutability
-        cannot introduce aliasing.
-
-        Returns:
-            A `DevicePointer` referencing the same `DeviceBuffer` at the same
-            offset, but with an immutable borrow.
-        """
-        return self.unsafe_mut_cast[False]()
-
-    @always_inline("builtin")
-    def as_unsafe_any_origin(
-        self,
-    ) -> Self._OriginCastType[UnsafeAnyOrigin[mut=Self.mut]]:
-        """Discards the origin of the borrow of the `DeviceBuffer`.
-
-        Returns:
-            A `DevicePointer` with the origin set to `UnsafeAnyOrigin`.
-
-        Safety:
-            `UnsafeAnyOrigin` might alias any live value, which forces the
-            lifetime checker into its most conservative behavior: it extends
-            unrelated lifetimes and turns off exclusivity checking. The caller
-            takes over keeping the `DeviceBuffer` alive. A concrete origin is
-            always preferable.
-        """
-        return self.unsafe_origin_cast[UnsafeAnyOrigin[mut=Self.mut]]()
-
-    # ===------------------------------------------------------------------=== #
-    # Pointer arithmetic
-    # ===------------------------------------------------------------------=== #
-
-    def __add__(self, n: Int) raises -> Self:
-        """Returns a new `DevicePointer` offset forward by `n` elements.
-
-        Args:
-            n: Number of elements to offset by.
-
-        Returns:
-            A new `DevicePointer` referencing the same `DeviceBuffer` at the
-            new offset.
-
-        Raises:
-            If the resulting offset is outside the bounds of the owning
-            `DeviceBuffer`.
-        """
-        var offset = self._offset + n
-        if offset < 0 or offset >= self._size:
-            raise Error(
-                t"DevicePointer: addition of '{n}' results in invalid offset of"
-                t" '{offset}' for DeviceBuffer of size {self._size}"
-            )
-        return LegacyDevicePointer(self._buffer[], offset)
-
-    def __sub__(self, n: Int) raises -> Self:
-        """Returns a new `DevicePointer` offset backward by `n` elements.
-
-        Args:
-            n: Number of elements to offset by.
-
-        Returns:
-            A new `DevicePointer` referencing the same `DeviceBuffer` at the
-            new offset.
-
-        Raises:
-            If the resulting offset is outside the bounds of the owning
-            `DeviceBuffer`.
-        """
-        var offset = self._offset - n
-        if offset < 0 or offset >= self._size:
-            raise Error(
-                t"DevicePointer: subtraction of '{n}' results in invalid offset"
-                t" of '{offset}' for DeviceBuffer of size {self._size}"
-            )
-        return LegacyDevicePointer(self._buffer[], offset)
-
-    def __iadd__(mut self, n: Int) raises:
-        """Offsets this `DevicePointer` forward by `n` elements in place.
-
-        Args:
-            n: Number of elements to offset by.
-
-        Raises:
-            If the resulting offset is outside the bounds of the owning
-            `DeviceBuffer`.
-        """
-        var offset = self._offset + n
-        if offset < 0 or offset >= self._size:
-            raise Error(
-                t"DevicePointer: addition of '{n}' results in invalid offset of"
-                t" '{offset}' for DeviceBuffer of size {self._size}"
-            )
-        self._offset = offset
-
-    def __isub__(mut self, n: Int) raises:
-        """Offsets this `DevicePointer` backward by `n` elements in place.
-
-        Args:
-            n: Number of elements to offset by.
-
-        Raises:
-            If the resulting offset is outside the bounds of the owning
-            `DeviceBuffer`.
-        """
-        var offset = self._offset - n
-        if offset < 0 or offset >= self._size:
-            raise Error(
-                t"DevicePointer: subtraction of '{n}' results in invalid offset"
-                t" of '{offset}' for DeviceBuffer of size {self._size}"
-            )
-        self._offset = offset
-
-    # ===------------------------------------------------------------------=== #
-    # Comparison
-    # ===------------------------------------------------------------------=== #
-
-    @__unsafe_nested_origins_read_only
-    def __eq__(self, other: Self) -> Bool:
-        """Returns `True` if `self` and `other` reference the same buffer and
-        offset.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if equal.
-        """
-        return (
-            self._buffer[]._handle == other._buffer[]._handle
-            and self._offset == other._offset
-        )
-
-    @__unsafe_nested_origins_read_only
-    def __eq__(self, other: LegacyDevicePointer[Self.dtype, _]) -> Bool:
-        """Returns `True` if `self` and `other` reference the same buffer and
-        offset.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if equal.
-        """
-        return (
-            self._buffer[]._handle == other._buffer[]._handle
-            and self._offset == other._offset
-        )
-
-    @__unsafe_nested_origins_read_only
-    def __ne__(self, other: Self) -> Bool:
-        """Returns `True` if `self` and `other` differ in buffer or offset.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if not equal.
-        """
-        return not (self == other)
-
-    @__unsafe_nested_origins_read_only
-    def __ne__(self, other: LegacyDevicePointer[Self.dtype, _]) -> Bool:
-        """Returns `True` if `self` and `other` differ in buffer or offset.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if not equal.
-        """
-        return not (self == other)
-
-    @__unsafe_nested_origins_read_only
-    def __lt__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
-        """Returns `True` if `self` precedes `other` within the same buffer.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if `self` is ordered before `other`.
-
-        Raises:
-            If `self` and `other` reference different `DeviceBuffer`s.
-        """
-        if self._buffer[]._handle != other._buffer[]._handle:
-            raise Error(
-                "DevicePointer: less than comparison not supported when the"
-                " underlying DeviceBuffer does not match"
-            )
-        return self._offset < other._offset
-
-    @__unsafe_nested_origins_read_only
-    def __le__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
-        """Returns `True` if `self` precedes or equals `other` within the
-        same buffer.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if `self` is ordered before or equal to `other`.
-
-        Raises:
-            If `self` and `other` reference different `DeviceBuffer`s.
-        """
-        if self._buffer[]._handle != other._buffer[]._handle:
-            raise Error(
-                "DevicePointer: less than or equal comparison not supported"
-                " when the underlying DeviceBuffer does not match"
-            )
-        return self._offset <= other._offset
-
-    @__unsafe_nested_origins_read_only
-    def __gt__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
-        """Returns `True` if `self` follows `other` within the same buffer.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if `self` is ordered after `other`.
-
-        Raises:
-            If `self` and `other` reference different `DeviceBuffer`s.
-        """
-        if self._buffer[]._handle != other._buffer[]._handle:
-            raise Error(
-                "DevicePointer: greater than comparison not supported when the"
-                " underlying DeviceBuffer does not match"
-            )
-        return self._offset > other._offset
-
-    @__unsafe_nested_origins_read_only
-    def __ge__(self, other: LegacyDevicePointer[Self.dtype, _]) raises -> Bool:
-        """Returns `True` if `self` follows or equals `other` within the same
-        buffer.
-
-        Args:
-            other: The other `DevicePointer` to compare.
-
-        Returns:
-            `True` if `self` is ordered after or equal to `other`.
-
-        Raises:
-            If `self` and `other` reference different `DeviceBuffer`s.
-        """
-        if self._buffer[]._handle != other._buffer[]._handle:
-            raise Error(
-                "DevicePointer: greater than or equal comparison not supported"
-                " when the underlying DeviceBuffer does not match"
-            )
-        return self._offset >= other._offset
-
-    # ===------------------------------------------------------------------=== #
-    # Writable
-    # ===------------------------------------------------------------------=== #
-
-    def write_to(self, mut writer: Some[Writer]):
-        """Writes a string representation of this `DevicePointer` to `writer`.
-
-        Args:
-            writer: The writer to output the formatted string to.
-        """
-        writer.write(
-            t"DevicePointer[{Self.dtype}]("
-            t"buffer=DeviceBuffer(size={len(self._buffer[])}), "
-            t"offset={self._offset})"
-        )
-
-    # ===------------------------------------------------------------------=== #
-    # DevicePassable
-    # ===------------------------------------------------------------------=== #
-
-    # Kernel-entry ABI type.
-    comptime device_type: AnyType = Pointer[
-        mut=True, Scalar[Self.dtype], AnyOrigin[mut=True]
-    ]
-    """`DevicePointer` is remapped to a device `Pointer` when passed to
-    accelerator devices."""
-
-    def _to_device_type(
-        self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
-    ):
-        """Device type mapping from `DevicePointer` to the device's
-        `Pointer`.
-        """
-        encoder.encode_device_ptr(self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Gets this type's name, for use in error messages when handing
-        arguments to kernels.
-
-        Returns:
-            This type's name.
-        """
-        return String(t"DevicePointer[{Self.dtype}]")
+        return Optional(self._handle)
 
 
 @fieldwise_init
@@ -1554,10 +1048,18 @@ struct LegacyDeviceBuffer[dtype: DType](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         """Device dtype mapping from DeviceBuffer to the device's `Pointer`."""
-        try:
-            encoder.encode_device_ptr(self.device_ptr(), target)
-        except:
-            pass
+        # An empty buffer has no device pointer, so nothing is encoded.
+        if len(self) == 0:
+            return
+        encoder.encode_device_ptr(
+            _LegacyBufferArg[Self.dtype](
+                self.unsafe_ptr()
+                .unsafe_mut_cast[True]()
+                .unsafe_origin_cast[MutUntrackedOrigin](),
+                self._handle.value().unsafe_bitcast[NoneType](),
+            ),
+            target,
+        )
 
     @staticmethod
     def get_type_name() -> String:
@@ -2023,26 +1525,6 @@ struct LegacyDeviceBuffer[dtype: DType](
         return (
             host_ptr.value().unsafe_mut_cast[mut]().unsafe_origin_cast[origin]()
         )
-
-    def device_ptr(
-        ref self,
-    ) raises -> LegacyDevicePointer[Self.dtype, origin_of(self)]:
-        """Returns a `DevicePointer` referencing the start of this buffer.
-
-        The returned `DevicePointer` is a non-owning borrow of this
-        `DeviceBuffer` and must not outlive it. A function that returns a
-        `DevicePointer` must also return (or otherwise keep alive) the backing
-        `DeviceBuffer`; returning a pointer into a buffer created locally within
-        the function is a borrow-check error.
-
-        Returns:
-            A `DevicePointer` referencing offset 0 of this buffer.
-
-        Raises:
-            If this buffer has size 0.
-        """
-        comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
-        return LegacyDevicePointer[Self.dtype, origin_of(self)](self)
 
     def context(self) raises -> LegacyDeviceContext[]:
         """Returns the device context associated with this buffer.
@@ -2791,10 +2273,8 @@ struct LegacyDeviceEvent(ImplicitlyCopyable):
         )
 
 
-def _max_dynamic_shared_bytes_for_load[
-    target: CompilationTarget
-](func_attribute: OptionalReg[FuncAttribute]) raises -> Int32:
-    """Returns the dynamic shared-memory cap to load with, or -1 for none."""
+def _check_func_attribute(func_attribute: OptionalReg[FuncAttribute]) raises:
+    """Raises unless the attribute is `MAX_DYNAMIC_SHARED_SIZE_BYTES`."""
     if case .Some(attr) = func_attribute:
         if attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES:
             raise Error(
@@ -2802,11 +2282,6 @@ def _max_dynamic_shared_bytes_for_load[
                 attr.attribute,
                 "' is not currently supported",
             )
-        # Only CUDA has a per-function cap; elsewhere the value would only
-        # split the function cache.
-        comptime if target.is_nvidia_gpu():
-            return attr.value
-    return -1
 
 
 @inline(.never)
@@ -2865,8 +2340,8 @@ def _is_path_like(ss: StringSpan) -> Bool:
 # const char *AsyncRT_DeviceContext_loadFunctionWithDebugName(
 #     const DeviceFunction **result, const DeviceContext *ctx,
 #     const char *moduleName, const char *functionName, const char *data,
-#     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
-#     int32_t optimizationLevel, const char *debugName)
+#     size_t dataLen, const char *debugLevel, int32_t optimizationLevel,
+#     const char *debugName)
 @inline(.never)
 def _load_function(
     ctx: _DeviceContextPtr[mut=True],
@@ -2874,7 +2349,6 @@ def _load_function(
     module_name: StaticString,
     function_name: StaticString,
     asm: StaticString,
-    max_dynamic_shared_size_bytes: Int32,
     debug_name: StaticString = "",
 ) raises -> _DeviceFunctionPtr[mut=True]:
     """Loads a compiled kernel into the context and returns its handle.
@@ -2887,8 +2361,6 @@ def _load_function(
         module_name: The compiled module's name.
         function_name: The kernel's linkage name within the module.
         asm: The compiled module contents.
-        max_dynamic_shared_size_bytes: The dynamic shared memory the kernel
-            may request, or -1 for the default.
         debug_name: A display name for the kernel. Backends that have no use
             for it ignore it, and an empty name means the linkage name.
 
@@ -2913,7 +2385,6 @@ def _load_function(
             CStringSpan[ImmStaticOrigin],
             CStringSpan[ImmStaticOrigin],
             c_size_t,
-            Int32,
             CStringSpan[ImmStaticOrigin],
             Int32,
             type_of(owned_debug_name.as_c_string_span()),
@@ -2924,7 +2395,6 @@ def _load_function(
             function_name.as_c_string_span(),
             asm.as_c_string_span(),
             c_size_t(asm.byte_length()),
-            max_dynamic_shared_size_bytes,
             debug_level.as_c_string_span(),
             Int32(Int(OptimizationLevel)),
             owned_debug_name.as_c_string_span(),
@@ -3029,9 +2499,7 @@ struct LegacyDeviceFunction[
         """
         self._context = ctx
 
-        var max_dynamic_shared_size_bytes = _max_dynamic_shared_bytes_for_load[
-            Self.target
-        ](func_attribute)
+        _check_func_attribute(func_attribute)
 
         self._func_impl = _compile_code[
             Self._wrapped_func,
@@ -3045,7 +2513,6 @@ struct LegacyDeviceFunction[
             module_name=self._func_impl.module_name,
             function_name=self._func_impl.function_name,
             asm=self._func_impl.asm,
-            max_dynamic_shared_size_bytes=max_dynamic_shared_size_bytes,
             debug_name=name,
         )
 
@@ -3831,15 +3298,12 @@ struct LegacyDeviceExternalFunction[
         """
         self._context = ctx
 
-        var max_dynamic_shared_size_bytes = _max_dynamic_shared_bytes_for_load[
-            Self.target
-        ](func_attribute)
+        _check_func_attribute(func_attribute)
 
         # const char *AsyncRT_DeviceContext_loadFunction(
         #     const DeviceFunction **result, const DeviceContext *ctx,
         #     const char *moduleName, const char *functionName, const char *data,
-        #     size_t dataLen, int32_t maxDynamicSharedBytes, const char *debugLevel,
-        #     int32_t optimizationLevel)
+        #     size_t dataLen, const char *debugLevel, int32_t optimizationLevel)
         var module_name = StaticString("")
         var result: _DeviceFunctionPtr[mut=True] = {}
         var debug_level = String(DebugLevel)
@@ -3853,7 +3317,6 @@ struct LegacyDeviceExternalFunction[
                 type_of(function_name.as_c_string_span()),
                 type_of(asm.as_c_string_span()),
                 c_size_t,
-                Int32,
                 type_of(debug_level.as_c_string_span()),
                 Int32,
             ](
@@ -3863,7 +3326,6 @@ struct LegacyDeviceExternalFunction[
                 function_name.as_c_string_span(),
                 asm.as_c_string_span(),
                 c_size_t(asm.byte_length()),
-                max_dynamic_shared_size_bytes,
                 debug_level.as_c_string_span(),
                 Int32(Int(OptimizationLevel)),
             )
@@ -4067,30 +3529,6 @@ struct LegacyDeviceExternalFunction[
             )
         )
         return Int(result)
-
-
-@fieldwise_init
-struct LegacyDeviceClosureFunction[
-    ClosureType: RegisterPassable & def() -> None,
-    target: CompilationTarget,
-](ImplicitlyCopyable):
-    """A closure kernel compiled by `DeviceContext.compile_function[ClosureType]`.
-
-    The MAX plugin for `target` compiles and launches the kernel and owns its
-    representation.
-
-    Parameters:
-        ClosureType: The closure's type.
-        target: The compilation target.
-    """
-
-    # Launches match on `ClosureType` through this wrapper: matching the
-    # plugin's kernel type against a launch argument fails to unify for
-    # nested captures.
-    var kernel: MaxPluginForTarget[Self.target].ClosureKernel[
-        Self.ClosureType, Self.target
-    ]
-    """The plugin's compiled kernel."""
 
 
 struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
@@ -4603,24 +4041,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
         return String(api_ptr)
 
     @inline(.always)
-    def _func_attribute_for_launch(
-        self,
-        func_attribute: OptionalReg[FuncAttribute],
-        shared_mem_bytes: OptionalReg[Int],
-    ) -> OptionalReg[FuncAttribute]:
-        """Returns the function attribute to compile a launch with.
-
-        CUDA's default cap is 48KB minus the kernel's static shared memory, so
-        the cap is set for every request, not only past a threshold.
-        """
-        var requested_bytes = shared_mem_bytes.or_else(0)
-        if func_attribute or requested_bytes <= 0:
-            return func_attribute
-        return FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
-            UInt32(requested_bytes)
-        )
-
-    @inline(.always)
     def enqueue[
         args_origin: ImmOrigin, //
     ](
@@ -4857,93 +4277,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
 
         return LegacyDeviceBuffer[dtype](cpp_handle, device_ptr.value())
 
-    @inline(.always)
-    def compile_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *,
-        compile_options: StaticString = (Self.target.default_compile_options()),
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *,
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        out result: LegacyDeviceFunction[
-            func,
-            Self.FunctionWrapper,
-            target=Self.target,
-            compile_options=compile_options,
-            link_options=link_options,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ],
-    ) raises:
-        """Compiles the provided function for execution on this device.
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device function.
-            func: The function to compile.
-            compile_options: Change the compile options to different options
-                than the ones associated with this `DeviceContext`.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            func_attribute: An attribute to use when compiling the code (such
-                as maximum shared memory size).
-
-        Returns:
-            A compiled `DeviceFunction` parameterized over the
-            (possibly wrapped) kernel, ready to be enqueued via
-            `enqueue_function`.
-
-        Raises:
-            If the operation fails.
-        """
-        if case .Some(attr) = func_attribute:
-            assert (
-                attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
-                or attr.value
-                <= Int32(
-                    self.default_device_info.shared_memory_per_multiprocessor
-                )
-            ), "Requested more than available shared memory."
-
-        comptime result_type = type_of(result)
-        comptime if Self.FunctionWrapper != _IdentityWrapper:
-            # Surface the user kernel's name (not the wrapper name) as the
-            # dispatch printName for device-level profiling.
-            comptime user_name = get_linkage_name[func, target=Self.target]()
-            result = result_type(
-                self,
-                func_attribute=func_attribute,
-                name=user_name,
-            )
-        else:
-            result = result_type(
-                self,
-                func_attribute=func_attribute,
-            )
-
-        result.dump_rep[
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            _dump_sass=_dump_sass,
-        ]()
-
     def load_function[
         ret_type: AnyType,
         declared_arg_types: TypeList[Trait=AnyType, ...],
@@ -5011,315 +4344,6 @@ struct LegacyDeviceContext[target: CompilationTarget = default_accelerator()](
             function_name=function_name^,
             asm=asm^,
             func_attribute=func_attribute,
-        )
-
-    def compile_function[
-        ClosureType: RegisterPassable & def() -> None,
-    ](self) raises -> LegacyDeviceClosureFunction[ClosureType, Self.target]:
-        """Compiles a closure as a kernel that takes no arguments.
-
-        Launch the result with `enqueue_function(kernel, closure, ...)`, which
-        passes the closure's captures. Only targets whose MAX plugin handles
-        closure kernels support this.
-
-        ```mojo
-        var kernel = ctx.compile_function[type_of(closure)]()
-        ctx.enqueue_function(kernel, closure, grid_dim=1, block_dim=1)
-        ```
-
-        Parameters:
-            ClosureType: The closure's type, such as `type_of(closure)`.
-
-        Returns:
-            The compiled kernel.
-
-        Raises:
-            If compilation or loading fails.
-        """
-        comptime plugin = MaxPluginForTarget[Self.target]
-        comptime assert (
-            plugin._handles_closure_kernels
-        ), "compile_function[ClosureType] is not supported on this target"
-        return {plugin.compile_closure_fn[ClosureType](self)}
-
-    @inline(.always)
-    def enqueue_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *encoded_types: DevicePassable,
-        link_options: StaticString = "",
-        dump_asm: _DumpPath = False,
-        dump_llvm: _DumpPath = False,
-        _dump_sass: _DumpPath = False,
-        _ptxas_info_verbose: Bool = False,
-    ](
-        self,
-        *encoded_args: *encoded_types,
-        host_args: Tuple[*HostArgs] = (),
-        grid_dim: Dim,
-        block_dim: Dim,
-        cluster_dim: OptionalReg[Dim] = None,
-        shared_mem_bytes: OptionalReg[Int] = None,
-        var attributes: List[LaunchAttribute] = [],
-        var constant_memory: List[ConstantMemoryMapping] = [],
-        func_attribute: OptionalReg[FuncAttribute] = None,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a kernel for execution on this device, encoding
-        `DevicePassable` args and passing the trailing host arguments by host
-        layout.
-
-        You can pass the function directly to `enqueue_function`
-        without compiling it first:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compiled_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
-
-        Put capturing closures in `host_args`. The named kernel is compiled
-        against those host callables; encoding them would rewrite captures to a
-        synthesized `device_type` the kernel cannot read. Kernel parameters
-        must be encoded args first, then the host arguments.
-
-        When this target's MAX plugin handles launches, `host_args` must be
-        empty.
-
-        Build `host_args` inline in the call with a tuple:
-
-        ```mojo
-        ctx.enqueue_function[kernel](
-            buffer,
-            host_args=(epilogue_fn,),
-            grid_dim=1,
-            block_dim=1,
-        )
-        ```
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device function.
-            HostArgs: The host-layout types of the trailing arguments.
-            func: The function to compile and launch.
-            encoded_types: The `DevicePassable` argument types encoded to
-                device layout.
-            link_options: Additional linker flags and options as a string.
-            dump_asm: To dump the compiled assembly, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            dump_llvm: To dump the generated LLVM code, pass `True`, or a file
-                path to dump to, or a function returning a file path.
-            _dump_sass: Only runs on NVIDIA targets, and requires CUDA Toolkit
-                to be installed. Pass `True`, or a file path to dump to, or a
-                function returning a file path.
-            _ptxas_info_verbose: Only runs on NVIDIA targets, and requires CUDA
-                Toolkit to be installed. Changes `dump_asm` to output verbose
-                PTX assembly (default `False`).
-
-        Args:
-            encoded_args: The variadic `DevicePassable` arguments encoded to
-                device layout.
-            host_args: The trailing arguments passed by host layout.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            cluster_dim: The cluster dimensions.
-            shared_mem_bytes: Per-block memory shared between blocks.
-            attributes: A `List` of launch attributes.
-            constant_memory: A `List` of constant memory mappings.
-            func_attribute: `CUfunction_attribute` enum.
-            location: Source location for the function call.
-
-        Raises:
-            If the operation fails.
-        """
-        _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-            grid_dim, location=call_location()
-        )
-        _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-            block_dim, location=call_location()
-        )
-        comptime plugin = MaxPluginForTarget[Self.target]
-        var inferred_func_attribute = self._func_attribute_for_launch(
-            func_attribute, shared_mem_bytes
-        )
-        var gpu_kernel = self.compile_function[
-            func,
-            dump_asm=dump_asm,
-            dump_llvm=dump_llvm,
-            link_options=link_options,
-            _dump_sass=_dump_sass,
-            _ptxas_info_verbose=_ptxas_info_verbose,
-        ](func_attribute=inferred_func_attribute)
-        comptime if plugin._handles_enqueue_function:
-            comptime assert (
-                HostArgs.length == 0
-            ), "host_args is not supported on this target"
-            comptime assert (
-                use_legacy_backend()
-            ), "the legacy compile-and-enqueue path needs the legacy backend"
-            plugin.enqueue_function_fn(
-                DeviceContext[Self.target](_legacy=self),
-                DeviceFunction[
-                    func,
-                    Self.FunctionWrapper,
-                    target=Self.target,
-                    link_options=link_options,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](_legacy=gpu_kernel),
-                *encoded_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
-        else:
-            gpu_kernel._call_with_pack_checked(
-                self,
-                *encoded_args,
-                host_args=host_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
-
-    @inline(.always)
-    def enqueue_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        ConfigType: GridBlockExecutionConfig,
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *encoded_types: DevicePassable,
-    ](
-        self,
-        *encoded_args: *encoded_types,
-        execution_config: ConfigType,
-        host_args: Tuple[*HostArgs] = (),
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a kernel with a capability-typed launch
-        configuration.
-
-        `execution_config` must be a `GridBlockLaunchConfig`, a
-        `ClusterLaunchConfig`, or, on NVIDIA targets, a
-        `GridBlockAttributeLaunchConfig` or a `ClusterAttributeLaunchConfig`
-        from `max.gpu.host.nvidia`. A capability this target lacks, such as
-        clusters or launch attributes, fails to compile:
-
-        ```mojo
-        from max.gpu.host import ClusterLaunchConfig, DeviceContext, Dim
-
-        def kernel():
-            pass
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](
-                execution_config=ClusterLaunchConfig(
-                    grid_dim=4, block_dim=128, cluster_dim=Dim(2, 1, 1)
-                ),
-            )
-        ```
-
-        Put capturing closures in `host_args`, after `execution_config`, as
-        for the keyword overload.
-
-        Parameters:
-            declared_arg_types: Types of the arguments to pass to the device
-                function.
-            ConfigType: The launch configuration type.
-            HostArgs: The host-layout types of the trailing arguments.
-            func: The function to compile and launch.
-            encoded_types: The `DevicePassable` argument types encoded to
-                device layout.
-
-        Args:
-            encoded_args: The variadic `DevicePassable` arguments encoded to
-                device layout.
-            execution_config: The launch configuration.
-            host_args: The trailing arguments passed by host layout.
-            location: Source location for the function call.
-
-        Raises:
-            If the operation fails.
-        """
-        comptime assert (
-            ConfigType == GridBlockLaunchConfig
-            or ConfigType == ClusterLaunchConfig
-            or ConfigType == GridBlockAttributeLaunchConfig
-            or ConfigType == ClusterAttributeLaunchConfig
-        ), (
-            "this DeviceContext launches only a GridBlockLaunchConfig,"
-            " ClusterLaunchConfig, GridBlockAttributeLaunchConfig, or"
-            " ClusterAttributeLaunchConfig"
-        )
-
-        var cluster_dim = OptionalReg[Dim](None)
-        comptime if conforms_to(ConfigType, ClusterExecutionConfig):
-            comptime assert conforms_to(
-                Self.ExecutionConfigType, ClusterExecutionConfig
-            ), "this target does not support thread block cluster launch"
-            cluster_dim = execution_config.get_cluster_dim()
-
-        var shared_mem_bytes = OptionalReg[Int](None)
-        comptime if conforms_to(
-            ConfigType, NearComputeGeneralPurposeScratchpadExecutionConfig
-        ):
-            shared_mem_bytes = (
-                execution_config.get_near_compute_scratchpad_usage()
-            )
-
-        var attributes = List[LaunchAttribute]()
-        comptime if conforms_to(
-            ConfigType, LaunchAttributeHolderExecutionConfig
-        ):
-            comptime assert conforms_to(
-                Self.ExecutionConfigType, LaunchAttributeHolderExecutionConfig
-            ), "this target does not support launch attributes"
-            if _holds_cluster_dim_attribute(
-                execution_config.get_launch_attributes()
-            ):
-                raise Error(_CLUSTER_DIM_ATTRIBUTE_ERROR)
-            attributes = List(execution_config.get_launch_attributes())
-
-        self.enqueue_function[func](
-            *encoded_args,
-            host_args=host_args,
-            grid_dim=execution_config.get_grid_dim(),
-            block_dim=execution_config.get_block_dim(),
-            cluster_dim=cluster_dim,
-            shared_mem_bytes=shared_mem_bytes,
-            attributes=attributes^,
-            location=location.or_else(call_location()),
         )
 
     @inline(.always)

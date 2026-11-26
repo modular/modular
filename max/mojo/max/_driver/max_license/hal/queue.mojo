@@ -19,6 +19,7 @@ from .plugin import (
     ContextHandle,
 )
 from max._plugin import MaxPluginForTarget
+from ._plugin._trait import HalPluginHooks
 from ._machine import DeviceRef
 from .buffer import Buffer, BufferView
 from .context import Context
@@ -28,7 +29,6 @@ from .device import DeviceSpec
 from .status import (
     STATUS_INVALID_ARG,
     STATUS_SUCCESS,
-    STATUS_UNSUPPORTED,
     HALError,
 )
 from std.collections import Array, OptionalReg
@@ -39,7 +39,6 @@ from std.memory import (
     MaybeUninit,
 )
 from std.memory.arc_pointer import WeakPointer
-from std.builtin.rebind import downcast
 from std.reflection import SourceLocation, call_location, reflect
 from max.gpu.host import (
     ClusterExecutionConfig,
@@ -54,7 +53,10 @@ from max.gpu.host.nvidia.launch_config import (
     _holds_cluster_dim_attribute,
 )
 from max.gpu.host._launch_args import DeviceFunctionWrapper
-from .execution_config import check_config_fields_launchable
+from .execution_config import (
+    ConstantMemoryMappingExecutionConfig,
+    check_config_fields_launchable,
+)
 from .kernel_args import _is_kernel_arg
 
 
@@ -167,16 +169,14 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
         `UInt` are a compile-time error, since their width differs between
         host and device.
 
-        The plugin's `ArgPacker` packs the arguments. A grid/block config
-        launches through the plugin's launcher when it takes grid/block
-        launches, and otherwise with the packed slots. Any other config
-        launches through the plugin's launcher, and is a compile-time error
-        for a plugin whose launcher doesn't take one. A grid/block config
-        that can hold constant memory mappings is a compile-time error too,
-        since they don't reach the launch, and so is a cluster config on a
-        device that can't launch clusters. A plugin launcher that only takes
-        the grid and block raises on launch attributes, clusters or shared
-        memory.
+        The plugin's `ArgPacker` packs the arguments and its `Launcher`
+        launches them. The default launcher takes grid/block configs whose
+        dimensions are all in `[1, Int32.MAX]`; a plugin's own launcher
+        decides what else it takes, and a config it can't launch fails to
+        compile. A grid/block config that can hold constant memory mappings
+        is a compile-time error too, since they don't reach the launch, and
+        so is a cluster or launch-attribute config on a device that can't
+        launch them.
 
         Totally ordered with respect to other operations within this queue
         if backed by a stream.
@@ -223,6 +223,7 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
 
         try:
             self._launch[
+                Self._HALHooks,
                 Self._FunctionWrapper,
                 declared_arg_types,
                 "HAL `Queue.execute`",
@@ -237,7 +238,13 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
     @inline(.always)
     def _launch[
         ExecutionConfigType: ExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
+        # TODO(DRIV-4): Get the hooks from `Self.device_spec`. Until each
+        # device has its own spec, a CPU context's queue has device 0's spec,
+        # which names the accelerator's plugin, so the caller passes the hooks
+        # of its own target.
+        Hooks: HalPluginHooks,
         Wrapper: DeviceFunctionWrapper,
         declared_arg_types: TypeList[Trait=AnyType, ...],
         api_name: StringLiteral,
@@ -247,6 +254,8 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
         func: FunctionHandle,
         execution_config: ExecutionConfigType,
         *args: *Ts,
+        host_args: Tuple[*HostArgs] = (),
+        var attributes: List[LaunchAttribute] = [],
     ) raises HALError:
         """Packs `args` with the plugin's `ArgPacker` and launches `func` as
         `execution_config` describes.
@@ -257,6 +266,9 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
 
         Parameters:
             ExecutionConfigType: The type of `execution_config`.
+            HostArgs: The types of the host-layout arguments.
+            Hooks: The plugin hooks of the target the launch was compiled
+                for.
             Wrapper: The wrapper `func`'s kernel was compiled behind.
             declared_arg_types: The kernel's declared argument types.
             api_name: The launch API, for error messages.
@@ -266,24 +278,16 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
             func: The loaded function.
             execution_config: How to launch it.
             args: The kernel's arguments.
+            host_args: Arguments that follow `args`, passed with their host
+                layout, such as a capturing closure.
+            attributes: Launch attributes to apply, such as a cluster
+                dimension.
 
         Raises:
-            If an argument can't be packed, the config asks for shared memory,
-            launch attributes or clusters the plugin's grid/block launcher
-            can't grant, or the launch fails.
+            If an argument can't be packed, or the plugin's launcher refuses
+            the config or fails to launch.
         """
-        comptime Hooks = Self._HALHooks
-        comptime is_grid_block = conforms_to(
-            ExecutionConfigType, GridBlockExecutionConfig
-        )
-        comptime assert is_grid_block or Hooks.Launcher.launches_config, String(
-            api_name,
-            (
-                ": the active HAL plugin's launcher doesn't take this"
-                " execution config"
-            ),
-        )
-        comptime if is_grid_block:
+        comptime if conforms_to(ExecutionConfigType, GridBlockExecutionConfig):
             check_config_fields_launchable[ExecutionConfigType, api_name]()
         comptime if conforms_to(ExecutionConfigType, ClusterExecutionConfig):
             comptime assert conforms_to(
@@ -292,77 +296,29 @@ struct Queue[device_spec: DeviceSpec](Deinitable, Movable):
                 ],
                 ClusterExecutionConfig,
             ), "cluster launch is not supported on this device"
+        # A config that can hold constant memory is refused above.
+        comptime if conforms_to(
+            ExecutionConfigType, LaunchAttributeHolderExecutionConfig
+        ) and not conforms_to(
+            ExecutionConfigType, ConstantMemoryMappingExecutionConfig
+        ):
+            comptime assert conforms_to(
+                Hooks.ExecutionConfigType[
+                    DeviceRef(Self.device_spec, 0, private=())
+                ],
+                LaunchAttributeHolderExecutionConfig,
+            ), "this target does not support launch attributes"
 
         var packed = Hooks.ArgPacker.pack[Wrapper, declared_arg_types](
-            self._context[], *args
+            self._context[], *args, host_args=host_args
         )
-        comptime if not is_grid_block:
-            Hooks.Launcher.enqueue(
-                self, func, packed, execution_config=execution_config
-            )
-        else:
-            ref config = rebind[
-                downcast[ExecutionConfigType, GridBlockExecutionConfig]
-            ](execution_config)
-            comptime if Hooks.Launcher.overrides_grid_block:
-                # It only gets the grid and block, so refuse anything else
-                # rather than drop it.
-                comptime if conforms_to(
-                    ExecutionConfigType,
-                    NearComputeGeneralPurposeScratchpadExecutionConfig,
-                ):
-                    if execution_config.get_near_compute_scratchpad_usage():
-                        raise HALError(
-                            STATUS_UNSUPPORTED,
-                            message=(
-                                "the active HAL plugin's launcher doesn't take"
-                                " shared memory"
-                            ),
-                        )
-                comptime if conforms_to(
-                    ExecutionConfigType, LaunchAttributeHolderExecutionConfig
-                ):
-                    if execution_config.get_launch_attributes():
-                        raise HALError(
-                            STATUS_UNSUPPORTED,
-                            message=(
-                                "the active HAL plugin's launcher doesn't take"
-                                " launch attributes"
-                            ),
-                        )
-                comptime if conforms_to(
-                    ExecutionConfigType, ClusterExecutionConfig
-                ):
-                    var cluster_dim = execution_config.get_cluster_dim()
-                    if (
-                        cluster_dim.x() != 1
-                        or cluster_dim.y() != 1
-                        or cluster_dim.z() != 1
-                    ):
-                        raise HALError(
-                            STATUS_UNSUPPORTED,
-                            message=(
-                                "the active HAL plugin's launcher doesn't take"
-                                " cluster dims"
-                            ),
-                        )
-                Hooks.Launcher.enqueue_grid_block(
-                    self,
-                    func,
-                    packed,
-                    grid_dim=config.get_grid_dim(),
-                    block_dim=config.get_block_dim(),
-                )
-            else:
-                var slots = packed.slots()
-                self.execute(
-                    func,
-                    config,
-                    args=slots.addrs.unsafe_ptr(),
-                    arg_sizes=slots.sizes.unsafe_ptr(),
-                    num_args=UInt32(packed.num_slots()),
-                )
-                _ = slots^
+        Hooks.Launcher.enqueue(
+            self,
+            func,
+            packed,
+            execution_config=execution_config,
+            attributes=Span(attributes),
+        )
         # The launcher may only have queued the launch; keep the packed
         # bytes alive until it returns.
         _ = packed^

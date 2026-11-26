@@ -461,12 +461,11 @@ LIT::StructType::canElideSugarFor(TypedAttr attr) const {
   return {};
 }
 
-Type LIT::StructType::getCachedCanonicalType(Type type) const {
+Type LIT::StructType::getCachedCanonicalType() const {
   // Struct type has a canonical type cache to cut recursive walks.
-  auto structType = cast<LIT::StructType>(type);
-  if (auto can = structType.getCanonical())
+  if (auto can = getCanonical())
     return can;
-  return structType;
+  return *this;
 }
 
 SymbolRefAttr LIT::StructType::getSymbolRef() const {
@@ -1040,15 +1039,24 @@ TypedAttr OriginType::stripMutCastAndRebind(TypedAttr origin) {
   return origin;
 }
 
+/// Returns true when `wider` is at least as wide as `narrower`, i.e.
+/// `union(wider, mutcast(narrower, wider's mutability))` collapses to
+/// `wider`; this compares origin sets, not mutability.
 bool OriginType::covers(TypedAttr wider, TypedAttr narrower) {
-  wider = getCanonicalAttr(wider);
-  narrower = getCanonicalAttr(narrower);
-  auto widerType = dyn_cast<OriginType>(wider.getType());
+  // A member of a union is covered by it. Check this before canonicalizing,
+  // which walks the whole union and is O(N^2) across the N upcasts of a large
+  // variadic call.
+  if (auto widerUnion = dyn_cast<OriginUnionAttr>(wider))
+    if (narrower.getType() == wider.getType() &&
+        llvm::is_contained(widerUnion.getOperands(), narrower))
+      return true;
+
+  auto widerType = sugarDynCast<OriginType>(wider.getType());
   if (!widerType)
     return false;
   auto originUnion = OriginUnionAttr::get(
       {wider, OriginMutCastAttr::get(narrower, widerType)}, widerType);
-  return wider == originUnion;
+  return isEqualCanon(wider, originUnion);
 }
 
 std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
@@ -1071,7 +1079,7 @@ std::optional<SugarKind> OriginType::canElideSugarFor(TypedAttr attr) const {
   return {};
 }
 
-Type OriginType::getCachedCanonicalType(Type type) const { return {}; }
+Type OriginType::getCachedCanonicalType() const { return {}; }
 
 //===----------------------------------------------------------------------===//
 // OriginSetType
@@ -1287,10 +1295,12 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   } else {
     captureOrigins = OriginSetAttr::get({}, originSet);
   }
-  bool isNestedOriginsReadOnly =
-      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
   bool definesInteriorOrigins =
       succeeded(p.parseOptionalKeyword("defines_interior_origins"));
+  bool isUnsafeNestedOriginsReadOnly =
+      succeeded(p.parseOptionalKeyword("no_nested_origin_exclusivity"));
+  bool isEnforcedNestedOriginsReadOnly =
+      succeeded(p.parseOptionalKeyword("nested_origins_read_only"));
 
   SmallVector<StringAttr> argNames;
   SmallVector<TypedAttr> defaultValues;
@@ -1343,9 +1353,9 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto pogList = PogListAttr::get(ctx, argNames, argPassingKinds, argVariadics,
                                   defaultValues, origVariadicConvention,
                                   /*bodyConstraints=*/{});
-  auto metadata = FnMetaOriginDataAttr::get(ctx, numOriginDecls, captureOrigins,
-                                            isNestedOriginsReadOnly,
-                                            definesInteriorOrigins);
+  auto metadata = FnMetaOriginDataAttr::get(
+      ctx, numOriginDecls, captureOrigins, definesInteriorOrigins,
+      isUnsafeNestedOriginsReadOnly, isEnforcedNestedOriginsReadOnly);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata, pogList);
@@ -1430,6 +1440,12 @@ bool FuncType::getIsNestedOriginsReadOnly() {
       .getIsNestedOriginsReadOnly();
 }
 
+/// Return whether the checked nested-origin read-only promise is present.
+bool FuncType::getIsEnforcedNestedOriginsReadOnly() {
+  return ::cast<FnMetaOriginDataAttr>(getMetadata())
+      .getIsEnforcedNestedOriginsReadOnly();
+}
+
 bool FuncType::getDefinesInteriorOrigins() {
   return ::cast<FnMetaOriginDataAttr>(getMetadata())
       .getDefinesInteriorOrigins();
@@ -1442,8 +1458,12 @@ size_t FuncType::getNumImplicitOriginDecls() {
 
 Type FuncType::getUserResultType() {
   // If this function has a byref_result, return the reference element type.
-  if (hasMemoryOnlyResult())
-    return ::cast<RefType>(getArguments().back()).getElementType();
+  if (hasMemoryOnlyResult()) {
+    if (auto refType = ::dyn_cast<RefType>(getArguments().back()))
+      return refType.getElementType();
+    assert(isa<UnresolvedType>(getArguments().back()));
+    return getArguments().back();
+  }
   return getResultType();
 }
 
@@ -1492,10 +1512,12 @@ FunctionType FuncType::substituteImplicitOriginsIntoValues(
 }
 
 FuncType FuncType::getWithCaptureOrigins(TypedAttr origins) {
+  auto metadata = ::cast<FnMetaOriginDataAttr>(getMetadata());
   return getWithMetadata(
       FnMetaOriginDataAttr::get(getContext(), getNumImplicitOriginDecls(),
-                                origins, getIsNestedOriginsReadOnly(),
-                                getDefinesInteriorOrigins()),
+                                origins, getDefinesInteriorOrigins(),
+                                metadata.getIsUnsafeNestedOriginsReadOnly(),
+                                getIsEnforcedNestedOriginsReadOnly()),
       getArgListAttrs());
 }
 
@@ -1565,6 +1587,12 @@ FuncType FnTypeGeneratorType::getBody() {
 
 PogListAttr FnTypeGeneratorType::getParamListAttrs() {
   return ::cast<PogListAttr>(GeneratorType::getParamListAttrs());
+}
+
+bool FnTypeGeneratorType::hasUnresolvedEntry() {
+  return Type(*this)
+      .walk([](UnresolvedType) { return WalkResult::interrupt(); })
+      .wasInterrupted();
 }
 
 FnTypeGeneratorType

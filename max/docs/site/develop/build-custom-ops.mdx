@@ -13,9 +13,9 @@ import { requirementsWithGPU } from '../requirements';
 When the built-in ops in MAX don't cover your computation (a specialized
 activation, a fused operation, or a domain-specific kernel), you can write your
 own in Mojo and call it from Python. In this tutorial, you'll learn to write
-custom operations (ops) in Mojo that run on GPUs and CPUs, then call them from
-eager tensors with `F.custom()` and from a model layer written with
-[`Module`](/develop/modules/).
+custom operations (ops) in Mojo that run on GPUs and CPUs, then declare them
+in Python with `custom_op.declare()`. You'll call a declared op on eager
+tensors and inside a graph.
 
 We'll start with a custom op that adds `1` to every element in the graph's
 input tensor, using an API that handles CPU and GPU device management. Then
@@ -74,11 +74,11 @@ the package dependencies. If you don't have it, install it:
     Graph result:
       [[1.7736697 1.4688652 1.7971799 1.4553597 1.8967733 1.3691401 1.1297637
       1.7047229 1.1314526 1.3924606]
-        # ... shorten for brevity
+        # ... shortened for brevity
     Expected result:
       [[1.7736697 1.4688652 1.7971799 1.4553597 1.8967733 1.3691401 1.1297637
       1.7047229 1.1314526 1.3924606]
-        # ... shorten for brevity
+        # ... shortened for brevity
     ```
 
 ## Example 1: An elementwise add op
@@ -144,7 +144,7 @@ is managed outside of the operation.
 Now let's look at the body of the `execute()` function. It adds `1` to each
 element inside the `elementwise_add_one()` closure.
 
-```mojo title="kernels/add_one.mojo" {11-33}
+```mojo title="kernels/add_one.mojo" {9-31}
 @extensibility.register("add_one")
 struct AddOne:
     @staticmethod
@@ -197,41 +197,110 @@ device behind `ctx`, so the same code runs on CPU or GPU with no changes.
 [next example](#example-2-write-device-specific-kernels) branches on
 `ctx.target` explicitly.
 
-### Declare the output shape
-
-If you don't annotate output shapes manually in the Python graph, you must tell
-the compiler how to infer them by registering a shape function with
-[`@extensibility.register_shape_function()`](/api/mojo/extensibility/decorators/register_shape_function/).
-A shape function that reads only its inputs' shapes takes them as
-`Some[Tensor]`, which exposes a tensor's shape, rank, and dtype but not its
-elements:
-
-```mojo title="kernels/add_one.mojo"
-@extensibility.register_shape_function("add_one")
-def add_one_shape(x: Some[Tensor]) -> IndexList[type_of(x).rank]:
-    return rebind[IndexList[type_of(x).rank]](
-        coord_to_index_list(x.shape().tuple())
-    )
-```
-
-Shape functions must use tensor traits for tensor arguments. If a shape function
-reads element values, use `Some[TileTensorable]` and access them through
-`to_tile_tensor()`. For variadic inputs, use a `TensorTuple` whose elements bind
-the traits they need. Legacy aliases such as `InputTensor` and
-`InputVariadicTensors` are not accepted on shape functions; `execute()` can
-still use them.
-
-For an op on a GPU, each tensor input not bound to `Some[Tensor]` is copied to
-the host before the shape function runs, and the host waits for the copy. Use
-`Some[Tensor]` for inputs whose elements the shape function doesn't read.
-
-### Call the custom op from Python
+### Declare and call a custom op from Python
 
 An op reaches Python through `custom_extensions`, which points at the Mojo
-package directory that holds the kernels. The directory needs an `__init__.mojo`
-file (which can be empty) so the compiler can find the ops.
+package directory that holds the kernels. The directory must contain an
+`__init__.mojo` file, which can be empty, because MAX treats a directory as a
+Mojo package only when the directory contains that file.
 
-On eager tensors, call the op directly with
+Declare the op once with
+[`custom_op.declare()`](/api/python/generated/max.functional.custom_op.declare/),
+then call it like a Python function. The declaration describes the op's
+signature: the dtype and shape of each input and output. List the inputs in the
+order that the kernel's `execute()` method takes them. The `inputs` keys, such
+as `x` in the following example, name the inputs in error messages and let you
+pass them as keyword arguments. They don't need to match the kernel's argument
+names.
+
+Each dimension in a shape is either a fixed size or a symbol that you create
+with `custom_op.Symbols()`. A symbol stands for a size that each call fills in
+from its arguments. When a symbol appears in more than one shape, it has the
+same size everywhere in that call. In the following example, the input and the
+output both use `rows` and `columns`, so the output always has the input's
+shape, whatever shape the input has.
+
+The
+[`custom_ops/declared_addition.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/declared_addition.py)
+example declares the `add_one` op, whose output has the same shape as its input:
+
+```python title="declared_addition.py"
+mojo_kernels = Path(__file__).parent / "kernels"
+
+# The input and the output are matrices with the same shape.
+rows, columns = custom_op.Symbols("rows", "columns")
+add_one = custom_op.declare(
+    "add_one",
+    inputs={"x": custom_op.TemplateType(DType.float32, [rows, columns])},
+    outputs=[custom_op.TemplateType(DType.float32, [rows, columns])],
+    custom_extensions=[mojo_kernels],
+)
+```
+
+`declare()` compiles the kernel package and checks that it registers the op.
+It does this once, when you declare the op, and not on each call. Each call
+checks its arguments against the declaration. An argument with the wrong dtype,
+rank, or size raises an error that names the argument.
+
+When you call the op on eager tensors, it runs on the tensors' device and
+returns a `Tensor`:
+
+```python title="declared_addition.py"
+x = Tensor.from_dlpack(x_values).to(device)
+result = add_one(x)
+```
+
+You can also use the declared op in a graph. The following code builds a graph
+whose only op is `add_one`. `Graph()` calls the `forward` function once, with
+the graph's input as a symbolic
+[`TensorValue`](/api/python/generated/max.graph.TensorValue/) instead of a
+tensor, and that call adds the `add_one` op to the graph. The op runs later,
+each time you execute the compiled graph:
+
+```python title="declared_addition.py"
+device_ref = DeviceRef.from_device(device)
+graph = Graph(
+    "declared_addition",
+    forward=add_one,
+    input_types=[TensorType(DType.float32, ["m", "n"], device=device_ref)],
+)
+```
+
+The input's shape, `["m", "n"]`, uses names instead of sizes, so the compiled
+graph accepts a matrix with any number of rows and columns. These names belong
+to the graph, not to the declaration. When `Graph()` calls `add_one`, the
+declaration's `rows` and `columns` symbols take the graph's dimensions `m` and
+`n`, and the op's output gets the same shape, `["m", "n"]`.
+
+Run the example:
+
+```sh
+pixi run python declared_addition.py
+```
+
+A call must match its declaration:
+
+- The declared shapes fix each input's rank. To accept inputs of another rank,
+  declare the op again with shapes of that rank.
+- A call doesn't broadcast its inputs. Each input must match its declared shape.
+- All of a call's inputs must be on the same device. To combine tensors from
+  different devices, move them with
+  [`to()`](/api/python/generated/max.tensor.Tensor/#max.tensor.Tensor.to) first.
+- A call takes either eager tensors or graph values, not a mix of both.
+
+MAX allocates each output with its declared shape, and nothing checks that shape
+against what the kernel writes. A declaration that understates an output's size
+gives the kernel a smaller buffer than it expects. A kernel that sizes its loop
+by the output returns a truncated result without an error, and one that sizes
+it by an input can write past the buffer.
+
+Inside a model, call a declared op from a layer's `forward()`, the same way as
+in a graph. The module compiles the kernel into the model's graph.
+
+### Call a custom op without declaring it
+
+You can also call an op without a declaration by passing its output types with
+each call. On eager tensors, use
 [`F.custom()`](/api/python/functional/#max.functional.custom), as the
 [`custom_ops/eager_vector_addition.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/eager_vector_addition.py)
 example does:
@@ -257,22 +326,26 @@ result = F.custom(
 )[0]
 ```
 
-Inside a model, call the op from a layer's `forward()`. The module then compiles
-the kernel as part of its graph along with everything else. The [custom layer
-guide](/develop/layers/#wrap-a-custom-op) shows that wrapper.
+`F.custom()` doesn't check dtypes or shapes against a declaration. The eager
+interpreter runs only declared ops, so an undeclared op's eager call compiles a
+graph first. That compile takes much longer than the op itself. MAX caches the
+compiled graph and reuses it when a later call builds the same graph.
+
+A model layer can wrap an `F.custom()` call the same way. The [custom layer
+guide](/develop/layers/#wrap-a-custom-op) shows a layer that wraps a custom op.
 
 ### Add the custom op to a graph directly
 
-When you build a graph with `max.graph`, add the op with
-[`ops.custom()`](/api/python/graph.ops/#max.graph.ops.custom). The
+In a graph that you build with `max.graph`, you can also add an undeclared op
+with [`ops.custom()`](/api/python/graph.ops/#max.graph.ops.custom). The
 [`custom_ops/addition.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/addition.py)
 example does that. The path passed to `custom_extensions` takes one of two
 forms:
 
-- A Mojo package directory, which needs an `__init__.mojo` file (which can be
-  empty) so the compiler can find the ops. MAX precompiles the directory each
-  time it builds a graph or session, so it picks up your edits automatically.
-  Use this form during development.
+- A Mojo package directory with an `__init__.mojo` file, as described in
+  [Declare and call a custom op from Python](#declare-and-call-a-custom-op-from-python).
+  MAX precompiles the directory each time it builds a graph or session, so it
+  picks up your edits automatically. Use this form during development.
 - A `.mojoc` file built with `mojo precompile`. Use this form to ship ops, and
   build it with the same Mojo version that the consumer runs.
 
@@ -510,7 +583,7 @@ def _vector_addition_gpu(
             output.store[width=1](Coord(tid), result)
 
     var num_blocks = ceildiv(vector_length, BLOCK_SIZE)
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         vector_addition_gpu_kernel, grid_dim=num_blocks, block_dim=BLOCK_SIZE
     )
 ```
@@ -519,7 +592,7 @@ The `vector_addition_gpu_kernel()` closure runs once per thread on the GPU,
 adding an element from the `lhs` vector to the matching element in the `rhs`
 vector and then saving the result at the correct position in the `output`
 vector. The closure copies the tensors and the length into its captures
-(`{var ...}`), so `enqueue_function()` can launch the closure itself as the
+(`{var ...}`), so `enqueue_closure()` can launch the closure itself as the
 kernel across a grid of `BLOCK_SIZE` blocks of threads.
 
 `BLOCK_SIZE` is untuned for this device. `elementwise()` picks the launch
@@ -533,19 +606,203 @@ the Python-based graph that uses the custom op:
 pixi run python vector_addition.py
 ```
 
-## Choosing a dispatch style
+### Register a kernel per platform
 
-You wrote custom ops and integrated them into MAX graphs:
+Instead of branching on `ctx.target` inside one kernel, you can register a
+separate kernel for each platform. Pass a platform as the second argument to
+`@extensibility.register()`. The `vector_addition.mojo` file also registers
+a second op, `vector_addition_by_platform`, with one struct for CPUs and one
+for accelerators:
+
+```mojo title="kernels/vector_addition.mojo"
+@extensibility.register("vector_addition_by_platform", CPU)
+struct VectorAdditionCPU:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        lhs: Some[Input & Tensor],
+        rhs: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ):
+        comptime assert conforms_to(type_of(output), TileTensorable)
+        comptime assert conforms_to(type_of(lhs), TileTensorable)
+        comptime assert conforms_to(type_of(rhs), TileTensorable)
+        comptime dtype = type_of(output).dtype
+        _vector_addition_cpu(
+            output.to_tile_tensor[dtype](),
+            lhs.to_tile_tensor[dtype]().as_imm(),
+            rhs.to_tile_tensor[dtype]().as_imm(),
+            ctx,
+        )
+
+
+@extensibility.register("vector_addition_by_platform", ACCELERATOR)
+struct VectorAdditionAccelerator:
+    @staticmethod
+    def execute(
+        output: Some[Output & Tensor],
+        lhs: Some[Input & Tensor],
+        rhs: Some[Input & Tensor],
+        ctx: DeviceContext,
+    ) raises:
+        # Same as VectorAdditionCPU, but calls _vector_addition_gpu().
+```
+
+When it compiles the op for a device, the graph compiler keeps the
+registrations whose platform includes that device. You import `CPU` and
+`ACCELERATOR` from `extensibility`, along with `CUDA`, `HIP`, and `METAL`,
+which narrow an accelerator to one GPU API. If more than one registration
+matches, the narrowest platform wins, so a kernel registered for `CUDA`
+replaces the `ACCELERATOR` kernel on NVIDIA GPUs. If no platform is narrower
+than all the others, the graph compiler reports an ambiguity error. The
+[`register()`](/api/mojo/extensibility/decorators/register/) reference covers
+the selection rules and how to build narrower platforms with `arch()` and
+`model()`.
+
+The `vector_addition.py` example runs both `vector_addition` and
+`vector_addition_by_platform` on the CPU, and on a GPU when one is present.
+
+The
+[`custom_ops/declared_vector_addition.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/declared_vector_addition.py)
+example declares `vector_addition` the same way that `declared_addition.py`
+declares `add_one`. Both inputs and the output use one symbol, `n`, so a call
+must pass two vectors of the same length:
+
+```python title="declared_vector_addition.py"
+(n,) = custom_op.Symbols("n")
+vector_addition = custom_op.declare(
+    "vector_addition",
+    inputs={
+        "lhs": custom_op.TemplateType(DType.float32, [n]),
+        "rhs": custom_op.TemplateType(DType.float32, [n]),
+    },
+    outputs=[custom_op.TemplateType(DType.float32, [n])],
+    custom_extensions=[mojo_kernels],
+)
+```
+
+### Declare the output shape
+
+Most ops get their output shapes from their inputs. The `add_one` output has its
+input's shape, and the `vector_addition` declaration sizes its output with the
+same symbol, `n`, as its inputs. When an output's size depends on the values in
+an input, no input dimension determines it. The kernel must then register a
+shape function with
+[`@extensibility.register_shape_function()`](/api/mojo/extensibility/decorators/register_shape_function/),
+which MAX runs on the host to compute the output shape before it runs the op.
+
+The `keep_positive` op in
+[`custom_ops/kernels/keep_positive.mojo`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/kernels/keep_positive.mojo)
+returns the positive values of a vector, so its output length depends on the
+input's values. Its shape function counts them:
+
+```mojo title="kernels/keep_positive.mojo"
+@extensibility.register_shape_function("keep_positive")
+def keep_positive_shape(x: Some[TileTensorable]) raises -> IndexList[1]:
+    var x_tile = x.to_tile_tensor()
+    var length = coord_to_index_list(x.shape())[0]
+    var count = 0
+    for i in range(length):
+        if x_tile[i] > 0:
+            count += 1
+    return IndexList[1](count)
+```
+
+The declaration in
+[`custom_ops/keep_positive.py`](https://github.com/modular/modular/tree/main/max/examples/custom_ops/keep_positive.py)
+sizes the output with a symbol, `k`, that no input uses:
+
+```python title="keep_positive.py"
+# No input binds k, so the kernel's shape function computes it at run time.
+n, k = custom_op.Symbols("n", "k")
+keep_positive = custom_op.declare(
+    "keep_positive",
+    inputs={"x": custom_op.TemplateType(DType.float32, [n])},
+    outputs=[custom_op.TemplateType(DType.float32, [k])],
+    custom_extensions=[mojo_kernels],
+)
+```
+
+If the kernel doesn't register a shape function for an output whose size no
+input binds, `declare()` raises an error. An op whose output shapes come from
+its inputs doesn't need a shape function.
+
+Shape functions must use tensor traits for tensor arguments. A shape function
+that reads only an input's shape takes it as `Some[Tensor]`, which exposes a
+tensor's shape, rank, and dtype but not its elements. If it reads element
+values, as `keep_positive_shape()` does, use `Some[TileTensorable]` and access
+them through `to_tile_tensor()`. For variadic inputs, use a
+[`TensorTuple`](/api/mojo/extensibility/tensor_tuple/TensorTuple/) whose
+elements bind the traits they need. Shape functions reject the
+`ManagedTensorSlice` and `VariadicTensors` types and their aliases, such as
+`InputTensor` and `InputVariadicTensors`.
+
+For an op on a GPU, MAX copies each tensor input not bound to `Some[Tensor]` to
+the host before the shape function runs, and the host waits for the copy. Use
+`Some[Tensor]` for inputs whose elements the shape function doesn't read.
+
+The `keep_positive` kernel is a serial loop, so it registers for the `CPU`
+platform only, and the example keeps its input on the CPU. Run the example:
+
+```sh
+pixi run python keep_positive.py
+```
+
+## Choose how to call and dispatch an op
+
+You wrote custom ops and called them from Python:
 
 - `AddOne`, which uses `elementwise()` for automatic device dispatch
 - `AddOneElementwise`, which the graph compiler can fuse with neighboring ops
 - `VectorAddition`, which uses `comptime if` to dispatch separate CPU and GPU
   implementations
+- `VectorAdditionCPU` and `VectorAdditionAccelerator`, which register separate
+  CPU and GPU kernels for one op
+
+To call an op from Python, declare it with `custom_op.declare()` when you know
+the rank of each input. A declared op checks every call against its signature,
+and MAX can run its eager calls without compiling a graph. A declaration fixes
+each input's rank, so for an op that must accept inputs of several ranks, use
+`F.custom()` on eager tensors or `ops.custom()` in a graph.
 
 Define `elementwise()` for elementwise ops you want the compiler to fuse. Use
 `elementwise()` inside `execute()` for other ops where device-specific tuning
 isn't needed. Write device-specific kernels when you need direct control over
-thread layout and memory access patterns.
+thread layout and memory access patterns. Branch on `ctx.target` with
+`comptime if` when the CPU and GPU code paths share their setup. Register a
+kernel per platform when the paths are separate kernels, or to add a kernel for
+one GPU API without changing the others.
+
+## Fix kernel registration errors
+
+When you write your own kernels, a mistake in a kernel's signature stops MAX
+from loading its package. MAX checks the kernels in a package when it loads the
+package, such as when `declare()` resolves an op. If a kernel's signature breaks
+a registration rule, MAX raises
+[`KernelRegistrationError`](/api/python/generated/max.graph.KernelRegistrationError/)
+with the Mojo file, line, and column of the problem.
+
+For example, swap the `output` and `x` arguments of `AddOne.execute()` in
+`kernels/add_one.mojo`, then run `declared_addition.py`. MAX raises this
+error:
+
+```output
+max.graph.KernelRegistrationError:
+.../kernels/add_one.mojo:40:9: error: Outputs must appear before inputs in the function signature: output 'output' comes after input 'x'
+        output: Some[Output & Tensor],
+        ^
+```
+
+To fix it, list the outputs first, then the inputs, and put the
+[`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/) last:
+
+```mojo title="kernels/add_one.mojo"
+def execute(
+    output: Some[Output & Tensor],
+    x: Some[Input & Tensor],
+    ctx: DeviceContext,
+) raises:
+```
 
 ## Next steps
 

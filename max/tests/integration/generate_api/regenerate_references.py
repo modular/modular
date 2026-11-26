@@ -22,8 +22,8 @@ The references live in the ``GENERATE_API_DATA`` tarball in S3. The script
 prints how far the new reference is from the current one, so a change in the
 Hugging Face stack shows up before it lands. It writes a new tarball into the
 target's ``test.outputs``, the current one with this run's reference
-replaced, and prints the command that uploads it and the new
-``GENERATE_API_DATA``. It never uploads anything itself. To regenerate more
+replaced, and prints the command that uploads it, the new
+``GENERATE_API_DATA`` and the ``http_file`` to update. It never uploads anything itself. To regenerate more
 than one reference, upload each new tarball and pass its S3 path as
 ``--base`` to the next run.
 
@@ -255,6 +255,10 @@ def _write_tarball(
     print(
         "    s3://modular-bazel-artifacts-public/artifacts/"
         f"{name}/{new_version}/{sha}/{DATA_TARBALL_NAME}"
+    )
+    print(
+        "and the url and sha256 of generate_api_references in"
+        " oss/modular/bazel/common.MODULE.bazel to match."
     )
 
 

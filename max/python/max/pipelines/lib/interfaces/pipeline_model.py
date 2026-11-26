@@ -54,6 +54,7 @@ from max.pipelines.kv_cache.config import (
 from max.pipelines.lib.config.model_config import (
     _select_quantization_encoding,
 )
+from max.pipelines.lib.ep_initializer import EPInitializerLike
 from max.pipelines.lib.graph_specs import (
     GraphRole,
     GraphSpec,
@@ -140,9 +141,14 @@ def _cast_to_parameter_dtypes(
     return adapted
 
 
+_EPInitT = TypeVar("_EPInitT", bound=EPInitializerLike)
+
+
 def compile_ep_init(
-    session: InferenceSession, ep_config: EPConfig
-) -> tuple[EPCommInitializer, dict[str, CompiledCallable[..., Any]]]:
+    session: InferenceSession,
+    ep_config: EPConfig,
+    initializer_cls: Callable[[EPConfig], _EPInitT],
+) -> tuple[_EPInitT, dict[str, CompiledCallable[..., Any]]]:
     """Compiles the expert-parallel handshake as the ``ep_init`` graph role.
 
     It touches no device, so a build on virtual devices, which can't run the
@@ -151,24 +157,34 @@ def compile_ep_init(
     Args:
         session: The session that compiles the handshake graph.
         ep_config: The EP configuration.
+        initializer_cls: Makes the initializer: the one of the model's module
+            API.
 
     Returns:
         The EP communication initializer, whose ``run_init`` does the device
         work, and the compiled handshake graph keyed by
         :attr:`GraphRole.EP_INIT`.
     """
-    initializer = EPCommInitializer(ep_config)
-    init = initializer.init_module()
-    modules = compile_and_init_graphs(
-        session,
-        {GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())},
-    )
+    initializer = initializer_cls(ep_config)
+    # "graph", because the handshake these lines would otherwise seem to cover
+    # runs in `run_init` afterwards. It is a collective, so its wall clock
+    # includes waiting for the slowest rank, which does not belong in a
+    # compile-time number.
+    with CompilationTimer("ep_init graph") as timer:
+        init = initializer.init_module()
+        timer.mark_build_complete()
+        modules = compile_and_init_graphs(
+            session,
+            {GraphRole.EP_INIT: GraphSpec(init, "ep_init", init.input_types())},
+        )
     return initializer, modules
 
 
 def init_ep_comm(
-    session: InferenceSession, ep_config: EPConfig
-) -> tuple[EPCommInitializer, dict[str, CompiledCallable[..., Any]]]:
+    session: InferenceSession,
+    ep_config: EPConfig,
+    initializer_cls: Callable[[EPConfig], _EPInitT],
+) -> tuple[_EPInitT, dict[str, CompiledCallable[..., Any]]]:
     """Runs the expert-parallel handshake as the ``ep_init`` graph role.
 
     A pipeline keeps the returned graph in its ``compiled_modules``, so that
@@ -177,12 +193,14 @@ def init_ep_comm(
     Args:
         session: The session that compiles and runs the handshake graph.
         ep_config: The EP configuration. The handshake sets its node ID.
+        initializer_cls: Makes the initializer: the one of the model's module
+            API.
 
     Returns:
         The initialized EP communication buffers, and the compiled handshake
         graph keyed by :attr:`GraphRole.EP_INIT`.
     """
-    initializer, modules = compile_ep_init(session, ep_config)
+    initializer, modules = compile_ep_init(session, ep_config, initializer_cls)
     initializer.run_init(modules[GraphRole.EP_INIT].engine_model)
     return initializer, modules
 
@@ -432,12 +450,15 @@ class UnifiedEagleOutputs(ModelOutputs):
     hidden_states: None = None
 
     @classmethod
-    def from_buffers(cls, buffers: Sequence[Buffer]) -> UnifiedEagleOutputs:
+    def from_buffers(
+        cls, buffers: Sequence[Buffer], skip: int = 0
+    ) -> UnifiedEagleOutputs:
         """Reads a unified graph's outputs.
 
-        ``(num_accepted_draft_tokens, next_tokens, next_draft_tokens)``, then
-        under ``draft_proposal="sampled"`` the distributions: one tensor, or
-        one per replica (always more than one) under
+        ``(num_accepted_draft_tokens, next_tokens, next_draft_tokens)``,
+        then ``skip`` confidence outputs a score-on export emits, then
+        under ``draft_proposal="sampled"`` the distributions: one tensor,
+        or one per replica (always more than one) under
         ``draft_probs_layout="replica"``.
 
         Raises:
@@ -449,7 +470,7 @@ class UnifiedEagleOutputs(ModelOutputs):
                 " expected num_accepted_draft_tokens, next_tokens,"
                 " next_draft_tokens and any draft distributions"
             )
-        dists = list(buffers[3:])
+        dists = list(buffers[3 + skip :])
         return cls(
             num_accepted_draft_tokens=buffers[0],
             next_tokens=buffers[1],
@@ -495,6 +516,13 @@ class UnifiedSpecDecodeInputs(ModelInputs):
     draft_block_offsets: Buffer | None = None
     """The draft block's ragged row offsets: ``[0, K, 2K, ...]`` to draft, all
     zeros to skip."""
+    draft_scores: Buffer | None = None
+    """The previous step's per-draft scores, which a per-row verify graph
+    declares. MAX Serve feeds none, so :meth:`_spec_decode_buffers` refuses
+    that graph."""
+    draft_score_coeffs: Buffer | None = None
+    """The host-fitted calibrator coefficients over the draft positions,
+    declared beside :attr:`draft_scores`."""
     pinned_bitmask: Buffer | None = None
     wait_payload: Buffer | None = None
     device_bitmask_scratch: Buffer | None = None
@@ -523,9 +551,19 @@ class UnifiedSpecDecodeInputs(ModelInputs):
 
         Takes the inputs ahead of the tail from the caller, which holds them,
         and passes over any group :attr:`spec` leaves out.
+
+        Raises:
+            ValueError: If :attr:`spec` declares the per-row verify inputs,
+                which this pipeline never feeds.
         """
         spec = self.spec
         assert spec is not None, "the batch processor sets the graph's spec"
+        if spec.include_per_row_verify:
+            raise ValueError(
+                "per_row_verify is not served by MAX Serve's speculative"
+                " pipeline: it does not feed the draft scores and calibrator"
+                " coefficients the graph declares"
+            )
         assert self.draft_tokens is not None
         assert self.seed is not None
         assert self.temperature is not None
@@ -616,9 +654,10 @@ class ModelLoadContext:
 
     ``None`` derives them from the config, as serving does.
     """
-    ep_runtime: Callable[[EPConfig], None] | None = None
-    """Starts expert parallelism's runtime, for a caller that shares it
-    across the modules it builds."""
+    ep_runtime: Callable[[EPConfig], EPConfig] | None = None
+    """Starts expert parallelism's runtime and returns the config with its
+    node ID, for a caller that shares the runtime across the modules it
+    builds."""
     encodes_images: bool = True
     """Whether the module encodes images. ``False`` builds a multimodal
     checkpoint's language model alone."""
@@ -638,16 +677,18 @@ class ModelLoadContext:
             return_hidden_states=model.return_hidden_states,
         )
 
-    def start_ep(self, ep_config: EPConfig | None) -> None:
+    def start_ep(self, ep_config: EPConfig | None) -> EPConfig | None:
         """Starts expert parallelism's runtime for ``ep_config``.
 
-        Starting it sets the node ID ``MoE.shard`` picks each device's
-        experts by, so a module calls this before it shards them. A
-        no-op without expert parallelism, or for a caller that starts the
-        runtime itself.
+        Starting it finds the node ID ``MoE.shard`` picks each device's
+        experts by, so a module calls this before it shards them, and
+        builds them with the config it returns. Without expert parallelism,
+        or for a caller that starts the runtime itself, it returns
+        ``ep_config``.
         """
         if ep_config is not None and self.ep_runtime is not None:
-            self.ep_runtime(ep_config)
+            return self.ep_runtime(ep_config)
+        return ep_config
 
     def defer_weight_load(
         self,
@@ -1298,10 +1339,10 @@ class PipelineModel(
     def _init_ep_comm(
         self, session: InferenceSession, ep_config: EPConfig
     ) -> EPCommInitializer:
-        """Runs the expert-parallel handshake as the ``ep_init`` graph role.
+        """Runs a ModuleV2 model's expert-parallel handshake.
 
-        Keeps the graph in :attr:`compiled_modules`, so that an export
-        records the handshake its serving engine runs.
+        It runs the legacy exchange's handshake through
+        :meth:`_init_ep_exchange`.
 
         Args:
             session: The session that compiles and runs the handshake graph.
@@ -1310,7 +1351,29 @@ class PipelineModel(
         Returns:
             The initialized EP communication buffers.
         """
-        initializer, modules = init_ep_comm(session, ep_config)
+        return self._init_ep_exchange(session, ep_config, EPCommInitializer)
+
+    def _init_ep_exchange(
+        self,
+        session: InferenceSession,
+        ep_config: EPConfig,
+        initializer_cls: Callable[[EPConfig], _EPInitT],
+    ) -> _EPInitT:
+        """Runs the expert-parallel handshake as the ``ep_init`` graph role.
+
+        Keeps the graph in :attr:`compiled_modules`, so that an export
+        records the handshake its serving engine runs.
+
+        Args:
+            session: The session that compiles and runs the handshake graph.
+            ep_config: The EP configuration. The handshake sets its node ID.
+            initializer_cls: Makes the initializer: the one of the model's
+                module API.
+
+        Returns:
+            The initialized EP communication buffers.
+        """
+        initializer, modules = init_ep_comm(session, ep_config, initializer_cls)
         self.compiled_modules = {**self.compiled_modules, **modules}
         return initializer
 
@@ -1601,6 +1664,7 @@ class ModuleV3PipelineModelWithKVCache(
     """
 
     model: Callable[..., ModuleV3Outputs]
+    _session: InferenceSession
     _modulev3_extra_input_types: list[Any]
     _checkpoint: dict[str, Any]
 
@@ -1630,6 +1694,8 @@ class ModuleV3PipelineModelWithKVCache(
             max_batch_size=max_batch_size,
             memory_plan=memory_plan,
         )
+        # Expert parallelism starts its exchange while the decoder builds.
+        self._session = session
         self.model = self._load_decoder(session)
 
     def execute(self, model_inputs: ModelInputs) -> ModelOutputs:

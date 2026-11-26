@@ -198,6 +198,16 @@ mo.graph @two_devices(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
   mo.output %c : !mo.tensor<[2, 2], f32>
 }
 
+// The host has no blob launch, so its declarative routines stay apart.
+// CHECK-LABEL: mo.graph @host
+// CHECK-NOT:   mogg.graph_blob
+// CHECK:       mo.output
+mo.graph @host(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
+  %b = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"cpu", 0>](%a) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  %c = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"cpu", 0>](%b) : (!mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32>
+  mo.output %c : !mo.tensor<[2, 2], f32>
+}
+
 // Each device keeps its own blob open, so two devices whose routines interleave
 // form one blob each.
 // CHECK-LABEL: mo.graph @interleaved_devices
@@ -330,8 +340,8 @@ mo.graph @shared_input(%a: !mo.tensor<[2, 2], f32>) -> !mo.tensor<[2, 2], f32> {
 mo.graph @parallel(%a: !mo.tensor<[2, 2], f32, gpu:0>, %b: !mo.tensor<[2, 2], f32, gpu:1>) -> (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>) {
   %bundle = mo.tensor.bundle(%a, %b) : (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>) -> (!mo.bundle<[!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>]>)
   %res = mo.parallel (%x) in (%bundle : !mo.bundle<[!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>]>) -> (!mo.bundle<[!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>]>) {
-    %1 = mo.custom [symbol = "map_lower_declarative"](%x) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
-    %2 = mo.custom [symbol = "map_lower_declarative"](%1) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+    %1 = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%x) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
+    %2 = mo.custom [symbol = "map_lower_declarative", device = #M.device_ref<"gpu", 0>](%1) : (!mo.tensor<[2, 2], f32, gpu:0>) -> !mo.tensor<[2, 2], f32, gpu:0>
     mo.yield %2 : !mo.tensor<[2, 2], f32, gpu:0>
   }
   %r0, %r1 = mo.tensor.unbundle(%res) : (!mo.bundle<[!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>]>) -> (!mo.tensor<[2, 2], f32, gpu:0>, !mo.tensor<[2, 2], f32, gpu:1>)

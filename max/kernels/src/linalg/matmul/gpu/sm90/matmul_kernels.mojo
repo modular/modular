@@ -62,7 +62,6 @@ from layout.tensor_core_async import (
 from layout.tma_async import (
     TMATensorTile,
 )
-from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
 
@@ -577,7 +576,7 @@ struct HopperMatmulSM90Kernel[
     @inline(.always)
     def get_block_swizzle(
         lut_ptr: OptionalReg[MutPointer[UInt32, MutAnyOrigin]] = None,
-    ) -> IndexList[2, element_type=.uint32]:
+    ) -> Tuple[UInt32, UInt32]:
         """Calculate block swizzle for better L2 cache locality.
 
         Args:
@@ -595,16 +594,16 @@ struct HopperMatmulSM90Kernel[
                 var packed = lut_ptr.unsafe_value()[linear]
                 var new_x = packed & 0xFFFF
                 var new_y = packed >> 16
-                return Index[dtype=.uint32](new_x, new_y)
+                return (new_x, new_y)
             else:
                 # Default swizzling pattern for L2 cache optimization
                 return block_swizzle(
-                    Index[dtype=.uint32](block_idx.x, block_idx.y),
-                    Index[dtype=.uint32](grid_dim.x, grid_dim.y),
+                    (UInt32(block_idx.x), UInt32(block_idx.y)),
+                    (UInt32(grid_dim.x), UInt32(grid_dim.y)),
                 )
         else:
             # Multi-cluster mode: no swizzling (handled by hardware)
-            return Index[dtype=.uint32](block_idx.x, block_idx.y)
+            return (UInt32(block_idx.x), UInt32(block_idx.y))
 
     @staticmethod
     @inline(.always)
@@ -993,8 +992,8 @@ struct HopperMatmulSM90Kernel[
 
         # Calculate block swizzle
         var block_idx_swizzle = Self.get_block_swizzle(lut_ptr)
-        var m_coord = block_idx_swizzle[1] * Self.BM
-        var n_coord = block_idx_swizzle[0] * Self.BN
+        var m_coord = Int(block_idx_swizzle[1]) * Self.BM
+        var n_coord = Int(block_idx_swizzle[0]) * Self.BN
 
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
@@ -1048,8 +1047,8 @@ struct HopperMatmulSM90Kernel[
                 warp_group_thread_idx,
                 local_warp_group_idx,
                 thread_idx.x - WARPGROUP_SIZE,
-                block_idx_swizzle[1],
-                block_idx_swizzle[0],
+                Int(block_idx_swizzle[1]),
+                Int(block_idx_swizzle[0]),
                 epilogue_fn,
                 compute_fn,
             )
@@ -1096,7 +1095,7 @@ struct HopperMatmulSM90Kernel[
         ],
         workspace_ptr: MutPointer[Scalar[Self.accum_type], MutAnyOrigin],
         locks_ptr: MutPointer[UInt8, MutAnyOrigin],
-        problem_shape: IndexList[3],
+        problem_shape: Coord[Int, Int, Int],
         epilogue_fn: EpilogueFnType,
         compute_fn: ComputeFnType,
     ):
@@ -1189,7 +1188,7 @@ struct HopperMatmulSM90Kernel[
         comptime CLUSTER_M = Int(Self.cluster_shape[1])
 
         var scheduler = SplitKTileScheduler[
-            Index(N, K),
+            (N, K),
             Self.block_tile_shape,
             UInt32(splits),
             UInt32(Self.num_consumer),
@@ -1198,7 +1197,7 @@ struct HopperMatmulSM90Kernel[
             raster_order,
         ](
             problem_shape,
-            Index(rank_m, rank_n),
+            Coord(rank_m, rank_n),
             locks_ptr,
         )
 
@@ -1439,7 +1438,7 @@ struct HopperMatmulSM90Kernel[
         # The block may be OOB because we create blocks based the maximum
         # number of tokens per expert.
         var M = a_offsets[block_idx.z + 1][0] - a_offsets[block_idx.z][0]
-        if UInt32(block_idx_swizzle[1] * Self.BM) >= M:
+        if block_idx_swizzle[1] * UInt32(Self.BM) >= M:
             return
 
         var a_start_row = a_offsets[block_idx.z][0]
@@ -1463,11 +1462,13 @@ struct HopperMatmulSM90Kernel[
             if warp_id == 0 and lane_predicate and not skip_matmul:
                 var m_coord = (
                     block_idx.y * Self.BM if CLUSTER_N
-                    > 1 else Int(a_start_row) + block_idx_swizzle[1] * Self.BM
+                    > 1 else Int(a_start_row)
+                    + Int(block_idx_swizzle[1]) * Self.BM
                 )
                 var n_coord = (
                     block_idx.x * Self.BN if CLUSTER_M
-                    > 1 else Int(b_start_row) + block_idx_swizzle[0] * Self.BN
+                    > 1 else Int(b_start_row)
+                    + Int(block_idx_swizzle[0]) * Self.BN
                 )
 
                 if warp_id == 0 and lane_predicate:
@@ -1521,6 +1522,7 @@ struct HopperMatmulSM90Kernel[
                 var c_ptr = c.ptr
 
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def group_epilogue_fn[
                     dtype: DType, width: SIMDLength, *, alignment: Int
                 ](idx: Coord, val: SIMD[dtype, width]) {
@@ -1555,8 +1557,8 @@ struct HopperMatmulSM90Kernel[
                     warp_group_thread_idx,
                     local_warp_group_idx,
                     thread_idx.x - WARPGROUP_SIZE,
-                    block_idx_swizzle[1],
-                    block_idx_swizzle[0],
+                    Int(block_idx_swizzle[1]),
+                    Int(block_idx_swizzle[0]),
                     group_epilogue_fn,
                 )
             else:
@@ -1568,8 +1570,8 @@ struct HopperMatmulSM90Kernel[
                     warp_group_thread_idx,
                     local_warp_group_idx,
                     thread_idx.x - WARPGROUP_SIZE,
-                    block_idx_swizzle[1],
-                    block_idx_swizzle[0],
+                    Int(block_idx_swizzle[1]),
+                    Int(block_idx_swizzle[0]),
                 )
 
         Self.finalize_kernel()

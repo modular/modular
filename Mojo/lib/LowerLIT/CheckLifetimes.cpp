@@ -65,17 +65,18 @@ template <typename ElementType>
 struct RaiseSetEntry {
   StringAttr label;
   /// When analyzing the body of a try, this set element indicates what a
-  /// 'raise' should produce based on its surrounding 'try's except block's
-  /// expectation with the matching label.
-  ElementType *raiseSet;
+  /// 'raise' should produce based on its selected except block's expectation.
+  ArrayRef<ElementType *> raiseSets;
   // A linked list to the previous entry.
   RaiseSetEntry<ElementType> *prev;
 
-  RaiseSetEntry<ElementType> *getMatchingRaiseSet(StringAttr label) {
+  ElementType *getMatchingRaiseSet(StringAttr label, size_t handlerIndex) {
     auto matchingSet = this;
     while (matchingSet && matchingSet->label != label)
       matchingSet = matchingSet->prev;
-    return matchingSet;
+    assert(matchingSet && handlerIndex < matchingSet->raiseSets.size() &&
+           "invalid handler index");
+    return matchingSet->raiseSets[handlerIndex];
   }
 };
 
@@ -184,6 +185,22 @@ insertDebugVariableForArg(OpBuilder &builder, FnOp func, BlockArgument arg,
 
   DebugInfo::ValueOp::create(builder, scopedLoc, arg, varAttr, diExpr);
   return varAttr;
+}
+
+// Render an origin to a string for use in diagnostics.
+static std::string getOriginStr(TypedAttr origin) {
+  std::string originStr;
+  llvm::raw_string_ostream originOs(originStr);
+  OriginPrinter().print(originOs, origin, /*elideOriginOf=*/true);
+  originOs.flush();
+
+  // We often end up look at the MLIR !lit.origin type but we want to complain
+  // about the user type for tidiness. Strip off a "._mlir_origin" suffix if
+  // present.
+  constexpr StringLiteral mlirOriginSuffix = "._mlir_origin";
+  if (StringRef(originStr).ends_with(mlirOriginSuffix))
+    originStr.resize(originStr.size() - mlirOriginSuffix.size());
+  return originStr;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1103,10 +1120,24 @@ struct ValueSet {
   /// Return the function/closure we're analyzing.
   FnOp getFunc() const { return func; }
 
+  /// Diagnose a disallowed mutable access to an origin. Returns true if it
+  /// emitted a diagnostic.
+  void checkDisallowedOriginAccess(TypedAttr origin, Operation &op);
+
   /// Return the number of values we are tracking.
   MutableArrayRef<ValueInfo> getValueInfos() { return valueInfos; }
   ValueInfo &getValueInfo(size_t idx) { return valueInfos[idx]; }
   const ValueInfo &getValueInfo(size_t idx) const { return valueInfos[idx]; }
+
+  /// Record that an error not associated with a ValueInfo was emitted.
+  void markErrorEmitted() { errorEmitted = true; }
+
+  /// Return whether an error associated with this function was emitted.
+  bool hadAnyErrors() const {
+    return errorEmitted || llvm::any_of(valueInfos, [](const ValueInfo &info) {
+             return info.hasErrorDiagnosed;
+           });
+  }
 
   /// Remove a tracked value from the valueset maps, and reset its ValueEntry to
   /// have a null Value.
@@ -1210,6 +1241,8 @@ struct ValueSet {
 private:
   /// This is the function we're analyzing.
   FnOp func;
+  /// Whether an error not associated with a ValueInfo was emitted.
+  bool errorEmitted = false;
   /// These are all of the value infos, indexed by ID #.
   SmallVector<ValueInfo> valueInfos;
   /// This is a lookup from SSA values to the thing they are referencing.
@@ -1217,6 +1250,9 @@ private:
   /// This is a mapping of origin attrs to the value index that defines them,
   /// these origins have sugar canonicalized away.
   DenseMap<TypedAttr, unsigned> originToValueIndex;
+  /// Origins reachable through arguments and captures when this function
+  /// promises to access nested origins read-only.
+  SmallPtrSet<Attribute, 8> readOnlyInputOrigins;
 
   /// Add a value to the set that we are tracking.  This includes:
   ///  * the MLIR representation for the value itself
@@ -1226,6 +1262,45 @@ private:
                 DebugInfo::DILocalVariableAttr debugVariable);
 };
 } // namespace
+
+/// Return argument types after removing ABI conventions and closure capture
+/// reference wrappers. This ignores return and error slots.
+static SmallVector<Type> getUserArgTypes(FnOp func,
+                                         TypeDeclInfo &typeDeclInfo) {
+  SmallVector<Type> argTypes;
+  auto signature = func.getFuncTypeGenerator();
+  for (auto [argument, convention] :
+       llvm::zip(func.getArguments(), signature.getArgConventions())) {
+    if (isResultSlot(convention))
+      continue;
+
+    Type argumentType =
+        RefType::stripRefConvention(argument.getType(), convention);
+
+    // A closure's synthetic self stores reference captures in ref-typed
+    // fields. Their direct origins retain the capture convention, while
+    // origins nested in the captured values are read-only.
+    if (func.isSynthetic() && argument.getArgNumber() == 0) {
+      if (auto structType = sugarDynCast<LIT::StructType>(argumentType)) {
+        StructInfo structInfo = typeDeclInfo.getStructInfoForType(structType);
+        if (structInfo.decl.isSynthetic()) {
+          ParameterEvaluator evaluator = typeDeclInfo.getParameterEvaluator(
+              structInfo.decl.getInputParams(), structType.getParamValues());
+          for (StructFieldOp field : structInfo.decl.getFieldDecls()) {
+            Type fieldType = evaluator.getReboundType(field.getType());
+            if (auto refType = sugarDynCast<RefType>(fieldType))
+              fieldType = refType.getElementType();
+            argTypes.push_back(fieldType);
+          }
+          continue;
+        }
+      }
+    }
+
+    argTypes.push_back(argumentType);
+  }
+  return argTypes;
+}
 
 /// Initialize the value set with one entry, so index #0 is always invalid and
 /// can be used as a sentinel, and so a null Value is always treated as
@@ -1288,6 +1363,69 @@ ValueSet::ValueSet(PerThreadCache &perThreadCache, FnOp func,
     if (auto trackable = OriginTrackable(arg))
       addValue(arg, trackable, debugVariable);
   }
+
+  // If this functions has the @__nested_origins_read_only decorator, we collect
+  // any nested origins that we need to disable mutable accesses to.
+  if (!func.getFuncTypeGenerator().getIsEnforcedNestedOriginsReadOnly())
+    return;
+
+  auto signature = func.getFuncTypeGenerator();
+  SmallVector<Type> argTypes =
+      getUserArgTypes(func, perThreadCache.typeDeclInfo);
+  for (TypedAttr origin : getOriginFinder().findOriginsIn(
+           argTypes, signature.getCaptureOrigins())) {
+    SmallVector<TypedAttr> worklist{origin};
+    while (!worklist.empty()) {
+      origin = getCanonicalAttr(worklist.pop_back_val());
+      if (auto unionAttr = dyn_cast<OriginUnionAttr>(origin)) {
+        llvm::append_range(worklist, unionAttr.getOperands());
+        continue;
+      }
+
+      origin = OriginMutCastAttr::strip(origin);
+      readOnlyInputOrigins.insert(origin);
+      if (auto field = dyn_cast<OriginFieldAttr>(origin))
+        worklist.push_back(field.getBase());
+      else if (auto interior = dyn_cast<InteriorOriginAttr>(origin))
+        worklist.push_back(interior.getBase());
+      else if (auto subtree = dyn_cast<OriginSubtreeAttr>(origin))
+        worklist.push_back(subtree.getBase());
+    }
+  }
+}
+
+/// Diagnose a disallowed mutable access to an origin.
+void ValueSet::checkDisallowedOriginAccess(TypedAttr origin, Operation &op) {
+  // If we have no origins with customized access, we can exit early.
+  if (readOnlyInputOrigins.empty() ||
+      // Read-only accesses or accesses to parametrically mutable origins are
+      // fine because the callee could not mutate them.
+      !OriginType::isMutableKnown(origin, /*value=*/true))
+    return;
+
+  SmallVector<TypedAttr> worklist{origin};
+  while (!worklist.empty()) {
+    TypedAttr candidate = getCanonicalAttr(worklist.pop_back_val());
+    if (auto unionAttr = dyn_cast<OriginUnionAttr>(candidate)) {
+      llvm::append_range(worklist, unionAttr.getOperands());
+      continue;
+    }
+    candidate = OriginMutCastAttr::strip(candidate);
+    if (readOnlyInputOrigins.contains(candidate)) {
+      emitError(op.getLoc())
+          << "function marked '__nested_origins_read_only' may not mutably "
+             "access origin '"
+          << getOriginStr(origin) << "'";
+      markErrorEmitted();
+      return;
+    }
+    if (auto field = dyn_cast<OriginFieldAttr>(candidate))
+      worklist.push_back(field.getBase());
+    else if (auto interior = dyn_cast<InteriorOriginAttr>(candidate))
+      worklist.push_back(interior.getBase());
+    else if (auto subtree = dyn_cast<OriginSubtreeAttr>(candidate))
+      worklist.push_back(subtree.getBase());
+  }
 }
 
 /// Add a value to the set that we are tracking.  This includes:
@@ -1305,6 +1443,7 @@ void ValueSet::addValue(Value val, const OriginTrackable &trackable,
     // This should be an assertion, but check softly to help IR clients.
     auto refType = dyn_cast<RefType>(val.getType());
     if (!refType) {
+      markErrorEmitted();
       mlir::emitError(val.getLoc())
           << "INTERNAL ERROR: trackable IR value of type " << val.getType()
           << " should have type '!lit.ref': " << val;
@@ -2296,8 +2435,10 @@ private:
   if (RaiseSetEntry<TrackedAndInteriorLiveness> *curr = raiseEntryInfo) {
     os << "  raise: {";
     while (curr) {
-      os << curr->label << " : ";
-      curr->raiseSet->print(valueSet, os) << "\n";
+      for (auto [index, raiseSet] : llvm::enumerate(curr->raiseSets)) {
+        os << curr->label << "[" << index << "] : ";
+        raiseSet->print(valueSet, os) << "\n";
+      }
       curr = curr->prev;
     }
     os << " }\n";
@@ -2476,6 +2617,12 @@ void UninitializedValueScan::checkUse(Value value, Operation &op,
   // Verify that any accessed interior origins are also live.
   for (auto origin : interiorOrigins)
     checkInteriorOriginUsage(origin, value, op);
+
+  // Check to see if we're accessing an origin marked inaccessible.  If so,
+  // generate an error about the invalid access.
+  if (isDeref)
+    valueSet.checkDisallowedOriginAccess(
+        cast<RefType>(value.getType()).getOrigin(), op);
 }
 
 /// One of the specified fields is missing, so emit an error about it.  This is
@@ -2542,6 +2689,12 @@ void UninitializedValueScan::diagnoseUsageError(ValueRef valueRef,
 
 void UninitializedValueScan::checkDef(Value value, Operation &op,
                                       bool isDeref) {
+  // Check that we're not storing to a mutable origin marked read only by a
+  // @__nested_origins_read_only decorator.
+  if (isDeref)
+    valueSet.checkDisallowedOriginAccess(
+        cast<RefType>(value.getType()).getOrigin(), op);
+
   // Invalidate any interior origins derived from the defined value.
   invalidateInteriorOriginsForOperand(value, isDeref, op);
 
@@ -2574,6 +2727,13 @@ void UninitializedValueScan::checkDef(Value value, Operation &op,
 
 void UninitializedValueScan::checkConsume(Value value, Operation &op,
                                           bool isDeref) {
+  // Check to see if we're mutating a mutable origin marked read only by a
+  // @__nested_origins_read_only decorator.  If so, generate an error about the
+  // invalid access.
+  if (isDeref)
+    valueSet.checkDisallowedOriginAccess(
+        cast<RefType>(value.getType()).getOrigin(), op);
+
   ValueRef valueRef = valueSet.getDirectValueRef(value, isDeref);
   if (!valueRef) {
     // We cannot consume an indirect value (unless it is untracked).
@@ -2609,6 +2769,12 @@ void UninitializedValueScan::checkConsume(Value value, Operation &op,
 /// a value only, but not its fields.  It marks the final aggregate as
 /// uninitialized.
 void UninitializedValueScan::checkMarkDestroyed(Value value, Operation &op) {
+  // Check to see if we're mutating a mutable origin marked read only by a
+  // @__nested_origins_read_only decorator.  If so, generate an error about the
+  // invalid access.
+  valueSet.checkDisallowedOriginAccess(
+      cast<RefType>(value.getType()).getOrigin(), op);
+
   ValueRef access = valueSet.getDirectValueRef(value, /*isDeref=*/true);
   ValueInfo &valueInfo = valueSet.getValueInfo(access.valueId);
   if (!access) {
@@ -2716,13 +2882,6 @@ static Operation *getProgramPointThatDefinedInteriorOrigin(Value v) {
   }
 }
 
-static std::string getOriginStr(InteriorOriginAttr origin) {
-  std::string originStr;
-  llvm::raw_string_ostream originOs(originStr);
-  OriginPrinter().print(originOs, origin, /*elideOriginOf=*/true);
-  return originStr;
-}
-
 void UninitializedValueScan::checkInteriorOriginUsage(
     InteriorOriginAttr interior, Value operand, Operation &op) {
 
@@ -2774,7 +2933,7 @@ void UninitializedValueScan::checkInteriorOriginUsage(
   //     list.append(4) # Could reallocate the memory 'r1' points to.
   //     ref r2 = list[j] # Def #2
   //     use(r2)  # This is clearly fine.
-  //     use(r)   # This is invalid because 'r' was invalidated.
+  //     use(r1)  # This is invalid because 'list' was invalidated.
   //
   // To handle this, we look at the operation in the interior origin entry,
   // which is the first operation that defined the interior origin.  If that
@@ -2844,6 +3003,10 @@ void UninitializedValueScan::checkOriginAccesses(TypedAttr origin,
   // Verify that any accessed interior origins are also live.
   for (auto origin : interiorOrigins)
     checkInteriorOriginUsage(origin, operand, op);
+
+  // If this operation is accessing an mutable origin marked read only by a
+  // @__nested_origins_read_only decorator, generate an error.
+  valueSet.checkDisallowedOriginAccess(origin, op);
 }
 
 /// This function is called when an operation uses a #lit.any.origin origin.
@@ -2993,7 +3156,6 @@ void UninitializedValueScan::scanBlock(Block &block) {
   for (Operation &op : block) {
     definedOrigins.clear();
     auto overall = opEffects.analyze(op);
-    /// If the operation is unknown, ignore it.
     if (overall == OverallOpValueEffect::unknownOp) {
       // NOTE: Can log here when extending things.
       // op.dump();
@@ -3044,6 +3206,15 @@ void UninitializedValueScan::scanBlock(Block &block) {
     for (auto [origin, value] : opEffects.origins) {
       checkOriginAccesses(origin, value, op);
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
+    }
+
+    // Invalidate any origins reachable from the argument type rather than just
+    // the one on the ref itself.
+    for (TypedAttr origin : llvm::make_first_range(opEffects.origins)) {
+      if (OriginType::isMutableKnown(origin, false))
+        continue;
+      interiorOriginTracker.invalidateOnMutation(
+          OriginMutCastAttr::strip(origin), liveness, op);
     }
 
     assert(opEffects.results.size() == op.getNumResults() &&
@@ -3272,13 +3443,14 @@ void UninitializedValueScan::checkLocalControlFlowOp(Operation &op) {
       entry->completeSet->mergeWith(liveness, valueSet.domInfo);
     }
   } else {
-    StringAttr label = cast<LIT::TryRaiseOp>(op).getLabelAttr();
-    RaiseSetEntry<TrackedAndInteriorLiveness> *matchingSet =
-        raiseEntryInfo->getMatchingRaiseSet(label);
+    auto raiseOp = cast<LIT::TryRaiseOp>(op);
+    TrackedAndInteriorLiveness *matchingSet =
+        raiseEntryInfo->getMatchingRaiseSet(
+            raiseOp.getLabelAttr(), raiseOp.getHandlerIndexAttr().getInt());
     //  lower-semantic-cf should guarantee there is a matching set.
     assert(matchingSet && "No matching 'try'?");
-    // Only merges the set with the matching label.
-    matchingSet->raiseSet->mergeWith(liveness, valueSet.domInfo);
+    // Only merge into the selected handler of the matching try.
+    matchingSet->mergeWith(liveness, valueSet.domInfo);
   }
 
   // Indicate that all values are live after the terminator so an 'if' will get
@@ -3439,23 +3611,38 @@ void UninitializedValueScan::checkTryOp(LIT::TryOp tryOp) {
   bodySets.breakSet = breakSet;
   bodySets.matchEntryInfo = matchEntryInfo;
 
-  // We capture all the common values live-out of raise's as being the live-in
-  // to the except block.
-  auto exceptSet =
-      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
-  // Attach a new entry to the try scope, such that the inner try op only merge
-  // the exceptSet with the matching label.
+  // Capture the common values live at raises targeting each except block.
+  SmallVector<TrackedAndInteriorLiveness> exceptSets;
+  SmallVector<TrackedAndInteriorLiveness *> exceptSetPointers;
+  exceptSets.reserve(tryOp.getExceptRegions().size());
+  exceptSetPointers.reserve(tryOp.getExceptRegions().size());
+  for ([[maybe_unused]] Region &region : tryOp.getExceptRegions())
+    exceptSets.push_back(
+        TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness));
+  for (TrackedAndInteriorLiveness &exceptSet : exceptSets)
+    exceptSetPointers.push_back(&exceptSet);
+
+  // Attach a new entry to the try scope so each raise merges only into the
+  // handler selected by its label and index.
   RaiseSetEntry<TrackedAndInteriorLiveness> exceptInfo = {
       tryOp.getLabelAttr(),
-      &exceptSet,
+      exceptSetPointers,
       raiseEntryInfo,
   };
   bodySets.raiseEntryInfo = &exceptInfo;
   bodySets.scanBlock(tryOp.getTryRegion().front());
 
-  // The live-ins to the except block are the exceptSet.
-  liveness = std::move(exceptSet);
-  scanBlock(tryOp.getExceptRegion().front());
+  // Analyze each handler from the liveness reaching only that handler, then
+  // intersect all handler fallthrough paths.
+  auto exceptLiveOut =
+      TrackedAndInteriorLiveness::getEmptyWithMatchingSize(liveness);
+  for (auto [exceptRegion, exceptSet] :
+       llvm::zip(tryOp.getExceptRegions(), exceptSets)) {
+    liveness = std::move(exceptSet);
+    scanBlock(exceptRegion.front());
+    exceptLiveOut.mergeWith(liveness, valueSet.domInfo);
+  }
+  liveness = std::move(exceptLiveOut);
 
   // The live-out set of the bodySet is the live-in to the else block, but
   // exceptions raised in it go out of the try.
@@ -3697,6 +3884,18 @@ void DestructorInserter::destroyValueIfNeeded(Value value, ValueRef valueRef,
         DebugInfo::KillOp::create(builder, info.debugVariable);
       }
     }
+
+    // The parser accepts a variable outside the default address space only
+    // when its type is trivially deinitable, so it needs no destructor. For a
+    // generic type, the destructor is found using Deinitable.__deinit__ which
+    // takes self in the default address space, so we're not even able to model
+    // this.
+    // FIXME: This is making assumptions on the IR coming out of the parser. It
+    // would be better to be explicit and carry this through.
+    if (auto refType = dyn_cast<RefType>(value.getType());
+        refType && !refType.isDefaultAddrSpace() &&
+        stripToVarDeclLookThrough(value).getDefiningOp<VarDeclOp>())
+      return emitLifetimeEnd(value, builder);
 
     // Emit the destructor.
     emitDestructorCall(value, valueRef, builder);
@@ -4652,8 +4851,10 @@ private:
   RaiseSetEntry<BitVector> *curr = raiseEntryInfo;
   os << " raise: {";
   while (curr) {
-    os << curr->label << " : ";
-    valueSet.printBV(*curr->raiseSet, os) << "\n";
+    for (auto [index, raiseSet] : llvm::enumerate(curr->raiseSets)) {
+      os << curr->label << "[" << index << "] : ";
+      valueSet.printBV(*raiseSet, os) << "\n";
+    }
     curr = curr->prev;
   }
   os << " }";
@@ -4978,11 +5179,12 @@ void DestructorInsertion::checkLocalControlFlowOp(Operation &op) {
 
   // A raise will use the consume set that was seen on entry to the enclosing
   // except block.
-  StringAttr raiseLabel = cast<LIT::TryRaiseOp>(op).getLabelAttr();
-  auto matchingSet = raiseEntryInfo->getMatchingRaiseSet(raiseLabel);
+  auto raiseOp = cast<LIT::TryRaiseOp>(op);
+  BitVector *matchingSet = raiseEntryInfo->getMatchingRaiseSet(
+      raiseOp.getLabelAttr(), raiseOp.getHandlerIndexAttr().getInt());
   //  lower-semantic-cf should guarantee there is a matching set.
   assert(matchingSet && "No matching 'try'?");
-  consumedValues = *matchingSet->raiseSet;
+  consumedValues = *matchingSet;
 }
 
 /// 'if' operations propagate the consume sets into each branch, and use the
@@ -5359,25 +5561,31 @@ void DestructorInsertion::checkLoopOp(Operation &loopOp) {
 }
 
 void DestructorInsertion::checkTryOp(LIT::TryOp tryOp) {
-  // The except block is processed with a copy of the consumed value set
-  // from the bottom of the try.  After processing it, we know what the
-  // consumed values are for the exception block.
-  auto exceptSets = DestructorInsertion::copy(*this);
-  exceptSets.raiseEntryInfo = raiseEntryInfo;
-
-  Region &exceptRegion = tryOp.getExceptRegion();
-  exceptSets.scanBlock(exceptRegion.front());
+  // Process each except block with the consumed set from after the try. The
+  // resulting entry sets describe what each corresponding raise path must
+  // consume.
+  SmallVector<DestructorInsertion> exceptSets;
+  exceptSets.reserve(tryOp.getExceptRegions().size());
+  for (Region &exceptRegion : tryOp.getExceptRegions()) {
+    auto handlerSets = DestructorInsertion::copy(*this);
+    handlerSets.raiseEntryInfo = raiseEntryInfo;
+    handlerSets.scanBlock(exceptRegion.front());
+    exceptSets.push_back(std::move(handlerSets));
+  }
+  SmallVector<BitVector *> exceptSetPointers;
+  exceptSetPointers.reserve(exceptSets.size());
+  for (DestructorInsertion &handlerSets : exceptSets)
+    exceptSetPointers.push_back(&handlerSets.consumedValues);
 
   // The normal flow finishes with the else block, process it to see what
   // the input consumedValues set to the else block is.
   scanBlock(tryOp.getElseRegion().front());
 
-  // Ok, finally we process the try body.  Any 'raise's within the try body
-  // use the consumed values set on entry to the except block.
-  // Attach current raise set info to the list as we get one scope deeper.
+  // Finally, process the try body. Each raise uses the consumed set on entry
+  // to its selected except block.
   RaiseSetEntry<BitVector> curInfo = {
       tryOp.getLabelAttr(),
-      &exceptSets.consumedValues,
+      exceptSetPointers,
       raiseEntryInfo,
   };
   llvm::SaveAndRestore x(raiseEntryInfo, &curInfo);
@@ -6011,9 +6219,5 @@ LogicalResult CheckLifetimes::processFunction(FnOp func,
     varDecl->erase();
   }
 
-  // Return failure if we generated errors for any of the tracked values.
-  hadErrors |= llvm::any_of(valueSet.getValueInfos(), [&](ValueInfo &info) {
-    return info.hasErrorDiagnosed;
-  });
-  return failure(hadErrors);
+  return failure(hadErrors || valueSet.hadAnyErrors());
 }

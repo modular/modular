@@ -1,0 +1,1120 @@
+Park posts the provider keeps refusing instead of spinning on them forever.
+
+EFA must hear a peer's handshake before it posts an RMA to that peer. Until it
+does, it queues up to 16 operations per endpoint and refuses the rest with
+-FI_EAGAIN, and a peer that stopped or died before answering never answers.
+libfabric 2.4 lowers its count of queued operations on every progress pass
+over them, so up to 16 more get in before the count wraps, and from then on it
+refuses every post to a peer whose handshake has not arrived. NIXL 1.5.0's
+progress thread retries a refused post in place forever, reaping only its own
+rail's completions in between. One read or write to such a peer therefore
+stops the agent outright, because the thread never gets back to its other
+posts, its other rails or their completions. Every later transfer on the agent
+then reports zero of its requests complete with no CQ error, and once a rail's
+post ring fills the caller blocks in MpscRing::push with the agent lock held.
+
+The progress thread now retries a refused post in place for a short budget,
+which usually covers a send queue that is only full, then parks it behind the
+posts already parked for its destination and moves on. Each pass first serves
+the parked destinations one post at a time in rounds, starting after the
+destination that took the last post, so a busy destination cannot take every
+slot the provider frees. A destination that takes no post for
+NIXL_LIBFABRIC_POST_RETRY_TIMEOUT_MS (2000 ms by default, 0 to wait forever)
+has all of its parked posts failed the way a failed post already is. That is
+far longer than any refusal a live peer causes, the handshake round trip of a
+healthy new peer included, and well inside the five seconds a KV cache
+connector gives a transfer, so a transfer whose posts all fail ends in an
+error first. A refusal that covers the whole rail, such as a peer that leaves
+the device retrying writes it never takes, fails every destination's parked
+posts after the same bound instead of stalling them. Parked posts left on a
+rail with no registrations are failed rather than tried again. A rail parks at
+most one post ring's worth of posts. At that limit a post to a destination
+that has taken none for 100 ms fails at once instead of parking, and a refused
+post that needs room first fails the parked posts of such destinations, so one
+silent peer's backlog cannot keep the rail from taking other destinations'
+posts. Only when no room frees does the rail hold the post back and stop
+taking new ones from the ring, so the threads pushing to it wait at the pace
+the provider takes posts, as they did before. Posts failed at the limit are
+reported in at most one line a second per rail. A parked post goes without
+FI_MORE, and so does the next post after one is set aside while a batch is
+open, so the next post the provider takes on the rail rings the doorbell for
+the writes it holds. The first post a parked destination takes logs, at INFO,
+how long after its first refusal it came.
+
+A transfer whose refused posts all fail completes with an error. The up to 32
+operations EFA queued before the refusals stay with the provider and complete
+only if the peer answers, so a transfer that includes them can stay pending.
+Its caller needs its own deadline for it, and after giving up on it must
+neither deregister nor reuse its memory, because the operations EFA holds may
+still write it.
+
+postSend, which sends handshakes and notifications, and the postRead and
+postWrite loops that run when the progress thread is off retried -FI_EAGAIN
+forever too, and now give up after the same bound. A handshake reply the
+progress thread sends itself reaps nothing while it waits, so a full rail 0
+send queue costs the agent up to the bound there instead of a permanent stall.
+The drain interleave's completion poll also failed to report an error entry to
+its request, which left that transfer's count short forever, and now fails the
+request the way progressCompletionQueue() does.
+
+With a silent peer no longer freezing it, the progress thread also reaps the
+provider's own error when that peer's endpoint is later destroyed, for example
+on the packet that asked it for its handshake. With no event queue bound the
+provider aborts the process on such an error, so each rail now binds one and
+drains it on every pass. An error that a lost peer explains (FI_ENOTCONN,
+FI_ECONNABORTED or FI_EHOSTUNREACH) is logged, and any other still aborts.
+
+TODO(GEX-4552): upstream this and drop the patch once it ships in a tagged NIXL
+release.
+
+diff --git a/src/utils/libfabric/libfabric_rail.cpp b/src/utils/libfabric/libfabric_rail.cpp
+index 491d16f..dc88200 100644
+--- a/src/utils/libfabric/libfabric_rail.cpp
++++ b/src/utils/libfabric/libfabric_rail.cpp
+@@ -25,6 +25,10 @@
+ #include <cuda_runtime.h>
+ #endif
+ 
++#include <algorithm>
++#include <chrono>
++#include <cstdio>
++#include <cstdlib>
+ #include <cstring>
+ #include <stdexcept>
+ #include <stack>
+@@ -42,6 +46,72 @@ shmProviderSupportsRuntime(enum fi_hmem_iface runtime) {
+     return runtime != FI_HMEM_NEURON;
+ }
+ 
++// How long the provider may refuse every post to a destination with -FI_EAGAIN before those
++// posts fail for good.
++//
++// EFA must hear a peer's handshake before it posts an RMA to that peer. Until it does, it
++// queues up to 16 operations per endpoint and refuses the rest with -FI_EAGAIN, and a peer
++// that stopped or died before answering never answers. Retrying such a post forever is what
++// used to freeze the whole agent, because the progress thread never got back to its other
++// posts, its other rails or its completions. libfabric 2.4 lowers its count of queued
++// operations on every progress pass over them, so up to 16 more get in before the count
++// wraps, and from then on it refuses every post to a peer whose handshake has not arrived.
++// The bound therefore also covers a healthy new peer's handshake round trip, which takes
++// milliseconds.
++//
++// A refusal that covers the whole rail, such as a peer that leaves the device retrying writes it
++// never takes, fails every destination's parked posts after the same bound instead of stalling
++// them, or after kParkedLimitGrace once the rail holds as many parked posts as it allows. Two
++// seconds sits far above any refusal a live peer causes and well below the five seconds a KV
++// cache connector gives a transfer, so a transfer whose posts all fail ends in an error before
++// its caller gives up on it. The operations EFA queued stay with the provider, so a transfer
++// that includes them can stay pending. Its caller needs a deadline of its own, and after giving
++// up on it must neither deregister nor reuse its memory.
++//
++// NIXL_LIBFABRIC_POST_RETRY_TIMEOUT_MS overrides the default, and 0 retries forever.
++std::chrono::milliseconds
++postRetryTimeout() {
++    static const std::chrono::milliseconds timeout = [] {
++        constexpr std::chrono::milliseconds default_timeout(2000);
++        const char *env = getenv("NIXL_LIBFABRIC_POST_RETRY_TIMEOUT_MS");
++        if (!env || !*env) {
++            return default_timeout;
++        }
++        char *end = nullptr;
++        const long long ms = strtoll(env, &end, 10);
++        if (end == env || *end != '\0' || ms < 0) {
++            NIXL_WARN << "Ignoring invalid NIXL_LIBFABRIC_POST_RETRY_TIMEOUT_MS='" << env
++                      << "' and using " << default_timeout.count() << " ms";
++            return default_timeout;
++        }
++        // a day is longer than any useful bound and keeps the nanosecond comparison in range
++        return std::min(std::chrono::milliseconds(ms),
++                        std::chrono::milliseconds(std::chrono::hours(24)));
++    }();
++    return timeout;
++}
++
++bool
++postRetryExpired(std::chrono::steady_clock::time_point started) {
++    const auto timeout = postRetryTimeout();
++    return timeout.count() > 0 && std::chrono::steady_clock::now() - started >= timeout;
++}
++
++// How long the progress thread retries a refused post in place, reaping completions in
++// between, before it parks the post and moves on. A send queue that is only full usually
++// clears within it, and a post parked anyway is retried on the next pass.
++constexpr std::chrono::microseconds kInlineRetryBudget(200);
++
++// How long a destination may take no post while its rail holds as many parked posts as it
++// allows. Past it the destination's parked posts fail early, so one silent peer cannot keep
++// the rail from taking anyone's new posts for the whole of postRetryTimeout(). It sits far
++// above a live peer's handshake round trip, so a healthy destination keeps its posts.
++constexpr std::chrono::milliseconds kParkedLimitGrace(100);
++
++// The least time between two reports of posts a rail failed at its parked limit, because a
++// flooded silent peer has posts failed on nearly every pass.
++constexpr std::chrono::seconds kLimitFailureReportInterval(1);
++
+ } // namespace
+ 
+ // RequestPool Base Class Implementation
+@@ -422,6 +492,7 @@ nixlLibfabricRail::nixlLibfabricRail(const std::string &device,
+     endpoint = nullptr;
+     cq = nullptr;
+     av = nullptr;
++    eq = nullptr;
+     memset(ep_name, 0, sizeof(ep_name));
+ 
+     // Initialize all Libfabric resources for this rail
+@@ -566,6 +637,29 @@ nixlLibfabricRail::nixlLibfabricRail(const std::string &device,
+             throw std::runtime_error("fi_ep_bind av failed for rail " + std::to_string(rail_id));
+         }
+ 
++        // Bind an EQ, so that the provider reports an error on an operation it runs on its
++        // own, such as the packet asking a peer for its handshake, instead of aborting the
++        // process. Once a peer that never answers no longer freezes the progress thread, that
++        // thread does reap such an error when the peer's endpoint is gone. drainEventQueue()
++        // still aborts on any other kind of error, and a provider that cannot bind an EQ keeps
++        // its old behavior.
++        struct fi_eq_attr eq_attr = {};
++        eq_attr.wait_obj = FI_WAIT_NONE;
++        ret = fi_eq_open(fabric, &eq_attr, &eq, NULL);
++        if (ret) {
++            NIXL_WARN << "fi_eq_open failed for rail " << rail_id << ": " << fi_strerror(-ret)
++                      << ", so the rail runs without an event queue";
++            eq = nullptr;
++        } else {
++            ret = fi_ep_bind(endpoint, &eq->fid, 0);
++            if (ret) {
++                NIXL_WARN << "fi_ep_bind eq failed for rail " << rail_id << ": "
++                          << fi_strerror(-ret) << ", so the rail runs without an event queue";
++                fi_close(&eq->fid);
++                eq = nullptr;
++            }
++        }
++
+         // On runtimes the shm provider cannot serve, disable it so that intra-node
+         // transfers stay on the EFA path.
+         if (!shmProviderSupportsRuntime(runtime_)) {
+@@ -727,6 +821,15 @@ nixlLibfabricRail::cleanup() {
+         av = nullptr;
+     }
+ 
++    if (eq) {
++        NIXL_TRACE << "Closing event queue for rail " << rail_id;
++        int ret = fi_close(&eq->fid);
++        if (ret) {
++            NIXL_WARN << "fi_close eq failed for rail " << rail_id << ": " << fi_strerror(-ret);
++        }
++        eq = nullptr;
++    }
++
+     // STEP 3: Clean up request pools while domain is still valid
+     // This ensures all memory registrations (MRs) are properly deregistered before domain closure
+     NIXL_TRACE << "Cleaning up request pools for rail " << rail_id;
+@@ -776,6 +879,7 @@ nixlLibfabricRail::setProgressThreadEnabled(bool enabled) {
+ 
+ bool
+ nixlLibfabricRail::initPostQueue(size_t post_queue_size) {
++    parked_limit_ = post_queue_size;
+     return post_ring_.initialize(post_queue_size);
+ }
+ 
+@@ -790,9 +894,68 @@ nixlLibfabricRail::setXferErrorCallback(
+     xferErrorCallback = callback;
+ }
+ 
++void
++nixlLibfabricRail::drainEventQueue() {
++    if (!eq) {
++        return;
++    }
++
++    // EFA's event queue is libfabric's util EQ, which takes its own lock, so unlike the CQ,
++    // reading it needs no ep_mutex_.
++
++    struct fi_eq_entry entry;
++    uint32_t event;
++    ssize_t ret;
++    while ((ret = fi_eq_read(eq, &event, &entry, sizeof(entry), 0)) != -FI_EAGAIN) {
++        if (ret == -FI_EAVAIL) {
++            struct fi_eq_err_entry err_entry;
++            memset(&err_entry, 0, sizeof(err_entry));
++            ret = fi_eq_readerr(eq, &err_entry, 0);
++            if (ret < 0) {
++                NIXL_ERROR << "fi_eq_readerr failed on rail " << rail_id << ": "
++                           << fi_strerror(-ret);
++                return;
++            }
++
++            // A peer whose endpoint is gone fails the operations the provider runs on its own
++            // to that peer, such as the packet asking for its handshake, which is expected
++            // whenever a peer restarts. Any other internal error means the provider no longer
++            // vouches for the endpoint, so stop the process as the provider does when no
++            // event queue is bound.
++            const bool peer_lost = err_entry.err == FI_ENOTCONN ||
++                err_entry.err == FI_ECONNABORTED || err_entry.err == FI_EHOSTUNREACH;
++            if (!peer_lost) {
++                NIXL_ERROR << "Provider internal error on rail " << rail_id << ": "
++                           << fi_strerror(err_entry.err) << " prov_errno: " << err_entry.prov_errno
++                           << ", aborting";
++                fprintf(stderr,
++                        "Libfabric provider reported an internal error on NIXL rail %u: (%d) %s, "
++                        "prov_errno %d. Aborting.\n",
++                        static_cast<unsigned>(rail_id),
++                        err_entry.err,
++                        fi_strerror(err_entry.err),
++                        err_entry.prov_errno);
++                abort();
++            }
++            NIXL_ERROR << "Event queue error on rail " << rail_id << ": "
++                       << fi_strerror(err_entry.err) << " prov_errno: " << err_entry.prov_errno;
++            continue;
++        }
++        if (ret < 0) {
++            NIXL_ERROR << "fi_eq_read failed on rail " << rail_id << ": " << fi_strerror(-ret);
++            return;
++        }
++        NIXL_DEBUG << "Event queue event " << event << " on rail " << rail_id;
++    }
++}
++
+ // Per-rail completion processing - handles one rail's CQ with configurable blocking behavior
+ nixl_status_t
+ nixlLibfabricRail::progressCompletionQueue() {
++    // the provider writes an internal error to the event queue while it reaps completions,
++    // so read it on every pass
++    drainEventQueue();
++
+     // Completion processing FIRST — process arrivals before posting new items
+     struct fi_cq_data_entry completions[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
+     fi_addr_t src_addrs[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
+@@ -886,11 +1049,12 @@ nixlLibfabricRail::pollForCompletions() {
+     fi_addr_t src_addrs[NIXL_LIBFABRIC_CQ_BATCH_SIZE];
+     struct fi_cq_err_entry err_entry = {};
+     int cq_ret;
++    int err_ret = 0;
+     {
+         const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+         cq_ret = fi_cq_readfrom(cq, cq_buf, NIXL_LIBFABRIC_CQ_BATCH_SIZE, src_addrs);
+         if (cq_ret < 0 && cq_ret != -FI_EAGAIN) {
+-            fi_cq_readerr(cq, &err_entry, 0);
++            err_ret = fi_cq_readerr(cq, &err_entry, 0);
+         }
+     }
+     if (cq_ret > 0) {
+@@ -900,6 +1064,18 @@ nixlLibfabricRail::pollForCompletions() {
+     } else if (cq_ret < 0 && cq_ret != -FI_EAGAIN) {
+         NIXL_ERROR << "CQ error in drain interleave on rail " << rail_id << ": "
+                    << fi_strerror(err_entry.err);
++
++        // The error entry names the operation that failed, so fail its request the way
++        // progressCompletionQueue() does. Otherwise its transfer can never complete.
++        if (err_ret > 0 && err_entry.op_context) {
++            nixlLibfabricReq *req = findRequestFromContext(err_entry.op_context);
++            if (req && req->in_use) {
++                if (req->completion_callback) {
++                    req->completion_callback(NIXL_ERR_BACKEND);
++                }
++                releaseRequest(req);
++            }
++        }
+     }
+ }
+ 
+@@ -1217,9 +1393,10 @@ nixlLibfabricRail::postSend(uint64_t immediate_data, fi_addr_t dest_addr, nixlLi
+                << " XFER_ID=" << NIXL_GET_XFER_ID_FROM_IMM(immediate_data)
+                << " dest_addr=" << dest_addr << std::dec << " context=" << &req->ctx;
+ 
+-    // Retry indefinitely until senddata succeeds or fails for all providers
++    // Retry while the provider refuses the send with EAGAIN, for up to postRetryTimeout()
+     int ret = -FI_EAGAIN;
+     int attempt = 0;
++    const auto started = std::chrono::steady_clock::now();
+ 
+     while (true) {
+         // Libfabric fi_senddata call
+@@ -1243,8 +1420,16 @@ nixlLibfabricRail::postSend(uint64_t immediate_data, fi_addr_t dest_addr, nixlLi
+         }
+ 
+         if (ret == -FI_EAGAIN) {
+-            // Resource temporarily unavailable - retry indefinitely for all providers
++            // A full send queue clears as completions are reaped, by the progress thread or
++            // below, but a peer that stopped polling its rail can keep the send refused
++            // indefinitely while the caller holds the agent.
+             attempt++;
++            if (postRetryExpired(started)) {
++                NIXL_ERROR << "fi_senddata still returned EAGAIN on rail " << rail_id << " after "
++                           << attempt << " attempts over " << postRetryTimeout().count()
++                           << " ms, so the post fails";
++                return NIXL_ERR_BACKEND;
++            }
+ 
+             // Log every N attempts to avoid log spam
+             if (attempt % NIXL_LIBFABRIC_LOG_INTERVAL_ATTEMPTS == 0) {
+@@ -1290,130 +1475,73 @@ nixlLibfabricRail::enqueuePost(const nixlLibfabricPostRequest &req) {
+ 
+ nixl_status_t
+ nixlLibfabricRail::drainPostQueue() {
+-    nixlLibfabricPostRequest pr;
+     int posted = 0;
+-#if HAVE_CUDA
+-    bool use_cuda_addr_wa = false;
+     int current_cuda_device = -1;
+-#endif
++
++    // posts parked on an earlier pass go first, so each destination's posts keep their order
++    if (!parked_.empty()) {
++        retryParkedPosts(current_cuda_device, posted);
++    }
+ 
+     // drain the queue up to configured limit,
+     // to ensure requests from other rails do not wait too much time
++    // A refused post needs room to park, and once the rail holds parked_limit_ posts it makes
++    // room by failing the parked posts of destinations that have taken none for
++    // kParkedLimitGrace. A post to such a destination fails at once instead, so one silent
++    // peer's backlog cannot keep the ring shut for everyone else. When no room frees, the
++    // post waits in held_post_ and the rail takes nothing more from the ring, so the threads
++    // pushing to it wait at the pace the provider takes posts, as they would without parking.
++    nixlLibfabricPostRequest pr;
+     size_t post_req_count = 0;
+-    while (post_req_count < POST_MAX_BATCH_SIZE && post_ring_.pop(pr)) {
++    while (post_req_count < POST_MAX_BATCH_SIZE && takeNextPost(pr)) {
+         ++post_req_count;
+-        int ret = -FI_EAGAIN;
+ 
+-#if HAVE_CUDA
+-        if (pr.is_cuda_vram) {
+-            // NOTE: for now we do not call engine to try to set context in work-around mode - this
+-            // is postponsed to another PR, which requires substantial refactoring - instead we
+-            // directly call cudaSetDevice() when needed
+-            use_cuda_addr_wa = false;
+-            nixl_status_t status = LibfabricUtils::cudaSetCtx(use_cuda_addr_wa);
+-            if (status != NIXL_SUCCESS) {
+-                // completion is notified also for failed requests
+-                // (otherwise counters would never match)
+-                if (pr.req && pr.req->completion_callback) {
+-                    pr.req->completion_callback(status);
+-                }
+-                if (pr.req) {
+-                    releaseRequest(pr.req);
+-                }
++        if (!bindPostDevice(pr, current_cuda_device)) {
++            continue;
++        }
+ 
+-                // defrred request cannot be executed, continue to the next
+-                NIXL_ERROR << "Failed to set CUDA context, while posting deferred descriptor";
++        // a post to a destination that already has posts parked waits behind them
++        if (auto parked = parked_.find(pr.dest_addr); parked != parked_.end()) {
++            if (parked_count_ >= parked_limit_ && idleAtParkedLimit(parked->second)) {
++                failPost(pr, NIXL_ERR_BACKEND);
++                countLimitFailures(1, 0, pr.dest_addr);
+                 continue;
+             }
+-
+-            // other-wise set cuda device before call if needed
+-            if (!use_cuda_addr_wa && pr.device_id != current_cuda_device) {
+-                cudaError_t cuda_ret = cudaSetDevice(pr.device_id);
+-                if (cuda_ret != cudaSuccess) {
+-                    // completion is notified also for failed requests
+-                    // (otherwise counters would never match)
+-                    if (pr.req && pr.req->completion_callback) {
+-                        pr.req->completion_callback(NIXL_ERR_BACKEND);
+-                    }
+-                    if (pr.req) {
+-                        releaseRequest(pr.req);
+-                    }
+-
+-                    // defrred request cannot be executed, continue to the next
+-                    NIXL_ERROR << "Failed to set CUDA device " << pr.device_id
+-                               << " while posting deferred descriptor: "
+-                               << cudaGetErrorString(cuda_ret);
+-                    continue;
+-                }
+-                current_cuda_device = pr.device_id;
++            if (!makeParkingRoom()) {
++                holdPost(pr);
++                break;
+             }
++            parkPost(pr, std::chrono::steady_clock::now());
++            continue;
+         }
+-#endif
+ 
+-        while (ret == -FI_EAGAIN) {
+-            if (pr.type == nixlLibfabricPostRequest::WRITE) {
+-                struct iovec iov{};
+-                iov.iov_base = pr.local_addr;
+-                iov.iov_len = pr.length;
+-
+-                struct fi_rma_iov rma_iov{};
+-                rma_iov.addr = pr.remote_addr;
+-                rma_iov.len = pr.length;
+-                rma_iov.key = pr.remote_key;
+-
+-                void *desc = pr.local_desc;
+-                struct fi_msg_rma msg = {};
+-                msg.msg_iov = &iov;
+-                msg.desc = &desc;
+-                msg.iov_count = 1;
+-                msg.addr = pr.dest_addr;
+-                msg.rma_iov = &rma_iov;
+-                msg.rma_iov_count = 1;
+-                msg.context = &pr.req->ctx;
+-                msg.data = pr.immediate_data;
+-
+-                const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+-                ret = fi_writemsg(endpoint, &msg, pr.fi_flags | FI_REMOTE_CQ_DATA);
+-            } else {
+-                struct iovec iov{};
+-                iov.iov_base = pr.local_addr;
+-                iov.iov_len = pr.length;
+-
+-                struct fi_rma_iov rma_iov{};
+-                rma_iov.addr = pr.remote_addr;
+-                rma_iov.len = pr.length;
+-                rma_iov.key = pr.remote_key;
+-
+-                void *desc = pr.local_desc;
+-                struct fi_msg_rma msg = {};
+-                msg.msg_iov = &iov;
+-                msg.desc = &desc;
+-                msg.iov_count = 1;
+-                msg.addr = pr.dest_addr;
+-                msg.rma_iov = &rma_iov;
+-                msg.rma_iov_count = 1;
+-                msg.context = &pr.req->ctx;
+-
+-                const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
+-                ret = fi_readmsg(endpoint, &msg, pr.fi_flags);
+-            }
++        // A send queue that is only full clears as completions are reaped, so retry in place
++        // for a short while before setting the post aside.
++        int ret = submitPost(pr, false);
++        const auto first_refused = std::chrono::steady_clock::now();
++        while (ret == -FI_EAGAIN &&
++               std::chrono::steady_clock::now() - first_refused < kInlineRetryBudget) {
++            pollForCompletions();
++            ret = submitPost(pr, false);
++        }
+ 
+-            if (ret == -FI_EAGAIN) {
+-                pollForCompletions();
++        // A post still refused is most likely waiting on a peer's handshake that may never
++        // come, so park it and keep serving the rail's other posts and the other rails.
++        if (ret == -FI_EAGAIN) {
++            if (!makeParkingRoom()) {
++                holdPost(pr);
++                break;
+             }
++            NIXL_DEBUG << "Parking a post to fi_addr " << pr.dest_addr << " on rail " << rail_id
++                       << " that the provider keeps refusing with EAGAIN";
++            parkPost(pr, first_refused);
++            continue;
+         }
+ 
+         if (ret != 0) {
+             NIXL_ERROR << "drainPostQueue: post failed ret=" << ret << " (" << fi_strerror(-ret)
+                        << ") on rail " << rail_id;
+-            if (pr.req && pr.req->completion_callback) {
+-                // completion is notified also for failed requests
+-                // (otherwise counters would never match)
+-                pr.req->completion_callback(NIXL_ERR_BACKEND);
+-            }
+-            if (pr.req) {
+-                releaseRequest(pr.req);
+-            }
++            failPost(pr, NIXL_ERR_BACKEND);
+             continue;
+         }
+         posted++;
+@@ -1422,9 +1550,348 @@ nixlLibfabricRail::drainPostQueue() {
+         }
+     }
+ 
++    reportLimitFailures();
++
++    const bool parked_full = held_post_.has_value();
++    if (parked_full && !parked_full_) {
++        NIXL_WARN << "Rail " << rail_id << " has " << parked_count_
++                  << " posts parked, so new posts wait in its post ring until the provider "
++                     "takes parked ones or they fail";
++    }
++    parked_full_ = parked_full;
++
+     return NIXL_SUCCESS;
+ }
+ 
++bool
++nixlLibfabricRail::takeNextPost(nixlLibfabricPostRequest &pr) {
++    if (held_post_) {
++        pr = *held_post_;
++        held_post_.reset();
++        return true;
++    }
++    return post_ring_.pop(pr);
++}
++
++bool
++nixlLibfabricRail::idleAtParkedLimit(const parkedDestination &destination) const {
++    // retrying forever means parked posts never fail, so neither does a post behind them
++    const auto timeout = postRetryTimeout();
++    return timeout.count() > 0 && std::chrono::steady_clock::now() - destination.last_progress >=
++        std::min(kParkedLimitGrace, timeout);
++}
++
++void
++nixlLibfabricRail::holdPost(const nixlLibfabricPostRequest &pr) {
++    // as in parkPost(), the post held back may have been the one meant to ring the doorbell
++    if (doorbell_owed_) {
++        ring_next_post_ = true;
++    }
++    held_post_ = pr;
++}
++
++void
++nixlLibfabricRail::countLimitFailures(size_t unparked, size_t cleared, fi_addr_t dest_addr) {
++    if (limit_unparked_ == 0 && limit_cleared_ == 0) {
++        limit_failures_since_ = std::chrono::steady_clock::now();
++    }
++    limit_unparked_ += unparked;
++    limit_cleared_ += cleared;
++    limit_last_addr_ = dest_addr;
++}
++
++void
++nixlLibfabricRail::reportLimitFailures() {
++    const auto now = std::chrono::steady_clock::now();
++    if ((limit_unparked_ == 0 && limit_cleared_ == 0) ||
++        now - limit_failures_reported_ < kLimitFailureReportInterval) {
++        return;
++    }
++    NIXL_ERROR << "Rail " << rail_id << " failed " << limit_unparked_
++               << " new posts without parking them and " << limit_cleared_
++               << " parked posts to make room in the last "
++               << std::chrono::duration_cast<std::chrono::milliseconds>(now -
++                                                                        limit_failures_since_)
++                      .count()
++               << " ms, because it held as many parked posts as it allows and their "
++                  "destinations, most recently fi_addr "
++               << limit_last_addr_ << ", had taken none for "
++               << std::min(kParkedLimitGrace, postRetryTimeout()).count()
++               << " ms, most likely because those peers never answered their handshakes";
++    limit_unparked_ = 0;
++    limit_cleared_ = 0;
++    limit_failures_reported_ = now;
++}
++
++bool
++nixlLibfabricRail::makeParkingRoom() {
++    if (parked_count_ < parked_limit_) {
++        return true;
++    }
++    // retrying forever means parked posts never fail, so the rail can only wait for room
++    const auto timeout = postRetryTimeout();
++    if (timeout.count() == 0) {
++        return false;
++    }
++    expireParkedPosts(std::min(kParkedLimitGrace, timeout), true);
++    return parked_count_ < parked_limit_;
++}
++
++void
++nixlLibfabricRail::retryParkedPosts(int &current_cuda_device, int &posted) {
++    // Serve the destinations one post at a time in rounds, starting just after the one that
++    // took the last post, so that when the provider frees only a few slots a destination
++    // with a long backlog cannot take them all and leave a healthy one to expire. Ordering
++    // by address keeps that rotation fair while destinations come and go. A destination
++    // whose head is refused sits out the rest of the pass, because its later posts would
++    // only be refused for the same reason.
++    std::vector<std::pair<fi_addr_t, parkedDestination *>> order;
++    order.reserve(parked_.size());
++    for (auto &[dest_addr, destination] : parked_) {
++        order.emplace_back(dest_addr, &destination);
++    }
++    if (order.empty()) {
++        return;
++    }
++    std::sort(order.begin(), order.end(), [](const auto &a, const auto &b) {
++        return a.first < b.first;
++    });
++    const auto first = std::upper_bound(
++        order.begin(), order.end(), parked_cursor_, [](fi_addr_t cursor, const auto &entry) {
++            return cursor < entry.first;
++        });
++    std::rotate(order.begin(), first, order.end());
++    std::vector<bool> refused(order.size(), false);
++
++    bool moved = true;
++    while (moved) {
++        moved = false;
++        for (size_t i = 0; i < order.size(); ++i) {
++            parkedDestination &destination = *order[i].second;
++            if (refused[i] || destination.posts.empty()) {
++                continue;
++            }
++
++            const nixlLibfabricPostRequest &head = destination.posts.front();
++            if (bindPostDevice(head, current_cuda_device)) {
++                const int ret = submitPost(head, true);
++                if (ret == -FI_EAGAIN) {
++                    refused[i] = true;
++                    continue;
++                }
++                if (ret != 0) {
++                    NIXL_ERROR << "drainPostQueue: parked post failed ret=" << ret << " ("
++                               << fi_strerror(-ret) << ") on rail " << rail_id;
++                    failPost(head, NIXL_ERR_BACKEND);
++                } else {
++                    // stamped now rather than at the start of the pass, which a handshake
++                    // reply sent from a completion callback can stretch past the bound
++                    destination.last_progress = std::chrono::steady_clock::now();
++                    parked_cursor_ = order[i].first;
++                    if (!destination.took_post) {
++                        destination.took_post = true;
++                        NIXL_INFO << "fi_addr " << order[i].first << " on rail " << rail_id
++                                  << " took a post "
++                                  << std::chrono::duration_cast<std::chrono::microseconds>(
++                                         destination.last_progress - destination.parked_since)
++                                         .count()
++                                  << " us after the provider first refused it";
++                    }
++                    if (++posted % POST_POLL_INTERLEAVE_RATIO == 0) {
++                        pollForCompletions();
++                    }
++                }
++            }
++            destination.posts.pop_front();
++            --parked_count_;
++            moved = true;
++        }
++    }
++
++    expireParkedPosts(postRetryTimeout(), false);
++}
++
++void
++nixlLibfabricRail::expireParkedPosts(std::chrono::milliseconds bound, bool at_limit) {
++    const auto now = std::chrono::steady_clock::now();
++    for (auto it = parked_.begin(); it != parked_.end();) {
++        parkedDestination &destination = it->second;
++
++        // A destination that has taken no post for the whole bound is most likely a peer that
++        // will never answer its handshake, and its later posts would only wait behind the
++        // same refusal, so fail every post parked for it.
++        if (bound.count() > 0 && !destination.posts.empty() &&
++            now - destination.last_progress >= bound) {
++            const size_t expired = destination.posts.size();
++            for (const nixlLibfabricPostRequest &post : destination.posts) {
++                failPost(post, NIXL_ERR_BACKEND);
++            }
++            destination.posts.clear();
++            parked_count_ -= expired;
++            if (at_limit) {
++                countLimitFailures(0, expired, it->first);
++            } else {
++                NIXL_ERROR << "Failed " << expired << " posts to fi_addr " << it->first
++                           << " on rail " << rail_id << " after the provider took none for "
++                           << bound.count()
++                           << " ms, most likely because the peer never answered its handshake";
++            }
++        }
++
++        it = destination.posts.empty() ? parked_.erase(it) : std::next(it);
++    }
++}
++
++void
++nixlLibfabricRail::parkPost(const nixlLibfabricPostRequest &pr,
++                            std::chrono::steady_clock::time_point refused_at) {
++    // A batch's FI_MORE writes are held until a post without it, and this may have been that
++    // post, so make sure the next one the rail accepts rings the doorbell.
++    if (doorbell_owed_) {
++        ring_next_post_ = true;
++    }
++
++    auto [it, inserted] = parked_.try_emplace(pr.dest_addr);
++    if (inserted) {
++        it->second.parked_since = refused_at;
++        it->second.last_progress = refused_at;
++    }
++    it->second.posts.push_back(pr);
++    ++parked_count_;
++}
++
++bool
++nixlLibfabricRail::hasParkedPosts() const {
++    return parked_count_ > 0 || held_post_.has_value();
++}
++
++void
++nixlLibfabricRail::failParkedPosts() {
++    size_t failed = parked_count_;
++    for (const auto &[dest_addr, destination] : parked_) {
++        for (const nixlLibfabricPostRequest &post : destination.posts) {
++            failPost(post, NIXL_ERR_BACKEND);
++        }
++    }
++    parked_.clear();
++    parked_count_ = 0;
++    if (held_post_) {
++        failPost(*held_post_, NIXL_ERR_BACKEND);
++        held_post_.reset();
++        ++failed;
++    }
++
++    NIXL_ERROR << "Failed " << failed << " parked posts on rail " << rail_id
++               << " without another attempt, because no local memory is registered on it";
++}
++
++bool
++nixlLibfabricRail::bindPostDevice(const nixlLibfabricPostRequest &pr, int &current_cuda_device) {
++#if HAVE_CUDA
++    if (pr.is_cuda_vram) {
++        // The engine is not asked to set the context in workaround mode yet, because that
++        // needs a larger refactor upstream, so the device is set with cudaSetDevice() when needed
++        bool use_cuda_addr_wa = false;
++        nixl_status_t status = LibfabricUtils::cudaSetCtx(use_cuda_addr_wa);
++        if (status != NIXL_SUCCESS) {
++            // completion is notified also for failed requests
++            // (otherwise counters would never match)
++            failPost(pr, status);
++
++            // the deferred request cannot be executed, so the caller moves on to the next
++            NIXL_ERROR << "Failed to set CUDA context, while posting deferred descriptor";
++            return false;
++        }
++
++        // otherwise set the CUDA device before the call when it changes
++        if (!use_cuda_addr_wa && pr.device_id != current_cuda_device) {
++            cudaError_t cuda_ret = cudaSetDevice(pr.device_id);
++            if (cuda_ret != cudaSuccess) {
++                // completion is notified also for failed requests
++                // (otherwise counters would never match)
++                failPost(pr, NIXL_ERR_BACKEND);
++
++                // the deferred request cannot be executed, so the caller moves on to the next
++                NIXL_ERROR << "Failed to set CUDA device " << pr.device_id
++                           << " while posting deferred descriptor: "
++                           << cudaGetErrorString(cuda_ret);
++                return false;
++            }
++            current_cuda_device = pr.device_id;
++        }
++    }
++#else
++    (void)pr;
++    (void)current_cuda_device;
++#endif
++    return true;
++}
++
++int
++nixlLibfabricRail::submitPost(const nixlLibfabricPostRequest &pr, bool parked) {
++    struct iovec iov{};
++    iov.iov_base = pr.local_addr;
++    iov.iov_len = pr.length;
++
++    struct fi_rma_iov rma_iov{};
++    rma_iov.addr = pr.remote_addr;
++    rma_iov.len = pr.length;
++    rma_iov.key = pr.remote_key;
++
++    void *desc = pr.local_desc;
++    struct fi_msg_rma msg = {};
++    msg.msg_iov = &iov;
++    msg.desc = &desc;
++    msg.iov_count = 1;
++    msg.addr = pr.dest_addr;
++    msg.rma_iov = &rma_iov;
++    msg.rma_iov_count = 1;
++    msg.context = &pr.req->ctx;
++
++    // A parked post no longer sits inside its batch, and a set aside post may have been the
++    // one meant to ring the doorbell, so either goes without FI_MORE and, once the provider
++    // takes it, rings the doorbell for the writes it holds.
++    uint64_t flags = pr.fi_flags;
++    if (parked || ring_next_post_) {
++        flags &= ~FI_MORE;
++    }
++
++    int ret;
++    if (pr.type == nixlLibfabricPostRequest::WRITE) {
++        msg.data = pr.immediate_data;
++        const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
++        ret = fi_writemsg(endpoint, &msg, flags | FI_REMOTE_CQ_DATA);
++    } else {
++        const std::lock_guard<std::mutex> ep_lock(ep_mutex_);
++        ret = fi_readmsg(endpoint, &msg, flags);
++    }
++
++    if (ret == 0) {
++        doorbell_owed_ = (flags & FI_MORE) != 0;
++        if (!doorbell_owed_) {
++            ring_next_post_ = false;
++        }
++    }
++    return ret;
++}
++
++void
++nixlLibfabricRail::failPost(const nixlLibfabricPostRequest &pr, nixl_status_t status) {
++    // as in parkPost(), a failed post may have been the one meant to ring the doorbell
++    if (doorbell_owed_) {
++        ring_next_post_ = true;
++    }
++
++    // completion is notified also for failed requests
++    // (otherwise counters would never match)
++    if (pr.req && pr.req->completion_callback) {
++        pr.req->completion_callback(status);
++    }
++    if (pr.req) {
++        releaseRequest(pr.req);
++    }
++}
++
+ nixl_status_t
+ nixlLibfabricRail::postWrite(const void *local_buffer,
+                              size_t length,
+@@ -1446,9 +1913,10 @@ nixlLibfabricRail::postWrite(const void *local_buffer,
+                << " dest_addr=" << dest_addr << " remote_addr=" << (void *)remote_addr
+                << " remote_key=" << remote_key << " context=" << &req->ctx;
+ 
+-    // Retry indefinitely until writedata succeeds or fails for all providers
++    // Retry while the provider refuses the write with EAGAIN, for up to postRetryTimeout()
+     int ret = -FI_EAGAIN;
+     int attempt = 0;
++    const auto started = std::chrono::steady_clock::now();
+ 
+     struct iovec iov{};
+ 
+@@ -1486,9 +1954,15 @@ nixlLibfabricRail::postWrite(const void *local_buffer,
+         }
+ 
+         if (ret == -FI_EAGAIN) {
+-            // SQ full - do inline CQ progress to free slots, then retry
+-            // Resource temporarily unavailable - retry indefinitely for all providers
++            // A full send queue clears as the completions below are reaped, but a peer that
++            // never answers its handshake keeps the write refused indefinitely.
+             attempt++;
++            if (postRetryExpired(started)) {
++                NIXL_ERROR << "fi_writemsg still returned EAGAIN on rail " << rail_id << " after "
++                           << attempt << " attempts over " << postRetryTimeout().count()
++                           << " ms, so the post fails";
++                return NIXL_ERR_BACKEND;
++            }
+ 
+             // Log every N attempts to avoid log spam
+             if (attempt % NIXL_LIBFABRIC_LOG_INTERVAL_ATTEMPTS == 0) {
+@@ -1542,9 +2016,10 @@ nixlLibfabricRail::postRead(void *local_buffer,
+                << " dest_addr=" << dest_addr << " remote_addr=" << (void *)remote_addr
+                << " remote_key=" << remote_key << " context=" << &req->ctx;
+ 
+-    // Retry indefinitely until readdata succeeds or fails for all providers
++    // Retry while the provider refuses the read with EAGAIN, for up to postRetryTimeout()
+     int ret = -FI_EAGAIN;
+     int attempt = 0;
++    const auto started = std::chrono::steady_clock::now();
+ 
+     while (true) {
+         // Libfabric fi_read call
+@@ -1569,9 +2044,15 @@ nixlLibfabricRail::postRead(void *local_buffer,
+         }
+ 
+         if (ret == -FI_EAGAIN) {
+-            // SQ full - do inline CQ progress to free slots, then retry
+-            // Resource temporarily unavailable - retry indefinitely for all providers
++            // A full send queue clears as the completions below are reaped, but a peer that
++            // never answers its handshake keeps the read refused indefinitely.
+             attempt++;
++            if (postRetryExpired(started)) {
++                NIXL_ERROR << "fi_read still returned EAGAIN on rail " << rail_id << " after "
++                           << attempt << " attempts over " << postRetryTimeout().count()
++                           << " ms, so the post fails";
++                return NIXL_ERR_BACKEND;
++            }
+ 
+             // Log every N attempts to avoid log spam
+             if (attempt % NIXL_LIBFABRIC_LOG_INTERVAL_ATTEMPTS == 0) {
+diff --git a/src/utils/libfabric/libfabric_rail.h b/src/utils/libfabric/libfabric_rail.h
+index ce58c93..b98d90e 100644
+--- a/src/utils/libfabric/libfabric_rail.h
++++ b/src/utils/libfabric/libfabric_rail.h
+@@ -19,8 +19,11 @@
+ #define NIXL_SRC_UTILS_LIBFABRIC_LIBFABRIC_RAIL_H
+ 
+ #include <vector>
++#include <chrono>
+ #include <deque>
++#include <optional>
+ #include <limits>
++#include <unordered_map>
+ #include <string>
+ #include <functional>
+ #include <mutex>
+@@ -510,6 +513,14 @@ public:
+     nixl_status_t
+     drainPostQueue();
+ 
++    /** Whether the progress thread still holds posts the provider refused on this rail */
++    bool
++    hasParkedPosts() const;
++
++    /** Fails every parked post without submitting it, for a rail whose memory is gone */
++    void
++    failParkedPosts();
++
+     // Callback registration methods
+     /** Set callback for notification message processing.
+      *  Signature: (serialized_notif, sender_agent_idx_in_our_table).
+@@ -592,6 +603,7 @@ private:
+     struct fid_domain *domain; // from rail_domains[rail_id]
+     struct fid_cq *cq; // from rail_cqs[rail_id]
+     struct fid_av *av; // from rail_avs[rail_id]
++    struct fid_eq *eq; // reports errors of provider internal operations
+ 
+     // Serializes every libfabric call on this rail's endpoint, CQ and AV. The rail opens its
+     // domain with FI_THREAD_COMPLETION, under which the provider takes no locks for these
+@@ -615,6 +627,102 @@ private:
+     // Whether a progress thread is handling CQ draining
+     bool progress_thread_enabled_ = false;
+ 
++    // The posts to one destination that the provider kept refusing with -FI_EAGAIN past
++    // kInlineRetryBudget, oldest first, so a later post never overtakes an earlier one to the
++    // same peer. last_progress is when the destination last took a post, or when its first
++    // post was parked, and the parked posts fail once it is older than postRetryTimeout().
++    // parked_since is when the provider first refused the destination, and took_post says
++    // whether it has taken a post since, so the wait is logged once.
++    struct parkedDestination {
++        std::deque<nixlLibfabricPostRequest> posts;
++        std::chrono::steady_clock::time_point parked_since;
++        std::chrono::steady_clock::time_point last_progress;
++        bool took_post = false;
++    };
++
++    // Parked posts by destination, so the progress thread can keep serving every other post
++    // and rail. Only the progress thread touches these.
++    std::unordered_map<fi_addr_t, parkedDestination> parked_;
++    size_t parked_count_ = 0;
++
++    // The most posts the rail parks at once, the post ring's size. At the limit the rail fails
++    // the parked posts of destinations idle past kParkedLimitGrace to make room, fails at once
++    // a post to such a destination, and keeps in held_post_ a refused post it has no room
++    // for, taking nothing more from the ring until the post moves on. parked_full_ remembers
++    // that the rail is holding a post, so the warning is logged once.
++    size_t parked_limit_ = 0;
++    std::optional<nixlLibfabricPostRequest> held_post_;
++    bool parked_full_ = false;
++
++    // Posts failed at the parked limit since the last report, new ones failed without parking
++    // and parked ones cleared to make room, the destination of the latest, when the first of
++    // them failed, and when that report went out.
++    size_t limit_unparked_ = 0;
++    size_t limit_cleared_ = 0;
++    fi_addr_t limit_last_addr_ = FI_ADDR_UNSPEC;
++    std::chrono::steady_clock::time_point limit_failures_since_;
++    std::chrono::steady_clock::time_point limit_failures_reported_;
++
++    // The destination that took the last parked post, so the next pass starts after it.
++    fi_addr_t parked_cursor_ = FI_ADDR_UNSPEC;
++
++    // Whether the rail's last accepted post carried FI_MORE, so the provider holds it until
++    // a later post rings the doorbell, and whether a post set aside since then means the
++    // rail's next post has to ring it instead.
++    bool doorbell_owed_ = false;
++    bool ring_next_post_ = false;
++
++    /** Binds the CUDA context and device a VRAM post needs, failing the post when it cannot */
++    bool
++    bindPostDevice(const nixlLibfabricPostRequest &pr, int &current_cuda_device);
++
++    /** Hands one post to the provider once, returning what fi_writemsg or fi_readmsg did */
++    int
++    submitPost(const nixlLibfabricPostRequest &pr, bool parked);
++
++    /** Sets a refused post aside behind the posts already parked for its destination */
++    void
++    parkPost(const nixlLibfabricPostRequest &pr, std::chrono::steady_clock::time_point refused_at);
++
++    /** Reports a post that will never run as a failed request and releases it */
++    void
++    failPost(const nixlLibfabricPostRequest &pr, nixl_status_t status);
++
++    /** Retries parked posts in order, failing those of a destination idle past the bound */
++    void
++    retryParkedPosts(int &current_cuda_device, int &posted);
++
++    /** The post a full rail held back on an earlier pass, or else the next one in the ring */
++    bool
++    takeNextPost(nixlLibfabricPostRequest &pr);
++
++    /** Whether a destination has taken no post for kParkedLimitGrace, so at the parked limit
++     * its new posts fail rather than wait */
++    bool
++    idleAtParkedLimit(const parkedDestination &destination) const;
++
++    /** Keeps a refused post the rail has no room to park for the next pass */
++    void
++    holdPost(const nixlLibfabricPostRequest &pr);
++
++    /** Counts posts failed at the parked limit toward the next report */
++    void
++    countLimitFailures(size_t unparked, size_t cleared, fi_addr_t dest_addr);
++
++    /** Logs the posts failed at the parked limit, at most once per report interval */
++    void
++    reportLimitFailures();
++
++    /** Whether the rail can park another post, failing the parked posts of idle destinations
++     * when it holds as many as it allows */
++    bool
++    makeParkingRoom();
++
++    /** Fails the parked posts of destinations idle for bound, 0 meaning never, and drops
++     * destinations left without posts */
++    void
++    expireParkedPosts(std::chrono::milliseconds bound, bool at_limit);
++
+     // Callback functions. Receive completions carry the sender's index in OUR table,
+     // resolved from the completion's source address (see resolveSourceAddress()).
+     std::function<void(const std::string &, uint32_t)> notificationCallback;
+@@ -640,6 +748,10 @@ private:
+     void
+     pollForCompletions();
+ 
++    /** Logs the provider's event queue errors, aborting on any a lost peer cannot explain */
++    void
++    drainEventQueue();
++
+     /** Record that fi_addr belongs to agent_idx. Called from insertAddress(). */
+     void
+     mapSourceAddress(fi_addr_t fi_addr, uint32_t agent_idx) const;
+diff --git a/src/utils/libfabric/libfabric_rail_manager.cpp b/src/utils/libfabric/libfabric_rail_manager.cpp
+index 4ba916a..7c45c5d 100644
+--- a/src/utils/libfabric/libfabric_rail_manager.cpp
++++ b/src/utils/libfabric/libfabric_rail_manager.cpp
+@@ -1055,6 +1055,7 @@ nixlLibfabricRailManager::postControlMessage(
+ nixl_status_t
+ nixlLibfabricRailManager::progressActiveRails() {
+     std::unordered_set<size_t> rails_to_process;
++    std::unordered_set<size_t> registered_rails;
+ 
+     // Copy active rails under lock to avoid iterator invalidation
+     {
+@@ -1063,6 +1064,17 @@ nixlLibfabricRailManager::progressActiveRails() {
+         rails_to_process.insert(0);
+         for (const auto &[rail_id, refcount] : active_rails_) {
+             rails_to_process.insert(rail_id);
++            registered_rails.insert(rail_id);
++        }
++    }
++
++    // A rail whose last registration is gone may still hold parked posts. Their local memory
++    // is no longer registered, so submitting them again would hand the provider a closed
++    // memory region, and leaving them would never complete their transfers, so they fail
++    // here. Only the progress thread parks posts, and it is the only caller while it runs.
++    for (size_t rail_id = 0; rail_id < rails_.size(); ++rail_id) {
++        if (registered_rails.count(rail_id) == 0 && rails_[rail_id]->hasParkedPosts()) {
++            rails_[rail_id]->failParkedPosts();
+         }
+     }
+ 

@@ -39,3 +39,11 @@ def test_reduction(op) -> None:  # noqa: ANN001
     result = op(tensor, axis=-1)
     assert result.real
     assert list(result.driver_tensor.shape) == [10, 1]
+
+
+@pytest.mark.parametrize("axis", [-1, None])
+def test_argmax_out_dtype(axis: int | None) -> None:
+    tensor = Tensor.zeros([10, 10], dtype=DType.float32, device=DEVICE)
+    result = F.argmax(tensor, axis=axis, out_dtype=DType.int32)
+    assert result.real
+    assert result.dtype == DType.int32

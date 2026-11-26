@@ -15,6 +15,7 @@
   "sparse_indices",
   "spec_decode",
   "spec_decode_outputs",
+  "static_buffers",
   "token_bitmask",
   "tp_signals",
   "vision_embeddings",

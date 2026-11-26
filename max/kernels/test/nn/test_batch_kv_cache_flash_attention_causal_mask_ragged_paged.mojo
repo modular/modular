@@ -268,26 +268,32 @@ def execute_ragged_flash_attention[
     )
 
     # continuous execution
+    # FIXME: K/V are disjoint views of one allocation, but origin tracking
+    # cannot express that attention only reads both views.
     flash_attention_kv_cache(
         q_ragged.as_imm(),
         input_row_offsets.as_imm(),
         # Assume self attention: Q and KV sequence lengths are equal.
         input_row_offsets.as_imm(),
-        kv_collection_continuous.get_key_cache(layer_idx),
-        kv_collection_continuous.get_value_cache(layer_idx),
+        kv_collection_continuous.get_key_cache(layer_idx).unsafe_origin_cast(),
+        kv_collection_continuous.get_value_cache(
+            layer_idx
+        ).unsafe_origin_cast(),
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
         ref_output,
     )
 
     # paged execution
+    # FIXME: K/V are disjoint views of one allocation, but origin tracking
+    # cannot express that attention only reads both views.
     flash_attention_kv_cache(
         q_ragged.as_imm(),
         input_row_offsets.as_imm(),
         # Assume self attention: Q and KV sequence lengths are equal.
         input_row_offsets.as_imm(),
-        kv_collection_paged.get_key_cache(layer_idx),
-        kv_collection_paged.get_value_cache(layer_idx),
+        kv_collection_paged.get_key_cache(layer_idx).unsafe_origin_cast(),
+        kv_collection_paged.get_value_cache(layer_idx).unsafe_origin_cast(),
         CausalMask(),
         rsqrt(Float32(kv_params.head_size)),
         test_output,

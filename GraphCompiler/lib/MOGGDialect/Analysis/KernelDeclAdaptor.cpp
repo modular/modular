@@ -59,8 +59,14 @@ static constexpr llvm::StringLiteral kStableKey = "stable";
 static mlir::StringAttr buildOpaqueSymbol(mlir::MLIRContext *ctx,
                                           mlir::SymbolRefAttr sym) {
   std::string result = sym.getRootReference().strref().str();
-  for (auto ref : sym.getNestedReferences())
+  for (auto ref : sym.getNestedReferences()) {
+    // A package's `__init__` is addressed by the package's own name, and the
+    // names this is compared against drop it too (see
+    // `getFullyResolvedMojoName`).
+    if (ref.getValue() == "__init__")
+      continue;
     result += "." + ref.getValue().str();
+  }
   return mlir::StringAttr::get(ctx, result);
 }
 
@@ -160,6 +166,24 @@ resolveTraitContract(mlir::Type argType, mlir::Attribute bakedEntry,
   return recoverTraitArgContract(argType);
 }
 
+/// Whether `argType` is bound by the `Workspace` trait of the extensibility
+/// package, as in `workspace: Some[Workspace]`.
+static bool isWorkspaceArgType(mlir::Type argType) {
+  if (auto ref = KGEN::sugarDynCast<KGEN::LIT::RefType>(argType))
+    argType = ref.getElementType();
+  auto paramType = KGEN::sugarDynCast<KGEN::ParamType>(argType);
+  if (!paramType)
+    return false;
+  auto traitType = mlir::dyn_cast_if_present<KGEN::LIT::TraitType>(
+      KGEN::getCanonicalType(paramType.getMetaType()));
+  if (!traitType)
+    return false;
+  return llvm::any_of(traitType.getSymbols(), [](TraitSymbolAttr trait) {
+    return symbolMatchesRootAndLeaf(trait.getSymbol(), kPackageExtensibility,
+                                    kLeafWorkspace);
+  });
+}
+
 /// Classify a single argument type into a KernelDeclOperandVariant by
 /// introspecting the LIT StructType symbol and parameter values.
 ///
@@ -175,6 +199,8 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
     // A trait-bound tensor argument is non-struct; classify it as a tensor
     // adaptor with its contract's role/mut so it joins operand mapping and the
     // DPS-output split. Other non-struct args are unsupported.
+    if (isWorkspaceArgType(argType))
+      return KernelDeclWorkspaceAdaptor{};
     if (std::optional<TensorArgContract> contract =
             resolveTraitContract(argType, bakedEntry, hasBakedArray))
       return traitContractToTensorAdaptor(*contract);
@@ -209,10 +235,10 @@ static KernelDeclOperandVariant classifyArgType(mlir::MLIRContext *ctx,
   // Use root+leaf matching because DeviceContext lives under max::gpu::host
   // (depth varies across package exports).
   if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContext))
-    return KernelDeclContextPtrAdaptor{};
+    return KernelDeclContextAdaptor{};
 
   if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceContextArray))
-    return KernelDeclContextPtrListAdaptor{};
+    return KernelDeclContextArrayAdaptor{};
 
   // --- Device graph builder (launch arg of build_graph) ---
   if (symbolMatchesBackendLeaf(sym, kPackageMax, kLeafDeviceGraphBuilder))
@@ -271,7 +297,7 @@ enum class TraitCategory {
   storage,
   /// An access-form marker (`LoadAccess` / `StoreAccess`), or the
   /// `_LegacyComputeOutput` slot. The row's `access` payload names the form it
-  /// contributes. Unlike the markers, the slot's `transform` form doesn't
+  /// contributes. Unlike the markers, the slot's `legacy_compute` form doesn't
   /// promise its capability: the slot may be delivered as a store fusion.
   accessMarker,
   /// An access-form callable capability (`Loadable` / `Storable` /
@@ -351,9 +377,9 @@ constexpr VocabEntry kTensorArgVocab[] = {
     {"StoreAccess", TraitCategory::accessMarker, TensorArgAccess::store},
     {"Storable", TraitCategory::accessCapability, TensorArgAccess::store},
     {"_LegacyComputeOutput", TraitCategory::accessMarker,
-     TensorArgAccess::transform},
+     TensorArgAccess::legacyCompute},
     {"_LegacyComputable", TraitCategory::accessCapability,
-     TensorArgAccess::transform},
+     TensorArgAccess::legacyCompute},
     // TODO(GEX-4340): the interim legacy tile traits; remove with GEX-4467.
     {"_LegacyTileStoreAccess", TraitCategory::accessMarker,
      TensorArgAccess::legacyTileStore},
@@ -583,11 +609,12 @@ KernelDeclFunctionAdaptor::synthesizeExecuteFromElementwise(
   for (size_t i = 0; i < endOfInputArgs; ++i) {
     mlir::Type argType = sig.getArgument(i);
 
-    // Skip a trailing IndexList argument (it is an elementwise-only concept).
+    // Skip a trailing `Coord` index argument (it is an elementwise-only
+    // concept).
     if (i + 1 == endOfInputArgs) {
       KGEN::LIT::StructType structType = getAsStructType(argType);
       if (structType && symbolMatchesRootAndLeaf(structType.getSymbol(),
-                                                 kPackageStd, kLeafIndexList))
+                                                 kPackageStd, kLeafCoord))
         continue;
     }
 
@@ -656,6 +683,9 @@ KernelDeclAdaptor::KernelDeclAdaptor(KernelDeclOp decl) {
   executeConfigurationFunction = buildFn(
       decl.getExecuteConfiguration(),
       stringifyKernelFunctionKind(KernelFunctionKind::ExecuteConfiguration));
+  workspaceSizeFunction =
+      buildFn(decl.getWorkspaceSize(),
+              stringifyKernelFunctionKind(KernelFunctionKind::WorkspaceSize));
 
   if (executeDeviceFunction)
     executeFunction = executeDeviceFunction;
@@ -692,6 +722,8 @@ KernelDeclAdaptor::getFunction(KernelFunctionKind kind) const {
     return get(executeDeviceFunction);
   case KernelFunctionKind::ExecuteConfiguration:
     return get(executeConfigurationFunction);
+  case KernelFunctionKind::WorkspaceSize:
+    return get(workspaceSizeFunction);
   case KernelFunctionKind::Shape:
     return nullptr;
   }
@@ -947,7 +979,7 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
   // allowed on a non-fused arg, so each is checked independently:
   //   * `load`      invalid on Output.
   //   * `store`     invalid on a read-only Input.
-  //   * `transform` requires Output.
+  //   * `legacy_compute` requires Output.
   // (So `load & store` together implies a MutableInput.)
   if (contract.hasAccess(TensorArgAccess::load) &&
       contract.role == TensorArgRole::output) {
@@ -959,22 +991,22 @@ mlir::FailureOr<TensorArgContract> distillTensorArgContract(
     emitError("store access is not valid on a read-only Input argument");
     return mlir::failure();
   }
-  if (contract.hasAccess(TensorArgAccess::transform) &&
+  if (contract.hasAccess(TensorArgAccess::legacyCompute) &&
       contract.role != TensorArgRole::output) {
-    emitError("transform access requires an Output argument");
+    emitError("legacy_compute access requires an Output argument");
     return mlir::failure();
   }
 
   // The graph compiler may deliver a `_LegacyComputeOutput` slot as a store
   // fusion, so a signature can't demand the compute capability up front.
-  if (contract.hasCapability(TensorArgAccess::transform)) {
+  if (contract.hasCapability(TensorArgAccess::legacyCompute)) {
     emitError("declare _LegacyComputeOutput on the kernel signature and "
               "refine to _LegacyComputable in the body; the graph compiler "
               "may deliver a store fusion instead");
     return mlir::failure();
   }
   // The store-fusion wrapper doesn't conform to `TileTensorable`.
-  if (contract.hasAccess(TensorArgAccess::transform) &&
+  if (contract.hasAccess(TensorArgAccess::legacyCompute) &&
       isPresentLeaf(kTileTensorableLeaf)) {
     emitError("a _LegacyComputeOutput argument cannot require TileTensorable "
               "on the kernel signature; refine in the body, since the graph "
@@ -1108,8 +1140,8 @@ StringRef toString(TensorArgAccess access) {
     return "load";
   case TensorArgAccess::store:
     return "store";
-  case TensorArgAccess::transform:
-    return "transform";
+  case TensorArgAccess::legacyCompute:
+    return "legacy_compute";
   case TensorArgAccess::legacyTileStore:
     return "legacy_tile_store";
   case TensorArgAccess::legacyTileTransform:

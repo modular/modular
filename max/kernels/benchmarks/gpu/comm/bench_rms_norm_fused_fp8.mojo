@@ -32,15 +32,12 @@ from layout import (
 from nn.normalization import rms_norm_gpu, rms_norm_fused_fp8
 
 from linalg.fp8_quantization import quantize_dynamic_scaled_fp8
-from std.utils.index import Index, IndexList
 
 
 def bench_rms_norm_fused_fp8[
-    rank: Int,
-    //,
     in_dtype: DType,
     out_dtype: DType,
-    shape: IndexList[rank],
+    shape: Coord,
     cache_busting: Bool = True,
 ](ctx: DeviceContext[], mut b: Bench, fn_name: String) raises:
     """Benchmark fused RMS norm + FP8 quantization against separate operations.
@@ -50,8 +47,9 @@ def bench_rms_norm_fused_fp8[
     2. FP8 quantization alone
     3. Fused RMS norm + FP8 quantization
     """
-    comptime cols = shape[rank - 1]
-    comptime rows = shape.flattened_length() // cols
+    comptime rank = shape.rank
+    comptime cols = Int(shape[rank - 1])
+    comptime rows = Int(shape.product()) // cols
 
     # Allocate host memory
     var data_h = List(length=rows * cols, fill=Scalar[in_dtype](0))
@@ -83,10 +81,8 @@ def bench_rms_norm_fused_fp8[
     var gamma_d = ctx.enqueue_create_buffer[in_dtype](cols)
     var scales_d = ctx.enqueue_create_buffer[.float32](rows)
 
-    var param_shape = Index(cols)
-
     # Create TileTensor for gamma
-    var gamma_tensor = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var gamma_tensor = TileTensor(gamma_d, row_major(Coord(cols)))
 
     var epsilon = Float32(0.001)
     var weight_offset = Scalar[in_dtype](0.0)
@@ -111,11 +107,9 @@ def bench_rms_norm_fused_fp8[
             # Construct buffers with offsets
             var data_ptr_offset = cb_data.offset_ptr(iteration)
             var rms_output_ptr_offset = cb_rms_output.offset_ptr(iteration)
-            var data_buf_offset = TileTensor(
-                data_ptr_offset, row_major(Coord(shape))
-            )
+            var data_buf_offset = TileTensor(data_ptr_offset, row_major(shape))
             var rms_output_buf_offset = TileTensor(
-                rms_output_ptr_offset, row_major(Coord(shape))
+                rms_output_ptr_offset, row_major(shape)
             )
 
             # Input function for RMS norm. `rms_norm_gpu` migrated to a `Coord`
@@ -145,7 +139,7 @@ def bench_rms_norm_fused_fp8[
             ](
                 input_fn,
                 rms_output_fn,
-                Coord(shape),
+                shape,
                 gamma_tensor,
                 ctx,
             )
@@ -229,7 +223,7 @@ def bench_rms_norm_fused_fp8[
                 width: Int
             ](coords: Coord) {var data_ptr_offset} -> SIMD[in_dtype, width]:
                 var data_buf_offset = TileTensor(
-                    data_ptr_offset, row_major(Coord(shape))
+                    data_ptr_offset, row_major(shape)
                 )
                 return data_buf_offset.load[width=width, alignment=width](
                     coords
@@ -237,13 +231,13 @@ def bench_rms_norm_fused_fp8[
 
             var fused_output_tt = TileTensor(
                 cb_fused_output.offset_ptr(iteration),
-                row_major(Coord(shape)),
+                row_major(shape),
             )
             var fused_scale_shape = shape
-            fused_scale_shape[rank - 1] = 1
+            fused_scale_shape.replace_dynamic[rank - 1](1)
             var fused_scales_tt = TileTensor(
                 scales_base_ptr_fused,
-                row_major(Coord(fused_scale_shape)),
+                row_major(fused_scale_shape),
             )
 
             # DeviceContext is passed directly
@@ -255,7 +249,7 @@ def bench_rms_norm_fused_fp8[
                 rank,
             ](
                 input_fn_fused,
-                Coord(shape),
+                shape,
                 fused_output_tt,
                 gamma_tensor,
                 epsilon,
@@ -292,9 +286,9 @@ def bench_rms_norm_fused_fp8[
     # Run separate operations with zero offset
     var data_ptr_verify = cb_data.unsafe_ptr()
     var rms_output_ptr_verify = rms_verify_base_ptr
-    var data_buf_verify = TileTensor(data_ptr_verify, row_major(Coord(shape)))
+    var data_buf_verify = TileTensor(data_ptr_verify, row_major(shape))
     var rms_output_buf_verify = TileTensor(
-        rms_output_ptr_verify, row_major(Coord(shape))
+        rms_output_ptr_verify, row_major(shape)
     )
 
     # Input function for verification. `rms_norm_gpu` migrated to a `Coord`
@@ -323,7 +317,7 @@ def bench_rms_norm_fused_fp8[
     ](
         input_fn_verify,
         rms_output_fn_verify,
-        Coord(shape),
+        shape,
         gamma_tensor,
         ctx,
     )
@@ -367,18 +361,18 @@ def bench_rms_norm_fused_fp8[
         width: Int
     ](coords: Coord) {var data_base_ptr_verify} -> SIMD[in_dtype, width]:
         var data_ptr = data_base_ptr_verify
-        var data_buf = TileTensor(data_ptr, row_major(Coord(shape)))
+        var data_buf = TileTensor(data_ptr, row_major(shape))
         return data_buf.load[width=width](coords)
 
     var fused_output_tt_verify = TileTensor(
         fused_verify_base_ptr,
-        row_major(Coord(shape)),
+        row_major(shape),
     )
     var verify_scale_shape = shape
-    verify_scale_shape[rank - 1] = 1
+    verify_scale_shape.replace_dynamic[rank - 1](1)
     var fused_scales_tt_verify = TileTensor(
         scales_base_ptr_fused,
-        row_major(Coord(verify_scale_shape)),
+        row_major(verify_scale_shape),
     )
 
     var ctx_ptr_verify = ctx
@@ -389,7 +383,7 @@ def bench_rms_norm_fused_fp8[
         rank,
     ](
         input_fn_fused_verify,
-        Coord(shape),
+        shape,
         fused_output_tt_verify,
         gamma_tensor,
         epsilon,

@@ -960,6 +960,7 @@ struct MhaMmaOp[T: DType, config: MhaConfigV2]:
                     comptime _d_in_sub = _depth_offset % _V_SUB_COLS_
 
                     @inline(.always)
+                    @__allow_legacy_any_origin_fields
                     def _load_keys[key_base: Int]() {imm} -> SIMD[Self.T, 8]:
                         # Comptime per-cell offset, derived from
                         # B = _row_offset + key_base (multiple of 16):

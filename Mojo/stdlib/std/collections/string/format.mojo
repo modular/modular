@@ -342,11 +342,14 @@ struct _FormatUtils:
         comptime l_err = "there is a single curly { left unclosed or unescaped"
         comptime r_err = "there is a single curly } left unclosed or unescaped"
 
-        var entries = List[EntryType]()
         var start = Optional[Int](None)
         var skip_next = False
         var fmt_bytes = format.as_bytes()
         var fmt_len = len(fmt_bytes)
+        # Every entry, escaped braces included, spans at least two bytes, so
+        # below the cap this is an upper bound. Growing from empty costs a
+        # reallocation per doubling, which dominates short format strings.
+        var entries = List[EntryType](capacity=min(16, fmt_len // 2 + 1))
         var total_estimated_entry_byte_width = 0
 
         for i in range(fmt_len):
@@ -364,7 +367,7 @@ struct _FormatUtils:
                     start = i
                 continue
             elif fmt_bytes.unsafe_get(i) == `}`:
-                __guard case .Some(start_value) = start else:
+                guard case .Some(start_value) = start else:
                     # python escapes double curlies
                     if (i + 1) < fmt_len and fmt_bytes.unsafe_get(i + 1) == `}`:
                         entries.append(EntryType(i, i + 1, field=True))

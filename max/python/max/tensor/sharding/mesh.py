@@ -27,16 +27,16 @@ from max.driver import Device
 class DeviceMesh:
     """An N-dimensional logical grid of devices.
 
-    ``devices`` holds ``prod(mesh_shape)`` entries in row-major order. A mesh
-    of real devices holds distinct entries; a simulated mesh repeats one
-    device in every slot, and the graph computes its collectives instead of
-    the hardware. ``axis_names`` holds one unique name per axis.
+    ``devices`` holds ``prod(mesh_shape)`` entries in row-major order, and
+    may repeat a device. A collective over a group of distinct devices runs
+    on the hardware; over a group that repeats one device, as on a simulated
+    mesh, the graph computes it. ``axis_names`` holds one unique name per
+    axis.
 
     Raises:
         ValueError: If ``devices`` is empty, its length differs from
             ``prod(mesh_shape)``, ``axis_names`` differs in length from
-            ``mesh_shape`` or repeats a name, or ``devices`` mixes repeated
-            and distinct entries.
+            ``mesh_shape`` or repeats a name.
     """
 
     devices: tuple[Device, ...]
@@ -66,16 +66,6 @@ class DeviceMesh:
             raise ValueError(
                 f"axis_names must be unique, got {self.axis_names}"
             )
-        if len(self.devices) > 1:
-            unique = set(self.devices)
-            n_unique = len(unique)
-            if n_unique != 1 and n_unique != len(self.devices):
-                raise ValueError(
-                    f"DeviceMesh requires either all-same devices "
-                    f"(simulated) or all-distinct devices (multi-device), "
-                    f"but got {n_unique} unique devices for "
-                    f"{len(self.devices)} slots."
-                )
 
     @property
     def ndim(self) -> int:

@@ -323,7 +323,6 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
 
     # Forming a view does not change the allocation, so a call through a
     # mutable `ref self` must not invalidate views that already exist.
-    @__unsafe_nested_origins_read_only
     def unsafe_ptr(
         ref self,
     ) -> Pointer[Self.T, Self._InteriorOrigin[origin_of(self)]]:
@@ -349,7 +348,6 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
 
     # Forming a view does not change the allocation, so a call through a
     # mutable `ref self` must not invalidate views that already exist.
-    @__unsafe_nested_origins_read_only
     def unsafe_span(
         ref self,
     ) -> Span[Self.T, Self._InteriorOrigin[origin_of(self)]]:
@@ -390,7 +388,6 @@ struct Allocation[T: AnyType, *, alignment: Alignment = .of[T]()](
 
     # Forming a view does not change the allocation, so a call through a
     # mutable `ref self` must not invalidate views that already exist.
-    @__unsafe_nested_origins_read_only
     def storage(
         ref self,
     ) -> Span[MaybeUninit[Self.T], Self._InteriorOrigin[origin_of(self)]]:
@@ -594,7 +591,6 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
 
     # Forming a view does not change the allocation, so a call through a
     # mutable `ref self` must not invalidate views that already exist.
-    @__unsafe_nested_origins_read_only
     def unsafe_ptr(
         ref self,
     ) -> Pointer[Self.T, Self._InteriorOrigin[origin_of(self)]]:
@@ -621,7 +617,6 @@ struct ManagedAllocation[T: AnyType, *, alignment: Alignment = .of[T]()](
 
     # Forming a view does not change the allocation, so a call through a
     # mutable `ref self` must not invalidate views that already exist.
-    @__unsafe_nested_origins_read_only
     def unsafe_span(
         ref self,
     ) -> Span[Self.T, Self._InteriorOrigin[origin_of(self)]]:
@@ -774,7 +769,6 @@ struct ThinAllocation[T: AnyType](
 
     # Forming a view does not change the allocation, so a call through a
     # mutable `ref self` must not invalidate views that already exist.
-    @__unsafe_nested_origins_read_only
     def unsafe_ptr[
         origin: Origin,
         address_space: AddressSpace,

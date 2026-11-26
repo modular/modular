@@ -2729,6 +2729,7 @@ def topk_cluster_split[
     var want_tma = use_tma and N % _elems_per_16b[in_dtype]() == 0
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch[CS: Int, TMA: Bool]() raises {imm}:
         # A stride rank 0 selects alone sends every row down the mid-length
         # path (`count <= N`), whose idle ranks only exit: launched without

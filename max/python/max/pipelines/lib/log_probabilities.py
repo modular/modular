@@ -27,6 +27,8 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 from max.nn.outputs import ReturnLogits
 from max.pipelines.context import LogProbabilities
 
+from .utils import CompilationTimer
+
 if TYPE_CHECKING:
     from .interfaces.pipeline_model import (
         ModelInputs,
@@ -278,16 +280,19 @@ class LogProbabilitiesMixin(_MixinBase):
     ) -> None:
         super().__init__(pipeline_config, session, *args, **kwargs)
         self._logprobs_device = self.devices[0]
-        graph = log_probabilities_ragged_graph(
-            DeviceRef.from_device(self._logprobs_device),
-            levels=_LOGPROBS_HEAP_LEVELS,
-        )
-        try:
-            self._logprobs_model = session.load(graph)
-        except CompilationStopped:
-            # `pre-jit` stops the first compile, and this graph is built
-            # before the host's own: propagating would leave that uncompiled.
-            self._logprobs_model = None
+        with CompilationTimer("log probabilities") as timer:
+            graph = log_probabilities_ragged_graph(
+                DeviceRef.from_device(self._logprobs_device),
+                levels=_LOGPROBS_HEAP_LEVELS,
+            )
+            timer.mark_build_complete()
+            try:
+                self._logprobs_model = session.load(graph)
+            except CompilationStopped:
+                # `pre-jit` stops the first compile, and this graph is built
+                # before the host's own: propagating would leave that
+                # uncompiled.
+                self._logprobs_model = None
 
     def compute_log_probabilities(
         self,

@@ -62,7 +62,7 @@ AsyncRoutineOp fuseAndReplaceCompiledRegions(bool allowDuplication,
     // We keep at least one chain output such that error could be propagated
     // properly. Duplicated chain outputs and operands are removed later in the
     // pipeline by the AsyncRoutineOp canonicalization.
-    bool isChain = isa<MEF::ChainType>(result.getType());
+    bool isChain = isa<MLRT::MEF::ChainType>(result.getType());
     if (isChain) {
       chainsThatShouldBeRemapped.push_back(result);
       continue;

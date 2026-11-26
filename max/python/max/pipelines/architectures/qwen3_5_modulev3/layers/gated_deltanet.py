@@ -38,14 +38,11 @@ from dataclasses import dataclass, field
 import numpy as np
 from max import functional as F
 from max import tree
-from max.driver import (
-    CPU,
-    accelerator_api,
-    accelerator_architecture_name,
-)
+from max.driver import CPU, accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
 from max.nn import Module
+from max.nn._graph_ops.state_space import has_blackwell_tcgen05
 from max.nn.common_layers.mesh_axis import TP
 from max.nn.kernels import (
     gated_delta_conv1d_fwd,
@@ -74,21 +71,6 @@ __all__ = [
     "GatedDeltaVerify",
     "ReplaySink",
 ]
-
-_CHUNK_MIN_COMPUTE_CAPABILITY = 100
-"""Lowest NVIDIA compute capability the fused chunk kernel supports."""
-
-
-def _nvidia_compute_capability() -> int:
-    """Returns the accelerator's compute capability, 86 for ``sm_86``.
-
-    Zero when the architecture isn't ``sm_<digits>[a-z]``, which keeps the
-    caller on the portable path.
-    """
-    name = accelerator_architecture_name()
-    digits = name.removeprefix("sm_").rstrip("abcdefghijklmnopqrstuvwxyz")
-    return int(digits) if name.startswith("sm_") and digits.isdigit() else 0
-
 
 _OUTPUT_GATE_ACTIVATIONS: dict[str, Callable[[Tensor], Tensor]] = {
     "swish": F.silu,
@@ -368,13 +350,12 @@ def _gated_delta_core(
             skip_long_rows=skip_long_rows,
         )
 
-    # The chunk op's kernels are written for NVIDIA SM100+ (tcgen05 MMAs and
-    # TMA), and a build without the closed-source kernels doesn't register
-    # it; everything else runs the sequential recurrence for prefill too.
-    # TODO(KERN-3635): drop this gate once kda_chunk compiles below SM100.
+    # The chunk op's speed is in its tcgen05 scan and chain bodies, so a part
+    # without tcgen05 keeps the sequential recurrence for prefill. A build
+    # without the closed-source kernels doesn't register the op either.
     chunk_servable = (
         accelerator_api() == "cuda"
-        and _nvidia_compute_capability() >= _CHUNK_MIN_COMPUTE_CAPABILITY
+        and has_blackwell_tcgen05()
         and kda_chunk_supports_head_dims(key_head_dim, value_head_dim)
         and kda_chunk_is_registered()
     )

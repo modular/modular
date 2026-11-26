@@ -252,6 +252,76 @@ class TestAllowedTransitions:
             pick(partial_input)
 
 
+@pytest.fixture
+def partial_on_both_axes() -> RuleCall:
+    """Builds rows that allreduce or reduce-scatter a Partial on "dp" and "tp"."""
+    lay = layout(mesh_2d(), (1024,), P, P)
+    return rule_call(
+        lay, AxisAssignment((R,), (R,)), AxisAssignment((S0,), (S0,))
+    )
+
+
+class TestPerAxisTransitions:
+    def test_a_named_axis_takes_its_own_set(
+        self, partial_on_both_axes: RuleCall
+    ) -> None:
+        with auto_reshard(
+            ALL_TRANSITIONS, axes={"dp": {(Partial, Replicated)}}, mode="silent"
+        ):
+            assert inputs(pick(partial_on_both_axes)) == (R, S0)
+
+    def test_an_axis_the_mesh_lacks_is_ignored(
+        self, partial_input: RuleCall
+    ) -> None:
+        with auto_reshard(
+            ALL_TRANSITIONS, axes={"cp": {(Partial, Replicated)}}, mode="silent"
+        ):
+            assert inputs(pick(partial_input)) == (S0,)
+
+    def test_an_inner_default_keeps_a_named_axis(
+        self, partial_on_both_axes: RuleCall
+    ) -> None:
+        with auto_reshard(axes={"dp": {(Partial, Replicated)}}, mode="silent"):
+            with auto_reshard(ALL_TRANSITIONS):
+                assert inputs(pick(partial_on_both_axes)) == (R, S0)
+
+    def test_an_inner_block_naming_the_axis_replaces_it(
+        self, partial_on_both_axes: RuleCall
+    ) -> None:
+        with auto_reshard(
+            ALL_TRANSITIONS, axes={"dp": {(Partial, Replicated)}}, mode="silent"
+        ):
+            with auto_reshard(axes={"dp": ALL_TRANSITIONS}):
+                assert inputs(pick(partial_on_both_axes)) == (S0, S0)
+            assert inputs(pick(partial_on_both_axes)) == (R, S0)
+
+    def test_no_allowed_row_on_a_named_axis_raises(
+        self, partial_on_both_axes: RuleCall
+    ) -> None:
+        with (
+            auto_reshard(
+                ALL_TRANSITIONS,
+                axes={"dp": {(Sharded, Replicated)}},
+                mode="silent",
+            ),
+            pytest.raises(ShardingError) as info,
+        ):
+            pick(partial_on_both_axes)
+        text = str(info.value)
+        assert "no resharding on mesh axis 'dp'" in text
+        assert 'axes={"dp": {(Sharded, Replicated)}}, mode="silent")' in text
+        assert (
+            'axes={"dp": {(Partial, Replicated), (Sharded, Replicated)}}'
+            in text
+        ), "the recommendation widens the named axis"
+
+    def test_a_bare_pair_in_axes_is_rejected(self) -> None:
+        bare: Any = (Partial, Replicated)
+        with pytest.raises(TypeError, match="pairs of placement types"):
+            with auto_reshard(axes={"dp": bare}):
+                pass
+
+
 class TestScoping:
     def test_default_outside_any_block(self) -> None:
         assert policy() == (DEFAULT_TRANSITIONS, "raise")

@@ -17,10 +17,10 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-# RUN: not %mojo -D test=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
-# RUN: not %mojo -D test=2 %s 2>&1 | FileCheck --check-prefix CHECK_2 %s
-# RUN: not %mojo -D test=3 %s 2>&1 | FileCheck --check-prefix CHECK_3 %s
-# RUN: not %mojo -D test=4 %s 2>&1 | FileCheck --check-prefix CHECK_4 %s
+# RUN: not --crash %mojo -D test=1 %s 2>&1 | FileCheck --check-prefix CHECK_1 %s
+# RUN: not --crash %mojo -D test=2 %s 2>&1 | FileCheck --check-prefix CHECK_2 %s
+# RUN: not --crash %mojo -D test=3 %s 2>&1 | FileCheck --check-prefix CHECK_3 %s
+# RUN: not --crash %mojo -D test=4 %s 2>&1 | FileCheck --check-prefix CHECK_4 %s
 
 from std.sys import get_defined_int
 

@@ -82,8 +82,12 @@ class MuseTextModelBase(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         image_embeddings: Tensor,
         image_token_indices: Tensor,
+        **layer_kwargs: object,
     ) -> tuple[Tensor, ...]:
-        """Runs the text model over the graph inputs."""
+        """Runs the text model over the graph inputs.
+
+        ``layer_kwargs`` go to every decoder layer.
+        """
         tokens = tokens.to(self.mesh)
         input_row_offsets = input_row_offsets.to(self.mesh)
         image_embeddings = image_embeddings.to(self.mesh)
@@ -103,6 +107,7 @@ class MuseTextModelBase(Module[..., tuple[Tensor, ...]]):
                 h,
                 kv_by_type[self._layer_kv_key[idx]],
                 input_row_offsets=input_row_offsets,
+                **layer_kwargs,
             )
 
         last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
@@ -247,8 +252,12 @@ class MuseModelBase(Module[..., tuple[Tensor, ...]]):
         image_embeddings: Tensor,
         image_token_indices: Tensor,
         *variadic_args: Tensor,
+        **layer_kwargs: object,
     ) -> tuple[Tensor, ...]:
-        """Unflattens the hybrid KV leaves, then runs the text model."""
+        """Unflattens the hybrid KV leaves, then runs the text model.
+
+        ``layer_kwargs`` go to every decoder layer.
+        """
         kv_inputs = iter(kv_input_values(variadic_args))
         # Each device owns a whole KV cache, so the shards are replicated
         # over the TP mesh rather than sharded over it.
@@ -268,6 +277,7 @@ class MuseModelBase(Module[..., tuple[Tensor, ...]]):
             input_row_offsets,
             image_embeddings,
             image_token_indices,
+            **layer_kwargs,
         )
 
 

@@ -42,11 +42,11 @@ from linalg.matmul.gpu.amd.blockwise_scaled_fp8_matmul_amd_large import (
 
 
 def directive(asm: String, name: String) -> Int:
-    __guard case .Some(i) = asm.find(name) else:
+    guard case .Some(i) = asm.find(name) else:
         return 0
     var end = asm.find("\n", i).or_else(asm.byte_length())
     var line = asm[byte=i:end]
-    __guard case .Some(colon) = line.find(":") else:
+    guard case .Some(colon) = line.find(":") else:
         return -1
     try:
         return Int(line[byte = colon + 1 :].strip())
@@ -107,23 +107,23 @@ def dispatch_m2048(
     comptime F8 = Scalar[DType.float8_e4m3fn]
     blockwise_scaled_fp8_matmul_amd[transpose_b=True](
         TileTensor(
-            Pointer[BFloat16, MutAnyOrigin](unsafe_from_address=c),
+            Pointer[BFloat16, MutUntrackedOrigin](unsafe_from_address=c),
             row_major[2048, 2048](),
         ),
         TileTensor(
-            Pointer[F8, ImmutAnyOrigin](unsafe_from_address=a),
+            Pointer[F8, ImmUntrackedOrigin](unsafe_from_address=a),
             row_major[2048, 2048](),
         ),
         TileTensor(
-            Pointer[F8, ImmutAnyOrigin](unsafe_from_address=b),
+            Pointer[F8, ImmUntrackedOrigin](unsafe_from_address=b),
             row_major[2048, 2048](),
         ),
         TileTensor(
-            Pointer[Float32, ImmutAnyOrigin](unsafe_from_address=a_scales),
+            Pointer[Float32, ImmUntrackedOrigin](unsafe_from_address=a_scales),
             row_major[16, 2048](),
         ),
         TileTensor(
-            Pointer[Float32, ImmutAnyOrigin](unsafe_from_address=b_scales),
+            Pointer[Float32, ImmUntrackedOrigin](unsafe_from_address=b_scales),
             row_major[16, 16](),
         ),
         ctx,

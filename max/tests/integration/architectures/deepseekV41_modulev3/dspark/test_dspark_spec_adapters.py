@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import AbstractContextManager
 from types import SimpleNamespace
 from typing import Any, cast
@@ -26,24 +26,24 @@ import pytest
 import torch
 from dspark_test_support import TESTDATA
 from max import functional as F
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
-from max.engine import InferenceSession
 from max.graph import (
-    BufferType,
     DeviceRef,
     Dim,
-    Graph,
     TensorType,
     TensorValue,
     ops,
 )
 from max.nn.common_layers.kv_cache import PagedCacheValues
-from max.nn.kv_cache import KVCacheInputsPerDevice
-from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
-from max.pipelines.architectures.deepseekV41.engram_lookback import (
-    read_engram_lookback,
+from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
+    MultiKVCacheParams,
+    RecurrentLeafInputs,
+    RecurrentStateInputsPerDevice,
 )
+from max.nn.kv_cache import PagedCacheValues as UpstreamPagedCacheValues
 from max.pipelines.architectures.deepseekV41_modulev3 import (
     deepseekV41 as trunk,
 )
@@ -53,12 +53,14 @@ from max.pipelines.architectures.deepseekV41_modulev3.deepseekV41 import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.dspark_drafter import (
     DSparkDrafter,
+    _lowest_argmax,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.interface import (
     PAGE_SIZE,
     V41Config,
     build_kv_params,
     extra_input_names,
+    extra_inputs,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.layers.rope import (
     RopeParams,
@@ -73,13 +75,20 @@ from max.pipelines.architectures.deepseekV41_modulev3.spec_adapters import (
 )
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.role_contracts import VisionInputs
+from max.pipelines.speculative import driver as spec_driver
 from max.pipelines.speculative._tensor_compat import as_tensors
 from max.pipelines.speculative.block_driver import (
+    Accepted,
     ArgmaxDraftSampler,
     BlockBatch,
 )
+from max.pipelines.speculative.draft_scores import top_token_logit
 from max.tensor import Tensor, default_device
-from max.tensor.realization_context import ensure_context
+from max.tensor.realization_context import (
+    EagerRealizationContext,
+    current_realization_context,
+    ensure_context,
+)
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Replicated, Sharded
 
 HIDDEN = 128
@@ -141,7 +150,7 @@ def test_trunk_tap_captures_the_layer_entry_stream(
         global_write_floor=None,
         image_token_mask=None,
         kv={},
-        comm=None,
+        ep=None,
     )
     model = SimpleNamespace(
         config=SimpleNamespace(hc_mult=hc, engram_layer_ids=()),
@@ -376,6 +385,7 @@ def _batch(
     lengths: list[int],
     extra: Mapping[str, Tensor | Buffer] | None = None,
     vision: tuple[Tensor, Tensor] | None = None,
+    verify_lengths: list[int] | None = None,
 ) -> BlockBatch:
     """A single-device BlockBatch over requests of the given lengths.
 
@@ -424,7 +434,57 @@ def _batch(
         num_accepted=None,
         draft_slot_ids=None,
         draft_block_offsets=None,
+        verify_lengths=(
+            _graph_typed(
+                _to_max(torch.tensor(verify_lengths, dtype=torch.int32))
+            )
+            if verify_lengths is not None
+            else None
+        ),
         block_size=BLOCK,
+    )
+
+
+_DP = 2
+_DP_MESH = DeviceMesh((CPU(), CPU()), (_DP,), ("dp",))
+_DP_ROWS = DeviceMapping(_DP_MESH, (Sharded(0),))
+
+
+def _dp_batch(
+    *,
+    lengths: list[int],
+    verify_lengths: list[int],
+) -> BlockBatch:
+    """A two-replica BlockBatch: one request per rank, in its local frame.
+
+    The host mirror carries the merged offsets the adapter's DP branch
+    requires, and each rank's row inputs are its own replica's rows, as
+    the trunk's split leaves them.
+    """
+    assert len(lengths) == _DP
+    offsets = [0]
+    for length in lengths:
+        offsets.append(offsets[-1] + length)
+    # One request per rank: the split is the request boundary itself.
+    splits = list(range(len(lengths) + 1))
+    kv = [_upstream_kv(lengths[splits[r] : splits[r + 1]]) for r in range(_DP)]
+    host_mirror = _to_max(
+        torch.tensor(
+            [o + i * BLOCK for i, o in enumerate(offsets)],
+            dtype=torch.int64,
+        )
+    )
+    return dataclasses.replace(
+        _batch(lengths=lengths, verify_lengths=verify_lengths),
+        kv_collections=kv,
+        draft_kv_collections=kv,
+        passthrough_kv={"global": kv},
+        devices=[DeviceRef.from_device(d) for d in _DP_MESH.devices],
+        host_merged_offsets=_graph_typed(host_mirror),
+        data_parallel_splits=_graph_typed(
+            _to_max(torch.tensor(splits, dtype=torch.int32))
+        ),
+        data_parallel_degree=_DP,
     )
 
 
@@ -451,6 +511,11 @@ class _RecordingTarget:
         self.assembled: tuple[Any, ...] | None = None
         self.draft_width: Tensor | None = None
         self.vision: VisionInputs[Tensor] | None = None
+        self.history: Any = None
+        self.ep_config = None
+
+    def ep_buffers(self, values: Sequence[Tensor]) -> None:
+        assert not values
 
     def batch_from_parts(
         self,
@@ -461,11 +526,13 @@ class _RecordingTarget:
         *,
         data_parallel_splits: Tensor | None = None,
         input_row_offsets_i64: Tensor | None = None,
-        comm_buffers: Any = None,
+        ep: Any = None,
         draft_width: Tensor | None = None,
+        history: Any = None,
         vision: VisionInputs[Tensor] | None = None,
     ) -> Any:
         self.assembled = (tokens, input_row_offsets, kv, extras)
+        self.history = history
         self.draft_width = draft_width
         self.vision = vision
         return SimpleNamespace(
@@ -491,6 +558,105 @@ def _target(total: int) -> Any:
     return cast(Any, _RecordingTarget(total))
 
 
+class _RecordingDPTarget(_RecordingTarget):
+    """The recording trunk over two CPU replicas.
+
+    Each rank's hidden rows are its own replica's slice of the marked
+    window, in its local row frame, as the trunk's DP split leaves them;
+    the joined logits come back off rank 0, as the allgathered head
+    reads them.
+    """
+
+    def __init__(self, lengths: list[int]) -> None:
+        total = sum(lengths)
+        super().__init__(total)
+        self.mesh = _DP_MESH
+        self.dp = _DP
+        marks = torch.arange(total, dtype=torch.int32)
+        marked = torch.stack([marks] * HIDDEN, dim=1).to(torch.bfloat16)
+        offsets = [0]
+        for length in lengths:
+            offsets.append(offsets[-1] + length)
+        self._offsets = offsets
+        shards = []
+        for r in range(_DP):
+            rows = marked[offsets[r] : offsets[r + 1]]
+            shards.append(_to_max(rows.clone()))
+        self.marked = Tensor.from_shard_values(shards, _DP_ROWS)
+        self.taps = Tensor.from_shard_values(
+            [
+                _to_max(
+                    torch.zeros(offsets[r + 1] - offsets[r], HIDDEN * STAGES)
+                )
+                for r in range(_DP)
+            ],
+            _DP_ROWS,
+        )
+        self.positions = Tensor.from_shard_values(
+            [
+                _to_max(
+                    torch.arange(offsets[r + 1] - offsets[r], dtype=torch.int32)
+                    + 100
+                )
+                for r in range(_DP)
+            ],
+            _DP_ROWS,
+        )
+
+    def batch_from_parts(
+        self,
+        tokens: Tensor,
+        input_row_offsets: Tensor,
+        kv: dict[str, PagedCacheValues],
+        extras: dict[str, Tensor],
+        *,
+        data_parallel_splits: Tensor | None = None,
+        input_row_offsets_i64: Tensor | None = None,
+        ep: Any = None,
+        draft_width: Tensor | None = None,
+        history: Any = None,
+        vision: VisionInputs[Tensor] | None = None,
+    ) -> Any:
+        self.assembled = (tokens, input_row_offsets, kv, extras)
+        self.draft_width = draft_width
+        self.history = history
+        self.vision = vision
+        assert data_parallel_splits is not None
+        # The host knows the split; reading the device offsets back here
+        # would realize inside the still-open eager context.
+        shards = []
+        for r in range(_DP):
+            local = [o - self._offsets[r] for o in self._offsets[r : r + 2]]
+            shards.append(_to_max(torch.tensor(local, dtype=torch.uint32)))
+        return SimpleNamespace(
+            row_offsets=Tensor.from_shard_values(shards, _DP_ROWS),
+            positions=self.positions,
+        )
+
+    def logits_all_rows(self, hidden: Tensor) -> Tensor:
+        return hidden.local_shards[0]
+
+
+class _TP4RecordingTarget(_RecordingTarget):
+    """The recording trunk over a TP mesh, its rows replicated.
+
+    The trunk's hidden rows live on the mesh, as production's do, and its
+    head returns one device's logits, as production's allgathered head does.
+    """
+
+    def __init__(self, total: int, marks: torch.Tensor) -> None:
+        super().__init__(total)
+        self.mesh = _TP4_MESH
+        self.marked = Tensor.from_shard_values(
+            [_to_max(torch.stack([marks] * HIDDEN, dim=1).to(torch.bfloat16))]
+            * _TP4_MESH.num_devices,
+            DeviceMapping(_TP4_MESH, (Replicated(),)),
+        )
+
+    def logits_all_rows(self, hidden: Tensor) -> Tensor:
+        return hidden.local_shards[0]
+
+
 # --------------------------------------------------------------------------- #
 # The verify path
 # --------------------------------------------------------------------------- #
@@ -506,7 +672,9 @@ def test_verify_gathers_the_last_k_plus_one_rows_per_request() -> None:
     """
     lengths = [3, 6]
     target = _RecordingTarget(sum(lengths))
-    adapter = DeepseekV41BlockTarget(cast(Any, target), _kv_params_stub())
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
     with _eager():
         verified = adapter(_batch(lengths=lengths))
         got = as_tensors(verified.logits)
@@ -521,6 +689,71 @@ def test_verify_gathers_the_last_k_plus_one_rows_per_request() -> None:
     assert bool((got == got[:, :1]).all())
 
 
+def test_verify_gathers_each_rows_verified_prefix() -> None:
+    """A per-row verify reads only the rows the row's drafts occupy.
+
+    Row ``r`` verifies ``k_r`` drafts, so its window ends with the anchor
+    and those ``k_r`` rows; the slots past ``k_r`` repeat the last real
+    row, never the next request's window.
+    """
+    lengths = [3, 6]
+    target = _RecordingTarget(sum(lengths))
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
+    with _eager():
+        verified = adapter(_batch(lengths=lengths, verify_lengths=[0, 2]))
+        got = as_tensors(verified.logits)
+
+    got = _torch(got)
+    assert tuple(got.shape) == (2 * (BLOCK + 1), HIDDEN)
+    rows = got[:, 0].to(torch.int32)
+    # Request 0 verifies nothing: its anchor row repeats. Request 1
+    # verifies 2 of its 3 rows and pads with the last one.
+    assert torch.equal(rows, torch.tensor([2, 2, 2, 6, 7, 8]))
+    assert bool((got == got[:, :1]).all())
+
+
+def test_verify_at_full_width_gathers_the_uniform_rows() -> None:
+    """Per-row verify at full width equals the uniform last-K+1 gather."""
+    lengths = [3, 6]
+    target = _RecordingTarget(sum(lengths))
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
+    with _eager():
+        verified = adapter(
+            _batch(lengths=lengths, verify_lengths=[BLOCK, BLOCK])
+        )
+        got = as_tensors(verified.logits)
+
+    got = _torch(got)
+    rows = got[:, 0].to(torch.int32)
+    assert torch.equal(rows, torch.tensor([0, 1, 2, 6, 7, 8]))
+
+
+def test_dp_verify_gathers_each_replicas_prefix_in_its_local_frame() -> None:
+    """Each replica gathers its own rows from its rebased offsets.
+
+    The global verify lengths are split per rank, and the joined block
+    holds the replicas' rows in request order.
+    """
+    lengths = [3, 6]
+    with _eager():
+        adapter = DeepseekV41BlockTarget(
+            cast(DeepseekV41, _RecordingDPTarget(lengths)), _kv_params_stub()
+        )
+        verified = adapter(_dp_batch(lengths=lengths, verify_lengths=[1, 2]))
+        got = as_tensors(verified.logits)
+
+    got = _torch(got)
+    assert tuple(got.shape) == (2 * (BLOCK + 1), HIDDEN)
+    rows = got[:, 0].to(torch.int32)
+    # Replica 0's local rows 1, 2, 2 are global 1, 2, 2; replica 1's
+    # local 3, 4, 5 are global 6, 7, 8.
+    assert torch.equal(rows, torch.tensor([1, 2, 2, 6, 7, 8]))
+
+
 def test_verify_carries_the_taps_with_the_rows_that_produced_them() -> None:
     """The proposer must store context at the verify forward's own rows.
 
@@ -530,7 +763,9 @@ def test_verify_carries_the_taps_with_the_rows_that_produced_them() -> None:
     """
     lengths = [4, 2]
     target = _RecordingTarget(sum(lengths))
-    adapter = DeepseekV41BlockTarget(cast(Any, target), _kv_params_stub())
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
     with _eager():
         verified = adapter(_batch(lengths=lengths))
     assert target.assembled is not None
@@ -544,7 +779,9 @@ def test_verify_assembles_the_leaves_and_extras() -> None:
     """The window leaf comes from the driver's primary, the rest pass through."""
     lengths = [3, 3]
     target = _RecordingTarget(sum(lengths))
-    adapter = DeepseekV41BlockTarget(cast(Any, target), _kv_params_stub())
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
     with _eager():
         adapter(_batch(lengths=lengths))
     assert target.assembled is not None
@@ -569,7 +806,9 @@ def test_verify_hands_the_batch_its_draft_width() -> None:
     batch's width is ``None`` there.
     """
     target = _RecordingTarget(6)
-    adapter = DeepseekV41BlockTarget(cast(Any, target), _kv_params_stub())
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
     with _eager():
         adapter(_batch(lengths=[3, 3]))
     assert target.draft_width is not None
@@ -585,7 +824,9 @@ def test_verify_hands_the_trunk_the_steps_image_rows() -> None:
     """
     lengths = [3, 3]
     target = _RecordingTarget(sum(lengths))
-    adapter = DeepseekV41BlockTarget(cast(Any, target), _kv_params_stub())
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
     with F.lazy():
         rows = Tensor.zeros([2, HIDDEN], dtype=DType.bfloat16, device=CPU())
         indices = Tensor.zeros([2], dtype=DType.int32, device=CPU())
@@ -605,7 +846,9 @@ def test_verify_fails_loud_on_a_missing_extra() -> None:
     """A silently-defaulted extra would feed the trunk garbage masks."""
     lengths = [2]
     target = _RecordingTarget(sum(lengths))
-    adapter = DeepseekV41BlockTarget(cast(Any, target), _kv_params_stub())
+    adapter = DeepseekV41BlockTarget(
+        cast(DeepseekV41, target), _kv_params_stub()
+    )
     batch = _batch(lengths=lengths)
     starved = {
         name: value
@@ -632,7 +875,9 @@ def test_verify_records_the_window_only_when_the_export_carries_the_history() ->
         default = adapter(_batch(lengths=lengths))
     assert default.roll_forward is None
 
-    config = dataclasses.replace(_v41_config(), engram_lookback_history=True)
+    config = dataclasses.replace(
+        _v41_config(), engram_lookback_history=True, artifact_export=True
+    )
     batch = 2
     extras: dict[str, Tensor | Buffer] = {**_extras()}
     del extras["engram_lookback"]
@@ -642,158 +887,37 @@ def test_verify_records_the_window_only_when_the_export_carries_the_history() ->
     extras["engram_lookback_source"] = _to_max(
         torch.full((batch,), -1, dtype=torch.int64)
     )
-    extras["engram_lookback_history"] = Buffer.from_numpy(
-        np.zeros((batch, 3), np.int64)
-    )
     assert set(extras) == set(extra_input_names(config))
     target = _target(sum(lengths))
     target.config = config
     target.interface_config = config
-    adapter = DeepseekV41BlockTarget(target, _kv_params_stub())
-    with _eager():
-        recording = adapter(_batch(lengths=lengths, extra=extras))
-    assert recording.roll_forward is not None
-
-
-def _to_device(array: np.ndarray) -> Buffer:
-    return Buffer.from_numpy(np.ascontiguousarray(array)).to(CPU())
-
-
-def _lookback_record_graph() -> Graph:
-    """The roll-forward's graph: the window its record reads, then the record.
-
-    The driver hands the roll-forward a batch whose lookback extras are
-    the graph's own input values -- the roll-forward reads them through
-    ``.tensor`` and ``.buffer`` -- so the record runs here against the
-    batch exactly as the driver stages it.
-    """
-    adapter = DeepseekV41BlockTarget(_target(0), _kv_params_stub())
-    base = _batch(lengths=[1, 1])
-    device = DeviceRef.CPU()
-    input_types: list[TensorType | BufferType] = [
-        TensorType(
-            DType.int64, ["engram_lookback_batch", DEPTH], device=device
-        ),
-        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
-        BufferType(DType.int64, ["engram_history_rows", DEPTH], device=device),
-        TensorType(DType.int64, ["total_seq_len"], device=device),
-        TensorType(DType.uint32, ["input_row_offsets_len"], device=device),
-        TensorType(
-            DType.int64, ["engram_lookback_batch", "num_drafts"], device=device
-        ),
-        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
-    ]
-    with Graph(
-        "modulev3_dspark_lookback_record", input_types=input_types
-    ) as graph:
-        host, source, history, tokens, offsets, drafts, accepted = graph.inputs
-        window = read_engram_lookback(
-            host.tensor, source.tensor, history.buffer
-        )
-        batch = dataclasses.replace(
-            base,
-            tokens=tokens.tensor,
-            input_row_offsets=offsets.tensor,
-            draft_tokens=drafts.tensor,
-            num_accepted=accepted.tensor,
-            extra={
-                "engram_lookback_ids": host,
-                "engram_lookback_source": source,
-                "engram_lookback_history": history,
-            },
-        )
-        adapter._record_lookback(batch)
-        graph.output(window)
-    return graph
-
-
-def _lookback_read_graph() -> Graph:
-    """The trunk's read, as ``batch_from_parts`` runs it: the recorded row
-    the source map names, else the host window, cast to the int32 the
-    Engram hash reads."""
-    device = DeviceRef.CPU()
-    input_types: list[TensorType | BufferType] = [
-        TensorType(
-            DType.int64, ["engram_lookback_batch", DEPTH], device=device
-        ),
-        TensorType(DType.int64, ["engram_lookback_batch"], device=device),
-        BufferType(DType.int64, ["engram_history_rows", DEPTH], device=device),
-    ]
-    with Graph(
-        "modulev3_dspark_lookback_read", input_types=input_types
-    ) as graph:
-        host, source, history = graph.inputs
-        graph.output(
-            F.cast(
-                read_engram_lookback(
-                    host.tensor, source.tensor, history.buffer
+    # The history is a recurrent leaf of the cache tree, beside the paged ones.
+    kv_params = _kv_params_stub()
+    kv_params.children["lookback_history"] = object()
+    # The eager run carries realized tensors in the graph-typed slots.
+    history: Any = RecurrentStateInputsPerDevice(
+        leaves=(
+            RecurrentLeafInputs(
+                pool=cast(Any, _to_max(torch.zeros(4, 3, dtype=torch.int64))),
+                live_row_ids=_graph_typed(
+                    _to_max(torch.tensor([[0, 1]], dtype=torch.uint32))
                 ),
-                DType.int32,
-            )
+            ),
         )
-    return graph
-
-
-def test_roll_forward_records_the_window_a_following_step_reads() -> None:
-    """The roll-forward's record and the following read agree on the rows.
-
-    The verify hands the roll-forward the driver's batch, so a swapped
-    argument there records another row's window and only fed rows ever
-    notice: with a known batch, the record must leave each row's window
-    -- the ``DEPTH`` tokens ending with the row's last accepted draft --
-    in its history row, and the next step's read must return exactly
-    those rows, never the stale host windows it carries.
-    """
-    session = InferenceSession(devices=[CPU()])
-    record = session.load(_lookback_record_graph())
-    read = session.load(_lookback_read_graph())
-    # The persistent history, as the executor allocates it once per boot.
-    history = _to_device(np.zeros((4, DEPTH), np.int64))
-
-    # Step one: two fresh rows read their host windows and record the
-    # tokens their accepted drafts end with -- request 0 accepts one of
-    # its two drafts, request 1 both.
-    host = np.array([[901, 902, 903], [911, 912, 913]], np.int64)
-    (window,) = record.execute(
-        _to_device(host),
-        _to_device(np.array([-1, -1], np.int64)),
-        history,
-        _to_device(np.array([101, 102, 111, 112, 113], np.int64)),
-        _to_device(np.array([0, 2, 5], np.uint32)),
-        _to_device(np.array([[201, 202], [211, 212]], np.int64)),
-        _to_device(np.array([1, 2], np.int64)),
     )
-    assert isinstance(window, Buffer)
-    np.testing.assert_array_equal(window.to_numpy(), host)
-    recorded = np.array([[201, 102, 101], [212, 211, 113]], np.int64)
-    np.testing.assert_array_equal(history.to_numpy()[:2], recorded)
-
-    # The following step's read sources the rows the record wrote, so
-    # the stale host windows it carries must not survive the source map.
-    stale = np.array([[701, 702, 703], [711, 712, 713]], np.int64)
-    sources = np.array([0, 1], np.int64)
-    (lookback,) = read.execute(_to_device(stale), _to_device(sources), history)
-    assert isinstance(lookback, Buffer)
-    np.testing.assert_array_equal(lookback.to_numpy(), recorded)
-
-    # A record over rows still in flight reads its windows out of the
-    # history the previous step recorded, then records past each chunk's
-    # single committed token: nothing accepted, and one draft accepted.
-    (window,) = record.execute(
-        _to_device(stale),
-        _to_device(sources),
-        history,
-        _to_device(np.array([103, 114], np.int64)),
-        _to_device(np.array([0, 1, 2], np.uint32)),
-        _to_device(np.array([[231, 232], [241, 242]], np.int64)),
-        _to_device(np.array([0, 1], np.int64)),
+    with_history = _batch(lengths=lengths, extra=extras)
+    with_history = dataclasses.replace(
+        with_history,
+        passthrough_kv={
+            **with_history.passthrough_kv,
+            "lookback_history": [history],
+        },
     )
-    assert isinstance(window, Buffer)
-    np.testing.assert_array_equal(window.to_numpy(), recorded)
-    np.testing.assert_array_equal(
-        history.to_numpy()[:2],
-        np.array([[103, 201, 102], [241, 114, 212]], np.int64),
-    )
+    adapter = DeepseekV41BlockTarget(target, kv_params)
+    with _eager():
+        recording = adapter(with_history)
+    assert recording.roll_forward is not None
+    assert target.history is not None
 
 
 # --------------------------------------------------------------------------- #
@@ -862,7 +986,7 @@ def test_forward_block_runs_the_proposer_path_with_real_positions() -> None:
     embed = object()
     target = SimpleNamespace(embed=embed)
     proposer = DSparkDeepseekV41Proposer(
-        cast(Any, drafter), cast(Any, target), config
+        cast(Any, drafter), cast(DeepseekV41, target), config
     )
     lengths = [5, 9]
     # Request 1 drafts a zero-length block (its end equals request 0's),
@@ -947,7 +1071,9 @@ def test_head_drafts_through_the_driver_sampler() -> None:
     # compile and trip the known E8M0 APInt assert.
     with default_device(_MESH):
         drafter = DSparkDrafter(config, _MESH, rope=_rope())
-        proposer = DSparkDeepseekV41Proposer(drafter, cast(Any, target), config)
+        proposer = DSparkDeepseekV41Proposer(
+            drafter, cast(DeepseekV41, target), config
+        )
         batch = _batch(lengths=[BLOCK] * BATCH)
 
     with _eager():
@@ -955,7 +1081,7 @@ def test_head_drafts_through_the_driver_sampler() -> None:
             proposer.head(
                 batch,
                 hidden,
-                cast(Any, accepted),
+                cast(Accepted, accepted),
                 cast(Any, sampler),
             )
         )
@@ -987,7 +1113,9 @@ def test_head_returns_the_block_width_per_request() -> None:
     # the drafter's E8M0 constants must stay out of the head's graph.
     with default_device(_MESH):
         drafter = DSparkDrafter(config, _MESH, rope=_rope())
-        proposer = DSparkDeepseekV41Proposer(drafter, cast(Any, target), config)
+        proposer = DSparkDeepseekV41Proposer(
+            drafter, cast(DeepseekV41, target), config
+        )
         batch = _batch(lengths=[BLOCK] * BATCH)
 
     with _eager():
@@ -995,7 +1123,7 @@ def test_head_returns_the_block_width_per_request() -> None:
             proposer.head(
                 batch,
                 hidden,
-                cast(Any, SimpleNamespace(next_tokens=anchors)),
+                cast(Accepted, SimpleNamespace(next_tokens=anchors)),
                 cast(Any, _PickySampler(VOCAB)),
             )
         )
@@ -1080,7 +1208,9 @@ def test_head_greedy_drafts_the_reference_tokens(tp: int) -> None:
     hidden = _to_max(torch.randn(BATCH * BLOCK, HIDDEN).to(torch.bfloat16))
     anchors = _to_max(torch.randint(0, vocab, (BATCH,), dtype=torch.int32))
     drafter = _drafter_on(mesh, config, live_markov=True)
-    proposer = DSparkDeepseekV41Proposer(drafter, cast(Any, target), config)
+    proposer = DSparkDeepseekV41Proposer(
+        drafter, cast(DeepseekV41, target), config
+    )
     batch = _batch(lengths=[BLOCK] * BATCH)
 
     with _eager():
@@ -1088,7 +1218,7 @@ def test_head_greedy_drafts_the_reference_tokens(tp: int) -> None:
             proposer.head(
                 batch,
                 hidden,
-                cast(Any, SimpleNamespace(next_tokens=anchors)),
+                cast(Accepted, SimpleNamespace(next_tokens=anchors)),
                 ArgmaxDraftSampler(),
             )
         )
@@ -1133,6 +1263,7 @@ def _vocab_parallel_drafts(
             head_weight,
             F.distributed_broadcast(_to_max(anchors), _TP4_MESH),
         )
+    assert not isinstance(got, tuple)
     assert got.dtype == DType.int32
     drafts = _torch(got).to(torch.int64)
     assert tuple(drafts.shape) == (BATCH, BLOCK)
@@ -1252,7 +1383,9 @@ def test_head_still_bridges_a_greedy_subclass_override(tp: int) -> None:
     hidden = _to_max(torch.randn(BATCH * BLOCK, HIDDEN).to(torch.bfloat16))
     anchors = _to_max(torch.randint(0, vocab, (BATCH,), dtype=torch.int32))
     drafter = _drafter_on(mesh, config, live_markov=True)
-    proposer = DSparkDeepseekV41Proposer(drafter, cast(Any, target), config)
+    proposer = DSparkDeepseekV41Proposer(
+        drafter, cast(DeepseekV41, target), config
+    )
     batch = _batch(lengths=[BLOCK] * BATCH)
     sampler = _LegacyGreedySubclass()
 
@@ -1261,7 +1394,7 @@ def test_head_still_bridges_a_greedy_subclass_override(tp: int) -> None:
             proposer.head(
                 batch,
                 hidden,
-                cast(Any, SimpleNamespace(next_tokens=anchors)),
+                cast(Accepted, SimpleNamespace(next_tokens=anchors)),
                 sampler,
             )
         )
@@ -1478,3 +1611,522 @@ def test_context_store_origins_are_the_staged_lengths_unshifted() -> None:
     assert torch.equal(
         _torch(origins), torch.tensor([4, 10], dtype=torch.int32)
     )
+
+
+def test_replica_proposals_enable_replica_verify_logits() -> None:
+    """The q and target-logit ownership must select the same replica path."""
+    with F.lazy():
+        config = _small_config()
+        drafter = DSparkDrafter(config, _MESH, rope=_rope())
+        target = _target(0)
+        assert isinstance(config.kv_params, MultiKVCacheParams)
+        verify = DeepseekV41BlockTarget(target, config.kv_params)
+        proposer = spec_adapters.block_proposer(
+            verify,
+            drafter,
+            config,
+            cast(
+                Any,
+                SimpleNamespace(
+                    draft_probs_layout="replica",
+                    draft_head_parallelism="replica",
+                    per_row_verify=False,
+                    draft_score_source=None,
+                ),
+            ),
+        )
+    assert verify.replica_logits
+    assert proposer.per_replica_head
+    assert proposer.per_replica_probs
+
+
+def test_the_replica_head_refuses_head_scores() -> None:
+    """The per-replica head mounts no confidence head, so a per-row boot
+    asking for head scores fails at construction, not at serve time."""
+    with F.lazy():
+        config = _small_config()
+        drafter = DSparkDrafter(config, _MESH, rope=_rope())
+        target = _target(0)
+        with pytest.raises(ValueError, match="head-free only"):
+            spec_adapters.DSparkDeepseekV41Proposer(
+                drafter,
+                target,
+                config,
+                per_replica_head=True,
+                scores=True,
+                head_scores=True,
+            )
+
+
+def test_replica_proposals_do_not_use_the_joined_draft_head(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with F.lazy():
+        config = _small_config()
+        drafter = DSparkDrafter(config, _MESH, rope=_rope())
+        proposer = DSparkDeepseekV41Proposer(
+            drafter,
+            _target(0),
+            config,
+            per_replica_head=True,
+            per_replica_probs=True,
+        )
+    proposer.dp = 8
+    hidden, expected = object(), object()
+    monkeypatch.setattr(spec_adapters, "as_tensors", lambda value: value)
+    monkeypatch.setattr(
+        proposer,
+        "_replica_head",
+        lambda batch, value, accepted, sampler: (
+            expected if value is hidden else None
+        ),
+    )
+    assert (
+        proposer.head(
+            cast(Any, None), cast(Any, hidden), cast(Any, None), cast(Any, None)
+        )
+        is expected
+    )
+
+
+@pytest.mark.parametrize("degree", [4, 8])
+def test_raw_trailing_tree_preserves_declared_order(degree: int) -> None:
+    """The fused named signature preserves each actual context/resource leaf."""
+    config = _small_config()
+    config.raw_checkpoint_weights = True
+    config.dspark_trailing_inputs = extra_inputs(
+        _v41_config(),
+        [DeviceRef.GPU(rank) for rank in range(degree)],
+        degree,
+        verify_rows=True,
+        artifact=True,
+    )
+    named = spec_adapters.trailing_input_tree(config)
+    assert named is not None
+    assert tree.leaves(named) == spec_adapters.trailing_input_types(config)
+    assert {cast(Any, group).kind for group in named.values()} == {
+        "batch_context",
+        "static_buffers",
+    }
+    context = named["context_0"]
+    constants = named["constants_1"]
+    assert isinstance(context, Mapping) and isinstance(constants, Mapping)
+    assert list(context)[:2] == ["window_start", "write_floor"]
+    assert list(constants) == [
+        f"engram_table_{ordinal}_{part}"
+        for ordinal in range(2)
+        for part in ("weight", "scale")
+    ]
+    assert spec_adapters.ADAPTER.trailing_input_tree(config) is not None
+
+
+def test_legacy_trailing_signature_remains_positional() -> None:
+    assert spec_adapters.trailing_input_tree(_small_config()) is None
+
+
+def test_raw_trailing_tree_refuses_unnamed_history() -> None:
+    config = _small_config()
+    config.raw_checkpoint_weights = True
+    config.dspark_trailing_inputs = [
+        (
+            "engram_device_history",
+            TensorType(DType.int32, [1], DeviceRef.GPU(0)),
+        )
+    ]
+    with pytest.raises(ValueError, match="no artifact input producer"):
+        spec_adapters.trailing_input_tree(config)
+
+
+def test_text_only_artifact_omits_vision_inputs_but_preserves_bare_abi() -> (
+    None
+):
+    config = _small_config()
+    config.vision = None
+    assert spec_adapters.ADAPTER.takes_vision_inputs(config)
+    config.raw_checkpoint_weights = True
+    assert not spec_adapters.ADAPTER.takes_vision_inputs(config)
+    config.vision = cast(Any, object())
+    assert spec_adapters.ADAPTER.takes_vision_inputs(config)
+
+
+def test_head_free_scores_fill_the_member_without_the_head() -> None:
+    """Head-free scores need no mounted head: the proposer returns the
+    drafts beside the logit(q_max) of the same biased logits that drew
+    them, so the scores stay aligned with the drafts position for
+    position."""
+    torch.manual_seed(0)
+    config = _small_config()
+    head_weight = _to_max(torch.randn(VOCAB, HIDDEN).to(torch.bfloat16))
+    target = SimpleNamespace(head=SimpleNamespace(weight=head_weight))
+    hidden = _to_max(torch.randn(BATCH * BLOCK, HIDDEN).to(torch.bfloat16))
+    anchors = _to_max(torch.randint(0, VOCAB, (BATCH,), dtype=torch.int32))
+    accepted = SimpleNamespace(next_tokens=anchors)
+    with default_device(_MESH):
+        drafter = DSparkDrafter(config, _MESH, rope=_rope())
+        proposer = DSparkDeepseekV41Proposer(
+            drafter, cast(DeepseekV41, target), config, scores=True
+        )
+    assert proposer.confidence_outputs is True
+    batch = _batch(lengths=[BLOCK] * BATCH)
+
+    with _eager():
+        headed = proposer.head(
+            batch, hidden, cast(Accepted, accepted), ArgmaxDraftSampler()
+        )
+        assert isinstance(headed, tuple)
+        drafts, scores = headed
+        drafts = as_tensors(drafts)
+        scores = as_tensors(scores)
+        logits = drafter.logits(hidden, head_weight)
+        _, biased = drafter.draft(logits, anchors)
+
+    assert tuple(drafts.shape) == (BATCH, BLOCK)
+    assert tuple(scores.shape) == (BATCH, BLOCK)
+    assert scores.dtype == DType.float32
+    # The float64 reference of the same biased logits: gap = L_max - lse,
+    # score = gap - log1p(-exp(gap)).
+    wide = _torch(biased).to(torch.float64)
+    gap = wide.max(dim=-1).values - torch.logsumexp(wide, dim=-1)
+    want = gap - torch.log1p(-torch.exp(gap))
+    torch.testing.assert_close(
+        _torch(scores), want.to(torch.float32), rtol=1e-4, atol=1e-4
+    )
+
+
+def test_head_free_scores_take_the_vocab_parallel_route() -> None:
+    """The head-free source rides the vocab-parallel route: the scores
+    equal the joined route's ``top_token_logit`` over the same biased
+    logits, and the drafts are unchanged with scores on versus off."""
+    torch.manual_seed(0)
+    config = _small_tp4_config()
+    head_weight = _head_weight_on(_TP4_MESH, _TP4_VOCAB)
+    hidden = torch.randn(BATCH * BLOCK, HIDDEN).to(torch.bfloat16)
+    anchors = torch.randint(0, _TP4_VOCAB, (BATCH,), dtype=torch.int32)
+    target = SimpleNamespace(head=SimpleNamespace(weight=head_weight))
+    with default_device(_TP4_MESH):
+        drafter = DSparkDrafter(config, _TP4_MESH, rope=_rope())
+        proposer = DSparkDeepseekV41Proposer(
+            drafter, cast(DeepseekV41, target), config, scores=True
+        )
+    proposer.vocab_parallel_draft = True
+    accepted = SimpleNamespace(next_tokens=_to_max(anchors))
+    batch = _batch(lengths=[BLOCK] * BATCH)
+
+    with _eager():
+        block_hs = F.distributed_broadcast(_to_max(hidden), _TP4_MESH)
+        headed = proposer.head(
+            batch, block_hs, cast(Accepted, accepted), ArgmaxDraftSampler()
+        )
+        assert isinstance(headed, tuple)
+        drafts, scores = headed
+        drafts = as_tensors(drafts)
+        scores = as_tensors(scores)
+        # The joined route's own reference: the same biased logits the
+        # joined head materializes, scored by the same helper.
+        logits = F.distributed_broadcast(
+            drafter.logits(block_hs, head_weight), _TP4_MESH
+        )
+        want_drafts, biased = drafter.draft(
+            logits, F.distributed_broadcast(_to_max(anchors), _TP4_MESH)
+        )
+        reference = top_token_logit(biased)
+        # The drafts are unchanged with scores on versus off.
+        bare = drafter.draft_vocab_parallel(
+            block_hs,
+            head_weight,
+            F.distributed_broadcast(_to_max(anchors), _TP4_MESH),
+        )
+
+    assert tuple(drafts.shape) == (BATCH, BLOCK)
+    assert tuple(scores.shape) == (BATCH, BLOCK)
+    assert scores.dtype == DType.float32
+    # The route's drafts are int32; the joined head's are int64 --
+    # torch.equal compares values across the promotion.
+    assert torch.equal(_torch(drafts), _torch(want_drafts).to(torch.int64))
+    assert torch.equal(_torch(drafts), _torch(bare).to(torch.int64))
+    torch.testing.assert_close(
+        _torch(scores), _torch(reference), rtol=1e-5, atol=1e-5
+    )
+    # An independent float64 reference over the same tensor: the
+    # in-context assert above cannot see a helper-internal error.
+    wide = _torch(biased).to(torch.float64)
+    gap = wide.max(dim=-1).values - torch.logsumexp(wide, dim=-1)
+    want = gap - torch.log1p(-torch.exp(gap))
+    torch.testing.assert_close(
+        _torch(scores), want.to(torch.float32), rtol=1e-4, atol=1e-4
+    )
+
+
+def _excluded_mass(logits: Tensor) -> Tensor:
+    """The unfused excluded mass: ``sum(exp(l_j - max))`` minus one top."""
+    logits = F.cast(logits, DType.float32)
+    top = F.max(logits, axis=-1)
+    shifted = F.exp(logits - top)
+    is_top = F.equal(logits, top)
+    background = F.sum(
+        shifted * F.cast(F.logical_not(is_top), DType.float32), axis=-1
+    )
+    ties = F.sum(F.cast(is_top, DType.float32), axis=-1)
+    # Reduce the tie term before the add: a float32 sum near one would
+    # absorb the small deficit the excluded sum keeps.
+    return F.squeeze(background + (ties - 1.0), axis=-1)
+
+
+def _combine_shard_logit(
+    maxima: Tensor, indices: Tensor, excluded: Tensor, top_index: Tensor
+) -> Tensor:
+    """The unfused per-position combine over ``[shards, b]`` pieces."""
+    maxima = F.cast(maxima, DType.float32)
+    l_top = F.squeeze(F.max(maxima, axis=0), axis=0)
+    rescaled = F.exp(maxima - l_top)
+    mass = F.sum(excluded * rescaled, axis=0)
+    is_top_shard = F.equal(indices, F.cast(top_index, indices.dtype))
+    restored = F.sum(
+        rescaled * F.cast(F.logical_not(is_top_shard), DType.float32),
+        axis=0,
+    )
+    return F.squeeze(-F.log(mass + restored), axis=0)
+
+
+def test_vocab_parallel_scores_match_the_unfused_pieces() -> None:
+    """The fused branch's drafts and scores equal the unfused ops on
+    the same shard logits: one fused launch replaces the max, argmax
+    and excluded-mass reductions per position per rank."""
+    torch.manual_seed(0)
+    config = _small_tp4_config()
+    head_weight = _head_weight_on(_TP4_MESH, _TP4_VOCAB)
+    hidden = torch.randn(BATCH * BLOCK, HIDDEN).to(torch.bfloat16)
+    anchors = torch.randint(0, _TP4_VOCAB, (BATCH,), dtype=torch.int32)
+    with default_device(_TP4_MESH):
+        drafter = DSparkDrafter(config, _TP4_MESH, rope=_rope())
+
+    with _eager():
+        block_hs = F.distributed_broadcast(_to_max(hidden), _TP4_MESH)
+        mesh_anchors = F.distributed_broadcast(_to_max(anchors), _TP4_MESH)
+        drawn = drafter.draft_vocab_parallel(
+            block_hs, head_weight, mesh_anchors, with_scores=True
+        )
+        assert isinstance(drawn, tuple)
+        fused, fused_scores = drawn
+        # The unfused reference: the ops the branch ran before the
+        # fused kernel, over each rank's own shard of the same biased
+        # logits.
+        logits = (drafter.norm(block_hs) @ head_weight.T).local_shards
+        embeds = drafter.markov_head.embed.weight.local_shards
+        markov = drafter.markov_head.head.weight.local_shards
+        widths = [int(shard.shape[-1]) for shard in logits]
+        starts = [sum(widths[:rank]) for rank in range(len(widths))]
+        steps = [
+            F.reshape(
+                F.rebind(shard.cast(DType.float32), [BATCH * BLOCK, w]),
+                [BATCH, BLOCK, w],
+            )
+            for shard, w in zip(logits, widths, strict=True)
+        ]
+        current = [
+            anchor.cast(DType.int32) for anchor in mesh_anchors.local_shards
+        ]
+        want_drafts = []
+        want_scores = []
+        for i in range(BLOCK):
+            columns = []
+            for rank, step_logits in enumerate(steps):
+                step = (
+                    step_logits[:, i]
+                    + F.gather(embeds[rank], current[rank], axis=0).cast(
+                        DType.float32
+                    )
+                    @ markov[rank][starts[rank] : starts[rank] + widths[rank]]
+                    .cast(DType.float32)
+                    .T
+                )
+                index = (F.argmax(step, axis=-1) + starts[rank]).cast(
+                    DType.float32
+                )
+                columns.append(
+                    F.concat(
+                        [
+                            F.max(step, axis=-1),
+                            index,
+                            F.unsqueeze(_excluded_mass(step), -1),
+                        ],
+                        axis=-1,
+                    )
+                )
+            gathered = F.allgather(
+                Tensor.from_shard_values(
+                    [F.unsqueeze(col, 0) for col in columns],
+                    DeviceMapping(_TP4_MESH, (Sharded(0),)),
+                ),
+                tensor_axis=0,
+            )
+            joined = gathered.local_shards[0]
+            top, _ = _lowest_argmax(joined, config.vocab_size)
+            want_drafts.append(top)
+            want_scores.append(
+                _combine_shard_logit(
+                    joined[:, :, 0],
+                    joined[:, :, 1],
+                    joined[:, :, 2],
+                    top,
+                )
+            )
+            current = [
+                _lowest_argmax(shard, config.vocab_size)[0]
+                for shard in gathered.local_shards
+            ]
+
+    assert torch.equal(
+        _torch(fused),
+        torch.stack([_torch(d) for d in want_drafts], dim=1).to(torch.int64),
+    )
+    # The one batched combine must reproduce the per-position combines
+    # exactly, not within a tolerance.
+    assert torch.equal(
+        _torch(fused_scores),
+        torch.stack([_torch(s) for s in want_scores], dim=1),
+    )
+
+
+def test_vocab_parallel_scores_combine_once_for_the_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The with_scores path runs one combine over the stacked pieces
+    after the loop, not one per position: the realized graph holds one
+    shard-axis reduction set for the whole block, and adds no
+    transpose over the plain path."""
+    config = _small_tp4_config()
+    head_weight = _head_weight_on(_TP4_MESH, _TP4_VOCAB)
+    hidden = torch.randn(BATCH * BLOCK, HIDDEN).to(torch.bfloat16)
+    anchors = torch.randint(0, _TP4_VOCAB, (BATCH,), dtype=torch.int32)
+    with default_device(_TP4_MESH):
+        drafter = DSparkDrafter(config, _TP4_MESH, rope=_rope())
+
+    with _eager():
+        block_hs = F.distributed_broadcast(_to_max(hidden), _TP4_MESH)
+        mesh_anchors = F.distributed_broadcast(_to_max(anchors), _TP4_MESH)
+        squeezes: list[object] = []
+        real_squeeze = F.squeeze
+
+        def counting_squeeze(*args: object, **kwargs: object) -> Tensor:
+            squeezes.append(args)
+            return real_squeeze(*args, **kwargs)
+
+        with monkeypatch.context() as patched:
+            patched.setattr(F, "squeeze", counting_squeeze)
+            bare = drafter.draft_vocab_parallel(
+                block_hs, head_weight, mesh_anchors
+            )
+        ctx = current_realization_context()
+        assert isinstance(ctx, EagerRealizationContext)
+        # The eager graph accumulates, so the plain call's ops come out
+        # of the delta the scored call adds to this snapshot.
+        plain_trace = str(ctx.graph)
+        drawn = drafter.draft_vocab_parallel(
+            block_hs, head_weight, mesh_anchors, with_scores=True
+        )
+        assert isinstance(drawn, tuple)
+        drafts, scores = drawn
+        scored_trace = str(ctx.graph)
+
+    # The drafts are unchanged with scores on versus off.
+    assert torch.equal(_torch(drafts), _torch(bare).to(torch.int64))
+    assert tuple(_torch(scores).shape) == (BATCH, BLOCK)
+    # The combine's own ops: one exp and one log for the whole block,
+    # where the per-position path ran one per position.
+    assert scored_trace.count("mo.exp") - plain_trace.count("mo.exp") == 1
+    assert scored_trace.count("mo.log") - plain_trace.count("mo.log") == 1
+    # The combine moves no axis of its own: no permute reaches the
+    # graph. The with_scores branch's extra operand transposes over the
+    # plain call come from the fused pieces op taking no matmul
+    # epilogue; the old per-position path carried the same set.
+    assert "mo.permute" not in scored_trace
+    # Main's plain path squeezes only the drafted ids, once per shard and
+    # step; the scored path squeezes the step maxima outside the argmax.
+    assert len(squeezes) == BLOCK * len(_TP4_MESH.devices), len(squeezes)
+
+
+def test_a_tp4_per_row_verify_places_the_lengths_on_the_mesh() -> None:
+    """A TP mesh with dp == 1 still broadcasts the verify lengths.
+
+    The per-row gather's body runs on every device, so lengths that
+    stay on one device are unreadable on the others; the shared
+    placement covers the dp == 1 case the inline broadcast skipped.
+    """
+    lengths = [3, 6]
+    total = sum(lengths)
+    marks = torch.arange(total, dtype=torch.int32)
+    offsets = [0]
+    for length in lengths:
+        offsets.append(offsets[-1] + length)
+    verify_lengths = _to_max(torch.tensor([0, 2], dtype=torch.int32))
+    return_n_logits = _to_max(torch.tensor([BLOCK + 1], dtype=torch.int64))
+    with _eager():
+        replicated = DeviceMapping(_TP4_MESH, (Replicated(),))
+        hidden = Tensor.from_shard_values(
+            [_to_max(torch.stack([marks] * HIDDEN, dim=1).to(torch.bfloat16))]
+            * _TP4_MESH.num_devices,
+            replicated,
+        )
+        row_offsets = Tensor.from_shard_values(
+            [_to_max(torch.tensor(offsets, dtype=torch.uint32))]
+            * _TP4_MESH.num_devices,
+            replicated,
+        )
+        var_h, _ = spec_driver.gather_verify_prefix(
+            hidden,
+            row_offsets,
+            verify_lengths,
+            None,
+            return_n_logits,
+            _TP4_MESH,
+            1,
+        )
+        got = as_tensors(var_h)
+
+        # The adapter's own dp == 1 branch must place the lengths too:
+        # the trunk's mesh is the gather's, and a host tensor only reads
+        # on an all-CPU test mesh -- on devices it would be unreadable.
+        target = _TP4RecordingTarget(total, marks)
+        kv = [_upstream_kv(lengths) for _ in range(_TP4_MESH.num_devices)]
+        batch = dataclasses.replace(
+            _batch(lengths=lengths, verify_lengths=[0, 2]),
+            kv_collections=kv,
+            draft_kv_collections=kv,
+            passthrough_kv={"global": kv},
+            devices=[DeviceRef.from_device(d) for d in _TP4_MESH.devices],
+        )
+        seen: list[Tensor] = []
+        real_gather = spec_driver.gather_prefix_rows
+
+        def record(
+            h: Tensor,
+            input_row_offsets: Tensor,
+            verify_lengths: Tensor,
+            return_n_logits: Tensor,
+            mesh: DeviceMesh,
+            data_parallel_degree: int = 1,
+        ) -> tuple[Tensor, Tensor]:
+            seen.append(verify_lengths)
+            return real_gather(
+                h,
+                input_row_offsets,
+                verify_lengths,
+                return_n_logits,
+                mesh,
+                data_parallel_degree,
+            )
+
+        spec_driver.gather_prefix_rows = record
+        try:
+            DeepseekV41BlockTarget(
+                cast(DeepseekV41, target), _kv_params_stub()
+            )(batch)
+        finally:
+            spec_driver.gather_prefix_rows = real_gather
+        assert seen[0].is_distributed
+        assert seen[0].mesh == _TP4_MESH
+
+    got = _torch(got)
+    rows = got[:, 0].to(torch.int32)
+    assert torch.equal(rows, torch.tensor([2, 2, 2, 6, 7, 8]))

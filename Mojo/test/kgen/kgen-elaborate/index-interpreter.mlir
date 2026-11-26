@@ -559,6 +559,55 @@ kgen.generator export @testFloordiv() -> !kgen.simd<4, index> {
   hlcf.return %1 : !kgen.simd<4, index>
 }
 
+// COM: pop.min and pop.max with index on 32-bit
+
+kgen.generator @min_index(%arg0: !kgen.simd<4, index>, %arg1: !kgen.simd<4, index>) -> !kgen.simd<4, index> {
+  %0 = pop.min %arg0, %arg1 : !kgen.simd<4, index>
+  hlcf.return %0 : !kgen.simd<4, index>
+}
+
+kgen.generator @max_index(%arg0: !kgen.simd<4, index>, %arg1: !kgen.simd<4, index>) -> !kgen.simd<4, index> {
+  %0 = pop.max %arg0, %arg1 : !kgen.simd<4, index>
+  hlcf.return %0 : !kgen.simd<4, index>
+}
+
+kgen.generator @min_uindex(%arg0: !kgen.simd<4, uindex>, %arg1: !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> {
+  %0 = pop.min %arg0, %arg1 : !kgen.simd<4, uindex>
+  hlcf.return %0 : !kgen.simd<4, uindex>
+}
+
+kgen.generator @max_uindex(%arg0: !kgen.simd<4, uindex>, %arg1: !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> {
+  %0 = pop.max %arg0, %arg1 : !kgen.simd<4, uindex>
+  hlcf.return %0 : !kgen.simd<4, uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testMinMax
+kgen.generator export @testMinMax() -> !kgen.simd<4, index> {
+  // COM: 1099511627776 and -1099511627776 truncate to int32 0, and 3000000000
+  // COM: to int32 -1294967296
+  kgen.param.declare S0: simd<4, index> = <<11, 1, 3000000000, -5>>
+  kgen.param.declare S1: simd<4, index> = <<1099511627776, 1099511627776, 0, -1099511627776>>
+  kgen.param.declare S2: simd<4, index> = <apply(:(!kgen.simd<4, index>, !kgen.simd<4, index>) -> !kgen.simd<4, index> @min_index, S0, S1)>
+  // CHECK: <<0, 0, -1294967296, -5>>
+  %1 = kgen.param.constant: !kgen.simd<4, index> = <S2>
+  kgen.param.declare S3: simd<4, index> = <apply(:(!kgen.simd<4, index>, !kgen.simd<4, index>) -> !kgen.simd<4, index> @max_index, S0, S1)>
+  // CHECK: <<11, 1, 0, 0>>
+  %2 = kgen.param.constant: !kgen.simd<4, index> = <S3>
+
+  // COM: 1099511627776 and 4294967296 truncate to uint32 0, and
+  // COM: 18446744073709551615 to 4294967295
+  kgen.param.declare U0: simd<4, uindex> = <<1099511627776, 3, 18446744073709551615, 0>>
+  kgen.param.declare U1: simd<4, uindex> = <<3, 1099511627776, 1, 4294967296>>
+  kgen.param.declare U2: simd<4, uindex> = <apply(:(!kgen.simd<4, uindex>, !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> @min_uindex, U0, U1)>
+  // CHECK: <<0, 0, 1, 0>>
+  %3 = kgen.param.constant: !kgen.simd<4, uindex> = <U2>
+  kgen.param.declare U3: simd<4, uindex> = <apply(:(!kgen.simd<4, uindex>, !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> @max_uindex, U0, U1)>
+  // CHECK: <<3, 3, 4294967295, 0>>
+  %4 = kgen.param.constant: !kgen.simd<4, uindex> = <U3>
+
+  hlcf.return %1 : !kgen.simd<4, index>
+}
+
 // COM: pop.shr with index on 32-bit
 
 kgen.generator @shr_index(%arg0 : !kgen.scalar<index>, %arg1 : !kgen.scalar<index>) -> !kgen.scalar<index> {
@@ -591,6 +640,35 @@ kgen.generator export @testShl() -> !kgen.scalar<index> {
   // CHECK: = <32>
   %0 = kgen.param.constant: !kgen.scalar<index> = <S2>
   hlcf.return %0 : !kgen.scalar<index>
+}
+
+// COM: pop.simd.insertelement into uninitialized memory with index on 32-bit
+
+kgen.generator @insert_index(%arg0: !kgen.scalar<index>, %arg1: !kgen.scalar<index>) -> !kgen.simd<2, index> {
+  %idx0 = kgen.param.constant: scalar<index> = <0>
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, index> = <#interp.uninitmem : !kgen.simd<2, index>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx0] : !kgen.simd<2, index>
+  %2 = pop.simd.insertelement %arg1, %1[%idx1] : !kgen.simd<2, index>
+  hlcf.return %2 : !kgen.simd<2, index>
+}
+
+kgen.generator @insert_uindex(%arg0: !kgen.scalar<uindex>) -> !kgen.simd<2, uindex> {
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, uindex> = <#interp.uninitmem : !kgen.simd<2, uindex>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx1] : !kgen.simd<2, uindex>
+  hlcf.return %1 : !kgen.simd<2, uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testInsertIntoUninit
+kgen.generator export @testInsertIntoUninit() -> !kgen.simd<2, index> {
+  kgen.param.declare S0: simd<2, index> = <apply(:(!kgen.scalar<index>, !kgen.scalar<index>) -> !kgen.simd<2, index> @insert_index, 3, -4)>
+  // CHECK: <<3, -4>>
+  %0 = kgen.param.constant: !kgen.simd<2, index> = <S0>
+  kgen.param.declare U0: simd<2, uindex> = <apply(:(!kgen.scalar<uindex>) -> !kgen.simd<2, uindex> @insert_uindex, 7)>
+  // CHECK: <<0, 7>>
+  %1 = kgen.param.constant: !kgen.simd<2, uindex> = <U0>
+  hlcf.return %0 : !kgen.simd<2, index>
 }
 
 }
@@ -723,6 +801,51 @@ kgen.generator export @testFloordiv() -> !kgen.simd<4, index> {
   hlcf.return %1 : !kgen.simd<4, index>
 }
 
+// COM: pop.min and pop.max with index on 64-bit
+
+kgen.generator @min_index(%arg0: !kgen.simd<4, index>, %arg1: !kgen.simd<4, index>) -> !kgen.simd<4, index> {
+  %0 = pop.min %arg0, %arg1 : !kgen.simd<4, index>
+  hlcf.return %0 : !kgen.simd<4, index>
+}
+
+kgen.generator @max_index(%arg0: !kgen.simd<4, index>, %arg1: !kgen.simd<4, index>) -> !kgen.simd<4, index> {
+  %0 = pop.max %arg0, %arg1 : !kgen.simd<4, index>
+  hlcf.return %0 : !kgen.simd<4, index>
+}
+
+kgen.generator @min_uindex(%arg0: !kgen.simd<4, uindex>, %arg1: !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> {
+  %0 = pop.min %arg0, %arg1 : !kgen.simd<4, uindex>
+  hlcf.return %0 : !kgen.simd<4, uindex>
+}
+
+kgen.generator @max_uindex(%arg0: !kgen.simd<4, uindex>, %arg1: !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> {
+  %0 = pop.max %arg0, %arg1 : !kgen.simd<4, uindex>
+  hlcf.return %0 : !kgen.simd<4, uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testMinMax
+kgen.generator export @testMinMax() -> !kgen.simd<4, index> {
+  kgen.param.declare S0: simd<4, index> = <<11, 1, 3000000000, -5>>
+  kgen.param.declare S1: simd<4, index> = <<1099511627776, 1099511627776, 0, -1099511627776>>
+  kgen.param.declare S2: simd<4, index> = <apply(:(!kgen.simd<4, index>, !kgen.simd<4, index>) -> !kgen.simd<4, index> @min_index, S0, S1)>
+  // CHECK: <<11, 1, 0, -1099511627776>>
+  %1 = kgen.param.constant: !kgen.simd<4, index> = <S2>
+  kgen.param.declare S3: simd<4, index> = <apply(:(!kgen.simd<4, index>, !kgen.simd<4, index>) -> !kgen.simd<4, index> @max_index, S0, S1)>
+  // CHECK: <<1099511627776, 1099511627776, 3000000000, -5>>
+  %2 = kgen.param.constant: !kgen.simd<4, index> = <S3>
+
+  kgen.param.declare U0: simd<4, uindex> = <<1099511627776, 3, 18446744073709551615, 0>>
+  kgen.param.declare U1: simd<4, uindex> = <<3, 1099511627776, 1, 4294967296>>
+  kgen.param.declare U2: simd<4, uindex> = <apply(:(!kgen.simd<4, uindex>, !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> @min_uindex, U0, U1)>
+  // CHECK: <<3, 3, 1, 0>>
+  %3 = kgen.param.constant: !kgen.simd<4, uindex> = <U2>
+  kgen.param.declare U3: simd<4, uindex> = <apply(:(!kgen.simd<4, uindex>, !kgen.simd<4, uindex>) -> !kgen.simd<4, uindex> @max_uindex, U0, U1)>
+  // CHECK: <<1099511627776, 1099511627776, 18446744073709551615, 4294967296>>
+  %4 = kgen.param.constant: !kgen.simd<4, uindex> = <U3>
+
+  hlcf.return %1 : !kgen.simd<4, index>
+}
+
 // COM: pop.shr with index on 64-bit
 
 kgen.generator @shr_index(%arg0 : !kgen.scalar<index>, %arg1 : !kgen.scalar<index>) -> !kgen.scalar<index> {
@@ -755,6 +878,35 @@ kgen.generator export @testShl() -> !kgen.scalar<index> {
   // CHECK: = <32>
   %0 = kgen.param.constant: !kgen.scalar<index> = <S2>
   hlcf.return %0 : !kgen.scalar<index>
+}
+
+// COM: pop.simd.insertelement into uninitialized memory with index on 64-bit
+
+kgen.generator @insert_index(%arg0: !kgen.scalar<index>, %arg1: !kgen.scalar<index>) -> !kgen.simd<2, index> {
+  %idx0 = kgen.param.constant: scalar<index> = <0>
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, index> = <#interp.uninitmem : !kgen.simd<2, index>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx0] : !kgen.simd<2, index>
+  %2 = pop.simd.insertelement %arg1, %1[%idx1] : !kgen.simd<2, index>
+  hlcf.return %2 : !kgen.simd<2, index>
+}
+
+kgen.generator @insert_uindex(%arg0: !kgen.scalar<uindex>) -> !kgen.simd<2, uindex> {
+  %idx1 = kgen.param.constant: scalar<index> = <1>
+  %0 = kgen.param.constant: simd<2, uindex> = <#interp.uninitmem : !kgen.simd<2, uindex>>
+  %1 = pop.simd.insertelement %arg0, %0[%idx1] : !kgen.simd<2, uindex>
+  hlcf.return %1 : !kgen.simd<2, uindex>
+}
+
+// CHECK-LABEL: kgen.func export @testInsertIntoUninit
+kgen.generator export @testInsertIntoUninit() -> !kgen.simd<2, index> {
+  kgen.param.declare S0: simd<2, index> = <apply(:(!kgen.scalar<index>, !kgen.scalar<index>) -> !kgen.simd<2, index> @insert_index, 3, -4)>
+  // CHECK: <<3, -4>>
+  %0 = kgen.param.constant: !kgen.simd<2, index> = <S0>
+  kgen.param.declare U0: simd<2, uindex> = <apply(:(!kgen.scalar<uindex>) -> !kgen.simd<2, uindex> @insert_uindex, 7)>
+  // CHECK: <<0, 7>>
+  %1 = kgen.param.constant: !kgen.simd<2, uindex> = <U0>
+  hlcf.return %0 : !kgen.simd<2, index>
 }
 
 }

@@ -37,6 +37,8 @@ from transformers import (
     PreTrainedTokenizerFast,
 )
 
+from .backend_names import SERVER_READY_PATH_MAP
+
 logger = logging.getLogger(__name__)
 
 # Model paths for which the best-effort ``AutoConfig`` architecture probe has
@@ -101,7 +103,7 @@ def openai_bearer_auth_headers() -> Mapping[str, str]:
 def wait_for_server_ready(
     host: str,
     port: int,
-    path: str = "health",
+    path: str | None = None,
     *,
     timeout_s: int = 120 * 60,
     interval_s: float = 5.0,
@@ -110,6 +112,10 @@ def wait_for_server_ready(
     base_url: str | None = None,
 ) -> float:
     """Polls ``http://<host>:<port>/<path>`` until it responds with HTTP 200.
+
+    *path* defaults to the backend's entry in
+    :data:`~max.benchmark.benchmark_shared.backend_names.SERVER_READY_PATH_MAP`,
+    else ``health``.
 
     Always attempts at least one request, even when ``timeout_s == 0``, so
     standalone callers get a fast error on misconfigured ``host``/``port``.
@@ -136,6 +142,8 @@ def wait_for_server_ready(
     # TODO: remove once BENTO-168 is fixed
     if backend == "mcloud":
         return 0.0
+    if path is None:
+        path = SERVER_READY_PATH_MAP.get(backend, "health")
     headers: Mapping[str, str] = {}
     if base_url is not None:
         url = f"{base_url.rstrip('/')}/{path}"

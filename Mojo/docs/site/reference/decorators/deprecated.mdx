@@ -35,6 +35,8 @@ Mojo offers the `@deprecated` decorator with two styles:
   should really start using the other thing instead."
   - The argument for `use` is the actual symbol. Don't quote it.
   - The symbol must be valid or the compiler will error.
+  - On a member of a struct, trait, or extension, such as a method or a
+    `comptime` member, the symbol names another member of the same type.
 
 - **`@deprecated("message")`**:
 

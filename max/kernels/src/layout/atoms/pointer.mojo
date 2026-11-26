@@ -60,7 +60,7 @@ struct PointerLoad[dt: DType, width: Int, align: Int = width * size_of[dt]()](
 
     comptime shape_values = ParameterList.of[Self.width]().values
     """One issue moves `width` elements."""
-    comptime Completion = Synchronous
+    comptime AsyncEngine = Synchronous
     """Ready when the call returns."""
     comptime dtype = Self.dt
     """The element type the instruction moves."""
@@ -121,7 +121,7 @@ struct PointerStore[dt: DType, width: Int, align: Int = width * size_of[dt]()](
 
     comptime shape_values = ParameterList.of[Self.width]().values
     """One issue moves `width` elements."""
-    comptime Completion = Synchronous
+    comptime AsyncEngine = Synchronous
     """Ready when the call returns."""
     comptime dtype = Self.dt
     """The element type the instruction moves."""

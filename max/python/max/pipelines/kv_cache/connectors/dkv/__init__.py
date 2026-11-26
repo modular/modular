@@ -13,8 +13,9 @@
 
 """Distributed KV cache connector via dKV service."""
 
-from .connector import DKVConnector
+from .connector import DkvClientTooOldError, DKVConnector
 
 __all__ = [
     "DKVConnector",
+    "DkvClientTooOldError",
 ]

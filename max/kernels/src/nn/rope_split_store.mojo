@@ -45,14 +45,6 @@ from nn.rope import get_safetensors_idx
 # ===-----------------------------------------------------------------------===#
 
 
-# HACK: `k_cache` and `v_cache` are the key/value halves (kv_idx 0 vs 1) of the
-# same `blocks` buffer, so they share the collection's mutable `blocks_origin`
-# (and `scales_origin`). They are only ever stored to at disjoint offsets, but
-# the exclusivity checker cannot prove that and rejects capturing both as
-# separately-writable values in the store closure. Disabling the nested-origin
-# exclusivity check is a stopgap workaround; the proper fix is to give the k/v
-# views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_nested_origins_read_only
 @inline(.always)
 def _rope_split_store_ragged_impl[
     dtype: DType,
@@ -334,11 +326,6 @@ def _rope_split_store_ragged_impl[
 # ===-----------------------------------------------------------------------===#
 
 
-# HACK: forwards the `k_cache`/`v_cache` pair (disjoint k/v halves of one
-# `blocks` buffer that share the collection's mutable origins) on to the store
-# impl, so it inherits the same false-positive aliasing rejection. See
-# `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
-@__unsafe_nested_origins_read_only
 @inline(.always)
 def _rope_split_store_ragged[
     dtype: DType,
@@ -424,13 +411,24 @@ def rope_split_store_paged_ragged[
         ctx: DeviceContext for GPU.
     """
     var layer_idx_cast = Int(layer_idx)
-    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    # FIXME: K/V are disjoint planes of one allocation, and Q output is a
+    # separate allocation, but origin tracking cannot express either fact.
+    var k_cache = kv_collection.get_key_cache(
+        layer_idx_cast
+    ).unsafe_origin_cast()
     var v_cache: OptionalReg[type_of(k_cache)] = kv_collection.get_value_cache(
         layer_idx_cast
-    )
+    ).unsafe_origin_cast()
+    var q_output_untracked = q_output.unsafe_origin_cast[MutUntrackedOrigin]()
 
     return _rope_split_store_ragged[interleaved=interleaved,](
-        qkv, input_row_offsets, freqs_cis, k_cache, v_cache, q_output, ctx
+        qkv,
+        input_row_offsets,
+        freqs_cis,
+        k_cache,
+        v_cache,
+        q_output_untracked,
+        ctx,
     )
 
 
@@ -439,11 +437,6 @@ def rope_split_store_paged_ragged[
 # ===-----------------------------------------------------------------------===#
 
 
-# HACK: forwards the `k_cache`/`v_cache` pair (disjoint k/v halves of one
-# `blocks` buffer that share the collection's mutable origins) on to the store
-# impl, so it inherits the same false-positive aliasing rejection. See
-# `_rope_split_store_ragged_impl` for the full rationale. Stopgap workaround.
-@__unsafe_nested_origins_read_only
 @inline(.always)
 def _rope_split_store_ragged_with_position_ids[
     dtype: DType,
@@ -583,10 +576,15 @@ def rope_split_store_paged_ragged_with_position_ids[
         ctx: DeviceContext for GPU.
     """
     var layer_idx_cast = Int(layer_idx)
-    var k_cache = kv_collection.get_key_cache(layer_idx_cast)
+    # FIXME: K/V are disjoint planes of one allocation, and Q output is a
+    # separate allocation, but origin tracking cannot express either fact.
+    var k_cache = kv_collection.get_key_cache(
+        layer_idx_cast
+    ).unsafe_origin_cast()
     var v_cache: OptionalReg[type_of(k_cache)] = kv_collection.get_value_cache(
         layer_idx_cast
-    )
+    ).unsafe_origin_cast()
+    var q_output_untracked = q_output.unsafe_origin_cast[MutUntrackedOrigin]()
 
     return _rope_split_store_ragged_with_position_ids[
         interleaved=interleaved,
@@ -600,6 +598,6 @@ def rope_split_store_paged_ragged_with_position_ids[
         k_cache,
         v_cache,
         position_ids,
-        q_output,
+        q_output_untracked,
         ctx,
     )

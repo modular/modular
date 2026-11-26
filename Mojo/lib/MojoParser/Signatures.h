@@ -211,7 +211,7 @@ public:
 class TypeCheckedParamList {
 private:
   /// Private constructor - use the static create method instead.
-  TypeCheckedParamList(ASTDecl &declScope);
+  TypeCheckedParamList(ASTDecl &declScope, bool partial);
 
   /// Set when an implicit parameter can't be prepended to the list because of
   /// what its type depends on.
@@ -222,10 +222,15 @@ public:
   ASTDecl &declScope;
   SharedState &shared;
 
+  /// If set, a parameter without a type gets `!lit.unresolved` instead of
+  /// an error, so the type can be inferred from context later.
+  bool partial;
+
   /// Type check each of the parameters from 'parsedParams' into their
   /// decomposed representation. Returns nullopt if type checking fails.
   static std::optional<TypeCheckedParamList>
-  create(ParsedParamList &parsedParams, ASTDecl &declScope);
+  create(ParsedParamList &parsedParams, ASTDecl &declScope,
+         bool partial = false);
 
   /// Emit the trailing `where` clauses parsed into `emittedBodyConstraints`.
   /// This cannot be performed at `create` because the body constraints may
@@ -309,6 +314,10 @@ public:
   /// absence of any abi annotation.
   bool hasExplicitABI = false;
   ExprNode *thrownTypeExpr = nullptr;
+  /// Whether the legacy unchecked nested-origin access promise was specified.
+  bool isUnsafeNestedOriginsReadOnly = false;
+  /// Whether the checked nested-origin access promise was specified.
+  bool isNestedOriginsReadOnly = false;
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
@@ -317,6 +326,10 @@ public:
   /// Parse the result specifier starting with a `->` if present.
   void parseResultIfPresent(ParserBase &p,
                             std::optional<size_t> stmtIndent = std::nullopt);
+
+  /// Parses the experimental `__accesses(...)` clause and records its access
+  /// promise for later function type construction.
+  ParseResult parseAccessesIfPresent(ParserBase &p);
 
   /// Returns true when a function type should be interpreted as a closure
   /// trait rather than a thin function pointer or legacy capturing function.
@@ -355,7 +368,9 @@ public:
   TypeCheckedFnSignature(TypeCheckedParamList &paramList,
                          ParsedArgumentList &argList,
                          const ExprNode *originExpr, DefASTDecl *fnDecl,
-                         StringAttr baseName);
+                         StringAttr baseName, bool partial = false);
+
+  bool partial;
   TypeCheckedParamList &paramList;
   ParsedArgumentList &argList;
 
@@ -389,8 +404,9 @@ public:
   /// This is an optional origin set parameter, representing the origins of
   /// the function captures.
   TypedAttr captureOrigins;
-  /// Whether `@__unsafe_nested_origins_read_only` was specified:
-  /// nested origins are not considered in exclusivity checking.
+  /// Whether `@__unsafe_nested_origins_read_only` was specified.
+  bool isUnsafeNestedOriginsReadOnly = false;
+  /// Whether `@__nested_origins_read_only` was specified.
   /// TODO: Generalize this to mutation sets.
   bool isNestedOriginsReadOnly = false;
   /// Whether the function has an explicitly declared return type containing an

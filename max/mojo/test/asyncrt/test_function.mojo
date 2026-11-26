@@ -29,10 +29,6 @@ struct TwoS(DevicePassable, TrivialRegisterPassable):
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "TwoS"
-
     var s0: S
     var s1: S
 
@@ -48,10 +44,6 @@ struct OneS(DevicePassable):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode(TwoS(self.s), target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "OneS"
 
     var s: S
 

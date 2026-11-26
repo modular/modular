@@ -26,6 +26,8 @@
 #include "Mojo/KGENDialect/KGENTypes.h"
 #include "Support/AssertStream.h"
 
+#include "mlir/IR/SymbolTable.h"
+
 #include "llvm/ADT/ScopedHashTable.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/ErrorHandling.h"
@@ -57,10 +59,12 @@ struct FusedTensorArg {
 
 /// State for lowering MOGG operations to Mojo text.
 struct EmitMojoState {
-  EmitMojoState(MojoRegistry &registry, bool enableOpTraceComments = false,
+  EmitMojoState(MojoRegistry &registry, mlir::SymbolTable &moduleSymbolTable,
+                bool enableOpTraceComments = false,
                 bool enableComputeLambdas = false,
                 bool enableDebugDumpFusedTensorSpecs = false)
-      : registry(registry), enableComputeLambdas(enableComputeLambdas),
+      : registry(registry), moduleSymbolTable(moduleSymbolTable),
+        enableComputeLambdas(enableComputeLambdas),
         enableOpTraceComments(enableOpTraceComments),
         enableDebugDumpFusedTensorSpecs(enableDebugDumpFusedTensorSpecs) {}
 
@@ -92,6 +96,10 @@ struct EmitMojoState {
   SmallVector<std::tuple<MojoValue, MojoValue>> mojoConstantResources;
 
   MojoRegistry &registry;
+
+  /// Looks up the functions backing call-like operations, so a walk over a
+  /// whole body shares one table.
+  mlir::SymbolTable &moduleSymbolTable;
 
   /// Values kept alive with `_ = someVar` at function end, where the Mojo
   /// compiler misjudges lifetimes (mostly lambdas, until the new closures).
@@ -248,7 +256,7 @@ public:
         params.push_back(kParameterKind.equal(
             kStructDeviceGraphInputKind.get(kInputKindHost)));
       return kStructOwnedTensor[params];
-    } else if (isa<MEF::ChainType>(mlirType)) {
+    } else if (isa<MLRT::MEF::ChainType>(mlirType)) {
       return kComptimeOpaquePointer;
     } else if (isa<MGP::DeviceContextType, ContextType>(mlirType)) {
       return kStructDeviceContext;
@@ -295,7 +303,8 @@ public:
       return kStructInt;
     } else if (auto shapeResultType = dyn_cast<ShapeFuncResultType>(mlirType)) {
       MOGG::MojoValue rankParam = shapeResultType.getRank();
-      return MOGG::kStructIndexList[rankParam];
+      return MOGG::kAliasDynamicCoord[{
+          MOGG::kStructDType.get(MOGG::kEnumDTypeInt), rankParam}];
     } else if (isa<MGP::OpaqueType, MO::OpaqueType>(mlirType)) {
       return kComptimeOpaquePointer;
     } else {
@@ -363,9 +372,6 @@ public:
       dimsAsMojoValues.push_back(getComptimeIdx(1));
     return kStructCoord(dimsAsMojoValues);
   }
-
-  MojoValue getShapeAsIndexListMojoValue(MOSH::ShapeAttr shapeAttr,
-                                         ValueRange dynamicDims = {});
 
   /// Emit the shape as a `Coord`, encoding static dims as compile-time `Idx[N]`
   /// components and dynamic dims as runtime `Int(<dim>)` components.

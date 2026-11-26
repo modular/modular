@@ -135,6 +135,41 @@ def test_sampled_draft_proposal_rejects_relaxed_acceptance() -> None:
     ).use_relaxed_acceptance_for_thinking
 
 
+@pytest.mark.parametrize(
+    "method", ["mtp", "dspark"], ids=["argmax_mtp", "block_driver"]
+)
+def test_per_row_verify_refuses_a_synthetic_acceptance_rate(
+    method: str,
+) -> None:
+    """Checks that per-row verification rejects a synthetic acceptance rate."""
+    with pytest.raises(ValueError, match="synthetic_acceptance_rate"):
+        SpeculativeConfig.model_validate(
+            {
+                "speculative_method": method,
+                "num_speculative_tokens": 3,
+                "per_row_verify": True,
+                "synthetic_acceptance_rate": 0.0,
+            }
+        )
+
+    per_row = SpeculativeConfig.model_validate(
+        {
+            "speculative_method": method,
+            "num_speculative_tokens": 3,
+            "per_row_verify": True,
+        }
+    )
+    assert per_row.per_row_verify
+    synthetic = SpeculativeConfig.model_validate(
+        {
+            "speculative_method": method,
+            "num_speculative_tokens": 3,
+            "synthetic_acceptance_rate": 0.7,
+        }
+    )
+    assert synthetic.synthetic_acceptance_rate == 0.7
+
+
 @pytest.mark.parametrize("num_steps", [1, 2, 3, 5, 7, 10])
 @pytest.mark.parametrize("rate", [0.0, 0.1, 0.3, 0.5, 0.7, 0.9, 0.99])
 def test_compute_synthetic_acceptance_base_rate(

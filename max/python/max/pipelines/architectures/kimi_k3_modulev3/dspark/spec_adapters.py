@@ -466,6 +466,8 @@ ADAPTER = TargetAdapter(
     verify=verify,
     block_proposer=block_proposer,
     export_contract=export_contract,
+    # The frozen DSpark input contract is text-only.
+    takes_vision_inputs=lambda _config: False,
     # The pairing this fold was written for: K3's accept graph answers its
     # per-step index glue in one launch. Every other target keeps the chain.
     fold_index_glue=True,

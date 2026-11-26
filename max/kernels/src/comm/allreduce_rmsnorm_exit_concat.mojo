@@ -254,6 +254,7 @@ def _fuse_exit_concat[
 @__name(
     t"allreduce_rmsnorm_exit_concat_{in_dtype}_{dtype}_{gamma_dtype}_{ngpus}"
 )
+@__allow_legacy_any_origin_fields
 def _allreduce_rmsnorm_exit_concat_kernel[
     in_dtype: DType,
     gamma_dtype: DType,
@@ -801,6 +802,7 @@ def allreduce_rmsnorm_exit_concat[
         return
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch[simd_width: Int]() raises {imm}:
         """Runs one arm of the launch, vectorizing the rows at `simd_width`.
 

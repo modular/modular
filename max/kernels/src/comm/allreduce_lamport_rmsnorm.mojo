@@ -40,7 +40,6 @@ sentinel-initialized once (`lamport_init`) before the first call.
 from std.math import align_down, rsqrt
 from std.sys import align_of, size_of
 
-from std.atomic import Atomic
 from std.collections import Array
 from std.collections.optional import OptionalReg
 
@@ -69,7 +68,6 @@ from layout import (
     row_major,
 )
 from layout.tile_tensor import _ComptimeConditionalTileTensor
-from std.memory import unsafe_stack_allocation
 from std.utils import StaticTuple
 from std.utils.numerics import get_accum_type
 
@@ -84,6 +82,7 @@ from .lamport import (
     Lamport,
     LamportGeneration,
     has_neg_zero,
+    lamport_arrive,
     remove_neg_zero,
     set_neg_zero,
 )
@@ -105,6 +104,7 @@ def _sum(x: SIMD, y: type_of(x)) -> type_of(x):
 @__name(
     t"allreduce_lamport_rmsnorm_{dtype}_{ngpus}_{BLOCK_SIZE}x{CLUSTER_SIZE}_{has_residual}_{multiply_before_cast}_{post_norm_residual}"
 )
+@__allow_legacy_any_origin_fields
 def _allreduce_lamport_rmsnorm_kernel[
     ResidualLayoutType: TensorLayout,
     residual_origin: Origin,
@@ -187,9 +187,9 @@ def _allreduce_lamport_rmsnorm_kernel[
     var col = pack * atomic_width
     var is_valid = col < cols
     var packs_per_row = cols // atomic_width
-    var cluster_slot = unsafe_stack_allocation[
-        2, Scalar[accum_type], address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var cluster_slot_storage = Array[Scalar[accum_type], 2](uninitialized=True)
+    var cluster_slot = cluster_slot_storage.unsafe_ptr()
 
     # PDL: wait for the producer, then release the consumer immediately so it
     # overlaps the whole AR+RMSNorm. Called by all threads in the block before
@@ -409,8 +409,8 @@ def _allreduce_lamport_rmsnorm_kernel[
     # intra-GPU block-arrival counter (device-side state -> CUDA-graph-safe).
     barrier()
     if tid == 0:
-        var arrived = Atomic.fetch_add(
-            state.unsafe_offset(Lamport.STATE_ARRIVAL), UInt32(1)
+        var arrived = lamport_arrive[ngpus](
+            state.unsafe_offset(Lamport.STATE_ARRIVAL)
         )
         if Int(arrived) == grid_dim.x - 1:
             state.unsafe_offset(Lamport.STATE_FLAG).unsafe_store[volatile=True](
@@ -563,6 +563,7 @@ def _lamport_allreduce_rmsnorm_launch[
     if rows == 0:
         return
 
+    @__allow_legacy_any_origin_fields
     def launch[block_size: Int, cluster_size: Int]() raises {imm}:
         comptime kernel = _allreduce_lamport_rmsnorm_kernel[
             ResidualLayoutType=residual.T.LayoutType,

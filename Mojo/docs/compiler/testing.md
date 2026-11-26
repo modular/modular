@@ -18,6 +18,14 @@ functional changes) should contain tests.
 | `Mojo/test/kgen/transforms/`  | Individual optimization pass tests                    | `kgen-opt`             |
 | `Mojo/test/test-packages/`    | Standard library stubs for isolated tests             | N/A                    |
 
+### When to use mojo-parser vs mojo-integration
+
+**mojo-parser**: Primary location for front-end tests. Uses isolated parser
+without full compiler.
+
+**mojo-integration**: Use only when mojo-parser tests won't work (e.g.,
+elaborator, codegen, back-end tests). Requires code owner approval.
+
 ## Running Tests
 
 ```bash
@@ -193,14 +201,6 @@ def broken():
 Name tests after features, not ticket numbers (mention tickets in comments).
 Group related tests in one file to reduce overhead. Split files exceeding ~200
 lines. Use feature names for folders.
-
-### When to use mojo-parser vs mojo-integration
-
-**mojo-parser**: Primary location for front-end tests. Uses isolated parser
-without full compiler.
-
-**mojo-integration**: Use only when mojo-parser tests won't work (e.g.,
-elaborator, codegen, back-end tests). Requires code owner approval.
 
 ### Standard library stubs
 

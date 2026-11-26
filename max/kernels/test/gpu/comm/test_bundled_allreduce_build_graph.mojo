@@ -111,6 +111,7 @@ def bundled_allreduce_build_graph_test[
         ]: Signal.unsafe_ptr_from(signal_buffers[i])
     )
 
+    @__allow_legacy_any_origin_fields
     def build_for[n: Int](mut builder: DeviceGraphBuilder[_]) raises {mut}:
         _ = builder.place_stable(
             n,

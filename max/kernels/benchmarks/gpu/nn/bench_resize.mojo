@@ -41,30 +41,27 @@ from nn.resize import (
     resize_nearest_neighbor,
 )
 
-from std.utils.index import IndexList
-
 
 def bench_resize_gpu[
-    in_rank: Int,
-    out_rank: Int,
-    //,
     dtype: DType,
     op: StaticString,
-    in_shape: IndexList[in_rank],
-    out_shape: IndexList[out_rank],
+    in_shape: Coord,
+    out_shape: Coord,
 ](ctx: DeviceContext[], mut b: Bench) raises:
-    comptime assert in_rank == out_rank, "input and output ranks must match"
+    comptime assert (
+        in_shape.rank == out_shape.rank
+    ), "input and output ranks must match"
 
-    var input_size = in_shape.flattened_length()
-    var output_size = out_shape.flattened_length()
+    var input_size = Int(in_shape.product())
+    var output_size = Int(out_shape.product())
 
     var in_device = ctx.enqueue_create_buffer[dtype](input_size)
     var out_device = ctx.enqueue_create_buffer[dtype](output_size)
     ctx.enqueue_memset(in_device, 1)
     ctx.synchronize()
 
-    var input = TileTensor(in_device, row_major(Coord(in_shape)))
-    var output = TileTensor(out_device, row_major(Coord(out_shape)))
+    var input = TileTensor(in_device, row_major(in_shape))
+    var output = TileTensor(out_device, row_major(out_shape))
 
     @inline(.always)
     def bench_fn(mut b: Bencher) raises {mut output, imm input, imm ctx}:

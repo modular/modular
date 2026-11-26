@@ -407,14 +407,14 @@ public:
 
   // ----- Forwarded to the backing context ----- //
 
-  ErrorOr<DeviceFunctionRef>
-  loadFunction(StringRef moduleName, StringRef functionName, StringRef code,
-               int32_t maxDynamicSharedBytes, StringRef debugLevel,
-               int32_t optimizationLevel) override;
+  ErrorOr<DeviceFunctionRef> loadFunction(StringRef moduleName,
+                                          StringRef functionName,
+                                          StringRef code, StringRef debugLevel,
+                                          int32_t optimizationLevel) override;
   ErrorOr<DeviceFunctionRef>
   loadFunctionWithDebugName(StringRef moduleName, StringRef functionName,
-                            StringRef code, int32_t maxDynamicSharedBytes,
-                            StringRef debugLevel, int32_t optimizationLevel,
+                            StringRef code, StringRef debugLevel,
+                            int32_t optimizationLevel,
                             StringRef debugName) override;
   ErrorOr<int> getAttribute(Attribute attr) const override;
 

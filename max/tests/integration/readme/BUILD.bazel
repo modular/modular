@@ -46,7 +46,11 @@ modular_py_test(
         "README_PATH": "$(rootpath //:public_readme)",
     },
     exec_properties = {
-        "test.resources:gpu-memory": "5",
+        # The request is the whole arena: the test env hands the memory manager
+        # this figure minus 0.6 GiB. At 5 GiB the snippet's Qwen3.5-0.8B weights
+        # and 1 GiB margin left 342 MiB for the KV cache, short of the 405 MiB
+        # one 8000-token prefill chunk needs.
+        "test.resources:gpu-memory": "6",
     },
     gpu_constraints = ["//:has_gpu"],
     # Depending on the binary puts the kernel packages on the Mojo import

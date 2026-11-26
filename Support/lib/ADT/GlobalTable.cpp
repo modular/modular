@@ -43,8 +43,45 @@ struct GlobalTable::LockFreeGlobalEntry {
   void *getValue() const { return value.load(std::memory_order_acquire); }
 }; // struct LockFreeGlobalEntry
 
+/// Incremented by GlobalTable::clear() so that a memoized lookup cannot return
+/// an entry that clear() has already destroyed.
+static std::atomic<uint64_t> tableGeneration{0};
+
 void *GlobalTable::getOrCreate(StringRef name, void *(*initFn)(),
                                void (*destroyFn)(void *)) {
+  // This memoizes the entry resolved by the previous lookup on this thread, so
+  // that repeated access to the same global replaces the hash and probe with a
+  // pointer compare. It is only set for entries in the hash table, which are
+  // stable until clear() bumps `tableGeneration`.
+  struct Memo {
+    const GlobalTable *table = nullptr;
+    const char *data = nullptr;
+    size_t size = 0;
+    uint64_t generation = 0;
+    LockFreeGlobalEntry *entry = nullptr;
+  };
+  static thread_local Memo memo{};
+
+  // The name pointer is only a filter: name buffers can be recycled, so the
+  // content is verified against the entry's own copy before returning it.
+  uint64_t generation = tableGeneration.load(std::memory_order_acquire);
+  if (memo.entry && memo.table == this && memo.generation == generation &&
+      memo.data == name.data() && memo.size == name.size() &&
+      name == memo.entry->name)
+    return memo.entry->getValue();
+
+  // This records a resolved entry for the fast path, unless clear() ran while
+  // we were resolving it, in which case the entry may already be gone.
+  auto storeMemo = [this, &name, generation](LockFreeGlobalEntry *entry) {
+    if (tableGeneration.load(std::memory_order_acquire) != generation)
+      return;
+    memo.table = this;
+    memo.data = name.data();
+    memo.size = name.size();
+    memo.generation = generation;
+    memo.entry = entry;
+  };
+
   uint64_t hash = llvm::hash_value(name);
   size_t startIndex = hash & (kTableSize - 1);
 
@@ -55,9 +92,11 @@ void *GlobalTable::getOrCreate(StringRef name, void *(*initFn)(),
         hashTable[index].load(std::memory_order_acquire);
 
     if (entry) {
-      if (name == entry->name)
+      if (name == entry->name) {
         // This found an existing entry.
+        storeMemo(entry);
         return entry->getValue();
+      }
       // This is a hash collision, so continue probing.
       continue;
     }
@@ -85,6 +124,7 @@ void *GlobalTable::getOrCreate(StringRef name, void *(*initFn)(),
                                                  std::memory_order_acq_rel)) {
       // This won the race, so add to destruction order list.
       insertIntoOrderList(newEntry);
+      storeMemo(newEntry);
       return newEntry->getValue();
     }
 
@@ -94,8 +134,10 @@ void *GlobalTable::getOrCreate(StringRef name, void *(*initFn)(),
     delete newEntry;
 
     // This checks if the winner has our name.
-    if (expected && name == expected->name)
+    if (expected && name == expected->name) {
+      storeMemo(expected);
       return expected->getValue();
+    }
 
     // The winner had different name, so continue probing from next slot.
     // The entry we want might have been placed at a later position.
@@ -115,6 +157,10 @@ void *GlobalTable::getOrCreate(StringRef name, void *(*initFn)(),
 }
 
 void GlobalTable::clear() {
+  // Invalidate any memoized lookups before destroying entries, so that the
+  // fast path in getOrCreate() cannot return a destroyed entry.
+  tableGeneration.fetch_add(1, std::memory_order_acq_rel);
+
   // For proper LIFO destruction order, we need to destroy entries in this
   // order:
   // 1. Overflow entries first since they are most recent and came after the

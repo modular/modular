@@ -18,8 +18,6 @@ from std.builtin.globals import global_constant
 # TODO: Generate those at compile-time when the interpreter
 # is able to do so.
 
-comptime CONTAINER_SIZE = 24
-comptime MAXIMUM_UINT64_AS_STRING = "18446744073709551615"
 comptime MANTISSA_EXPLICIT_BITS = 52
 comptime SMALLEST_POWER_OF_5 = -342
 

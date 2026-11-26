@@ -15,6 +15,9 @@ discussion, understanding, and growth.
   conversation. We expect you to show up as a human and respond to comments
   yourself.
 - The burden is on you to demonstrate that you're present and respectful.
+- Don't post LLM-generated review comments, or run an agent that comments for
+  you, on pull requests you don't own. Using a tool to help you read a change is
+  fine, but check what it finds and write the comment yourself.
 
 ## Assume positive intent
 

@@ -135,6 +135,7 @@ def bench_concat[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut b: Bencher, shape: IndexList[rank]
     ) raises {mut output_device, imm}:
@@ -171,6 +172,7 @@ def bench_concat[
         var input = inputs_host[i]
         var input_shape = shapes[i]
 
+        @__allow_legacy_any_origin_fields
         def check[width: Int, alignment: Int = 1](coords: Coord) {var}:
             var out_coords = coord_to_index_list(coords)
             out_coords[axis] += offset

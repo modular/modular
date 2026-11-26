@@ -113,18 +113,18 @@ def _kernel[
             output[thread_idx.x, 12 + 2 * tile + element] = scores[
                 tile, element
             ]
-    comptime for guard in range(LOCAL_GUARD):
-        output[thread_idx.x, 20 + guard] = score_storage[guard]
-        output[thread_idx.x, 22 + guard] = score_storage[
-            LOCAL_GUARD + NUM_REGISTER_ELEMENTS + guard
+    comptime for guard_ in range(LOCAL_GUARD):
+        output[thread_idx.x, 20 + guard_] = score_storage[guard_]
+        output[thread_idx.x, 22 + guard_] = score_storage[
+            LOCAL_GUARD + NUM_REGISTER_ELEMENTS + guard_
         ]
-        output[thread_idx.x, 24 + guard] = accum_storage[guard]
-        output[thread_idx.x, 26 + guard] = accum_storage[
-            LOCAL_GUARD + NUM_REGISTER_ELEMENTS + guard
+        output[thread_idx.x, 24 + guard_] = accum_storage[guard_]
+        output[thread_idx.x, 26 + guard_] = accum_storage[
+            LOCAL_GUARD + NUM_REGISTER_ELEMENTS + guard_
         ]
-        output[thread_idx.x, 28 + guard] = scratch_storage[guard]
-        output[thread_idx.x, 30 + guard] = scratch_storage[
-            LOCAL_GUARD + 64 + guard
+        output[thread_idx.x, 28 + guard_] = scratch_storage[guard_]
+        output[thread_idx.x, 30 + guard_] = scratch_storage[
+            LOCAL_GUARD + 64 + guard_
         ]
 
 
@@ -145,10 +145,11 @@ def main() raises:
         )
         ctx.enqueue_copy(host, device)
         ctx.synchronize()
-        for guard in range(DRAM_GUARD):
-            assert_equal(host[guard], SENTINEL)
+        for guard_index in range(DRAM_GUARD):
+            assert_equal(host[guard_index], SENTINEL)
             assert_equal(
-                host[DRAM_GUARD + NUM_THREADS * NUM_FIELDS + guard], SENTINEL
+                host[DRAM_GUARD + NUM_THREADS * NUM_FIELDS + guard_index],
+                SENTINEL,
             )
         for thread in range(NUM_THREADS):
             var base = DRAM_GUARD + thread * NUM_FIELDS

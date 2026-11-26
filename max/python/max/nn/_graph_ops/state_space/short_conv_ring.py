@@ -35,6 +35,7 @@ def short_conv_ring(
     layer_row: TensorValue,
     *,
     commit: bool,
+    out_divisor: float = 1.0,
 ) -> TensorValue:
     """Returns ``x + conv(x)`` over a ragged batch.
 
@@ -52,6 +53,8 @@ def short_conv_ring(
         layer_row: Scalar uint32 CPU row of ``conv_rows`` this layer reads.
         commit: Whether to write each sequence's last ``ring_len`` rows of
             ``x`` into its slot of ``ring``.
+        out_divisor: Divides the float32 sum before it rounds to ``x``'s
+            dtype, so a scaled residual conv rounds once.
 
     Returns:
         Same shape and dtype as ``x``.
@@ -69,5 +72,7 @@ def short_conv_ring(
             layer_row,
         ],
         out_types=[TensorType(x.dtype, x.shape, device=x.device)],
-        parameters={"commit": commit},
+        parameters={"commit": commit}
+        if out_divisor == 1.0
+        else {"commit": commit, "out_divisor": out_divisor},
     )[0].tensor

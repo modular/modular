@@ -29,7 +29,7 @@ using namespace M::MGP;
 //===----------------------------------------------------------------------===//
 
 void ForwardsRelationDataflowAnalysis::flowSimpleLoop(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   assert(cfOp->getNumRegions() == 1);
   Block *bodyBlock = &cfOp->getRegion(0).front();
@@ -45,7 +45,7 @@ void ForwardsRelationDataflowAnalysis::flowSimpleLoop(
 }
 
 void ForwardsRelationDataflowAnalysis::flowConditionedLoop(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   LLVM_DEBUG(llvm::dbgs() << "flowConditionedLoop begin\n");
   assert(cfOp->getNumRegions() == 2);
@@ -92,7 +92,7 @@ ForwardsRelationDataflowAnalysis::splitByScope(const Set &set, Block *block) {
 }
 
 void ForwardsRelationDataflowAnalysis::flowBranch(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   // Flow from control flow op inputs forwards into each sub-block's args.
   for (Region &region : cfOp->getRegions()) {
@@ -199,10 +199,10 @@ void ForwardsRelationDataflowAnalysis::flowBranch(
 ///      }
 ///    then R(%lhs, %rhs) if R(%x, %rhs) and R(%y1, %x1) and R(%y2, %x2).
 void ForwardsRelationDataflowAnalysis::flowControlFlow(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   switch (cfOp.getFlavor()) {
-  case GRT::kLoopLike: {
+  case MLRT::GRT::kLoopLike: {
     LLVM_DEBUG(llvm::dbgs() << "fixed point setup...\n");
     // For 1-subregion loops we assume all traces are of the form:
     //  loop_body*
@@ -249,7 +249,7 @@ void ForwardsRelationDataflowAnalysis::flowControlFlow(
     LLVM_DEBUG(llvm::dbgs() << "fixed point done\n");
     break;
   }
-  case GRT::kBranchLike: {
+  case MLRT::GRT::kBranchLike: {
     flowBranch(cfOp, domainMap, flowOp);
     break;
   }
@@ -318,7 +318,7 @@ BackwardsRelationDataflowAnalysis::operandCombination(
 }
 
 void BackwardsRelationDataflowAnalysis::flowSimpleLoop(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   assert(cfOp->getNumRegions() == 1);
   Block *bodyBlock = &cfOp->getRegion(0).front();
@@ -335,7 +335,7 @@ void BackwardsRelationDataflowAnalysis::flowSimpleLoop(
 }
 
 void BackwardsRelationDataflowAnalysis::flowConditionedLoop(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   LLVM_DEBUG(llvm::dbgs() << "flowConditionedLoop begin\n");
   assert(cfOp->getNumRegions() == 2);
@@ -383,7 +383,7 @@ BackwardsRelationDataflowAnalysis::splitByScope(const Set &set, Block *block) {
 }
 
 void BackwardsRelationDataflowAnalysis::flowBranch(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   for (size_t i = 0, n = cfOp->getNumResults(); i < n; ++i) {
     Value result = cfOp->getResult(i);
@@ -427,7 +427,7 @@ void BackwardsRelationDataflowAnalysis::flowBranch(
 }
 
 void BackwardsRelationDataflowAnalysis::flowControlFlow(
-    GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
+    MLRT::GRT::GRTControlFlowInterface cfOp, DomainMap &domainMap,
     const FlowOp &flowOp) {
   if (cfOp->getNumOperands() > cfOp.getInputs().size()) {
     // Bind the loop or condition inputs.
@@ -435,7 +435,7 @@ void BackwardsRelationDataflowAnalysis::flowControlFlow(
   }
 
   switch (cfOp.getFlavor()) {
-  case GRT::kLoopLike: {
+  case MLRT::GRT::kLoopLike: {
     LLVM_DEBUG(llvm::dbgs() << "fixed point setup...\n");
     // Flow from control flow op results to outputs of first sub-block.
     Operation *firstOutput = cfOp->getRegions().front().front().getTerminator();
@@ -477,7 +477,7 @@ void BackwardsRelationDataflowAnalysis::flowControlFlow(
 
     break;
   }
-  case GRT::kBranchLike: {
+  case MLRT::GRT::kBranchLike: {
     flowBranch(cfOp, domainMap, flowOp);
     break;
   }
@@ -486,7 +486,7 @@ void BackwardsRelationDataflowAnalysis::flowControlFlow(
 
 void BackwardsRelationDataflowAnalysis::flowDefault(Operation *op,
                                                     DomainMap &domainMap) {
-  if (isa<MEF::OutputOp>(op))
+  if (isa<MLRT::MEF::OutputOp>(op))
     // entries for the output op operands are established from the outer block.
     return;
 

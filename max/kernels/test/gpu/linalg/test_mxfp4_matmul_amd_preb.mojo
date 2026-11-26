@@ -51,12 +51,18 @@ from linalg.matmul.gpu.amd import BlockScaledMatmulAMD_PreB, Shuffler
 # ===----------------------------------------------------------------------=== #
 
 
-def block_scaled_matmul_ref(
-    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    a_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_scales_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
+def block_scaled_matmul_ref[
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    a_scales_origin: ImmOrigin,
+    b_scales_origin: ImmOrigin,
+    c_origin: MutOrigin,
+](
+    a_ptr: ImmPointer[UInt8, a_origin],
+    b_ptr: ImmPointer[UInt8, b_origin],
+    a_scales_ptr: ImmPointer[Float8_e8m0fnu, a_scales_origin],
+    b_scales_ptr: ImmPointer[Float8_e8m0fnu, b_scales_origin],
+    c_ptr: MutPointer[Float32, c_origin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,
@@ -149,16 +155,17 @@ def _preb_grid_kernel[
     SFBEngine: TensorEngine,
     N: Int,
     K_BYTES: Int,
+    c_origin: MutOrigin,
+    a_origin: ImmOrigin,
+    b_pre_origin: ImmOrigin,
+    sfa_origin: ImmOrigin,
+    sfb_origin: ImmOrigin,
 ](
-    c: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin, Engine=CEngine],
-    a: TileTensor[.uint8, LayoutA, ImmutAnyOrigin, Engine=AEngine],
-    b_pre: TileTensor[.uint8, LayoutBPre, ImmutAnyOrigin, Engine=BPreEngine],
-    sfa: TileTensor[
-        .float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin, Engine=SFAEngine
-    ],
-    sfb: TileTensor[
-        .float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin, Engine=SFBEngine
-    ],
+    c: TileTensor[out_dtype, LayoutC, c_origin, Engine=CEngine],
+    a: TileTensor[.uint8, LayoutA, a_origin, Engine=AEngine],
+    b_pre: TileTensor[.uint8, LayoutBPre, b_pre_origin, Engine=BPreEngine],
+    sfa: TileTensor[.float8_e8m0fnu, LayoutSFA, sfa_origin, Engine=SFAEngine],
+    sfb: TileTensor[.float8_e8m0fnu, LayoutSFB, sfb_origin, Engine=SFBEngine],
 ):
     BlockScaledMatmulAMD_PreB[
         BM=BM,
@@ -297,11 +304,19 @@ def _test_case[
     # Independent code path from the MFMA kernel under test — catches
     # bugs that would be hidden by a same-MFMA-family reference.
     comptime BLOCK_DIM = 32
-    ctx.enqueue_function[block_scaled_matmul_ref](
+    ctx.enqueue_function[
+        block_scaled_matmul_ref[
+            ImmOrigin(origin_of(a_d)),
+            ImmOrigin(origin_of(b_d)),
+            ImmOrigin(origin_of(sfa_d)),
+            ImmOrigin(origin_of(sfb_d)),
+            origin_of(c_ref_d),
+        ]
+    ](
         a_d,
         b_d,
-        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
-        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu](),
+        sfa_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
+        sfb_d.unsafe_ptr().unsafe_bitcast[Float8_e8m0fnu]().as_imm(),
         c_ref_d,
         Int32(M_static),
         Int32(N_static),
@@ -351,6 +366,11 @@ def _test_case[
         type_of(sfb_tt).Engine,
         N_static,
         packed_K,
+        c_tt.origin,
+        a_tt.origin,
+        b_pre_tt.origin,
+        sfa_tt.origin,
+        sfb_tt.origin,
     ]
     ctx.enqueue_function[kernel, dump_asm=DUMP_ASM](
         c_tt,

@@ -425,14 +425,27 @@ def test_variadic_pack_write_to() raises:
     helper(1, "hello", True)
 
 
-def test_variadic_pack_write_repr_to() raises:
-    def helper[*Ts: Writable](*args: *Ts) raises:
-        comptime assert Ts.all_conforms_to[Writable]()
-        var s = String()
-        args.write_repr_to(s)
-        assert_equal(s, "(Int(1), 'hello', True)")
+def test_variadic_pack_writable() raises:
+    def return_pack[*Ts: AnyType](*args: *Ts) -> type_of(args):
+        return args.copy()
 
-    helper(1, "hello", True)
+    var a = 1
+    var b = "hello"
+    var c = [1, 2, 3]
+
+    var abc = return_pack(a, b, c)
+    assert_true(conforms_to(type_of(abc), Writable))
+    assert_equal(String(abc), String(t"({a}, {b}, {c})"))
+
+    var ab = return_pack(a, b)
+    assert_true(conforms_to(type_of(ab), Writable))
+    assert_equal(
+        repr(ab),
+        String(
+            t"VariadicPack[{reflect[type_of(a)].name()},"
+            t" {reflect[type_of(b)].name()}]({repr(a)}, {repr(b)})"
+        ),
+    )
 
 
 def test_variadic_pack_forwarding() raises:
@@ -673,6 +686,7 @@ def test_dynamic_variadic_pack() raises:
         List[Int],
     ]()
 
+    @__allow_legacy_any_origin_fields
     def make_elem_ptr[
         idx: Int
     ]() {imm} -> Pointer[Args[idx], MutUnsafeAnyOrigin]:

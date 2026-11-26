@@ -47,6 +47,7 @@ from pathlib import Path
 
 import pytest
 from max import functional as F
+from max import tree
 from max.driver import (
     Accelerator,
     set_virtual_device_api,
@@ -56,8 +57,9 @@ from max.driver import (
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, TensorType
 from max.nn import Module
+from max.nn.ep.init import payload_types
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import MLAKVCacheParams, MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager, EPConfig
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.legacy.transformer import ReturnHiddenStates
 from max.nn.quant_config import DISABLE_FUSED_SWIGLU_NVFP4_ENV
@@ -331,13 +333,11 @@ def _build(
     config.mesh = mesh
     # The routed experts do not fit one device, so a multi-device decode graph
     # is always expert parallel; the allreduce backend is the export's arm.
-    ep_manager = None
     if n_devices > 1:
         config.ep_config = _ep_config(config, config.nvfp4_config)
-        ep_manager = EPBatchManager(config.ep_config)
 
     with F.lazy(), default_device(mesh):
-        module = MistralLarge4(config, kv_params, ep_manager)
+        module = MistralLarge4(config, kv_params, config.ep_config)
     if taps:
         module.language_model.return_hidden_states = (
             ReturnHiddenStates.SELECTED_LAYERS
@@ -352,8 +352,8 @@ def _build(
     # variadic arguments before the cache tree, as the ModuleV3 batch
     # processor arranges it.
     inputs.insert(3, TensorType(DType.int32, shape=[1], device=DeviceRef.CPU()))
-    if ep_manager is not None:
-        inputs.extend(ep_manager.input_types())
+    if config.ep_config is not None:
+        inputs.extend(tree.leaves(payload_types(config.ep_config)))
     return module, inputs
 
 

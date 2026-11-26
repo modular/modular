@@ -26,9 +26,6 @@ from std.os import abort
 from std.reflection import SourceLocation, call_location
 from std.sys.info import CompilationTarget
 
-from max._driver.max_license.device_context_dispatch.device_function import (
-    _check_config_dims,
-)
 from max._driver.max_license.hal import Event, Stream, get_device_spec
 from max._driver.max_license.hal.extensions.completion_flag import FlagCondition
 from max._driver.max_license.hal.extensions.traits import (
@@ -40,7 +37,6 @@ from max._driver.max_license.hal.extensions.traits import (
     SupportsPeerAccessV1,
 )
 from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
-from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
 from max._plugin import MaxPluginForTarget
 from .device_context import use_legacy_backend
 from max.gpu.host._legacy.device_context import (
@@ -70,8 +66,10 @@ from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,
-    _HALDeviceExternalFunction,
-    _HALDeviceFunction,
+)
+from ._hal_launch import (
+    _hal_enqueue_compiled,
+    _hal_enqueue_external,
 )
 from max._driver.max_license.device_context_dispatch.device_context import (
     DeviceContext,
@@ -277,7 +275,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         # Now it's safe to use results on the host
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.synchronize()
             return
 
@@ -296,7 +294,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the wait operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_wait_for(event._impl)
             return
 
@@ -337,7 +335,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         new_stream.enqueue_wait_for(event)
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.record_event(event._impl)
             return
 
@@ -373,7 +371,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the underlying device does not support host callbacks, or if
             the driver rejects the enqueue.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_host_func(func, user_data)
             return
 
@@ -394,7 +392,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             If the device has no completion flags, the flag belongs to
             another backend, or enqueueing the wait fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.wait_for_flag(flag._impl, value)
             return
 
@@ -445,7 +443,7 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
@@ -465,39 +463,18 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             )
             return
 
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args)
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceStream.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
-            f._call_with_pack_checked(
-                self,
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=call_location(),
-            )
+        _hal_enqueue_compiled[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=call_location(),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -533,27 +510,17 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceStream"
         )
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[], execution_config, *args, host_args=()
-            )
-        else:
-            var gpu_f = DeviceFunction[
-                func,
-                DeviceContext[Self.target].FunctionWrapper,
-                target=Self.target,
-            ](self._impl._ctx)
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceStream.enqueue_function"](
-                    execution_config, location=call_location()
-                )
-
-            gpu_f._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        var gpu_f = DeviceFunction[
+            func,
+            DeviceContext[Self.target].FunctionWrapper,
+            target=Self.target,
+        ](self._impl._ctx)
+        gpu_f._do_call_with_pack_checked(
+            self._hal_stream(),
+            execution_config,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -588,28 +555,13 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config is only available on a"
             " HAL DeviceStream"
         )
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](
-                self._hal_stream()[],
-                hal_f._inner[]._func_handle,
-                execution_config,
-                *args,
-            )
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceStream.enqueue_function"](
-                    execution_config, location=call_location()
-                )
-
-            f._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_compiled[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            execution_config,
+            f,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -650,38 +602,18 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "external functions can only be enqueued on a HAL DeviceStream"
-        var hal_f: _HALDeviceExternalFunction = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_external(
-                self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args
-            )
-        else:
-            _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
-                grid_dim, location=call_location()
-            )
-            _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
-                block_dim, location=call_location()
-            )
-            f._call_with_pack(
-                self._hal_stream(),
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_external[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -715,30 +647,13 @@ struct DeviceStreamBase[target: CompilationTarget = default_accelerator()](
         comptime assert (
             not use_legacy_backend()
         ), "external functions can only be enqueued on a HAL DeviceStream"
-        var hal_f: _HALDeviceExternalFunction = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_external(
-                self._hal_stream()[],
-                hal_f._inner[]._func_handle,
-                execution_config,
-                *args,
-            )
-        else:
-            var grid_dim = execution_config.get_grid_dim()
-            var block_dim = execution_config.get_block_dim()
-
-            _check_dim_in_range["DeviceStream.enqueue_function", "grid_dim"](
-                grid_dim, location=call_location()
-            )
-            _check_dim_in_range["DeviceStream.enqueue_function", "block_dim"](
-                block_dim, location=call_location()
-            )
-            f._call_with_pack(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_external[Self.target, "DeviceStream.enqueue_function"](
+            self,
+            execution_config,
+            f,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
 
 comptime DeviceStream = DeviceStreamBase[]
@@ -802,7 +717,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If event creation or recording fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(ctx._impl)
             return
 
@@ -852,7 +767,7 @@ struct DeviceEvent(ImplicitlyCopyable):
         Raises:
             If synchronization fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.synchronize()
             return
 
@@ -1013,7 +928,7 @@ struct CompletionFlag(ImplicitlyCopyable):
             unsafe_from_address: Raw address of an `M::Driver::CompletionFlag`
                 (as packed into a graph payload buffer by the producer side).
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl = Self._Legacy(unsafe_from_address=unsafe_from_address)
             return
 
@@ -1061,7 +976,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         Args:
             value: The value to store.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.signal(value)
             return
 
@@ -1080,7 +995,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         Returns:
             The value the flag holds.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.load()
 
         try:
@@ -1094,7 +1009,7 @@ struct CompletionFlag(ImplicitlyCopyable):
         Don't reset while a wait on the flag is pending; doing so is undefined
         behavior. Aborts if the plugin fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.reset()
             return
 
@@ -1179,7 +1094,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the device name cannot be queried.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_name()
 
         return self._impl._ctx[]._device[].name()
@@ -1196,7 +1111,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the attribute cannot be queried.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_attribute(attr)
 
         return Int(self._impl._ctx[]._device[].get_attribute(attr._value))
@@ -1214,9 +1129,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.multiprocessor_count()
-
         return self.get_attribute(DeviceAttribute.MULTIPROCESSOR_COUNT)
 
     def max_threads_per_block(self) raises -> Int:
@@ -1232,9 +1144,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_threads_per_block()
-
         return self.get_attribute(DeviceAttribute.MAX_THREADS_PER_BLOCK)
 
     def max_shared_memory_per_block(self) raises -> Int:
@@ -1250,9 +1159,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_shared_memory_per_block()
-
         return self.get_attribute(DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK)
 
     def max_grid_dim_x(self) raises -> Int:
@@ -1267,9 +1173,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim_x()
-
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_X)
 
     def max_grid_dim_y(self) raises -> Int:
@@ -1284,9 +1187,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim_y()
-
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Y)
 
     def max_grid_dim_z(self) raises -> Int:
@@ -1301,9 +1201,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim_z()
-
         return self.get_attribute(DeviceAttribute.MAX_GRID_DIM_Z)
 
     def max_grid_dim(self) raises -> Dim:
@@ -1320,9 +1217,6 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the driver cannot answer the query.
         """
-        comptime __guard not use_legacy_backend() else:
-            return self._impl.max_grid_dim()
-
         return Dim(
             self.max_grid_dim_x(), self.max_grid_dim_y(), self.max_grid_dim_z()
         )
@@ -1337,7 +1231,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the device cannot be queried.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.is_host_unified()
 
         return self._impl._ctx[]._device[].is_host_unified()
@@ -1351,7 +1245,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the plugin does not report an architecture.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_arch()
 
         return self._impl._ctx[]._device[].arch()
@@ -1375,7 +1269,7 @@ struct Device[target: CompilationTarget, origin: ImmOrigin]:
         Raises:
             If the plugin query fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.can_access_peer(peer._impl)
 
         ref ctx = self._impl._ctx[]
@@ -1582,7 +1476,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If the allocation fails or multicast is unsupported.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             var legacy = List[LegacyDeviceContext[]]()
             for ctx in contexts:
                 legacy.append(ctx._impl)
@@ -1616,7 +1510,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.unicast_buffer_for(ctx._impl)
             )
@@ -1637,7 +1531,7 @@ struct DeviceMulticastBuffer[dtype: DType](Movable):
         Raises:
             If `ctx` is not one of the sharing contexts.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[Self.dtype](
                 _impl=self._impl.multicast_buffer_for(ctx._impl)
             )

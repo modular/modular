@@ -3,6 +3,11 @@ load("//max/kernels/src:deprecations.bzl", "IGNORED_POINTER_DEPRECATIONS_COPTS")
 
 package(default_visibility = ["//max:consumers"])
 
+exports_files([
+    "test_device_pointer_tile_storage_kernel.mojo",
+    "test_optional_device_pointer_tile.mojo",
+])
+
 _EXTRA_COPTS = {}
 
 _H100_TESTS = [

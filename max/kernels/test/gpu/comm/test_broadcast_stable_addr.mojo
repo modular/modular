@@ -176,6 +176,7 @@ def stable_broadcast_test[
             out_dev[i], row_major(length)
         ).as_unsafe_any_origin()
 
+    @__allow_legacy_any_origin_fields
     def run_and_check(alt: Bool) raises {imm}:
         comptime for i in range(ngpus):
             comptime if force_2stage:

@@ -29,7 +29,8 @@ share, until each moves onto :class:`SpecDecodePipelineModel`.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping, Sequence
+from collections import OrderedDict
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
 from functools import cached_property, partial
@@ -70,7 +71,7 @@ from max.nn.kv_cache import (
 )
 from max.nn.legacy.comm import Signals
 from max.nn.legacy.comm.ep import EPCommInitializer
-from max.nn.legacy.graph_groups import DecoderGraphInputs
+from max.nn.legacy.graph_groups import DecoderGraphInputs, SpecDecodeOutputs
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.context import (
     ImageMetadata,
@@ -105,6 +106,7 @@ from max.profiler import traced
 from max.tensor import Tensor
 from max.tensor.compilation import CompiledCallable
 from max.tensor.realization_context import current_realization_context
+from max.tensor.sharding import DeviceMesh
 from transformers import AutoConfig
 
 from ..arch_lookup import ARCH_LOOKUP, SupportedArchitecture
@@ -146,7 +148,13 @@ from ..registration_draft import (
     RegisteredDraftBuilder,
     default_target_hidden_states,
 )
-from ..registration_runtime import BatchContextLengths
+from ..registration_runtime import (
+    BatchContextLengths,
+    ConstantInputs,
+    ExpertParallelExchange,
+    ExpertParallelInputs,
+    initialize_static_inputs,
+)
 from ..utils import CompilationTimer, start_checkpoint_prefetch
 from ..vision_encoder_cache import SupportsVisionEncoding, VisionEncodeResult
 from ..weight_transform import (
@@ -164,10 +172,28 @@ __all__ = [
     "SpecGraph",
     "_UnifiedSpecDecodeModelMixin",
     "build_spec_graph",
+    "extra_output_count",
+    "route_per_row_verify_layout_error",
+    "route_verifies_per_row",
+    "route_wires_head_score",
     "spec_decode_architecture",
 ]
 
 logger = logging.getLogger("max.pipelines")
+
+
+def extra_output_count(pipeline_config: PipelineConfig) -> int:
+    """Counts the outputs the graph emits before the distributions.
+
+    A per-row verify adds ``next_draft_scores`` and ``verify_lengths``
+    (``spec_decode_outputs`` names both); skipping them keeps the
+    distribution probe from reading the scores' trailing ``K`` as a
+    vocabulary.
+    """
+    speculative = pipeline_config.speculative
+    if speculative is None:
+        return 0
+    return 2 * int(speculative.per_row_verify)
 
 
 class _UnifiedSpecDecodeModelMixin:
@@ -176,6 +202,7 @@ class _UnifiedSpecDecodeModelMixin:
     # Provided by the concrete PipelineModel this mixin is combined with.
     model: Model
     devices: list[Device]
+    pipeline_config: PipelineConfig
 
     # Dflash-style block drafters derive the draft width from the draft
     # checkpoint at model construction and expose it here instead of
@@ -192,17 +219,18 @@ class _UnifiedSpecDecodeModelMixin:
     def sampled_draft_vocab_size(self) -> int | None:
         """The vocabulary the draft's proposal distributions span.
 
-        ``None`` when the compiled graph drafts by argmax. Read off the
-        compiled graph's ``next_draft_probs_full`` output rather than the
-        config, so the pipeline binds ``draft_probs_full`` exactly when the
-        graph declares it.
+        ``None`` when the compiled graph drafts by argmax. The vocabulary
+        is read off the graph's ``next_draft_probs_full`` output, past the
+        per-row verify's outputs, so the pipeline binds
+        ``draft_probs_full`` exactly when the graph declares it.
         """
         outputs = self._spec_decode_model.output_metadata
+        skip = extra_output_count(self.pipeline_config)
         # One distribution, or one per replica under
         # draft_probs_layout="replica".
-        if len(outputs) < 4:
+        if len(outputs) < 4 + skip:
             return None
-        shape = outputs[3].shape
+        shape = outputs[3 + skip].shape
         assert shape is not None and isinstance(shape[-1], int), (
             f"next_draft_probs_full needs a static vocab dim, got {shape}"
         )
@@ -211,7 +239,12 @@ class _UnifiedSpecDecodeModelMixin:
     @property
     def num_draft_distributions(self) -> int:
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
-        return max(0, len(self._spec_decode_model.output_metadata) - 3)
+        return max(
+            0,
+            len(self._spec_decode_model.output_metadata)
+            - 3
+            - extra_output_count(self.pipeline_config),
+        )
 
     @property
     def next_draft_tokens_dtype(self) -> DType:
@@ -220,7 +253,9 @@ class _UnifiedSpecDecodeModelMixin:
 
     def execute(self, model_inputs: ModelInputs) -> UnifiedEagleOutputs:
         model_outputs = self._spec_decode_model.execute(*model_inputs.buffers)
-        return UnifiedEagleOutputs.from_buffers(model_outputs)
+        return UnifiedEagleOutputs.from_buffers(
+            model_outputs, skip=extra_output_count(self.pipeline_config)
+        )
 
     def _next_seed(self) -> Buffer:
         self._seed_counter = getattr(self, "_seed_counter", 0) + 1
@@ -303,6 +338,39 @@ def _builds_modulev3(arch: SupportedArchitecture) -> bool:
             ModuleV3MultiGraphPipelineModelWithKVCache,
         ),
     )
+
+
+_EPStarted = tuple[
+    EPConfig,
+    ExpertParallelExchange | None,
+    dict[str, CompiledCallable[..., Any]],
+]
+
+
+def _start_graph_api_ep(
+    session: InferenceSession, ep_config: EPConfig, mesh: DeviceMesh
+) -> _EPStarted:
+    """Starts a graph-API target's exchange.
+
+    It sets ``ep_config``'s node ID in place.
+    """
+    del mesh
+    if is_virtual_device_mode():
+        # An export still records the init graph, which nothing can run.
+        _, modules = compile_ep_init(session, ep_config, EPCommInitializer)
+        return ep_config, None, modules
+    initializer, modules = init_ep_comm(session, ep_config, EPCommInitializer)
+    return initializer.config, initializer, modules
+
+
+_EP_STARTS: dict[
+    bool, Callable[[InferenceSession, EPConfig, DeviceMesh], _EPStarted]
+] = {
+    True: ExpertParallelInputs().initialize,
+    False: _start_graph_api_ep,
+}
+"""Starts the exchange, keyed by whether the target builds a ModuleV3
+module (:func:`_builds_modulev3`)."""
 
 
 def _draft_architecture(
@@ -528,14 +596,84 @@ class _Pairing:
 
     @property
     def adapter_arch(self) -> str:
-        """The name spec decoding finds the target's call under.
+        """The name spec decoding finds the target's call under."""
+        return _adapter_arch(self.target_arch, self.target)
 
-        A ModuleV3 target's is its variant's name, since its module calls
-        unlike its graph twin's.
-        """
-        if _builds_modulev3(self.target):
-            return self.target.name
-        return self.target_arch
+
+def _adapter_arch(target_arch: str, target: SupportedArchitecture) -> str:
+    """Returns the name spec decoding finds the target's call under.
+
+    A ModuleV3 target's is its variant's name, since its module calls
+    unlike its graph twin's.
+    """
+    if _builds_modulev3(target):
+        return target.name
+    return target_arch
+
+
+def route_verifies_per_row(
+    target_arch: str,
+    method: str,
+    *,
+    prefer_module_v3: bool,
+    data_parallel_degree: int = 1,
+    hisparse: bool = False,
+    decode_context_parallel_degree: int = 1,
+) -> bool:
+    """Returns whether the route an export resolves verifies per row.
+
+    It answers before the pipeline is built, from the target variant the
+    build would pick; a target with no buildable variant wires none. The
+    layout arguments are the export's, and an adapter with no layout rule
+    serves every layout its method does.
+    """
+    target = _target_architecture(target_arch, prefer_module_v3)
+    return target is not None and spec_adapters.verifies_per_row(
+        _adapter_arch(target_arch, target),
+        method,
+        data_parallel_degree=data_parallel_degree,
+        hisparse=hisparse,
+        decode_context_parallel_degree=decode_context_parallel_degree,
+    )
+
+
+def route_per_row_verify_layout_error(
+    target_arch: str,
+    *,
+    prefer_module_v3: bool,
+    data_parallel_degree: int,
+    hisparse: bool,
+    decode_context_parallel_degree: int,
+) -> str | None:
+    """Returns why the route's layout cannot serve a per-row verify.
+
+    It answers before the pipeline is built, from the target variant the
+    build would pick; a route with no adapter, or whose adapter declares
+    no layout rule, serves every layout.
+    """
+    target = _target_architecture(target_arch, prefer_module_v3)
+    if target is None:
+        return None
+    return spec_adapters.per_row_verify_layout_error(
+        _adapter_arch(target_arch, target),
+        data_parallel_degree=data_parallel_degree,
+        hisparse=hisparse,
+        decode_context_parallel_degree=decode_context_parallel_degree,
+    )
+
+
+def route_wires_head_score(
+    target_arch: str, method: str, *, prefer_module_v3: bool
+) -> bool:
+    """Returns whether the route an export resolves wires a confidence head.
+
+    It answers before the pipeline is built, from the target variant the
+    build would pick; a target with no buildable variant wires none.
+    """
+    target = _target_architecture(target_arch, prefer_module_v3)
+    return target is not None and spec_adapters.wires_head_score(
+        _adapter_arch(target_arch, target), method
+    )
 
 
 def _takes_distributed_inputs(*parts: object) -> bool:
@@ -756,7 +894,7 @@ def _pairing_stage_error(pipeline_config: PipelineConfig) -> str | None:
     assert method is not None
     if issubclass(
         _pipeline_model(pairing.target), PipelinedModel
-    ) and spec_adapters.speculates_on_last_stage(pairing.target_arch, method):
+    ) and spec_adapters.speculates_on_last_stage(pairing.adapter_arch, method):
         return None
     return (
         f"A {pairing.target_arch} target does not speculate with {method} on"
@@ -999,11 +1137,31 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
         self._method = speculative.speculative_method
         self._pairing = _Pairing.from_pipeline_config(runtime.pipeline_config)
         target = self._pairing.target
-        self._takes_images = _takes_images(target)
+        self._takes_images = _takes_images(
+            target
+        ) and spec_adapters.takes_vision_inputs(
+            self._pairing.adapter_arch, self._method, config.target
+        )
         self._prepares_batches = _encodes_in_batching(
             target
         ) or spec_adapters.prepares_every_batch(self._pairing.adapter_arch)
-        self._ep_comm_initializer: EPCommInitializer | None = None
+        self._ep_comm_initializer: ExpertParallelExchange | None = None
+        self._constant_inputs: ConstantInputs | None = None
+
+    def max_dims(
+        self, dims: Iterable[str], kv_params: KVCacheParamInterface
+    ) -> dict[str, int]:
+        """Combines canonical speculative bounds with the target's own bounds."""
+        bounds: dict[str, int] = {}
+        for dim in dims:
+            try:
+                bounds.update(super().max_dims([dim], kv_params))
+            except ValueError:
+                target = self._target_batching
+                if target is None:
+                    raise
+                bounds.update(target.max_dims([dim], kv_params))
+        return bounds
 
     @property
     def _target_prepares_inputs(self) -> bool:
@@ -1019,15 +1177,33 @@ class _BatchProcessor(UnifiedSpecDecodeBatchProcessor[_Inputs]):
     def _target_batching(self) -> Any:
         """The target's batching, where it prepares or encodes any batches."""
         config = self.spec_config
+        if (
+            self._constant_inputs is not None
+            and not self._target_prepares_inputs
+        ):
+            raise ValueError(
+                "the target takes constant inputs, which only its own batching "
+                "passes, but its batching does not prepare the batches"
+            )
         if not (self._target_prepares_inputs or self._takes_images):
             return None
         batching = _batching(self._pairing.target)(config.target, self.runtime)
         if isinstance(batching, ReplayBatching):
             batching.bind_kv_params(config.kv_params)
+        if self._constant_inputs is not None:
+            batching.constant_inputs = self._constant_inputs
         return batching
 
+    def bind_constant_inputs(self, constants: ConstantInputs) -> None:
+        """Hands the target's constant inputs to the target's batching.
+
+        The pipeline model built and initialized them; the target's batching
+        passes those same buffers every step, as standalone serving does.
+        """
+        self._constant_inputs = constants
+
     def bind_ep_comm_initializer(
-        self, initializer: EPCommInitializer | None
+        self, initializer: ExpertParallelExchange | None
     ) -> None:
         """Hands expert parallelism's buffers to the target's batching.
 
@@ -1357,7 +1533,7 @@ class SpecDecodePipelineModel(
     batch_processor_cls: ClassVar[type[Any]] = _BatchProcessor
 
     model: Model
-    ep_comm_initializer: EPCommInitializer | None = None
+    ep_comm_initializer: ExpertParallelExchange | None = None
     """Expert parallelism's runtime, which the target and the draft share."""
     drafter_export: object | None = None
     """What the graph bakes in of a draft that records it, which an export's
@@ -1368,6 +1544,9 @@ class SpecDecodePipelineModel(
     export_contract: Mapping[str, object] | None = None
     """What the target's engine checks the export's inputs against, if it
     keeps a record of its own."""
+    export_acceptance_mode: str | None = None
+    """The rule the fused graph verifies with; an export's sidecar must
+    record the same."""
     replay_model: Model | None = None
     """The replay graph, compiled beside :attr:`model` and sharing its
     weights, when the target's adapter enables one."""
@@ -1419,17 +1598,18 @@ class SpecDecodePipelineModel(
     def sampled_draft_vocab_size(self) -> int | None:
         """The vocabulary the draft's proposal distributions span.
 
-        ``None`` when the compiled graph drafts by argmax. Read off the
-        compiled graph's ``next_draft_probs_full`` output rather than the
-        config, so the pipeline binds ``draft_probs_full`` exactly when the
-        graph declares it.
+        ``None`` when the compiled graph drafts by argmax. The vocabulary
+        is read off the graph's ``next_draft_probs_full`` output, past the
+        per-row verify's outputs, so the pipeline binds
+        ``draft_probs_full`` exactly when the graph declares it.
         """
         outputs = self.model.output_metadata
+        skip = extra_output_count(self.pipeline_config)
         # One distribution, or one per replica under
         # draft_probs_layout="replica".
-        if len(outputs) < 4:
+        if len(outputs) < 4 + skip:
             return None
-        shape = outputs[3].shape
+        shape = outputs[3 + skip].shape
         assert shape is not None and isinstance(shape[-1], int), (
             f"next_draft_probs_full needs a static vocab dim, got {shape}"
         )
@@ -1438,7 +1618,12 @@ class SpecDecodePipelineModel(
     @property
     def num_draft_distributions(self) -> int:
         """Distribution outputs: 0 (argmax), 1, or one per replica."""
-        return max(0, len(self.model.output_metadata) - 3)
+        return max(
+            0,
+            len(self.model.output_metadata)
+            - 3
+            - extra_output_count(self.pipeline_config),
+        )
 
     @property
     def next_draft_tokens_dtype(self) -> DType:
@@ -1471,7 +1656,9 @@ class SpecDecodePipelineModel(
             assert self.replay_model is not None
             model = self.replay_model
         model_outputs = model.execute(*model_inputs.buffers)
-        outputs = UnifiedEagleOutputs.from_buffers(model_outputs)
+        outputs = UnifiedEagleOutputs.from_buffers(
+            model_outputs, skip=extra_output_count(self.pipeline_config)
+        )
         if self.replay_model is not None and isinstance(model_inputs, _Inputs):
             self._batching.record_submission(model_inputs)
         return outputs
@@ -1768,7 +1955,13 @@ class SpecDecodePipelineModel(
         assert speculative is not None
         pairing = self.pairing
 
-        ep = _EPRuntime(session)
+        ep = _EPRuntime(
+            session,
+            lambda: DeviceMesh(
+                tuple(self.devices), (len(self.devices),), ("ep",)
+            ),
+            _EP_STARTS[_builds_modulev3(pairing.target)],
+        )
         self._weight_loads = []
         context = replace(
             ModelLoadContext.from_pipeline_model(self),
@@ -1784,7 +1977,8 @@ class SpecDecodePipelineModel(
             context,
             weights=load_weights(draft_paths),
             adapter=pairing.draft.checkpoint_adapters(
-                draft_checkpoint.huggingface_config
+                draft_checkpoint.huggingface_config,
+                artifact_export=self.pipeline_config.artifact_export,
             ).get(weights_format(draft_paths)),
             # A draft without a leaf of its own runs on the target's.
             kv_params=config.kv_params.children.get(
@@ -1826,8 +2020,23 @@ class SpecDecodePipelineModel(
         target, target_config = target_builder.build_module(target_context)
         # The planner sized the cache from this config before finalizing.
         config.target = target_config
-        self.ep_comm_initializer = ep.initializer
-        self.compiled_modules = {**self.compiled_modules, **ep.modules}
+        constant_provider = getattr(type(target), "constant_inputs", None)
+        constants = (
+            constant_provider(target_config, devices=self.devices)
+            if constant_provider is not None
+            else None
+        )
+        static_modules = initialize_static_inputs(session, constants)
+        if constants is not None:
+            assert isinstance(constants, ConstantInputs)
+            # Serving reads the buffers the initializer just filled.
+            self._batching.bind_constant_inputs(constants)
+        self.ep_comm_initializer = ep.exchange
+        self.compiled_modules = {
+            **self.compiled_modules,
+            **ep.modules,
+            **static_modules,
+        }
         # Each module's entries go under its name in the fused graph. A module
         # whose naming isn't rules yet compiles with its checkpoint_weights,
         # and leaves the graph unnamed.
@@ -1858,6 +2067,18 @@ class SpecDecodePipelineModel(
         self.weight_naming = (
             {GraphRole.SPEC_DECODER: tuple(entries)} if named else {}
         )
+        if (
+            isinstance(constants, ConstantInputs)
+            and constants.initializer is not None
+        ):
+            self.weight_naming = {
+                **self.weight_naming,
+                GraphRole.STATIC_INIT: tuple(
+                    _weight_entries(
+                        target_builder, target_context, target_config
+                    )
+                ),
+            }
         return _Modules(
             target, target_config, draft, draft_config, hidden_states, weights
         )
@@ -2012,7 +2233,7 @@ def build_spec_graph(
         module=module,
     ) as graph:
         graph.output(
-            spec_decode_outputs(
+            call.named_outputs(
                 call(nn_model.decode_inputs(graph.inputs, call.kv_params))
             )
         )
@@ -2088,6 +2309,19 @@ class _DriverCall:
         if self.input_tree is None:
             return tuple(self.input_types)
         return (self.input_tree,)
+
+    def named_outputs(
+        self, outputs: Sequence[TensorValue]
+    ) -> OrderedDict[str, SpecDecodeOutputs[TensorValue]]:
+        """Names the driver's outputs in one ``spec`` group.
+
+        A per-row verify's driver emits the drafts' scores and each row's
+        verify length after the drafts.
+        """
+        per_row = self.driver.input_spec.include_per_row_verify
+        return spec_decode_outputs(
+            outputs, scores=per_row, verify_lengths=per_row
+        )
 
     def __call__(
         self,
@@ -2369,8 +2603,12 @@ def _driver_call(
     # A target that encodes its images in its own batching passes them
     # past the tail, so only one that encodes through the vision cache
     # takes the pipeline's vision inputs.
-    vision = _takes_images(pairing.target) and not _encodes_in_batching(
-        pairing.target
+    vision = (
+        _takes_images(pairing.target)
+        and not _encodes_in_batching(pairing.target)
+        and spec_adapters.takes_vision_inputs(
+            target_arch, method, target_config
+        )
     )
     huggingface_config = pipeline_config.model.huggingface_config
     verify = spec_adapters.verify_for(
@@ -2630,6 +2868,11 @@ class _SpecDecodeVisionCachePipelineModel(_SpecDecodeVisionPipelineModel):
 
     model_config_cls: ClassVar[type[Any]] = _SpecDecodeVisionArchConfig
 
+    @property
+    def vision_encoding(self) -> SupportsVisionEncoding[Any] | None:
+        """Returns the encoder when this speculative deployment takes images."""
+        return self if self._batching._takes_images else None
+
     def pack_vision_inputs(
         self,
         selection: Sequence[tuple[Any, Sequence[ImageMetadata]]],
@@ -2815,7 +3058,7 @@ class _SpecDecodeModule(ModuleV3[..., Mapping[str, Any]]):
         outputs = call(
             graph_inputs, signal_buffers=list(signals) if signals else None
         )
-        result: Mapping[str, Any] = as_tensors(spec_decode_outputs(outputs))
+        result: Mapping[str, Any] = as_tensors(call.named_outputs(outputs))
         return result
 
 
@@ -2830,27 +3073,27 @@ class _EPRuntime:
     """
 
     session: InferenceSession
-    initializer: EPCommInitializer | None = None
+    mesh: Callable[[], DeviceMesh]
+    """Returns the mesh of the pipeline's devices."""
+    start_exchange: Callable[
+        [InferenceSession, EPConfig, DeviceMesh], _EPStarted
+    ]
+    """Starts the exchange of the target's module API."""
+    config: EPConfig | None = None
+    """The config the exchange started with."""
+    exchange: ExpertParallelExchange | None = None
     modules: dict[str, CompiledCallable[..., Any]] = field(default_factory=dict)
     """The init graph, by role, for ``compiled_modules``."""
 
-    def start(self, ep_config: EPConfig) -> None:
+    def start(self, ep_config: EPConfig) -> EPConfig:
         """Starts the runtime once, and gives ``ep_config`` its node ID."""
-        if is_virtual_device_mode():
-            # An export still records the init graph, which nothing can run.
-            if not self.modules:
-                _, self.modules = compile_ep_init(self.session, ep_config)
-            return
-        if self.initializer is None:
-            self.initializer, self.modules = init_ep_comm(
-                self.session, ep_config
+        if self.config is None:
+            self.config, self.exchange, self.modules = self.start_exchange(
+                self.session, ep_config, self.mesh()
             )
-        ep_config.node_id = self.initializer.config.node_id
-        if ep_config.node_id == -1:
-            raise ValueError(
-                "EP node ID is not set. Please check if the EP initialization"
-                " is successful."
-            )
+            return self.config
+        ep_config.node_id = self.config.node_id
+        return ep_config
 
 
 def _named_leaves(node: Any) -> dict[str, list[Any]]:

@@ -82,12 +82,14 @@ class DeepseekV4Compressor(Module[..., Tensor]):
         window_offsets: Tensor,
         freqs_table: Tensor,
         state: CacheLeaf,
+        zone: CacheLeaf,
         layer: Tensor,
     ) -> Tensor:
-        """Every window of the batch pooled into one entry.
+        """Stores the chunk's rows and pools the windows it closes.
 
-        Returns ``[n, head_dim]``, ``n`` a bound on the window count; rows
-        past ``window_offsets[b]`` are left unwritten.
+        Every closed window's entry is also stored into ``zone``. Returns
+        ``[n, head_dim]``, ``n`` a bound on the window count; rows past
+        ``window_offsets[b]`` are left unwritten.
         """
         return compress_windows_ragged(
             kv_proj,
@@ -100,6 +102,7 @@ class DeepseekV4Compressor(Module[..., Tensor]):
             window_offsets,
             rows.starts,
             state.values,
+            zone.values,
             layer,
             epsilon=self.norm.eps,
             rotate=self.rotate,

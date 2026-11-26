@@ -101,7 +101,7 @@ def _first_device(t: Tensor) -> TensorValue:
     return _per_device(t)[0]
 
 
-def _batch_context_length(batch: SequentialBatch) -> Tensor:
+def _batch_context_length(batch: SequentialBatch | BlockBatch) -> Tensor:
     """The host length the attention blocks take, a named input of the graph.
 
     The sparse MLA kernels, the only ones Hy4 builds, never read it.

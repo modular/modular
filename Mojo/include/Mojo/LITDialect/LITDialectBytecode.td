@@ -132,8 +132,9 @@ def SymbolAttr : DialectAttribute<(attr
 def FnMetaOriginDataAttr : DialectAttribute<(attr
   VarInt:$numImplicitOriginDecls,
   TypedAttr:$captureOrigins,
-  Bool:$isNestedOriginsReadOnly,
-  Bool:$definesInteriorOrigins
+  Bool:$definesInteriorOrigins,
+  Bool:$isUnsafeNestedOriginsReadOnly,
+  Bool:$isEnforcedNestedOriginsReadOnly
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
 }

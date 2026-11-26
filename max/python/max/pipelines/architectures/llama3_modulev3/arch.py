@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 """Registers Llama3 on ModuleV3 with the registry."""
 
+from max.experimental.cascade.pipelines.common_textgen import (
+    CommonTextGenPipeline,
+)
 from max.graph.weights import WeightsFormat
 from max.pipelines.context import TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture, TextTokenizer
@@ -48,4 +51,5 @@ llama_modulev3_arch = SupportedArchitecture(
     config=Llama3DecoderConfig,
     supports_overlap_scheduler=False,
     supports_device_graph_capture=False,
+    cascade_pipeline_factory=CommonTextGenPipeline,
 )

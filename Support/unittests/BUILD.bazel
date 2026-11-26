@@ -64,6 +64,22 @@ modular_cc_test(
     ],
 )
 
+# Own binary: its tests exit the process with the default logger's lifetime
+# under test.
+modular_cc_test(
+    name = "LogExitTest",
+    srcs = [
+        "Log/LogExitTest.cpp",
+    ],
+    env = {
+        "MODULAR_LOG_NO_SUMMARY": "1",
+    },
+    deps = [
+        "//Support:Log",
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 modular_cc_test(
     name = "LogEdgeCasesTest",
     srcs = [

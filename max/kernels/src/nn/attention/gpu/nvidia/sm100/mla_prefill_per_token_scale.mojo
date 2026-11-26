@@ -19,7 +19,7 @@ MLA kernel's per-token-scale variant (mla_prefill_kernel_per_token_scale).
 from std.sys import size_of
 from std.math import ceildiv
 from nn.attention.mha_operand import MHAOperand
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.gpu.nvidia.mha_tile_scheduler import TransientScheduler
 from nn.attention.gpu.nvidia.common import (
     get_seq_info,
@@ -198,7 +198,7 @@ __extension SM100MLA:
             var seq_info: SeqInfo = get_seq_info[
                 Self.BM,
                 Self.num_q_heads,
-                Self.MaskType.get_type_name() == "CausalMask",
+                Self.MaskType == CausalMask,
             ](batch_size, pack.max_seq_len, pack.valid_length, pack.partition)
 
             comptime cfg_1q = Self.config.switch_1q_config()
@@ -1058,6 +1058,7 @@ __extension SM100MLA:
             var k_scale_idx: UInt32 = 0
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_kv_buffer_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KVLUTType.dtype]]:
@@ -1067,6 +1068,7 @@ __extension SM100MLA:
                 )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_rope_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[Self.KRopeType.dtype]]:
@@ -1081,6 +1083,7 @@ __extension SM100MLA:
                 )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _fused_k_scale_smem_ptr() {
                 imm
             } -> SharedMemPointer[Scalar[config.scale_dtype]]:
@@ -1096,6 +1099,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_fused[
                 partial: Bool,
                 with_q: Bool = False,
@@ -1637,6 +1641,7 @@ __extension SM100MLA:
             )
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def _produce_k_split[
                 partial: Bool,
                 with_q: Bool = False,
@@ -2145,7 +2150,7 @@ def mla_sm100_prefill_per_token_scale[
         comptime SchedulerType = TransientScheduler[
             UInt32(cfg.BM),
             UInt32(cfg.num_q_heads),
-            flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+            flip_prompt_idx=MaskType == CausalMask,
         ]
 
         comptime SM100MLAType = SM100MLA[

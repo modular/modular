@@ -28,7 +28,6 @@ extra_pipelines_args=(
 
 model_profile=deepseek_v4
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # Thinking is on by default, so a request without max_tokens can reason to

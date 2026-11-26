@@ -20,7 +20,7 @@
 
 #include "Support/LLVMCompilerForwardDecls.h"
 
-namespace M {
+namespace M::MLRT {
 
 /// Read the specified a MEF file from the specified binary buffer, and
 /// returning the created module on success.  On failure, report an error at the
@@ -30,6 +30,6 @@ ModuleOp translateMEFToMLIR(ArrayRef<uint8_t> buffer, Location loc);
 // Register this translation for GraphRTTranslate.
 void registerMEFToMLIRTranslation();
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MEFTOMLIR_H

@@ -1107,16 +1107,20 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
   // Otherwise, we'll need to memcpy or invoke the copy ctor method which will
   // take the destination by reference, so we're dealing with a memory case.
-  bool isNonDefaultAddressSpace = dest.isNonDefaultAddressSpace();
+  bool isDestNonDefaultAddressSpace = dest.isNonDefaultAddressSpace();
+  bool isSourceNonDefaultAddressSpace =
+      value.ir.isMValue() && !value.ir.getMValueType().isDefaultAddrSpace();
 
   // If the value's type is trivially copyable, emit a memcpy. This allows
   // us to handle values residing in the non-default address space.
   // Only use memcpy for non-register passable types, unless we're forced to by
-  // address space constraints.
+  // address space constraints: the copy constructor takes both its source and
+  // its destination in the default address space.
   if (value.ir.isMValue() &&
       valueType.isProvablyImplicitlyTriviallyCopyable(exprLoc, shared,
                                                       declScope) &&
-      (!isRegisterPassable || isNonDefaultAddressSpace)) {
+      (!isRegisterPassable || isDestNonDefaultAddressSpace ||
+       isSourceNonDefaultAddressSpace)) {
     if (!builder) {
       emitErrorForDynamicValueInParameter(value.expr);
       return {};
@@ -1132,7 +1136,7 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
 
   // Memory-only copy ctor will take the destination as address space zero, so
   // we need to reject ExprDest's expecting it in GPU memory.
-  if (isNonDefaultAddressSpace) {
+  if (isDestNonDefaultAddressSpace) {
     emitError(exprLoc, "value of type ")
         << valueType << " cannot be copied into a non-default address space"
         << value.expr->getRange();
@@ -1228,6 +1232,44 @@ CValue IREmitter::emitCopyOfValue(ASTExprAnd<CValue> value, ExprDest &dest) {
   operands.add(StringAttr::get(shared.getContext(), "copy"), value,
                ArgUnpackStyle::kKeyword);
   return emitConstructorCall(valueType, std::move(operands));
+}
+
+RValue IREmitter::emitCopyFromNonDefaultAddressSpace(ASTExprAnd<AnyValue> value,
+                                                     ExprContext context) {
+  assert(value.ir.isMValue() &&
+         !value.ir.getMValueType().isDefaultAddrSpace() &&
+         "expected a reference outside the default address space");
+  // Only a trivial copy can read from another address space. emitCopyOfValue
+  // makes it with a load or a memcpy.
+  ASTType valueType(value.ir.getMValueType().getElementType());
+  SMLoc loc = value.expr->getLoc();
+  if (!valueType.isProvablyImplicitlyTriviallyCopyable(loc, shared,
+                                                       declScope)) {
+    emitError(loc, "non-implicitly trivially copyable value cannot be copied "
+                   "from a non-default address space")
+        << value.expr->getRange();
+    return {};
+  }
+
+  // A transfer gives an owned value that is still in the other address space.
+  // The trivial copy moves it to the default address space, so the copy owns
+  // the value and the original ends without a destructor.
+  if (MRValue mrValue = value.ir.getIfMRValue()) {
+    if (!builder) {
+      emitErrorForDynamicValueInParameter(value.expr);
+      return {};
+    }
+    ExprDest dest(context);
+    CValue copy = emitCopyOfValue({mrValue, value.expr}, dest);
+    if (!copy) {
+      dest.resetForError(*this);
+      return {};
+    }
+    OwnershipMarkDestroyedOp::create(*builder, value.expr->getLocation(*this),
+                                     mrValue);
+    return copy.getIfRValue();
+  }
+  return emitRValue(value, context);
 }
 
 CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
@@ -2096,13 +2138,23 @@ MLValue RaiseContext::coalesceErrorSlot(IREmitter &emitter, MLValue errorSlot,
 }
 
 /// Records where a typed error leaves a source-level try body.
-void RaiseContext::recordRaiseSite(MLValue errorSlot, Operation *terminator,
+void RaiseContext::recordRaiseSite(MLValue errorSlot, LIT::RaiseOp terminator,
                                    Operation *sourceOperation,
                                    SMLoc sourceLoc) {
   if (isEagerlyEmitted())
     return;
   assert(errorSlot && terminator && "raise site must be fully specified");
   raiseSites.push_back({errorSlot, terminator, sourceOperation, sourceLoc});
+}
+
+/// Stores `handlerIndex` on each raise site routed to that handler.
+void RaiseContext::selectHandler(ArrayRef<RaiseSite> sites,
+                                 size_t handlerIndex) {
+  for (const RaiseSite &site : sites) {
+    LIT::RaiseOp terminator = site.terminator;
+    terminator.setHandlerIndexAttr(IntegerAttr::get(
+        IntegerType::get(terminator.getContext(), 64), handlerIndex));
+  }
 }
 
 /// The declaration `origin` is ultimately rooted at, null when it is rooted at
@@ -2265,7 +2317,8 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
       continue;
 
     OpBuilder savedBuilder = *emitter.builder;
-    emitter.builder->setInsertionPoint(site.terminator);
+    LIT::RaiseOp terminator = site.terminator;
+    emitter.builder->setInsertionPoint(terminator.getOperation());
     ExprDest destination(primaryErrorSlot, EC_RaiseValue);
     SyntheticNode source(site.sourceLoc);
     (void)emitter.emitResult(MRValue(site.errorSlot), &source, destination);
@@ -2277,6 +2330,93 @@ MLValue RaiseContext::finalizeErrorSlots(IREmitter &emitter,
   assert(primaryIter != errorSlots.end() && "unknown primary error slot");
   std::swap(errorSlots.front(), *primaryIter);
   return primaryErrorSlot;
+}
+
+/// Routes errors convertible to `requiredErrorType` to one handler. The
+/// handler owns its slot, so remove the selected sites before resolving later
+/// handlers or a catch-all.
+std::pair<MLValue, bool> RaiseContext::finalizeErrorSlotsForHandler(
+    IREmitter &emitter, ASTType requiredErrorType, size_t handlerIndex) {
+  assert(!isEagerlyEmitted() && requiredErrorType);
+
+  // Return true if the error value can be converted to the required type.
+  auto isConvertible = [&](MLValue errorSlot) {
+    SyntheticNode source(
+        emitter.shared.diags.convertLocToSMLoc(opForRaise->getLoc()));
+    return IREmitter::canImplicitlyConvertToType(
+        {CValue(errorSlot), &source}, requiredErrorType, emitter.getDeclScope(),
+        emitter.shared.noAssumptions);
+  };
+
+  // Decide which of the raise sites will go to this handler, splitting them
+  // into two sets based on whether their type implicit converts.
+  SmallVector<RaiseSite, 4> matchedSites;
+  SmallVector<RaiseSite, 4> pendingSites;
+  for (const RaiseSite &site : raiseSites)
+    (isConvertible(site.errorSlot) ? matchedSites : pendingSites)
+        .push_back(site);
+
+  // If one of the error slots (a vardecl) is exactly this type then we reuse
+  // it, otherwise we create a new one to convert into.
+  MLValue handlerSlot;
+  auto exactSlot = llvm::find_if(errorSlots, [&](MLValue errorSlot) {
+    return requiredErrorType.isEqualCanon(errorSlot.getRValueType());
+  });
+  if (exactSlot != errorSlots.end())
+    handlerSlot = *exactSlot;
+  else
+    handlerSlot =
+        getOrCreateErrorSlot(emitter, requiredErrorType, opForRaise->getLoc());
+
+  // Process all of the sites that can be converted to the required type,
+  // routing them and converting their slot if needed.
+  for (const RaiseSite &site : matchedSites) {
+    OpBuilder savedBuilder = *emitter.builder;
+    LIT::RaiseOp terminator = site.terminator;
+    emitter.builder->setInsertionPoint(terminator.getOperation());
+    if (site.errorSlot != handlerSlot) {
+      ExprDest destination(handlerSlot, EC_RaiseValue);
+      SyntheticNode source(site.sourceLoc);
+      (void)emitter.emitResult(MRValue(site.errorSlot), &source, destination);
+    }
+    emitter.builder = savedBuilder;
+  }
+  selectHandler(matchedSites, handlerIndex);
+
+  if (!matchedSites.empty())
+    verifyExceptTypeLifetimeValidity(emitter, handlerSlot);
+
+  // Now that we've processed some of the raise sites, remove them from the
+  // list we need to still process.
+  raiseSites = std::move(pendingSites);
+  // Keep only slots used by pending sites so later handlers find a common type
+  // only for errors that can reach them.
+  llvm::erase_if(errorSlots, [&](MLValue errorSlot) {
+    return llvm::none_of(raiseSites, [&](const RaiseSite &site) {
+      return site.errorSlot == errorSlot;
+    });
+  });
+  return {handlerSlot, !matchedSites.empty()};
+}
+
+/// Routes every error still pending after typed handlers to the catch-all.
+void RaiseContext::selectCatchAllHandler(size_t handlerIndex) {
+  selectHandler(raiseSites, handlerIndex);
+  raiseSites.clear();
+  errorSlots.clear();
+}
+
+/// Returns the distinct types that have not been routed to a handler.
+SmallVector<ASTType> RaiseContext::getPendingErrorTypes() const {
+  SmallVector<ASTType> result;
+  for (const RaiseSite &site : raiseSites) {
+    ASTType errorType = site.errorSlot.getRValueType();
+    if (llvm::none_of(result, [&](ASTType existing) {
+          return existing.isEqualCanon(errorType);
+        }))
+      result.push_back(errorType);
+  }
+  return result;
 }
 
 /// Check that the declarations `origin` is rooted at outlive `block`, emitting
@@ -2680,8 +2820,9 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   auto originData = FnMetaOriginDataAttr::get(
       ctx, sig.getFnMetaOriginData().getNumImplicitOriginDecls() + 1,
       sig.getFnMetaOriginData().getCaptureOrigins(),
-      sig.getFnMetaOriginData().getIsNestedOriginsReadOnly(),
-      sig.getFnMetaOriginData().getDefinesInteriorOrigins());
+      sig.getFnMetaOriginData().getDefinesInteriorOrigins(),
+      sig.getFnMetaOriginData().getIsUnsafeNestedOriginsReadOnly(),
+      sig.getFnMetaOriginData().getIsEnforcedNestedOriginsReadOnly());
   SmallVector<ArgConvention> argConventions;
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
   argConventions.push_back(ArgConvention::ImmMem);
@@ -2738,10 +2879,12 @@ IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
       FunctionType::get(ctx, shifter.replace(body.getArguments().drop_front()),
                         shifter.replace(body.getResults())),
       sigWithSelf.getArgConventions().drop_front(), sigWithSelf.getFnEffects(),
-      FnMetaOriginDataAttr::get(ctx, originData.getNumImplicitOriginDecls() - 1,
-                                originData.getCaptureOrigins(),
-                                originData.getIsNestedOriginsReadOnly(),
-                                originData.getDefinesInteriorOrigins()),
+      FnMetaOriginDataAttr::get(
+          ctx, originData.getNumImplicitOriginDecls() - 1,
+          originData.getCaptureOrigins(),
+          originData.getDefinesInteriorOrigins(),
+          originData.getIsUnsafeNestedOriginsReadOnly(),
+          originData.getIsEnforcedNestedOriginsReadOnly()),
       dropFrontPog(sigWithSelf.getParamListAttrs()),
       dropFrontPog(sigWithSelf.getArgListAttrs()));
 }

@@ -39,6 +39,7 @@ from max.graph import (
 from max.graph.weights import WeightsFormat
 from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheInputsPerDevice
+from max.nn.legacy.comm.ep import EPCommInitializer
 from max.nn.legacy.graph_groups import (
     BatchContext,
     EPPayload,
@@ -509,7 +510,7 @@ def test_a_malformed_registration_fails(
 
 
 class _HostEPInputs(ExpertParallelInputs):
-    def input_tree(self, ep: EPConfig) -> object:
+    def input_tree(self, ep: EPConfig) -> EPPayload:
         return EPPayload(
             atomic_counters=(BufferType(DType.int32, [1], device=CPU_REF),),
             send_buf_ptrs=(X,),
@@ -575,10 +576,16 @@ def test_deployment_is_completed_before_constructing_the_decoder(
     exchange = NonCallableMock()
 
     def initialize(
-        config: _DeploymentConfig, runtime: ModuleRuntime, session: object
+        config: _DeploymentConfig,
+        runtime: ModuleRuntime,
+        session: object,
+        initializer_cls: object,
     ) -> tuple[ModuleRuntime, object, dict[str, object]]:
         assert config.finalized
         assert session is model._session
+        # A graph-API decoder is a ModuleV2 module, which keeps the legacy
+        # initializer.
+        assert initializer_cls is EPCommInitializer
         ep = config.expert_parallel_config(runtime)
         config.events.append("initialize_exchange")
         ep.node_id = 7
@@ -652,7 +659,7 @@ def test_virtual_ep_deployment_compiles_the_init_graph_without_running_it(
         lambda: True,
     )
 
-    def unexpected(*args: object) -> None:
+    def unexpected(*args: object) -> EPCommInitializer:
         raise AssertionError("virtual deployment allocated an EP initializer")
 
     monkeypatch.setattr(
@@ -661,10 +668,10 @@ def test_virtual_ep_deployment_compiles_the_init_graph_without_running_it(
     graph = object()
     monkeypatch.setattr(
         "max.pipelines.lib.registration_runtime.compile_ep_init",
-        lambda session, ep: (object(), {"ep_init": graph}),
+        lambda session, ep, initializer_cls: (object(), {"ep_init": graph}),
     )
     initialized, exchange, ep_init = initialize_ep_comm_buffers(
-        config, runtime, model._session
+        config, runtime, model._session, unexpected
     )
     assert initialized.ep is not None
     assert exchange is None
@@ -691,7 +698,7 @@ def test_virtual_ep_deployment_continues_when_pre_jit_stops_the_init_graph(
         "max.pipelines.lib.registration_runtime.compile_ep_init", stopped
     )
     initialized, exchange, ep_init = initialize_ep_comm_buffers(
-        config, runtime, model._session
+        config, runtime, model._session, EPCommInitializer
     )
     assert initialized.ep is not None
     assert exchange is None

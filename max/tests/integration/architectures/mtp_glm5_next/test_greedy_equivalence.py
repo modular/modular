@@ -22,6 +22,18 @@ choice given the MTP run's own prefix, up to a near-tie of
 The draft agrees with the target often but not always, so steps both accept
 and reject drafts, and a KDA state landed on the wrong prefix moves the logits
 past the tolerance.
+
+The same checkpoint also checks data-parallel attention: two replicas over
+the expert-parallel MoE decode greedily a batch they split unevenly, and each
+token must be the tensor-parallel build's greedy choice for its prefix, to
+the same near-tie tolerance. Each replica runs whole KDA and sparse-MLA heads
+on its own rows and keeps its own caches and KDA state, so a row that reads
+another replica's state or offsets moves its logits past it.
+
+Data-parallel MTP runs the first check over those two replicas: each replica
+verifies, rolls back and drafts its own requests, so a rollback that folds
+another replica's accepted count, or seeds its tail ring from another
+replica's rows, moves that row's logits past the tolerance.
 """
 
 from __future__ import annotations
@@ -244,6 +256,7 @@ def _quant_scheme() -> Glm5NextQuantScheme:
         mlp_layers=mlp_layers,
         attn_layers=attn_layers,
         compute_dtype=DType.bfloat16,
+        moe_layers=frozenset(range(1, NUM_LAYERS + 1)),
     )
 
 
@@ -578,6 +591,9 @@ def _pipeline(
     monkeypatch: pytest.MonkeyPatch,
     *,
     speculative: bool,
+    data_parallel_degree: int = 1,
+    device_memory_utilization: float | None = None,
+    device_graph_capture: bool | None = None,
 ) -> Pipeline:
     # A speculative config rewrites the cached HF config in place.
     monkeypatch.setattr(_hf_config, "_config_cache", {})
@@ -589,18 +605,29 @@ def _pipeline(
                 DeviceSpec.accelerator(i) for i in range(NUM_DEVICES)
             ],
             quantization_encoding="float8_e4m3fn",
+            data_parallel_degree=data_parallel_degree,
             max_length=1024,
             kv_cache=KVCacheConfig(
                 enable_prefix_caching=False,
                 # The plain pipeline is built while the MTP one is resident,
                 # and the budget counts it, so the plain one gets more.
-                device_memory_utilization=0.3 if speculative else 0.6,
+                device_memory_utilization=(
+                    device_memory_utilization
+                    if device_memory_utilization is not None
+                    else 0.3
+                    if speculative
+                    else 0.6
+                ),
             ),
             runtime=PipelineRuntimeConfig(
                 ep_size=NUM_DEVICES,
                 prefer_module_v3=True,
                 max_batch_size=len(PROMPT_LENGTHS),
-                device_graph_capture=speculative,
+                device_graph_capture=(
+                    speculative
+                    if device_graph_capture is None
+                    else device_graph_capture
+                ),
                 # The plain run reports the logits behind each token.
                 disable_overlap=not speculative,
             ),
@@ -640,15 +667,18 @@ class _CountingReplay:
 
 
 def _generate_with_mtp(
-    pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch
+    pipeline: Pipeline, monkeypatch: pytest.MonkeyPatch, capture: bool
 ) -> tuple[list[list[int]], list[list[int]], int]:
     """Returns each row's new tokens, how many each step added per row, and
-    how many steps replayed a captured graph."""
-    pipeline.warmup_graph_capture()
-    runner = pipeline._graph_capture_runner
-    assert runner is not None
-    replays = _CountingReplay(runner.replay)
-    monkeypatch.setattr(runner, "replay", replays)
+    how many steps replayed a captured graph (0 for a pipeline that captures
+    none)."""
+    replays: _CountingReplay | None = None
+    if capture:
+        pipeline.warmup_graph_capture()
+        runner = pipeline._graph_capture_runner
+        assert runner is not None
+        replays = _CountingReplay(runner.replay)
+        monkeypatch.setattr(runner, "replay", replays)
     prompts = _prompts()
     per_step: list[list[int]] = [[] for _ in prompts]
     with GenerateIterator(
@@ -663,7 +693,7 @@ def _generate_with_mtp(
             for sequence, prompt in zip(batch.sequences, prompts, strict=True)
         ]
     monkeypatch.undo()
-    return generated, per_step, replays.calls
+    return generated, per_step, replays.calls if replays is not None else 0
 
 
 def _greedy(
@@ -686,25 +716,26 @@ def _greedy(
 def _divergences(
     greedy: Callable[[list[int], int], tuple[list[int], np.ndarray]],
     prompt: list[int],
-    mtp_tokens: list[int],
+    tokens_under_test: list[int],
 ) -> list[tuple[int, float]]:
-    """Returns where ``mtp_tokens`` leaves the plain model's greedy choice,
-    with the plain model's gap there in bfloat16 ulps of its top logit.
+    """Returns where ``tokens_under_test`` leaves the plain model's greedy
+    choice, with the plain model's gap there in bfloat16 ulps of its top
+    logit.
 
-    After each divergence the plain model resumes from the MTP run's token,
+    After each divergence the plain model resumes from the token under test,
     so every token is checked against its own prefix.
     """
     found: list[tuple[int, float]] = []
     start = 0
-    while start < len(mtp_tokens):
+    while start < len(tokens_under_test):
         tokens, logits = greedy(
-            prompt + mtp_tokens[:start], len(mtp_tokens) - start
+            prompt + tokens_under_test[:start], len(tokens_under_test) - start
         )
         offset = next(
             (
                 i
                 for i, (got, want) in enumerate(
-                    zip(mtp_tokens[start:], tokens, strict=True)
+                    zip(tokens_under_test[start:], tokens, strict=True)
                 )
                 if got != want
             ),
@@ -715,23 +746,40 @@ def _divergences(
         row = logits[offset]
         top = float(row.max())
         ulp = 2.0 ** (np.floor(np.log2(abs(top))) - 7)
-        gap = top - float(row[mtp_tokens[start + offset]])
+        gap = top - float(row[tokens_under_test[start + offset]])
         found.append((start + offset, gap / ulp))
         start += offset + 1
     return found
 
 
+@pytest.mark.parametrize(
+    "data_parallel_degree", [1, NUM_DEVICES], ids=["tp", "dp"]
+)
 def test_mtp_decodes_the_plain_models_greedy_tokens(
-    checkpoint: Path, monkeypatch: pytest.MonkeyPatch
+    checkpoint: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    data_parallel_degree: int,
 ) -> None:
     # Both pipelines are built before either runs, so the precompile record,
-    # which stops at the first device execution, compiles both on CPU.
-    mtp_pipeline = _pipeline(checkpoint, monkeypatch, speculative=True)
+    # which stops at the first device execution, compiles both on CPU. Under
+    # data parallelism the reference is still the tensor-parallel build, and
+    # the run is eager: generate() does not pad the replicas to equal rows,
+    # which replaying a captured graph needs.
+    capture = data_parallel_degree == 1
+    mtp_pipeline = _pipeline(
+        checkpoint,
+        monkeypatch,
+        speculative=True,
+        data_parallel_degree=data_parallel_degree,
+        device_graph_capture=capture,
+    )
     pipeline = _pipeline(checkpoint, monkeypatch, speculative=False)
-    generated, per_step, replays = _generate_with_mtp(mtp_pipeline, monkeypatch)
+    generated, per_step, replays = _generate_with_mtp(
+        mtp_pipeline, monkeypatch, capture
+    )
     del mtp_pipeline
     gc.collect()
-    assert replays > 0, "no step replayed a captured graph"
+    assert replays > 0 or not capture, "no step replayed a captured graph"
     assert all(len(tokens) == MAX_NEW_TOKENS for tokens in generated)
 
     # The first step is the prefill's one token; every later step but the
@@ -749,6 +797,49 @@ def test_mtp_decodes_the_plain_models_greedy_tokens(
         return _greedy(pipeline, prompt, n)
 
     for prompt, tokens in zip(_prompts(), generated, strict=True):
+        divergences = _divergences(greedy, prompt, tokens)
+        print(f"prompt of {len(prompt)}: diverged at {divergences}")
+        assert all(gap <= NEAR_TIE_ULPS for _, gap in divergences), divergences
+
+
+def test_data_parallel_decodes_the_tensor_parallel_greedy_tokens(
+    checkpoint: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Both pipelines are built before either runs, so the precompile record
+    # compiles both on CPU. The first one built is resident while the second
+    # is planned, and the budget counts it.
+    dp_pipeline = _pipeline(
+        checkpoint,
+        monkeypatch,
+        speculative=False,
+        data_parallel_degree=NUM_DEVICES,
+        device_memory_utilization=0.3,
+    )
+    pipeline = _pipeline(checkpoint, monkeypatch, speculative=False)
+    # Three prompts over two replicas: one replica takes two rows of
+    # different lengths, the other one.
+    prompts = _prompts()
+    with GenerateIterator(
+        dp_pipeline,
+        prompts,
+        max_new_tokens=MAX_NEW_TOKENS,
+        top_k=1,
+        ignore_eos=True,
+    ) as batch:
+        while not batch.done:
+            batch.step()
+        generated = [
+            sequence[len(prompt) :]
+            for sequence, prompt in zip(batch.sequences, prompts, strict=True)
+        ]
+    del dp_pipeline
+    gc.collect()
+    assert all(len(tokens) == MAX_NEW_TOKENS for tokens in generated)
+
+    def greedy(prompt: list[int], n: int) -> tuple[list[int], np.ndarray]:
+        return _greedy(pipeline, prompt, n)
+
+    for prompt, tokens in zip(prompts, generated, strict=True):
         divergences = _divergences(greedy, prompt, tokens)
         print(f"prompt of {len(prompt)}: diverged at {divergences}")
         assert all(gap <= NEAR_TIE_ULPS for _, gap in divergences), divergences

@@ -16,7 +16,7 @@ Shared utilities live here (conv_utils), with platform-specific
 implementations organized by vendor and architecture:
 
   conv/                       - shared utilities and main conv implementations
-  conv/conv.mojo              - CPU direct conv, GPU conv via cuDNN/MIOpen
+  conv/conv.mojo              - CPU direct conv, GPU conv, cuDNN/MIOpen fallback
   conv/conv_transpose.mojo    - transposed (deconvolution) for CPU and GPU
   conv/conv_utils.mojo        - ConvShape, ConvPartition, epilogue helpers
   conv/gpu/nvidia/sm100/      - SM100 (Blackwell) structured Conv2D kernels

@@ -6,15 +6,15 @@
 #type_value3 = #kgen.type<pointer<typevalue<#type_value1>>, pointer<i1>> : !kgen.type
 
 // CHECK-LABEL: kgen.func @lower_args_with_arg_metadata
-// CHECK-SAME: (%arg0: i8, %arg1: index, %arg2: i1, %arg3: index, %arg4: i1, %arg5: i16, %arg6: !kgen.struct<() isParamPack>, %arg7: i32)
+// CHECK-SAME: (%arg0: i8, %arg1: index, %arg2: i1, %arg3: index, %arg4: i1, %arg5: i16, %arg6: !kgen.struct<()>, %arg7: i32)
 kgen.func @lower_args_with_arg_metadata(
  %arg0: !kgen.pointer<i8> imm_mem,
- %arg1: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> pack_imm_mem,
+ %arg1: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>> pack_imm_mem,
  %arg2: !kgen.pointer<i16> imm_mem,
- %arg3: !kgen.pointer<struct<() isParamPack>> imm_mem,
+ %arg3: !kgen.pointer<struct<()>> imm_mem,
  %arg4: !kgen.pointer<i32> imm_mem
-) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> <fnArgAttrs = [{nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}]> {
-    hlcf.return %arg1 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
+) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>> <fnArgAttrs = [{nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}]> {
+    hlcf.return %arg1 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>>
 }
 // CHECK-SAME: <{{.*}}fnArgAttrs = [{nvvm.grid_constant}, {}, {}, {}, {}, {nvvm.grid_constant}, {}, {nvvm.grid_constant}]
 

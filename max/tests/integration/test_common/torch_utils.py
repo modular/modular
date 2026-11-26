@@ -33,7 +33,6 @@ from test_common.test_data import (
 from transformers import (
     LogitsProcessorList,
     MllamaProcessor,
-    PixtralProcessor,
     PreTrainedModel,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
@@ -83,8 +82,7 @@ def run_text_generation(  # noqa: ANN201
     model: PreTrainedModel,
     data_processor: PreTrainedTokenizer
     | PreTrainedTokenizerFast
-    | MllamaProcessor
-    | PixtralProcessor,
+    | MllamaProcessor,
     device: torch.device,
     textgen_requests: Iterable[MockTextGenerationRequest],
     num_steps: int = 50,

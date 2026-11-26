@@ -19,10 +19,7 @@ from std._plugin import CurrentPlugin
 from std.format._utils import _FixedWriteBuffer
 from std.io.io import _printf
 from std.os import abort
-from std.sys import (
-    is_apple_gpu,
-    is_gpu,
-)
+from std.sys import is_gpu
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
@@ -72,10 +69,9 @@ def _assert_enabled[assert_mode: StaticString, cpu_only: Bool]() -> Bool:
         " but must be one of: none, safe",
     ]()
 
-    # FIXME: Enable assertions on Apple GPU after MOCO-2405 is fixed
     comptime if ASSERT_MODE == "none" or (
         is_gpu() and cpu_only
-    ) or is_apple_gpu():
+    ) or not CurrentPlugin.supports_assertions:
         return False
     elif ASSERT_MODE == "all" or ASSERT_MODE == "warn" or is_debug_build():
         return True

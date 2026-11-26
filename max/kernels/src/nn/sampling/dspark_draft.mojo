@@ -168,12 +168,12 @@ def _draft_warp_reduce(val: _DraftBest) -> _DraftBest:
 def _draft_block_reduce[block_size: Int](val: _DraftBest) -> _DraftBest:
     """Picks the block's best; valid in thread 0."""
     comptime n_warps = block_size // WARP_SIZE
-    var w_value = unsafe_stack_allocation[
-        n_warps, Float32, address_space=.SHARED
-    ]()
-    var w_index = unsafe_stack_allocation[
-        n_warps, Int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var w_value_storage = Array[Float32, n_warps](uninitialized=True)
+    var w_value = w_value_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var w_index_storage = Array[Int32, n_warps](uninitialized=True)
+    var w_index = w_index_storage.unsafe_ptr()
 
     var res = _draft_warp_reduce(val)
     if lane_id() == 0:
@@ -426,6 +426,7 @@ def dspark_draft_sample_gpu[
                 _DRAFT_CLUSTER_MAX,
             )
 
+        @__allow_legacy_any_origin_fields
         def launch_cluster[cluster_size: Int]() raises {imm}:
             comptime kernel = DSparkDraftSampleClusterKernel[
                 dtype,

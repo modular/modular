@@ -14,8 +14,10 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 import types
+from typing import Any
 
 import pytest
 from max.graph.weights import WeightsFormat
@@ -29,6 +31,7 @@ from max.pipelines.lib.interfaces import (
     ModelOutputs,
 )
 from max.pipelines.lib.interfaces.pipeline_model import PipelineModel
+from max.pipelines.lib.registry import PipelineRegistry
 from max.pipelines.lib.tokenizer import TextTokenizer
 from max.pipelines.modeling.types import PipelineTask
 from transformers import AutoConfig
@@ -137,3 +140,29 @@ def test_materialize_registers_lazy_arch_with_different_task(
         lookup.resolve("LlamaForCausalLM", PipelineTask.TEXT_GENERATION)
         is custom
     )
+
+
+def _registry_config(mach_only: bool) -> tuple[PipelineRegistry, Any]:
+    arch = make_arch("MachOnlyForCausalLM", PipelineTask.TEXT_GENERATION)
+    registry = PipelineRegistry(
+        [dataclasses.replace(arch, mach_only=mach_only)]
+    )
+    config = types.SimpleNamespace(
+        models=types.SimpleNamespace(
+            main_architecture_name="MachOnlyForCausalLM"
+        ),
+        runtime=types.SimpleNamespace(prefer_module_v3=False),
+        speculative=None,
+    )
+    return registry, config
+
+
+def test_max_serve_refuses_a_mach_only_architecture() -> None:
+    registry, config = _registry_config(mach_only=True)
+    with pytest.raises(ValueError, match="Mach only"):
+        registry.refuse_mach_only(config)
+
+
+def test_max_serve_serves_any_other_architecture() -> None:
+    registry, config = _registry_config(mach_only=False)
+    registry.refuse_mach_only(config)

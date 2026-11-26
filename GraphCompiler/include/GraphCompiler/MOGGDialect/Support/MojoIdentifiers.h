@@ -57,9 +57,13 @@ namespace M::MOGG {
 constexpr MojoStaticValue kOpaqueTypeMappingAttrName =
     "mogg.opaque_type_mapping";
 
-/// The name generated code imports `max._graph_blob` as, the module of the
-/// primitives a graph blob calls.
-constexpr MojoStaticValue kGraphBlobModuleAlias = "_graph_blob";
+/// The built-in kernel packages the registry was built from, under the names
+/// they import as. Written by `mogg-import-packages`, read by `EmitMojo`,
+/// which imports each one so a kernel's fully-qualified path resolves.
+/// `builtin_kernels` is a namespace, so the set is what was found on the
+/// import path rather than a list the compiler carries.
+constexpr MojoStaticValue kBuiltInKernelPackagesAttrName =
+    "mogg.builtin_kernel_packages";
 
 /// The `@register` decorators, owned by KGEN's `LITUtils.h`, which the Mojo
 /// parser also uses. A kernel struct's method names are
@@ -107,12 +111,14 @@ using KGEN::kLeafManagedTensorSlice;
 constexpr MojoStaticValue kLeafVariadicTensors = "VariadicTensors";
 constexpr MojoStaticValue kLeafVariadicPack = "VariadicPack";
 constexpr MojoStaticValue kLeafTensorTuple = "TensorTuple";
+constexpr MojoStaticValue kLeafWorkspace = "Workspace";
 constexpr MojoStaticValue kLeafFusedInputVariadicTensors =
     "_FusedInputVariadicTensors";
 constexpr MojoStaticValue kLeafFusedOutputVariadicTensors =
     "_FusedOutputVariadicTensors";
 constexpr MojoStaticValue kLeafSIMD = "SIMD";
 constexpr MojoStaticValue kLeafIndexList = "IndexList";
+constexpr MojoStaticValue kLeafCoord = "Coord";
 constexpr MojoStaticValue kLeafTileTensor = "TileTensor";
 constexpr MojoStaticValue kLeafDeviceContextArray = "DeviceContextArray";
 constexpr MojoStaticValue kLeafDeviceGraphBuilder = "DeviceGraphBuilder";
@@ -162,6 +168,8 @@ constexpr MojoStaticValue kMojoInternalDpsBoolTypeName = "std::Bool";
 constexpr MojoStaticValue kMojoInternalDpsIndexListTypeName = "std::IndexList";
 
 /// In `buildOpaqueSymbol`'s dotted form, for `isOpaqueWithTypeName`.
+constexpr MojoStaticValue kMojoInternalDpsCoordTypeQualifiedName =
+    "std.utils.coord.Coord";
 constexpr MojoStaticValue kMojoInternalDpsIndexListTypeQualifiedName =
     "std.utils.index.IndexList";
 
@@ -239,8 +247,8 @@ constexpr MojoStaticValue kStructTileCopier = "layout.tile_io.TileCopier";
 constexpr MojoStaticValue kStructTileLayout = "layout.MixedLayout";
 constexpr MojoStaticValue kStructMoggOutputStoreFusionTensor =
     "_MoggOutputStoreFusionTensor";
-constexpr MojoStaticValue kStructMoggTransformFusionTensor =
-    "_MoggTransformFusionTensor";
+constexpr MojoStaticValue kStructMoggLegacyComputeTensor =
+    "_MoggLegacyComputeTensor";
 constexpr MojoStaticValue kStructMoggInputLoadFusionTensor =
     "_MoggInputLoadFusionTensor";
 constexpr MojoStaticValue kStructStateContext =
@@ -303,6 +311,8 @@ constexpr MojoStaticValue kFnGetSimdWidthForDtypes =
     "builtin_primitives.primitives.get_simd_width_for_dtypes";
 constexpr MojoStaticValue kFnPow2DivisorOfDims =
     "builtin_primitives.primitives.pow2_divisor_of_dims";
+constexpr MojoStaticValue kFnShapeFuncResult =
+    "builtin_primitives.primitives.shape_func_result";
 constexpr MojoStaticValue kFnUnpackBufferRef =
     "builtin_primitives.primitives.unpack_buffer_ref";
 constexpr MojoStaticValue kFnUnpackDeviceCtx =
@@ -332,9 +342,6 @@ constexpr MojoStaticValue kFnMsSimdStoreIntoTensorPointer =
 /// Returns a tile kernel's `(rows, cols)` tile shape.
 constexpr MojoStaticValue kFnGetKernelTileShape =
     "managed_tensor_slice.get_kernel_tile_shape";
-/// Fully qualified because `std.utils` does not re-export `coord`.
-constexpr MojoStaticValue kFnCoordToIndexList =
-    "std.utils.coord.coord_to_index_list";
 constexpr MojoStaticValue kStructRowwiseRow = "algorithm.rowwise.Row";
 constexpr MojoStaticValue kStructRowwiseContextParams =
     "algorithm.rowwise_types.ContextParams";
@@ -419,6 +426,7 @@ constexpr MojoStaticValue kParameterSize = "size";
 constexpr MojoStaticValue kParameterLength = "length";
 constexpr MojoStaticValue kParameterSimdWidth = "simd_width";
 constexpr MojoStaticValue kParameterPreferredSimdWidth = "simd_width";
+constexpr MojoStaticValue kParameterDtypes = "dtypes";
 constexpr MojoStaticValue kArgMaxSimdWidth = "max_simd_width";
 constexpr MojoStaticValue kParameterElementAlignment = "element_alignment";
 /// The rowwise cache lambda's alignment parameter.
@@ -448,6 +456,9 @@ constexpr MojoStaticValue kParameterForeachElem = "elem";
 constexpr MojoStaticValue kParameterForeachCtx = "ctx";
 constexpr MojoStaticValue kMoggForeachTileRegistration =
     "mogg.call.foreach.tile";
+/// The guard `mogg.graph_blob.call` runs its region under.
+constexpr MojoStaticValue kMoggGraphBlobIsThreadActiveRegistration =
+    "mogg.graph_blob.is_thread_active";
 constexpr MojoStaticValue kParameterSelf = "self";
 constexpr MojoStaticValue kParameterIdx = "idx";
 constexpr MojoStaticValue kParameterVal = "val";
@@ -490,8 +501,6 @@ constexpr std::pair<llvm::StringLiteral, llvm::StringLiteral>
         {"algorithm.rowwise_types", ""},
         // For `layout.tile_io.TileCopier`.
         {"layout.tile_io", ""},
-        // For the graph blob primitives, as `kGraphBlobModuleAlias`.
-        {"max._graph_blob", "_graph_blob"},
 };
 
 /// TODO(GEX-2488): Find another way to detect that a type is an `IOSpec`
@@ -528,8 +537,8 @@ public:
   explicit ManagedTensorSliceRef(MojoValue v) : value(std::move(v)) {}
 
   static constexpr MojoStaticValue kUnsafePtr = "unsafe_ptr";
-  static constexpr MojoStaticValue kShape = "shape";
-  static constexpr MojoStaticValue kStrides = "strides";
+  static constexpr MojoStaticValue kShapeCoord = "shape_coord";
+  static constexpr MojoStaticValue kStridesCoord = "strides_coord";
   static constexpr MojoStaticValue kToTileTensor = "to_tile_tensor";
   static constexpr MojoStaticValue kStaticSpec = "static_spec";
   static constexpr MojoStaticValue kStaticShapeTuple = "_static_shape_tuple";
@@ -548,8 +557,8 @@ public:
   MojoValue rawPtr() const { return value.get(kPtr); }
 
   MojoValue unsafePtr() const { return value.get(kUnsafePtr)(); }
-  MojoValue shape() const { return value.get(kShape)(); }
-  MojoValue strides() const { return value.get(kStrides)(); }
+  MojoValue shapeCoord() const { return value.get(kShapeCoord)(); }
+  MojoValue stridesCoord() const { return value.get(kStridesCoord)(); }
   MojoValue toTileTensor() const { return value.get(kToTileTensor)(); }
 
   MojoValue value;
@@ -840,12 +849,17 @@ inline MojoValue rowMajorLayout(const MojoValue &shape) {
   return kFnRowMajor({shape});
 }
 
-/// `coord_to_index_list(<coord>)`, optionally rebound to `IndexList[rank]`.
-inline MojoValue
-coordToIndexList(const MojoValue &coord,
-                 std::optional<MojoValue> rank = std::nullopt) {
-  MojoValue list = kFnCoordToIndexList({coord});
-  return rank ? list.rebind(kStructIndexList[*rank]) : list;
+/// `DynamicCoord[DType.int, <rank>]`.
+inline MojoValue dynamicIntCoord(const MojoValue &rank) {
+  return kAliasDynamicCoord[{kStructDType.get(kEnumDTypeInt), rank}];
+}
+
+/// `<coord>` with every element a runtime `Scalar[DType.int]`, typed as
+/// `DynamicCoord[DType.int, <rank>]`.
+inline MojoValue toDynamicIntCoord(const MojoValue &coord,
+                                   const MojoValue &rank) {
+  return coord.get(MojoValue("make_dynamic"))[kStructDType.get(kEnumDTypeInt)]()
+      .rebind(dynamicIntCoord(rank));
 }
 
 /// `Scalar[<dtype>]`.

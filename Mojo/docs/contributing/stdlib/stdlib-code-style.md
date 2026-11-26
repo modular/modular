@@ -196,8 +196,9 @@ code.
 | `trait`                                      | `trait Copyable`                           | `PascalCase` |
 | Trait composition                            | `comptime KeyElement = Movable & Hashable` | `PascalCase` |
 | `struct` type                                | `struct Point`                             | `PascalCase` |
-| `__enum` type                                | `__enum IOErrorKind` / `__enum IpAddr`     | `PascalCase` |
-| `__enum` case                                | `case not_found`                           | `snake_case` |
+| `__enum` type                                | `__enum IOErrorKind`                       | `PascalCase` |
+| `__union` type                               | `__union IpAddr`                           | `PascalCase` |
+| `__enum` or `__union` case                   | `case not_found`                           | `snake_case` |
 | Module-level `comptime` type alias           | `comptime Int8 = Scalar[DType.int8]`       | `PascalCase` |
 | Type parameter                               | `struct List[T: Movable]`                  | `PascalCase` |
 | Value parameter                              | `def repeat[count: Int]()`                 | `snake_case` |
@@ -346,14 +347,14 @@ Choose the form by what the code does when the value is absent:
 
 - It uses a default: `opt.or_else(default)`.
 - It leaves the scope with `return`, `raise`, `continue`, `break`, or
-  `abort()`: `__guard case .Some(x) = opt else:`. The binding `x` stays in
+  `abort()`: `guard case .Some(x) = opt else:`. The binding `x` stays in
   scope after the statement, so the main path keeps its indentation.
 - It uses the payload only when it's present: `if case .Some(x) = opt:`.
 - Both cases do work and continue: `match opt:` with `.Some(x)` and `.None`
   cases.
 
 When the value can't be absent, write
-`__guard case .Some(x) = opt else: abort("<reason>")` so the code states the
+`guard case .Some(x) = opt else: abort("<reason>")` so the code states the
 invariant where it relies on it.
 
 ```mojo
@@ -363,7 +364,7 @@ if not opt:
 use(opt.value())
 
 # 🟢 Prefer
-__guard case .Some(x) = opt else:
+guard case .Some(x) = opt else:
     return -1
 use(x)
 ```

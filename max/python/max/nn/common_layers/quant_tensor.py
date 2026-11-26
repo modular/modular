@@ -22,16 +22,17 @@ from typing import Any, ClassVar, TypeAlias, TypeGuard
 from max import functional as F
 from max.driver import CPU, Device
 from max.dtype import DType
-from max.graph import Shape
+from max.graph import DimLike, Shape
 from max.nn import Module
 from max.nn.kernels import (
     mxfp4_dequant,
     mxfp8_dequant,
     nvfp4_dequant,
+    quantize_block_scaled_with_amax,
     quantize_dynamic_block_scaled,
     quantize_dynamic_block_scaled_mxfp4,
 )
-from max.nn.module import module_dataclass
+from max.nn.module import _TransparentKey, module_dataclass
 from max.tensor import Tensor
 from max.tensor.sharding import (
     DeviceMapping,
@@ -145,6 +146,60 @@ class FP8BlockTensor(_QuantizedWeight):
     def block_size(self) -> tuple[int, int]:
         """Quantization block shape as ``(rows, cols)``."""
         return self._block_size
+
+    def dequantize(self, dtype: DType = DType.bfloat16) -> Tensor:
+        """Decodes the weight: ``weight * weight_scale_inv``, block by block.
+
+        Each ``block_size`` block of ``weight`` is multiplied by its entry of
+        ``weight_scale_inv``. The product is taken in float32 and rounded once
+        to ``dtype``, so the result is exact in bfloat16 only when each scaled
+        value fits bfloat16's mantissa, as it does for power-of-two scales.
+
+        Args:
+            dtype: The dtype of the result.
+
+        Returns:
+            The decoded weight, ``[rows, cols]`` in ``dtype``.
+
+        Raises:
+            ValueError: If the weight is not rank 2, its dimensions are not
+                multiples of the block, or the scales are not one entry per
+                block. Ragged edge blocks are not supported.
+        """
+        rows, cols = self._check_tiles()
+        block_m, block_k = self.block_size
+        values = self.weight.cast(DType.float32).reshape(
+            [rows // block_m, block_m, cols // block_k, block_k]
+        )
+        scales = self.weight_scale_inv.cast(DType.float32).reshape(
+            [rows // block_m, 1, cols // block_k, 1]
+        )
+        return (values * scales).reshape([rows, cols]).cast(dtype)
+
+    def _check_tiles(self) -> tuple[int, int]:
+        """Returns ``(rows, cols)`` if the weight and scales tile exactly."""
+        weight_dims = tuple(int(d) for d in self.weight.shape)
+        scale_dims = tuple(int(d) for d in self.weight_scale_inv.shape)
+        if len(weight_dims) != 2:
+            raise ValueError(
+                "a block-scaled FP8 weight must be rank 2, got shape "
+                f"{weight_dims}"
+            )
+        block_m, block_k = self.block_size
+        rows, cols = weight_dims
+        if rows % block_m or cols % block_k:
+            raise ValueError(
+                "FP8 block dequantization needs both dimensions to be "
+                f"multiples of the block {self.block_size}, got {weight_dims}"
+            )
+        expected = (rows // block_m, cols // block_k)
+        if scale_dims != expected:
+            raise ValueError(
+                f"the block scales of a {weight_dims} FP8 weight with block "
+                f"{self.block_size} must have shape {expected}, got "
+                f"{scale_dims}"
+            )
+        return rows, cols
 
     def shard(self, axis: int, mesh: DeviceMesh) -> FP8BlockTensor:
         """Co-shard both leaves along ``axis`` onto ``mesh``.
@@ -878,32 +933,50 @@ class _Quantizer(QTensor):
 
     Everything here is format-independent; a subclass supplies only
     ``_quantize`` and its container's fields.
+
+    The wrapped weight may itself be an :class:`FP8BlockTensor`, as a
+    checkpoint like GLM-5.3 holds it. Then :attr:`_source_values` is its
+    :meth:`~FP8BlockTensor.dequantize`, the bfloat16 tensor every format
+    quantizes and every error is measured against. Otherwise ``_tensor``
+    already is the values. A wrapped container keeps the checkpoint's names:
+    its ``weight`` and ``weight_scale_inv`` load as this quantizer's own.
     """
 
-    _tensor: Tensor
+    _tensor: Tensor | FP8BlockTensor
     _block_size: tuple[int, int]
     _report_error: bool = False
+    _mse_sweep_scales: bool = False
 
     def __init__(
         self,
-        tensor: Tensor,
+        tensor: Tensor | FP8BlockTensor,
         block_size: tuple[int, int],
         *,
         report_error: bool = False,
+        mse_sweep_scales: bool = False,
     ):
         if report_error and type(self)._dequantize is _Quantizer._dequantize:
             # Fail at construction, not deep inside tracing.
             raise NotImplementedError(
                 f"{type(self).__name__} cannot report its quantization error"
             )
-        if int(tensor.shape[-1]) % block_size[-1]:
+        shape = (
+            tensor.weight.shape
+            if isinstance(tensor, FP8BlockTensor)
+            else tensor.shape
+        )
+        if int(shape[-1]) % block_size[-1]:
             raise ValueError(
                 f"{type(self).__name__} needs a K that is a multiple of "
-                f"{block_size[-1]}, got {tensor.shape[-1]}"
+                f"{block_size[-1]}, got {shape[-1]}"
             )
+        if isinstance(tensor, FP8BlockTensor):
+            # Fail here, not when the first decode is traced.
+            tensor._check_tiles()
         self._tensor = tensor
         self._block_size = block_size
         self._report_error = report_error
+        self._mse_sweep_scales = mse_sweep_scales
 
     def _quantize(self) -> QTensor:
         """Produces the quantized container. The only format-specific part."""
@@ -927,9 +1000,9 @@ class _Quantizer(QTensor):
     def _print_error(self, quantized: QTensor) -> None:
         """Measures and prints the error of ``quantized``, if reporting.
 
-        Called by each format's :meth:`_quantize` with the container it
-        built. Adds ops beside the quantization that consume the same
-        quantized values, and prints
+        Called from :meth:`quant_tensor` with the container it built. Adds
+        ops beside the quantization that consume the same quantized values,
+        and prints
         ``[sum_sq_error, sum_sq_source, max_abs_error]`` under
         ``quant_error.<weight name>``. Does nothing unless the quantizer was
         built with ``report_error=True``.
@@ -940,24 +1013,52 @@ class _Quantizer(QTensor):
         """
         if not self._report_error:
             return
-        name = self._tensor.external_name
+        name = self._weight.external_name
         if name is None:
             raise ValueError(
                 "cannot report quantization error for a tensor that is not a "
                 "named weight; compile names weights after their path"
             )
-        stats = _error_stats(self._tensor, self._dequantize(quantized))
+        stats = _error_stats(self._source_values, self._dequantize(quantized))
         F.print(stats.to(CPU()), f"quant_error.{name}")
+
+    @property
+    def _weight(self) -> Tensor:
+        """The wrapped weight's own tensor: the FP8 data, or ``_tensor``."""
+        if isinstance(self._tensor, FP8BlockTensor):
+            return self._tensor.weight
+        return self._tensor
+
+    @cached_property
+    def _source_values(self) -> Tensor:
+        """The weight as bfloat16 values: decoded from FP8, or ``_tensor``."""
+        if isinstance(self._tensor, FP8BlockTensor):
+            return self._tensor.dequantize(DType.bfloat16)
+        return self._tensor
+
+    def _mse_scales_sweep(self) -> QTensor:
+        raise NotImplementedError(
+            f"{type(self).__name__} does not implement MSE scales sweep."
+        )
 
     @cached_property
     def quant_tensor(self) -> Any:
-        """Holds a cached quantized tensor."""
-        return self._quantize()
+        """The quantization of the wrapped tensor, built on first use.
+
+        Prints the quantization error when this quantizer was built with
+        ``report_error=True``.
+        """
+        if self._mse_sweep_scales:
+            result = self._mse_scales_sweep()
+        else:
+            result = self._quantize()
+        self._print_error(result)
+        return result
 
     @property
     def shape(self) -> Shape:
         """Delegates shape to underlying tensor."""
-        return self._tensor.shape
+        return self._weight.shape
 
     @property
     def block_size(self) -> tuple[int, int]:
@@ -967,21 +1068,28 @@ class _Quantizer(QTensor):
     def _scale_grid(self) -> tuple[int, int]:
         """The ``(rows, K // block)`` extent of the rank-2 block scales."""
         return (
-            int(self._tensor.shape[0]),
-            int(self._tensor.shape[1]) // self.block_size[1],
+            int(self._weight.shape[0]),
+            int(self._weight.shape[1]) // self.block_size[1],
         )
 
     def __tree_flatten__(self) -> tuple[dict[str, Any], None]:
         # Not vars(self): that also holds the cached quant_tensor once it is
         # computed, which is no weight to load. The tensor is keyed by its
         # checkpoint name, though the attribute `weight` is the packed field.
-        # ``_report_error`` rides along so a rebuilt copy, which skips
-        # ``__init__``, keeps reporting.
-        return {
-            "weight": self._tensor,
+        # ``_report_error`` and ``_mse_sweep_scales`` ride along so a
+        # rebuilt copy, which skips ``__init__``, keeps both.
+        children: dict[Any, Any] = {
             "_block_size": self._block_size,
             "_report_error": self._report_error,
-        }, None
+            "_mse_sweep_scales": self._mse_sweep_scales,
+        }
+        if isinstance(self._tensor, Module):
+            # A wrapped FP8 container loads its two tensors under the
+            # checkpoint's own names, so it adds no path segment.
+            children[_TransparentKey("_tensor")] = self._tensor
+        else:
+            children["weight"] = self._tensor
+        return children, None
 
     def __tree_setattr__(self, key: Any, value: Any) -> None:
         super().__tree_setattr__("_tensor" if key == "weight" else key, value)
@@ -995,6 +1103,7 @@ class _Quantizer(QTensor):
         a function of the wrapped tensor and are rebuilt where it now lives.
         """
         self._tensor = self._tensor.to(target)
+        self.__dict__.pop("_source_values", None)
         self.__dict__.pop("quant_tensor", None)
         return self
 
@@ -1012,17 +1121,23 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
 
     def __init__(
         self,
-        tensor: Tensor,
+        tensor: Tensor | FP8BlockTensor,
         block_size: tuple[int, int] = (1, 16),
         *,
         report_error: bool = False,
+        mse_sweep_scales: bool = False,
     ):
-        super().__init__(tensor, block_size, report_error=report_error)
+        super().__init__(
+            tensor,
+            block_size,
+            report_error=report_error,
+            mse_sweep_scales=mse_sweep_scales,
+        )
 
     def _reduction_amax(self) -> Tensor:
         """Returns this tensor's abs-max as a CPU float32 scalar."""
         return (
-            F.abs(self._tensor)
+            F.abs(self._source_values)
             .max(axis=None)
             .reshape([])
             .cast(DType.float32)
@@ -1052,7 +1167,9 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
             return
         self._pinned_amax = amax
 
-    def _quantize(self) -> NVFP4Tensor:
+    def _quantize(self, block_amax: Tensor | None = None) -> NVFP4Tensor:
+        # ``block_amax`` replaces each block's own abs-max (a multiplier from
+        # the MSE search); values past it saturate.
         # A fused group shares one global scale. Block scales encoded with a
         # member's own amax would not match the weight_scale_2 concat keeps.
         amax = (
@@ -1063,14 +1180,23 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
         encode_scale = (MAX_E2M1 * MAX_E4M3) / amax
         decode_scale = 1.0 / encode_scale
 
-        packed, scales = quantize_dynamic_block_scaled(
-            self._tensor,
-            tensor_sf=encode_scale,
-            sf_vector_size=self.block_size[1],
-            scales_type=DType.float8_e4m3fn,
-            out_type=DType.uint8,
-        )
-        input_scale = Tensor.ones((), dtype=DType.float32, device=CPU())
+        source = self._source_values
+        if block_amax is None:
+            packed, scales = quantize_dynamic_block_scaled(
+                source,
+                tensor_sf=encode_scale,
+                sf_vector_size=self.block_size[1],
+                scales_type=DType.float8_e4m3fn,
+                out_type=DType.uint8,
+            )
+        else:
+            packed, scales = quantize_block_scaled_with_amax(
+                source,
+                block_amax,
+                tensor_sf=encode_scale,
+                sf_vector_size=self.block_size[1],
+            )
+        input_scale = self.input_scale
 
         result = NVFP4Tensor(
             weight=packed,
@@ -1078,7 +1204,6 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
             weight_scale_2=decode_scale,
             input_scale=input_scale,
         )
-        self._print_error(result)
         return result
 
     def _dequantize(self, quantized: QTensor) -> Tensor:
@@ -1090,10 +1215,84 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
             out_type=DType.float32,
         )
 
-    @cached_property
-    def quant_tensor(self) -> NVFP4Tensor:
-        """The NVFP4 quantization of the wrapped tensor, built on first use."""
-        return self._quantize()
+    def _mse_scales_sweep(
+        self,
+        mse_start: float = 0.25,
+        mse_end: float = 4.0,
+        mse_step: float = 0.1,
+    ) -> NVFP4Tensor:
+        # One candidate per iteration, so the graph holds a single float32
+        # reconstruction instead of one per multiplier.
+        import math
+
+        source = self._source_values
+        dims = source.shape
+        block_shape: list[DimLike] = [
+            *dims[:-1],
+            dims[-1] // self._block_size[1],
+            self._block_size[1],
+        ]
+        # A view of the bf16 weight. Casting it to float32 would keep a
+        # second full copy live for every matrix in the export graph.
+        block_weight = source.reshape(block_shape)
+        block_amax = F.max(F.abs(block_weight), axis=-1).cast(DType.float32)
+        scale_shape = block_shape[:-1]
+        # Exact float32 multipliers. F.arange would take the device's bf16
+        # default, and a 0.25 step of 0.1 never lands on 1.0, the block's
+        # own abs-max. Without that candidate a block can lose to plain
+        # quantization.
+        num_candidates = math.ceil(round((mse_end - mse_start) / mse_step, 6))
+        mults = [mse_start + i * mse_step for i in range(num_candidates)]
+        if mse_start <= 1.0 < mse_end and not any(
+            abs(mult - 1.0) < 1e-6 for mult in mults
+        ):
+            mults.append(1.0)
+        candidates = F.constant(mults, DType.float32, source.device)
+        # One global scale for every candidate. A fused group already pinned
+        # its shared amax; otherwise pin this tensor's own for the search.
+        pinned = self._pinned_amax
+        if pinned is None:
+            self._pinned_amax = self._reduction_amax()
+        try:
+            index = F.constant(0, DType.int64, CPU())
+            limit = F.constant(len(mults), DType.int64, CPU())
+            best_error = F.full_like(block_amax, float("inf"))
+            best_mult = F.full_like(block_amax, 0)
+            scale_ones = [1] * int(block_amax.rank)
+
+            def step(
+                index: Tensor, best_error: Tensor, best_mult: Tensor
+            ) -> tuple[Tensor, Tensor, Tensor]:
+                picked = F.gather(
+                    candidates,
+                    index.to(candidates.device).reshape([1]),
+                    axis=0,
+                )
+                candidate = (
+                    picked.reshape(scale_ones)
+                    .broadcast_to(best_mult.shape)
+                    .cast(best_mult.dtype)
+                )
+                quantized = self._quantize(
+                    (block_amax * candidate).reshape(scale_shape)
+                )
+                restored = self._dequantize(quantized).reshape(block_shape)
+                error = F.sum((block_weight - restored) ** 2, axis=-1)
+                better = error < best_error
+                return (
+                    index + 1,
+                    F.where(better, error, best_error),
+                    F.where(better, candidate, best_mult),
+                )
+
+            _index, _best_error, best_mult = F.while_loop(
+                (index, best_error, best_mult),
+                lambda index, _best_error, _best_mult: index < limit,
+                step,
+            )
+            return self._quantize((block_amax * best_mult).reshape(scale_shape))
+        finally:
+            self._pinned_amax = pinned
 
     # The base class stores these as attributes. These stay read-only views
     # of the cached quantized tensor so dispatch can read them the same way.
@@ -1112,10 +1311,18 @@ class NVFP4TensorQuantizer(_Quantizer, NVFP4Tensor):
         """Global weight scaling factor."""
         return self.quant_tensor.weight_scale_2
 
-    @property
+    @cached_property
     def input_scale(self) -> Tensor:  # type: ignore[override]
-        """Global activations scaling factor."""
-        return self.quant_tensor.input_scale
+        """Global activations scaling factor, always 1.0 for a quantizer.
+
+        Built here instead of read from :attr:`quant_tensor`. Reading the
+        cached container quantizes the weight, and a fused group must pin its
+        shared amax before any member does. Callers that need only this
+        scale, such as the expert-parallel dispatch, would otherwise
+        quantize a gate projection before its up projection is joined to it.
+        Cached, so every read returns the same tensor.
+        """
+        return Tensor.ones((), dtype=DType.float32, device=CPU())
 
 
 class MXFP8Quantizer(_Quantizer, MXFP8Tensor):
@@ -1128,27 +1335,31 @@ class MXFP8Quantizer(_Quantizer, MXFP8Tensor):
 
     def __init__(
         self,
-        tensor: Tensor,
+        tensor: Tensor | FP8BlockTensor,
         block_size: tuple[int, int] = (1, 32),
         *,
         report_error: bool = False,
+        mse_sweep_scales: bool = False,
     ):
-        super().__init__(tensor, block_size, report_error=report_error)
+        super().__init__(
+            tensor,
+            block_size,
+            report_error=report_error,
+            mse_sweep_scales=mse_sweep_scales,
+        )
 
     def _quantize(self) -> MXFP8Tensor:
         data, scales = quantize_dynamic_block_scaled(
-            self._tensor,
+            self._source_values,
             sf_vector_size=self.block_size[1],
             scales_type=MXFP8Tensor.scale_dtype,
             out_type=MXFP8Tensor.storage_dtype,
         )
-        result = MXFP8Tensor(
+        return MXFP8Tensor(
             weight=data,
             weight_scale=_scales_as_rows(scales, *self._scale_grid()),
             block_size=self.block_size,
         )
-        self._print_error(result)
-        return result
 
     def _dequantize(self, quantized: QTensor) -> Tensor:
         assert isinstance(quantized, MXFP8Tensor)
@@ -1159,7 +1370,9 @@ class MXFP8Quantizer(_Quantizer, MXFP8Tensor):
     @cached_property
     def quant_tensor(self) -> MXFP8Tensor:
         """The MXFP8 quantization of the wrapped tensor, built on first use."""
-        return self._quantize()
+        result = self._quantize()
+        self._print_error(result)
+        return result
 
     # Read-only views of the cached quantized tensor, as for NVFP4.
     @property
@@ -1183,24 +1396,28 @@ class MXFP4Quantizer(_Quantizer, MXFP4Tensor):
 
     def __init__(
         self,
-        tensor: Tensor,
+        tensor: Tensor | FP8BlockTensor,
         block_size: tuple[int, int] = (1, 32),
         *,
         report_error: bool = False,
+        mse_sweep_scales: bool = False,
     ):
-        super().__init__(tensor, block_size, report_error=report_error)
+        super().__init__(
+            tensor,
+            block_size,
+            report_error=report_error,
+            mse_sweep_scales=mse_sweep_scales,
+        )
 
     def _quantize(self) -> MXFP4Tensor:
         data, scales = quantize_dynamic_block_scaled_mxfp4(
-            self._tensor,
+            self._source_values,
             scales_type=MXFP4Tensor.scale_dtype,
             out_type=MXFP4Tensor.storage_dtype,
         )
-        result = MXFP4Tensor(
+        return MXFP4Tensor(
             weight=data, weight_scale=scales, block_size=self.block_size
         )
-        self._print_error(result)
-        return result
 
     def _dequantize(self, quantized: QTensor) -> Tensor:
         assert isinstance(quantized, MXFP4Tensor)
@@ -1211,7 +1428,9 @@ class MXFP4Quantizer(_Quantizer, MXFP4Tensor):
     @cached_property
     def quant_tensor(self) -> MXFP4Tensor:
         """The MXFP4 quantization of the wrapped tensor, built on first use."""
-        return self._quantize()
+        result = self._quantize()
+        self._print_error(result)
+        return result
 
     # Read-only views of the cached quantized tensor, as for NVFP4.
     @property

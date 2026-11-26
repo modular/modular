@@ -28,11 +28,13 @@ from unittest.mock import Mock
 import numpy as np
 import pytest
 from max import functional as F
+from max import tree
 from max.driver import CPU, Buffer
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
+from max.nn.ep.init import payload_types
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import KVCacheInputs
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.outputs import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV41_modulev3.batch_processor import (
     DeepseekV41BatchProcessor,
@@ -51,11 +53,14 @@ from max.pipelines.architectures.deepseekV41_modulev3.layers.moe import (
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model import (
     DeepseekV41Model,
+    build_ep_config,
+    check_parallel_layout,
 )
 from max.pipelines.architectures.deepseekV41_modulev3.model_config import (
     DeepseekV41Config,
 )
 from max.pipelines.lib import KVCacheConfig
+from max.pipelines.lib.registration_runtime import ExpertParallelInputs
 from max.tensor import Tensor, default_device
 from max.tensor.sharding import DeviceMesh
 from runtime_config import text_config
@@ -97,10 +102,15 @@ def _batch_processor(dp: int) -> DeepseekV41BatchProcessor:
     return DeepseekV41BatchProcessor(Mock(), runtime)
 
 
-def _ep_manager() -> EPBatchManager:
-    """The EP batch manager the pipeline model builds at ep_size 4."""
-    model = _model(dp=4, ep_size=4)
-    return EPBatchManager(model._build_ep_config(_model_config(), n_devices=4))
+def _ep_config() -> EPConfig:
+    """The EP config the pipeline model builds at ep_size 4."""
+    config = _model_config()
+    return build_ep_config(
+        _model(dp=4, ep_size=4).pipeline_config,
+        config,
+        4,
+        config.routed_expert_format,
+    )
 
 
 def test_extra_inputs_name_global_rows_under_dp() -> None:
@@ -213,9 +223,8 @@ def _model(
 
 
 def test_model_builds_the_checkpoint_ep_config() -> None:
-    model = _model(dp=4, ep_size=4)
     config = _model_config()
-    ep_config = model._build_ep_config(config, n_devices=4)
+    ep_config = _ep_config()
     assert ep_config.dispatch_dtype == DType.uint8
     assert ep_config.combine_dtype == DType.bfloat16
     assert ep_config.hidden_size == config.hidden_size
@@ -228,11 +237,14 @@ def test_model_builds_the_checkpoint_ep_config() -> None:
     assert ep_config.dispatch_quant_config.is_nvfp4
 
 
-def test_model_refuses_multi_device_without_dp_attention() -> None:
-    # The arch registration lets every multi-GPU layout through, but the
-    # trunk wires one: plain TP would die deep in graph staging, so the
-    # runtime must refuse it before any weights load.
-    model = _model(dp=1, ep_size=1)
+@pytest.mark.parametrize("devices", [2, 4])
+def test_model_accepts_staged_tensor_parallel_layout(devices: int) -> None:
+    model = _model(dp=1, ep_size=1, n_devices=devices)
+    check_parallel_layout(model.pipeline_config)
+
+
+def test_model_refuses_unstaged_tensor_parallel_eight() -> None:
+    model = _model(dp=1, ep_size=1, n_devices=8)
     with pytest.raises(ValueError, match="only as"):
         model._init_distributed_runtime(_model_config())
 
@@ -266,24 +278,27 @@ def test_model_ep_runtime_requires_chunked_prefill() -> None:
         model._init_distributed_runtime(_model_config())
 
 
-def test_model_ep_runtime_binds_the_batch_manager(
+def test_model_ep_runtime_binds_the_ep_config(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # The export path (virtual devices) stages the wiring the engine
-    # replays: the batch manager and its input tail, with the symmetric
-    # heap left to the engine's handshake.
+    # replays: the EP config and its input tail, with the symmetric heap
+    # left to the engine's handshake.
     monkeypatch.setattr(
-        "max.pipelines.architectures.deepseekV41_modulev3.model"
-        ".is_virtual_device_mode",
-        lambda: True,
+        ExpertParallelInputs,
+        "initialize",
+        lambda self, session, ep, mesh: (ep, None, {}),
     )
     model = _model(dp=4, ep_size=4)
+    model._session = Mock()
     model._init_distributed_runtime(_model_config())
-    manager = model._ep_batch_manager
-    assert isinstance(manager, EPBatchManager)
+    ep_config = model._ep_config
+    assert isinstance(ep_config, EPConfig)
     # The EP tail the compile input list appends after the extras: the
     # per-device counter and symmetric-heap buffers.
-    assert model._modulev3_extra_input_types == manager.input_types()
+    assert model._modulev3_extra_input_types == tree.leaves(
+        payload_types(ep_config)
+    )
     assert model._modulev3_extra_input_types
     assert model.ep_comm_initializer is None
 
@@ -291,10 +306,10 @@ def test_model_ep_runtime_binds_the_batch_manager(
 def test_batch_processor_binds_the_ep_tail() -> None:
     """The processor carries the initializer's buffers as the input tail.
 
-    The model's load hands the ``EPCommInitializer`` to the processor
-    (the base ``load_graphs`` binding), and every forward's inputs must
-    end with the buffers it produced, in ``EPBatchManager.input_types``
-    order -- or the in-process forward fails on input arity.
+    The model's load hands the exchange to the processor (the base
+    ``load_graphs`` binding), and every forward's inputs must end with
+    the buffers it produced, in the EP inputs' order -- or
+    the in-process forward fails on input arity.
     """
     processor = _batch_processor(dp=4)
     assert processor._ep_inputs() == ()
@@ -332,7 +347,7 @@ def test_module_dp_degree_must_match_mesh() -> None:
             text_config=text_config(),
             token_map=np.arange(128, dtype=np.int32),
             data_parallel_degree=2,
-            ep_batch_manager=_ep_manager(),
+            ep_config=_ep_config(),
         )
 
 
@@ -352,7 +367,7 @@ def test_module_requires_ep_with_dp() -> None:
             text_config=text_config(),
             token_map=np.arange(128, dtype=np.int32),
             data_parallel_degree=4,
-            ep_batch_manager=None,
+            ep_config=None,
         )
 
 
@@ -372,7 +387,7 @@ def test_module_dp_serves_next_token_logits_only() -> None:
             text_config=text_config(),
             token_map=np.arange(128, dtype=np.int32),
             data_parallel_degree=4,
-            ep_batch_manager=_ep_manager(),
+            ep_config=_ep_config(),
         )
 
 

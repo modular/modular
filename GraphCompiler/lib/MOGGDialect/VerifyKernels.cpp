@@ -16,6 +16,7 @@
 #include "GraphCompiler/MOGGDialect/MOGGPasses.h"
 #include "Mojo/KGENDialect/KGENAttrs.h"
 #include "Mojo/KGENDialect/KGENPogUtils.h"
+#include "mlir/IR/AttrTypeSubElements.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/StringSet.h"
 
@@ -49,6 +50,12 @@ emitMojoArgumentError(KernelDeclOp decl, KernelFunctionKind kind,
     return mlir::emitError(decl.getMojoFunctionLocation(kind));
   return mlir::emitError(
       decl.getMojoArgLocation(kind, arg.sourceDescriptor->position));
+}
+
+/// Emits an error at the Mojo location of `decl`'s `kind` function.
+static mlir::InFlightDiagnostic emitMojoFunctionError(KernelDeclOp decl,
+                                                      KernelFunctionKind kind) {
+  return mlir::emitError(decl.getMojoFunctionLocation(kind));
 }
 
 /// Whether `arg` is declared as an output tensor, wherever it sits.
@@ -89,7 +96,8 @@ static std::string capitalize(llvm::StringRef s) {
 }
 
 /// Walk the input argument lists of `lhs` and `rhs` in parallel, skipping
-/// launch args (DeviceContext / DeviceGraphBuilder) from either side, and
+/// launch args (DeviceContext / DeviceGraphBuilder) and workspace buffers from
+/// either side, and
 /// require pairwise compatibility. `lhsKind` / `rhsKind` name the functions in
 /// error messages.
 ///
@@ -112,7 +120,7 @@ LogicalResult verifyInputArgumentsAlign(KernelDeclOp decl,
          uint64_t &idx) -> std::optional<KernelDeclOperandAdaptor> {
     while (idx < inputs.size()) {
       const auto &arg = inputs[idx];
-      if (!arg.isLaunchArgument())
+      if (arg.isOperand())
         return arg;
       ++idx;
     }
@@ -527,6 +535,165 @@ LogicalResult declVerifyContextsAppearLastInSignature(
   return success();
 }
 
+/// A kernel requests a workspace buffer with one `Workspace` argument on
+/// `execute` or `execute_device`, placed after its operands, and sizes it with
+/// a `workspace_size` function over its tensor inputs. `workspace_size` binds
+/// each input by `Tensor` alone, so the size is a function of the input shapes.
+LogicalResult declVerifyWorkspace(KernelDeclOp decl,
+                                  const KernelDeclAdaptor &adaptor) {
+  KernelFunctionKind entryKind = adaptor.isDeclarative()
+                                     ? KernelFunctionKind::ExecuteDevice
+                                     : KernelFunctionKind::Execute;
+  StringRef entryName = stringifyKernelFunctionKind(entryKind);
+  StringRef workspaceSizeName =
+      stringifyKernelFunctionKind(KernelFunctionKind::WorkspaceSize);
+  auto position = [](const KernelDeclOperandAdaptor &arg) {
+    return arg.sourceDescriptor->position;
+  };
+  // A package's kernels are verified together, so each error names its kernel.
+  auto argError = [&](KernelFunctionKind kind,
+                      const KernelDeclOperandAdaptor &arg) {
+    return emitMojoArgumentError(decl, kind, arg)
+           << "kernel '" << decl.getRegistration() << "': ";
+  };
+  auto functionError = [&](KernelFunctionKind kind) {
+    return emitMojoFunctionError(decl, kind)
+           << "kernel '" << decl.getRegistration() << "': ";
+  };
+
+  auto workspaceArgumentsOf = [](const KernelDeclFunctionAdaptor &func) {
+    SmallVector<const KernelDeclOperandAdaptor *, 1> workspaceArgs;
+    for (const KernelDeclOperandAdaptor &arg : func.inputArguments)
+      if (arg.isWorkspaceType())
+        workspaceArgs.push_back(&arg);
+    return workspaceArgs;
+  };
+
+  using KindPair =
+      std::pair<std::optional<KernelDeclFunctionAdaptor>, KernelFunctionKind>;
+
+  std::initializer_list<KindPair> invalidWorkspaceArgs = {
+      {adaptor.buildGraphFunction, KernelFunctionKind::BuildGraph},
+      {adaptor.executeConfigurationFunction,
+       KernelFunctionKind::ExecuteConfiguration},
+      {adaptor.workspaceSizeFunction, KernelFunctionKind::WorkspaceSize},
+      {adaptor.elementwiseFunction, KernelFunctionKind::Elementwise},
+      {adaptor.tileElementwiseFunction, KernelFunctionKind::TileElementwise}};
+
+  for (auto &[func, kind] : invalidWorkspaceArgs) {
+    if (!func.has_value())
+      continue;
+    auto workspaceArgs = workspaceArgumentsOf(*func);
+    if (workspaceArgs.empty())
+      continue;
+    const KernelDeclOperandAdaptor &workspace = *workspaceArgs.front();
+    return argError(kind, workspace)
+           << "Workspace arguments are only supported on "
+           << stringifyKernelFunctionKind(KernelFunctionKind::Execute)
+           << " and "
+           << stringifyKernelFunctionKind(KernelFunctionKind::ExecuteDevice)
+           << " functions (argument at position " << position(workspace)
+           << " of the " << stringifyKernelFunctionKind(kind) << " function)";
+  }
+
+  const KernelDeclFunctionAdaptor &entry = *adaptor.executeFunction;
+  auto workspaceArgs = workspaceArgumentsOf(entry);
+  if (workspaceArgs.empty()) {
+    if (!adaptor.workspaceSizeFunction)
+      return success();
+    return functionError(KernelFunctionKind::WorkspaceSize)
+           << "the kernel declares " << workspaceSizeName << ", but its "
+           << entryName << " function takes no Workspace argument";
+  }
+
+  if (workspaceArgs.size() > 1)
+    return argError(entryKind, *workspaceArgs[1])
+           << "there can be at most one Workspace argument";
+  const KernelDeclOperandAdaptor &workspace = *workspaceArgs.front();
+  for (const KernelDeclOperandAdaptor &arg : entry.inputArguments)
+    if (arg.isOperand() && position(arg) > position(workspace))
+      return argError(entryKind, workspace)
+             << "the Workspace argument must come after every operand, but it "
+                "comes before '"
+             << arg.sourceDescriptor->sourceName.getValue() << "'";
+
+  // A recording stub hands `build_graph` the arguments of `execute`, and it
+  // has no workspace buffer to hand over.
+  if (adaptor.buildGraphFunction)
+    return argError(entryKind, workspace)
+           << "Workspace arguments are not supported on a kernel with a "
+           << stringifyKernelFunctionKind(KernelFunctionKind::BuildGraph)
+           << " function";
+
+  if (!adaptor.workspaceSizeFunction)
+    return argError(entryKind, workspace)
+           << "the " << entryName
+           << " function takes a Workspace argument, but the kernel declares "
+              "no "
+           << workspaceSizeName << " function to size it";
+
+  const KernelDeclFunctionAdaptor &workspaceSize =
+      *adaptor.workspaceSizeFunction;
+  // `Int` is `SIMD[.index, 1]`.
+  auto isInt = [&](const KernelDeclOperandAdaptor &result) {
+    if (!result.isScalarType())
+      return false;
+    auto sig = workspaceSize.attr.getSignature();
+    Type type = result.sourceDescriptor
+                    ? sig.getArgument(result.sourceDescriptor->position)
+                    : sig.getResultType();
+    if (auto ref = KGEN::sugarDynCast<KGEN::LIT::RefType>(type))
+      type = ref.getElementType();
+    auto simd = KGEN::sugarDynCast<KGEN::LIT::StructType>(type);
+    if (!simd || simd.getParamValues().empty())
+      return false;
+    bool isIndex = false;
+    mlir::Attribute dtypeParam = simd.getParamValues().front();
+    dtypeParam.walk([&](DTypeConstantAttr dtype) {
+      isIndex |= dtype.getDType().isIndex();
+    });
+    return isIndex;
+  };
+  if (!workspaceSize.outputResult || !isInt(*workspaceSize.outputResult))
+    return functionError(KernelFunctionKind::WorkspaceSize)
+           << workspaceSizeName
+           << " must return the size of the workspace buffer in bytes, as an "
+              "Int";
+
+  SmallVector<const KernelDeclOperandAdaptor *> tensorInputs;
+  for (const KernelDeclOperandAdaptor &arg : entry.inputArguments)
+    if (arg.isTensorType())
+      tensorInputs.push_back(&arg);
+  ArrayRef<KernelDeclOperandAdaptor> sizeArgs = workspaceSize.inputArguments;
+  if (sizeArgs.size() != tensorInputs.size())
+    return functionError(KernelFunctionKind::WorkspaceSize)
+           << workspaceSizeName << " takes " << sizeArgs.size()
+           << " argument(s) but " << entryName << " has " << tensorInputs.size()
+           << " tensor input(s); " << workspaceSizeName
+           << " takes one argument per tensor input";
+  for (auto [sizeArg, input] : llvm::zip(sizeArgs, tensorInputs)) {
+    std::optional<TensorArgContract> contract = sizeArg.getTraitContract();
+    if (!contract || contract->bound != TensorArgBound::tensor)
+      return argError(KernelFunctionKind::WorkspaceSize, sizeArg)
+             << workspaceSizeName << " argument at position "
+             << position(sizeArg)
+             << " must be bound by Tensor alone, as in 'Some[Tensor]'; the "
+                "workspace size depends on the shapes of the inputs and not "
+                "on their data";
+    if (sizeArg.isVariadicTensorType() != input->isVariadicTensorType())
+      return argError(KernelFunctionKind::WorkspaceSize, sizeArg)
+             << workspaceSizeName << " argument at position "
+             << position(sizeArg) << " is "
+             << (sizeArg.isVariadicTensorType() ? "a TensorTuple"
+                                                : "a single tensor")
+             << ", but the " << entryName << " input at position "
+             << position(*input) << " is "
+             << (input->isVariadicTensorType() ? "a TensorTuple"
+                                               : "a single tensor");
+  }
+  return success();
+}
+
 LogicalResult declVerifyOpaqueArgumentsArePassedByReference(
     KernelDeclOp decl, KernelDeclAdaptor &adaptor,
     std::optional<KernelDeclFunctionAdaptor> shapeFunction) {
@@ -814,7 +981,8 @@ LogicalResult declVerifyDeclarative(KernelDeclOp decl,
     for (const KernelDeclOperandAdaptor &arg : fn.outputArguments)
       operands.push_back(&arg);
     for (const KernelDeclOperandAdaptor &arg : fn.inputArguments)
-      operands.push_back(&arg);
+      if (!arg.isWorkspaceType())
+        operands.push_back(&arg);
     return operands;
   };
   auto deviceOperands = operandsOf(executeDevice);
@@ -918,12 +1086,19 @@ LogicalResult declVerifyElementwiseFunction(KernelDeclOp decl,
   size_t operandsCount = 0;
   for (size_t i = 0, inputsCount = elemwiseFn.inputArguments.size();
        i < inputsCount; ++i) {
-    // The last argument might be an IndexList. Skip it — it is an
+    // The last argument might be the `Coord` index. Skip it -- it is an
     // elementwise-only concept.
-    if (i + 1 == inputsCount && elemwiseFn.takesIndexList())
+    if (i + 1 == inputsCount && elemwiseFn.takesIndex())
       continue;
     ++operandsCount;
     const KernelDeclOperandAdaptor &arg = elemwiseFn.inputArguments[i];
+    // A trailing `IndexList` is the index's old type: name the fix rather
+    // than report a non-SIMD operand.
+    if (i + 1 == inputsCount &&
+        arg.isOpaqueWithTypeName(kMojoInternalDpsIndexListTypeQualifiedName))
+      return decl->emitError()
+             << "Elementwise kernels take the element's index as a trailing "
+                "`Coord`, not an `IndexList`";
     if (!arg.isScalarType())
       return decl->emitError() << "Elementwise kernels must have SIMD operands";
     // Fused consumers of a load share its value, so an operand must not be
@@ -1011,10 +1186,10 @@ static llvm::StringRef kernelTypeName(KernelTypeTag t) {
 }
 
 static llvm::SmallVector<KernelDeclOperandAdaptor>
-getNonLaunchInputs(const KernelDeclFunctionAdaptor &fn) {
+getOperandInputs(const KernelDeclFunctionAdaptor &fn) {
   llvm::SmallVector<KernelDeclOperandAdaptor> result;
   for (const KernelDeclOperandAdaptor &arg : fn.inputArguments)
-    if (!arg.isLaunchArgument())
+    if (arg.isOperand())
       result.push_back(arg);
   return result;
 }
@@ -1096,11 +1271,11 @@ LogicalResult crossVerifyKernels(ModuleOp moduleOp) {
     std::optional<KernelDeclOperandAdaptor> refOutputResult;
     if (refTag == KernelTypeTag::Execute) {
       refOutputs = &refAdaptor.executeFunction->outputArguments;
-      refInputs = getNonLaunchInputs(*refAdaptor.executeFunction);
+      refInputs = getOperandInputs(*refAdaptor.executeFunction);
       refOutputResult = getSemanticResult(*refAdaptor.executeFunction);
     } else if (refTag == KernelTypeTag::Elementwise) {
       refOutputs = &refAdaptor.elementwiseFunction->outputArguments;
-      refInputs = getNonLaunchInputs(*refAdaptor.elementwiseFunction);
+      refInputs = getOperandInputs(*refAdaptor.elementwiseFunction);
       refOutputResult = getSemanticResult(*refAdaptor.elementwiseFunction);
     }
 
@@ -1140,12 +1315,12 @@ LogicalResult crossVerifyKernels(ModuleOp moduleOp) {
       if (refTag == KernelTypeTag::Execute) {
         sigKind = "Execute";
         outputs = &adaptor.executeFunction->outputArguments;
-        inputs = getNonLaunchInputs(*adaptor.executeFunction);
+        inputs = getOperandInputs(*adaptor.executeFunction);
         outputResult = getSemanticResult(*adaptor.executeFunction);
       } else {
         sigKind = "Elementwise";
         outputs = &adaptor.elementwiseFunction->outputArguments;
-        inputs = getNonLaunchInputs(*adaptor.elementwiseFunction);
+        inputs = getOperandInputs(*adaptor.elementwiseFunction);
         outputResult = getSemanticResult(*adaptor.elementwiseFunction);
       }
 
@@ -1302,6 +1477,9 @@ struct VerifyKernelsPass : public impl::VerifyKernelsBase<VerifyKernelsPass> {
       if (setFlagIfFailed(failed, declVerifyContextsAppearLastInSignature, decl,
                           adaptor, shapeFnAdaptor)
               .failed())
+        continue;
+
+      if (setFlagIfFailed(failed, declVerifyWorkspace, decl, adaptor).failed())
         continue;
 
       if (setFlagIfFailed(failed, declVerifyExecuteMatchesBuildGraph, decl,

@@ -312,10 +312,6 @@ def pointer_to_int(pointer: Optional[Pointer[...]]) -> Int:
     return Pointer(to=pointer).unsafe_bitcast[Int]()[]
 
 
-comptime _UnsafeDanglingPluginHookFnType = def[alignment: Int]() thin -> Int
-"""Plugin-hook signature for `PluginHooks.unsafe_dangling_fn`; keep in sync with `Pointer.unsafe_dangling`."""
-
-
 # ===-----------------------------------------------------------------------===#
 # Pointer
 # ===-----------------------------------------------------------------------===#
@@ -514,12 +510,6 @@ struct Pointer[
     ]
     """The underlying pointer type."""
 
-    comptime _with_origin[
-        with_mut: Bool, //, with_origin: Origin[mut=with_mut]
-    ] = Pointer[
-        mut=with_mut, Self.T, with_origin, address_space=Self.address_space
-    ]
-
     # ===-------------------------------------------------------------------===#
     # Fields
     # ===-------------------------------------------------------------------===#
@@ -680,7 +670,7 @@ struct Pointer[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __getitem__(self) -> ref[Self.origin, Self.address_space] Self.T:
         """Return a reference to the underlying data.
@@ -694,7 +684,7 @@ struct Pointer[
             ](self._mlir_value)
         )
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __getitem__[
         I: Indexer
@@ -720,7 +710,7 @@ struct Pointer[
         """
         return self.unsafe_offset(unsafe_offset)[]
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @doc_hidden
     @inline(.nodebug)
     @deprecated(
@@ -835,7 +825,7 @@ struct Pointer[
         return self.unsafe_offset(offset)
 
     @doc_hidden
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __sub__(
         self,
@@ -882,7 +872,7 @@ struct Pointer[
         """
         return self.offset_from(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     @stable(since="1.3")
     def __eq__(
@@ -899,7 +889,7 @@ struct Pointer[
         """
         return Int(self) == Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     @stable(since="1.3")
     def __eq__(self, rhs: Self) -> Bool:
@@ -913,7 +903,7 @@ struct Pointer[
         """
         return Int(self) == Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     @stable(since="1.3")
     def __ne__(
@@ -930,7 +920,7 @@ struct Pointer[
         """
         return not (self == rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     @stable(since="1.3")
     def __ne__(self, rhs: Self) -> Bool:
@@ -944,7 +934,7 @@ struct Pointer[
         """
         return not (self == rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __lt__(
         self,
@@ -960,7 +950,7 @@ struct Pointer[
         """
         return Int(self) < Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __lt__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a lower address than rhs.
@@ -973,7 +963,7 @@ struct Pointer[
         """
         return Int(self) < Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __le__(
         self,
@@ -990,7 +980,7 @@ struct Pointer[
         """
         return Int(self) <= Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __le__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a lower than or equal
@@ -1004,7 +994,7 @@ struct Pointer[
         """
         return Int(self) <= Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __gt__(
         self,
@@ -1021,7 +1011,7 @@ struct Pointer[
         """
         return Int(self) > Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __gt__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a higher address than rhs.
@@ -1035,7 +1025,7 @@ struct Pointer[
         """
         return Int(self) > Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __ge__(
         self,
@@ -1053,7 +1043,7 @@ struct Pointer[
         """
         return Int(self) >= Int(rhs)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.nodebug)
     def __ge__(self, rhs: Self) -> Bool:
         """Returns True if this pointer represents a higher than or equal
@@ -1224,7 +1214,7 @@ struct Pointer[
     # NOTE: `__sub__` duplicates this docstring so LSP hover on the `-`
     # operator shows the same documentation. Sync any docstring change here
     # over to `__sub__`.
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def offset_from(
         self,
@@ -1308,14 +1298,7 @@ struct Pointer[
         # initializing it first! The pointer is not null but isn't valid either!
         ```
         """
-        comptime alignment = align_of[Self.T]()
-        comptime if case .Some(dangling_fn) = CurrentPlugin.unsafe_dangling_fn:
-            comptime address = dangling_fn[alignment]()
-            comptime assert (
-                address != 0
-            ), "Pointer cannot be constructed with address 0"
-            return Self(unsafe_from_address=address)
-        return Self(unsafe_from_address=alignment)
+        return Self(unsafe_from_address=align_of[Self.T]())
 
     @__allow_legacy_custom_self_type
     @inline(.nodebug)

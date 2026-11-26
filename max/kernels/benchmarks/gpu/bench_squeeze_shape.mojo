@@ -120,6 +120,7 @@ def run_case[
     var output = out_dev.unsafe_ptr().as_unsafe_any_origin()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch(ctx: DeviceContext[]) raises {imm}:
         comptime if squeeze:
             squeeze_shape_gpu(

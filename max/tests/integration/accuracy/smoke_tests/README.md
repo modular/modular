@@ -10,7 +10,7 @@ path or a registered variant that maps to a recipe in `MODEL_RECIPES`
 
 ```bash
 # A plain HuggingFace model (320 questions by default):
-./bazelw run //:smoke-test -- meta-llama/Llama-3.2-1B-Instruct
+./bazelw run //:smoke-test -- meta-llama/Llama-3.1-8B-Instruct
 
 # A registered, recipe-backed variant, with fewer questions for a faster loop:
 ./bazelw run //:smoke-test -- google/gemma-4-31B-it__tuned \

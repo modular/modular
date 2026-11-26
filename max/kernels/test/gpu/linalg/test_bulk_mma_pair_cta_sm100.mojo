@@ -110,10 +110,11 @@ def bulk_mma_pair_cta_kernel[
     cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_origin: MutOrigin,
 ](
     a_tma_op: TMATensorTile[ab_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[ab_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, c_origin],
     num_iters_dev: Int32,
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
@@ -427,10 +428,11 @@ def bulk_mma_pair_cta_ts_kernel[
     cluster_shape: Coord[Int, Int, Int] = Coord[Int, Int, Int](2, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    c_origin: MutOrigin,
 ](
     a_tma_op: TMATensorTile[ab_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[ab_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, c_origin],
     num_iters_dev: Int32,
 ):
     """TS pair-CTA kernel: A from TMEM (via tcgen05_cp), B from SMEM."""
@@ -890,6 +892,7 @@ def test_bulk_mma_pair_cta[
             cluster_shape=cluster_shape,
             a_swizzle=a_swizzle,
             b_swizzle=b_swizzle,
+            c_origin=c_dev.origin,
         ]
         ctx.enqueue_function[kernel](
             a_tma_op,
@@ -918,6 +921,7 @@ def test_bulk_mma_pair_cta[
             cluster_shape=cluster_shape,
             a_swizzle=a_swizzle,
             b_swizzle=b_swizzle,
+            c_origin=c_dev.origin,
         ]
         ctx.enqueue_function[kernel](
             a_tma_op,

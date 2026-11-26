@@ -30,7 +30,13 @@ from typing import Any
 import pytest
 from max import tree
 from max._artifact.value_types import treedef_from_json, treedef_to_json
-from max._kv_cache_ops import mha_split_kv_decode_num_partitions
+from max._kv_cache_ops import (
+    ATTN_DISPATCH_UNSET,
+    AttnDispatch,
+    AttnDispatchDesc,
+    AttnDispatchFlag,
+    mha_split_kv_decode_num_partitions,
+)
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
 from max.nn import _graph_ops as kernels
@@ -639,56 +645,53 @@ def test_split_kv_decode_partitions_serve_any_sm_count(sm_count: int) -> None:
         assert got == _ladder512(*args, policy_sm_count), (row, sm_count)
 
 
-def _decode_partitions(
-    params: MHAKVCacheParams,
-    monkeypatch: pytest.MonkeyPatch,
-    batch_size: int,
-    max_cache_valid_length: int,
-) -> int:
-    """The decode key's partition count on a stand-in 148-SM device, with
-    the legacy policy returning a sentinel 7."""
+def _resolved_desc(
+    params: MHAKVCacheParams, monkeypatch: pytest.MonkeyPatch
+) -> AttnDispatchDesc:
+    """The descriptor a decode key resolves with, on a stand-in device whose
+    dispatch returns a sentinel 7 partitions."""
     params.__dict__["_primary_device"] = object()
-    monkeypatch.setattr(
-        cache_params_module, "multiprocessor_count", lambda _: 148
+    seen: list[AttnDispatchDesc] = []
+
+    def resolve(
+        device: object,
+        desc: AttnDispatchDesc,
+        batch_size: int,
+        q_max_seq_len: int,
+        max_cache_valid_length: int,
+    ) -> AttnDispatch:
+        seen.append(desc)
+        return AttnDispatch(
+            key=(7,),
+            metadata=(batch_size, q_max_seq_len, 7, max_cache_valid_length),
+        )
+
+    monkeypatch.setattr(cache_params_module, "attn_dispatch_resolve", resolve)
+    for length in (4096, 131072):
+        key = params.resolve_attn_key(1, 1, length)
+        assert isinstance(key, MHAAttnKey)
+        assert key.num_partitions == 7
+    # Every step describes the same cache.
+    assert seen[0] == seen[1]
+    return seen[0]
+
+
+def test_split_cache_asks_for_the_split_partition_policy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    full = _resolved_desc(_params(head_dim=192, v_head_dim=128), monkeypatch)
+    assert full.kind == "mha"
+    assert AttnDispatchFlag.SPLIT_HEAD_DIMS in full.flags
+    assert full.window_size == ATTN_DISPATCH_UNSET
+    swa = _resolved_desc(
+        _params(head_dim=192, v_head_dim=128, window_size=128), monkeypatch
     )
-    monkeypatch.setattr(
-        cache_params_module, "mha_decode_num_partitions", lambda *_: 7
-    )
-    key = params.resolve_attn_key(batch_size, 1, max_cache_valid_length)
-    assert isinstance(key, MHAAttnKey)
-    return key.num_partitions
+    assert AttnDispatchFlag.SPLIT_HEAD_DIMS in swa.flags
+    assert swa.window_size == 128
 
 
-def test_split_cache_resolves_the_split_partition_policy(
+def test_unsplit_cache_does_not_ask_for_the_split_policy(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # 4 KV heads on the one device: 148 // 4 = 37 caps the want at 32.
-    full = _params(head_dim=192, v_head_dim=128)
-    assert _decode_partitions(full, monkeypatch, 1, 131072) == 32
-    assert _decode_partitions(full, monkeypatch, 1, 4096) == 8
-    # A 128-key window never splits, however long the cache.
-    swa = _params(head_dim=192, v_head_dim=128, window_size=128)
-    assert _decode_partitions(swa, monkeypatch, 1, 262144) == 1
-
-
-def test_unsplit_cache_keeps_the_legacy_partition_policy(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    assert _decode_partitions(_params(), monkeypatch, 1, 131072) == 7
-
-
-def test_split_partition_policy_reads_the_sm_count_once(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    params = _params(head_dim=192, v_head_dim=128)
-    params.__dict__["_primary_device"] = object()
-    queries: list[object] = []
-
-    def count(device: object) -> int:
-        queries.append(device)
-        return 148
-
-    monkeypatch.setattr(cache_params_module, "multiprocessor_count", count)
-    for length in (4096, 131072, 262144):
-        params.resolve_attn_key(1, 1, length)
-    assert len(queries) == 1
+    desc = _resolved_desc(_params(), monkeypatch)
+    assert AttnDispatchFlag.SPLIT_HEAD_DIMS not in desc.flags

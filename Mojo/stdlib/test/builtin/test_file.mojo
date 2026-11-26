@@ -347,10 +347,7 @@ def test_file_seek() raises:
         try:
             _ = f.seek(-12)
         except e:
-            comptime expected_msg = "Failed to seek"
-            assert_equal(
-                String(e)[byte = : expected_msg.byte_length()], expected_msg
-            )
+            assert_equal(e.kind(), .invalid_input)
 
 
 def test_file_open_nodir() raises:
@@ -744,7 +741,7 @@ def test_optional_file_handle_uses_niche() raises:
 
     var temp_file = Path(gettempdir().value()) / "test_file_optional_niche"
     var maybe: Optional[FileHandle] = open(temp_file, "w")
-    __guard case .Some(ref handle) = maybe else:
+    guard case .Some(ref handle) = maybe else:
         raise Error("expected an open file handle")
     handle.write("niche")
     maybe = None
@@ -759,16 +756,16 @@ def test_file_invalid_mode() raises:
     var temp_file = Path(gettempdir().value()) / "test_file_invalid_mode"
 
     # Test various invalid mode strings
-    with assert_raises(contains="invalid mode:"):
+    with assert_raises(contains="invalid mode"):
         _ = open(temp_file, "x")
 
-    with assert_raises(contains="invalid mode:"):
+    with assert_raises(contains="invalid mode"):
         _ = open(temp_file, "rb")
 
-    with assert_raises(contains="invalid mode:"):
+    with assert_raises(contains="invalid mode"):
         _ = open(temp_file, "w+")
 
-    with assert_raises(contains="invalid mode:"):
+    with assert_raises(contains="invalid mode"):
         _ = open(temp_file, "")
 
 

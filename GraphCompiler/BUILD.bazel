@@ -984,6 +984,7 @@ modular_cc_library(
         "//Mojo:MojoParser",
         "//Mojo:ObjectCompiler",
         "//Mojo:Support",
+        "//Support:CacheLog",
         "//Support:Context",
         "//Support:Diagnostics",
         "//Support:HashUtils",
@@ -1580,6 +1581,7 @@ modular_cc_library(
         ":MOSHDialect",
         ":OperandInference",
         ":ParameterInference",
+        "//Mojo:KGENDialect",
         "//Support:MDialect",
         "@llvm-project//mlir:IR",
     ],
@@ -1809,6 +1811,19 @@ modular_cc_library(
     name = "SafeTensor",
     srcs = ["lib/Support/SafeTensor/SafeTensor.cpp"],
     hdrs = ["include/GraphCompiler/Support/SafeTensor/SafeTensor.h"],
+    deps = [
+        ":DeviceDriver",
+        "//MLRT:Driver/DeviceContext.static",
+        "//Support:Base",
+        "//Support:ML",
+    ],
+    alwayslink = True,
+)
+
+modular_cc_library(
+    name = "GGUF",
+    srcs = glob(["lib/Support/GGUF/*.cpp"]),
+    hdrs = glob(["include/GraphCompiler/Support/GGUF/*.h"]),
     deps = [
         ":DeviceDriver",
         "//MLRT:Driver/DeviceContext.static",

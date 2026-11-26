@@ -256,7 +256,7 @@ TEST(TargetBackendTest, OffloadEmissionOptionsCarryLinkAndFpMode) {
 
   EXPECT_FALSE(applyOffloadEmissionOptions("target-abi=lp64d,some-opt",
                                            "-lfoo,-lbar", hostFpMode, options)
-                   .has_value());
+                   .isError());
   EXPECT_EQ(options.emissionLinkOptions, "-lfoo,-lbar");
   // `target-abi` is intercepted but stays in the string: it identifies the
   // offload in debug output and cache keys.
@@ -273,13 +273,67 @@ TEST(TargetBackendTest, OffloadEmissionOptionsStripFpMode) {
   // string that later reaches `parseEmissionOptions`.
   EXPECT_FALSE(
       applyOffloadEmissionOptions("contract=off", "", hostFpMode, options)
-          .has_value());
+          .isError());
   EXPECT_EQ(options.emissionOptions, "");
   EXPECT_FALSE(options.fpMode.contract);
 
-  EXPECT_EQ(
-      applyOffloadEmissionOptions("contract=bogus", "", hostFpMode, options),
-      "contract=bogus");
+  ErrorOrSuccess bad =
+      applyOffloadEmissionOptions("contract=bogus", "", hostFpMode, options);
+  ASSERT_TRUE(bad.isError());
+  EXPECT_STREQ(bad.getError(), "invalid fp-mode emission option "
+                               "'contract=bogus', expected 'contract=fast' or "
+                               "'contract=off'");
+}
+
+// KGEN reads `denormal-fp-math-f32` into the options instead of an LLVM cl
+// option, and resets it for each offload group.
+TEST(TargetBackendTest, OffloadEmissionOptionsCarryDenormalFP32Mode) {
+  CompilationOptions options;
+  options.targetTriple = "nvptx64-nvidia-cuda";
+  FpMode hostFpMode = options.fpMode;
+
+  EXPECT_FALSE(applyOffloadEmissionOptions(
+                   "target-abi=shortptr,denormal-fp-math-f32=preserve-sign", "",
+                   hostFpMode, options)
+                   .isError());
+  EXPECT_EQ(options.denormalFP32Mode, llvm::DenormalMode::PreserveSign);
+  EXPECT_EQ(options.emissionOptions,
+            "target-abi=shortptr,denormal-fp-math-f32=preserve-sign");
+  EXPECT_TRUE(isInterceptedEmissionOption("denormal-fp-math-f32=ieee"));
+  // Without `=`, the item reaches `parseEmissionOptions`, which rejects it.
+  EXPECT_FALSE(isInterceptedEmissionOption("denormal-fp-math-f32"));
+  EXPECT_FALSE(isInterceptedEmissionOption("target-abi"));
+  EXPECT_FALSE(isInterceptedEmissionOption("target-abi lp64d"));
+
+  // The next offload group starts from no mode.
+  EXPECT_FALSE(applyOffloadEmissionOptions("some-opt", "", hostFpMode, options)
+                   .isError());
+  EXPECT_FALSE(options.denormalFP32Mode.has_value());
+
+  for (llvm::StringRef item :
+       {"denormal-fp-math-f32=bogus", "denormal-fp-math-f32="}) {
+    ErrorOrSuccess bad =
+        applyOffloadEmissionOptions(item, "", hostFpMode, options);
+    ASSERT_TRUE(bad.isError()) << item.str();
+    EXPECT_EQ(llvm::StringRef(bad.getError()),
+              ("invalid value '" +
+               item.drop_front(strlen("denormal-fp-math-f32=")) +
+               "' for emission option 'denormal-fp-math-f32', expected 'ieee', "
+               "'preserve-sign', 'positive-zero' or 'dynamic'")
+                  .str());
+  }
+}
+
+// Only the NVPTX backend applies the f32 denormal mode, so other targets reject
+// it instead of ignoring it.
+TEST(TargetBackendTest, DenormalFP32RequiresNVIDIATarget) {
+  CompilationOptions options;
+  options.targetTriple = "amdgcn-amd-amdhsa";
+  ErrorOrSuccess bad = applyOffloadEmissionOptions(
+      "denormal-fp-math-f32=preserve-sign", "", options.fpMode, options);
+  ASSERT_TRUE(bad.isError());
+  EXPECT_STREQ(bad.getError(), "emission option 'denormal-fp-math-f32' is only "
+                               "supported for NVIDIA GPU targets");
 }
 
 } // namespace

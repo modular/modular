@@ -17,10 +17,17 @@ Graphs in MAX can be extended to use custom operations written in Mojo. The
 following examples are shown here:
 
 - **addition**: Adding 1 to every element of an input tensor.
+- **declared_addition**: The `add_one` op declared once with
+  `custom_op.declare()`, then called on eager tensors and inside a graph.
 - **mandelbrot**: Calculating the Mandelbrot set.
-- **vector_addition**: Performing vector addition using a manual GPU function.
+- **vector_addition**: Performing vector addition using a manual GPU function,
+  and the same op registered as one kernel per platform.
 - **eager_vector_addition**: The same custom op as `vector_addition`, only
   using the eager Tensor API.
+- **declared_vector_addition**: The `vector_addition` op declared once with
+  `custom_op.declare()`, then called on eager tensors and inside a graph.
+- **keep_positive**: A CPU op whose output length depends on its input's
+  values, so its kernel registers a shape function.
 - **top_k**: A top-K token sampler, a complex operation that shows a real-world
   use case for a custom operation used today within a large language model
   processing pipeline.

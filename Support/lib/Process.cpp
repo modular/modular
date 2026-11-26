@@ -25,8 +25,10 @@
 #include <vector>
 
 #ifdef __APPLE__
+#include <mach/exception_types.h>
 #include <mach/mach_init.h>
 #include <mach/task.h>
+#include <mach/thread_status.h>
 #endif // __APPLE__
 
 #ifdef _WIN32
@@ -106,4 +108,14 @@ std::string M::getProcessExecutablePath() {
   if (executable.empty())
     return "<unknown>";
   return executable;
+}
+
+void M::disableMacOSCrashReport() {
+#ifdef __APPLE__
+  // The system builds its report from the corpse notification. `EXC_CRASH` is
+  // left alone, because Crashpad listens there.
+  task_set_exception_ports(
+      mach_task_self(), EXC_MASK_CORPSE_NOTIFY, MACH_PORT_NULL,
+      EXCEPTION_STATE_IDENTITY | MACH_EXCEPTION_CODES, THREAD_STATE_NONE);
+#endif
 }

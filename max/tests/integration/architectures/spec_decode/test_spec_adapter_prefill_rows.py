@@ -29,9 +29,9 @@ from max.pipelines.architectures import register_all_models
 from max.pipelines.lib import PIPELINE_REGISTRY
 from max.pipelines.speculative import proposers, spec_adapters
 
-# The pairings whose verify commits a prefill row riding a verify step,
-# as the engine registry's mixed-verify list holds them.
+# The pairings whose verify commits a prefill row riding a verify step.
 PREFILL_ROW_PAIRS = {
+    ("BeamForCausalLM_ModuleV3", "dflash2"),
     ("Gemma4ForConditionalGeneration", "mtp"),
     ("Gemma4UnifiedForConditionalGeneration", "mtp"),
     ("Qwen3_5ForCausalLM", "mtp"),
@@ -47,6 +47,7 @@ PREFILL_ROW_PAIRS = {
     ("NemotronHForCausalLM_ModuleV3", "dspark"),
     ("MiMoV2ForCausalLM", "dflash"),
     ("LagunaForCausalLM_ModuleV3", "dflash"),
+    ("HYV4VLForConditionalGeneration_ModuleV3", "dfly"),
 }
 
 # The pairings whose engine replays a cached prompt row's boundary token,

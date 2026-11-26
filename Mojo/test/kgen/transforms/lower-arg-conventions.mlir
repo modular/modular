@@ -324,8 +324,8 @@ kgen.func @two_call_indirect(%arg0: !kgen.generator<(!kgen.pointer<index> byref_
 // CHECK-LABEL: kgen.func @lower_args1
 // CHECK-SAME: (%arg0: index, %arg1: i1, %arg2: index, %arg3: i1)
 kgen.func @lower_args1(
- %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> pack_imm_mem
-) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> {
+ %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>> pack_imm_mem
+) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>> {
     // CHECK: [[V0:%.*]] = pop.stack_allocation 1 x i1
     // CHECK-NEXT: pop.store %arg3, [[V0]] : !kgen.pointer<i1>
     // CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x index
@@ -334,57 +334,57 @@ kgen.func @lower_args1(
     // CHECK-NEXT: pop.store %arg1, [[V2]] : !kgen.pointer<i1>
     // CHECK-NEXT: [[V3:%.*]] = pop.stack_allocation 1 x index
     // CHECK-NEXT: pop.store %arg0, [[V3]] : !kgen.pointer<index>
-    // CHECK-NEXT: [[V4:%.*]] = kgen.struct.create([[V3]], [[V2]], [[V1]], [[V0]]) : !kgen.struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
-    // CHECK-NEXT: [[V5:%.*]] = pop.stack_allocation 1 x struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
-    // CHECK-NEXT: pop.store [[V4]], [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
-    // CHECK-NEXT: hlcf.return [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
- hlcf.return %arg0 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
+    // CHECK-NEXT: [[V4:%.*]] = kgen.struct.create([[V3]], [[V2]], [[V1]], [[V0]]) : !kgen.struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>
+    // CHECK-NEXT: [[V5:%.*]] = pop.stack_allocation 1 x struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>
+    // CHECK-NEXT: pop.store [[V4]], [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>>
+    // CHECK-NEXT: hlcf.return [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>>
+ hlcf.return %arg0 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>>
 }
 // CHECK-LABEL: kgen.func @main
 kgen.func @main() {
-    // CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
-    // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
-    // CHECK-NEXT: [[V2:%.*]] = kgen.struct.extract [[V1]][0] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
-    // CHECK-NEXT: [[V3:%.*]] = kgen.struct.extract [[V1]][1] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
-    // CHECK-NEXT: [[V4:%.*]] = kgen.struct.extract [[V1]][2] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
-    // CHECK-NEXT: [[V5:%.*]] = kgen.struct.extract [[V1]][3] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
+    // CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>
+    // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>>
+    // CHECK-NEXT: [[V2:%.*]] = kgen.struct.extract [[V1]][0] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>
+    // CHECK-NEXT: [[V3:%.*]] = kgen.struct.extract [[V1]][1] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>
+    // CHECK-NEXT: [[V4:%.*]] = kgen.struct.extract [[V1]][2] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>
+    // CHECK-NEXT: [[V5:%.*]] = kgen.struct.extract [[V1]][3] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>
     // CHECK-NEXT: [[V6:%.*]] = pop.load [[V2]] : !kgen.pointer<index>
     // CHECK-NEXT: [[V7:%.*]] = pop.load [[V3]] : !kgen.pointer<i1>
     // CHECK-NEXT: [[V8:%.*]] = pop.load [[V4]] : !kgen.pointer<index>
     // CHECK-NEXT: [[V9:%.*]] = pop.load [[V5]] : !kgen.pointer<i1>
-    // CHECK-NEXT: [[V10:%.*]] = kgen.call @lower_args1([[V6]], [[V7]], [[V8]], [[V9]]) : (index, i1, index, i1) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
-    %0 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>
-    %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> pack_imm_mem) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
+    // CHECK-NEXT: [[V10:%.*]] = kgen.call @lower_args1([[V6]], [[V7]], [[V8]], [[V9]]) : (index, i1, index, i1) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>)>>
+    %0 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>
+    %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>> pack_imm_mem) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3)>>
     hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @lower_empty
-// CHECK-SAME: (%arg0: !kgen.none) -> !kgen.pointer<struct<() isParamPack>>
+// CHECK-SAME: (%arg0: !kgen.none) -> !kgen.pointer<struct<()>>
 kgen.func @lower_empty(
- %arg0: !kgen.pointer<struct<() isParamPack>> pack_imm_mem
-) -> !kgen.pointer<struct<() isParamPack>> {
- hlcf.return %arg0 : !kgen.pointer<struct<() isParamPack>>
+ %arg0: !kgen.pointer<struct<()>> pack_imm_mem
+) -> !kgen.pointer<struct<()>> {
+ hlcf.return %arg0 : !kgen.pointer<struct<()>>
 }
 // CHECK-LABEL: kgen.func @main_empty
 kgen.func @main_empty() {
-    %0 = pop.stack_allocation 1 x !kgen.struct<() isParamPack>
-    // CHECK: kgen.call @lower_empty(%none) : (!kgen.none) -> !kgen.pointer<struct<() isParamPack>>
-    %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<struct<() isParamPack>> pack_imm_mem) -> !kgen.pointer<struct<() isParamPack>>
+    %0 = pop.stack_allocation 1 x !kgen.struct<()>
+    // CHECK: kgen.call @lower_empty(%none) : (!kgen.none) -> !kgen.pointer<struct<()>>
+    %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<struct<()>> pack_imm_mem) -> !kgen.pointer<struct<()>>
     hlcf.return
 }
 
 // CHECK-LABEL: kgen.func @none_with_res
-// CHECK-SAME: (%arg0: !kgen.none, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
-kgen.func @none_with_res(%arg0: !kgen.pointer<struct<() isParamPack>> pack_owned_in_mem, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none {
+// CHECK-SAME: (%arg0: !kgen.none, %arg1: !kgen.pointer<struct<(struct<()>) memoryOnly>> byref_result) -> !kgen.none
+kgen.func @none_with_res(%arg0: !kgen.pointer<struct<()>> pack_owned_in_mem, %arg1: !kgen.pointer<struct<(struct<()>) memoryOnly>> byref_result) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
 }
 // CHECK-LABEL: kgen.func @call_none_with_res
 kgen.func @call_none_with_res(%arg0: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> imm_mem, %arg1: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> byref_result) -> !kgen.none {
-    %2 = pop.stack_allocation 1 x !kgen.struct<() isParamPack>
-    %3 = pop.stack_allocation 1 x struct<(struct<() isParamPack>) memoryOnly>
-    // CHECK: kgen.call @none_with_res(%none, %{{.*}}) : (!kgen.none, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
-    %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<struct<() isParamPack>> pack_owned_in_mem, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
+    %2 = pop.stack_allocation 1 x !kgen.struct<()>
+    %3 = pop.stack_allocation 1 x struct<(struct<()>) memoryOnly>
+    // CHECK: kgen.call @none_with_res(%none, %{{.*}}) : (!kgen.none, !kgen.pointer<struct<(struct<()>) memoryOnly>> byref_result) -> !kgen.none
+    %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<struct<()>> pack_owned_in_mem, !kgen.pointer<struct<(struct<()>) memoryOnly>> byref_result) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     hlcf.return %none : !kgen.none
 }
@@ -406,9 +406,9 @@ kgen.func @call_recursive_ptr(%arg0: !kgen.pointer<pointer<none>> imm_mem){
 // CHECK-LABEL: kgen.func @lower_args_no_ptr
 // CHECK-SAME: (%arg0: !kgen.pointer<index> mut)
 kgen.func @lower_args_no_ptr(
- %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) {
-    %0 = pop.load %arg0 : !kgen.pointer<struct<(pointer<index>) isParamPack>>
-    %1 = kgen.struct.extract %0[0] : !kgen.struct<(pointer<index>) isParamPack>
+ %arg0: !kgen.pointer<struct<(pointer<index>)>> pack_mut) {
+    %0 = pop.load %arg0 : !kgen.pointer<struct<(pointer<index>)>>
+    %1 = kgen.struct.extract %0[0] : !kgen.struct<(pointer<index>)>
     %2 = kgen.param.constant:index = <9>
     pop.store %2, %1 : !kgen.pointer<index>
  hlcf.return
@@ -417,11 +417,11 @@ kgen.func @lower_args_no_ptr(
 // CHECK-LABEL: kgen.func @callIt
 kgen.func @callIt() -> index {
     %0 = pop.stack_allocation 1 x index
-    %1 = kgen.struct.create(%0) : !kgen.struct<(pointer<index>) isParamPack>
-    %2 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>) isParamPack>
-    pop.store %1, %2 : !kgen.pointer<struct<(pointer<index>) isParamPack>>
+    %1 = kgen.struct.create(%0) : !kgen.struct<(pointer<index>)>
+    %2 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>)>
+    pop.store %1, %2 : !kgen.pointer<struct<(pointer<index>)>>
     // CHECK: kgen.call @lower_args_no_ptr(%{{.*}}) : (!kgen.pointer<index> mut) -> ()
-    kgen.call @lower_args_no_ptr(%2) : (!kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) -> ()
+    kgen.call @lower_args_no_ptr(%2) : (!kgen.pointer<struct<(pointer<index>)>> pack_mut) -> ()
     %3 = pop.load %0 : !kgen.pointer<index>
     hlcf.return %3 : index
 }
@@ -432,7 +432,7 @@ kgen.func @callIt() -> index {
 // CHECK-LABEL: kgen.func @mut_pack_vararg
 // CHECK-SAME: (%arg0: !kgen.pointer<index> mut, %arg1: !kgen.pointer<i1> mut)
 kgen.func @mut_pack_vararg(
- %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>) isParamPack>> pack_mut) {
+ %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>)>> pack_mut) {
  hlcf.return
 }
 
@@ -441,7 +441,7 @@ kgen.func @mut_pack_vararg(
 // CHECK-LABEL: kgen.func @owned_pack_vararg
 // CHECK-SAME: (%arg0: index owned)
 kgen.func @owned_pack_vararg(
- %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_owned_in_mem) {
+ %arg0: !kgen.pointer<struct<(pointer<index>)>> pack_owned_in_mem) {
  hlcf.return
 }
 
@@ -449,17 +449,17 @@ kgen.func @owned_pack_vararg(
 // COM: promoted like any struct, not split.
 
 // CHECK-LABEL: kgen.func @nested_pack_vararg
-// CHECK-SAME: (%arg0: !kgen.struct<(pointer<index>, pointer<i1>) isParamPack>)
+// CHECK-SAME: (%arg0: !kgen.struct<(pointer<index>, pointer<i1>)>)
 kgen.func @nested_pack_vararg(
- %arg0: !kgen.pointer<struct<(pointer<struct<(pointer<index>, pointer<i1>) isParamPack>>) isParamPack>> pack_imm_mem) {
+ %arg0: !kgen.pointer<struct<(pointer<struct<(pointer<index>, pointer<i1>)>>)>> pack_imm_mem) {
  hlcf.return
 }
 
 // COM: A pack that is not a pack vararg is an ordinary value.
 
 // CHECK-LABEL: kgen.func @value_pack_arg
-// CHECK-SAME: (%arg0: !kgen.struct<(index, index) isParamPack>)
-kgen.func @value_pack_arg(%arg0: !kgen.struct<(index, index) isParamPack>) {
+// CHECK-SAME: (%arg0: !kgen.struct<(index, index)>)
+kgen.func @value_pack_arg(%arg0: !kgen.struct<(index, index)>) {
  hlcf.return
 }
 
@@ -470,49 +470,83 @@ kgen.func @value_pack_arg(%arg0: !kgen.struct<(index, index) isParamPack>) {
 // CHECK-LABEL: kgen.func @call_pack_vararg_round_trip
 // CHECK: kgen.call @pack_vararg_round_trip(%{{.*}}) : (!kgen.pointer<index> mut) -> ()
 kgen.func @pack_vararg_round_trip(
- %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) {
+ %arg0: !kgen.pointer<struct<(pointer<index>)>> pack_mut) {
  hlcf.return
 }
 kgen.func @call_pack_vararg_round_trip(
- %arg0: !kgen.pointer<struct<(pointer<index>) isParamPack>> imm_mem) {
- kgen.call @pack_vararg_round_trip(%arg0) : (!kgen.pointer<struct<(pointer<index>) isParamPack>> pack_mut) -> ()
+ %arg0: !kgen.pointer<struct<(pointer<index>)>> imm_mem) {
+ kgen.call @pack_vararg_round_trip(%arg0) : (!kgen.pointer<struct<(pointer<index>)>> pack_mut) -> ()
  hlcf.return
 }
 
 //===----------------------------------------------------------------------===//
-// `pop.external_call` pack expansion
+// Pack operand expansion on call-like POP ops
 //===----------------------------------------------------------------------===//
 
+// The pack operand is replaced by its elements, in its position.
 // CHECK-LABEL: @external_call_pack_expand
-kgen.func @external_call_pack_expand(%a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>) {
+kgen.func @external_call_pack_expand(
+    %a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>, %c: !kgen.scalar<f64>) {
   // CHECK: [[PACK:%.*]] = kgen.struct.create
-  %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
+  %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>)>
   // CHECK: [[V0:%.*]] = kgen.struct.extract [[PACK]][0]
   // CHECK: [[V1:%.*]] = kgen.struct.extract [[PACK]][1]
-  // CHECK: pop.external_call @my_extern([[V0]], [[V1]]) : (!kgen.scalar<si32>, !kgen.scalar<f32>) -> ()
-  pop.external_call @my_extern(%pack)
-    : (!kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>) -> ()
+  // CHECK: pop.external_call @my_extern(%arg2, [[V0]], [[V1]], %arg2)
+  // CHECK-SAME: (!kgen.scalar<f64>, !kgen.scalar<si32>, !kgen.scalar<f32>, !kgen.scalar<f64>) -> ()
+  // CHECK-NOT: expandPackOperandIdx
+  pop.external_call @my_extern(%c, %pack, %c)
+    : (!kgen.scalar<f64>, !kgen.struct<(scalar<si32>, scalar<f32>)>, !kgen.scalar<f64>) -> ()
+    <expandPackOperandIdx = 1>
   hlcf.return
 }
 
-// Nested packs are recursively flattened. This occurs in practice when Mojo
-// variadic args are forwarded to a C variadic function (e.g. fcntl(fd, cmd, *args)).
+// Only one level is expanded, so a pack in the pack is one argument.
 // CHECK-LABEL: @external_call_nested_pack
 kgen.func @external_call_nested_pack(
     %a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>, %c: !kgen.scalar<f64>) {
-  %inner = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
+  %inner = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>)>
   %outer = kgen.struct.create(%inner, %c)
-    : !kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>
-  // The outer pack is expanded, and the inner pack extracted from it is
-  // recursively expanded as well, yielding three individual arguments.
+    : !kgen.struct<(struct<(scalar<si32>, scalar<f32>)>, scalar<f64>)>
   // CHECK: [[INNER:%.*]] = kgen.struct.extract %{{.*}}[0]
-  // CHECK: [[A:%.*]] = kgen.struct.extract [[INNER]][0]
-  // CHECK: [[B:%.*]] = kgen.struct.extract [[INNER]][1]
   // CHECK: [[C:%.*]] = kgen.struct.extract %{{.*}}[1]
-  // CHECK: pop.external_call @my_extern([[A]], [[B]], [[C]])
-  // CHECK-SAME: (!kgen.scalar<si32>, !kgen.scalar<f32>, !kgen.scalar<f64>) -> ()
+  // CHECK: pop.external_call @my_extern([[INNER]], [[C]])
+  // CHECK-SAME: (!kgen.struct<(scalar<si32>, scalar<f32>)>, !kgen.scalar<f64>) -> ()
   pop.external_call @my_extern(%outer)
-    : (!kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>) -> ()
+    : (!kgen.struct<(struct<(scalar<si32>, scalar<f32>)>, scalar<f64>)>) -> ()
+    <expandPackOperandIdx = 0>
+  hlcf.return
+}
+
+// Without `expandPackOperandIdx`, a pack is one argument.
+// CHECK-LABEL: @external_call_no_pack_operand
+kgen.func @external_call_no_pack_operand(%a: !kgen.scalar<si32>, %b: !kgen.scalar<f32>) {
+  // CHECK: [[PACK:%.*]] = kgen.struct.create
+  %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>)>
+  // CHECK-NOT: kgen.struct.extract
+  // CHECK: pop.external_call @my_extern([[PACK]])
+  pop.external_call @my_extern(%pack)
+    : (!kgen.struct<(scalar<si32>, scalar<f32>)>) -> ()
+  hlcf.return
+}
+
+// CHECK-LABEL: @intrinsic_and_asm_pack_expand
+kgen.func @intrinsic_and_asm_pack_expand(%a: !kgen.scalar<si64>, %b: !kgen.scalar<si64>) {
+  %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si64>, scalar<si64>)>
+  // CHECK: [[A0:%.*]] = kgen.struct.extract %{{.*}}[0]
+  // CHECK: [[A1:%.*]] = kgen.struct.extract %{{.*}}[1]
+  // CHECK: pop.call_llvm_intrinsic "llvm.smax", ([[A0]], [[A1]])
+  // CHECK-SAME: (!kgen.scalar<si64>, !kgen.scalar<si64>) -> !kgen.scalar<si64>
+  // CHECK-NOT: expandPackOperandIdx
+  %0 = pop.call_llvm_intrinsic "llvm.smax", (%pack)
+    : (!kgen.struct<(scalar<si64>, scalar<si64>)>) -> !kgen.scalar<si64>
+    <expandPackOperandIdx = 0>
+  // CHECK: [[B0:%.*]] = kgen.struct.extract %{{.*}}[0]
+  // CHECK: [[B1:%.*]] = kgen.struct.extract %{{.*}}[1]
+  // CHECK: pop.inline_asm "add $0, $1, $2", "=r,r,r", ([[B0]], [[B1]])
+  // CHECK-SAME: (!kgen.scalar<si64>, !kgen.scalar<si64>) -> !kgen.scalar<si64>
+  %1 = pop.inline_asm "add $0, $1, $2", "=r,r,r", (%pack)
+    : (!kgen.struct<(scalar<si64>, scalar<si64>)>) -> !kgen.scalar<si64>
+    <expandPackOperandIdx = 0>
   hlcf.return
 }
 

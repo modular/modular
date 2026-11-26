@@ -30,7 +30,10 @@ from std.utils.static_tuple import StaticTuple
 
 from ..structured_kernels.config import MatmulConfig, GEMMKind
 from .blockwise_fp8_smem import BlockwiseFP8Smem
-from .blockwise_fp8_matmul_kernel import BlackwellBlockwiseFP8MatmulKernel
+from .blockwise_fp8_matmul_kernel import (
+    BlackwellBlockwiseFP8MatmulKernel,
+    SwapOutput,
+)
 
 # Legacy kernel for fallback via -D USE_LEGACY_BLOCKWISE_FP8=True
 from ...sm100.warp_specialized_blockwise_fp8 import (
@@ -51,6 +54,7 @@ def blockwise_fp8_matmul[
     config: MatmulConfig[_, _, _, transpose_b],
     n_scale_granularity: Int = 128,
     pdl_level: PDLLevel = PDLLevel(),
+    swap_ab: Bool = False,
 ](
     c: TileTensor,
     a: TileTensor[mut=False, ...],
@@ -76,6 +80,9 @@ def blockwise_fp8_matmul[
         pdl_level: Programmatic dependent launch level for the structured
             kernel (defaults to `PDLLevel.OVERLAP_AT_BEGINNING`). Ignored by the
             legacy kernel selected with `USE_LEGACY_BLOCKWISE_FP8`.
+        swap_ab: Compute C^T tiles with the weight as the MMA's A operand
+            (`config.mma_shape` is then (weight rows, activation rows, K)),
+            for decode-sized M. Each output's K order is unchanged.
 
     Args:
         c: Output matrix (M x N).
@@ -156,6 +163,8 @@ def blockwise_fp8_matmul[
     var M = Int(c.dim[0]())
     var N = Int(c.dim[1]())
     var K = Int(a.dim[1]())
+    if ceildiv(K, BK) % config.k_group_size != 0:
+        raise Error("K tiles must divide evenly into k_group_size groups")
 
     comptime SmemType = BlockwiseFP8Smem[
         a_type,
@@ -181,29 +190,54 @@ def blockwise_fp8_matmul[
         n_scale_granularity=n_scale_granularity,
         b_scales_engine=type_of(b_scales).Engine,
         pdl_level=pdl_level,
+        swap_ab=swap_ab,
     ]
 
-    # Create TMA descriptors using kernel's layout types
-    var a_tma_op = create_tma_tile[
-        Kernel.ATileLayout,
-        Kernel.ADescLayout,
-        coord[BM // config.cluster_shape[1], BK],
-        swizzle_mode=config.a_swizzle,
-    ](ctx, a)
-
-    var b_tma_op = create_tma_tile[
-        Kernel.BTileLayout,
-        Kernel.BDescLayout,
-        coord[
-            BN
-            // (
-                config.cluster_shape[0] // config.cta_group
-            ) if transpose_b else BK,
-            BK if transpose_b else BN
-            // (config.cluster_shape[0] // config.cta_group),
-        ],
-        swizzle_mode=config.b_swizzle,
-    ](ctx, b)
+    # Create TMA descriptors using kernel's layout types. With swap_ab the
+    # MMA's A operand is the weight and its B operand the activation.
+    var a_tma_op: Kernel.ATmaOp
+    var b_tma_op: Kernel.BTmaOp
+    comptime a_box = coord[BM // config.cluster_shape[1], BK]
+    comptime b_box = coord[
+        BN
+        // (config.cluster_shape[0] // config.cta_group) if transpose_b else BK,
+        BK if transpose_b else BN
+        // (config.cluster_shape[0] // config.cta_group),
+    ]
+    comptime if swap_ab:
+        a_tma_op = rebind[Kernel.ATmaOp](
+            create_tma_tile[
+                Kernel.ATileLayout,
+                Kernel.ADescLayout,
+                a_box,
+                swizzle_mode=config.a_swizzle,
+            ](ctx, b)
+        )
+        b_tma_op = rebind[Kernel.BTmaOp](
+            create_tma_tile[
+                Kernel.BTileLayout,
+                Kernel.BDescLayout,
+                b_box,
+                swizzle_mode=config.b_swizzle,
+            ](ctx, a)
+        )
+    else:
+        a_tma_op = rebind[Kernel.ATmaOp](
+            create_tma_tile[
+                Kernel.ATileLayout,
+                Kernel.ADescLayout,
+                a_box,
+                swizzle_mode=config.a_swizzle,
+            ](ctx, a)
+        )
+        b_tma_op = rebind[Kernel.BTmaOp](
+            create_tma_tile[
+                Kernel.BTileLayout,
+                Kernel.BDescLayout,
+                b_box,
+                swizzle_mode=config.b_swizzle,
+            ](ctx, b)
+        )
 
     var a_scales_tma_op = create_tma_tile[
         Kernel.AScalesLayout,
@@ -219,16 +253,9 @@ def blockwise_fp8_matmul[
     comptime bw_c_n = config.output_tile_shape[1]
     comptime c_tma_tile_shape = coord[bw_c_m, bw_c_n]
 
-    var c_tma_op = create_tma_tile[
-        Kernel.CTileLayout,
-        Kernel.CDescLayout,
-        c_tma_tile_shape,
-        swizzle_mode=config.c_swizzle,
-    ](ctx, c)
-
     var grid_dim = (
-        align_up(ceildiv(M, BM), config.cluster_shape[0]),
-        align_up(ceildiv(N, MMA_N), config.cluster_shape[1]),
+        align_up(ceildiv(N if swap_ab else M, BM), config.cluster_shape[0]),
+        align_up(ceildiv(M if swap_ab else N, MMA_N), config.cluster_shape[1]),
         1,
     )
 
@@ -240,20 +267,54 @@ def blockwise_fp8_matmul[
 
     var problem_shape = StaticTuple[Int32, 3](Int32(M), Int32(N), Int32(K))
 
-    ctx.enqueue_function[Kernel.run](
-        a_tma_op,
-        b_tma_op,
-        c_tma_op,
-        a_scales_tma_op,
-        cluster_dim,
-        Int32(ceildiv(K, BK)),
-        b_scales,
-        problem_shape,
-        execution_config=GridBlockAttributeLaunchConfig(
-            grid_dim=grid_dim,
-            # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
-            block_dim=(32 * 7),
-            shared_mem_bytes=smem_size,
-            attributes=pdl_launch_attributes(pdl_level),
-        ),
-    )
+    # The swap-AB epilogue stores through C's base pointer; the TMA epilogue
+    # needs the C descriptor.
+    comptime if swap_ab:
+        var c_out = SwapOutput[c_type](
+            rebind[MutPointer[Scalar[c_type], MutUntrackedOrigin]](
+                c.ptr.unsafe_bitcast[Scalar[c_type]]()
+                .unsafe_mut_cast[True]()
+                .unsafe_origin_cast[MutUntrackedOrigin]()
+            )
+        )
+        ctx.enqueue_function[Kernel.run_swap](
+            a_tma_op,
+            b_tma_op,
+            c_out,
+            a_scales_tma_op,
+            cluster_dim,
+            Int32(ceildiv(K, BK)),
+            b_scales,
+            problem_shape,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
+                block_dim=(32 * 7),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
+        )
+    else:
+        var c_tma_op = create_tma_tile[
+            Kernel.CTileLayout,
+            Kernel.CDescLayout,
+            c_tma_tile_shape,
+            swizzle_mode=config.c_swizzle,
+        ](ctx, c)
+        ctx.enqueue_function[Kernel.run](
+            a_tma_op,
+            b_tma_op,
+            c_tma_op,
+            a_scales_tma_op,
+            cluster_dim,
+            Int32(ceildiv(K, BK)),
+            b_scales,
+            problem_shape,
+            execution_config=GridBlockAttributeLaunchConfig(
+                grid_dim=grid_dim,
+                # 1 TMA, 1 MMA, 1 Scheduler, 4 EPILOGUE warps = 7 warps
+                block_dim=(32 * 7),
+                shared_mem_bytes=smem_size,
+                attributes=pdl_launch_attributes(pdl_level),
+            ),
+        )

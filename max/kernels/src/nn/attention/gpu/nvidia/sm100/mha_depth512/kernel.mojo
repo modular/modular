@@ -67,7 +67,7 @@ from nn.attention.gpu.nvidia.common import (
     Pack,
     PositionSummary,
 )
-from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_mask import CausalMask, MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHATileScheduler,
@@ -340,7 +340,7 @@ struct SM100MHADepth512[
                     Self.PairBM_mask,
                     Self.num_q_heads
                     // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
+                    Self.MaskType == CausalMask,
                     pair_cta=True,
                 ](batch_size, max_seq_len, valid_length, partition)
 
@@ -400,7 +400,7 @@ struct SM100MHADepth512[
                     Self.PairBM_mask,
                     Self.num_q_heads
                     // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
+                    Self.MaskType == CausalMask,
                     pair_cta=True,
                 ](batch_size, max_seq_len, valid_length, partition)
                 if not seq_info.is_valid():
@@ -438,7 +438,7 @@ struct SM100MHADepth512[
                     Self.PairBM_mask,
                     Self.num_q_heads
                     // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
+                    Self.MaskType == CausalMask,
                     pair_cta=True,
                 ](batch_size, max_seq_len, valid_length, partition)
 
@@ -480,7 +480,7 @@ struct SM100MHADepth512[
                     Self.PairBM_mask,
                     Self.num_q_heads
                     // Self.group if Self.fuse_gqa else Self.num_q_heads,
-                    Self.MaskType.get_type_name() == "CausalMask",
+                    Self.MaskType == CausalMask,
                     pair_cta=True,
                 ](batch_size, max_seq_len, valid_length, partition)
 

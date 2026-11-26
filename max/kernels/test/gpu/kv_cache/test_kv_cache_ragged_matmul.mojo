@@ -704,13 +704,6 @@ def generic_assert_output_equals[
     test_output_host_ptr.unsafe_free()
 
 
-# HACK: `k_cache` and `v_cache` use disjoint regions within each block
-# (kv_idx 0 vs 1), but share the collection's mutable origins. They are
-# only ever stored to at disjoint offsets, but the exclusivity checker cannot
-# prove that and rejects passing both as separately-writable arguments. Disable
-# the nested-origin exclusivity check as a stopgap; the proper fix is to give the
-# k/v views provably-disjoint origins instead of sharing the collection's.
-@__unsafe_nested_origins_read_only
 def generic_execute_fused_qkv_cache_ragged[
     cache_t: KVCacheT,
     //,
@@ -939,8 +932,14 @@ def execute_paged_fused_qkv_matmul[
         UInt32(max_full_context_length),
     )
 
-    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
-    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
+    # FIXME: K/V are disjoint planes of one allocation, but origin tracking
+    # cannot express that fact.
+    var k_cache_device = kv_collection_device.get_key_cache(
+        layer_idx
+    ).unsafe_origin_cast()
+    var v_cache_device = kv_collection_device.get_value_cache(
+        layer_idx
+    ).unsafe_origin_cast()
 
     var kv_collection_host = CollectionType(
         kv_block.host_tensor().as_unsafe_any_origin(),
@@ -1096,8 +1095,14 @@ def execute_cont_batch_fused_qkv_matmul[
         UInt32(max_context_length),
     )
 
-    var k_cache_device = kv_collection_device.get_key_cache(layer_idx)
-    var v_cache_device = kv_collection_device.get_value_cache(layer_idx)
+    # FIXME: K/V are disjoint planes of one allocation, but origin tracking
+    # cannot express that fact.
+    var k_cache_device = kv_collection_device.get_key_cache(
+        layer_idx
+    ).unsafe_origin_cast()
+    var v_cache_device = kv_collection_device.get_value_cache(
+        layer_idx
+    ).unsafe_origin_cast()
 
     var kv_blocks_host_view = TileTensor(kv_block_host_ptr, blocks_layout)
     var cache_lengths_host_view = TileTensor(

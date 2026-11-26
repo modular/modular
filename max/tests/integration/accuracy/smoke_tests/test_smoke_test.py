@@ -12,9 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 
 import pytest
+import reasoning_parser_selection
 from pytest import MonkeyPatch
 from smoke_tests import smoke_test
 from smoke_tests.smoke_test import MODEL_RECIPES
+
+
+@pytest.fixture(autouse=True)
+def _no_checkpoint_downloads(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        reasoning_parser_selection, "_hf_architectures", lambda model: []
+    )
+
+
+def test_reasoning_parser_selection(monkeypatch: MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        reasoning_parser_selection, "_hf_architectures", lambda model: [model]
+    )
+    get_parser = reasoning_parser_selection.get_reasoning_parser_arg
+    arch = "MuseGlimmerForConditionalGeneration"
+    assert get_parser("vllm", arch) == "muse_glimmer"
+    assert get_parser("sglang", arch) == "muse"
+    assert get_parser("sglang", "UnknownArchitecture") == "auto"
+    assert get_parser("vllm", "UnknownArchitecture") is None
 
 
 def test_variants_contain_exactly_one_double_underscore() -> None:
@@ -68,22 +88,15 @@ def test_variant_lookup_is_case_insensitive() -> None:
 
 def test_variants_preserve_key_model_path_and_speculation() -> None:
     mtp_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["nvidia/DeepSeek-V3.1-NVFP4__mtp"]
+        MODEL_RECIPES["nvidia/GLM-5.2-NVFP4__mtp_tpep"]
     )
     assert mtp_recipe.speculative is not None
-    assert mtp_recipe.speculative.num_speculative_tokens == 3
-
-    kimi_recipe = smoke_test._load_recipe(
-        MODEL_RECIPES["nvidia/Kimi-K2.7-Code-NVFP4"]
-    )
-    assert kimi_recipe.model.model_path == "nvidia/Kimi-K2.7-Code-NVFP4"
-    assert kimi_recipe.speculative is not None
-    assert kimi_recipe.speculative.num_speculative_tokens == 3
+    assert mtp_recipe.speculative.num_speculative_tokens == 5
 
 
 def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
     recipe = smoke_test._load_recipe(
-        "max/pipelines/architectures/deepseekV3/recipes/nvfp4_fp8kv_8x_b200.yaml"
+        "max/pipelines/architectures/minimax_m2/recipes/minimax_m2_nvfp4_8x_b200.yaml"
     )
 
     args = smoke_test._recipe_gpu_overrides(recipe, gpu_count=4)
@@ -100,7 +113,7 @@ def test_recipe_gpu_overrides_scale_matching_parallelism() -> None:
 
 def test_recipe_gpu_overrides_preserve_intentional_fixed_parallelism() -> None:
     recipe = smoke_test._load_recipe(
-        "max/pipelines/architectures/deepseekV3/recipes/nvfp4_tpep_8x_b200.yaml"
+        "max/pipelines/architectures/glm5_1/recipes/glm_5_2_fp8_tp_ep_8x_b200_mtp.yaml"
     )
 
     args = smoke_test._recipe_gpu_overrides(recipe, gpu_count=4)
@@ -124,9 +137,9 @@ def test_8x_recipe_auto_reduces_on_4_gpu_machine(
     """Regression: an 8-GPU recipe on a 4-GPU runner scales down to 4."""
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
-    # amd/Kimi-K2.7-Code-MXFP4 pins device_specs [0..7] and ep_size 8.
+    # zai-org/GLM-5.3__fp8_tpep_mi355 pins device_specs [0..7] and ep_size 8.
     cmd, _ = smoke_test.get_server_cmd(
-        "max", "amd/Kimi-K2.7-Code-MXFP4", gpu_spec=("AMD MI355X", 4)
+        "max", "zai-org/GLM-5.3__fp8_tpep_mi355", gpu_spec=("AMD MI355X", 4)
     )
 
     assert cmd[cmd.index("--devices") + 1] == "gpu:0,1,2,3"
@@ -139,7 +152,7 @@ def test_no_autoscale_devices_honors_recipe(monkeypatch: MonkeyPatch) -> None:
 
     cmd, _ = smoke_test.get_server_cmd(
         "max",
-        "amd/Kimi-K2.7-Code-MXFP4",
+        "zai-org/GLM-5.3__fp8_tpep_mi355",
         autoscale_devices=False,
         gpu_spec=("AMD MI355X", 4),
     )
@@ -153,7 +166,7 @@ def test_max_enables_vmm_on_amd_up_to_4_gpus(monkeypatch: MonkeyPatch) -> None:
 
     def vmm(gpu_spec: tuple[str, int]) -> str | None:
         _, env = smoke_test.get_server_cmd(
-            "max", "Qwen/Qwen3-8B", gpu_spec=gpu_spec
+            "max", "Qwen/Qwen3.5-9B", gpu_spec=gpu_spec
         )
         return env.get("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_VMM")
 
@@ -217,7 +230,7 @@ def test_vllm_uses_tp_for_recipe_default_data_parallel_degree(
 
     cmd, _ = smoke_test.get_server_cmd(
         "vllm",
-        "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         serve_image="vllm/vllm-openai:v0.27.1",
         gpu_spec=("NVIDIA B200", 8),
     )
@@ -234,7 +247,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
-        "nvidia/DeepSeek-V3.1-NVFP4__tpep",
+        "nvidia/GLM-5.2-NVFP4__mtp_tpep",
         serve_image="lmsysorg/sglang:v0.5.18",
         gpu_spec=("NVIDIA B200", 8),
     )
@@ -243,7 +256,7 @@ def test_sglang_uses_tp_for_recipe_with_tensor_parallel_attention(
     assert "--expert-parallel-size" in cmd
     assert "8" in cmd
     assert "--mem-fraction-static" in cmd
-    assert "0.8" in cmd
+    assert "0.75" in cmd
     assert "--data-parallel-size=8" not in cmd
     assert "--enable-dp-attention" not in cmd
 
@@ -255,18 +268,19 @@ def test_sglang_uses_data_parallel_attention_for_recipe_dp(
 
     cmd, _ = smoke_test.get_server_cmd(
         "sglang",
-        "nvidia/DeepSeek-V3.1-NVFP4__fp8kv",
+        "nvidia/DeepSeek-V4.1-Flash-NVFP4",
         serve_image="lmsysorg/sglang:v0.5.18",
-        gpu_spec=("NVIDIA B200", 8),
+        gpu_spec=("NVIDIA B200", 4),
     )
 
-    assert "--data-parallel-size=8" in cmd
+    assert "--data-parallel-size=4" in cmd
     assert "--enable-dp-attention" in cmd
     assert "--expert-parallel-size" in cmd
-    assert "8" in cmd
-    assert "--mem-fraction-static" in cmd
-    assert "0.8" in cmd
-    assert "--tp-size=8" not in cmd
+    assert "4" in cmd
+    assert "--tp-size=4" not in cmd
+    # The recipe sets no device memory utilization, so sglang keeps its default
+    # rather than capping it.
+    assert "--mem-fraction-static" not in cmd
 
 
 def test_sglang_uses_recipe_memory_cap(monkeypatch: MonkeyPatch) -> None:
@@ -294,7 +308,7 @@ def test_max_get_server_cmd_variant_resolves_yaml(
     """
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
-    variant = "microsoft/phi-4__modulev3"
+    variant = "google/gemma-3-27b-it__modulev3"
     recipe_path = MODEL_RECIPES[variant]
     cmd, _ = smoke_test.get_server_cmd(
         "max", variant, gpu_spec=("NVIDIA L40S", 1)
@@ -318,7 +332,7 @@ def test_max_ci_validates_every_request(monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: True)
 
     cmd, _ = smoke_test.get_server_cmd(
-        "max-ci", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+        "max-ci", "google/gemma-3-27b-it__modulev3", gpu_spec=("NVIDIA B200", 1)
     )
 
     assert "--eager-usage-validator" in cmd
@@ -332,7 +346,7 @@ def test_released_max_does_not_get_eager_usage_validator(
     monkeypatch.setattr(smoke_test, "_inside_bazel", lambda: False)
 
     cmd, _ = smoke_test.get_server_cmd(
-        "max", "microsoft/phi-4__modulev3", gpu_spec=("NVIDIA B200", 1)
+        "max", "google/gemma-3-27b-it__modulev3", gpu_spec=("NVIDIA B200", 1)
     )
 
     assert "--eager-usage-validator" not in cmd
@@ -432,3 +446,35 @@ def test_lfm3_smoke_uses_architecture_defaults(
         "--enable-overlap-scheduler",
         "--no-enable-overlap-scheduler",
     }.intersection(cmd)
+
+
+CASCADE_KEY = "google/gemma-4-31B-it__cascade"
+
+
+def test_cascade_gate_admits_max_and_mach_only() -> None:
+    for framework in ("max", "max-ci", "mach-ci"):
+        smoke_test.cascade_gate(framework, cascade=True)
+    for framework in ("vllm", "sglang"):
+        with pytest.raises(ValueError, match="only supported for MAX and Mach"):
+            smoke_test.cascade_gate(framework, cascade=True)
+    # A non-Cascade run is unaffected.
+    smoke_test.cascade_gate("vllm", cascade=False)
+
+
+def test_cascade_run_is_text_only() -> None:
+    # The key is a vision model, so the Cascade flag is what drops the images.
+    assert smoke_test.runs_vision(CASCADE_KEY, cascade=False)
+    assert not smoke_test.runs_vision(CASCADE_KEY, cascade=True)
+    assert smoke_test.tasks_for(CASCADE_KEY, cascade=False, override=()) == [
+        smoke_test.VISION_TASK,
+        smoke_test.TEXT_TASK,
+    ]
+    assert smoke_test.tasks_for(CASCADE_KEY, cascade=True, override=()) == [
+        smoke_test.TEXT_TASK
+    ]
+
+
+def test_override_tasks_win_over_the_cascade_default() -> None:
+    assert smoke_test.tasks_for(
+        CASCADE_KEY, cascade=True, override=("babilong_qa1",)
+    ) == ["babilong_qa1"]

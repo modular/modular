@@ -16,15 +16,22 @@ for M <= 128 against the naive blockwise reference and the previous dispatch.
 
 For a static N the dispatcher picks, per runtime M band:
 
+  M <= 16    with 128-wide scales, the swapped-AB tile: the weight is the
+             MMA's A operand (64 rows, or 128 when 64-row tiles would take a
+             second wave), the activation rows its B operand, and each
+             pipeline stage carries 4 / 2 / 1 K tiles by K's divisibility;
   M <= 64    a 64-row, one-CTA-per-tile config whose MMA_N is the narrowest of
-             64/128/192/256 that fits the N grid in one wave of SMs;
+             64/128/192/256 that fits the N grid in one wave of SMs, without
+             cluster launch control when that grid is one wave;
   M <= 128   the 128-wide 2-CTA pair while its CTAs fit in one wave
              (N <= 9472), else a 128-wide one-CTA-per-tile config.
 
 The N values select each MMA_N the M <= 64 band can pick (64, 128, 192, 256)
 and sit on both sides of the one-wave boundary (9472 / 9552). 576 and 9552 end
 in a partial 128-wide tile, and with 64-wide scales the tile stays within two
-scale blocks. M = 1 uses a 4-wide A-scales row stride, as the TMA needs
+scale blocks. The six DeepSeek-V4-Flash TP2 linear shapes cover the swapped
+tile's K groups of 4 (K = 1024, 2048, 4096) and its 128-row weight tile
+(N = 16384). M = 1 uses a 4-wide A-scales row stride, as the TMA needs
 16 byte rows.
 
 Per case this checks, in addition to the naive reference:
@@ -302,6 +309,13 @@ def main() raises:
         # 192- and 256-wide M <= 64 tiles.
         _run_m_sweep[24576, 256, 128](ctx)
         _run_m_sweep[28672, 256, 128](ctx)
+        # DeepSeek-V4-Flash TP2 linear shapes: wq_a+wkv, wo_b and w1/w3, wq_b
+        # (128-row swapped tile), w2, indexer wq_b.
+        _run_m_sweep[1536, 4096, 128](ctx)
+        _run_m_sweep[4096, 4096, 128](ctx)
+        _run_m_sweep[16384, 1024, 128](ctx)
+        _run_m_sweep[4096, 2048, 128](ctx)
+        _run_m_sweep[4096, 1024, 128](ctx)
         # 64-wide scales: the M <= 64 tile is capped at two scale blocks.
         _run_m_sweep[5120, 256, 64](ctx)
         _run_m_sweep[9600, 512, 64](ctx)

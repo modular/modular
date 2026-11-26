@@ -1787,6 +1787,7 @@ def flash_attention_dispatch[
                     # the split-K launch go through this one ladder, so their
                     # instantiation sets cannot drift. Returns whether a launch
                     # happened.
+                    @__allow_legacy_any_origin_fields
                     def launch_mha_decoding[
                         out_dtype: DType
                     ](
@@ -3866,6 +3867,7 @@ def mha_single_batch_pipelined[
     #   ```
     # Only the last iteration is doing boundary check.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, end: Int) {
@@ -5674,6 +5676,7 @@ def mha_decoding_single_batch_pipelined[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def loop_over_kvcache[
         tile_size: Int, not_last_iter: Bool
     ](kv_tile_start_row: Int, seq_len: Int) {
@@ -5990,12 +5993,12 @@ def mha_splitk_reduce[
     var qk_max = warp.lane_group_max[WARP_SIZE](l)
 
     # since _num_partitions <= WARP_SIZE, allocate buffer using WARP_SIZE
+    @__address_space(.SHARED)
+    var exp_sums_storage = Array[Scalar[accum_type], WARP_SIZE](
+        uninitialized=True
+    )
     var exp_sums = TileTensor(
-        unsafe_stack_allocation[
-            WARP_SIZE,
-            Scalar[accum_type],
-            address_space=.SHARED,
-        ](),
+        exp_sums_storage.unsafe_ptr(),
         row_major[WARP_SIZE](),
     )
 
@@ -6033,6 +6036,7 @@ def mha_splitk_reduce[
 
     # Keep captured Kahan state inlined across scalar-tail calls on Metal.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def accum_fn[
         simd_width: Int
     ](partition_idx: Int) {
@@ -6215,16 +6219,20 @@ def mha_gpu_naive[
         attributes=pdl_launch_attributes(PDLLevel.ON),
     )
 
+    # FIXME: Softmax reads and writes this buffer in place, but origin tracking
+    # cannot express that each row is read before it is written.
+    var p_buffer_untracked = p_buffer.unsafe_origin_cast[MutUntrackedOrigin]()
+
     def input_fn_device[
         _simd_width: Int
-    ](coords: Coord) {var p_buffer} -> SIMD[p_type, _simd_width]:
-        comptime assert p_buffer.flat_rank >= coords.flat_rank
-        return p_buffer.load[width=_simd_width](coords)
+    ](coords: Coord) {var p_buffer_untracked} -> SIMD[p_type, _simd_width]:
+        comptime assert p_buffer_untracked.flat_rank >= coords.flat_rank
+        return p_buffer_untracked.load[width=_simd_width](coords)
 
     _softmax_gpu[p_type, 1, sink=sink](
         input_fn_device,
         Coord(batch_size * num_heads, max_prompt_len, num_keys),
-        p_buffer,
+        p_buffer_untracked,
         2,
         ctx,
         sink_weights=sink_weights,
@@ -6360,6 +6368,7 @@ def _bmm0_bs[
         )
         var accum_vec = SIMD[p_type, accum_width](0)
 
+        @__allow_legacy_any_origin_fields
         def accum_fn[
             width: Int
         ](offset: Int) {q, y, _num_heads, _depth, k_ptr, mut}:

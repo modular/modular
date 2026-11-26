@@ -810,7 +810,7 @@ def takesFnParam[F: def(x: Int) -> Int]():
   pass
 
 def testLambdaNonThinCallParam() raises:
-  # expected-error @+1 {{invalid call to 'takesFnParam': 'takesFnParam' parameter 'F' has 'def(x: Int) -> Int' type, but value has type 'def `lambda_6(x: Int) thin -> Int'}}
+  # expected-error @+1 {{invalid call to 'takesFnParam': 'takesFnParam' parameter 'F' has 'def(x: Int) -> Int' type, but value has type 'def `lambda_5(x: Int) thin -> Int'}}
   takesFnParam[lambda (x: Int) {} -> Int: x + 1]()
 
 # A `def` reference is rejected identically -- def-parity, not a lambda-specific

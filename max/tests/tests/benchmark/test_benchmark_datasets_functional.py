@@ -15,12 +15,16 @@
 
 import warnings
 
+import pytest
 from max.benchmark.benchmark_shared.datasets import BenchmarkDataset
 from max.benchmark.benchmark_shared.datasets._tokenizer_pool import (
     TokenizerPool,
 )
+from max.benchmark.benchmark_shared.datasets.multiturn_distribution_fit import (
+    _replacement_token_id,
+)
 from max.pipelines.lib import generate_local_model_path
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerBase
 
 REPO_ID = "HuggingFaceTB/SmolLM-135M"
 # Minimum average match rate for system prompt token consistency across requests.
@@ -28,6 +32,21 @@ REPO_ID = "HuggingFaceTB/SmolLM-135M"
 # prompts to different target lengths. Rates of 90-96% are expected and indicate
 # high consistency while allowing for minor alignment variations.
 SYS_PROMPT_PATTERN_CONSISTENCY_THRESHOLD = 0.90
+
+
+@pytest.fixture(scope="module")
+def smollm_tokenizer() -> PreTrainedTokenizerBase:
+    """Loads the SmolLM tokenizer, preferring a local snapshot."""
+    try:
+        model_path = generate_local_model_path(REPO_ID)
+    except FileNotFoundError as e:
+        warnings.warn(f"Failed to generate local model path: {str(e)}")
+        warnings.warn(
+            f"Falling back to repo_id: {REPO_ID} as config to the tokenizer"
+        )
+        model_path = REPO_ID
+
+    return AutoTokenizer.from_pretrained(model_path)
 
 
 def _match_rate(seq: list[int], ref: list[int]) -> float:
@@ -58,37 +77,21 @@ def _is_consistent(
     return avg_rate >= threshold, rates
 
 
-def test_random_replacement_token_with_smollm_tokenizer() -> None:
-    """Test that the space-replacement token logic finds a valid token with a real tokenizer.
-
-    This is a replicated logic in random dataset that picks a replacement for
-    special tokens using candidates: plain space, U+0120 (BPE), U+2581 (SentencePiece).
-    """
-    try:
-        model_path = generate_local_model_path(REPO_ID)
-    except FileNotFoundError as e:
-        warnings.warn(f"Failed to generate local model path: {str(e)}")
-        warnings.warn(
-            f"Falling back to repo_id: {REPO_ID} as config to the tokenizer"
-        )
-        model_path = REPO_ID
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
-
-    replacement = next(
-        tid
-        for candidate in [" ", chr(0x0120), chr(0x2581)]
-        if (tid := tokenizer.convert_tokens_to_ids(candidate))
-        not in (None, tokenizer.unk_token_id)
-    )
+def test_random_replacement_token_with_smollm_tokenizer(
+    smollm_tokenizer: PreTrainedTokenizerBase,
+) -> None:
+    """Checks that the space-replacement token resolves to a real token id."""
+    replacement = _replacement_token_id(smollm_tokenizer)
 
     assert isinstance(replacement, int), "replacement must be a token id (int)"
-    assert replacement != tokenizer.unk_token_id, (
+    assert replacement != smollm_tokenizer.unk_token_id, (
         "replacement must not be the unknown token id"
     )
 
 
-def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
+def test_random_dataset_sys_prompt_ratio_matches_requested(
+    smollm_tokenizer: PreTrainedTokenizerBase,
+) -> None:
     """Validate that generated prompts have system prompt length matching sys_prompt_ratio.
 
     For each request: (1) expected system length in tokens = prompt_len * sys_prompt_ratio,
@@ -102,16 +105,7 @@ def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
     cause minor token alignment mismatches (typically 90-96% consistency). This is
     expected behavior and still indicates high consistency.
     """
-    try:
-        model_path = generate_local_model_path(REPO_ID)
-    except FileNotFoundError as e:
-        warnings.warn(f"Failed to generate local model path: {str(e)}")
-        warnings.warn(
-            f"Falling back to repo_id: {REPO_ID} as config to the tokenizer"
-        )
-        model_path = REPO_ID
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = smollm_tokenizer
     dataset = BenchmarkDataset.from_flags(dataset_name="random")
 
     with TokenizerPool(tokenizer) as pool:
@@ -128,37 +122,35 @@ def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
             )
             assert len(samples.requests) == 10, "Expected 10 requests"
 
-        # (1) Each request's system length in tokens = prompt_len * sys_prompt_ratio
-        # (2) Encode prompt_formatted and take first expected_sys_len token ids
-        system_portions: list[list[int]] = []
-        for req in samples.requests:
-            expected_sys_len = int(req.prompt_len * sys_prompt_ratio)
-            token_ids = tokenizer(
-                req.prompt_formatted, add_special_tokens=False
-            ).input_ids
-            assert len(token_ids) >= expected_sys_len, (
-                f"Encoded length {len(token_ids)} < expected sys length {expected_sys_len}"
+            # (1) Each request's system length in tokens = prompt_len * sys_prompt_ratio
+            # (2) Encode prompt_formatted and take first expected_sys_len token ids
+            system_portions: list[list[int]] = []
+            for req in samples.requests:
+                expected_sys_len = int(req.prompt_len * sys_prompt_ratio)
+                token_ids = tokenizer(
+                    req.prompt_formatted, add_special_tokens=False
+                ).input_ids
+                assert len(token_ids) >= expected_sys_len, (
+                    f"Encoded length {len(token_ids)} < expected sys length {expected_sys_len}"
+                )
+                system_portions.append(token_ids[:expected_sys_len])
+
+            # (3) Compare system portions: they should be consistent within threshold
+            consistent, rates = _is_consistent(
+                system_portions,
+                threshold=SYS_PROMPT_PATTERN_CONSISTENCY_THRESHOLD,
             )
-            system_portions.append(token_ids[:expected_sys_len])
-
-        # (3) Compare system portions: they should be consistent within threshold
-        consistent, rates = _is_consistent(
-            system_portions, threshold=SYS_PROMPT_PATTERN_CONSISTENCY_THRESHOLD
-        )
-        assert consistent, (
-            f"System prompt token consistency below {SYS_PROMPT_PATTERN_CONSISTENCY_THRESHOLD} "
-            f"for sys_prompt_ratio={sys_prompt_ratio}: rates={rates}"
-        )
+            assert consistent, (
+                f"System prompt token consistency below {SYS_PROMPT_PATTERN_CONSISTENCY_THRESHOLD} "
+                f"for sys_prompt_ratio={sys_prompt_ratio}: rates={rates}"
+            )
 
 
-def test_synthetic_placeholder_token_count() -> None:
+def test_synthetic_placeholder_token_count(
+    smollm_tokenizer: PreTrainedTokenizerBase,
+) -> None:
     """Synthetic placeholder for prefix turns should tokenize to ~output_len."""
-    try:
-        model_path = generate_local_model_path(REPO_ID)
-    except FileNotFoundError:
-        model_path = REPO_ID
-
-    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    tokenizer = smollm_tokenizer
 
     for output_len in [1, 5, 10, 50]:
         placeholder = " ".join(["token"] * max(output_len, 1))

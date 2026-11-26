@@ -10,7 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
+
+# CHECK-LABEL: lit.struct.decl @"{{.*}}interior_type_arg{{.*}}n::__storage"<[{{.*}}": origin<false>, *"?__interior_origin_0": origin<true>, +>
+# CHECK:       lit.call {{.*}}generic_by_type{{.*}}<:!AnyType {{.*}}:origin<true> *"?__interior_origin_0"{{.*}}>
 
 # COM: COnstructor is generated correctly
 
@@ -61,3 +64,31 @@ def thing[O: MutOrigin](x: String, y: Int, mut ptr: Ptr[O]) raises:
         observe(x, y, immut_ptr)
 
     take_it(closure_ref, immut_ptr)
+
+
+struct MyList[T: AnyType](Movable where False):
+    var data: Pointer[Self.T, UntrackedOrigin[mut=True]]
+
+    def __init__(out self):
+        self.data = Pointer[Self.T, UntrackedOrigin[mut=True]].unsafe_dangling()
+
+    def __deinit__(deinit self):
+        pass
+
+    @__unsafe_nested_origins_read_only
+    def __getitem__(
+        ref self,
+    ) -> ref[self.data._get_ref_with_unsafe_interior_origin["element"](self)] Self.T:
+        return self.data._get_ref_with_unsafe_interior_origin["element"](self)
+
+def generic_by_type[T: AnyType](value: T):
+    pass
+
+def interior_type_arg():
+    var list = MyList[Int]()
+    var b = Pointer(to=list[])
+
+    def n() {b}:
+        generic_by_type(b)
+
+    n()

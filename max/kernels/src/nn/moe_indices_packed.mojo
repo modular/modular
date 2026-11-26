@@ -61,8 +61,9 @@ comptime ALIGN = 128
 
 comptime POISONS = 3
 """Planted faults, `poison` 1 through 3, each of which a test must catch:
-1 files other devices' slots under group 0, 2 ranks a lane after every lane
-of its group, 3 skips the last slot's weight."""
+1 files other devices' slots under group 0, 2 reverses the ranks of a lane's
+group, 3 skips the last slot's weight. Every fault writes in bounds, so the
+tests can run under a sanitizer and under the redzone allocator."""
 
 comptime In[T: DType] = Pointer[Scalar[T], ImmUntrackedOrigin]
 comptime Out[T: DType] = Pointer[Scalar[T], MutUntrackedOrigin]
@@ -100,10 +101,6 @@ struct PackedIndicesArgs(DevicePassable, ImplicitlyCopyable):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "PackedIndicesArgs"
 
 
 @always_inline
@@ -233,13 +230,16 @@ def scatter_span[
         var on = i < hi
         var g = slot_group[top_k, local_experts, poison](a, i) if on else groups
         var same = _same_group(g)
-        var below = same if poison == 2 else same & _lanes_below()
         if on:
-            var pos = (
-                starts[unsafe_offset=g]
-                + row[unsafe_offset=g]
-                + UInt32(pop_count(below))
-            )
+            # Fault 2 ranks a lane by the lanes above it instead of below,
+            # reversing its group's ranks. Both are permutations of
+            # `[0, count)`, so the fault writes only in bounds: a sanitizer or
+            # redzone allocator must see the tests catch it, not a write past
+            # `order`.
+            var rank = UInt32(pop_count(same & _lanes_below()))
+            if poison == 2:
+                rank = UInt32(pop_count(same & ~_lanes_below())) - 1
+            var pos = starts[unsafe_offset=g] + row[unsafe_offset=g] + rank
             a.order[unsafe_offset=Int(pos)] = UInt32(i)
             a.restore[unsafe_offset=i] = pos
         syncwarp()

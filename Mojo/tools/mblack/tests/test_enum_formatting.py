@@ -23,8 +23,8 @@ __enum Token(Copyable, Writable):
     \"\"\"A lexer token.\"\"\"
 
     case eof
-    case identifier(String)
-    case span(Int, Int)
+    case identifier
+    case span
 
     def is_eof(self) -> Bool:
         match self:
@@ -48,10 +48,10 @@ def test_enum_body_formats_like_struct_body():
 __enum Token(Writable, Copyable):
     \"\"\"A lexer token.\"\"\"
     case eof
-    case identifier( String )
+    case identifier
 
 
-    case span(Int,Int)
+    case span
     def is_eof(self) -> Bool:
         return False
     comptime Name = "Token"
@@ -61,9 +61,9 @@ __enum Token(Copyable, Writable):
     \"\"\"A lexer token.\"\"\"
 
     case eof
-    case identifier(String)
+    case identifier
 
-    case span(Int, Int)
+    case span
 
     def is_eof(self) -> Bool:
         return False
@@ -82,9 +82,9 @@ __enum Color:
     \"\"\"Pure red.\"\"\"
     case green
 
-    case rgb(Int, Int, Int)
+    case blue
     \"\"\"
-    A color by its components.
+    Blue.
     \"\"\"
 """
     expected = """\
@@ -95,9 +95,9 @@ __enum Color:
     \"\"\"Pure red.\"\"\"
     case green
 
-    case rgb(Int, Int, Int)
+    case blue
     \"\"\"
-    A color by its components.
+    Blue.
     \"\"\"
 """
     assert_mojo_format(source, expected)
@@ -107,7 +107,7 @@ def test_enum_one_line_body_and_semicolons():
     source = """\
 __enum Unit: case only
 __enum Pair:
-    case a; case b(Int)
+    case a; case b
 """
     expected = """\
 __enum Unit:
@@ -116,37 +116,7 @@ __enum Unit:
 
 __enum Pair:
     case a
-    case b(Int)
-"""
-    assert_mojo_format(source, expected)
-
-
-def test_enum_case_payload_splits_like_a_call():
-    source = """\
-__enum Payloads:
-    case long_payload_case_name(List[Int], Dict[String, Int], Optional[String], Int)
-    case trailing_comma(Int, Bool,)
-    case one_trailing_comma(Int,)
-    case multi_line(
-        Int,
-        Bool
-    )
-    case `def`
-"""
-    expected = """\
-__enum Payloads:
-    case long_payload_case_name(
-        List[Int], Dict[String, Int], Optional[String], Int
-    )
-    case trailing_comma(
-        Int,
-        Bool,
-    )
-    case one_trailing_comma(
-        Int,
-    )
-    case multi_line(Int, Bool)
-    case `def`
+    case b
 """
     assert_mojo_format(source, expected)
 

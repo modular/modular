@@ -111,11 +111,13 @@ void checkUnavailableAndError(ASTDecl &decl, llvm::SMLoc useLoc,
 /// \param fixitLoc Location for fixit replacement (defaults to useLoc if
 ///                 invalid). For method calls, this should be the method
 ///                 identifier location, not the full expression location.
+/// \param checkDeprecation Whether to emit deprecation warnings.
 void checkDeclUsageWarnings(ASTDecl &decl, llvm::SMLoc useLoc,
                             ASTDecl &useSiteDecl, SharedState &shared,
                             M::SourceRange range,
                             CallSyntax syntax = CallSyntax::kDirectCall,
-                            llvm::SMLoc fixitLoc = {});
+                            llvm::SMLoc fixitLoc = {},
+                            bool checkDeprecation = true);
 
 /// Check for API author error: when a stable struct implements a stable trait,
 /// the implementing member (method or alias) must also be stable if the trait

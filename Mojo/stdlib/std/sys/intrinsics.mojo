@@ -66,6 +66,7 @@ def llvm_intrinsic[
             intrin=intrin_kgen_string,
             _type=None,
             hasSideEffects=has_side_effect.__mlir_i1__(),
+            expandPackOperandIdx=__mlir_attr.`0 : index`,
         ](loaded_pack)
         return rebind[type](None)
 
@@ -74,6 +75,7 @@ def llvm_intrinsic[
             intrin=intrin_kgen_string,
             _type=type,
             hasSideEffects=has_side_effect.__mlir_i1__(),
+            expandPackOperandIdx=__mlir_attr.`0 : index`,
         ](loaded_pack)
 
 
@@ -779,9 +781,7 @@ def strided_store[
 
 
 struct _RegisterPackType[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[
-        `!kgen.struct<`, ~Self.Ts.values, ` isParamPack>`
-    ]
+    comptime _mlir_type = __mlir_type[`!kgen.struct<`, ~Self.Ts.values, `>`]
 
     var _mlir_value: Self._mlir_type
 

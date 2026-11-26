@@ -135,7 +135,8 @@ static void moveInvariantsIn(FunctionLike func, mlir::DominanceInfo &domInfo,
 
     else if (auto tryOp = dyn_cast<LIT::TryOp>(op)) {
       moveInvariants(func, domInfo, tryOp, tryOp.getTryRegion(), numHoisted);
-      moveInvariants(func, domInfo, tryOp, tryOp.getExceptRegion(), numHoisted);
+      for (Region &exceptRegion : tryOp.getExceptRegions())
+        moveInvariants(func, domInfo, tryOp, exceptRegion, numHoisted);
       moveInvariants(func, domInfo, tryOp, tryOp.getElseRegion(), numHoisted);
     }
 

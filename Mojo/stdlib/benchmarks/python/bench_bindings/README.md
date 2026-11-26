@@ -66,8 +66,7 @@ taskset -c 2 ./bazelw test \
 
 The bench is intentionally not part of `//...`. It is tagged `manual` and
 `stdlib-benchmark`; run it explicitly when you change anything in
-`stdlib/std/python/bindings.mojo`, `_python_func.mojo`, or
-`python_object.mojo`.
+`stdlib/std/python/bindings.mojo` or `python_object.mojo`.
 
 ## Methodology
 

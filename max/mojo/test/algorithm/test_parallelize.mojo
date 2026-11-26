@@ -24,7 +24,7 @@ from max.algorithm import (
     parallelize_over_rows,
 )
 from std.testing import assert_equal, assert_false, TestSuite
-from std.utils import IndexList
+from std.utils.coord import Coord
 
 
 def test_sync_parallelize() raises:
@@ -104,7 +104,7 @@ def test_parallelize_over_rows_zero_work() raises:
     def noop(start: Int, end: Int) {}:
         pass
 
-    parallelize_over_rows(noop, IndexList[1](0), 0, 1)
+    parallelize_over_rows(noop, Coord(0), 0, 1)
 
 
 def test_parallelize_unified() raises:
@@ -190,9 +190,9 @@ def test_sync_parallelize_unified_zero_items() raises:
 
 
 def test_parallelize_over_rows() raises:
-    var shape = IndexList[2](4, 8)
-    var num_rows = shape[0]
-    var row_size = shape[1]
+    var num_rows = 4
+    var row_size = 8
+    var shape = Coord(num_rows, row_size)
 
     var data_stack = Array[Int, 32](fill={})
     var data = Span(data_stack)

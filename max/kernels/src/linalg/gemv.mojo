@@ -74,7 +74,6 @@ from layout import (
     stack_allocation as tt_stack_allocation,
 )
 from std.logger import Logger
-from std.memory import unsafe_stack_allocation
 from std.utils.coord import Coord
 from std.utils.numerics import get_accum_type
 from std.utils.static_tuple import StaticTuple
@@ -1361,6 +1360,7 @@ def _gemv_split_k_impl[
     # SM100 block-scaled matmul uses around its PDL wait. Both capture the
     # K-tile index immutably; `tile_w` and `acc` are mutated in place.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _load_weight_frags(k_tile: Int) {mut tile_w, imm}:
         """Phase 1: load this K-tile's weight fragments into `tile_w`.
 
@@ -1386,6 +1386,7 @@ def _gemv_split_k_impl[
                 tile_w.store((i, Idx[0]), b_vec)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _consume_weight_frags(k_tile: Int) {mut acc, imm}:
         """Phase 2: load this K-tile's activation rows and dot them against
         the weight fragments `_load_weight_frags` staged in `tile_w`.
@@ -2197,6 +2198,7 @@ def router_gate_mixed_gemv[
     if m == 0 or n == 0:
         return
 
+    @__allow_legacy_any_origin_fields
     def _launch[
         tile_m: Int,
         tile_n: Int,
@@ -2489,6 +2491,7 @@ def mixed_gemv_store_epilogue[
         static_N <= 65535
     ), "mixed GEMV N exceeds the grid.y block limit"
 
+    @__allow_legacy_any_origin_fields
     def _launch[tile_m: Int, tile_n: Int, unroll_factor: Int]() raises {imm}:
         comptime kernel = gemv_split_k_epilogue_fn[
             DType.float32,
@@ -2659,11 +2662,11 @@ def _gevm_kernel_impl[
     var col = block_idx.x * WARP_SIZE + lane_id
     var global_warp_id = global_idx.x // warps_per_block
 
-    var x_shared = unsafe_stack_allocation[
-        tile_size,
-        accum_type,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var x_shared_storage = Array[Scalar[accum_type], tile_size](
+        uninitialized=True
+    )
+    var x_shared = x_shared_storage.unsafe_ptr()
 
     comptime if pdl_level > PDLLevel.OFF:
         wait_on_dependent_grids()
@@ -5496,6 +5499,14 @@ def _gemm_mma_cpasync_kernel_impl[
         loader.issue_mainloop(k_iters)
 
     else:
+        # A closure can read what the predecessor grid writes, such as a
+        # residual. These warps skip the loaders' wait, and the barriers after
+        # that wait do not keep their read-only loads below it (see
+        # `wait_on_dependent_grids`).
+        comptime if pdl_level > PDLLevel.OFF and (
+            has_epilogue_fn or has_compute_fn
+        ):
+            wait_on_dependent_grids()
         var computer = _MmaCpAsyncMmaComputer[
             c_type,
             a_type,

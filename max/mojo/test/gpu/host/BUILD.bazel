@@ -2,6 +2,8 @@ load("//bazel:api.bzl", "lit_tests", "mojo_test")
 
 package(default_visibility = ["//max:consumers"])
 
+exports_files(["test_device_buffer_host_ptr.mojo"])
+
 mojo_test(
     name = "test_device_type_encoder_target.mojo.test",
     srcs = ["test_device_type_encoder_target.mojo"],

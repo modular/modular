@@ -33,13 +33,15 @@ from max.nn._graph_ops import (
 )
 from max.nn.activation import GatedActivation
 from max.nn.common_layers import quant_ops
-from max.nn.common_layers.quant_tensor import MXFP8Tensor
+from max.nn.common_layers.quant_tensor import FP8BlockTensor, MXFP8Tensor
 from max.nn.kernels import block_scales_interleave
 from max.tensor import Tensor
 from max.tensor.sharding.action import AxisAssignment
 from max.tensor.sharding.cost import P, R
 from max.tensor.sharding.placements import Sharded
 from max.tensor.sharding.types import TensorLayout
+
+from . import block_fp8
 
 _SF_VECTOR_SIZE = 32
 
@@ -182,8 +184,11 @@ _cluster_splitk_op = F.functional(_cluster_splitk, rule=_cluster_splitk_rule)
 def matmul(x: Tensor, weight: quant_ops.QuantAwareTensor) -> Tensor:
     """Returns ``x @ weight.T``, MXFP8 weights on the cluster split-K matmul.
 
-    Other weights, and MXFP8 off SM100, take :func:`quant_ops.matmul`.
+    Block-FP8 weights take :func:`block_fp8.matmul`; other weights, and
+    MXFP8 off SM100, take :func:`quant_ops.matmul`.
     """
+    if isinstance(weight, FP8BlockTensor):
+        return block_fp8.matmul(x, weight)
     if not isinstance(weight, MXFP8Tensor) or not _is_sm10x_gpu():
         return quant_ops.matmul(x, weight)
     weight_scales = block_scales_interleave(

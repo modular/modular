@@ -459,12 +459,18 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
     printParamValue(p, metadata.getCaptureOrigins());
     p << ':';
   }
-  if (signature.getIsNestedOriginsReadOnly())
-    p << "no_nested_origin_exclusivity";
-  if (signature.getDefinesInteriorOrigins()) {
-    if (signature.getIsNestedOriginsReadOnly())
-      p << ' ';
+  if (signature.getDefinesInteriorOrigins())
     p << "defines_interior_origins";
+  if (metadata.getIsUnsafeNestedOriginsReadOnly()) {
+    if (signature.getDefinesInteriorOrigins())
+      p << ' ';
+    p << "no_nested_origin_exclusivity";
+  }
+  if (metadata.getIsEnforcedNestedOriginsReadOnly()) {
+    if (signature.getDefinesInteriorOrigins() ||
+        metadata.getIsUnsafeNestedOriginsReadOnly())
+      p << ' ';
+    p << "nested_origins_read_only";
   }
 
   PogListAttr argListAttr = signature.getArgListAttrs();
@@ -715,6 +721,25 @@ void LIT::sortAndDeduplicateTraitSymbols(
     return false;
   });
   symbols.erase(std::unique(symbols.begin(), symbols.end()), symbols.end());
+}
+
+SmallVector<ConstraintAttr> LIT::getTraitConstraintsInSymbolOrder(
+    MLIRContext *context, ArrayRef<TraitSymbolAttr> symbols,
+    const DenseMap<TraitSymbolAttr, ConstraintAttr> &constraintMap) {
+  if (constraintMap.empty())
+    return {};
+
+  SmallVector<ConstraintAttr> constraints;
+  constraints.reserve(symbols.size());
+  for (TraitSymbolAttr symbol : symbols) {
+    if (auto it = constraintMap.find(symbol); it != constraintMap.end()) {
+      constraints.push_back(it->second);
+    } else {
+      // FIXME(MOCO-4250): `True` is wrong, should be inherited from parents.
+      constraints.push_back(getUnconditionalConstraint(context));
+    }
+  }
+  return constraints;
 }
 
 std::optional<ParameterEvaluator>

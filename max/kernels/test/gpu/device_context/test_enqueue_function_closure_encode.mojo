@@ -39,7 +39,7 @@ def test_capturing_enqueue_encodes_device_pointer_tile(
     def kernel() {var tile}:
         tile[0] = 42.0
 
-    ctx.enqueue_function(kernel, grid_dim=1, block_dim=1)
+    ctx.enqueue_closure(kernel, grid_dim=1, block_dim=1)
 
     var host = ctx.enqueue_create_host_buffer[.float32](1)
     ctx.enqueue_copy(host, buf)

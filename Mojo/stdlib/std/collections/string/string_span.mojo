@@ -570,7 +570,7 @@ struct StringSpan[origin: ImmOrigin](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __eq__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSpan` is equal to another `StringSpan` with the
         same origin.
@@ -609,7 +609,7 @@ struct StringSpan[origin: ImmOrigin](
     # dereferenced by the method.
     # TODO: replace with a safe model that checks the body of the method for
     # accesses to the origin.
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __eq__(self, rhs: StringSpan) -> Bool:
         """Verify if a `StringSpan` is equal to another `StringSpan`.
 
@@ -630,7 +630,7 @@ struct StringSpan[origin: ImmOrigin](
             return True
         return unsafe_memcmp(s_ptr, rhs_ptr, s_len) == 0
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def __ne__(self, rhs_same: Self) -> Bool:
         """Verify if a `StringSpan` is not equal to another `StringSpan` with
         the same origin.
@@ -644,7 +644,7 @@ struct StringSpan[origin: ImmOrigin](
         """
         return Self.__ne__(self, rhs=rhs_same)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __ne__(self, rhs: StringSpan) -> Bool:
         """Verify if span is not equal to another `StringSpan`.
@@ -1039,12 +1039,7 @@ struct StringSpan[origin: ImmOrigin](
             A StringSpan merged with the other origin.
         """
         return {
-            unsafe_from_utf8 = Span[Byte, result.origin](
-                unsafe_ptr=self.unsafe_ptr().unsafe_origin_cast[
-                    result.origin
-                ](),
-                length=self.byte_length(),
-            )
+            unsafe_from_utf8 = self._slice.unsafe_origin_cast[result.origin]()
         }
 
     # ===------------------------------------------------------------------===#
@@ -1101,7 +1096,7 @@ struct StringSpan[origin: ImmOrigin](
         var current_pos = 0
 
         for _ in range(occurrences):
-            __guard case .Some(idx) = self.find(old, current_pos) else:
+            guard case .Some(idx) = self.find(old, current_pos) else:
                 assert False, "expected to find occurrence during find"
                 break
 
@@ -1218,7 +1213,7 @@ struct StringSpan[origin: ImmOrigin](
         var r_idx = self.byte_length()
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
         # for s in self.__reversed__():
-        #     if not s.isspace():
+        #     if not s.is_ascii_whitespace():
         #         break
         #     r_idx -= 1
         while (
@@ -1264,7 +1259,7 @@ struct StringSpan[origin: ImmOrigin](
         var l_idx = 0
         # TODO (#933): should use this once llvm intrinsics can be used at comp time
         # for s in self:
-        #     if not s.isspace():
+        #     if not s.is_ascii_whitespace():
         #         break
         #     l_idx += 1
         while (
@@ -1863,20 +1858,24 @@ struct StringSpan[origin: ImmOrigin](
             print(text[byte=:index])  # héllo
         ```
         """
-        if not substr:
-            return 0
-
-        if self.byte_length() < substr.byte_length() + start:
-            return None
-
         # The substring to search within, offset from the beginning if `start`
         # is positive, and offset from the end if `start` is negative.
         var start_byte = start if start >= 0 else max(
             start + self.byte_length(), 0
         )
+
+        if not substr:
+            # An empty substring matches at `start_byte`, if it is in bounds.
+            if start_byte > self.byte_length():
+                return None
+            return start_byte
+
+        if self.byte_length() < substr.byte_length() + start:
+            return None
+
         var haystack = self.as_bytes()[start_byte:]
 
-        __guard case .Some(loc) = _memmem(
+        guard case .Some(loc) = _memmem(
             haystack.as_imm(),
             substr.as_bytes().as_imm(),
         ) else:
@@ -1909,6 +1908,9 @@ struct StringSpan[origin: ImmOrigin](
         ```
         """
         if not substr:
+            # A negative `start` always resolves in bounds.
+            if start > self.byte_length():
+                return None
             return self.byte_length()
 
         if self.byte_length() < substr.byte_length() + start:
@@ -1921,17 +1923,12 @@ struct StringSpan[origin: ImmOrigin](
         )
         var haystack = self.as_bytes()[start_byte:]
 
-        __guard case .Some(loc) = _memrmem(
+        guard case .Some(loc) = _memrmem(
             haystack,
             substr.as_bytes(),
         ) else:
             return None
         return Int(loc) - Int(self.unsafe_ptr())
-
-    @doc_hidden
-    @deprecated(use=is_ascii_whitespace)
-    def isspace[single_character: Bool = False](self) -> Bool:
-        return self.is_ascii_whitespace[single_character=single_character]()
 
     def is_ascii_whitespace[single_character: Bool = False](self) -> Bool:
         """Determines whether every character in the given StringSpan is a
@@ -1956,14 +1953,14 @@ struct StringSpan[origin: ImmOrigin](
         from std.testing import assert_true, assert_false
 
         # An empty string is not considered to contain only whitespace chars:
-        assert_false(StringSpan("").isspace())
+        assert_false(StringSpan("").is_ascii_whitespace())
 
         # ASCII space characters
-        assert_true(StringSpan(" ").isspace())
-        assert_true(StringSpan("\t").isspace())
+        assert_true(StringSpan(" ").is_ascii_whitespace())
+        assert_true(StringSpan("\t").is_ascii_whitespace())
 
         # Contains non-space characters
-        assert_false(StringSpan(" abc  ").isspace())
+        assert_false(StringSpan(" abc  ").is_ascii_whitespace())
         ```
         """
 

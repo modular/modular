@@ -59,6 +59,7 @@ from layout.tensor_engine import TensorEngine
 from linalg.accumulate import _Accumulator
 from linalg.utils import partition_work
 from nn.conv.conv import _get_cudnn_meta, check_cudnn_error
+from nn.conv.gpu.nvidia.sm100.conv_dgrad_fp32 import conv_dgrad_fp32
 from max.runtime.asyncrt import parallelism_level
 from max.runtime.tracing import Trace, TraceLevel, trace_arg
 
@@ -495,7 +496,6 @@ struct ConvTransposedPacked[
     # `epilogue_fn` reads back the rows of `output` that `run` writes, which
     # is safe: each row is read only after it has been fully written.
     @staticmethod
-    @__unsafe_nested_origins_read_only
     def run(
         output: TileTensor[
             mut=True,
@@ -1561,9 +1561,6 @@ def pack_filter(
 # ===----------------------------------------------------------------------=== #
 
 
-# `elementwise_lambda` may read and write `output`, which is safe: it is
-# applied to each output row only after that row has been fully written.
-@__unsafe_nested_origins_read_only
 def conv_transposed_cpu[
     EpilogueFnType: ConvSimdEpilogueFn,
     //,
@@ -1676,6 +1673,10 @@ def conv_transposed_cpu[
             1,
         )
 
+        # FIXME: The epilogue captures output while the convolution also takes
+        # it mutably; each row is read only after convolution writes it.
+        var output_untracked = output.unsafe_origin_cast[MutUntrackedOrigin]()
+
         # The closure updates a row segment of the output.
         @inline(.always)
         def elementwise_epilogue(coords: Coord, f_size: Int) {imm}:
@@ -1684,14 +1685,14 @@ def conv_transposed_cpu[
             comptime assert coords.rank == input_rank
 
             @inline(.always)
-            def body[width: Int](idx: Int) {coords, output, imm}:
+            def body[width: Int](idx: Int) {coords, output_untracked, imm}:
                 # Coordinates of the current index.
                 var curr_coords = coords
                 curr_coords.replace_dynamic[input_rank - 1](
                     Int(coords[input_rank - 1]) + idx
                 )
 
-                var vec = output.load[
+                var vec = output_untracked.load[
                     width=width, alignment=align_of[output.dtype]()
                 ](curr_coords)
                 elementwise_lambda(curr_coords, vec)
@@ -1701,7 +1702,7 @@ def conv_transposed_cpu[
         ConvTransposedPacked[
             input.origin,
             packed_filter.origin,
-            output.origin,
+            output_untracked.origin,
             input.dtype,
             filter.dtype,
             output.dtype,
@@ -1709,7 +1710,12 @@ def conv_transposed_cpu[
             has_epilogue_fusion,
             type_of(elementwise_epilogue),
         ].run(
-            output, input, packed_filter, conv_shape, elementwise_epilogue, ctx
+            output_untracked,
+            input,
+            packed_filter,
+            conv_shape,
+            elementwise_epilogue,
+            ctx,
         )
 
         comptime if not filter_packed:
@@ -1738,7 +1744,10 @@ def conv_transposed_gpu[
     padding: Coord,
     ctx: DeviceContext,
 ) raises:
-    """Runs a transposed convolution on the GPU via the cuDNN backward-data path.
+    """Runs a transposed convolution on the GPU.
+
+    The geometries `conv_dgrad_fp32` serves run on its dedicated B200 kernel;
+    cuDNN's backward-data is the fallback for every other convolution.
 
     Parameters:
         input_type: Element type of the input tensor.
@@ -1754,6 +1763,18 @@ def conv_transposed_gpu[
         padding: Padding along each spatial axis.
         ctx: Device context used to access the cuDNN handle and device buffers.
     """
+    comptime if input.rank == 4:
+        if conv_dgrad_fp32(
+            input,
+            filter,
+            output,
+            _int_coord[2](stride),
+            _int_coord[2](dilation),
+            _int_coord[2](padding),
+            ctx,
+        ):
+            return
+
     conv_transposed_cudnn[input_type, filter_type, output_type](
         input,
         filter,
@@ -1782,14 +1803,16 @@ def conv_transposed_gpu[
     elementwise_epilogue: EpilogueFnType,
     ctx: DeviceContext,
 ) raises:
-    """Runs a transposed convolution on the GPU via the cuDNN backward-data path
-    and hands every output value to an elementwise epilogue.
+    """Runs a transposed convolution on the GPU and hands every output value to
+    an elementwise epilogue.
 
     The same convolution as the overload that takes `output`, for a caller
     whose epilogue owns every write, such as a graph op whose output is fused.
-    cuDNN writes into a temporary buffer and a separate elementwise pass feeds
-    it to `elementwise_epilogue`. The output is given as a layout, so the
-    kernel never sees a pointer it could write through.
+    The geometries `conv_dgrad_fp32` serves apply the epilogue in the kernel's
+    store, once per output element. cuDNN is the fallback for every other
+    convolution: it writes into a temporary buffer and a separate elementwise
+    pass feeds it to `elementwise_epilogue`. The output is given as a layout,
+    so the kernel never sees a pointer it could write through.
 
     Parameters:
         EpilogueFnType: Type of `elementwise_epilogue` (inferred).
@@ -1809,6 +1832,24 @@ def conv_transposed_gpu[
             output value.
         ctx: Device context used to access the cuDNN handle and device buffers.
     """
+    comptime if input.rank == 4 and OutputLayoutType.rank == 4:
+        if conv_dgrad_fp32[output_type=output_type](
+            input,
+            filter,
+            Coord(
+                Int(output_layout.shape[0]().value()),
+                Int(output_layout.shape[1]().value()),
+                Int(output_layout.shape[2]().value()),
+                Int(output_layout.shape[3]().value()),
+            ),
+            _int_coord[2](stride),
+            _int_coord[2](dilation),
+            _int_coord[2](padding),
+            elementwise_epilogue,
+            ctx,
+        ):
+            return
+
     var output_tmp_data = ctx.enqueue_create_buffer[output_type](
         output_layout.product()
     )

@@ -17,7 +17,7 @@ from __future__ import annotations
 import dataclasses
 
 import pytest
-from max.driver import CPU, Accelerator, Device, accelerator_count
+from max.driver import CPU, Device
 from max.tensor.sharding import DeviceMesh
 
 # ── Inline mesh helpers (no conftest dependency) ──────────────────────
@@ -184,14 +184,3 @@ class TestDeviceMeshEquality:
         b = mesh_1d(4)
         assert hash(a) == hash(b)
         assert {a, b} == {a}
-
-    @pytest.mark.skipif(accelerator_count() < 2, reason="Need at least 2 GPUs")
-    def test_mixed_mesh_raises(self) -> None:
-        """Rejects meshes with some repeated and some different devices."""
-        devices = (Accelerator(0), Accelerator(0), Accelerator(1))
-        with pytest.raises(ValueError, match=r"all-same.*or all-distinct"):
-            DeviceMesh(
-                devices=devices,
-                mesh_shape=(3,),
-                axis_names=("tp",),
-            )

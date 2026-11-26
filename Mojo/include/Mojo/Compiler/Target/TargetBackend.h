@@ -50,6 +50,9 @@ class Triple;
 class raw_pwrite_stream;
 template <class C>
 struct object_creator;
+namespace cl {
+class LibraryOptionsContext;
+} // namespace cl
 } // namespace llvm
 
 namespace mlir {
@@ -78,6 +81,13 @@ using TransformCache = BlobCache<TransformCacheKey>;
 namespace M::KGEN {
 
 class MCLinker;
+
+/// Returns the values that emission options set for the LLVM options declared
+/// in TableGen. LLVM reads such an option from the `LLVMContext` of the code
+/// and from the target machine, not from a process-wide value. So every
+/// context that holds code to compile copies these values, and every target
+/// machine that `defaultCreateTargetMachine` creates refers to them.
+llvm::cl::LibraryOptionsContext &getEmissionLibraryOptions();
 
 /// Creates an LLVM TargetMachine from already-effective `options`.
 /// Runs entirely in the host's LLVM instance (it uses the target registry,
@@ -199,14 +209,13 @@ public:
   /// never match.
   virtual bool isSharedMemoryGlobal(const llvm::GlobalVariable &global) const;
 
-protected:
   /// The target's shared/threadgroup-memory address space, or nullopt for
-  /// targets without one (e.g. host). Backing datum for
-  /// `isSharedMemoryGlobal`.
+  /// targets without one (e.g. host).
   virtual std::optional<unsigned> sharedMemoryAddressSpace() const {
     return std::nullopt;
   }
 
+protected:
   /// Check if the specific Target is a base target.
   /// This is needed to gate max only targets for now.
   virtual bool isBaseTarget() const = 0;

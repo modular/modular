@@ -23,7 +23,6 @@
 #include "Mojo/MojoParser/EntryPoint.h"
 #include "Mojo/MojoTooling/ParserDriver.h"
 #include "Mojo/Precompile/Precompile.h"
-#include "Mojo/Support/CLOptionUtils.h"
 #include "Mojo/Support/CompilerProfiling.h"
 #include "Mojo/Support/Configuration.h"
 #include "Mojo/Support/Constants.h"
@@ -54,7 +53,6 @@
 #include "mlir/Parser/Parser.h"
 #include "mlir/Support/Timing.h"
 #include "llvm/ADT/StringExtras.h"
-#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/MC/TargetRegistry.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
@@ -206,7 +204,6 @@ void printVersion(llvm::raw_ostream &os) {
 /// MLIR and KGEN options they may name.
 bool parseForwardedCLOptions(const char *programName,
                              const llvm::opt::InputArgList &args) {
-  M::registerCommandFlags();
   registerMLIRContextCLOptions();
   registerAsmPrinterCLOptions();
   registerDefaultTimingManagerCLOptions();

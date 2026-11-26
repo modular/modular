@@ -138,6 +138,12 @@ public:
   /// destination etc.
   ExprDest dest;
 
+  /// A temporary for the result when the callee's result address space or
+  /// origin is parametric and `dest` has no memory to infer them from.
+  /// Inference reads the parameters from it, and the call initializes it. The
+  /// result then goes to `dest` as an owned value.
+  MLValue resultSlot;
+
   /// The values passed in.  The keyword field will be null for positional
   /// arguments and present for keyword operands.
   OperandValueList values;
@@ -232,7 +238,7 @@ public:
 raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 
 //===----------------------------------------------------------------------===//
-// OperandsNeedingOriginsList
+// OperandsNeedingReEmissionList
 //===----------------------------------------------------------------------===//
 
 /// Parameter inference is used to evaluate whether a set of operands can work
@@ -241,53 +247,70 @@ raw_ostream &operator<<(raw_ostream &os, const CallOperands &value);
 /// In that process, it may find that it could select the candidate if a
 /// non-memory operand(eg a PValue or SRValue) were to be dumped into memory.
 /// This list keeps track of those cases.
-struct OperandNeedingOrigin {
+struct OperandNeedingReEmission {
   size_t operandIdx; // The index of the operand in the call operands list.
-  size_t argIdx;     // The index of the argument in `signature`.
-  ASTType expectedArgType; // The expected RValue type of the argument.
-
-  // The signature that `argIdx` indexes into.  This is not necessarily the
-  // signature of the call being evaluated: when the operand only fits after an
-  // implicit conversion, this is the signature of that conversion's
-  // constructor.  Consider:
-  //
-  //   struct RW[o: ImmOrigin](Copyable, Movable):
-  //
-  //     @implicit
-  //     def __init__[vo: ImmOrigin, //](ref[vo] value: Int, out self: RW[vo]):
-  //         self.n = value
-  //
-  // def grw(w: RW) -> Int:
-  //     pass
-  //
-  // def main():
-  //     var a, b = 1, 2
-  //     _ = grw(a + b)
-  //
-  // `a + b` will need to be spilled to memory to get an origin to construct a
-  // `RW`, so the spill has to use the implicit ctor's convention for `value`
-  // (ref) rather than `grw`'s convention for `w` (readMem), since we want to
-  // eventually emit `grw(RW(a + b))`.  Emission derives the convention from
-  // this signature, which also tells it whether `argIdx` is variadic.
-  FnTypeGeneratorType signature;
-
-  // TODO: figure out the subtleties related to variadic convention etc, then we
-  // can collapse signature and argIdx into a single ArgConvention field.
-  ArgConvention getArgConvention() const {
-    FnTypeGeneratorType sig = signature;
-    if (sig.isPosVarArg(argIdx) || sig.isPack(argIdx))
-      return sig.getVariadicConvention(argIdx);
-    return sig.getArgConvention(argIdx);
-  }
-
   enum {
     /// This is a sentinel representing the the "operand" that needs spilling is
     /// actually the ExprDest of the call, not an actual operand.
     kExprDestOperandIdx = ~1ULL,
   };
+  struct NeedingOrigins {
+    ASTType expectedArgType; // The expected RValue type of the argument.
+
+    // The convention the spilled operand is bound with.  This is not
+    // necessarily the convention of the call being evaluated: when the operand
+    // only fits after an implicit conversion, this is the convention of that
+    // conversion's constructor.  Consider:
+    //
+    // struct RW[o: ImmOrigin](Copyable, Movable):
+    //
+    //   @implicit
+    //   def __init__[vo: ImmOrigin, //](ref[vo] value: Int, out self: RW[vo]):
+    //     self.n = value
+    //
+    // def grw(w: RW) -> Int:
+    //     pass
+    //
+    // def main():
+    //     var a, b = 1, 2
+    //     _ = grw(a + b)
+    //
+    // `a + b` will need to be spilled to memory to get an origin to construct a
+    // `RW`, so the spill has to use the implicit ctor's convention for `value`
+    // (ref) rather than `grw`'s convention for `w` (readMem), since we want to
+    // eventually emit `grw(RW(a + b))`.  For a variadic argument, this is the
+    // convention of its elements.
+    ArgConvention argConvention;
+  };
+
+  struct Lambda {
+    FnTypeGeneratorType ctxSig;
+    bool isThin;
+  };
+
+  SmartVariant<NeedingOrigins, Lambda> storage;
+
+  static OperandNeedingReEmission
+  getNeedingOrigin(size_t operandIdx, ASTType expectedArgType,
+                   ArgConvention argConvention) {
+    return {operandIdx, NeedingOrigins{expectedArgType, argConvention}};
+  }
+
+  static OperandNeedingReEmission
+  getLambda(size_t operandIdx, FnTypeGeneratorType ctxSig, bool isThin) {
+    return {operandIdx, Lambda{ctxSig, isThin}};
+  }
+
+  bool isNeedingOrigins() const { return isa<NeedingOrigins>(storage); }
+  const NeedingOrigins &getNeedingOrigins() const {
+    return cast<NeedingOrigins>(storage);
+  }
+
+  bool isLambdas() const { return isa<Lambda>(storage); }
+  const Lambda &getLambdas() const { return cast<Lambda>(storage); }
 };
 
-using OperandsNeedingOriginsList = std::vector<OperandNeedingOrigin>;
+using OperandsNeedingReEmissionList = std::vector<OperandNeedingReEmission>;
 
 } // namespace M::KGEN::LIT
 

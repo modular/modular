@@ -91,10 +91,12 @@ def _run_rms_norm[
     var gamma_view = TileTensor(gamma_ptr, row_major(Coord(K)))
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def input_fn[width: Int](coords: Coord) {var in_view} -> SIMD[dtype, width]:
         return in_view.load[width=width](coords)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def output_fn[
         width: SIMDLength, alignment: Int
     ](coords: Coord, val: SIMD[dtype, width]) {var out_view} -> None:
@@ -398,6 +400,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
     # ===== Benchmark 1: fused `lamport_allreduce_rmsnorm` (1 kernel) =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fused_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {imm}:
@@ -433,6 +436,7 @@ def bench_fused_lamport_allreduce_rmsnorm[
 
     # ===== Benchmark 2: unfused `allreduce` + `rms_norm_gpu` (2 kernels) =====
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_unfused_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:

@@ -39,11 +39,8 @@ import huggingface_hub
 import torch
 import transformers
 import transformers.integrations.peft as peft_integration
-from idefics3 import torch_utils as idefics3_torch_utils
-from internvl import torch_utils as internvl_torch_utils
 from max import driver, pipelines
 from max.pipelines import TextGenerationPipelineInterface
-from max.pipelines.architectures.internvl.tokenizer import InternVLProcessor
 from max.pipelines.architectures.qwen3.text_encoder import (
     Qwen3TextEncoderKleinModel,
 )
@@ -52,7 +49,6 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.modeling.types import PipelineTask, PipelineTokenizer
 from peft.peft_model import PeftModel
-from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
 from test_common import test_data, torch_utils
 from test_common.test_data import (
@@ -107,8 +103,6 @@ class TorchModelAndDataProcessor:
         transformers.PreTrainedTokenizer
         | transformers.PreTrainedTokenizerFast
         | transformers.MllamaProcessor
-        | transformers.PixtralProcessor
-        | InternVLProcessor
     )
 
 
@@ -306,250 +300,6 @@ def _create_vision_max_pipeline(
     return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
 
-class InternVLPipelineOracle(PipelineOracle):
-    """Pipeline oracle for InternVL3 architectures."""
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-        self.trust_remote_code = True
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for InternVL."""
-        return (
-            test_data.DEFAULT_TEXT_ONLY + test_data.INTERNVL_INSTRUCT_REQUESTS
-        )
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        return _create_vision_max_pipeline(
-            self.model_path,
-            encoding,
-            device_specs,
-            # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.8,
-        )
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        tokenizer = transformers.AutoTokenizer.from_pretrained(
-            self.model_path,
-            trust_remote_code=True,
-            use_fast=False,
-        )
-        config = transformers.AutoConfig.from_pretrained(
-            self.model_path, trust_remote_code=True
-        )
-        processor = InternVLProcessor(tokenizer, config)
-        model = transformers.AutoModel.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
-            trust_remote_code=True,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-    def run_torch_text_generation(
-        self,
-        *,
-        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
-        device: torch.device,
-        num_steps: int,
-        inputs: list[Any],
-        generate_logprobs: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Run text generation using InternVL-specific preprocessing logic."""
-        return internvl_torch_utils.run_text_generation(
-            model=torch_pipeline_and_tokenizer.model,
-            processor=torch_pipeline_and_tokenizer.data_processor,
-            device=device,
-            textgen_requests=inputs,
-            num_steps=num_steps,
-            print_outputs=True,
-            generate_logprobs=generate_logprobs,
-            # Omit `use_cache` since the InternVL code hardcodes it.
-        )
-
-
-class Idefics3PipelineOracle(PipelineOracle):
-    """Pipeline oracle for Idefics3 architectures."""
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for Idefics3."""
-
-        return (
-            test_data.DEFAULT_TEXT_ONLY + test_data.IDEFICS3_INSTRUCT_REQUESTS
-        )
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        return _create_vision_max_pipeline(
-            self.model_path,
-            encoding,
-            device_specs,
-            # TODO(GEX-2365): Handle this in model memory estimation.
-            device_memory_utilization=0.8,
-        )
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        config = transformers.AutoConfig.from_pretrained(
-            self.model_path, trust_remote_code=True
-        )
-        processor = transformers.AutoProcessor.from_pretrained(self.model_path)
-        # Use AutoModelForImageTextToText instead of AutoModel for Idefics3
-        # (transformers 5.12 removed AutoModelForVision2Seq).
-        model = transformers.AutoModelForImageTextToText.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
-            trust_remote_code=True,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-    def run_torch_text_generation(
-        self,
-        *,
-        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
-        device: torch.device,
-        num_steps: int,
-        inputs: list[Any],
-        generate_logprobs: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Run text generation using Idefics3-specific preprocessing logic."""
-
-        return idefics3_torch_utils.run_text_generation(
-            model=torch_pipeline_and_tokenizer.model,
-            data_processor=torch_pipeline_and_tokenizer.data_processor,
-            device=device,
-            textgen_requests=inputs,
-            num_steps=num_steps,
-            print_outputs=True,
-            use_cache=self.use_cache,
-            generate_logprobs=generate_logprobs,
-        )
-
-
-class Qwen2_5VLPipelineOracle(PipelineOracle):
-    """Pipeline oracle for Qwen2.5VL architectures."""
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for Qwen2.5VL."""
-        # Torch model tries to return EOT for the default long text prompt,
-        # so add another bullet point to get it to generate more tokens.
-        long_prompt = test_data.LONG_TEXT_PROMPT + "\n    * "
-        text_only_prompts = [long_prompt] + list(test_data.SHORT_TEXT_PROMPTS)
-        text_only_requests = [
-            MockTextGenerationRequest.text_only(prompt)
-            for prompt in text_only_prompts
-        ]
-        return qwen2_5vl_utils.INSTRUCT_REQUESTS + text_only_requests
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        return _create_vision_max_pipeline(
-            self.model_path,
-            encoding,
-            device_specs,
-            # Chunked prefill is not supported for image prompts.
-            # (technically, this script doesn't go through the scheduler so
-            # it's not a problem, but it's a good idea to disable it anyway.)
-            enable_chunked_prefill=False,
-        )
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        config = transformers.AutoConfig.from_pretrained(
-            self.model_path, trust_remote_code=True
-        )
-        processor = transformers.AutoProcessor.from_pretrained(self.model_path)
-        model = transformers.Qwen2_5_VLForConditionalGeneration.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            # Qwen2.5VL 32B uses float32 for the vision model, and bfloat16 for the language model
-            # So, we don't set the encoding dtype for the torch model
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-    def run_torch_text_generation(
-        self,
-        *,
-        torch_pipeline_and_tokenizer: TorchModelAndDataProcessor,
-        device: torch.device,
-        num_steps: int,
-        inputs: list[Any],
-        generate_logprobs: bool = False,
-    ) -> list[dict[str, Any]]:
-        """Run text generation using Qwen2.5VL-specific preprocessing logic."""
-
-        return qwen2_5vl_utils.run_text_generation(
-            model=torch_pipeline_and_tokenizer.model,
-            data_processor=torch_pipeline_and_tokenizer.data_processor,
-            device=device,
-            textgen_requests=inputs,
-            num_steps=num_steps,
-            print_outputs=True,
-            use_cache=self.use_cache,
-            generate_logprobs=generate_logprobs,
-        )
-
-
 class Qwen3VLPipelineOracle(PipelineOracle):
     """Pipeline oracle for Qwen3VL architectures."""
 
@@ -655,195 +405,6 @@ class Qwen3VLPipelineOracle(PipelineOracle):
             use_cache=self.use_cache,
             generate_logprobs=generate_logprobs,
         )
-
-
-class PixtralPipelineOracle(PipelineOracle):
-    def __init__(self) -> None:
-        super().__init__()
-        self.model_path = "mistral-experimental/pixtral-12b"
-        self.max_length = 8192
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        """Input requests for Pixtral model."""
-        return test_data.PIXTRAL_REQUESTS
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {
-            "gpu": ["bfloat16"],
-        }
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        # TODO (AIPIPE-234): Implement MAX pipeline generation for Pixtral.
-        config = pipelines.PipelineArgs(
-            device_specs=device_specs,
-            quantization_encoding=encoding,
-            model_path=self.model_path,
-            max_length=self.max_length,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-
-        assert isinstance(pipeline, pipelines.TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device,
-    ) -> TorchModelAndDataProcessor:
-        processor = transformers.AutoProcessor.from_pretrained(self.model_path)
-        config = transformers.AutoConfig.from_pretrained(self.model_path)
-        model = transformers.LlavaForConditionalGeneration.from_pretrained(
-            self.model_path,
-            config=config,
-            device_map=device,
-            torch_dtype=ENCODING_TO_TORCH_DTYPE[encoding] if encoding else None,
-        )
-        return TorchModelAndDataProcessor(model=model, data_processor=processor)
-
-
-class _KimiK2_5BaseOracle(PipelineOracle):
-    """Shared scaffolding for Kimi-K2.5-NVFP4 oracle variants.
-
-    The Kimi K2.5 MAX pipeline config (8x EP/DP, 4096 ctx, NVFP4, etc.) and
-    the "torch goldens not practical at 1T params" stance are identical
-    across the multimodal upstream checkpoint and any text-only DeepseekV3
-    conversion. Subclasses provide their own ``inputs`` and override the
-    vLLM mm-specific kwargs via ``_vllm_extra_kwargs`` / ``_vllm_mm_data_key``.
-    """
-
-    # vLLM defaults match VLLMPipeline's own defaults (no mm passthrough).
-    # The multimodal subclass overrides these.
-    _vllm_extra_kwargs: Mapping[str, Any] = {}
-    _vllm_mm_data_key: str = "image"
-
-    def __init__(self, model_path: str) -> None:
-        super().__init__()
-        self.model_path = model_path
-        self.trust_remote_code = True
-
-    @property
-    def device_encoding_map(self) -> dict[str, list[str]]:
-        return {"gpu": ["float4_e2m1fnx2"]}
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        config = pipelines.PipelineArgs.from_flat_kwargs(
-            device_specs=device_specs,
-            quantization_encoding=encoding,
-            model_path=self.model_path,
-            max_length=4096,
-            trust_remote_code=self.trust_remote_code,
-            max_batch_input_tokens=4096,
-            ep_size=8,
-            data_parallel_degree=8,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-        assert isinstance(pipeline, TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
-
-    def create_torch_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device: torch.device | str,
-    ) -> TorchModelAndDataProcessor:
-        raise NotImplementedError(
-            "Kimi K2.5 is 1T params (MoE) — torch golden generation is not"
-            " practical. Use --framework vllm instead."
-        )
-
-    def create_vllm_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding | None,
-        device_specs: list[driver.DeviceSpec],
-    ) -> VLLMPipeline:
-        gpu_count = sum(1 for d in device_specs if d.device_type == "gpu")
-        return VLLMPipeline(
-            model_path=self.model_path,
-            trust_remote_code=self.trust_remote_code,
-            encoding=encoding,
-            tensor_parallel_size=max(1, gpu_count),
-            extra_kwargs=dict(self._vllm_extra_kwargs),
-            mm_data_key=self._vllm_mm_data_key,
-        )
-
-
-class KimiK2_5PipelineOracle(_KimiK2_5BaseOracle):
-    """Pipeline oracle for Kimi K2.5 multimodal architectures (vLLM only).
-
-    Kimi K2.5 is a 1T-parameter MoE model.
-    """
-
-    _vllm_extra_kwargs = {
-        "mm_encoder_tp_mode": "data",
-        "limit_mm_per_prompt": {"vision_chunk": 1},
-    }
-    _vllm_mm_data_key = "vision_chunk"
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        text_only_requests = [
-            MockTextGenerationRequest.text_only(prompt)
-            for prompt in test_data.SHORT_TEXT_PROMPTS
-        ]
-        return test_data.KIMIK2_5_REQUESTS + text_only_requests
-
-
-class KimiK2_7PipelineOracle(KimiK2_5PipelineOracle):
-    """Pipeline oracle for Kimi-K2.7-Code-NVFP4 (vLLM only).
-
-    K2.7-Code reuses the Kimi-K2.5 MAX architecture — confirmed via the HF
-    config (``architectures: KimiK25ForConditionalGeneration``, ``vision_config``
-    present), same as K2.5 and K2.6. It therefore inherits K2.5's vLLM golden
-    setup verbatim: multimodal (``KIMIK2_5_REQUESTS``) + text inputs and the
-    vision ``_vllm_extra_kwargs`` (``mm_encoder_tp_mode`` / ``limit_mm_per_prompt``
-    on the ``vision_chunk`` mm-data key).
-
-    The MAX pipeline runs in TP+EP mode (``data_parallel_degree=1``,
-    ``ep_size=8``, ``ep_use_allreduce=True``) to match the served K2.7-Code
-    deployment (same layout as K2.6), rather than the K2.5 base oracle's DP+EP
-    (``dp=8``) layout.
-    """
-
-    def create_max_pipeline(
-        self,
-        *,
-        encoding: pipelines.SupportedEncoding,
-        device_specs: list[driver.DeviceSpec],
-    ) -> MaxPipelineAndTokenizer:
-        config = pipelines.PipelineArgs.from_flat_kwargs(
-            device_specs=device_specs,
-            quantization_encoding=encoding,
-            model_path=self.model_path,
-            max_length=4096,
-            trust_remote_code=self.trust_remote_code,
-            max_batch_input_tokens=4096,
-            ep_size=8,
-            data_parallel_degree=1,
-            ep_use_allreduce=True,
-        )
-        tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(
-            PipelineConfig.from_args(config)
-        )
-        assert isinstance(pipeline, TextGenerationPipelineInterface)
-        return MaxPipelineAndTokenizer(pipeline, tokenizer)
 
 
 class GenericOracle(PipelineOracle):
@@ -1648,27 +1209,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="meta-models/Muse-Glimmer-30B",
         device_encoding_map={"gpu": ["bfloat16"]},
     ),
-    "microsoft/Phi-3.5-mini-instruct": GenericOracle(
-        model_path="microsoft/Phi-3.5-mini-instruct",
-        device_encoding_map={
-            "cpu": ["float32"],
-            "gpu": ["float32", "bfloat16"],
-        },
-    ),
-    "microsoft/phi-4": GenericOracle(
-        model_path="microsoft/phi-4",
-        device_encoding_map={
-            "cpu": ["float32"],
-            "gpu": ["float32", "bfloat16"],
-        },
-    ),
-    "LiquidAI/LFM2.5-1.2B-Instruct": GenericOracle(
-        model_path="LiquidAI/LFM2.5-1.2B-Instruct",
-        config_params={"trust_remote_code": True},
-        device_encoding_map={
-            "gpu": ["float32", "bfloat16"],
-        },
-    ),
     "LiquidAI/LFM3-1.7B": GenericOracle(
         model_path="LiquidAI/LFM3-1.7B",
         config_params={"max_length": 8192, "trust_remote_code": True},
@@ -1682,18 +1222,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # BF16 weights use ~278/288 GB on MI355X; cap context + batch to fit KV cache in remaining ~10 GB.
         config_params={"max_length": 8192, "max_batch_size": 16},
         device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "meta-llama/Meta-Llama-3-8B-Instruct": GenericOracle(
-        model_path="meta-llama/Meta-Llama-3-8B-Instruct",
-        weight_path_map={
-            "q4_k": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf",
-            "float32": "bartowski/Meta-Llama-3-8B-Instruct-GGUF/Meta-Llama-3-8B-Instruct-fp32.gguf",
-        },
-        config_params={"max_length": 512},
-        device_encoding_map={
-            "gpu": ["float32", "bfloat16"],
-            "cpu": ["float32", "q4_k"],
-        },
     ),
     "meta-llama/Llama-3.1-8B-Instruct": GenericOracle(
         model_path="meta-llama/Llama-3.1-8B-Instruct",
@@ -1759,136 +1287,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "gpu": ["float8_e4m3fn"],
         },
     ),
-    "meta-llama/Llama-3.2-1B": GenericOracle(
-        model_path="meta-llama/Llama-3.2-1B",
-        config_params={"max_length": 512},
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-        },
-    ),
-    "meta-llama/Llama-3.3-70B-Instruct": GenericOracle(
-        model_path="meta-llama/Llama-3.3-70B-Instruct",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "allenai/OLMo-2-0425-1B": GenericOracle(
-        model_path="allenai/OLMo-2-0425-1B",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["float32"],
-            "cpu": ["float32"],
-        },
-    ),
-    "allenai/OLMo-2-0425-1B-Instruct": GenericOracle(
-        model_path="allenai/OLMo-2-0425-1B-Instruct",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "allenai/OLMo-2-1124-7B": GenericOracle(
-        model_path="allenai/OLMo-2-1124-7B",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["float32"],
-            "cpu": ["float32"],
-        },
-    ),
-    "allenai/OLMo-2-1124-7B-Instruct": GenericOracle(
-        model_path="allenai/OLMo-2-1124-7B-Instruct",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "allenai/OLMo-2-1124-13B-Instruct": GenericOracle(
-        model_path="allenai/OLMo-2-1124-13B-Instruct",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "allenai/OLMo-2-0325-32B-Instruct": GenericOracle(
-        model_path="allenai/OLMo-2-0325-32B-Instruct",
-        config_params={
-            "max_length": 4096,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-            "cpu": ["bfloat16"],
-        },
-    ),
-    "allenai/Olmo-3-7B-Instruct": GenericOracle(
-        model_path="allenai/Olmo-3-7B-Instruct",
-        config_params={
-            "max_length": 32768,
-            "prefer_module_v3": True,
-        },
-        device_encoding_map={
-            "gpu": ["bfloat16"],
-        },
-    ),
-    "mistralai/Mistral-Nemo-Instruct-2407": GenericOracle(
-        model_path="mistralai/Mistral-Nemo-Instruct-2407",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": GenericOracle(
-        model_path="mistralai/Mistral-Small-3.1-24B-Instruct-2503",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-        auto_model_cls=transformers.AutoModelForImageTextToText,
-    ),
-    "OpenGVLab/InternVL3-1B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-1B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-8B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-8B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-14B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-14B-Instruct"
-    ),
-    "OpenGVLab/InternVL3-38B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3-38B-Instruct"
-    ),
-    "OpenGVLab/InternVL3_5-8B-Instruct": InternVLPipelineOracle(
-        "OpenGVLab/InternVL3_5-8B-Instruct"
-    ),
-    "HuggingFaceM4/Idefics3-8B-Llama3": Idefics3PipelineOracle(
-        "HuggingFaceM4/Idefics3-8B-Llama3"
-    ),
-    "mistral-experimental/pixtral-12b": PixtralPipelineOracle(),
-    "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
-        model_path="Qwen/Qwen2.5-7B-Instruct",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen2.5-VL-3B-Instruct": Qwen2_5VLPipelineOracle(
-        "Qwen/Qwen2.5-VL-3B-Instruct"
-    ),
-    "Qwen/Qwen2.5-VL-7B-Instruct": Qwen2_5VLPipelineOracle(
-        "Qwen/Qwen2.5-VL-7B-Instruct"
-    ),
-    "Qwen/Qwen2.5-VL-32B-Instruct": Qwen2_5VLPipelineOracle(
-        "Qwen/Qwen2.5-VL-32B-Instruct"
-    ),
-    # Qwen2.VL-FP8
-    "allenai/olmOCR-2-7B-1025-FP8": Qwen2_5VLPipelineOracle(
-        "allenai/olmOCR-2-7B-1025-FP8"
-    ),
     "Qwen/Qwen3-VL-30B-A3B-Instruct": Qwen3VLPipelineOracle(
         "Qwen/Qwen3-VL-30B-A3B-Instruct"
     ),
@@ -1904,31 +1302,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         component_model_class=Qwen3TextEncoderKleinModel,
         padded_length=512,
         device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-8B": GenericOracle(
-        model_path="Qwen/Qwen3-8B",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-32B": GenericOracle(
-        model_path="Qwen/Qwen3-32B",
-        config_params={"max_length": 512, "max_batch_size": 1},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-30B-A3B": GenericOracle(
-        model_path="Qwen/Qwen3-30B-A3B",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-30B-A3B-Instruct-2507": GenericOracle(
-        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["bfloat16"]},
-    ),
-    "Qwen/Qwen3-30B-A3B-Instruct-2507-FP8": GenericOracle(
-        model_path="Qwen/Qwen3-30B-A3B-Instruct-2507-FP8",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
     "Qwen/Qwen3.8-27B": GenericOracle(
         model_path="Qwen/Qwen3.8-27B",
@@ -1986,18 +1359,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["float8_e4m3fn"],
-        },
-    ),
-    "sentence-transformers/all-mpnet-base-v2": GenericOracle(
-        model_path="sentence-transformers/all-mpnet-base-v2",
-        # Maximum length accepted by MPNet tokenizer is 512.
-        config_params={"max_length": 512, "pool_embeddings": False},
-        prompts=[p[:502] for p in test_data.DEFAULT_PROMPTS],
-        auto_model_cls=transformers.AutoModel,
-        task=PipelineTask.EMBEDDINGS_GENERATION,
-        device_encoding_map={
-            "cpu": ["float32"],
-            "gpu": ["float32"],
         },
     ),
     "Qwen/Qwen3-Embedding-0.6B": GenericOracle(
@@ -2068,14 +1429,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         config_params={"max_length": 8192, "trust_remote_code": True},
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
     ),
-    "deepseek-ai/DeepSeek-V2-Lite-Chat": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-V2-Lite-Chat",
-        config_params={"max_length": 516, "trust_remote_code": True},
-        device_encoding_map={"gpu": ["bfloat16"]},
-        prompts=[prompt[:1500] for prompt in test_data.DEFAULT_PROMPTS],
-        # upstream modeling_deepsek.py uses a deprecated transformers function
-        use_cache=False,
-    ),
     "kathywu95/deepseek-v3-small-random": GenericOracle(
         model_path="kathywu95/deepseek-v3-small-random",
         config_params={
@@ -2090,18 +1443,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
             "max_length": 516,
             "trust_remote_code": False,
             "use_subgraphs": False,
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        add_bos_token=True,
-    ),
-    "deepseek-ai/DeepSeek-V3.1-Terminus": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-V3.1-Terminus",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 8,
         },
         device_encoding_map={"gpu": ["float8_e4m3fn"]},
         add_bos_token=True,
@@ -2130,30 +1471,6 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         # vLLM's DeepSeek-V4 o_proj calls DeepGEMM's fp8_einsum
         # unconditionally, so it needs DeepGEMM's weight layout.
         vllm_env={"VLLM_USE_DEEP_GEMM": "1"},
-    ),
-    "deepseek-ai/DeepSeek-V3.2-Exp": GenericOracle(
-        model_path="deepseek-ai/DeepSeek-V3.2-Exp",
-        config_params={
-            "max_length": 516,
-            "trust_remote_code": False,
-            "max_batch_input_tokens": 512,
-            "ep_size": 8,
-            "data_parallel_degree": 1,
-            # Match `--kv-cache-format float8_e4m3fn` (FP8 KV avoids dtype mismatches / hangs).
-            "kv_cache_format": "float8_e4m3fn",
-        },
-        device_encoding_map={"gpu": ["float8_e4m3fn"]},
-        add_bos_token=True,
-    ),
-    "nvidia/Kimi-K2.7-Code-NVFP4": KimiK2_7PipelineOracle(
-        "nvidia/Kimi-K2.7-Code-NVFP4"
-    ),
-    # `transformers` cannot load Laguna S-2.1's mixed NVFP4/BF16 experts and
-    # the BF16 source is 236 GB, so the reference side has to be a vLLM golden.
-    "poolside/Laguna-S-2.1-NVFP4": GenericOracle(
-        model_path="poolside/Laguna-S-2.1-NVFP4",
-        config_params={"max_length": 512},
-        device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     # transformers cannot load ML4's consolidated NVFP4 checkpoint, so the
     # reference has to be a vLLM golden. ep_size stays at its default

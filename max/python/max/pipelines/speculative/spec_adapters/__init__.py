@@ -64,6 +64,7 @@ __all__ = [
     "batch_trailing_buffers",
     "block_proposer",
     "check",
+    "draft_score_source_route_error",
     "ep_input_tree",
     "ep_input_types",
     "ep_tail",
@@ -72,6 +73,8 @@ __all__ = [
     "fold_index_glue",
     "has_adapter",
     "hisparse_input_types",
+    "per_row_verify_layout_error",
+    "per_row_verify_route_error",
     "prepares_every_batch",
     "primary_kv",
     "relaxed_thinking_acceptance",
@@ -85,9 +88,11 @@ __all__ = [
     "trailing_buffers",
     "trailing_input_tree",
     "trailing_input_types",
+    "verifies_per_row",
     "verify_commits_long_rows",
     "verify_for",
     "verify_takes_prefill_rows",
+    "wires_head_score",
 ]
 
 
@@ -111,6 +116,8 @@ _TARGET_ADAPTERS: Mapping[str, str] = {
     "GraniteForCausalLM": ".llama3.spec_adapters",
     "HYV4ForCausalLM": ".hy_v4.spec_adapters",
     "HYV4ForCausalLM_ModuleV3": ".hy_v4.spec_adapters",
+    "HYV4VLForConditionalGeneration_ModuleV3": ".hy_v4.vl_spec_adapters",
+    "Inkling2ForConditionalGeneration_ModuleV3": ".inkling2.spec_adapters",
     "InklingForConditionalGeneration": ".inkling.spec_adapters",
     "InklingForConditionalGeneration_ModuleV3": (
         ".inkling_modulev3.spec_adapters"
@@ -160,6 +167,15 @@ def has_adapter(target_arch: str) -> bool:
     A ModuleV3 variant counts only when it names an adapter of its own.
     """
     return target_arch in _TARGET_ADAPTERS
+
+
+def _adapter_if_any(target_arch: str) -> TargetAdapter | None:
+    """Returns the target's adapter, or ``None`` if neither name has one."""
+    if has_adapter(target_arch) or has_adapter(
+        target_arch.removesuffix("_ModuleV3")
+    ):
+        return _target_adapter(target_arch)
+    return None
 
 
 def _adapter(target_arch: str, method: str | None = None) -> TargetAdapter:
@@ -345,6 +361,113 @@ def successor_replay(target_arch: str, method: str) -> bool:
     return _adapter(target_arch, method).successor_replay
 
 
+def verifies_per_row(
+    target_arch: str,
+    method: str,
+    *,
+    data_parallel_degree: int = 1,
+    hisparse: bool = False,
+    decode_context_parallel_degree: int = 1,
+) -> bool:
+    """Returns whether ``method``'s verify wires per-row prefix selection.
+
+    The layout arguments are the export's; an adapter that declares no
+    layout rule serves every layout its method does. A target with no
+    spec adapter wires none.
+    """
+    adapter = _adapter_if_any(target_arch)
+    return (
+        adapter is not None
+        and method in adapter.per_row_verify_methods
+        and per_row_verify_layout_error(
+            target_arch,
+            data_parallel_degree=data_parallel_degree,
+            hisparse=hisparse,
+            decode_context_parallel_degree=decode_context_parallel_degree,
+        )
+        is None
+    )
+
+
+def per_row_verify_layout_error(
+    target_arch: str,
+    *,
+    data_parallel_degree: int,
+    hisparse: bool,
+    decode_context_parallel_degree: int,
+) -> str | None:
+    """Returns why the target cannot serve per-row verify on this layout.
+
+    An adapter with no layout rule serves every layout, so only an
+    adapter that checked layouts apart refuses any.
+    """
+    adapter = _adapter_if_any(target_arch)
+    if adapter is None or adapter.per_row_verify_layout_error is None:
+        return None
+    return adapter.per_row_verify_layout_error(
+        data_parallel_degree, hisparse, decode_context_parallel_degree
+    )
+
+
+def per_row_verify_route_error(
+    *,
+    wired_per_row: bool,
+    per_row_verify: bool,
+    layout_error: str | None = None,
+) -> str | None:
+    """Returns why the route cannot serve a per-row verify, else ``None``.
+
+    Args:
+        wired_per_row: Whether the resolved route's verify path wires
+            per-row prefix selection, as :func:`verifies_per_row` reports.
+        per_row_verify: Whether the export asks for per-row verify.
+        layout_error: Why the export's layout cannot serve it, as
+            :func:`per_row_verify_layout_error` reports.
+    """
+    if per_row_verify and layout_error is not None:
+        return (
+            f"--per-row-verify is not exported for this layout: {layout_error}"
+        )
+    if per_row_verify and not wired_per_row:
+        return (
+            "--per-row-verify is not exported for this route: no verify "
+            "path of this export wires per-row prefix selection into its "
+            "graph"
+        )
+    return None
+
+
+def wires_head_score(target_arch: str, method: str) -> bool:
+    """Returns whether ``method``'s drafter wires a checkpoint confidence head.
+
+    A target with no spec adapter wires none. This is a route capability,
+    not a model name: the ``head`` score source is exported only where the
+    drafter mounts the head.
+    """
+    adapter = _adapter_if_any(target_arch)
+    return adapter is not None and method in adapter.head_score_methods
+
+
+def draft_score_source_route_error(
+    *, wired_head: bool, score_source: str | None
+) -> str | None:
+    """Returns why the route cannot serve a score source, else ``None``.
+
+    Args:
+        wired_head: Whether the resolved route's drafter wires a
+            checkpoint confidence head into its graph, as
+            :func:`wires_head_score` reports.
+        score_source: The export's requested ``--draft-score-source``.
+    """
+    if score_source == "head" and not wired_head:
+        return (
+            "--draft-score-source head is not exported for this route: "
+            "no drafter of this export wires a checkpoint confidence head "
+            "into its graph"
+        )
+    return None
+
+
 def signal_buffer_index(target_arch: str) -> int | None:
     """Returns where a fused graph takes its signal buffers.
 
@@ -352,6 +475,13 @@ def signal_buffer_index(target_arch: str) -> int | None:
     fix it.
     """
     return _adapter(target_arch).signal_buffer_index
+
+
+def takes_vision_inputs(
+    target_arch: str, method: str, target_config: Any
+) -> bool:
+    """Returns whether this deployment takes cached vision inputs."""
+    return _adapter(target_arch, method).takes_vision_inputs(target_config)
 
 
 def trailing_input_types(

@@ -179,12 +179,12 @@ static SMLoc getAttributeNameLoc(const ExprNode *expr) {
 }
 
 PValue OverloadSet::getCallee(ASTDecl *fnDecl) const {
-  return getCallee(fnDecl, VerifiedParamBindings());
+  VerifiedParamBindings emptyBindings;
+  return getCallee(fnDecl, emptyBindings);
 }
 
-PValue
-OverloadSet::getCallee(ASTDecl *fnDecl,
-                       const VerifiedParamBindings &verifiedBindings) const {
+PValue OverloadSet::getCallee(ASTDecl *fnDecl,
+                              VerifiedParamBindings &verifiedBindings) const {
   ParamBindings paramBindings = getParamBindings(fnDecl);
   // Check deprecation and stability warnings for the resolved function.
   // For method calls (instance or static via attribute access), compute the
@@ -194,7 +194,8 @@ OverloadSet::getCallee(ASTDecl *fnDecl,
     fixitLoc = getAttributeNameLoc(paramBindings.getExpr());
   checkDeclUsageWarnings(*fnDecl, paramBindings.getExprLoc(),
                          paramBindings.declScope, paramBindings.shared,
-                         paramBindings.getExpr()->getRange(), syntax, fixitLoc);
+                         paramBindings.getExpr()->getRange(), syntax, fixitLoc,
+                         /*checkDeprecation=*/!isConformanceWitness);
 
   ASTType ctxType = getContextualType(fnDecl);
   // Take the fast path to avoid verify binding again if a verified binding has
@@ -529,7 +530,7 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   if (evaluations.size() == 1) {
     ASTDecl *selectedDecl = evaluations[0].first;
     // We don't have arguments, so can't need re-emission.
-    assert(bestFitness.getOperandsNeedingOrigins().empty() &&
+    assert(bestFitness.getOperandsNeedingReEmission().empty() &&
            "No arguments to require re-emission");
 
     // If body-constraint deferral applies to this candidate, record the
@@ -565,132 +566,141 @@ PValue OverloadSet::filterOverloadSetForParamBindings(
   return {};
 }
 
+/// Spill the operand at `operandIdx`, or the result slot for
+/// `kExprDestOperandIdx`, to memory so that it exposes an origin.
+static LogicalResult emitOperandNeedingOrigins(
+    const OperandNeedingReEmission::NeedingOrigins &needingOrigins,
+    size_t operandIdx, CallOperands &operands, IREmitter &emitter) {
+  ASTType expectedArgType = needingOrigins.expectedArgType;
+  // Handle the result slot if we have to materialize it into memory. If the
+  // destination can supply memory, for example a 'var' pattern, resolve it
+  // so that inference can use it. Otherwise make a temporary. Do not
+  // replace the destination: the call result must still go to it as an
+  // owned value.
+  if (operandIdx == OperandNeedingReEmission::kExprDestOperandIdx) {
+    if (operands.dest.getDefinedMLValueIfExists(expectedArgType, emitter))
+      return success();
+    ExprDest temporary(operands.dest.getContext());
+    operands.resultSlot = temporary.getMLValueForResult(
+        operands.getExprLoc(), expectedArgType, emitter);
+    if (!operands.resultSlot)
+      return failure();
+    return success();
+  }
+
+  // This is the implicit constructor's convention when the operand is
+  // spilled to feed a conversion rather than the call itself.
+  ArgConvention argConvention = needingOrigins.argConvention;
+
+  // If the argument is a DLValue, then we might have a getter/setter pair,
+  // but we are only going to use the getter.  In the case when the getter
+  // returns a reference, we can directly use that. Reference arguments
+  // cannot support writeback anyway.
+  //
+  // TODO: Explicit handling of DLValues shouldn't be needed here -
+  // emitMBValue (et al) already do this. The problem is that the code below
+  // isn't handling all the arg conventions correctly, notably ref and mut
+  // can bind to a mutable ref returned by getitem. We should generalize
+  // "needsRValue" to a full ArgConvention.
+  if (auto lv = operands[operandIdx].ir.getIfDLValue()) {
+    ExprDest loadDest(EC_RefBinding);
+    auto loaded = lv->emitLoad(loadDest, emitter);
+    if (!loaded)
+      return failure(); // Failed to emit the PValue/SValue to an MRValue.
+    operands.values[operandIdx].ir = loaded;
+
+    // If the getter returned a reference, then use that value, otherwise
+    // drop an RValue into a temporary and bind an immutable ref.
+    if (operands[operandIdx].ir.isMValue())
+      return success();
+  }
+
+  // Ref convention isn't supported, so if we still have something in the
+  // wrong address space, we need to emit a copy.
+  if (operands[operandIdx].ir.isMValue() &&
+      !operands[operandIdx].ir.getMValueType().isDefaultAddrSpace()) {
+    operands.values[operandIdx].ir = emitter.emitCopyFromNonDefaultAddressSpace(
+        operands[operandIdx], EC_CallArgValue);
+    if (!operands[operandIdx].ir)
+      return failure();
+  }
+
+  AnyValue newVal;
+  if (emitter.builder) {
+    // We emit this as an MBValue instead of an MRValue specifically so
+    // 'ref' arguments do not infer mutability from the temporary.
+    if (argConvention != ArgConvention::OwnedMem) {
+      newVal =
+          emitter.emitMBValue({operands[operandIdx]},
+                              ExprContext::EC_CallRefArgValue, expectedArgType);
+    } else {
+      // "var" variadic list arguments need ot turn into RValues though.
+      newVal =
+          emitter.emitMRValue({operands[operandIdx]},
+                              ExprContext::EC_CallRefArgValue, expectedArgType);
+    }
+    if (!newVal)
+      return failure(); // Failed to emit the PValue/SValue to an MBValue.
+
+  } else {
+    // In a comptime context, convert to expected type then drop in
+    // memory.
+    auto convertedArg = emitter.emitPValue(
+        operands[operandIdx], ExprContext::EC_CallRefArgValue, expectedArgType);
+    if (!convertedArg)
+      return failure(); // Failed to emit the PValue/SValue to an MRValue.
+    if (argConvention != ArgConvention::OwnedMem)
+      newVal = PMBValue::getFromPValue(convertedArg);
+    else
+      newVal = PMRValue::getFromPValue(convertedArg);
+  }
+  operands.values[operandIdx].ir = newVal;
+  return success();
+}
+
 /// This method is called when we have selected an overload candidate that
 /// matches the operand list, but some argument requires an origin and the
 /// argument doesn't have it. This could be because the argument is a computed
 /// lvalue or SRValue, but either way we need to spill it to memory to expose
 /// the origin.
 ///
-/// This operands in question are indicated by the
-/// info.getOperandsNeedingOrigins() bitset, and this method emits them and
+/// The operands in question are listed by
+/// fitness.getOperandsNeedingReEmission(), and this method emits them and
 /// mutates the operand list so that overload resolution can be iterated and
 /// will succeed.
-static LogicalResult emitOperandsNeedingOriginsToMemory(
-    const OperandsNeedingOriginsList &operandsNeedingOrigins,
+static LogicalResult emitOperandsNeedingReEmission(
+    const OperandsNeedingReEmissionList &operandsNeedingReEmission,
     CallOperands &operands, IREmitter &emitter) {
-  assert(!operandsNeedingOrigins.empty() && "should emit something");
+  assert(!operandsNeedingReEmission.empty() && "should emit something");
 
   SmallPtrSet<size_t, 4> operandsAlreadySpilled;
 
   // Emit each of the arguments that needs a origin to an MValue.
-  for (const OperandNeedingOrigin &info : operandsNeedingOrigins) {
+  for (const OperandNeedingReEmission &info : operandsNeedingReEmission) {
     auto operandIdx = info.operandIdx;
-    auto expectedArgType = info.expectedArgType;
+
     // If the operand is a positional argument it will be in the normal
     // operand list, otherwise it will be in the kwargs list.
     assert((operandIdx < operands.size() ||
-            operandIdx == OperandNeedingOrigin::kExprDestOperandIdx) &&
+            operandIdx == OperandNeedingReEmission::kExprDestOperandIdx) &&
            "argument index incorrect");
 
     if (!operandsAlreadySpilled.insert(operandIdx).second)
       continue; // Ignore duplicates.
 
-    // Handle the result slot if we have to materialize it into memory.
-    if (operandIdx == OperandNeedingOrigin::kExprDestOperandIdx) {
-      MLValue addr = operands.dest.getMLValueForResult(
-          operands.getExprLoc(), expectedArgType, emitter);
-      if (!addr)
-        return failure();
-      operands.dest = ExprDest(addr, operands.dest.getContext());
-      continue;
-    }
-
-    // Derive the convention from the signature this argument belongs to, which
-    // is the implicit constructor's signature when the operand is spilled to
-    // feed a conversion rather than the call itself.  If the argument is a
-    // variadic, the elements have their own convention.
-    ArgConvention argConvention = info.getArgConvention();
-
-    // If the argument is a DLValue, then we might have a getter/setter pair,
-    // but we are only going to use the getter.  In the case when the getter
-    // returns a reference, we can directly use that. Reference arguments cannot
-    // support writeback anyway.
-    //
-    // TODO: Explicit handling of DLValues shouldn't be needed here -
-    // emitMBValue (et al) already do this. The problem is that the code below
-    // isn't handling all the arg conventions correctly, notably ref and mut can
-    // bind to a mutable ref returned by getitem.
-    // We should generalize "needsRValue" to a full ArgConvention.
-    if (auto lv = operands[operandIdx].ir.getIfDLValue()) {
-      ExprDest loadDest(EC_RefBinding);
-      auto newVal = lv->emitLoad(loadDest, emitter);
-      if (!newVal)
-        return failure(); // Failed to emit the PValue/SValue to an MRValue.
-      operands.values[operandIdx].ir = newVal;
-
-      // If the getter returned a reference, then use that value, otherwise drop
-      // an RValue into a temporary and bind an immutable ref.
-      if (operands[operandIdx].ir.isMValue())
-        continue;
-    }
-
-    // Ref convention isn't supported, so if we still have something in the
-    // wrong address space, we need to emit a copy.
-    if (operands[operandIdx].ir.isMValue() &&
-        !operands[operandIdx].ir.getMValueType().isDefaultAddrSpace()) {
-      auto eltType = operands[operandIdx].ir.getMValueType().getElementType();
-      // Non-trivially copyable types cannot be copied from a non-default
-      // address space, because copyinit doesn't allow 'ref'.
-      if (!ASTType(eltType).isProvablyImplicitlyTriviallyCopyable(
-              operands[operandIdx].expr->getLoc(), emitter.shared,
-              emitter.declScope)) {
-        emitter.emitError(
-            operands[operandIdx].expr->getLoc(),
-            "non-implicitly trivially copyable value cannot be copied from a "
-            "non-default address space")
-            << operands[operandIdx].expr->getRange();
-        return failure();
-      }
-
-      // Because this is a trivially copyable value, then we can do a copy by
-      // doing a load.
+    if (info.isLambdas()) {
+      assert(operandIdx != OperandNeedingReEmission::kExprDestOperandIdx);
+      auto ctx = info.getLambdas();
+      LambdaUValue lambdaUValue = operands[operandIdx].ir.getIfLambda();
       operands.values[operandIdx].ir =
-          emitter.emitSRValue(operands[operandIdx], EC_CallArgValue);
-      if (!operands[operandIdx].ir)
+          lambdaUValue.emitAsCValue(emitter, ctx.ctxSig, ctx.isThin);
+    } else if (info.isNeedingOrigins()) {
+      if (failed(emitOperandNeedingOrigins(info.getNeedingOrigins(), operandIdx,
+                                           operands, emitter)))
         return failure();
-    }
-
-    AnyValue newVal;
-    if (emitter.builder) {
-      // We emit this as an MBValue instead of an MRValue specifically so
-      // 'ref' arguments do not infer mutability from the temporary.
-      if (argConvention != ArgConvention::OwnedMem) {
-        newVal = emitter.emitMBValue({operands[operandIdx]},
-                                     ExprContext::EC_CallRefArgValue,
-                                     expectedArgType);
-      } else {
-        // "var" variadic list arguments need ot turn into RValues though.
-        newVal = emitter.emitMRValue({operands[operandIdx]},
-                                     ExprContext::EC_CallRefArgValue,
-                                     expectedArgType);
-      }
-      if (!newVal)
-        return failure(); // Failed to emit the PValue/SValue to an MBValue.
-
     } else {
-      // In a comptime context, convert to expected type then drop in
-      // memory.
-      auto convertedArg =
-          emitter.emitPValue(operands[operandIdx],
-                             ExprContext::EC_CallRefArgValue, expectedArgType);
-      if (!convertedArg)
-        return failure(); // Failed to emit the PValue/SValue to an MRValue.
-      if (argConvention != ArgConvention::OwnedMem)
-        newVal = PMBValue::getFromPValue(convertedArg);
-      else
-        newVal = PMRValue::getFromPValue(convertedArg);
+      llvm_unreachable("unrecognized remission kind");
     }
-    operands.values[operandIdx].ir = newVal;
   }
   return success();
 }
@@ -707,7 +717,15 @@ bool LIT::isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
   return false;
 }
 
-/// Evaluate the fnDecls candidates and see if there is an unambiguous
+CalleeResult OverloadSet::filterOverloadSet(
+    CallOperands &operands, bool emitDiagnosticOnFailure, IREmitter &emitter,
+    bool disableMaterialization,
+    OperandsNeedingReEmissionList *forwardedNeedingReEmission) const {
+  return filterDecls(fnDecls, operands, emitDiagnosticOnFailure, emitter,
+                     disableMaterialization, forwardedNeedingReEmission);
+}
+
+/// Evaluate the decls candidates and see if there is an unambiguous
 /// candidate that works with the specified parameter bindings and provided
 /// arguments.  If so, return the single entry that works.
 ///
@@ -718,10 +736,11 @@ bool LIT::isNeverCallableSynthesizedCandidate(ASTDecl *candidate) {
 /// list, e.g. when calling a static method that doesn't need a self value, and
 /// by pre-emitting PValues when not in an parameter context. The actual
 /// emission needs to use the updated argument list.
-CalleeResult OverloadSet::filterOverloadSet(
-    CallOperands &operands, bool emitDiagnosticOnFailure, IREmitter &emitter,
+CalleeResult OverloadSet::filterDecls(
+    ArrayRef<ASTDecl *> fnDecls, CallOperands &operands,
+    bool emitDiagnosticOnFailure, IREmitter &emitter,
     bool disableMaterialization,
-    OperandsNeedingOriginsList *forwardedNeedingOrigins) const {
+    OperandsNeedingReEmissionList *forwardedNeedingReEmission) const {
   // We allow implicit conversion of the operands to this call unless it is
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
   bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
@@ -994,22 +1013,26 @@ CalleeResult OverloadSet::filterOverloadSet(
     // (from PValue or SValues) to be passed as 'ref' arguments.  If this
     // happens, emit them now and then re-infer the correct origins.  If not,
     // we're done.
-    if (!bestFitness.getOperandsNeedingOrigins().empty()) {
-      if (forwardedNeedingOrigins)
-        *forwardedNeedingOrigins = bestFitness.getOperandsNeedingOrigins();
+    if (!bestFitness.getOperandsNeedingReEmission().empty()) {
+      if (forwardedNeedingReEmission)
+        *forwardedNeedingReEmission =
+            bestFitness.getOperandsNeedingReEmission();
       if (!disableMaterialization) {
         // Emit one or more operands to memory.  We know this can't infinitely
         // loop because there is a forward progress guarantee here.
-        if (failed(emitOperandsNeedingOriginsToMemory(
-                bestFitness.getOperandsNeedingOrigins(), operands, emitter)))
+        if (failed(emitOperandsNeedingReEmission(
+                bestFitness.getOperandsNeedingReEmission(), operands, emitter)))
           return CalleeResult::no();
 
         // Now that we mutated the operand list by introducing some new memory
-        // types to provide origins, try again.  This will re-evaluate parameter
-        // bindings and either succeed or fail based on the new information.
+        // types to provide origins, try again.
         // The recursive call will push deferred body constraints (if any) onto
         // the context itself, so do not push them here.
-        return filterOverloadSet(operands, emitDiagnosticOnFailure, emitter);
+        //
+        // We don't have to reevaluate the entire overload set, only re-evaluate
+        // over the best fitness.
+        return filterDecls({selectedDecl}, operands, emitDiagnosticOnFailure,
+                           emitter, disableMaterialization, nullptr);
       }
     }
 
@@ -1089,8 +1112,8 @@ CalleeAndDeclResult OverloadSet::filterOverloadSetForValueType(
                        /*declIfDirect=*/nullptr,
                        /*discardError=*/true, additionalAssumptions);
     VerifiedParamBindings newBindings = inference.inferForStruct();
-    if (!newBindings)
-      return {{}, nullptr}; // If there is an error, return the problem.
+    if (!newBindings) // On error, return the problem.
+      return {VerifiedParamBindings(), nullptr};
 
     // If anything was bound, apply it to the signature so the expected
     // argument types are updated.
@@ -1588,23 +1611,29 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands) {
         operands.dest.resetForError(*this);
         return {};
       }
-      const VerifiedParamBindings &paramBindings = fitness.getParamBindings();
+      VerifiedParamBindings &paramBindings = fitness.getParamBindings();
+      FailureOr<ParamsBindingArrayAttr> bindings =
+          paramBindings.materializeBinding();
+      if (failed(bindings)) {
+        operands.dest.resetForError(*this);
+        return {};
+      }
       auto discharged = KGEN::getDenseBoolArrayAttr(
           getContext(), paramBindings.getDischargedBodyConstraints());
       Location loc = translateLocation(callExpr->getLoc());
-      auto bindOp = BindParamsOp::create(
-          *builder, loc, calleeVal, paramBindings.getBindings(), discharged);
+      auto bindOp =
+          BindParamsOp::create(*builder, loc, calleeVal, *bindings, discharged);
       boundCalleeRV = SRValue(bindOp.getResult());
     }
   }
 
   // If the selected candidate needs some register operands emitted to memory,
   // do so and try again.
-  if (!fitness.getOperandsNeedingOrigins().empty()) {
+  if (!fitness.getOperandsNeedingReEmission().empty()) {
     // Emit one or more operands to memory.  We know this can't infinitely
     // loop because there is a forward progress guarantee here.
-    if (failed(emitOperandsNeedingOriginsToMemory(
-            fitness.getOperandsNeedingOrigins(), operands, *this))) {
+    if (failed(emitOperandsNeedingReEmission(
+            fitness.getOperandsNeedingReEmission(), operands, *this))) {
       operands.dest.resetForError(*this);
       return {};
     }
@@ -1810,7 +1839,7 @@ CValue IREmitter::emitConstructorCall(ASTType type,
 /// any error reporting. This does not generate any IR.
 FailureOr<CalleeResult> OverloadSet::canConstructType(
     ASTType requiredType, CallOperands &operands, ASTDecl &declScope,
-    OperandsNeedingOriginsList *forwardedNeedingOrigins) {
+    OperandsNeedingReEmissionList *forwardedNeedingReEmission) {
   // Check to see if we can do an implicit conversion by invoking a `__init__`
   // method on the expected type.
   requiredType = getConstructorLookupType(requiredType, declScope);
@@ -1836,7 +1865,7 @@ FailureOr<CalleeResult> OverloadSet::canConstructType(
   CalleeResult result = callee.filterOverloadSet(
       operands,
       /*emitDiagnosticOnFailure=*/false, paramEmitter,
-      /*disableMaterialization=*/true, forwardedNeedingOrigins);
+      /*disableMaterialization=*/true, forwardedNeedingReEmission);
 
   if (callee.isErroneous())
     return FailureOr<CalleeResult>(failure());

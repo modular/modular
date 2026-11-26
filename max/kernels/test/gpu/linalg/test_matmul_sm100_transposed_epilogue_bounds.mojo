@@ -40,7 +40,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
 )
 import linalg.matmul.vendor.blas as vendor_blas
-from std.utils.index import Index, IndexList
 
 
 def test_transposed_epilogue_row_straddle[
@@ -141,7 +140,7 @@ def test_transposed_epilogue_row_straddle[
         transpose_b=transpose_b,
         config=matmul_config,
     ](
-        IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+        (Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
         a_tensor,
         b_tensor,
         store_epilogue,

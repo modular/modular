@@ -442,6 +442,45 @@ def test_error_ct_dynamic_weight_scaling(
         )
 
 
+def test_parse_compressed_tensors_block_fp8() -> None:
+    """Parses tencent/Hy4-FP8's compressed-tensors block FP8 W8A8 scheme."""
+    config_path = TEST_DATA_PATH / "tencent__hy4_fp8_config.json"
+    config = json.loads(config_path.read_text())
+    num_layers = config["text_config"]["num_hidden_layers"]
+    hf_config = SimpleNamespace(
+        quantization_config=config["quantization_config"],
+        text_config=SimpleNamespace(num_hidden_layers=num_layers),
+    )
+    state_dict = {
+        "layers.1.self_attn.o_proj.weight_scale": WeightData(
+            name="layers.1.self_attn.o_proj.weight_scale",
+            shape=Shape((1, 1)),
+            dtype=DType.float32,
+            data=torch.zeros((1, 1), dtype=torch.float32),
+        ),
+    }
+
+    quant_config = parse_quant_config(
+        hf_config, state_dict, DType.float8_e4m3fn
+    )
+
+    assert quant_config is not None
+    assert quant_config.format == QuantFormat.BLOCKSCALED_FP8
+    assert quant_config.weight_scale == WeightScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        dtype=DType.float32,
+        block_size=(128, 128),
+    )
+    assert quant_config.input_scale == InputScaleSpec(
+        granularity=ScaleGranularity.BLOCK,
+        origin=ScaleOrigin.DYNAMIC,
+        dtype=DType.float32,
+        block_size=(1, 128),
+    )
+    assert quant_config.mlp_quantized_layers == set(range(num_layers))
+    assert quant_config.attn_quantized_layers == set(range(num_layers))
+
+
 # --- Gemma3 FP8 Tests --- #
 
 

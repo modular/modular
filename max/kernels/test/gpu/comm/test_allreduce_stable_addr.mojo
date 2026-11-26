@@ -169,6 +169,7 @@ def stable_allreduce_test[
         algorithm=AllReduceAlgorithm.TWO_STAGE,
     )
 
+    @__allow_legacy_any_origin_fields
     def run_and_check(expected: Float32) raises {imm}:
         group_start()
         comptime for i in range(ngpus):

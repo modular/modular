@@ -20,8 +20,6 @@ llm-fuzz knobs (defaults; the workflow can override per dispatch):
 
 - `model_profile` — required, passed as `--model-profile`
 - `scenarios` — empty runs the tool's full default suite
-- `k2vv_mode` — only meaningful when `scenarios` selects the
-  kimi-k2vv suite
 - `extra_fuzz_args` — space-separated llm-fuzz flags this deployment
   needs, such as a `--max-concurrency` matching its batch size.
   `--extra-fuzz-args` on the command line appends to these rather

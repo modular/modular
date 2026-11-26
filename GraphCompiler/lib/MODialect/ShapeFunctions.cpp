@@ -50,13 +50,21 @@ TypedAttr ParamExprBuilder::createKgenExpr(KGEN::POC poc,
   return wrapNonTrivialAttrWithDecl(exprAttr, declPrefix);
 }
 
+KGEN::ParamDeclAttr ParamExprBuilder::newParamDecl(StringRef prefix,
+                                                   Type type) {
+  if (naming == ParamNaming::Real)
+    return graphOp.getNewParamOfType(prefix, type);
+  return KGEN::ParamDeclAttr::get(
+      ("$" + prefix + Twine(++inferenceCounter)).str(), type);
+}
+
 TypedAttr ParamExprBuilder::wrapNonTrivialAttrWithDecl(TypedAttr attr,
                                                        StringRef declPrefix) {
   if (isa<IntegerAttr, KGEN::SIMDAttr, KGEN::ParamDeclRefAttr>(attr))
     return attr;
 
   Type resTy = attr.getType();
-  KGEN::ParamDeclAttr declAttr = graphOp.getNewParamOfType(declPrefix, resTy);
+  KGEN::ParamDeclAttr declAttr = newParamDecl(declPrefix, resTy);
   auto declRefAttr = KGEN::ParamDeclRefAttr::get(declAttr);
   createdOps->push_back(ParamBinding(declAttr, attr));
   return declRefAttr;
@@ -291,7 +299,7 @@ ShapeMaterializeResult materializeRmoMatmulShape(GraphOp graphOp, Location loc,
                                                  TypedAttr rhsShapeAttr) {
   mlir::MLIRContext *ctx = lhsShapeAttr.getContext();
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, ParamNaming::Inference);
 
   ShapeAttr lhsShape = dyn_cast<ShapeAttr>(lhsShapeAttr);
   ShapeAttr rhsShape = dyn_cast<ShapeAttr>(rhsShapeAttr);
@@ -354,7 +362,7 @@ ShapeMaterializeResult
 materializeRmoBinaryElementwiseShape(GraphOp graphOp, Location loc,
                                      ShapeAttr lhsShape, ShapeAttr rhsShape) {
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, ParamNaming::Inference);
 
   auto intDim1 = ShapeAttr::getDim(graphOp.getContext(), 1ll);
   size_t maxRank = std::max(lhsShape.getRank(), rhsShape.getRank());
@@ -402,7 +410,7 @@ ShapeMaterializeResult materializeRmoSelectShape(GraphOp graphOp, Location loc,
                                                  ShapeAttr xShape,
                                                  ShapeAttr yShape) {
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, ParamNaming::Inference);
 
   auto intDim1 = ShapeAttr::getDim(graphOp.getContext(), 1ll);
   size_t maxRank = std::max(condShape.getRank(),
@@ -456,7 +464,7 @@ materializeRmoSliceShape(GraphOp graphOp, Location loc, ShapeAttr inputShape,
                          ShapeAttr starts, ShapeAttr stops,
                          const SmallVector<int64_t> &steps) {
   SmallVector<MO::ParamBinding> paramBindings;
-  MO::ParamExprBuilder b(graphOp, loc, &paramBindings);
+  MO::ParamExprBuilder b(graphOp, loc, &paramBindings, ParamNaming::Inference);
 
   // Constraints not verifiable at staging time are deferred to the lowering.
   SmallVector<TypedAttr> outDims;
@@ -585,9 +593,10 @@ ShapeMaterializeResult materializeBroadcastShapeShape(GraphOp graphOp,
 ShapeMaterializeResult materializeBroadcastToShape(GraphOp graphOp,
                                                    Location loc,
                                                    TypedAttr inputShapeAttr,
-                                                   TypedAttr targetShapeAttr) {
+                                                   TypedAttr targetShapeAttr,
+                                                   ParamNaming naming) {
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, naming);
 
   ShapeAttr inputShape = dyn_cast<ShapeAttr>(inputShapeAttr);
   ShapeAttr targetShape = dyn_cast<ShapeAttr>(targetShapeAttr);
@@ -623,9 +632,10 @@ ShapeMaterializeResult materializeBroadcastToShape(GraphOp graphOp,
 /// Materialize the shape logic for `MO::ConcatOp`.
 ShapeMaterializeResult
 materializeConcatShape(GraphOp graphOp, Location loc, TypedAttr axisAttr,
-                       ArrayRef<TypedAttr> inputShapeAttrs) {
+                       ArrayRef<TypedAttr> inputShapeAttrs,
+                       ParamNaming naming) {
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, naming);
 
   std::optional<int64_t> axisOr = tryGetConstantInt(axisAttr);
   if (!axisOr.has_value())
@@ -682,7 +692,7 @@ materializeConvShape(GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
                      TypedAttr filterShapeAttr, TypedAttr stridesAttr,
                      TypedAttr dilationsAttr, TypedAttr paddingsAttr,
                      TypedAttr numGroupsAttr, StringAttr inputLayoutAttr,
-                     LayoutAttr filterLayoutAttr) {
+                     LayoutAttr filterLayoutAttr, ParamNaming naming) {
   auto inputShape = dyn_cast<ShapeAttr>(inputShapeAttr);
   auto filterShape = dyn_cast<ShapeAttr>(filterShapeAttr);
   auto strides = dyn_cast<ShapeAttr>(stridesAttr);
@@ -714,7 +724,7 @@ materializeConvShape(GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
   }
 
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, naming);
 
   // Default layouts: input/output [batch, ...spatial..., channels], filter
   // [...spatial..., filter_channels, output_channels].
@@ -767,7 +777,8 @@ ShapeMaterializeResult materializeConvTransposeShape(
     GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
     TypedAttr filterShapeAttr, TypedAttr stridesAttr, TypedAttr dilationsAttr,
     TypedAttr paddingsAttr, TypedAttr outputPaddingsAttr,
-    StringAttr inputLayoutAttr, LayoutAttr filterLayoutAttr) {
+    StringAttr inputLayoutAttr, LayoutAttr filterLayoutAttr,
+    ParamNaming naming) {
   auto inputShape = dyn_cast<ShapeAttr>(inputShapeAttr);
   auto filterShape = dyn_cast<ShapeAttr>(filterShapeAttr);
   auto strides = dyn_cast<ShapeAttr>(stridesAttr);
@@ -800,7 +811,7 @@ ShapeMaterializeResult materializeConvTransposeShape(
   }
 
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, naming);
 
   // Default layouts as for conv, but being conv's inverse w.r.t. the input,
   // the output is [batch, ...spatial..., filter_channels].
@@ -891,7 +902,7 @@ ShapeMaterializeResult
 materializePoolShape(GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
                      TypedAttr filterAttr, TypedAttr stridesAttr,
                      TypedAttr dilationsAttr, TypedAttr paddingsAttr,
-                     bool ceilMode) {
+                     bool ceilMode, ParamNaming naming) {
   auto inputShape = dyn_cast<ShapeAttr>(inputShapeAttr);
   auto filter = dyn_cast<ShapeAttr>(filterAttr);
   auto strides = dyn_cast<ShapeAttr>(stridesAttr);
@@ -921,7 +932,7 @@ materializePoolShape(GraphOp graphOp, Location loc, TypedAttr inputShapeAttr,
   }
 
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, naming);
 
   // Input/output layout is [batch, ...spatial..., channels].
   Var batchSize = b.createVar(inputShape[0]);
@@ -1199,9 +1210,10 @@ ShapeMaterializeResult materializeScatterNdShape(GraphOp graphOp, Location loc,
 /// elements.
 ShapeMaterializeResult materializeReshapeShape(GraphOp graphOp, Location loc,
                                                TypedAttr inputShapeAttr,
-                                               TypedAttr targetShapeAttr) {
+                                               TypedAttr targetShapeAttr,
+                                               ParamNaming naming) {
   SmallVector<ParamBinding> paramBindings;
-  ParamExprBuilder b(graphOp, loc, &paramBindings);
+  ParamExprBuilder b(graphOp, loc, &paramBindings, naming);
 
   ShapeAttr inputShape = dyn_cast<ShapeAttr>(inputShapeAttr);
   ShapeAttr targetShape = dyn_cast<ShapeAttr>(targetShapeAttr);
@@ -1595,6 +1607,15 @@ ErrorOr<SmallVector<ShapeAttr>> propagateShape(ArrayRef<ParamBinding> bindings,
     auto resultShape = cast<ShapeAttr>(replacer.replace(targetShape));
     resultShapes.push_back(resultShape);
   }
+#ifndef NDEBUG
+  for (ShapeAttr shape : resultShapes)
+    shape.walk([](KGEN::ParamDeclRefAttr declRef) {
+      ASSERT_STREAM(!declRef.getName().getValue().starts_with("$"),
+                    << "inference parameter name '"
+                    << declRef.getName().getValue()
+                    << "' escaped into an inferred shape");
+    });
+#endif
   return resultShapes;
 }
 

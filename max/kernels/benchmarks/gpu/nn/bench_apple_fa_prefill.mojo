@@ -114,6 +114,7 @@ def _bench_prefill[
     var sink_opt = SinkOpt(None)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def _launch() raises {
         var q_t,
         var o_t,

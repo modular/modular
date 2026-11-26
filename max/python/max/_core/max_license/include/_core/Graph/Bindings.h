@@ -68,6 +68,7 @@ void bindGraphModule(nanobind::module_);
 void bindProfilerModule(nanobind::module_);
 void bindNIXLModule(nanobind::module_);
 void bindSafetensorsModule(nanobind::module_);
+void bindGGUFModule(nanobind::module_);
 void bindXXHashModule(nanobind::module_);
 void bindXGrammarModule(nanobind::module_);
 void bindMetricsModule(nanobind::module_);
@@ -111,6 +112,10 @@ public:
   KernelTorchInfo kernelTorchInfo(const std::string &name);
   /// Whether the op bound to `name` has a registered `mogg.shape_func.decl`.
   bool hasShapeFunction(const std::string &name);
+  /// Whether a kernel registered as `name` applies to the device
+  /// `label`:`id`, by the device info of the module that holds `op`.
+  bool resolvesKernel(const std::string &name, MlirOperation op,
+                      const std::string &label, int64_t id);
 
 private:
   // Keep the Python MLIR context alive at least as long as the standalone

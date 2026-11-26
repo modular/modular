@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
@@ -39,6 +40,7 @@ from max.benchmark.benchmark_shared.datasets.types import (
     SessionMessage,
     TextContentBlock,
 )
+from tests.benchmark.benchmark_fakes import make_sampled_request
 
 _TOOLS: list[dict[str, Any]] = [
     {"type": "function", "function": {"name": "read_file"}},
@@ -51,17 +53,24 @@ _WORDS_PER_TOOL = 4
 def _word_tokenizer(
     *, template_renders_tools: bool = True, model_max_length: int = 100_000
 ) -> MagicMock:
-    """A tokenizer whose tokens are whitespace-separated words.
+    """A tokenizer whose tokens are words, each carrying its leading spaces.
 
     Its chat template renders each tool as ``_WORDS_PER_TOOL`` words, so the
     carve-out the augmentation computes is known exactly.
+
+    Holding the leading spaces, as a real BPE's tokens do, makes decoding a
+    lossless inverse of encoding for text that does not end in whitespace; a
+    trailing whitespace run belongs to no token and is dropped. Splitting on
+    whitespace alone would drop the opening space of a window, so a window
+    that started on one would decode to text a character short of what it
+    encoded.
     """
     vocab: dict[str, int] = {}
     words: list[str] = []
 
     def encode(text: str, add_special_tokens: bool = True) -> list[int]:
         ids = []
-        for word in text.split():
+        for word in re.findall(r"\s*\S+", text):
             if word not in vocab:
                 vocab[word] = len(words)
                 words.append(word)
@@ -69,7 +78,7 @@ def _word_tokenizer(
         return ids
 
     def decode(ids: list[int]) -> str:
-        return " ".join(words[i] for i in ids)
+        return "".join(words[i] for i in ids)
 
     def apply_chat_template(
         messages: list[dict[str, str]],
@@ -91,8 +100,11 @@ def _word_tokenizer(
     return tokenizer
 
 
-def _first_turn_text(num_words: int) -> str:
-    return " ".join(f"w{i}" for i in range(num_words))
+def _first_turn_text(num_words: int, word_len: int = 0) -> str:
+    """``w<i>`` words, right-padded with ``x`` to ``word_len`` when given."""
+    if not word_len:
+        return " ".join(f"w{i}" for i in range(num_words))
+    return " ".join(f"w{i}".ljust(word_len, "x") for i in range(num_words))
 
 
 def _make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
@@ -112,13 +124,7 @@ def _make_session(session_id: int, num_user_turns: int = 3) -> ChatSession:
 
 
 def _make_request(prompt: str = "hi") -> SampledRequest:
-    return SampledRequest(
-        prompt_formatted=prompt,
-        prompt_len=len(prompt.split()),
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    return make_sampled_request(prompt, prompt_len=len(prompt.split()))
 
 
 def _user_turns(session: ChatSession) -> list[SessionMessage]:
@@ -198,6 +204,71 @@ def test_block_is_carved_out_of_the_first_turn() -> None:
     assert first.content == _first_turn_text(20 - block)
     assert first.num_tokens == 20
     assert [m.content for m in rest] == ["turn 1", "turn 2"]
+
+
+@pytest.mark.parametrize(
+    ("word_len", "window_encodes"),
+    [
+        pytest.param(0, (1, 2), id="short-words"),
+        pytest.param(30, (3, 5), id="long-single-token-words"),
+    ],
+)
+def test_long_first_turn_is_trimmed_from_a_window_at_its_end(
+    word_len: int, window_encodes: tuple[int, int]
+) -> None:
+    """A long first turn loses the same tail tokens, but only a window at its
+    end is encoded, so tool mixing does not encode every prompt whole.
+
+    Long words pack more than the seed window's eight characters into a token,
+    so the widening loop has to run before the window holds enough of them.
+
+    Where the window's start lands follows from the character budget, so it can
+    fall mid-word or on a space. The fake round-trips the turn exactly, as it
+    does not end in whitespace, which is what lets the trimmed content be
+    compared on its own terms.
+    """
+    num_words = 2_000
+    first_turn = _first_turn_text(num_words, word_len)
+    session = ChatSession(
+        id=0,
+        messages=[
+            SessionMessage(
+                source="user",
+                content=first_turn,
+                num_tokens=num_words,
+            ),
+            SessionMessage(source="assistant", content="", num_tokens=5),
+        ],
+    )
+    tokenizer = _word_tokenizer()
+    # Without an exact round trip this comparison would hold only while the
+    # boundary happened to cut mid-word, where the raw head and the decoded
+    # tail still meet without a lost space.
+    round_trip = tokenizer.decode.side_effect(
+        tokenizer.encode.side_effect(first_turn)
+    )
+    assert round_trip == first_turn
+    augment_samples_with_tools(
+        ChatSamples(chat_sessions=[session]),
+        tools=_TOOLS,
+        fraction=1.0,
+        tokenizer=tokenizer,
+    )
+    block = _WORDS_PER_TOOL * len(_TOOLS)
+    assert session.messages[0].content == _first_turn_text(
+        num_words - block, word_len
+    )
+    # Only the window's own encodes take a suffix of the turn; the other two
+    # calls size the tool block from the template.
+    windows = [
+        call
+        for call in tokenizer.encode.call_args_list
+        if first_turn.endswith(call.args[0])
+    ]
+    assert window_encodes[0] <= len(windows) <= window_encodes[1]
+    # The count alone cannot tell a window from the whole turn, which is also
+    # one encode; the characters fed to the encoder do.
+    assert sum(len(call.args[0]) for call in windows) < len(first_turn) // 4
 
 
 def test_block_is_sized_from_json_when_the_template_ignores_tools() -> None:
@@ -307,13 +378,7 @@ def test_chat_message_prompts_are_sent_untrimmed_with_a_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     messages = [ChatMessage(role="user", content=[TextContentBlock(text="hi")])]
-    request = SampledRequest(
-        prompt_formatted=messages,
-        prompt_len=1,
-        output_len=64,
-        encoded_images=[],
-        ignore_eos=True,
-    )
+    request = make_sampled_request(messages)
     with caplog.at_level(logging.WARNING):
         augment_samples_with_tools(
             RequestSamples(requests=[request]),

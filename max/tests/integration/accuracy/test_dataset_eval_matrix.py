@@ -39,13 +39,10 @@ def test_dataset_eval_matrix_dispatch_specific() -> None:
             "--event-name",
             "workflow_dispatch",
             "--selected-pipeline",
-            "sentence-transformers/all-mpnet-base-v2",
+            "google/gemma-4-26B-A4B-it",
         ],
     )
     assert result.exit_code == 0
     output = json.loads(result.output)
     assert len(output["include"]) == 1
-    assert (
-        output["include"][0]["pipeline"]
-        == "sentence-transformers/all-mpnet-base-v2"
-    )
+    assert output["include"][0]["pipeline"] == "google/gemma-4-26B-A4B-it"

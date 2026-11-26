@@ -330,6 +330,9 @@ class BatchMetrics:
     dkv_settle_queue_oldest_age_ms: float = 0.0
     dkv_settle_jobs_finished: int = 0
     dkv_owner_releases_halted: int = 0
+    # Offloads a page-managed dKV share refused for capacity: a per-window
+    # delta that publishes as a counter.
+    dkv_offloads_capacity_refused: int = 0
 
     # Cache blocks dKV landed in device memory this batch, credited from
     # transfer accounting: a block behind a hole in the request's hash chain is
@@ -392,6 +395,10 @@ class BatchMetrics:
     dkv_own_runs_short_of_hint: int = 0
     dkv_split_loads: int = 0
     dkv_overlapped_peer_lookups: int = 0
+    dkv_overlap_reads_moved_by_probe: int = 0
+    dkv_overlap_blocks_moved_by_probe: int = 0
+    dkv_own_runs_short_of_probe: int = 0
+    dkv_own_run_blocks_short_of_probe: int = 0
     # The peer-load write-back (MODULAR_DKV_OFFLOAD_PEER_LOADS): per-window
     # counts published as counters on the same guard, and the mean hold
     # behind a write-back, published as a histogram under its own > 0 guard
@@ -443,6 +450,9 @@ class BatchMetrics:
     # Connector loads whose copy failed, counted by the cache manager for any
     # connector. Each is served by recomputing the request's prefix.
     connector_load_failures: int = 0
+    # Device blocks the cache manager keeps out of use for good because a
+    # connector gave up on a load whose copy may still write them. A level.
+    connector_quarantined_blocks: int = 0
 
     # Connector lookup answers the Jenga block manager dropped, for any
     # connector. Empty, or 0, when none was dropped this window. See
@@ -599,6 +609,7 @@ class BatchMetrics:
         dkv_settle_queue_oldest_age_ms = 0.0
         dkv_settle_jobs_finished = 0
         dkv_owner_releases_halted = 0
+        dkv_offloads_capacity_refused = 0
         dkv_read_blocks = 0
         dkv_read_bytes = 0
         dkv_peer_attaches = 0
@@ -626,6 +637,10 @@ class BatchMetrics:
         dkv_hint_blocks_unserved = 0
         dkv_split_loads = 0
         dkv_overlapped_peer_lookups = 0
+        dkv_overlap_reads_moved_by_probe = 0
+        dkv_overlap_blocks_moved_by_probe = 0
+        dkv_own_runs_short_of_probe = 0
+        dkv_own_run_blocks_short_of_probe = 0
         dkv_peer_writeback_blocks = 0
         dkv_peer_writeback_blocks_evicted = 0
         dkv_peer_writeback_blocks_dropped = 0
@@ -653,6 +668,7 @@ class BatchMetrics:
         connector_loads_refused = 0
         connector_offload_blocks_dropped = 0
         connector_load_failures = 0
+        connector_quarantined_blocks = 0
         connector_lookup_drops: dict[
             tuple[ConnectorLookupDrop, ConnectorLookupAnswer, bool], int
         ] = {}
@@ -735,6 +751,9 @@ class BatchMetrics:
                 metrics_agg.connector_offload_blocks_dropped
             )
             connector_load_failures = metrics_agg.connector_load_failures
+            connector_quarantined_blocks = (
+                metrics_agg.connector_quarantined_blocks
+            )
             connector_lookup_drops = metrics_agg.connector_lookup_drops
             connector_lookup_dropped_blocks = (
                 metrics_agg.connector_lookup_dropped_blocks
@@ -782,6 +801,9 @@ class BatchMetrics:
             )
             dkv_settle_jobs_finished = metrics_agg.dkv_settle_jobs_finished
             dkv_owner_releases_halted = metrics_agg.dkv_owner_releases_halted
+            dkv_offloads_capacity_refused = (
+                metrics_agg.dkv_offloads_capacity_refused
+            )
             dkv_read_blocks = metrics_agg.nixl_read_blocks
             dkv_read_bytes = metrics_agg.nixl_read_bytes
 
@@ -829,6 +851,18 @@ class BatchMetrics:
             dkv_split_loads = metrics_agg.dkv_split_loads
             dkv_overlapped_peer_lookups = (
                 metrics_agg.dkv_overlapped_peer_lookups
+            )
+            dkv_overlap_reads_moved_by_probe = (
+                metrics_agg.dkv_overlap_reads_moved_by_probe
+            )
+            dkv_overlap_blocks_moved_by_probe = (
+                metrics_agg.dkv_overlap_blocks_moved_by_probe
+            )
+            dkv_own_runs_short_of_probe = (
+                metrics_agg.dkv_own_runs_short_of_probe
+            )
+            dkv_own_run_blocks_short_of_probe = (
+                metrics_agg.dkv_own_run_blocks_short_of_probe
             )
             dkv_peer_writeback_blocks = metrics_agg.dkv_peer_writeback_blocks
             dkv_peer_writeback_blocks_evicted = (
@@ -1000,6 +1034,7 @@ class BatchMetrics:
             dkv_settle_queue_oldest_age_ms=dkv_settle_queue_oldest_age_ms,
             dkv_settle_jobs_finished=dkv_settle_jobs_finished,
             dkv_owner_releases_halted=dkv_owner_releases_halted,
+            dkv_offloads_capacity_refused=dkv_offloads_capacity_refused,
             dkv_read_blocks=dkv_read_blocks,
             dkv_read_bytes=dkv_read_bytes,
             dkv_peer_attaches=dkv_peer_attaches,
@@ -1027,6 +1062,10 @@ class BatchMetrics:
             dkv_hint_blocks_unserved=dkv_hint_blocks_unserved,
             dkv_split_loads=dkv_split_loads,
             dkv_overlapped_peer_lookups=dkv_overlapped_peer_lookups,
+            dkv_overlap_reads_moved_by_probe=dkv_overlap_reads_moved_by_probe,
+            dkv_overlap_blocks_moved_by_probe=dkv_overlap_blocks_moved_by_probe,
+            dkv_own_runs_short_of_probe=dkv_own_runs_short_of_probe,
+            dkv_own_run_blocks_short_of_probe=dkv_own_run_blocks_short_of_probe,
             dkv_peer_writeback_blocks=dkv_peer_writeback_blocks,
             dkv_peer_writeback_blocks_evicted=dkv_peer_writeback_blocks_evicted,
             dkv_peer_writeback_blocks_dropped=dkv_peer_writeback_blocks_dropped,
@@ -1054,6 +1093,7 @@ class BatchMetrics:
             connector_loads_refused=connector_loads_refused,
             connector_offload_blocks_dropped=connector_offload_blocks_dropped,
             connector_load_failures=connector_load_failures,
+            connector_quarantined_blocks=connector_quarantined_blocks,
             connector_lookup_drops=connector_lookup_drops,
             connector_lookup_dropped_blocks=connector_lookup_dropped_blocks,
             connector_lookup_shrink_depths=connector_lookup_shrink_depths,
@@ -1423,6 +1463,13 @@ class BatchMetrics:
         if self.connector_load_failures:
             extra["connector_load_failures"] = self.connector_load_failures
 
+        # A level that never falls, so it is logged wherever dKV is attached,
+        # zero included, and wherever any block is held.
+        if self.dkv_total_clients > 0 or self.connector_quarantined_blocks:
+            extra["connector_quarantined_blocks"] = (
+                self.connector_quarantined_blocks
+            )
+
         # One scalar key per label, as publish_metrics sends. The block
         # manager only keeps labels that moved.
         for key, drops in self.connector_lookup_drops.items():
@@ -1522,6 +1569,9 @@ class BatchMetrics:
             )
             extra["dkv_settle_jobs_finished"] = self.dkv_settle_jobs_finished
             extra["dkv_owner_releases_halted"] = self.dkv_owner_releases_halted
+            extra["dkv_offloads_capacity_refused"] = (
+                self.dkv_offloads_capacity_refused
+            )
             # Same guard as the health gauges above.
             extra["dkv_peer_attaches"] = self.dkv_peer_attaches
             extra["dkv_peer_attach_failures"] = self.dkv_peer_attach_failures
@@ -1564,6 +1614,18 @@ class BatchMetrics:
             extra["dkv_split_loads"] = self.dkv_split_loads
             extra["dkv_overlapped_peer_lookups"] = (
                 self.dkv_overlapped_peer_lookups
+            )
+            extra["dkv_overlap_reads_moved_by_probe"] = (
+                self.dkv_overlap_reads_moved_by_probe
+            )
+            extra["dkv_overlap_blocks_moved_by_probe"] = (
+                self.dkv_overlap_blocks_moved_by_probe
+            )
+            extra["dkv_own_runs_short_of_probe"] = (
+                self.dkv_own_runs_short_of_probe
+            )
+            extra["dkv_own_run_blocks_short_of_probe"] = (
+                self.dkv_own_run_blocks_short_of_probe
             )
             extra["dkv_peer_writeback_blocks"] = self.dkv_peer_writeback_blocks
             extra["dkv_peer_writeback_blocks_evicted"] = (
@@ -1753,6 +1815,13 @@ class BatchMetrics:
         if self.connector_load_failures:
             METRICS.cache_connector_load_failures(self.connector_load_failures)
 
+        # A level, so it is sent wherever dKV is attached, zero included, and
+        # a dashboard has the series before the first block is held.
+        if self.dkv_total_clients > 0 or self.connector_quarantined_blocks:
+            METRICS.cache_connector_quarantined_blocks(
+                self.connector_quarantined_blocks
+            )
+
         # Per-window deltas the block manager only fills when something was
         # dropped, so publishing what is there loses nothing, and a window
         # with no drop sends nothing.
@@ -1833,6 +1902,9 @@ class BatchMetrics:
             # A per-window delta, so a window skipped here loses its count for
             # good, the same as the peer counters below.
             METRICS.dkv_settle_jobs_finished(self.dkv_settle_jobs_finished)
+            METRICS.dkv_offloads_capacity_refused(
+                self.dkv_offloads_capacity_refused
+            )
             # Same guard as the health gauges: per-window deltas, so a window
             # skipped here loses its count for good.
             METRICS.dkv_peer_attaches(self.dkv_peer_attaches)
@@ -1870,6 +1942,18 @@ class BatchMetrics:
             METRICS.dkv_split_loads(self.dkv_split_loads)
             METRICS.dkv_overlapped_peer_lookups(
                 self.dkv_overlapped_peer_lookups
+            )
+            METRICS.dkv_overlap_reads_moved_by_probe(
+                self.dkv_overlap_reads_moved_by_probe
+            )
+            METRICS.dkv_overlap_blocks_moved_by_probe(
+                self.dkv_overlap_blocks_moved_by_probe
+            )
+            METRICS.dkv_own_runs_short_of_probe(
+                self.dkv_own_runs_short_of_probe
+            )
+            METRICS.dkv_own_run_blocks_short_of_probe(
+                self.dkv_own_run_blocks_short_of_probe
             )
             METRICS.dkv_peer_writeback_blocks(self.dkv_peer_writeback_blocks)
             METRICS.dkv_peer_writeback_blocks_evicted(

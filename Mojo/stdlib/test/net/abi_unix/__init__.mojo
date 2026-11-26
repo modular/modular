@@ -57,6 +57,12 @@ from std.net._sys.unix import (
     MSG_WAITALL,
     SCM_RIGHTS,
     O_NONBLOCK,
+    POLLERR,
+    POLLHUP,
+    POLLIN,
+    POLLNVAL,
+    POLLOUT,
+    POLLPRI,
     SHUT_RD,
     SHUT_RDWR,
     SHUT_WR,
@@ -82,6 +88,8 @@ from std.net._sys.unix import (
     SO_TYPE,
     TCP_NODELAY,
     linger,
+    nfds_t,
+    pollfd,
     sockaddr,
     sockaddr_in,
     sockaddr_in6,
@@ -97,6 +105,7 @@ comptime CABI_INCLUDES: List[StaticString] = [
     "<fcntl.h>",
     "<netinet/in.h>",
     "<netinet/tcp.h>",
+    "<poll.h>",
     "<sys/socket.h>",
     "<sys/time.h>",
     "<sys/un.h>",
@@ -114,6 +123,7 @@ comptime CABI_STRUCTS = TypeList.of[
     sockaddr_storage,
     timeval,
     linger,
+    pollfd,
 ]()
 """The struct mirrors to check."""
 
@@ -123,6 +133,7 @@ comptime CABI_TYPEDEFS = TypeList.of[
     AbiTypedef["in_addr_t", in_addr_t],
     AbiTypedef["socklen_t", socklen_t],
     AbiTypedef["suseconds_t", suseconds_t],
+    AbiTypedef["nfds_t", nfds_t],
 ]()
 """The type aliases to check."""
 
@@ -178,6 +189,12 @@ comptime CABI_CONSTANTS = [
     AbiConstant("IPV6_MULTICAST_HOPS", IPV6_MULTICAST_HOPS),
     AbiConstant("IPV6_MULTICAST_LOOP", IPV6_MULTICAST_LOOP),
     AbiConstant("IPV6_V6ONLY", IPV6_V6ONLY),
+    AbiConstant("POLLIN", POLLIN),
+    AbiConstant("POLLPRI", POLLPRI),
+    AbiConstant("POLLOUT", POLLOUT),
+    AbiConstant("POLLERR", POLLERR),
+    AbiConstant("POLLHUP", POLLHUP),
+    AbiConstant("POLLNVAL", POLLNVAL),
     AbiConstant("F_GETFL", F_GETFL),
     AbiConstant("F_SETFL", F_SETFL),
     AbiConstant("F_DUPFD_CLOEXEC", FcntlCommands.F_DUPFD_CLOEXEC),

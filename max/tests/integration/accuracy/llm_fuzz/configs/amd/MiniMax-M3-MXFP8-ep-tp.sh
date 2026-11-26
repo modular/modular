@@ -34,7 +34,6 @@ extra_pipelines_args=(
 # llm-fuzz knobs. Empty scenarios runs the tool's full default suite.
 model_profile=minimax-m3
 scenarios=
-k2vv_mode=
 circuit_breaker=0
 
 # Skip the known MiniMax-M3 failures (the official MiniMax API fails them too).

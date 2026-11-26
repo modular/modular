@@ -12,6 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 from typing import NoReturn
 
+import pytest
+from conftest import tensor_types
+from hypothesis import assume, given
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 
@@ -225,3 +228,13 @@ def test_conditional_existing_device_in_branch_in_subgraph() -> None:
         x1 = main_graph.inputs[1].tensor
         ops.call(subgraph, x0, x1)
         main_graph.output()
+
+
+@given(pred_type=tensor_types())
+def test_conditional_predicate_must_be_scalar_bool(
+    pred_type: TensorType,
+) -> None:
+    assume(pred_type.dtype != DType.bool or pred_type.rank != 0)
+    with Graph("conditional_bad_predicate", input_types=[pred_type]) as graph:
+        with pytest.raises(ValueError, match="scalar bool tensor"):
+            ops.cond(graph.inputs[0].tensor, None, lambda: None, lambda: None)

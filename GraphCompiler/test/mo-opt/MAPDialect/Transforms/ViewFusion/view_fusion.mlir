@@ -12,7 +12,7 @@
 // CHECK-LABEL: mo.graph @sliceIntoTranspose
 // CHECK:       %{{.*}} = map.iter.elementwise<[32, 3]>
 // CHECK:       index   (%[[IDX:.*]]: !map.index<2>) -> !mo.tensor<[32, 3], f32> {
-// CHECK-NEXT:  %[[TIDX:.*]] = map.index.transpose<{{.*}}> (%[[IDX]], %{{.*}})
+// CHECK-NEXT:  %[[TIDX:.*]] = map.index.transpose<{{.*}}> (%[[IDX]])
 // CHECK-NEXT:  %[[SIDX:.*]] = map.index.slice<{{.*}}> (%[[TIDX]], %{{.*}})
 // CHECK-NEXT:  %[[VAL:.*]] = map.load %{{.*}}[%[[SIDX]]]
 // CHECK-NEXT:  map.store %{{.*}}[%[[IDX]]] = %[[VAL]]
@@ -63,7 +63,7 @@ mo.graph @sliceIntoElementwise(%input: !mo.tensor<[10, 64], f32>, %other: !mo.te
 // CHECK:       %{{.*}} = map.iter.elementwise<[1, 32, 3]>
 // CHECK:       index   (%[[IDX3:.*]]: !map.index<3>) -> !mo.tensor<[1, 32, 3], f32> {
 // CHECK-NEXT:  %[[BIDX:.*]] = map.index.broadcast<{{.*}}> (%[[IDX3]])
-// CHECK-NEXT:  %[[TIDX2:.*]] = map.index.transpose<{{.*}}> (%[[BIDX]], %{{.*}})
+// CHECK-NEXT:  %[[TIDX2:.*]] = map.index.transpose<{{.*}}> (%[[BIDX]])
 // CHECK-NEXT:  %[[SIDX3:.*]] = map.index.slice<{{.*}}> (%[[TIDX2]], %{{.*}})
 // CHECK-NEXT:  %[[VAL3:.*]] = map.load %{{.*}}[%[[SIDX3]]]
 // CHECK-NEXT:  map.store %{{.*}}[%[[IDX3]]] = %[[VAL3]]

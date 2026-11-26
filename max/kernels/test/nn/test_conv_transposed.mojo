@@ -256,19 +256,24 @@ def test_conv_transposed[
 
     # Test.
     comptime conv_attr = ConvInfoStatic[rank]()
+    # FIXME: The epilogue captures output while the convolution also takes it
+    # mutably; each row is read only after convolution writes it.
+    var output_untracked = output.unsafe_origin_cast[MutUntrackedOrigin]()
 
     # Test epilogue
     @inline(.always)
-    def epilogue(coords: Coord, f_size: Int) {var output, var bias_ptr}:
+    def epilogue(
+        coords: Coord, f_size: Int
+    ) {var output_untracked, var bias_ptr}:
         @inline(.always)
         def body1[width: Int](idx: Int) {var}:
             var f = Int(coords[rank + 1]) + idx
             var curr_coords = coords
             curr_coords.replace_dynamic[rank + 1](f)
 
-            var vec = output.load[width=width](curr_coords)
+            var vec = output_untracked.load[width=width](curr_coords)
 
-            output.store(
+            output_untracked.store(
                 curr_coords, 10.0 * (vec + bias_ptr.unsafe_load[width=width](f))
             )
 
@@ -277,7 +282,7 @@ def test_conv_transposed[
     ConvTransposedPacked[
         input.origin,
         packed_filter.origin,
-        output.origin,
+        output_untracked.origin,
         dtype,
         dtype,
         dtype,
@@ -285,7 +290,7 @@ def test_conv_transposed[
         True,
         type_of(epilogue),
     ].run(
-        output,
+        output_untracked,
         input,
         packed_filter,
         rebind[ConvShape[rank]](conv_shape),

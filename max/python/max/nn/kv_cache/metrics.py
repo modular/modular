@@ -154,6 +154,15 @@ class KVCacheMetrics:
     request's prefix. A transport fault rather than a miss, so any of these is
     worth chasing.
     """
+    connector_quarantined_blocks: int = 0
+    """Device blocks kept out of use because a connector gave up on a load whose
+    copy may still write them.
+
+    A level the cache manager reads fresh for every snapshot rather than a
+    per-window delta, summed over replicas. The blocks never go back to the
+    pool, so the count only grows, and each one is KV capacity lost until the
+    engine restarts.
+    """
     connector_offload_blocks_dropped: int = 0
     """Number of offloaded blocks the connector's host pool had no room for.
 
@@ -278,6 +287,14 @@ class KVCacheMetrics:
     """
     dkv_settle_jobs_finished: int = 0
     """Settle jobs the workers finished or dropped this window, summed."""
+    dkv_offloads_capacity_refused: int = 0
+    """Offloads dKV refused for capacity this window, summed over leaf clients.
+
+    Only a page-managed dKV share refuses with a typed capacity error, and the
+    connector stays healthy when it does: the offload is dropped and its
+    blocks are recomputed if asked for again. A steady rate is cache the store
+    could not keep.
+    """
     dkv_owner_releases_halted: int = 0
     """1 while any leaf client's owner release halt is up, else 0.
 
@@ -409,6 +426,22 @@ class KVCacheMetrics:
     dkv_overlapped_peer_lookups: int = 0
     """Peer lookups begun alongside the co-located lookup rather than after
     it, under ``MODULAR_DKV_OVERLAP_PEER_LOOKUPS``."""
+    dkv_overlap_reads_moved_by_probe: int = 0
+    """Hinted entries whose overlapped peer lookup started later, or not at
+    all, because the request's presence probe found a longer co-located run
+    than the hint credited the co-located dKV with."""
+    dkv_overlap_blocks_moved_by_probe: int = 0
+    """The blocks those entries' overlapped peer lookups no longer asked a
+    peer for."""
+    dkv_own_runs_short_of_probe: int = 0
+    """Entries whose co-located run ended before the longer run the request's
+    presence probe found, counting only a probed run longer than the hint's
+    credit. With ``MODULAR_DKV_OVERLAP_PEER_LOOKUPS`` each asks its peer in a
+    serial pass, so a rising rate means probed runs go stale before their
+    lease runs."""
+    dkv_own_run_blocks_short_of_probe: int = 0
+    """The blocks past the hint's credit those co-located runs fell short of
+    the probed run by."""
     dkv_peer_writeback_blocks: int = 0
     """Peer-filled blocks offloaded to write back to the co-located dKV once
     their onload landed, under ``MODULAR_DKV_OFFLOAD_PEER_LOADS``, counted per
@@ -627,6 +660,8 @@ class KVCacheMetrics:
             + other.connector_loads_refused,
             connector_load_failures=self.connector_load_failures
             + other.connector_load_failures,
+            connector_quarantined_blocks=self.connector_quarantined_blocks
+            + other.connector_quarantined_blocks,
             connector_offload_blocks_dropped=self.connector_offload_blocks_dropped
             + other.connector_offload_blocks_dropped,
             connector_lookup_drops=_add_by_key(
@@ -692,6 +727,8 @@ class KVCacheMetrics:
             ),
             dkv_settle_jobs_finished=self.dkv_settle_jobs_finished
             + other.dkv_settle_jobs_finished,
+            dkv_offloads_capacity_refused=self.dkv_offloads_capacity_refused
+            + other.dkv_offloads_capacity_refused,
             # Up when either side's is, and still 1 rather than a count.
             dkv_owner_releases_halted=max(
                 self.dkv_owner_releases_halted, other.dkv_owner_releases_halted
@@ -747,6 +784,22 @@ class KVCacheMetrics:
             dkv_split_loads=self.dkv_split_loads + other.dkv_split_loads,
             dkv_overlapped_peer_lookups=self.dkv_overlapped_peer_lookups
             + other.dkv_overlapped_peer_lookups,
+            dkv_overlap_reads_moved_by_probe=(
+                self.dkv_overlap_reads_moved_by_probe
+                + other.dkv_overlap_reads_moved_by_probe
+            ),
+            dkv_overlap_blocks_moved_by_probe=(
+                self.dkv_overlap_blocks_moved_by_probe
+                + other.dkv_overlap_blocks_moved_by_probe
+            ),
+            dkv_own_runs_short_of_probe=(
+                self.dkv_own_runs_short_of_probe
+                + other.dkv_own_runs_short_of_probe
+            ),
+            dkv_own_run_blocks_short_of_probe=(
+                self.dkv_own_run_blocks_short_of_probe
+                + other.dkv_own_run_blocks_short_of_probe
+            ),
             dkv_peer_writeback_blocks=self.dkv_peer_writeback_blocks
             + other.dkv_peer_writeback_blocks,
             dkv_peer_writeback_blocks_evicted=(

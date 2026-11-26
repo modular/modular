@@ -63,7 +63,7 @@ from typing_extensions import Self, override
 
 from . import hybrid_layout
 from .checkpoint import (
-    _stored_hc_fn_dtype,
+    _stored_dtype,
     check_raw_projections,
     checkpoint_quant_scheme,
 )
@@ -105,7 +105,10 @@ class Glm5NextConfig(
     """Configuration for GLM-5.3-Flash on ModuleV3."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "float8_e4m3fn"
-    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {"float8_e4m3fn"}
+    SUPPORTED_ENCODINGS: ClassVar[set[SupportedEncoding]] = {
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+    }
 
     takes_batch_context_lengths: ClassVar[bool] = True
 
@@ -132,8 +135,10 @@ class Glm5NextConfig(
     """
 
     data_parallel_degree: int = 1
-    """Number of data-parallel attention replicas. Selects the decoder layer's
-    parallelism mode together with :attr:`ep_config`."""
+    """Number of data-parallel attention replicas: 1 for tensor-parallel
+    attention, or the device count for one replica per device. Under data
+    parallelism every device runs whole heads on its own replica's rows, and
+    the MoE layers run expert-parallel."""
 
     vocab_size: int = 129280
     hidden_size: int = 7168
@@ -212,6 +217,9 @@ class Glm5NextConfig(
     linear_head_dim: int = 128
     linear_conv_kernel_dim: int = 4
     linear_lower_bound: float = -5.0
+    linear_conv_dtype: DType = DType.bfloat16
+    """Storage dtype of the KDA short-conv weights: float32 in NVIDIA's NVFP4
+    export, bfloat16 in the FP8 checkpoint."""
     state_pool_dtype: DType = DType.float32
     """Storage dtype of the KDA conv and recurrent pools."""
 
@@ -227,7 +235,8 @@ class Glm5NextConfig(
 
     mla_latent_pad_to: int = 576
     """Latent width the MLA kernels compile against; the 512-wide NoPE latent
-    is zero-padded to it on the way in."""
+    is zero-padded to it on the way in, or on SM100 read as padded by the
+    kernel itself."""
 
     swiglu_limit: float = 10.0
     """Clamp applied before the activation in every MLP and expert."""
@@ -271,6 +280,8 @@ class Glm5NextConfig(
         Raises:
             ValueError: If the checkpoint's ``modules_to_not_convert``
                 disagrees with which MLA projections carry a scale.
+            ValueError: If the checkpoint mixes dtypes within the
+                ``*.hc_fn`` or the ``*_conv1d`` weights.
         """
         del outputs
         check_raw_projections(state_dict)
@@ -281,7 +292,11 @@ class Glm5NextConfig(
                 break
         # Held as stored: the fused pre-site op reads a bfloat16 projection,
         # and the unfused path widens it to float32, which is exact.
-        self.hc_fn_dtype = _stored_hc_fn_dtype(state_dict)
+        self.hc_fn_dtype = _stored_dtype(state_dict, ".hc_fn", DType.float32)
+        # Held as stored: the conv core widens the weights to float32.
+        self.linear_conv_dtype = _stored_dtype(
+            state_dict, "_conv1d", DType.bfloat16
+        )
         return self
 
     def __post_init__(self) -> None:
@@ -311,10 +326,13 @@ class Glm5NextConfig(
                 f"reuse a top-k selection from (got {self.indexer_types[0]!r})."
             )
 
-        if self.data_parallel_degree != 1:
+        if self.data_parallel_degree not in (1, len(self.devices)):
+            # Each replica runs whole heads on one device; replicas of
+            # several devices would need tensor parallelism inside each.
             raise ValueError(
-                "GLM-5.3-Flash is tensor-parallel only: data_parallel_degree "
-                f"must be 1, got {self.data_parallel_degree}."
+                "GLM-5.3-Flash runs one data-parallel replica per device: "
+                f"data_parallel_degree must be 1 or {len(self.devices)} "
+                f"(the device count), got {self.data_parallel_degree}."
             )
         if self.qk_rope_head_dim != 0:
             raise ValueError(
@@ -351,16 +369,25 @@ class Glm5NextConfig(
     def expert_parallel_config(self, runtime: ModuleRuntime) -> EPConfig:
         """Sizes the expert-parallel buffers for ``runtime``.
 
-        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when it is
-        quantized, else in bf16. The shared expert fuses with the routed ones
-        only when it has their shape and weight layout. Flash is
-        tensor-parallel only, so the ranks' token counts differ by at most
-        one: each dispatches an even share of the step's rows, or all of
-        them under allreduce.
+        Tokens dispatch in the checkpoint's FP8 or NVFP4 format when every
+        routed expert loaded is quantized, else in bf16: the NVFP4
+        checkpoint's MTP experts are bf16, and the MTP layer's config, built
+        first, sizes the buffers the target shares. The shared expert fuses
+        with the routed ones only when it has their shape and weight layout,
+        which a bf16 exchange's experts and the bf16 shared expert share.
+        Under tensor-parallel attention the ranks' token counts differ by at
+        most one: each dispatches an even share of the step's rows, or all of
+        them under allreduce. Data-parallel replicas each dispatch their own
+        requests' rows, which need not split evenly.
         """
         quant_config = self.quant_config
-        quantized_dispatch = quant_config is not None and (
-            self.dtype.is_float8() or quant_config.is_nvfp4
+        quantized_dispatch = (
+            quant_config is not None
+            and (self.dtype.is_float8() or quant_config.is_nvfp4)
+            and (
+                self.quant_scheme is None
+                or self.quant_scheme.quantizes_every_moe
+            )
         )
         n_devices = len(runtime.mesh.devices)
         return EPConfig(
@@ -378,13 +405,17 @@ class Glm5NextConfig(
             ),
             n_gpus_per_node=n_devices,
             n_nodes=runtime.ep_size // n_devices,
+            # A bf16 exchange fuses the bf16 shared expert: unfused, its
+            # side-stream matmul fails graph verification when the MTP layer
+            # runs it at a second draft step.
             fused_shared_expert=self.n_shared_experts == 1
             and (
                 quant_config is None
+                or not quantized_dispatch
                 or quant_config.shared_experts_use_quant(self.dtype)
             ),
             use_allreduce=runtime.ep_use_allreduce,
-            tokens_split_evenly=True,
+            tokens_split_evenly=runtime.data_parallel_degree <= 1,
         )
 
     def apply_runtime(self, runtime: ModuleRuntime) -> Self:
@@ -489,9 +520,13 @@ class Glm5NextConfig(
     def per_request_state_bytes(self) -> int:
         """Returns the GPU bytes one request's recurrent state occupies.
 
-        The count is summed over every device.
+        The count is summed over the devices of the request's replica: every
+        device under tensor parallelism, one under data parallelism.
         """
-        return recurrent_state_bytes(self.kv_params, len(self.devices))
+        devices_per_replica = len(self.devices) // max(
+            1, self.data_parallel_degree
+        )
+        return recurrent_state_bytes(self.kv_params, devices_per_replica)
 
     @override
     @classmethod

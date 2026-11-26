@@ -59,7 +59,7 @@ struct Cvt[src_dt: DType, dst_dt: DType, width: Int](CastAtom):
     `v_cvt_pk_bf16_f32` at width 2, a scalar conversion at width 1."""
 
     comptime shape_values = ParameterList.of[Self.width]().values
-    comptime Completion = Synchronous
+    comptime AsyncEngine = Synchronous
     comptime src_dtype = Self.src_dt
     comptime dst_dtype = Self.dst_dt
     comptime SrcEngine = Regs
@@ -104,7 +104,7 @@ struct Fma[dt: DType, width: Int](MmaAtom):
     adjacent B elements, added into `width` adjacent accumulators."""
 
     comptime shape_values = ParameterList.of[1, Self.width, 1]().values
-    comptime Completion = Synchronous
+    comptime AsyncEngine = Synchronous
     comptime a_dtype = Self.dt
     comptime b_dtype = Self.dt
     comptime c_dtype = Self.dt

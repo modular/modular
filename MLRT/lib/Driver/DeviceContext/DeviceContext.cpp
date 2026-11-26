@@ -36,10 +36,11 @@ static_assert(
 
 #include "CUDA/CUDACompilationDevice.h"
 #include "CUDA/CUDADeviceContext.h"
+#include "DeviceAllocator.h"
 #include "HIP/HIPCompilationDevice.h"
 #include "HIP/HIPDeviceContext.h"
 #include "MLRT/Driver/DeviceContext/CPU/CpuDeviceContext.h"
-#include "MemoryManager.h"
+#include "MLRT/lib/Driver/MemoryManager/MemoryManager.h"
 #include "Metal/MetalDeviceContext.h"
 #include "PinnedCompletionFlag.h"
 #include "Support/AlignedAlloc.h"
@@ -158,7 +159,7 @@ Device::Device(API api, std::string name, int id, MemInfo memInfo,
                size_t allocAlignment, bool useMemoryManager)
     : name_(std::move(name)), id_(id), api_(api), memInfo_(memInfo),
       allocAlignment_(allocAlignment), useMemoryManager_(useMemoryManager),
-      hostMemoryManager_(MemoryManager::onHost(*this, allocAlignment)) {}
+      hostMemoryManager_(createHostMemoryManager(*this, allocAlignment)) {}
 
 Device::~Device() {
   // Destroy the function map before destroying the context.
@@ -426,7 +427,7 @@ std::string Device::FunctionCacheKey::moduleCacheName(StringRef moduleName,
 
 DeviceFunctionCacheEntryRef
 Device::findInFunctionCache(const FunctionCacheKey &key) const {
-  M_PROFILE_SPAN("Device::findInFunctionCache", M_PROFILE_COLOR_PURPLE);
+  M_PROFILE_TRACY_ZONE("Device::findInFunctionCache", M_PROFILE_COLOR_PURPLE);
   std::scoped_lock<std::mutex> lock(mu_);
   return funcMap_.lookup(key);
 }
@@ -434,7 +435,7 @@ Device::findInFunctionCache(const FunctionCacheKey &key) const {
 DeviceFunctionCacheEntryRef
 Device::insertInFunctionCache(const FunctionCacheKey &key,
                               const DeviceFunctionCacheEntry &entry) {
-  M_PROFILE_SPAN("Device::insertInFunctionCache", M_PROFILE_COLOR_PURPLE);
+  M_PROFILE_TRACY_ZONE("Device::insertInFunctionCache", M_PROFILE_COLOR_PURPLE);
   {
     std::scoped_lock<std::mutex> lock(mu_);
     auto iter = funcMap_.find(key);
@@ -1061,25 +1062,6 @@ ErrorOrSuccess DeviceGraphCollection::debugVerifyReplay(
 }
 
 //
-// ===== MemoryManagerFreeList ===== //
-//
-
-std::unique_ptr<MemoryManagerFreeList> MemoryManagerFreeList::createForContext(
-    DeviceContext &context, MemoryManager &memoryManager,
-    MemoryManagerFreeList *parent, bool disableFlush, std::string label) {
-  bool redzones = context.isDebugAllocatorEnabled("out-of-bounds");
-  // `poison-all` is the allocator-layer counterpart to the graph-driver's
-  // type-aware `uninitialized-poison` (see Device::createDeviceMemory): it has
-  // no dtype information, so it fills *every* allocation body with a raw byte
-  // pattern rather than a type-specific sentinel. See the MemoryManagerOverview
-  // doc (`MODULAR_DEBUG_DEVICE_ALLOCATOR`) for how the two tiers relate.
-  bool poison = context.isDebugAllocatorEnabled("poison-all");
-  return std::make_unique<MemoryManagerFreeList>(
-      &context, memoryManager, parent, disableFlush, std::move(label), redzones,
-      poison);
-}
-
-//
 // ===== DeviceGraphMemoryPool ===== //
 //
 
@@ -1090,13 +1072,13 @@ DeviceGraphMemoryPool::DeviceGraphMemoryPool(DeviceContextRef context)
   static std::atomic<int64_t> counter = 0;
 
   int64_t id = counter.fetch_add(1);
-  deviceFreeList = MemoryManagerFreeList::createForContext(
+  deviceFreeList = createFreeListForContext(
       *context, device.memoryManager(), device.memoryManager().freeList(),
       /*disableFlush=*/true,
       /*label=*/
       (Twine("DeviceGraphMemoryPool(id=") + Twine(id) + ", device)").str());
 
-  hostFreeList = MemoryManagerFreeList::createForContext(
+  hostFreeList = createFreeListForContext(
       *context, device.hostMemoryManager(),
       device.hostMemoryManager().freeList(),
       /*disableFlush=*/true,
@@ -1115,8 +1097,8 @@ ErrorOr<void *> DeviceGraphMemoryPool::allocate(size_t numBytes, bool isHost) {
     return nullptr;
 
   if (isHost)
-    return hostFreeList->allocate(numBytes, Device::AllocMode::HOST);
-  return deviceFreeList->allocate(numBytes, Device::AllocMode::SYNC);
+    return hostFreeList->allocate(numBytes, AllocatorContext::AllocMode::HOST);
+  return deviceFreeList->allocate(numBytes, AllocatorContext::AllocMode::SYNC);
 }
 
 void DeviceGraphMemoryPool::free(void *ptr, bool isHost) {
@@ -1477,14 +1459,14 @@ uint64_t PinnedCompletionFlag::load() const {
 
 DeviceContext::DeviceContext(Device &device, TypeID typeID)
     : device_(DeviceRef::copy(&device)), typeID(typeID),
-      freeList_(MemoryManagerFreeList::createForContext(
+      freeList_(createFreeListForContext(
           *this, device.memoryManager(), device.memoryManager().freeList(),
           /*disableFlush=*/false, /*label=*/"freeList")),
-      hostFreeList_(MemoryManagerFreeList::createForContext(
+      hostFreeList_(createFreeListForContext(
           *this, device.hostMemoryManager(),
           device.hostMemoryManager().freeList(),
           /*disableFlush=*/false, /*label=*/"hostFreeList")),
-      graphFreeList_(MemoryManagerFreeList::createForContext(
+      graphFreeList_(createFreeListForContext(
           *this, device.memoryManager(), device.memoryManager().freeList(),
           /*disableFlush=*/true, /*label=*/"graphFreeList")),
       syncMode_(0) {
@@ -1551,7 +1533,7 @@ DeviceContext::getMemoryInfo() const {
   // If we are using the memory manager, get memory information from it.
   MemoryManager &cache = device().memoryManager();
   if (cache.isEnabled()) {
-    return cache.getMemoryInfo();
+    return toDeviceMemInfo(cache.getMemoryInfo());
   }
 
   // Otherwise, go directly to the device.
@@ -1638,7 +1620,8 @@ void DeviceContext::setPendingEventHandler(PendingEventHandler *h) {
 }
 
 ErrorOrSuccess DeviceContext::checkPendingError() {
-  M_PROFILE_SPAN("DeviceContext::checkPendingError", M_PROFILE_COLOR_PURPLE);
+  M_PROFILE_TRACY_ZONE("DeviceContext::checkPendingError",
+                       M_PROFILE_COLOR_PURPLE);
 
   // Quickly check if we should check for a pending error.
   if (hasPendingError_.load(std::memory_order_acquire) == 0) {
@@ -1798,7 +1781,8 @@ ErrorOr<DeviceBufferRef> DeviceContext::allocBuffer(size_t byteSize,
                                      : isGraphCapturing() ? graphFreeList()
                                                           : freeList();
 
-  ErrorOr<void *> errPtr = allocator.allocate(byteSize, mode);
+  ErrorOr<void *> errPtr =
+      allocator.allocate(byteSize, toAllocatorAllocMode(mode));
   if (errPtr.isError())
     return errPtr.takeError();
 
@@ -2100,17 +2084,18 @@ MODULAR_CXX_EXPORT int Device::numberOfDevices(StringRef api) {
 }
 
 MemoryManager &Device::memoryManager() const {
-  // Built lazily on first access rather than in the constructor so onDevice()
-  // sees the fully-constructed derived Device when it queries the virtual
-  // vmmSupported(). First access must therefore occur while the derived Device
-  // is alive: an access during or after subclass destruction queries the base
-  // vmmSupported() (always false) and silently builds a non-VMM manager.
+  // Built lazily on first access rather than in the constructor so
+  // createDeviceMemoryManager() sees the fully-constructed derived Device when
+  // it queries the virtual vmmSupported(). First access must therefore occur
+  // while the derived Device is alive: an access during or after subclass
+  // destruction queries the base vmmSupported() (always false) and silently
+  // builds a non-VMM manager.
   std::call_once(memoryManagerOnce_, [&] {
     Device &device = const_cast<Device &>(*this);
-    memoryManager_.reset(
+    memoryManager_ =
         useMemoryManager_
-            ? MemoryManager::onDevice(device, memInfo_, allocAlignment_)
-            : MemoryManager::disabled(device, allocAlignment_));
+            ? createDeviceMemoryManager(device, memInfo_, allocAlignment_)
+            : createDisabledMemoryManager(device, allocAlignment_);
   });
   return *memoryManager_;
 }

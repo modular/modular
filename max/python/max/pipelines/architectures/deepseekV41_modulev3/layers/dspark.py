@@ -43,6 +43,7 @@ from .attention import (
 )
 from .block import _on_each_device
 from .mxfp8_linear import (
+    ConcatenatedMXFP8Linear,
     MXFP8Linear,
     Mxfp8Rows,
     _dense_op,
@@ -128,19 +129,14 @@ class DSparkMarkovHead(Module[..., tuple[Tensor, Tensor]]):
 
 
 class DSparkConfidenceHead(Module[[Tensor, Tensor], Tensor]):
-    """Predicts one draft position's acceptance probability.
-
-    A single float32 linear over the concatenation of a hidden state and
-    that position's Markov embedding. The checkpoint stores the projection
-    bf16; the loader widens it, like every other float32 weight.
-    """
+    """Returns a raw float32 score for one draft position."""
 
     def __init__(self, *, hidden_size: int, markov_rank: int) -> None:
         super().__init__()
         self.proj = _DenseLinear(1, hidden_size + markov_rank, DType.float32)
 
     def forward(self, hidden: Tensor, markov_embed: Tensor) -> Tensor:
-        """Scores one position's acceptance probability.
+        """Returns the raw float32 score for each proposed position.
 
         Args:
             hidden: ``[..., hidden_size]`` bf16 hidden state.
@@ -240,7 +236,13 @@ class DSparkAttention(Module[..., Tensor]):
         # ``wq_a`` and ``wkv`` read the same input, so the adapter stacks
         # them into one projection, as in the trunk's attention.
         self.q_lora_rank = config.q_lora_rank
-        self.wqa_wkv = MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
+        self.wqa_wkv = (
+            ConcatenatedMXFP8Linear(
+                config.hidden_size, ("wq_a", config.q_lora_rank), ("wkv", d)
+            )
+            if config.raw_checkpoint_weights
+            else MXFP8Linear(config.hidden_size, config.q_lora_rank + d)
+        )
         self.q_norm = RMSNorm(config.q_lora_rank, eps=config.rms_norm_eps)
         self.wq_b = MXFP8Linear(config.q_lora_rank, heads * d)
         self.kv_norm = RMSNorm(d, eps=config.rms_norm_eps)

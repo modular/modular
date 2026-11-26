@@ -84,7 +84,7 @@ def test_perf_struct_layout() raises:
 def test_algo_count_out_param() raises:
     # cuDNN writes a C int through returned_algo_count. The word right after
     # it must survive the call.
-    comptime guard = Int32(0x5A5A5A5A)
+    comptime guard_value = Int32(0x5A5A5A5A)
     with DeviceContext() as ctx:
         _ = ctx
         var meta = CuDNNConvMeta()
@@ -142,7 +142,7 @@ def test_algo_count_out_param() raises:
         var counts_alloc = alloc[Int32]({length = 2}).into_managed()
         var counts = counts_alloc.unsafe_ptr()
         counts[] = 0
-        counts.unsafe_offset(1)[] = guard
+        counts.unsafe_offset(1)[] = guard_value
 
         check_cudnn_error(
             cudnnGetConvolutionForwardAlgorithm_v7(
@@ -157,7 +157,7 @@ def test_algo_count_out_param() raises:
             )
         )
 
-        assert_equal(counts.unsafe_offset(1)[], guard)
+        assert_equal(counts.unsafe_offset(1)[], guard_value)
         var returned = Int(counts[])
         assert_true(returned >= 1 and returned <= max_algos)
         for i in range(returned):

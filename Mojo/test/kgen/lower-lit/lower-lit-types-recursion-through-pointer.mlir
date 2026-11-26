@@ -195,9 +195,7 @@ lit.struct.decl @Node {
 // -----
 
 //===----------------------------------------------------------------------===//
-// Tuple stores `!kgen.struct<: <type values> isParamPack>`, and param
-// packs deliberately opt out of `normalizeVariadicForUniquing` (see #84445),
-// which is what keeps ordinary structs from reaching this. Mojo equivalent:
+// Tuple stores `!kgen.struct<: <type values>>`. Mojo equivalent:
 // struct Node: var next: Tuple[Pointer[Node, MutUntrackedOrigin]]
 //===----------------------------------------------------------------------===//
 
@@ -208,11 +206,11 @@ lit.struct.decl @Ptr<ty: type> register_passable {
 }
 
 lit.struct.decl @Tup<Ts: !kgen.param_list<!lit.trait<@AnyType>>> register_passable {
-  lit.struct.field storage : !kgen.struct<:!kgen.param_list<!lit.trait<@AnyType>> Ts isParamPack>
+  lit.struct.field storage : !kgen.struct<:!kgen.param_list<!lit.trait<@AnyType>> Ts>
 }
 
 // CHECK-LABEL: kgen.struct.generator @Node
-// CHECK-SAME:    , pointer<none>]]>>>, struct<(pointer<none>) isParamPack>]) memoryOnly>
+// CHECK-SAME:    , pointer<none>]]>>>, struct<(pointer<none>)>]) memoryOnly>
 lit.struct.decl @Node {
   lit.struct.field next : !lit.struct<@Tup<:param_list<trait<@AnyType>>
       [!lit.struct<@Ptr<:type !lit.struct<@Node>>>]>>

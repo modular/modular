@@ -25,10 +25,10 @@ from std.utils.index import Index
 
 
 def test_kernel[
-    swizzle: Bool, num_offsets: Int
+    swizzle: Bool, num_offsets: Int, offsets_origin: ImmOrigin
 ](
     group_offsets: ImmTileTensor[
-        .uint32, RowMajorLayout[ComptimeInt[num_offsets]], ImmutAnyOrigin
+        .uint32, RowMajorLayout[ComptimeInt[num_offsets]], offsets_origin
     ]
 ):
     var scheduler = TileScheduler[
@@ -98,7 +98,9 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function[test_kernel[False, group_len + 1]](
+    ctx.enqueue_function[
+        test_kernel[False, group_len + 1, dev_group_offsets.origin]
+    ](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),
@@ -137,7 +139,9 @@ def test(ctx: DeviceContext) raises:
     # CHECK-DAG: 3 (12, 24, True, False)
     # ----
     # CHECK-DAG: 0 (16, 24, True, False)
-    ctx.enqueue_function[test_kernel[True, group_len + 1]](
+    ctx.enqueue_function[
+        test_kernel[True, group_len + 1, dev_group_offsets.origin]
+    ](
         dev_group_offsets,
         grid_dim=(4),
         block_dim=(1),

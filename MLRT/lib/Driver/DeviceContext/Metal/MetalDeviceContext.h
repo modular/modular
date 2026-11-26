@@ -216,10 +216,10 @@ public:
   ErrorOr<void *> getHostAccessiblePointer(const void *devicePtr) override;
 
   // DeviceFunction loading and execution.
-  ErrorOr<DeviceFunctionRef>
-  loadFunction(StringRef moduleName, StringRef functionName, StringRef code,
-               int32_t maxDynamicSharedBytes, StringRef debugLevel,
-               int32_t optimizationLevel) override;
+  ErrorOr<DeviceFunctionRef> loadFunction(StringRef moduleName,
+                                          StringRef functionName,
+                                          StringRef code, StringRef debugLevel,
+                                          int32_t optimizationLevel) override;
 
   ErrorOrSuccess enqueueFunctionExecDirect(
       const DeviceFunction &func, uint32_t gridX, uint32_t gridY,

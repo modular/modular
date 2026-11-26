@@ -32,19 +32,23 @@ from std.utils.lock import BlockingScopedLock, BlockingSpinLock
 from std.reflection import (
     SourceLocation,
     call_location,
+    get_linkage_name,
 )
 from std.memory.unsafe import bitcast
 from std.sys import bit_width_of, size_of
-from std.sys.defines import is_defined
 from std.sys.info import CompilationTarget
 
+from max._driver.max_license.device_context_dispatch.backend_selection import (
+    HAL_DEVICE_CONTEXT,
+)
 from max._driver.max_license.device_context_dispatch.device_function import (
     DeviceExternalFunction,
     DeviceFunction,
     _DispatchEnqueuer,
-    _HALDeviceExternalFunction,
-    _HALDeviceFunction,
-    _check_config_dims,
+)
+from ._hal_launch import (
+    _hal_enqueue_compiled,
+    _hal_enqueue_external,
 )
 from max._driver.max_license.hal import (
     Buffer,
@@ -63,13 +67,20 @@ from max._driver.max_license.hal.event import EVENT_FLAG_CPU_VISIBLE
 from max._driver.max_license.hal.extensions.traits import (
     SupportsCompletionFlagResetV1,
 )
-from max._driver.max_license.hal._plugin._trait import HalLaunchOptions
+from max._driver.max_license.hal.plugin_spec import (
+    DriverPluginEntry,
+    parse_driver_plugins,
+)
 from max._plugin import MaxPluginForTarget
 from max._driver.max_license.hal._machine import DeviceRef, DeviceSpec
 from max.gpu.host import (
     ClusterExecutionConfig,
     ClusterLaunchConfig,
     GridBlockLaunchConfig,
+)
+from max.gpu.host.nvidia.launch_config import (
+    _CLUSTER_DIM_ATTRIBUTE_ERROR,
+    _holds_cluster_dim_attribute,
 )
 from max.gpu.host.nvidia import (
     ClusterAttributeLaunchConfig,
@@ -79,16 +90,15 @@ from max.gpu.host.nvidia import (
 from max.gpu.host._legacy.constant_memory_mapping import ConstantMemoryMapping
 from max.gpu.host._legacy.device_attribute import DeviceAttribute
 from max.gpu.host._legacy.dim import Dim
-from max.gpu.host._legacy.func_attribute import FuncAttribute
+from max.gpu.host._legacy.func_attribute import Attribute, FuncAttribute
 from max.gpu.host._legacy.launch_attribute import LaunchAttribute
 from max.gpu.host._legacy.device_context import (
-    LegacyDeviceClosureFunction,
     LegacyDeviceContext,
     LegacyDeviceFunction,
     _LegacyDeviceContextScope,
 )
 from max.gpu.host._driver_common import _DumpPath
-from max.gpu.host._launch_args import DeviceFunctionWrapper
+from max.gpu.host._launch_args import DeviceFunctionWrapper, _IdentityWrapper
 from max.gpu.host._driver_common import (
     StreamPriorityRange as _OverlayStreamPriorityRange,
     _check_dim_in_range,
@@ -98,6 +108,7 @@ from max.gpu.host.info import default_accelerator, get_gpu_info
 from max.gpu.host.launch_config import (
     ExecutionConfig,
     GridBlockExecutionConfig,
+    NearComputeGeneralPurposeScratchpadExecutionConfig,
 )
 from .host_types import (
     CompletionFlag,
@@ -140,14 +151,14 @@ def _driver_satisfies_api(driver_name: String, api: String) -> Bool:
     return d == a
 
 
-def _plugin_spec_entry(api: String) raises -> String:
+def _plugin_spec_entry(api: String) raises -> DriverPluginEntry:
     """Returns the first `MODULAR_DRIVER_PLUGINS` entry that satisfies `api`.
 
     Args:
         api: The requested device API, such as "cpu", "gpu" or "cuda".
 
     Returns:
-        The matching `name@/path/to/plugin.so` entry.
+        The matching entry.
 
     Raises:
         If `MODULAR_DRIVER_PLUGINS` is not set or no entry satisfies `api`.
@@ -156,10 +167,9 @@ def _plugin_spec_entry(api: String) raises -> String:
     if not plugin_spec:
         raise Error("MODULAR_DRIVER_PLUGINS not set")
     # The spec may list several plugins ("CUDA@/x.so;CPU@/y.so").
-    for entry in plugin_spec.split(";"):
-        var name = String(entry.split("@")[0])
-        if _driver_satisfies_api(name, api):
-            return String(entry)
+    for entry in parse_driver_plugins(plugin_spec):
+        if _driver_satisfies_api(entry.name, api):
+            return entry.copy()
     raise Error(
         String(t"Requested API {api} not provided by MODULAR_DRIVER_PLUGINS")
     )
@@ -239,7 +249,7 @@ def _accelerator_api_and_arch(device_id: Int) raises -> Tuple[String, String]:
         API name, or the plugin has no arch for the device.
     """
     var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-    __guard case .Some(driver) = maybe_driver[] else:
+    guard case .Some(driver) = maybe_driver[] else:
         raise Error("no accelerator driver plugin is loaded")
     var api = String(driver[].name()).lower()
     # A plugin listed as a bare path, without a `name@`, is named after
@@ -403,14 +413,6 @@ def _enqueue_copy_device_to_device[
         )
 
 
-comptime HAL_DEVICE_CONTEXT = is_defined["HAL_DEVICE_CONTEXT"]()
-"""Whether this build uses the HAL `DeviceContext`.
-
-`--config=hal-device-context` defines `HAL_DEVICE_CONTEXT` for every Mojo
-compile, through the Mojo toolchain.
-"""
-
-
 def use_legacy_backend() -> Bool:
     """Returns whether this build executes through the legacy backend.
 
@@ -566,13 +568,10 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 ClusterAttributeLaunchConfig if Self._plugin_has_clusters else GridBlockAttributeLaunchConfig
             ) if Self._plugin_has_attributes else (
                 ClusterLaunchConfig if Self._plugin_has_clusters else (
-                    Self._PluginExecutionConfigType if (
-                        Self._HALHooks.Launcher.launches_config
-                        and not conforms_to(
-                            Self._PluginExecutionConfigType,
-                            GridBlockExecutionConfig,
-                        )
-                    ) else GridBlockLaunchConfig
+                    GridBlockLaunchConfig if conforms_to(
+                        Self._PluginExecutionConfigType,
+                        GridBlockExecutionConfig,
+                    ) else Self._PluginExecutionConfigType
                 )
             )
         )
@@ -582,8 +581,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
 
     On NVIDIA targets it carries launch attributes, and from sm_90 on also
     thread block clusters. When the plugin's own configuration isn't
-    grid/block shaped and the plugin's launcher takes it, it's that
-    configuration.
+    grid/block shaped, it's that configuration.
 
     Generic code checks for a capability with `conforms_to`, for example
     `conforms_to(DeviceContext[].ExecutionConfigType, ClusterExecutionConfig)`.
@@ -696,7 +694,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 # `_open_cpu_plugin` only loads a plugin that satisfies "cpu",
                 # so the driver needs no api check here.
                 var maybe_plugin = _CPU_PLUGIN.get_or_create_ptr()
-                __guard case .Some(plugin) = maybe_plugin[] else:
+                guard case .Some(plugin) = maybe_plugin[] else:
                     # The cached load drops its error; load again to raise it.
                     _ = _open_cpu_plugin()
                     raise Error("failed to load the CPU plugin")
@@ -785,7 +783,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                     t" from: {call_location()}"
                 )
             )
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceContext.CPU(_impl=self._impl.assert_cpu_target())
 
         return rebind_var[DeviceContext.CPU](self^)
@@ -1050,7 +1048,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             print("Failed to get memory information")
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_memory_info()
 
         var info = self._impl._context[].get_memory_info()
@@ -1082,7 +1080,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If querying the compute capability fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.compute_capability()
 
         var major = self.device().get_attribute(
@@ -1116,7 +1114,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If there's an error setting the current device.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.set_as_current()
             return
 
@@ -1186,7 +1184,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             print("GPU API version:", api_version)
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.get_api_version()
 
         # TODO: HAL stub - returns 0. Plumb plugin-side `cuDriverGetVersion`
@@ -1225,7 +1223,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         print("Device is compatible with MAX:", ctx.is_compatible())
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.is_compatible()
 
         # TODO: HAL stub - always returns True. Hook this up to a plugin-side
@@ -1255,7 +1253,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails. The HAL backend never raises.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.is_graph_capturing()
 
         # TODO(DRIV-687): answer from the queue once the HAL has stream capture.
@@ -1274,7 +1272,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             The number of devices, or 0 if no driver plugin is available or the
             loaded plugin does not support the requested API.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return LegacyDeviceContext[Self.target].number_of_devices(api=api^)
 
         # The built-in host (CPU) backend always provides a single device and
@@ -1372,7 +1370,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         default_stream.synchronize()
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceEvent(_impl=self._impl.create_event())
 
         # The HAL uses logical events where creation and recording happen in
@@ -1395,7 +1393,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the allocation fails, or if the device's plugin has no
             completion flags.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return CompletionFlag(_impl=self._impl.allocate_completion_flag())
 
         return CompletionFlag(
@@ -1491,7 +1489,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.stream_priority_range()
 
         # TODO: HAL stub - returns the trivial range.
@@ -1560,7 +1558,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Returns:
             A `Device` that borrows this context.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return Device[Self.target, ImmOrigin(origin_of(self))](
                 _impl=rebind_var[
                     Device[Self.target, ImmOrigin(origin_of(self))]._Impl
@@ -1599,7 +1597,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[dtype](
                 _impl=self._impl.enqueue_create_buffer[dtype](size)
             )
@@ -1625,7 +1623,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the allocation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return DeviceBuffer[dtype](
                 _impl=self._impl.create_buffer_sync[dtype](size)
             )
@@ -1679,7 +1677,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             # ...
         ```
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return HostBuffer[dtype](
                 _impl=self._impl.enqueue_create_host_buffer[dtype](size)
             )
@@ -1749,10 +1747,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst_ptr, src_ptr, size)
-            return
-
         self.enqueue_copy(
             DeviceBuffer[dtype](self, dst_ptr, size, owning=False),
             DeviceBuffer[dtype](self, src_ptr, size, owning=False),
@@ -1779,7 +1773,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
             return
 
@@ -1809,7 +1803,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_ptr)
             return
 
@@ -1838,7 +1832,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
             return
 
@@ -1865,7 +1859,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If the operation fails, or if `dst_buf` is not on this context's
             device.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1897,7 +1891,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1926,7 +1920,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1957,7 +1951,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails, or if `src_buf` is smaller than `dst_buf`.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_buf._impl, src_buf._impl)
             return
 
@@ -1989,7 +1983,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy(dst_ptr, src_buf._impl)
             return
 
@@ -2021,10 +2015,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst_buf._impl, src)
-            return
-
         debug_assert(
             len(src) >= len(dst_buf),
             "source span length must be >= destination buffer length",
@@ -2052,10 +2042,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst_buf._impl, src)
-            return
-
         debug_assert(
             len(src) >= len(dst_buf),
             "source span length must be >= destination buffer length",
@@ -2086,10 +2072,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst, src_buf._impl)
-            return
-
         debug_assert(
             len(dst) >= len(src_buf),
             "destination span length must be >= source buffer length",
@@ -2118,10 +2100,6 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_copy(dst, src_buf._impl)
-            return
-
         debug_assert(
             len(dst) >= len(src_buf),
             "destination span length must be >= source buffer length",
@@ -2148,7 +2126,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_copy_no_cross_stream_sync(
                 dst_buf._impl, src_buf._impl
             )
@@ -2173,7 +2151,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_memset(dst._impl, val)
             return
 
@@ -2199,7 +2177,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the operation fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_memset(dst._impl, val)
             return
 
@@ -2232,7 +2210,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If self is not a CPU DeviceContext.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enqueue_cpu_range(func, count)
             return
 
@@ -2283,6 +2261,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # Compiling and launching functions
     # ===-------------------------------------------------------------------===#
 
+    @inline(.always)
     def compile_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
@@ -2312,8 +2291,9 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Parameters:
             declared_arg_types: Types of the arguments of the kernel.
             func: The function to compile.
-            compile_options: The compile options for the function.
-            link_options: The link options for the function.
+            compile_options: Change the compile options to different options
+                than the ones associated with this `DeviceContext`.
+            link_options: Additional linker flags and options as a string.
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -2326,39 +2306,74 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 PTX assembly (default `False`).
 
         Args:
-            func_attribute: An attribute to use when compiling the function.
+            func_attribute: An attribute to use when compiling the code (such
+                as maximum shared memory size).
 
         Returns:
-            The compiled function.
+            A compiled `DeviceFunction` parameterized over the
+            (possibly wrapped) kernel, ready to be enqueued via
+            `enqueue_function`.
 
         Raises:
-            If the compilation fails.
+            If the operation fails.
         """
         comptime if use_legacy_backend():
-            result = type_of(result)(
-                _impl=self._impl.compile_function[
-                    func,
-                    compile_options=compile_options,
-                    link_options=link_options,
-                    dump_asm=dump_asm,
-                    dump_llvm=dump_llvm,
-                    _dump_sass=_dump_sass,
-                    _ptxas_info_verbose=_ptxas_info_verbose,
-                ](func_attribute=func_attribute)
-            )
+            if case .Some(attr) = func_attribute:
+                assert (
+                    attr.attribute != Attribute.MAX_DYNAMIC_SHARED_SIZE_BYTES
+                    or attr.value
+                    <= Int32(
+                        Self.default_device_info.shared_memory_per_multiprocessor
+                    )
+                ), "Requested more than available shared memory."
+
+            comptime if Self.FunctionWrapper != _IdentityWrapper:
+                # Surface the user kernel's name (not the wrapper name) as the
+                # dispatch printName for device-level profiling.
+                comptime user_name = get_linkage_name[
+                    func, target=Self.target
+                ]()
+                result = type_of(result)(
+                    _impl=type_of(result)._Legacy(
+                        self._impl,
+                        func_attribute=func_attribute,
+                        name=user_name,
+                    )
+                )
+            else:
+                result = type_of(result)(
+                    _impl=type_of(result)._Legacy(
+                        self._impl, func_attribute=func_attribute
+                    )
+                )
+
+            result._impl.dump_rep[
+                dump_asm=dump_asm,
+                dump_llvm=dump_llvm,
+                _dump_sass=_dump_sass,
+            ]()
         else:
             # The HAL backend ignores the compile options, link options and
             # dump flags; they are accepted for parity with the legacy backend.
             result = type_of(result)(self, func_attribute=func_attribute)
 
-    def compile_function[
+    def compile_closure[
         ClosureType: RegisterPassable & def() -> None,
-    ](self) raises -> LegacyDeviceClosureFunction[ClosureType, Self.target]:
+    ](self) raises -> MaxPluginForTarget[Self.target].ClosureKernel[
+        ClosureType, Self.target
+    ]:
         """Compiles a closure as a kernel that takes no arguments.
 
-        Launch the result with `enqueue_function(kernel, closure, ...)`. Only
-        targets whose MAX plugin handles closure kernels support this, and the
-        HAL backend has no closure kernels.
+        Launch the result with `enqueue_closure(kernel, closure, ...)`, which
+        passes the closure's captures. Only targets whose MAX plugin handles
+        closure kernels support this. The HAL backend takes
+        `enqueue_closure(closure, ...)` instead, which compiles and launches
+        the closure in one call.
+
+        ```mojo
+        var kernel = ctx.compile_closure[type_of(closure)]()
+        ctx.enqueue_closure(kernel, closure, grid_dim=1, block_dim=1)
+        ```
 
         Parameters:
             ClosureType: The closure's type, such as `type_of(closure)`.
@@ -2369,51 +2384,11 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If compilation or loading fails.
         """
+        comptime plugin = MaxPluginForTarget[Self.target]
         comptime assert (
-            use_legacy_backend()
-        ), "closure kernels are only available on the legacy DeviceContext"
-        return self._impl.compile_function[ClosureType]()
-
-    def enqueue_function[
-        ClosureType: RegisterPassable & def() -> None,
-    ](
-        self,
-        f: LegacyDeviceClosureFunction[ClosureType, Self.target],
-        closure: ClosureType,
-        *,
-        grid_dim: Dim,
-        block_dim: Dim,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Enqueues a closure kernel compiled by `compile_function[ClosureType]`.
-
-        The target's MAX plugin defines what `grid_dim` and `block_dim` mean
-        for a closure kernel.
-
-        Parameters:
-            ClosureType: The closure's type.
-
-        Args:
-            f: The compiled kernel.
-            closure: The closure whose captures to launch with.
-            grid_dim: The grid dimensions.
-            block_dim: The block dimensions.
-            location: Source location for the function call.
-
-        Raises:
-            If the launch fails.
-        """
-        comptime assert (
-            use_legacy_backend()
-        ), "closure kernels are only available on the legacy DeviceContext"
-        MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
-            self._impl,
-            f.kernel,
-            closure,
-            grid_dim=grid_dim,
-            block_dim=block_dim,
-            location=location.or_else(call_location()),
-        )
+            plugin._handles_closure_kernels
+        ), "compile_closure is not supported on this target"
+        return plugin.compile_closure_fn[ClosureType](self)
 
     def load_function[
         ret_type: AnyType,
@@ -2452,7 +2427,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the load fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             result = type_of(result)(
                 _impl=self._impl.load_function[func](
                     function_name=function_name^,
@@ -2532,7 +2507,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
                 grid_dim, location=call_location()
             )
@@ -2552,38 +2527,18 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             )
             return
 
-        var hal_f: _HALDeviceExternalFunction = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_external(
-                self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args
-            )
-        else:
-            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
-                grid_dim, location=call_location()
-            )
-            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
-                block_dim, location=call_location()
-            )
-            f._call_with_pack(
-                self._hal_stream(),
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_external[Self.target, "DeviceContext.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -2637,7 +2592,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             comptime plugin = MaxPluginForTarget[Self.target]
             comptime if plugin._handles_enqueue_function:
                 plugin.enqueue_function_fn(
@@ -2672,39 +2627,77 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 )
             return
 
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                None,
-            )
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](self._hal_stream()[], hal_f._inner[]._func_handle, launch, *args)
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
-            f._call_with_pack_checked(
-                self,
-                *args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        _hal_enqueue_compiled[Self.target, "DeviceContext.enqueue_function"](
+            self,
+            f,
+            *args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @inline(.always)
+    def enqueue_function[
+        ExecutionConfigType: ExecutionConfig,
+        //,
+        *Ts: DevicePassable,
+    ](
+        self,
+        execution_config: ExecutionConfigType,
+        f: DeviceFunction[target=Self.target, ...],
+        *args: *Ts,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Enqueues a pre-compiled checked function for execution on this device.
+
+        Only available on the HAL `DeviceContext`.
+
+        This overload requires a `DeviceFunction` that was compiled with
+        type checking enabled (via `compile_function`). The function
+        will verify that the argument types match the declared types at
+        compile time.
+
+        Parameters:
+            ExecutionConfigType: The type of the execution configuration.
+            Ts: Argument dtypes.
+
+        Args:
+            execution_config: The execution configuration specifying device specific kernel launch arguments.
+            f: The compiled function to execute.
+            args: Arguments to pass to the function.
+            location: Source location for the function call.
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+
+        def kernel(x: Int):
+            print("Value:", x)
+
+        with DeviceContext() as ctx:
+            var compiled_func = ctx.compile_function[kernel]()
+            var cfg = GPUExecutionConfiguration(grid_dim=Dim(1, 1, 1), block_dim=Dim(1, 1, 1))
+            ctx.enqueue_function(cfg, compiled_func, 42)
+            ctx.synchronize()
+        ```
+
+        Raises:
+            If the operation fails.
+        """
+        comptime assert not use_legacy_backend(), (
+            "enqueue_function with an execution config is only available on a"
+            " HAL DeviceContext"
+        )
+        _hal_enqueue_compiled[Self.target, "DeviceContext.enqueue_function"](
+            self,
+            execution_config,
+            f,
+            *args,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
     def enqueue_function[
@@ -2779,66 +2772,241 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the compilation or the launch fails.
         """
-        comptime __guard not use_legacy_backend() else:
-            self._impl.enqueue_function[
+        comptime guard not use_legacy_backend() else:
+            _check_dim_in_range["DeviceContext.enqueue_function", "grid_dim"](
+                grid_dim, location=call_location()
+            )
+            _check_dim_in_range["DeviceContext.enqueue_function", "block_dim"](
+                block_dim, location=call_location()
+            )
+            comptime plugin = MaxPluginForTarget[Self.target]
+            var gpu_kernel = self.compile_function[
                 func,
-                link_options=link_options,
                 dump_asm=dump_asm,
                 dump_llvm=dump_llvm,
+                link_options=link_options,
                 _dump_sass=_dump_sass,
                 _ptxas_info_verbose=_ptxas_info_verbose,
-            ](
+            ](func_attribute=func_attribute)
+            comptime if plugin._handles_enqueue_function:
+                comptime assert (
+                    HostArgs.length == 0
+                ), "host_args is not supported on this target"
+                plugin.enqueue_function_fn(
+                    self,
+                    gpu_kernel,
+                    *encoded_args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    location=location.or_else(call_location()),
+                )
+            else:
+                gpu_kernel._call_with_pack_checked(
+                    self,
+                    *encoded_args,
+                    host_args=host_args,
+                    grid_dim=grid_dim,
+                    block_dim=block_dim,
+                    cluster_dim=cluster_dim,
+                    shared_mem_bytes=shared_mem_bytes,
+                    attributes=attributes^,
+                    constant_memory=constant_memory^,
+                    location=location.or_else(call_location()),
+                )
+            return
+
+        var gpu_kernel = self.compile_function[func](
+            func_attribute=func_attribute
+        )
+        gpu_kernel._call_with_pack_checked(
+            self,
+            *encoded_args,
+            host_args=host_args,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
+
+    @inline(.always)
+    def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        ConfigType: ExecutionConfig,
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+        //,
+        func: def(*args: *declared_arg_types) thin -> None,
+        *encoded_types: DevicePassable,
+    ](
+        self,
+        *encoded_args: *encoded_types,
+        execution_config: ConfigType,
+        host_args: Tuple[*HostArgs] = (),
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Compiles and enqueues a kernel with an execution configuration.
+
+        Put capturing closures in `host_args`, after the encoded arguments,
+        as for the keyword overload.
+
+        You can pass the function directly to `enqueue_function` without
+        compiling it first:
+
+        ```mojo
+        from max.gpu.host import DeviceContext
+        from max.driver._hal.execution_config import GPUExecutionConfiguration
+
+        def kernel():
+            print("hello from the GPU")
+
+        with DeviceContext() as ctx:
+            ctx.enqueue_function[kernel](GPUExecutionConfiguration(grid_dim=Dim(1, 1, 1), block_dim=Dim(1, 1, 1)))
+            ctx.synchronize()
+        ```
+
+        Parameters:
+            declared_arg_types: Types of the arguments of the kernel.
+            ConfigType: The type of the execution configuration.
+            HostArgs: Types of the host-only arguments.
+            func: The function to compile and launch.
+            encoded_types: The types of the device arguments.
+
+        Args:
+            encoded_args: The device arguments to pass to the kernel.
+            execution_config: The execution configuration of the launch.
+            host_args: The host-only arguments to pass to the kernel.
+            location: The source location of the call.
+
+        Raises:
+            If the compilation or the launch fails.
+        """
+        comptime guard not use_legacy_backend() else:
+            # The legacy backend doesn't support the full
+            # `DeviceContext.ExecutionConfigType`, so the legacy
+            # context's launch configurations are asserted here.
+            comptime assert conforms_to(ConfigType, GridBlockExecutionConfig), (
+                "the legacy DeviceContext launches only grid and block"
+                " configurations"
+            )
+            comptime assert (
+                ConfigType == GridBlockLaunchConfig
+                or ConfigType == ClusterLaunchConfig
+                or ConfigType == GridBlockAttributeLaunchConfig
+                or ConfigType == ClusterAttributeLaunchConfig
+            ), (
+                "this DeviceContext launches only a GridBlockLaunchConfig,"
+                " ClusterLaunchConfig, GridBlockAttributeLaunchConfig, or"
+                " ClusterAttributeLaunchConfig"
+            )
+
+            var cluster_dim = OptionalReg[Dim](None)
+            comptime if conforms_to(ConfigType, ClusterExecutionConfig):
+                comptime assert conforms_to(
+                    Self.ExecutionConfigType, ClusterExecutionConfig
+                ), "this target does not support thread block cluster launch"
+                cluster_dim = execution_config.get_cluster_dim()
+
+            var shared_mem_bytes = OptionalReg[Int](None)
+            comptime if conforms_to(
+                ConfigType, NearComputeGeneralPurposeScratchpadExecutionConfig
+            ):
+                shared_mem_bytes = (
+                    execution_config.get_near_compute_scratchpad_usage()
+                )
+
+            var attributes = List[LaunchAttribute]()
+            comptime if conforms_to(
+                ConfigType, LaunchAttributeHolderExecutionConfig
+            ):
+                comptime assert conforms_to(
+                    Self.ExecutionConfigType,
+                    LaunchAttributeHolderExecutionConfig,
+                ), "this target does not support launch attributes"
+                if _holds_cluster_dim_attribute(
+                    execution_config.get_launch_attributes()
+                ):
+                    raise Error(_CLUSTER_DIM_ATTRIBUTE_ERROR)
+                attributes = List(execution_config.get_launch_attributes())
+
+            self.enqueue_function[func](
                 *encoded_args,
                 host_args=host_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
+                grid_dim=execution_config.get_grid_dim(),
+                block_dim=execution_config.get_block_dim(),
                 cluster_dim=cluster_dim,
                 shared_mem_bytes=shared_mem_bytes,
                 attributes=attributes^,
-                constant_memory=constant_memory^,
-                func_attribute=func_attribute,
-                location=location,
+                location=location.or_else(call_location()),
             )
             return
 
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                func_attribute,
-            )
-            Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[], launch, *encoded_args, host_args=host_args
-            )
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
-            var gpu_kernel = self.compile_function[func](
-                func_attribute=func_attribute
-            )
-            gpu_kernel._call_with_pack_checked(
-                self,
-                *encoded_args,
-                host_args=host_args,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
+        var gpu_kernel = self.compile_function[func]()
+        comptime for idx in range(HostArgs.length):
+            type_of(gpu_kernel)._check_trailing_host[
+                HostArgs[idx], encoded_types.length + idx
+            ]()
+        gpu_kernel._do_call_with_pack_checked(
+            self._hal_stream(),
+            execution_config,
+            *encoded_args,
+            host_args=host_args,
+            location=location.or_else(call_location()),
+        )
 
-    def enqueue_function[
+    @inline(.always)
+    def enqueue_closure[
+        ClosureType: RegisterPassable & def() -> None,
+    ](
+        self,
+        f: MaxPluginForTarget[Self.target].ClosureKernel[
+            ClosureType, Self.target
+        ],
+        closure: ClosureType,
+        *,
+        grid_dim: Dim,
+        block_dim: Dim,
+        num_cores: OptionalReg[Int] = None,
+        thread_mask: OptionalReg[Int] = None,
+        location: Optional[SourceLocation] = None,
+    ) raises:
+        """Enqueues a closure kernel compiled by `compile_closure[ClosureType]`.
+
+        The target's MAX plugin defines what `grid_dim` and `block_dim` mean
+        for a closure kernel.
+
+        Parameters:
+            ClosureType: The closure's type.
+
+        Args:
+            f: The compiled kernel.
+            closure: The closure whose captures to launch with.
+            grid_dim: The grid dimensions.
+            block_dim: The block dimensions.
+            num_cores: A core count that only some targets support.
+            thread_mask: A thread mask that only some targets support.
+            location: Source location for the function call.
+
+        Raises:
+            If the launch fails.
+        """
+        MaxPluginForTarget[Self.target].enqueue_closure_fn[ClosureType](
+            self,
+            f,
+            closure,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            num_cores=num_cores,
+            thread_mask=thread_mask,
+            location=location.or_else(call_location()),
+        )
+
+    def enqueue_closure[
         FuncType: DevicePassable & def() -> None,
         //,
         dump_asm: _DumpPath = False,
@@ -2913,7 +3081,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                         return
                     data[i] = data[i] * scale_factor
 
-                ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
+                ctx.enqueue_closure(scale_kernel, grid_dim=1, block_dim=256)
                 ctx.synchronize()
                 with data_buffer.map_to_host() as h:
                     for i in range(data.num_elements()):
@@ -2937,9 +3105,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _ptxas_info_verbose=_ptxas_info_verbose,
             ](
                 self._impl,
-                func_attribute=self._impl._func_attribute_for_launch(
-                    func_attribute, shared_mem_bytes
-                ),
+                func_attribute=func_attribute,
             )
             gpu_kernel.dump_rep[
                 dump_asm=dump_asm,
@@ -2979,7 +3145,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 location=location,
             )
 
-    def enqueue_function[
+    def enqueue_closure[
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         //,
         dump_asm: _DumpPath = False,
@@ -3046,9 +3212,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
                 _ptxas_info_verbose=_ptxas_info_verbose,
             ](
                 self._impl,
-                func_attribute=self._impl._func_attribute_for_launch(
-                    func_attribute, shared_mem_bytes
-                ),
+                func_attribute=func_attribute,
             )
             gpu_kernel.dump_rep[
                 dump_asm=dump_asm,
@@ -3096,209 +3260,23 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         func_attribute: OptionalReg[FuncAttribute],
         location: Optional[SourceLocation],
     ) raises where not use_legacy_backend():
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            var launch = HalLaunchOptions(
-                grid_dim,
-                block_dim,
-                cluster_dim,
-                shared_mem_bytes,
-                attributes^,
-                constant_memory^,
-                func_attribute,
-            )
-            Self._HALHooks.Enqueuer.enqueue_closure(
-                self._hal_stream()[], launch, func
-            )
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "grid_dim"
-                ](grid_dim, location=call_location())
-                _check_dim_in_range[
-                    "DeviceContext.enqueue_function", "block_dim"
-                ](block_dim, location=call_location())
-            var gpu_kernel = DeviceFunction[
-                FuncType.__call__, target=Self.target
-            ](self, func_attribute=func_attribute)
-            gpu_kernel._call_closure_checked(
-                self,
-                func,
-                grid_dim=grid_dim,
-                block_dim=block_dim,
-                cluster_dim=cluster_dim,
-                shared_mem_bytes=shared_mem_bytes,
-                attributes=attributes^,
-                constant_memory=constant_memory^,
-                location=location.or_else(call_location()),
-            )
-
-    @inline(.always)
-    def enqueue_function[
-        declared_arg_types: TypeList[Trait=AnyType, ...],
-        ConfigType: ExecutionConfig,
-        HostArgs: TypeList[Trait=RegisterPassable, ...],
-        //,
-        func: def(*args: *declared_arg_types) thin -> None,
-        *encoded_types: DevicePassable,
-    ](
-        self,
-        *encoded_args: *encoded_types,
-        execution_config: ConfigType,
-        host_args: Tuple[*HostArgs] = (),
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Compiles and enqueues a kernel with an execution configuration.
-
-        Put capturing closures in `host_args`, after the encoded arguments,
-        as for the keyword overload.
-
-        You can pass the function directly to `enqueue_function` without
-        compiling it first:
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-        from max.driver._hal.execution_config import GPUExecutionConfiguration
-
-        def kernel():
-            print("hello from the GPU")
-
-        with DeviceContext() as ctx:
-            ctx.enqueue_function[kernel](GPUExecutionConfiguration(grid_dim=Dim(1, 1, 1), block_dim=Dim(1, 1, 1)))
-            ctx.synchronize()
-        ```
-
-        Parameters:
-            declared_arg_types: Types of the arguments of the kernel.
-            ConfigType: The type of the execution configuration.
-            HostArgs: Types of the host-only arguments.
-            func: The function to compile and launch.
-            encoded_types: The types of the device arguments.
-
-        Args:
-            encoded_args: The device arguments to pass to the kernel.
-            execution_config: The execution configuration of the launch.
-            host_args: The host-only arguments to pass to the kernel.
-            location: The source location of the call.
-
-        Raises:
-            If the compilation or the launch fails.
-        """
-        comptime __guard not use_legacy_backend() else:
-            # The legacy backend doesn't support the full
-            # `DeviceContext.ExecutionConfigType`, so the legacy
-            # context's grid and block requirement is asserted here.
-            comptime assert conforms_to(ConfigType, GridBlockExecutionConfig), (
-                "the legacy DeviceContext launches only grid and block"
-                " configurations"
-            )
-            self._impl.enqueue_function[func](
-                *encoded_args,
-                execution_config=execution_config,
-                host_args=host_args,
-                location=location,
-            )
-            return
-
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_function[func](
-                self._hal_stream()[],
-                execution_config,
-                *encoded_args,
-                host_args=host_args,
-            )
-        else:
-            var gpu_kernel = self.compile_function[func]()
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceContext.enqueue_function"](
-                    execution_config, location=call_location()
-                )
-            comptime for idx in range(HostArgs.length):
-                type_of(gpu_kernel)._check_trailing_host[
-                    HostArgs[idx], encoded_types.length + idx
-                ]()
-            gpu_kernel._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *encoded_args,
-                host_args=host_args,
-                location=location.or_else(call_location()),
-            )
-
-    @inline(.always)
-    def enqueue_function[
-        ExecutionConfigType: ExecutionConfig,
-        //,
-        *Ts: DevicePassable,
-    ](
-        self,
-        execution_config: ExecutionConfigType,
-        f: DeviceFunction,
-        *args: *Ts,
-        location: Optional[SourceLocation] = None,
-    ) raises:
-        """Enqueues a pre-compiled checked function for execution on this device.
-
-        Only available on the HAL `DeviceContext`.
-
-        This overload requires a `DeviceFunction` that was compiled with
-        type checking enabled (via `compile_function`). The function
-        will verify that the argument types match the declared types at
-        compile time.
-
-        Parameters:
-            ExecutionConfigType: The type of the execution configuration.
-            Ts: Argument dtypes.
-
-        Args:
-            execution_config: The execution configuration specifying device specific kernel launch arguments.
-            f: The compiled function to execute.
-            args: Arguments to pass to the function.
-            location: Source location for the function call.
-
-        ```mojo
-        from max.gpu.host import DeviceContext
-
-        def kernel(x: Int):
-            print("Value:", x)
-
-        with DeviceContext() as ctx:
-            var compiled_func = ctx.compile_function[kernel]()
-            var cfg = GPUExecutionConfiguration(grid_dim=Dim(1, 1, 1), block_dim=Dim(1, 1, 1))
-            ctx.enqueue_function(cfg, compiled_func, 42)
-            ctx.synchronize()
-        ```
-
-        Raises:
-            If the operation fails.
-        """
-        comptime assert not use_legacy_backend(), (
-            "enqueue_function with an execution config is only available on a"
-            " HAL DeviceContext"
+        var gpu_kernel = DeviceFunction[FuncType.__call__, target=Self.target](
+            self, func_attribute=func_attribute
         )
-        var hal_f: _HALDeviceFunction[...] = f._impl
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_compiled[
-                hal_f.Wrapper, hal_f.declared_arg_types
-            ](
-                self._hal_stream()[],
-                hal_f._inner[]._func_handle,
-                execution_config,
-                *args,
-            )
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceContext.enqueue_function"](
-                    execution_config, location=call_location()
-                )
-            f._do_call_with_pack_checked(
-                self._hal_stream(),
-                execution_config,
-                *args,
-                location=location.or_else(call_location()),
-            )
+        gpu_kernel._call_closure_checked(
+            self,
+            func,
+            grid_dim=grid_dim,
+            block_dim=block_dim,
+            cluster_dim=cluster_dim,
+            shared_mem_bytes=shared_mem_bytes,
+            attributes=attributes^,
+            constant_memory=constant_memory^,
+            location=location.or_else(call_location()),
+        )
 
     @inline(.always)
-    def enqueue_function[
+    def enqueue_closure[
         FuncType: ImplicitlyCopyable & RegisterPassable & def() -> None,
         ExecutionConfigType: ExecutionConfig,
         //,
@@ -3331,26 +3309,16 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             "enqueue_function with an execution config and a closure is only"
             " available on the HAL DeviceContext"
         )
-        comptime if Self._HALHooks.Enqueuer.overrides:
-            Self._HALHooks.Enqueuer.enqueue_closure(
-                self._hal_stream()[], execution_config, func
-            )
-        else:
-            comptime if not Self._HALHooks.Launcher.overrides_grid_block:
-                _check_config_dims["DeviceContext.enqueue_function"](
-                    execution_config, location=call_location()
-                )
+        var gpu_kernel = DeviceFunction[FuncType.__call__, target=Self.target](
+            self
+        )
 
-            var gpu_kernel = DeviceFunction[
-                FuncType.__call__, target=Self.target
-            ](self)
-
-            gpu_kernel._do_call_closure_checked(
-                self._hal_stream(),
-                execution_config,
-                func,
-                location=location.or_else(call_location()),
-            )
+        gpu_kernel._do_call_closure_checked(
+            self._hal_stream(),
+            execution_config,
+            func,
+            location=location.or_else(call_location()),
+        )
 
     def execution_time[
         FuncType: def(Self) raises -> None,
@@ -3374,7 +3342,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
 
             def run_legacy(inner: Self._Legacy) raises {imm}:
                 func(Self(_impl=inner.copy()))
@@ -3408,7 +3376,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.execution_time(func, num_iters)
 
         self.synchronize()
@@ -3438,7 +3406,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the timing fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
 
             def run_legacy(inner: Self._Legacy, i: Int) raises {imm}:
                 func(Self(_impl=inner.copy()), i)
@@ -3483,7 +3451,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
             If enabling peer access fails: the build or `peer`'s driver lacks
             peer access, or the plugin refuses the pair.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             self._impl.enable_peer_access(peer._impl)
             return
 
@@ -3516,7 +3484,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             On the first pair the plugin refuses.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             LegacyDeviceContext[Self.target].enable_all_peer_access()
             return
 
@@ -3524,7 +3492,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         comptime Ext = _HALDevice[device_spec].Extensions
         comptime if conforms_to(Ext, SupportsPeerAccessV1):
             var maybe_driver = _GPU_DRIVER.get_or_create_ptr()
-            __guard case .Some(driver) = maybe_driver[] else:
+            guard case .Some(driver) = maybe_driver[] else:
                 return
             var count = Int(driver[].device_count())
             if count <= 1:
@@ -3566,7 +3534,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return LegacyDeviceContext[Self.target].all_peer_access_enabled()
 
         return _PEER_STATE.get_or_create_ptr()[].all_enabled.load() != 0
@@ -3581,7 +3549,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
         Raises:
             If the query fails. The HAL backend never raises.
         """
-        comptime __guard not use_legacy_backend() else:
+        comptime guard not use_legacy_backend() else:
             return self._impl.supports_multicast()
 
         return False

@@ -1,0 +1,254 @@
+---
+title: Mojo debugging reference
+sidebar_label: Debugging reference
+description: >
+  Complete reference for debugging Mojo programs. Covers the mojo debug
+  command, debug information levels, programmatic breakpoints, stack
+  traces, MODULAR_DEBUG, Mojo support in LLDB, and platform notes.
+---
+
+{/* VERIFIED: code/tools/debugging-reference/ (tests.mojo,
+     test_debug_reference.sh);
+     code/tools/debugging/test_debugging.sh; mojo debug --help;
+     mojo build --help; Support/lib/Configuration.cpp parseModularDebugEnv();
+     Mojo/lib/CompilerRT/System.cpp; Mojo/stdlib/std/builtin/_startup.mojo,
+     error.mojo, range.mojo; Mojo/lib/MojoLLDB/Language/MojoLanguage.cpp,
+     MojoLanguageRuntime.cpp
+     Compiler verified: 2026-11-20, Mojo 1.3.0.dev2026111805 (310936c5)
+     Tested on macOS arm64 and Linux aarch64. Not tested on Linux x86-64.
+     VS Code section checked by hand with extension 26.6.1.
+     Last updated: 2026-11-23 (moved from reference/ to tools/) */}
+
+Mojo includes the LLDB debugger with a Mojo plugin, a `mojo debug` command
+that starts debugging sessions, and runtime support for stack traces.
+
+This page lists each debugging feature and its options. For a guided
+introduction, see [Debugging](/docs/tools/debugging). Examples that name
+`histogram.mojo` use the example program from that page.
+
+## The `mojo debug` command
+
+`mojo debug` starts a session in one of five modes:
+
+| Command                                    | Mode                                           |
+|--------------------------------------------|------------------------------------------------|
+| `mojo debug [options] file.mojo [args]`    | Builds the file and debugs it.                 |
+| `mojo debug [options] program [args]`      | Debugs a built program.                        |
+| `mojo debug [options] --pid PID`           | Attaches to a running process by ID.           |
+| `mojo debug [options] --process-name NAME` | Attaches to a running process by name or path. |
+| `mojo debug`                               | Starts the LLDB prompt with no program.        |
+
+Options go before the file or program. Arguments after it go to the
+program. When you debug a `.mojo` file, `mojo debug` builds it with `-O0`
+and full debug information, and accepts the build options of `mojo run`,
+such as `-D` and `-I`.
+
+| Option                | Effect                                                                      |
+|-----------------------|-----------------------------------------------------------------------------|
+| `--X ARG`             | Passes `ARG` to LLDB. Repeat for each argument.                             |
+| `--vscode`            | Starts the session in a running VS Code window, through the Mojo extension. |
+| `--pid PID`           | Attaches to the process with this ID.                                       |
+| `--process-name NAME` | Attaches to the process with this name or path.                             |
+
+For GPU debugging, see [GPU debugging](https://max.modular.com/gpu/debugging/).
+
+To run LLDB commands without typing them, pass `-b` and `-o` through
+`--X`. LLDB runs each `-o` command in order, then exits:
+
+```bash
+mojo debug --X -b --X -o --X "b histogram.mojo:25" --X -o --X run \
+  --X -o --X "v pixels" --X -o --X kill histogram.mojo
+```
+
+## Debug information and optimization levels
+
+`mojo build`, `mojo run`, and `mojo debug` accept these options:
+
+| Option                             | Debug information | Gives you                                                       |
+|------------------------------------|-------------------|-----------------------------------------------------------------|
+| `-g0`, `--debug-level=none`        | None              | Function names in crash traces, for frames the optimizer keeps. |
+| `-g1`, `--debug-level=line-tables` | Line tables       | File and line numbers in crash traces.                          |
+| `-g`, `-g2`, `--debug-level=full`  | Full              | Line numbers, plus values and types in the debugger.            |
+
+The default is `none`, except for `mojo debug file.mojo`, which uses `full`.
+
+Optimization (`-O1` through `-O3`, default `-O3`) inlines functions. A
+breakpoint on an inlined function never stops: at `-O3`, `b bin_index` in
+`histogram.mojo` doesn't resolve. `mojo debug file.mojo` builds with `-O0`.
+For a program you build yourself, use `-O0` for a full debugging session.
+
+## Programmatic breakpoints
+
+[`breakpoint()`](/docs/std/builtin/breakpoint/breakpoint/) stops the program
+when a debugger is attached. The debugger shows the line after the call as
+the current line. Without a debugger, the program
+crashes. Guard a call with a compile-time define so normal builds don't
+contain it:
+
+```mojo
+from std.sys import is_defined
+
+def bin_index(value: UInt8, bin_count: Int) -> Int:
+    var index = Int(value) * bin_count // 256
+    comptime if is_defined["BREAK_ON_BAD_BIN"]():
+        if index >= bin_count:
+            breakpoint()
+    return index
+```
+
+```bash
+mojo debug -D BREAK_ON_BAD_BIN histogram.mojo
+```
+
+## Stack traces
+
+### Crash traces
+
+When a program receives `SIGSEGV` or `SIGABRT`, including from a call to
+[`abort()`](/docs/std/os/os/abort/), the runtime prints a stack trace. This
+behavior is on by default.
+
+`abort()` also prints its message with the file and line of the call.
+
+| To get                | Do this                                                                                                                                   |
+|-----------------------|-------------------------------------------------------------------------------------------------------------------------------------------|
+| Function names        | Put `llvm-symbolizer` on `PATH`, or set `LLVM_SYMBOLIZER_PATH` to it. The Mojo environment includes it, and `pixi run` adds it to `PATH`. |
+| File and line numbers | Also build with `-g1` or higher.                                                                                                          |
+
+Without `llvm-symbolizer`, most frames appear as addresses.
+
+### Error traces
+
+An error that `main()` doesn't handle ends the program with exit status 1
+and prints the error message. To print a stack trace as well, set
+`MODULAR_DEBUG=stack-trace-on-error`.
+
+`Error` collects the trace when you create it, so the trace depends on how
+you create the error:
+
+| Error created from                                      | Trace         |
+|---------------------------------------------------------|---------------|
+| A string literal: `Error("bin count must be positive")` | Collected     |
+| Several arguments: `Error("bad header: ", line)`        | Collected     |
+| One `String`: `Error("bad header: " + line)`            | Not collected |
+
+On Linux, the trace runs from the line that created the error to `main()`.
+On macOS, it stops inside the standard library before it reaches your code.
+
+### `MODULAR_DEBUG`
+
+`MODULAR_DEBUG` takes a comma-separated list. Two entries affect Mojo
+programs:
+
+| Entry                  | Effect                                            |
+|------------------------|---------------------------------------------------|
+| `stack-trace-on-error` | Collects stack traces for errors. Off by default. |
+| `stack-trace-on-crash` | Prints a stack trace on a crash. On by default.   |
+
+Entries turn features on. The variable has no form that turns a feature off.
+The runtime warns about any entry it doesn't recognize, including the underscore
+spellings `stack_trace_on_error` and `stack_trace_on_crash`, and ignores it.
+
+For the entries that configure MAX, see
+[MAX debugging](https://max.modular.com/develop/debugging/).
+
+## LLDB with Mojo
+
+### Value display
+
+The Mojo plugin formats these types in `v` (`frame variable`) output:
+
+| Type                                    | Display                                                                               |
+|-----------------------------------------|---------------------------------------------------------------------------------------|
+| Structs                                 | Each field by name                                                                    |
+| `List`                                  | Size, then each element                                                               |
+| `Dict`                                  | Size, then each entry's key and value                                                 |
+| `String`                                | The text in quotes                                                                    |
+| `SIMD`                                  | Each element                                                                          |
+| `Int`, `Float64`, `Bool`, other scalars | The value, with an internal type name such as `` __mlir_type.`!kgen.scalar<index>` `` |
+
+`Optional`, `Variant`, and strings inside a `Tuple` display their internal
+storage fields, not their values.
+
+Mojo destroys each value right after its last use. After that point, `v`
+reports the value as `<variable not available>`.
+
+`v` accepts field paths such as `v hist.bins`. It doesn't accept subscripts
+such as `v pixels[1]`.
+
+### Expressions
+
+`p` (`expression`) evaluates plain values and fields, such as `p hist.samples`.
+It doesn't evaluate arithmetic, function calls, or subscripts, and it often
+prints nothing for an expression it doesn't support. In the VS Code Debug
+Console, a subscript can print a crash report, and the session keeps
+running.
+
+Breakpoint conditions use the same evaluator. A condition fails to evaluate,
+and the debugger stops at the first hit. Ignore counts work:
+`breakpoint set -f histogram.mojo -l 25 -i 4` skips four hits.
+
+### Break on raise
+
+`breakpoint set -E mojo` stops each time Mojo code raises an error.
+Iterators end a `for` loop by raising `StopIteration`, so this breakpoint
+also stops at the end of every loop.
+
+### Stack frames
+
+- When you debug a `.mojo` file, its frames carry a `JIT(...)` prefix,
+  because `mojo debug` compiles the file in memory.
+- Frames list compiler-generated arguments such as `__error__` and
+  `__result__`.
+- `bt` continues past `main()` into runtime frames. Use `bt N` to show the
+  first N frames.
+- `finish` doesn't show the value the function returned.
+- LLDB warns that it can't resolve a breakpoint set before `run`. It
+  resolves the breakpoint when your code loads.
+
+## VS Code
+
+`mojo debug --vscode` starts the session in a running VS Code window that
+has the Mojo extension. With one window open, it uses that window. The
+program's output appears in the **Debug Console**.
+
+In the **Debug Console**, an entry that starts with a colon runs an LLDB
+command, such as `:v` or `:bt`. Other entries evaluate as expressions, with
+the same limits as `p`.
+
+Each session prints two errors about importing `lldbDataFormatters.py` and
+`mlirDataFormatters.py`. The session works normally after them.
+
+## Environment variables
+
+| Variable               | Effect                                                                            |
+|------------------------|-----------------------------------------------------------------------------------|
+| `MODULAR_DEBUG`        | Turns on runtime debugging features. See [`MODULAR_DEBUG`](#modular_debug).       |
+| `MODULAR_CACHE_DIR`    | Directory for the compilation cache. See [Compilation cache](#compilation-cache). |
+| `LLVM_SYMBOLIZER_PATH` | Path to `llvm-symbolizer`, for function names and line numbers in stack traces.   |
+
+## Compilation cache
+
+The compilation cache reuses an earlier build of code that differs only in
+blank lines or in its directory. The reused build reports the earlier
+build's file paths and line numbers, in `abort()` messages, crash traces, and
+the debugger. To build without the cache's earlier results, set
+`MODULAR_CACHE_DIR` to an empty directory.
+
+## Platform notes
+
+### macOS
+
+- A program built with `mojo build` keeps its debug information in
+  temporary files that the build deletes, so the debugger shows no source
+  lines for it. Debug the source file with `mojo debug` instead.
+- Error traces stop inside the standard library.
+
+### Linux
+
+- `mojo-lldb` requires `libncurses.so.6`. On Ubuntu, install `libncurses6`.
+- In a Docker container, LLDB reports `personality set failed` when it
+  launches a program, and attaching fails with a `ptrace_scope` error. Start
+  the container with `--cap-add=SYS_PTRACE --security-opt seccomp=unconfined`.
+  To launch without those options, run
+  `settings set target.disable-aslr false` in LLDB before `run`.

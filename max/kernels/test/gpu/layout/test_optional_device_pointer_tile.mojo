@@ -128,7 +128,7 @@ def test_optional_reg_capture(ctx: DeviceContext, engaged: Bool) raises:
         if case .Some(arg) = arg:
             _fill_ramp(arg)
 
-    ctx.enqueue_function(kernel, grid_dim=1, block_dim=1)
+    ctx.enqueue_closure(kernel, grid_dim=1, block_dim=1)
     _check(ctx, buf, engaged)
 
 

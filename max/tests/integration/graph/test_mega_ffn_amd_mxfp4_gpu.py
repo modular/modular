@@ -180,7 +180,7 @@ def test_mega_ffn_amd_mxfp4_matches_chain(regime: str) -> None:
             region = words - amd_mega_ffn_workspace_words(
                 n_experts, total, total
             )
-            slot = (region - 2) // decode
+            slot = region // decode
             words -= 2 * (decode - 1) * slot
         workspace = ops.buffer_create(
             BufferType(DType.uint32, shape=[words], device=device_ref),

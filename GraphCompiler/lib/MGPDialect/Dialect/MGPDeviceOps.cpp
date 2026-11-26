@@ -196,7 +196,7 @@ std::optional<uint64_t> BufferConstantOp::getOptAlign() {
 //===----------------------------------------------------------------------===//
 // BufferAllocOp
 //===----------------------------------------------------------------------===//
-bool BufferAllocOp::isThrows() { return true; }
+bool BufferAllocOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferAllocOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -241,7 +241,7 @@ void BufferAllocOp::setInChain(Value chain) {
 //===----------------------------------------------------------------------===//
 // BufferHostToDeviceOp
 //===----------------------------------------------------------------------===//
-bool BufferHostToDeviceOp::isThrows() { return true; }
+bool BufferHostToDeviceOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferHostToDeviceOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -281,7 +281,7 @@ BufferHostToDeviceOp::getInOutSemantics(size_t index) {
 //===----------------------------------------------------------------------===//
 // BufferMemsetOp
 //===----------------------------------------------------------------------===//
-bool BufferMemsetOp::isThrows() { return true; }
+bool BufferMemsetOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferMemsetOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -322,7 +322,7 @@ BufferMemsetOp::getInOutSemantics(size_t index) {
 // BufferDeviceToHostOp
 //===----------------------------------------------------------------------===//
 
-bool BufferDeviceToHostOp::isThrows() { return true; }
+bool BufferDeviceToHostOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferDeviceToHostOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -363,7 +363,7 @@ BufferDeviceToHostOp::getInOutSemantics(size_t index) {
 // BufferDeviceToDeviceOp
 //===----------------------------------------------------------------------===//
 
-bool BufferDeviceToDeviceOp::isThrows() { return true; }
+bool BufferDeviceToDeviceOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferDeviceToDeviceOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -426,7 +426,7 @@ BufferConcatOp::getInOutSemantics(size_t index) {
              : InOutSignatureAttr::kIn;
 }
 
-bool BufferConcatOp::isThrows() { return true; }
+bool BufferConcatOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferConcatOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -454,7 +454,7 @@ LogicalResult BufferConcatOp::emitMojo(MOGG::EmitMojoState &state) {
 //===----------------------------------------------------------------------===//
 // BufferSliceOp
 //===----------------------------------------------------------------------===//
-bool BufferSliceOp::isThrows() { return true; }
+bool BufferSliceOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferSliceOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -532,7 +532,7 @@ bool BufferBulkSliceOp::mayAlias(size_t operandIndex, size_t /*resultIndex*/) {
   return operandIndex == getBaseBufferMutable().getOperandNumber();
 }
 
-bool BufferBulkSliceOp::isThrows() { return true; }
+bool BufferBulkSliceOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferBulkSliceOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -568,7 +568,7 @@ LogicalResult BufferBulkSliceOp::emitMojo(MOGG::EmitMojoState &state) {
 //===----------------------------------------------------------------------===//
 // BufferToIndexOp
 //===----------------------------------------------------------------------===//
-bool BufferToIndexOp::isThrows() { return true; }
+bool BufferToIndexOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferToIndexOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -609,7 +609,7 @@ LogicalResult BufferToBoolOp::verify() {
 //===----------------------------------------------------------------------===//
 // BufferSetWithIndexOp
 //===----------------------------------------------------------------------===//
-bool BufferSetWithIndexOp::isThrows() { return true; }
+bool BufferSetWithIndexOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult BufferSetWithIndexOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -655,7 +655,15 @@ LogicalResult BufferPlanOp::emitMojo(MOGG::EmitMojoState &state) {
   size_t numRuntimeSizes = getRuntimeSizes().size();
 
   MojoValue alignmentsParam = inlineArray(state, getAlignments());
-  MojoValue canShareParam = inlineArray(state, getCanShare());
+
+  // One string literal of 0/1 digits instead of a list literal: the Mojo
+  // parser resolves an overload and implicit conversion per element, and
+  // elaboration unrolls the Array constructor once per element (GEX-4663).
+  std::string canShareDigits;
+  canShareDigits.reserve(getCanShare().size());
+  for (uint8_t value : getCanShare())
+    canShareDigits.push_back(static_cast<char>('0' + value));
+  MojoValue canShareParam = MojoValue(std::move(canShareDigits)).quote();
 
   MojoValue staticSizesParam;
   if (auto staticSizes = getStaticSizes()) {
@@ -819,6 +827,9 @@ LogicalResult BufferPlanOp::verify() {
                  "share with itself) at index ")
              << i;
     for (size_t j : llvm::seq(totalAllocs)) {
+      if (mat[i * totalAllocs + j] > 1)
+        return emitOpError("expected canShare values to be 0 or 1 at index ")
+               << i * totalAllocs + j;
       if (mat[i * totalAllocs + j] != mat[j * totalAllocs + i])
         return emitOpError("expected canShare to be symmetric: canShare[")
                << i << "][" << j << "]=" << mat[i * totalAllocs + j]
@@ -889,7 +900,7 @@ bool TensorCreateOp::mayAlias(size_t operandIndex, size_t resultIndex) {
 //===----------------------------------------------------------------------===//
 // DebugTensorPrintOp
 //===----------------------------------------------------------------------===//
-bool DebugTensorPrintOp::isThrows() { return true; }
+bool DebugTensorPrintOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult DebugTensorPrintOp::emitMojo(MOGG::EmitMojoState &state) {
   auto primDecl = state.registry.lookupPrimitive(getOperationName());
@@ -919,7 +930,7 @@ LogicalResult DebugTensorPrintOp::emitMojo(MOGG::EmitMojoState &state) {
 // SyncOp
 //===----------------------------------------------------------------------===//
 
-bool SyncOp::isThrows() { return true; }
+bool SyncOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult SyncOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;
@@ -937,7 +948,7 @@ LogicalResult SyncOp::emitMojo(MOGG::EmitMojoState &state) {
 // DeviceWaitOp
 //===----------------------------------------------------------------------===//
 
-bool DeviceWaitOp::isThrows() { return true; }
+bool DeviceWaitOp::isThrows(mlir::SymbolTable &) { return true; }
 
 LogicalResult DeviceWaitOp::emitMojo(MOGG::EmitMojoState &state) {
   using namespace MOGG;

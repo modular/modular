@@ -64,6 +64,10 @@ class RMSNorm(Module[[Tensor], Tensor]):
         dim: The size of the last dimension of the input.
         eps: A small positive constant added to the mean of squares for
             numerical stability. Defaults to ``1e-6``.
+        multiply_before_cast: If True, multiplies by ``weight`` in float32
+            and rounds once to the input dtype. If False (the default),
+            rounds the normalized input first, then multiplies by
+            ``weight``.
     """
 
     weight: Tensor
@@ -72,9 +76,15 @@ class RMSNorm(Module[[Tensor], Tensor]):
     eps: float
     """The variance epsilon used for numerical stability."""
 
-    def __init__(self, dim: int, eps: float = 1e-6) -> None:
+    multiply_before_cast: bool
+    """Whether ``weight`` is applied before the cast to the input dtype."""
+
+    def __init__(
+        self, dim: int, eps: float = 1e-6, *, multiply_before_cast: bool = False
+    ) -> None:
         self.weight = Tensor.ones([dim])
         self.eps = eps
+        self.multiply_before_cast = multiply_before_cast
 
     @property
     def dim(self) -> Dim:
@@ -85,10 +95,16 @@ class RMSNorm(Module[[Tensor], Tensor]):
         """Yields fields for the rich debug repr."""
         yield "dim", self.dim
         yield "eps", self.eps, 1e-6
+        yield "multiply_before_cast", self.multiply_before_cast, False
 
     def forward(self, x: Tensor) -> Tensor:
         """Returns ``x`` normalized by its root-mean-square over the last axis."""
-        return rms_norm(x, self.weight, self.eps)
+        return rms_norm(
+            x,
+            self.weight,
+            self.eps,
+            multiply_before_cast=self.multiply_before_cast,
+        )
 
 
 class GemmaRMSNorm(RMSNorm):

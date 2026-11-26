@@ -23,7 +23,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -65,24 +64,35 @@ def workload_config(tmp_path: Path) -> Path:
     return path
 
 
-@pytest.fixture
-def cmd_args(tmp_path: Path, workload_config: Path) -> list[str]:
-    """CLI args shared across the multi-concurrency dry-run tests."""
+def _dry_run_cmd(
+    workload_config: Path, log_dir: Path, *flags: str
+) -> list[str]:
+    """Returns sweep CLI args for a dry run of the test model with ``flags``."""
     return [
         "--model",
         "HuggingFaceTB/SmolLM2-135M",
         "--workload-config",
         str(workload_config),
+        *flags,
+        "--log-dir",
+        str(log_dir),
+        "--dry-run",
+    ]
+
+
+@pytest.fixture
+def cmd_args(tmp_path: Path, workload_config: Path) -> list[str]:
+    """CLI args shared across the multi-concurrency dry-run tests."""
+    return _dry_run_cmd(
+        workload_config,
+        tmp_path / "sweep-test-logs",
         "--max-concurrency",
         "1,2",
         "--num-prompts",
         "10",
         "--request-rate",
         "10",
-        "--log-dir",
-        str(tmp_path / "sweep-test-logs"),
-        "--dry-run",
-    ]
+    )
 
 
 _NUM_PROMPTS_DURATION_WARNING = (
@@ -158,17 +168,9 @@ def test_warns_if_num_prompts_and_max_benchmark_duration_s_not_provided(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """Emits a warning when num-prompts and max-benchmark-duration-s are not provided."""
-    cmd_missing_args = [
-        "--model",
-        "HuggingFaceTB/SmolLM2-135M",
-        "--workload-config",
-        str(workload_config),
-        "--max-concurrency",
-        "1",
-        "--log-dir",
-        str(tmp_path),
-        "--dry-run",
-    ]
+    cmd_missing_args = _dry_run_cmd(
+        workload_config, tmp_path, "--max-concurrency", "1"
+    )
 
     with caplog.at_level(logging.WARNING):
         sweep_benchmark_serving.main(cmd_missing_args)
@@ -185,27 +187,24 @@ def test_override_num_prompts_if_set_explicitly(
     tmp_path: Path,
     workload_config: Path,
     capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """When --num-prompts is set, no defaulting warning and the value is used."""
-    cmd_missing_args = [
-        "--model",
-        "HuggingFaceTB/SmolLM2-135M",
-        "--workload-config",
-        str(workload_config),
+    cmd_missing_args = _dry_run_cmd(
+        workload_config,
+        tmp_path,
         "--num-prompts",
         "700",
         "--max-concurrency",
         "1",
-        "--log-dir",
-        str(tmp_path),
-        "--dry-run",
-    ]
+    )
 
-    sweep_benchmark_serving.main(cmd_missing_args)
-    stdout, stderr = capsys.readouterr()
+    with caplog.at_level(logging.WARNING):
+        sweep_benchmark_serving.main(cmd_missing_args)
+    stdout, _stderr = capsys.readouterr()
 
-    assert _NUM_PROMPTS_DURATION_WARNING not in stderr, (
-        f"Unexpected defaulting warning in stderr:\n{stderr}"
+    assert _NUM_PROMPTS_DURATION_WARNING not in caplog.text, (
+        f"Unexpected defaulting warning in the log:\n{caplog.text}"
     )
     assert "num_prompts=700" in stdout
 
@@ -213,28 +212,22 @@ def test_override_num_prompts_if_set_explicitly(
 def test_override_benchmark_duration_s(
     tmp_path: Path,
     workload_config: Path,
-    capsys: pytest.CaptureFixture[str],
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """When --max-benchmark-duration-s is set, no defaulting warning."""
-    cmd_missing_args = [
-        "--model",
-        "HuggingFaceTB/SmolLM2-135M",
-        "--workload-config",
-        str(workload_config),
+    cmd_missing_args = _dry_run_cmd(
+        workload_config,
+        tmp_path,
         "--max-benchmark-duration-s",
         "10",
         "--max-concurrency",
         "1",
-        "--log-dir",
-        str(tmp_path),
-        "--dry-run",
-    ]
+    )
 
-    sweep_benchmark_serving.main(cmd_missing_args)
-    _stdout, stderr = capsys.readouterr()
-
-    assert _NUM_PROMPTS_DURATION_WARNING not in stderr, (
-        f"Unexpected defaulting warning in stderr:\n{stderr}"
+    with caplog.at_level(logging.WARNING):
+        sweep_benchmark_serving.main(cmd_missing_args)
+    assert _NUM_PROMPTS_DURATION_WARNING not in caplog.text, (
+        f"Unexpected defaulting warning in the log:\n{caplog.text}"
     )
 
 
@@ -244,19 +237,14 @@ def test_default_arguments(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """Default host, port, and endpoint appear in dry-run output."""
-    minimal_cmd_args = [
-        "--model",
-        "HuggingFaceTB/SmolLM2-135M",
-        "--workload-config",
-        str(workload_config),
+    minimal_cmd_args = _dry_run_cmd(
+        workload_config,
+        tmp_path,
         "--max-concurrency",
         "1",
         "--num-prompts",
         "1",
-        "--log-dir",
-        str(tmp_path),
-        "--dry-run",
-    ]
+    )
 
     sweep_benchmark_serving.main(minimal_cmd_args)
     stdout, _stderr = capsys.readouterr()
@@ -352,25 +340,19 @@ random-output-len: 100
 random-sys-prompt-ratio: 0.1
 max-benchmark-duration-s: 1500
 """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as temp_file:
-        temp_file.write(yaml_content)
-        temp_file.flush()
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(yaml_content)
 
-        cmd_test_args = [
-            "--model",
-            "HuggingFaceTB/SmolLM2-135M",
-            "--workload-config",
-            temp_file.name,
-            "--max-benchmark-duration-s",
-            "300",
-            "--max-concurrency",
-            "1",
-            "--log-dir",
-            str(tmp_path),
-            "--dry-run",
-        ]
+    cmd_test_args = _dry_run_cmd(
+        workload_config,
+        tmp_path,
+        "--max-benchmark-duration-s",
+        "300",
+        "--max-concurrency",
+        "1",
+    )
 
-        sweep_benchmark_serving.main(cmd_test_args)
+    sweep_benchmark_serving.main(cmd_test_args)
     stdout, _stderr = capsys.readouterr()
 
     assert "max_benchmark_duration_s=300" in stdout, stdout
@@ -384,19 +366,14 @@ def _multiplier_cmd(
     cli_multiplier: bool = True,
 ) -> list[str]:
     multiplier = ["--num-prompts-multiplier", "3"] if cli_multiplier else []
-    return [
-        "--model",
-        "HuggingFaceTB/SmolLM2-135M",
-        "--workload-config",
-        str(workload_config),
+    return _dry_run_cmd(
+        workload_config,
+        tmp_path,
         "--max-concurrency",
         "2,4",
         *multiplier,
-        "--log-dir",
-        str(tmp_path),
-        "--dry-run",
         *extra,
-    ]
+    )
 
 
 @pytest.mark.parametrize(
@@ -520,34 +497,28 @@ random-output-len: 50
 max-concurrency: 100
 """
 
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as temp_file:
-        temp_file.write(yaml_content)
-        temp_file.flush()
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(yaml_content)
 
-        cmd_test_args = [
-            "--model",
-            "HuggingFaceTB/SmolLM2-135M",
-            "--workload-config",
-            temp_file.name,
-            "--max-concurrency",
-            "5",
-            "--num-prompts",
-            "10",
-            "--log-dir",
-            str(tmp_path),
-            "--dry-run",
-        ]
+    cmd_test_args = _dry_run_cmd(
+        workload_config,
+        tmp_path,
+        "--max-concurrency",
+        "5",
+        "--num-prompts",
+        "10",
+    )
 
-        sweep_benchmark_serving.main(cmd_test_args)
-        stdout, _stderr = capsys.readouterr()
+    sweep_benchmark_serving.main(cmd_test_args)
+    stdout, _stderr = capsys.readouterr()
 
-        assert "max_concurrency=100" not in stdout, (
-            f"Workload max-concurrency should be overridden by CLI:\n{stdout}"
-        )
+    assert "max_concurrency=100" not in stdout, (
+        f"Workload max-concurrency should be overridden by CLI:\n{stdout}"
+    )
 
-        assert "max_concurrency=5" in stdout, (
-            f"CLI max-concurrency not found in output:\n{stdout}"
-        )
+    assert "max_concurrency=5" in stdout, (
+        f"CLI max-concurrency not found in output:\n{stdout}"
+    )
 
 
 @pytest.mark.parametrize(
@@ -690,17 +661,22 @@ def test_flush_prefix_cache_no_base_url_uses_host_port_without_auth() -> None:
 # ===========================================================================
 
 
+@pytest.mark.parametrize(
+    "passes_result_filename", [True, False], ids=["given", "not_provided"]
+)
 def test_result_filename_reaches_main_with_parsed_args(
     tmp_path: Path,
     workload_config: Path,
     mocker: pytest_mock.MockerFixture,
+    passes_result_filename: bool,
 ) -> None:
     """config.result_filename must not be cleared before main_with_parsed_args is called.
 
     Regression guard: if run_sweep reintroduces ``config.result_filename = None``
     before calling main_with_parsed_args, the result JSON for non-sweep CI runs
     will silently never be written and the "submit results" step will fail with
-    ``ls: cannot access 'results': No such file or directory``.
+    ``ls: cannot access 'results': No such file or directory``. Without
+    ``--result-filename``, config.result_filename must be None.
     """
     result_path = str(tmp_path / "result.json")
     received: dict[str, str | None] = {}
@@ -725,53 +701,21 @@ def test_result_filename_reaches_main_with_parsed_args(
             "1",
             "--num-prompts",
             "10",
-            "--result-filename",
-            result_path,
+            *(
+                ["--result-filename", result_path]
+                if passes_result_filename
+                else []
+            ),
             "--log-dir",
             str(tmp_path),
         ]
     )
 
-    assert received.get("result_filename") == result_path, (
+    expected = result_path if passes_result_filename else None
+    assert received.get("result_filename") == expected, (
         f"config.result_filename was cleared before main_with_parsed_args. "
-        f"Expected {result_path!r}, got {received.get('result_filename')!r}."
+        f"Expected {expected!r}, got {received.get('result_filename')!r}."
     )
-
-
-def test_result_filename_none_when_not_provided(
-    tmp_path: Path,
-    workload_config: Path,
-    mocker: pytest_mock.MockerFixture,
-) -> None:
-    """When --result-filename is not passed, config.result_filename must be None."""
-    received: dict[str, str | None] = {}
-
-    def capture_config(config: object, **kwargs: object) -> list[object]:
-        received["result_filename"] = getattr(
-            config, "result_filename", "NOT_SET"
-        )
-        return []
-
-    mocker.patch(
-        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
-        side_effect=capture_config,
-    )
-    sweep_benchmark_serving.main(
-        [
-            "--model",
-            "HuggingFaceTB/SmolLM2-135M",
-            "--workload-config",
-            str(workload_config),
-            "--max-concurrency",
-            "1",
-            "--num-prompts",
-            "10",
-            "--log-dir",
-            str(tmp_path),
-        ]
-    )
-
-    assert received.get("result_filename") is None
 
 
 # ===========================================================================
@@ -984,28 +928,22 @@ random-input-len: 512
 random-output-len: 128
 request-rate: "999"
 """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as temp_file:
-        temp_file.write(yaml_content)
-        temp_file.flush()
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(yaml_content)
 
-        cmd_test_args = [
-            "--model",
-            "HuggingFaceTB/SmolLM2-135M",
-            "--workload-config",
-            temp_file.name,
-            "--request-rate",
-            "7",
-            "--num-prompts",
-            "10",
-            "--max-concurrency",
-            "1",
-            "--log-dir",
-            str(tmp_path),
-            "--dry-run",
-        ]
+    cmd_test_args = _dry_run_cmd(
+        workload_config,
+        tmp_path,
+        "--request-rate",
+        "7",
+        "--num-prompts",
+        "10",
+        "--max-concurrency",
+        "1",
+    )
 
-        with caplog.at_level(logging.INFO):
-            sweep_benchmark_serving.main(cmd_test_args)
+    with caplog.at_level(logging.INFO):
+        sweep_benchmark_serving.main(cmd_test_args)
     stdout, _stderr = capsys.readouterr()
 
     assert "request_rate=7" in stdout or "request_rate=7.0" in stdout, (
@@ -1033,26 +971,20 @@ def test_workload_yaml_applies_when_cli_not_set(
 random-input-len: 256
 random-output-len: 64
 """
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml") as temp_file:
-        temp_file.write(yaml_content)
-        temp_file.flush()
+    workload_config = tmp_path / "workload.yaml"
+    workload_config.write_text(yaml_content)
 
-        cmd_test_args = [
-            "--model",
-            "HuggingFaceTB/SmolLM2-135M",
-            "--workload-config",
-            temp_file.name,
-            "--num-prompts",
-            "10",
-            "--max-concurrency",
-            "1",
-            "--log-dir",
-            str(tmp_path),
-            "--dry-run",
-        ]
+    cmd_test_args = _dry_run_cmd(
+        workload_config,
+        tmp_path,
+        "--num-prompts",
+        "10",
+        "--max-concurrency",
+        "1",
+    )
 
-        with caplog.at_level(logging.INFO):
-            sweep_benchmark_serving.main(cmd_test_args)
+    with caplog.at_level(logging.INFO):
+        sweep_benchmark_serving.main(cmd_test_args)
 
     # Both workload fields should be logged as "Applying workload YAML value".
     applied_messages = [

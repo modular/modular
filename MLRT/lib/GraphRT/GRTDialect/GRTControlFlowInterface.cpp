@@ -17,8 +17,8 @@
 #include "mlir/IR/Operation.h"
 #include "llvm/ADT/STLExtras.h"
 
-mlir::LogicalResult M::GRT::verifyControlFlowInterfaceOp(Operation *op) {
-  auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op);
+mlir::LogicalResult M::MLRT::GRT::verifyControlFlowInterfaceOp(Operation *op) {
+  auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op);
 
   switch (cfOp.getFlavor()) {
   case kLoopLike:
@@ -51,7 +51,7 @@ mlir::LogicalResult M::GRT::verifyControlFlowInterfaceOp(Operation *op) {
   // All the nested blocks must return results matching the op's results.
   for (size_t i = 0, n = cfOp->getNumRegions(); i < n; ++i) {
     Block *block = &cfOp->getRegion(i).front();
-    auto outputOp = cast<M::MEF::OutputOp>(block->getTerminator());
+    auto outputOp = cast<M::MLRT::MEF::OutputOp>(block->getTerminator());
     SmallVector<Type> outputTypes =
         llvm::to_vector(outputOp.getOperands().getTypes());
     if (cfOp.getFlavor() == kLoopLike) {

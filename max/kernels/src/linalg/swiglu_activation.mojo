@@ -31,6 +31,11 @@ comptime values."""
 # than fp32 `/`: the fused grouped-matmul epilogue runs 4 warps (1 per
 # scheduler), where IEEE `div.f32` latency does not hide.
 @inline(.always)
+def _silu(x: Float32) -> Float32:
+    return x * recip(Float32(1.0) + exp(-x))
+
+
+@inline(.always)
 def swiglu[limit: Float32](gate: Float32, up: Float32) -> Float32:
     """Computes the SwiGLU activation `silu(gate) * up`.
 
@@ -52,7 +57,25 @@ def swiglu[limit: Float32](gate: Float32, up: Float32) -> Float32:
     comptime if limit != 0.0:
         g = min(g, limit)
         u = clamp(u, -limit, limit)
-    return g * recip(Float32(1.0) + exp(-g)) * u
+    return _silu(g) * u
+
+
+@inline(.always)
+def swiglu_post_clamp[limit: Float32](gate: Float32, up: Float32) -> Float32:
+    """Computes `min(silu(gate), limit) * clamp(up, -limit, limit)`.
+
+    Parameters:
+        limit: Clamp bound, which must be non-zero.
+
+    Args:
+        gate: Gate projection value.
+        up: Up projection value.
+
+    Returns:
+        The activated value.
+    """
+    comptime assert limit != 0.0, "silu_post_clamp needs a non-zero limit"
+    return min(_silu(gate), limit) * clamp(up, -limit, limit)
 
 
 @inline(.always)
@@ -159,6 +182,8 @@ def _named_swiglu_activation[
     comptime match name:
         case "silu":
             return swiglu[limit](gate, up)
+        case "silu_post_clamp":
+            return swiglu_post_clamp[limit](gate, up)
         case "swigluoai":
             return swigluoai[alpha, limit](gate, up)
         case "silu_bf16":

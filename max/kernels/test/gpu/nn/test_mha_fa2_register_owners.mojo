@@ -78,13 +78,15 @@ def _check_fa2[
     comptime key_rows = ceildiv(keys, config.block_n()) * config.block_n()
     comptime query_size = query_rows * heads * depth
     comptime key_size = key_rows * heads * depth
-    comptime guard = 32
+    comptime guard_value = 32
     comptime scale = Float32(0.125)
 
     var q_host = ctx.enqueue_create_host_buffer[dtype](query_size)
     var k_host = ctx.enqueue_create_host_buffer[dtype](key_size)
     var v_host = ctx.enqueue_create_host_buffer[dtype](key_size)
-    var out_host = ctx.enqueue_create_host_buffer[dtype](query_size + guard)
+    var out_host = ctx.enqueue_create_host_buffer[dtype](
+        query_size + guard_value
+    )
     var scores = ctx.enqueue_create_host_buffer[.float64](keys)
 
     for row in range(query_rows):
@@ -106,13 +108,13 @@ def _check_fa2[
                     + Float32(col % 7) / 32
                     + Float32((row * 7 + head * 3 + col * 5) % 23 - 11) / 16
                 ) if row < keys else Scalar[dtype](0)
-    for i in range(query_size + guard):
+    for i in range(query_size + guard_value):
         out_host[i] = Scalar[dtype](42)
 
     var q_buffer = ctx.enqueue_create_buffer[dtype](query_size)
     var k_buffer = ctx.enqueue_create_buffer[dtype](key_size)
     var v_buffer = ctx.enqueue_create_buffer[dtype](key_size)
-    var out_buffer = ctx.enqueue_create_buffer[dtype](query_size + guard)
+    var out_buffer = ctx.enqueue_create_buffer[dtype](query_size + guard_value)
     ctx.enqueue_copy(q_buffer, q_host)
     ctx.enqueue_copy(k_buffer, k_host)
     ctx.enqueue_copy(v_buffer, v_host)
@@ -176,7 +178,7 @@ def _check_fa2[
                 assert_almost_equal(
                     actual, expected / denominator, atol=2e-3, rtol=1e-2
                 )
-    for i in range(queries * heads * depth, query_size + guard):
+    for i in range(queries * heads * depth, query_size + guard_value):
         assert_equal(out_host[i], Scalar[dtype](42))
 
 

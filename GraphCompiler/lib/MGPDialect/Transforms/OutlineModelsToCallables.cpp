@@ -58,10 +58,10 @@ class OutlineModelsToCallablesPass
   /// to a subgraph's parent during `rewriteAndSeal()`.
   struct GraphContext {
     struct SealedGraphContext {
-      MEF::CallableOp initCallable;
-      MEF::CallableOp execCallable;
+      MLRT::MEF::CallableOp initCallable;
+      MLRT::MEF::CallableOp execCallable;
 
-      SealedGraphContext(MEF::CallableOp init, MEF::CallableOp exec)
+      SealedGraphContext(MLRT::MEF::CallableOp init, MLRT::MEF::CallableOp exec)
           : initCallable(init), execCallable(exec) {}
     };
 
@@ -211,7 +211,7 @@ class OutlineModelsToCallablesPass
         modelPtr.get()->initPrefixValue = initPrefix;
 
         // Init returns the prefix so exec need not rebuild it.
-        llvm::cast<MEF::OutputOp>(initBlock->getTerminator())
+        llvm::cast<MLRT::MEF::OutputOp>(initBlock->getTerminator())
             .getOperandsMutable()
             .append(initPrefix);
       }
@@ -263,7 +263,7 @@ class OutlineModelsToCallablesPass
     bool isSubgraph = model.getIsSubgraph();
 
     auto initOutput =
-        llvm::cast<MEF::OutputOp>(model.getInitBlock()->getTerminator());
+        llvm::cast<MLRT::MEF::OutputOp>(model.getInitBlock()->getTerminator());
 
     // Collected up front since fixups take several passes.
     struct CallContext {
@@ -346,7 +346,7 @@ class OutlineModelsToCallablesPass
 
         initArgs.push_back(prefixValue);
 
-        auto initInvokeOp = GRT::InvokeOp::create(
+        auto initInvokeOp = MLRT::GRT::InvokeOp::create(
             initBuilder, call.getLoc(), target.initCallable.getResultTypes(),
             target.initCallable.getName(), initArgs);
 
@@ -395,9 +395,9 @@ class OutlineModelsToCallablesPass
         OpBuilder execBuilder(callContext.call);
 
         auto execInvokeOp =
-            GRT::InvokeOp::create(execBuilder, callContext.call->getLoc(),
-                                  target.execCallable.getResultTypes(),
-                                  target.execCallable.getName(), args);
+            MLRT::GRT::InvokeOp::create(execBuilder, callContext.call->getLoc(),
+                                        target.execCallable.getResultTypes(),
+                                        target.execCallable.getName(), args);
 
         callContext.call->replaceAllUsesWith(execInvokeOp->getResults());
         callContext.call->erase();
@@ -407,7 +407,7 @@ class OutlineModelsToCallablesPass
       // expect that.
       Value parentChain = initOutput.getOperand(0);
       initChains.push_back(parentChain);
-      auto newInitChain = GRT::ChainCreateOp::create(
+      auto newInitChain = MLRT::GRT::ChainCreateOp::create(
           initBuilder, initOutput->getLoc(), initChains);
       initOutput->setOperand(0, newInitChain.getResult());
     }
@@ -427,13 +427,13 @@ class OutlineModelsToCallablesPass
     auto parent = ancestors.back();
     builder.setInsertionPoint(parent);
 
-    auto initCallable = MEF::CallableOp::create(
+    auto initCallable = MLRT::MEF::CallableOp::create(
         builder, modelLoc,
         builder.getStringAttr(modelName + mlir::Twine("$init")), {}, {}, {});
 
     initCallable.setFunctionType(initFunctionType);
 
-    auto execCallable = MEF::CallableOp::create(
+    auto execCallable = MLRT::MEF::CallableOp::create(
         builder, modelLoc,
         builder.getStringAttr(modelName + mlir::Twine("$exec")), {}, {}, {});
 
@@ -487,7 +487,7 @@ class OutlineModelsToCallablesPass
       }
 
       // MAX is the only supported runtime framework.
-      auto mefModel = MEF::ModelOp::create(
+      auto mefModel = MLRT::MEF::ModelOp::create(
           builder, loc, devices, "mof", initFnType, execFnType,
           initialModelFnType, argumentDeviceIndicesAttr,
           resultDeviceIndicesAttr, argumentNamesAttr, resultNamesAttr,
@@ -496,7 +496,7 @@ class OutlineModelsToCallablesPass
       auto &initBlock = mefModel.getInit().emplaceBlock();
       auto &execBlock = mefModel.getExecute().emplaceBlock();
 
-      SmallVector<std::pair<Block *, MEF::CallableOp>> blocks{
+      SmallVector<std::pair<Block *, MLRT::MEF::CallableOp>> blocks{
           {&initBlock, initCallable}, {&execBlock, execCallable}};
 
       for (auto &[block, callable] : blocks) {
@@ -510,10 +510,10 @@ class OutlineModelsToCallablesPass
         }
 
         auto invoke =
-            GRT::InvokeOp::create(builder, loc, callable.getResultTypes(),
-                                  callable.getName(), operands);
+            MLRT::GRT::InvokeOp::create(builder, loc, callable.getResultTypes(),
+                                        callable.getName(), operands);
 
-        MEF::OutputOp::create(builder, loc, invoke.getResults());
+        MLRT::MEF::OutputOp::create(builder, loc, invoke.getResults());
       }
     }
 

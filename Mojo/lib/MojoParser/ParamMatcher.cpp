@@ -49,6 +49,106 @@ extern bool checkConventionsConvertible(ArgConvention expectedConv,
 // InferenceFailure
 //===----------------------------------------------------------------------===//
 
+using FnMismatch = MatchFailure::FnTypeMismatch;
+
+static StringRef nameOrEmpty(StringAttr name) {
+  return name ? name.getValue() : StringRef();
+}
+
+/// Write "'name'" for a named argument, or its position otherwise.
+static void addArgName(MojoInflightDiag &diag, size_t argIdx,
+                       StringRef argName) {
+  if (argName.empty())
+    diag << "#" << argIdx;
+  else
+    diag << "'" << argName << "'";
+}
+
+static void addCount(MojoInflightDiag &diag, size_t count, StringRef noun) {
+  diag << count << " " << noun << (count == 1 ? "" : "s");
+}
+
+static void addFnTypeMismatchReason(MojoInflightDiag &diag,
+                                    const FnMismatch &mismatch) {
+  diag << ", ";
+  std::visit(
+      Overloaded{
+          [&](const FnMismatch::TooManyParams &d) {
+            diag << "expected at most ";
+            addCount(diag, d.expectedCount, "compile-time parameter");
+            diag << ", found " << d.actualCount;
+          },
+          [&](const FnMismatch::UnmatchedParam &d) {
+            if (d.isExpectedParam)
+              diag << "function must declare compile-time parameter '" << d.name
+                   << "'";
+            else
+              diag << "compile-time parameter '" << d.name
+                   << "' has no match in the expected type";
+          },
+          [&](const FnMismatch::RefResultRequired &) {
+            diag << "function must return a reference";
+          },
+          [&](const FnMismatch::RefResultNotCopyable &d) {
+            diag << "reference result type " << d.resultType
+                 << " must be copyable to return it as a value";
+          },
+          [&](const FnMismatch::EffectsDiffer &d) {
+            SmallVector<StringRef, 4> rules;
+            if (d.actual.isThrows() != d.expected.isThrows())
+              rules.push_back(d.expected.isThrows() ? "must be 'raises'"
+                                                    : "must not be 'raises'");
+            if (d.actual.isAsync() != d.expected.isAsync())
+              rules.push_back(d.expected.isAsync() ? "must be 'async'"
+                                                   : "must not be 'async'");
+            if (d.actual.isCABI() != d.expected.isCABI())
+              rules.push_back(d.expected.isCABI() ? "must be 'abi(\"C\")'"
+                                                  : "must not be 'abi(\"C\")'");
+            if (d.actual.isRefResult() != d.expected.isRefResult())
+              rules.push_back(d.expected.isRefResult()
+                                  ? "must return a reference"
+                                  : "must not return a reference");
+            diag << "function " << llvm::join(rules, " and ");
+          },
+          [&](const FnMismatch::NestedOriginsReadOnlyRequired &) {
+            diag << "function may mutate nested origins";
+          },
+          [&](const FnMismatch::KwargsDiffer &d) {
+            diag << (d.actualHasKwargs
+                         ? "function must not take a '**kwargs' argument"
+                         : "function must take a '**kwargs' argument");
+          },
+          [&](const FnMismatch::ArgConventionsIncompatible &d) {
+            diag << "argument ";
+            addArgName(diag, d.argIdx, d.argName);
+            StringRef actual = getUserSyntax(d.actual);
+            StringRef expected = getUserSyntax(d.expected);
+            // Some distinct conventions have the same spelling.
+            if (actual == expected)
+              diag << " has an incompatible '" << actual << "' convention";
+            else
+              diag << ": expected '" << expected << "' convention, found '"
+                   << actual << "'";
+          },
+          [&](const FnMismatch::ArgCountsDiffer &d) {
+            diag << "expected " << (d.expectedIsMinimum ? "at least " : "");
+            addCount(diag, d.expectedCount, "argument");
+            diag << ", found " << d.actualCount;
+          },
+          [&](const FnMismatch::KwOnlyArgNamesDiffer &d) {
+            diag << "expected keyword-only argument '" << d.expectedName
+                 << "', found '" << d.actualName << "'";
+          },
+          [&](const FnMismatch::VariadicElementTypeMismatch &d) {
+            diag << "argument ";
+            addArgName(diag, d.argIdx, d.argName);
+            diag << " of type " << d.argType
+                 << " does not match variadic element type " << d.elementType;
+          },
+      },
+      mismatch.detail);
+}
+
 void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
   SharedState *shared = diag.getSharedIfActive();
   if (!shared)
@@ -56,6 +156,11 @@ void MatchFailure::addExplanation(MojoInflightDiag &diag) const {
 
   if (isa<Unclassified>(info))
     return;
+
+  if (isa<FnTypeMismatch>(info)) {
+    addFnTypeMismatchReason(diag, cast<FnTypeMismatch>(info));
+    return;
+  }
 
   if (isa<DependsOnUnresolved>(info)) {
     auto details = cast<DependsOnUnresolved>(info);
@@ -175,7 +280,10 @@ void ParamMatcher::FailableScope::revert() {
 }
 
 LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
-                                               FnTypeGeneratorType expected) {
+                                               FnTypeGeneratorType expected,
+                                               bool isPartiallyTypedActual) {
+  assert(isPartiallyTypedActual || !actual.hasUnresolvedEntry());
+
   // FIXME: "actual" ends up with parameter names sometimes, not always index
   // references. If this happens we need to convert to make this work correctly.
 
@@ -183,35 +291,78 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // increment is for.
   auto depth = state.enterSignatureScope();
 
-  // Functions with different parameterization cannot be converted between each
-  // other. If the types are equal but the passing conventions are different,
-  // then the conversion is allowed.
-  // TODO: Consider default parameter values and enable parameter inference to
-  // reconcile differences. For now we do a hack to allow VariadicPack to work,
-  // allowing inferred params only.
-  size_t nextActualParamIdx = 0;
+  if (isPartiallyTypedActual) {
+    // We check whether the number of user declared parameter matches.
+    auto isUserDeclaredParam = [](auto pog) {
+      return !isHiddenGeneratorParam(pog.value().getPassingKind(),
+                                     pog.value().getName());
+    };
 
-  if (expected.getInputParamTypes().size() < actual.getInputParamTypes().size())
-    return error(MatchFailure::Unclassified{});
+    auto userDeclaredActual = llvm::make_filter_range(
+        llvm::enumerate(actual.getParamListAttrs().getPogs()),
+        isUserDeclaredParam);
+    auto userDeclaredExpected = llvm::make_filter_range(
+        llvm::enumerate(expected.getParamListAttrs().getPogs()),
+        isUserDeclaredParam);
 
-  for (auto [idx, pType] : llvm::enumerate(expected.getInputParamTypes())) {
-    // Ran out of params or mismatch on types.
-    if (nextActualParamIdx >= actual.getInputParamTypes().size() ||
-        actual.getInputParamTypes()[nextActualParamIdx] != pType) {
-
-      if (expected.getParamListAttrs().getPassingKind(idx) !=
-              PassingKind::Inferred &&
-          expected.getParamListAttrs().getPassingKind(idx) !=
-              PassingKind::Implicit)
-        return error(MatchFailure::Unclassified{});
-
-      continue;
+    size_t actualNum = llvm::range_size(userDeclaredActual);
+    size_t expectedNum = llvm::range_size(userDeclaredExpected);
+    if (actualNum != expectedNum) {
+      return error(
+          FnMismatch{FnMismatch::TooManyParams{actualNum, expectedNum}});
     }
-    ++nextActualParamIdx;
-  }
+    for (auto [a, e] :
+         llvm::zip_equal(userDeclaredActual, userDeclaredExpected)) {
+      auto actualType = actual.getInputParamTypes()[a.index()];
+      auto expectedType = expected.getInputParamTypes()[e.index()];
 
-  if (nextActualParamIdx != actual.getInputParamTypes().size())
-    return error(MatchFailure::Unclassified{});
+      // This and below (when handling non-partially typed sig) should both be
+      // tightened up: we should probably ensure name are matched between kwOnly
+      // parameters.
+      if (!isa<UnresolvedType>(actualType) &&
+          !isEqualCanon(actualType, expectedType)) {
+        return error(FnMismatch{FnMismatch::UnmatchedParam{
+            nameOrEmpty(expected.getParamName(e.index())),
+            /*isExpectedParam=*/true}});
+      }
+    }
+  } else {
+    // Functions with different parameterization cannot be converted between
+    // each other. If the types are equal but the passing conventions are
+    // different, then the conversion is allowed.
+    // TODO: Consider default parameter values and enable parameter inference to
+    // reconcile differences. For now we do a hack to allow VariadicPack to
+    // work, allowing inferred params only.
+    size_t nextActualParamIdx = 0;
+
+    if (expected.getInputParamTypes().size() <
+        actual.getInputParamTypes().size())
+      return error(FnMismatch{
+          FnMismatch::TooManyParams{actual.getInputParamTypes().size(),
+                                    expected.getInputParamTypes().size()}});
+    for (auto [idx, pType] : llvm::enumerate(expected.getInputParamTypes())) {
+      // Ran out of params or mismatch on types.
+      if (nextActualParamIdx >= actual.getInputParamTypes().size() ||
+          actual.getInputParamTypes()[nextActualParamIdx] != pType) {
+
+        if (expected.getParamListAttrs().getPassingKind(idx) !=
+                PassingKind::Inferred &&
+            expected.getParamListAttrs().getPassingKind(idx) !=
+                PassingKind::Implicit)
+          return error(FnMismatch{FnMismatch::UnmatchedParam{
+              nameOrEmpty(expected.getParamName(idx)),
+              /*isExpectedParam=*/true}});
+
+        continue;
+      }
+      ++nextActualParamIdx;
+    }
+
+    if (nextActualParamIdx != actual.getInputParamTypes().size())
+      return error(FnMismatch{FnMismatch::UnmatchedParam{
+          nameOrEmpty(actual.getParamName(nextActualParamIdx)),
+          /*isExpectedParam=*/false}});
+  }
 
   auto actualFnTp =
       cast<FuncType>(state.evaluator.getReboundType(actual.getBody()));
@@ -224,7 +375,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   actual = {};
   expected = {};
 
-  if (!allowImplicitConversions) {
+  if (!allowImplicitConversions && !isPartiallyTypedActual) {
     // Allow signature types to be converted for free if they differ only in
     // argument names, parameter names, passing kinds, or implicit origins.
     // The must matches `IREmitter::canZeroCostConvert`
@@ -243,8 +394,10 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // Otherwise, either we allow implicit conversion, or we already ensured
   // zeroCostConversion above.
+  bool actualMightThrows =
+      actualEffects.isThrows() || actualEffects.isUnresolved();
   ArrayRef<Type> actualArgTypes = actualFnTp.getArguments().drop_back(
-      actualFnTp.hasMemoryOnlyResult() + actualFnTp.isThrows());
+      actualFnTp.hasMemoryOnlyResult() + actualMightThrows);
   ArrayRef<Type> expectedArgTypes = expectedFnTp.getArguments().drop_back(
       expectedFnTp.hasMemoryOnlyResult() + expectedFnTp.isThrows());
 
@@ -272,12 +425,12 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
           *expectedKwVarArgIndex + 1 == expectedArgTypes.size()) &&
          "kwargs must be the last user argument");
 
-  if (!actualEffects.isThrows() && expectedEffects.isThrows())
+  if (!actualMightThrows && expectedEffects.isThrows())
     state.numImplicitConversions++;
 
   // If the actual function is not throwing, and the expected function is,
   // then we can infer the Error type to be Never.
-  if (!actualEffects.isThrows() && expectedEffects.isThrows()) {
+  if (!actualMightThrows && expectedEffects.isThrows()) {
     FailableScope failableScope(*this);
 
     // Match the expected error type to Never, but allow this to fail: it may
@@ -291,17 +444,23 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
 
   // Error arguments are excluded from argument matching, so compare their
   // user-facing types explicitly when both functions throw.
-  if (actualFnTp.isThrows() && expectedFnTp.isThrows())
-    PROP(matchTypes(actualFnTp.getUserThrownType(),
-                    expectedFnTp.getUserThrownType()));
+  if (actualMightThrows && expectedFnTp.isThrows()) {
+    // If throw type is unresolved, no need to match, just take it directly
+    // from expected fn tp.
+    if (!isa<UnresolvedType>(actualFnTp.getUserThrownType())) {
+      PROP(matchTypes(actualFnTp.getUserThrownType(),
+                      expectedFnTp.getUserThrownType()));
+    }
+  }
 
-  // If the actual result type returns a ref result and the expected returns a
-  // value, then we can copy the value to the ref result.  Otherwise, the
+  // If the actual result type returns a ref result and the expected returns
+  // a value, then we can copy the value to the ref result.  Otherwise, the
   // ref-result-ness needs to line up.
-  if (actualFnTp.isRefResult() != expectedFnTp.isRefResult()) {
+  if (!actualEffects.isUnresolved() && // unresolved match all fn effects.
+      actualFnTp.isRefResult() != expectedFnTp.isRefResult()) {
     // A function returning a value can't promote to a ref result.
     if (expectedFnTp.isRefResult())
-      return error(MatchFailure::Unclassified{});
+      return error(FnMismatch{FnMismatch::RefResultRequired{}});
     // We can look through the reference to implicitly copy.
     actualResultType = actualResultType.getReferenceElementType();
     actualEffects.setRefResult(false);
@@ -317,28 +476,43 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
         // when we have more strong origin support in traits.
         !actualResultType.isCopyable(expr->getLoc(), shared,
                                      /*isImplicit=*/false, state.declScope))
-      return error(MatchFailure::Unclassified{});
+      return error(
+          FnMismatch{FnMismatch::RefResultNotCopyable{actualResultType}});
   }
 
-  if (actualEffects != expectedEffects)
-    return error(MatchFailure::Unclassified{});
+  if (actualEffects != expectedEffects && !actualEffects.isUnresolved())
+    return error(
+        FnMismatch{FnMismatch::EffectsDiffer{actualEffects, expectedEffects}});
 
+  // Verify the effective nested-origin read-only promise.
+  if (expectedFnTp.getIsNestedOriginsReadOnly() &&
+      !actualFnTp.getIsNestedOriginsReadOnly())
+    return error(FnMismatch{FnMismatch::NestedOriginsReadOnlyRequired{}});
+
+  // TODO: how does this affect partial type match?
   PROP(matchParams(actualFnTp.getCaptureOrigins(),
                    expectedFnTp.getCaptureOrigins()));
 
   if (actualKwVarArgIndex.has_value() != expectedKwVarArgIndex.has_value())
-    return error(MatchFailure::Unclassified{});
+    return error(
+        FnMismatch{FnMismatch::KwargsDiffer{actualKwVarArgIndex.has_value()}});
   if (actualKwVarArgIndex) {
     size_t actualIndex = *actualKwVarArgIndex;
     size_t expectedIndex = *expectedKwVarArgIndex;
-    if (!checkConventionsConvertible(
-            expectedFnTp.getArgConvention(expectedIndex),
-            actualFnTp.getArgConvention(actualIndex)))
-      return error(MatchFailure::Unclassified{});
+    ArgConvention actualConv = actualFnTp.getArgConvention(actualIndex);
+    ArgConvention expectedConv = expectedFnTp.getArgConvention(expectedIndex);
+    if (actualConv != ArgConvention::Unresolved &&
+        !checkConventionsConvertible(expectedConv, actualConv))
+      return error(FnMismatch{FnMismatch::ArgConventionsIncompatible{
+          actualIndex, nameOrEmpty(actualFnTp.getArgName(actualIndex)),
+          actualConv, expectedConv}});
 
-    PROP(matchTypes(
-        ASTType(actualArgTypes[actualIndex]).getKwargsDictRefValueType(),
-        ASTType(expectedArgTypes[expectedIndex]).getKwargsDictRefValueType()));
+    if (!isa<UnresolvedType>(actualArgTypes[actualIndex])) {
+      PROP(matchTypes(
+          ASTType(actualArgTypes[actualIndex]).getKwargsDictRefValueType(),
+          ASTType(expectedArgTypes[expectedIndex])
+              .getKwargsDictRefValueType()));
+    }
   }
 
   // Functions with an incompatible number of arguments cannot be converted
@@ -350,7 +524,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // TODO: Consider default argument values.
   std::optional<size_t> expectedPackIndex = expectedFnTp.findPackVarArgIndex();
   std::optional<size_t> actualPackIndex = actualFnTp.findPackVarArgIndex();
-  bool collectIntoVariadic = expectedPackIndex && !actualPackIndex;
+  // Collect into variadic only when implicit conversion is allowed.
+  bool collectIntoVariadic =
+      allowImplicitConversions && expectedPackIndex && !actualPackIndex;
   // The actual arguments in [packBegin, packEnd) go into the pack.
   size_t packBegin = actualPositionalArgCount;
   size_t packEnd = actualPositionalArgCount;
@@ -358,11 +534,16 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     size_t numArgsAfterPack =
         expectedPositionalArgCount - *expectedPackIndex - 1;
     if (actualPositionalArgCount < *expectedPackIndex + numArgsAfterPack)
-      return error(MatchFailure::Unclassified{});
+      return error(FnMismatch{FnMismatch::ArgCountsDiffer{
+          actualPositionalArgCount, *expectedPackIndex + numArgsAfterPack,
+          /*expectedIsMinimum=*/true}});
     packBegin = *expectedPackIndex;
     packEnd = actualPositionalArgCount - numArgsAfterPack;
-  } else if (actualPositionalArgCount != expectedPositionalArgCount ||
-             actualPackIndex != expectedPackIndex) {
+  } else if (actualPositionalArgCount != expectedPositionalArgCount) {
+    return error(FnMismatch{FnMismatch::ArgCountsDiffer{
+        actualPositionalArgCount, expectedPositionalArgCount,
+        /*expectedIsMinimum=*/false}});
+  } else if (actualPackIndex != expectedPackIndex) {
     return error(MatchFailure::Unclassified{});
   }
 
@@ -375,15 +556,20 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     ASTType actualAstType = actualArgTypes[actualArgIndex];
     ASTType expectedAstType = expectedArgTypes[expectedArgIndex];
 
-    if (!checkConventionsConvertible(expectedConv, actualConv))
-      return error(MatchFailure::Unclassified{});
+    if (actualConv != ArgConvention::Unresolved &&
+        !checkConventionsConvertible(expectedConv, actualConv))
+      return error(FnMismatch{FnMismatch::ArgConventionsIncompatible{
+          actualArgIndex, nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+          actualConv, expectedConv}});
 
-    Type expectedValueAstType =
-        RefType::stripRefConvention(expectedAstType, expectedConv);
-    Type actualValueAstType =
-        RefType::stripRefConvention(actualAstType, actualConv);
-    // Now check that the argument types line up.
-    PROP(matchTypes(actualValueAstType, expectedValueAstType));
+    if (!isa<UnresolvedType>(actualAstType)) {
+      Type expectedValueAstType =
+          RefType::stripRefConvention(expectedAstType, expectedConv);
+      Type actualValueAstType =
+          RefType::stripRefConvention(actualAstType, actualConv);
+      // Now check that the argument types line up.
+      PROP(matchTypes(actualValueAstType, expectedValueAstType));
+    }
 
     // If the argument has a required keyword, then the two must match names.
     if (actualFnTp.getArgListAttrs().getPassingKind(actualArgIndex) ==
@@ -392,7 +578,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
             PassingKind::KwOnly) {
       if (actualFnTp.getArgName(actualArgIndex) !=
           expectedFnTp.getArgName(expectedArgIndex))
-        return error(MatchFailure::Unclassified{});
+        return error(FnMismatch{FnMismatch::KwOnlyArgNamesDiffer{
+            nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+            nameOrEmpty(expectedFnTp.getArgName(expectedArgIndex))}});
     }
     return success();
   };
@@ -403,6 +591,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
   // If the expected def has a variadic arg, check all the actual args that will
   // go into it.
   if (collectIntoVariadic) {
+    assert(!isPartiallyTypedActual &&
+           "We don't handle variadic conversion when matching a partially "
+           "typed actual signature");
     ArgConvention expectedConv =
         expectedFnTp.getVariadicConvention(*expectedPackIndex);
 
@@ -423,7 +614,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       ASTType actualAstType = actualArgTypes[actualArgIndex];
 
       if (!checkConventionsConvertible(expectedConv, actualConv))
-        return error(MatchFailure::Unclassified{});
+        return error(FnMismatch{FnMismatch::ArgConventionsIncompatible{
+            actualArgIndex, nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+            actualConv, expectedConv}});
 
       // TODO(MOCO-5418): The elements of a `mut` pack have the same origin, so
       // the conversion thunk cannot pass two of them to `mut` arguments
@@ -447,7 +640,9 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       if (failed(matchTypes(ASTType(actualValueAstType).extractMetaType(),
                             variadicElType))) {
         failableScope.revert();
-        return error(MatchFailure::Unclassified{});
+        return error(FnMismatch{FnMismatch::VariadicElementTypeMismatch{
+            actualArgIndex, nameOrEmpty(actualFnTp.getArgName(actualArgIndex)),
+            actualValueAstType, variadicElType}});
       }
       // If the argument types line up, emit the type value.
       PValue converted = emitter.emitPValue({PValue(actualValueAstType), expr},
@@ -476,7 +671,7 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
     PROP(matchArg(actualArgIndex, actualArgIndex - packEnd + packBegin + 1));
 
   // Match the result. When implicit conversions are allowed we allow them here.
-  {
+  if (!isa<UnresolvedType>(actualResultType)) {
     FailableScope failableScope(*this);
     if (failed(matchTypes(actualResultType, expectedResultType))) {
       if (!allowImplicitConversions)

@@ -36,6 +36,7 @@ import io
 import json
 import os
 import tarfile
+import tempfile
 import time
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
@@ -367,13 +368,22 @@ def check_sha256(path: Path, s3_path: str) -> None:
 
 @functools.cache
 def data_dir(s3_path: str) -> Path:
-    """Downloads and extracts a data tarball, after checking its sha256."""
-    try:
-        path = Path(load_from_s3(s3_path))
-    except Exception as error:
-        message = f"Downloading {s3_path} failed: {error}"
-        print(f"{INFRA_MARKER} {message}")
-        raise
+    """Extracts a data tarball, after checking its sha256.
+
+    Under bazel the tarball comes from the build, through the variable
+    :data:`TARBALL_ENV` names, so the test needs no network. Elsewhere it
+    is downloaded from S3.
+    """
+    local = os.environ.get(TARBALL_ENV.get(s3_path, ""))
+    if local:
+        path = Path(local)
+    else:
+        try:
+            path = Path(load_from_s3(s3_path))
+        except Exception as error:
+            message = f"Downloading {s3_path} failed: {error}"
+            print(f"{INFRA_MARKER} {message}")
+            raise
     check_sha256(path, s3_path)
     return Path(load_from_tar(str(path)))
 
@@ -464,6 +474,33 @@ FLUX2_GOLDEN_TAR = (
 FLUX2_GOLDEN_JSON = (
     "torch_black-forest-labs_FLUX.2-dev-t2i_bfloat16_golden.json"
 )
+
+TARBALL_ENV = {
+    GENERATE_API_DATA: "GENERATE_API_DATA_TAR",
+    FLUX2_GOLDEN_TAR: "FLUX2_GOLDEN_TAR_PATH",
+}
+"""The variable that names bazel's copy of each data tarball. The BUILD file
+sets them from the http_file repos in common.MODULE.bazel."""
+
+LPIPS_BACKBONE_ENV = "LPIPS_SQUEEZENET_PATH"
+"""The variable that names bazel's copy of the SqueezeNet weights LPIPS loads
+through torchvision."""
+
+
+def use_build_lpips_backbone() -> None:
+    """Points torch.hub at bazel's copy of the LPIPS backbone, so LPIPS needs
+    no network. Does nothing when the variable is unset."""
+    weights = os.environ.get(LPIPS_BACKBONE_ENV)
+    if not weights:
+        return
+    source = Path(weights).resolve()
+    home = Path(tempfile.mkdtemp())
+    checkpoints = home / "hub" / "checkpoints"
+    checkpoints.mkdir(parents=True)
+    (checkpoints / source.name).symlink_to(source)
+    os.environ["TORCH_HOME"] = str(home)
+
+
 FLUX2_REVISION = "26afe3a78bb242c0a8bb181dcc8937bb16e5c66c"
 FLUX2_HEIGHT = 1024
 FLUX2_WIDTH = 1024

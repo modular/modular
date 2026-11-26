@@ -1,7 +1,8 @@
 // RUN: mo-opt %s --mogg-rowwise-group-row-stores | FileCheck %s
 
 // The stores at the row index, and the row-level ops only they read, move into
-// one `mogg.rowwise.emit` at the end of the body. A load at the row index that
+// one `mogg.rowwise.emit`, before the map phases if any, else at the end of the
+// body. A load at the row index that
 // a phase reads stays in the body: a `mogg.rowwise.load_lane` spread by a
 // `mogg.rowwise.splat_lane`.
 
@@ -56,6 +57,29 @@ func.func @rowLoadReadByPhase(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mog
       %xv = mogg.tensor.load %cx[%j] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
       %y = builtin.unrealized_conversion_cast %xv, %s : !mogg.simd<f32>, !mogg.simd<f32> to !mogg.simd<f32>
       mogg.tensor.store %co[%j] = %y : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    }
+  }
+  return
+}
+
+// The emit goes before the map phase, which stays last.
+// CHECK-LABEL: func.func @emitBeforeMap
+// CHECK:       %[[ACC:.*]] = mogg.rowwise.reduce
+// CHECK:       }
+// CHECK-NEXT:  mogg.rowwise.emit {
+// CHECK-NEXT:    mogg.tensor.store %{{.*}}[%row] = %[[ACC]]
+// CHECK-NEXT:  }
+// CHECK-NEXT:  mogg.rowwise.map
+func.func @emitBeforeMap(%shape: !mogg.shape, %ctx: !mogg.context, %x: !mogg.tensor, %out: !mogg.tensor, %sum: !mogg.tensor) {
+  mogg.call.rowwise shape(%shape) axis(1) context(%ctx) (%row : !map.index<2>) capturing {%cx = %x : !mogg.tensor, %co = %out : !mogg.tensor, %cs = %sum : !mogg.tensor} device = "cpu" {
+    %acc = mogg.rowwise.reduce @builtin_kernels.monoids.ReduceSum (%i : !map.index<2>) -> !mogg.simd<f32> {
+      %v = mogg.tensor.load %cx[%i] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.yield %v : !mogg.simd<f32>
+    }
+    mogg.tensor.store %cs[%row] = %acc : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
+    mogg.rowwise.map (%j : !map.index<2>) {
+      %v = mogg.tensor.load %cx[%j] : !mogg.tensor, !map.index<2> -> !mogg.simd<f32>
+      mogg.tensor.store %co[%j] = %v : !mogg.tensor, !map.index<2>, !mogg.simd<f32>
     }
   }
   return

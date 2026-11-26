@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 from max._core import Value as _Value
+from max.dtype import DType
 from max.mlir.dialects import mo
 
 from ..graph import Graph, GraphBlock
@@ -141,6 +142,11 @@ def while_loop(
                 "The predicate for `ops.while_loop` must reside on CPU,"
                 f" but got a tensor on {condition.device}. Transfer it"
                 " explicitly with `ops.transfer_to(pred, CPU())`."
+            )
+        if condition.dtype != DType.bool or condition.rank != 0:
+            raise ValueError(
+                "The predicate for `ops.while_loop` must return a scalar bool"
+                f" tensor, but got {condition.type}."
             )
         fold_new_chains(live_on_entry)
         pred_block.output(

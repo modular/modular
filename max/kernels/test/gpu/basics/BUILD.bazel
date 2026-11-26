@@ -6,6 +6,7 @@ package(default_visibility = ["//max:consumers"])
 # Also run against the HAL `DeviceContext`, with its driver plugin staged.
 exports_files([
     "test_attribute_launch_config.mojo",
+    "test_launch_dims.mojo",
     "test_pdl_launch_wait_check.mojo",
 ])
 

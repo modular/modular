@@ -34,12 +34,12 @@ from max.nn.common_layers import quant_ops
 from max.nn.common_layers.moe import MoEGate
 from max.nn.common_layers.quant_linear import QuantizedMLP
 from max.nn.common_layers.quant_moe import ExpertParallelMoE, TensorParallelMoE
+from max.nn.ep_config import EPConfig
 from max.nn.kernels import (
     moe_router_group_limited,
     moe_sigmoid_gemv_router,
     router_gate_mixed_gemv,
 )
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping
 from typing_extensions import override
@@ -164,7 +164,7 @@ class Glm5NextExpertParallelMoE(ExpertParallelMoE):
 
     @override
     def _dispatched_rows(self, x_shards: Sequence[Tensor]) -> Tensor:
-        if not self.ep_batch_manager.config.use_allreduce:
+        if not self.ep_config.use_allreduce:
             return super()._dispatched_rows(x_shards)
         # Every device holds every row under allreduce, so the rows count
         # once. The base's sum would estimate each device's expert rows at
@@ -320,9 +320,11 @@ class Glm5NextMLP(QuantizedMLP):
         gate_up_weight = quant_ops.concat_weights(
             self.gate_proj.weight, self.up_proj.weight, axis=0
         )
-        gate, up = quant_ops.matmul(x, gate_up_weight).split(
-            [self.feed_forward_length, self.feed_forward_length], axis=-1
-        )
+        gate_up = quant_ops.matmul(x, gate_up_weight)
+        # Half the output's own width: one device's copy of a column-split
+        # shared expert holds only its slice of ``feed_forward_length``.
+        width = int(gate_up.shape[-1]) // 2
+        gate, up = gate_up.split([width, width], axis=-1)
         limit = self.swiglu_limit
         gate = F.min(gate.cast(DType.float32), limit)
         up = F.max(F.min(up.cast(DType.float32), limit), -limit)
@@ -332,15 +334,17 @@ class Glm5NextMLP(QuantizedMLP):
 def build_mlp(
     config: Glm5NextConfig,
     layer_idx: int,
-    ep_batch_manager: EPBatchManager | None,
+    ep_config: EPConfig | None,
 ) -> Module[..., Tensor]:
     """Returns layer ``layer_idx``'s feed-forward block.
 
-    Dense below ``first_k_dense_replace``, MoE from there on. Every MLP in
-    this checkpoint is FP8. The dense blocks are replicated: the decoder layer
-    runs them on each device's share of the tokens.
+    Dense below ``first_k_dense_replace``, MoE from there on, quantized as
+    the checkpoint stores the layer: the NVFP4 checkpoint's MTP layer is
+    bf16. The dense blocks are replicated: the decoder layer runs them on
+    each device's share of the tokens.
     """
-    quant_config = config.quant_config
+    scheme = config.quant_scheme
+    quant_config = scheme.mlp_config(layer_idx) if scheme else None
     mlp_cls = functools.partial(Glm5NextMLP, swiglu_limit=config.swiglu_limit)
     if layer_idx < config.first_k_dense_replace:
         return mlp_cls(
@@ -370,8 +374,12 @@ def build_mlp(
         mlp_cls=mlp_cls,
         swiglu_limit=config.swiglu_limit,
     )
-    if ep_batch_manager is not None:
+    if ep_config is not None:
+        # Under the all-reduce exchange, each rank runs its share of the
+        # shared expert instead of rank 0 all of it while the others wait.
         return Glm5NextExpertParallelMoE(
-            **moe_kwargs, ep_batch_manager=ep_batch_manager
+            **moe_kwargs,
+            ep_config=ep_config,
+            shard_shared_expert=True,
         )
     return Glm5NextTensorParallelMoE(**moe_kwargs)

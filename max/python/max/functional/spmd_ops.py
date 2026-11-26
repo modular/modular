@@ -29,6 +29,7 @@ from typing import Any, Union
 
 from max import tree
 from max.driver import CPU, Buffer
+from max.dtype import DType
 from max.graph import (
     BufferValue,
     Shape,
@@ -2978,12 +2979,13 @@ def _reduce_op(
     def fn(
         x: Tensor,
         axis: int | None = -1,
+        **kwargs: object,
     ) -> Tensor:
         assert isinstance(x, tensor.Tensor)
         if axis is None:
             x = reshape(x, [-1])
             axis = 0
-        return single_axis(x, axis)
+        return single_axis(x, axis, **kwargs)
 
     return fn
 
@@ -3042,6 +3044,7 @@ _argmin_impl = _reduce_op(ops.argmin, rule=reduce_rule)
 def argmax(
     x: Tensor,
     axis: int | None = -1,
+    out_dtype: DType = DType.int64,
 ) -> Tensor:
     """Returns the indices of the maximum values along an axis.
 
@@ -3071,9 +3074,10 @@ def argmax(
         axis: The axis along which to compute the argmax. Negative values
             index from the last dimension. When ``None``, the tensor is
             flattened to 1-D first. Defaults to ``-1``.
+        out_dtype: The dtype of the indices. Defaults to ``int64``.
 
     Returns:
-        A ``Tensor`` with ``int64`` dtype containing the indices of the
+        A ``Tensor`` with ``out_dtype`` dtype containing the indices of the
         maximum values along ``axis``. For an integer ``axis``, the result
         has the same rank as ``x`` with the ``axis`` dimension reduced to
         size ``1``. When ``axis`` is ``None``, the result has shape ``(1,)``.
@@ -3081,7 +3085,7 @@ def argmax(
     Raises:
         ValueError: If ``axis`` is out of range for ``x``.
     """
-    return _argmax_impl(x, axis=axis)
+    return _argmax_impl(x, axis, out_dtype=out_dtype)
 
 
 def argmin(

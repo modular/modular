@@ -27,8 +27,8 @@ from std.math.math import max as _max, min as _min
 from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu
 
-from std.utils.index import IndexList, StaticTuple
-from std.utils.coord import Coord, CoordLike, DynamicCoord, coord_to_index_list
+from std.utils.index import StaticTuple
+from std.utils.coord import Coord, CoordLike, DynamicCoord
 
 from std._plugin import CurrentPlugin
 
@@ -123,32 +123,6 @@ def _get_nd_indices_from_flat_index[
     return res
 
 
-@inline(.always)
-def _get_nd_indices_from_flat_index(
-    flat_index: Int, shape: IndexList, skip_dim: Int, out res: type_of(shape)
-):
-    """Converts a flat index into ND indices but skip over one of the dimensions.
-
-    This overload forwards to the `Coord` implementation. See it for details.
-
-    Args:
-        flat_index: The flat index to convert.
-        shape: The shape of the ND space we are converting into.
-        skip_dim: The dimension to skip over. This represents the dimension
-                  which is being iterated across.
-    Returns:
-        Constructed ND-index.
-    """
-    comptime dtype = type_of(shape).element_type
-    var coords = _get_nd_indices_from_flat_index[out_dtype=dtype](
-        flat_index, Coord(shape), skip_dim
-    )
-
-    res = {}
-    comptime for i in range(type_of(shape).size):
-        res.data[i] = rebind[type_of(shape)._int_type](coords[i].value())
-
-
 # ===-----------------------------------------------------------------------===#
 # MOGG reduce functions.
 # These take lambdas and don't assume contiguous inputs so can compose
@@ -205,13 +179,8 @@ def _reduce_generator[
         reduce_function: The lambda implementing the reduction.
         context: The pointer to DeviceContext.
     """
-    # The plugin hook only accepts an `IndexList`, and the empty-dimension
-    # check below needs runtime indexing that a `Coord` does not support, so
-    # materialize an `IndexList` view of the shape once.
-    var shape_index_list = coord_to_index_list(shape)
-
-    for i in range(len(shape_index_list)):
-        if shape_index_list[i] == 0:
+    comptime for i in range(type_of(shape).rank):
+        if Int(shape[i]) == 0:
             return
 
     comptime if context.T.target.is_cpu():
@@ -222,7 +191,7 @@ def _reduce_generator[
         # The plugin hook takes `reduce_dim` as a runtime argument; feed it the
         # compile-time value.
         return plugin_reduce[num_reductions, init_type](
-            shape_index_list,
+            shape,
             init,
             reduce_dim,
             input_0_fn,
@@ -317,10 +286,7 @@ def _reduce_generator[
 # ===-----------------------------------------------------------------------===#
 
 
-# `input_gen_fn` and `output_fn` may read and write the same buffer, which
-# is safe and the expected pattern here.
 @inline(.always)
-@__unsafe_nested_origins_read_only
 def map_reduce[
     InputGenFnType: def[dtype: DType, width: Int](Int) -> SIMD[dtype, width],
     ReduceVecToVecFnType: def[acc_type: DType, dtype: DType, width: SIMDLength](

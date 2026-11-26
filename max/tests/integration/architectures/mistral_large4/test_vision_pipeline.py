@@ -51,6 +51,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -66,7 +67,6 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.graph import DeviceRef, TensorType
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.nn.legacy.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.architectures.deepseekV3_modulev3.batch_processor import (
     DeepseekV3ModuleV3BatchProcessor,
@@ -116,7 +116,10 @@ from max.pipelines.lib.graph_specs import GraphRole, GraphSpec
 from max.pipelines.lib.interfaces import arch_has_vision_tower
 from max.pipelines.lib.interfaces.batch_processor import BatchProcessorRuntime
 from max.pipelines.lib.memory_plan import _vision_row, vision_cache_plan
-from max.pipelines.lib.registration_runtime import ModuleRuntime
+from max.pipelines.lib.registration_runtime import (
+    ExpertParallelInputs,
+    ModuleRuntime,
+)
 from max.pipelines.lib.vision_encoder_cache import (
     SupportsVisionEncoding,
     VisionEncoderCache,
@@ -576,10 +579,6 @@ def _seeded_model(
         ),
     )
     model.kv_params = kv_params
-    ep_config = getattr(config, "ep_config", None)
-    model._ep_batch_manager = (
-        EPBatchManager(ep_config) if ep_config is not None else None
-    )
     # graph_specs sets this through the distributed-runtime init; the
     # ABI-boundary test reads the input types directly.
     model._modulev3_extra_input_types = []
@@ -608,9 +607,7 @@ def _seeded_model(
         default_device(config.mesh),
         default_dtype(DType.bfloat16),
     ):
-        text_module = MistralLarge4(
-            config, kv_params, cast(Any, model)._ep_batch_manager
-        )
+        text_module = MistralLarge4(config, kv_params, config.ep_config)
         vision_module = MistralLarge4Vision(VISION_CONFIG)
     # The modules' own lazy weights stand in for the parsed checkpoint: the
     # production names, no allocation, exactly what a ModuleV3 graph stages
@@ -948,6 +945,13 @@ def test_graph_specs_stages_the_tp_pair_on_a_two_device_mesh(
     set_virtual_device_count(2)
     try:
         model, config = _seeded_model(n_devices=2)
+        # The trace needs only the EP inputs, not the compiled init graph.
+        monkeypatch.setattr(
+            ExpertParallelInputs,
+            "initialize",
+            lambda self, session, ep, mesh: (ep, None, {}),
+        )
+        model._session = Mock()
         specs = model.graph_specs(config)
         assert set(specs) == {GraphRole.DECODER, GraphRole.VISION}
 

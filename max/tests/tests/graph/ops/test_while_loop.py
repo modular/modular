@@ -14,6 +14,9 @@
 
 from typing import NoReturn
 
+import pytest
+from conftest import tensor_types
+from hypothesis import assume, given
 from max.dtype import DType
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue, ops
 
@@ -186,3 +189,13 @@ def test_while_loop_device_chains_scoped() -> None:
         assert id(graph.device_chains[DeviceRef.GPU(0)]) != id0
         assert id(graph.device_chains[DeviceRef.GPU(1)]) != id1
         graph.output()
+
+
+@given(pred_type=tensor_types())
+def test_while_loop_predicate_must_be_scalar_bool(
+    pred_type: TensorType,
+) -> None:
+    assume(pred_type.dtype != DType.bool or pred_type.rank != 0)
+    with Graph("while_loop_bad_predicate", input_types=[pred_type]) as graph:
+        with pytest.raises(ValueError, match="scalar bool tensor"):
+            ops.while_loop(graph.inputs[0].tensor, lambda x: x, lambda x: x)

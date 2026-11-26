@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Maps a Kimi K3 checkpoint onto the text tower's module tree.
+"""Maps a Kimi K3 checkpoint onto the text and vision module trees.
 
 :class:`~.model.KimiK3Model` is the registry's top-level module, so its
 weights lose the checkpoint's ``language_model.`` prefixes. The modules
@@ -26,23 +26,57 @@ from max.dtype import DType
 from max.pipelines.lib import Bitcast, Ignore, WeightRenaming, WeightRule
 from transformers.configuration_utils import PretrainedConfig
 
+from .vision_config import has_vision_tower
+
 __all__ = ["kimi_k3_weight_rules"]
+
+_VISION_RENAMES = (
+    WeightRenaming(r"^vision_tower\.", "vision_encoder."),
+    WeightRenaming(r"^mm_projector\.", "vision_encoder.patch_merger."),
+    WeightRenaming(
+        r"^(vision_encoder\.patch_merger\.)proj\.0\.", r"\1linear1."
+    ),
+    WeightRenaming(
+        r"^(vision_encoder\.patch_merger\.)proj\.2\.", r"\1linear2."
+    ),
+    WeightRenaming(
+        r"^(vision_encoder\.encoder\.)final_layernorm\.", r"\1norm."
+    ),
+    WeightRenaming(
+        r"^(vision_encoder\.encoder\.blocks\.\d+\.)(wqkv|wo)\.",
+        r"\1attn.\2.",
+    ),
+    WeightRenaming(
+        r"^(vision_encoder\.encoder\.blocks\.\d+\.mlp\.)fc0\.",
+        r"\1up_proj.",
+    ),
+    WeightRenaming(
+        r"^(vision_encoder\.encoder\.blocks\.\d+\.mlp\.)fc1\.",
+        r"\1down_proj.",
+    ),
+)
 
 
 def kimi_k3_weight_rules(
     huggingface_config: PretrainedConfig,
 ) -> Sequence[WeightRule]:
-    """Returns the rules that map a Kimi K3 checkpoint onto the text tower.
+    """Returns the rules that map a Kimi K3 checkpoint onto the text and vision modules.
 
     Args:
         huggingface_config: The checkpoint's config.
     """
-    del huggingface_config
+    vision_rules = (
+        _VISION_RENAMES
+        if has_vision_tower(huggingface_config)
+        else (
+            Ignore(
+                r"^(?:vision_tower|mm_projector)\.",
+                reason="the vision tower, which this text-only config does not serve",
+            ),
+        )
+    )
     return (
-        Ignore(
-            r"^(?:vision_tower|mm_projector)\.",
-            reason="the vision tower, which the text tower doesn't serve",
-        ),
+        *vision_rules,
         WeightRenaming(r"^language_model\.lm_head\.weight$", "lm_head_weight"),
         WeightRenaming(
             r"^language_model\.model\.norm\.weight$", "final_norm_weight"
@@ -59,7 +93,9 @@ def kimi_k3_weight_rules(
             r"\1_weight",
         ),
         WeightRenaming(r"\.self_attn\.", ".attention."),
-        WeightRenaming(r"\.(?:block_sparse_moe|mlp)\.", ".ffn."),
+        WeightRenaming(
+            r"^(layers\.\d+)\.(?:block_sparse_moe|mlp)\.", r"\1.ffn."
+        ),
         WeightRenaming(r"\.ffn\.gate\.weight$", ".ffn.gate.gate_score.weight"),
         WeightRenaming(r"(_conv1d)\.weight$", r"\1"),
         WeightRenaming(r"\.A_log$", ".a_log"),

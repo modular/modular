@@ -198,6 +198,10 @@ def test[
             vectorize[simd_size](F, body0)
 
     # Test epilogue
+    # FIXME: The epilogue captures output while the convolution also takes it
+    # mutably; each row is read only after convolution writes it.
+    var output_untracked = output.unsafe_origin_cast[MutUntrackedOrigin]()
+
     @inline(.always)
     def epilogue(coords: Coord, f_size: Int) {imm}:
         @inline(.always)
@@ -206,9 +210,9 @@ def test[
             var curr_coords = coords
             curr_coords.replace_dynamic[rank + 1](f)
 
-            var vec = output.load[width=width](curr_coords)
+            var vec = output_untracked.load[width=width](curr_coords)
 
-            output.store(
+            output_untracked.store(
                 curr_coords, 10.0 * (vec + bias_ptr.unsafe_load[width=width](f))
             )
 
@@ -227,7 +231,7 @@ def test[
             True,
             type_of(epilogue),
         ].run(
-            output,
+            output_untracked,
             input.as_imm(),
             packed_filter.as_imm(),
             conv_shape,
@@ -245,7 +249,13 @@ def test[
             conv_attr,
             True,
             type_of(epilogue),
-        ].run(output, input.as_imm(), filter.as_imm(), conv_shape, epilogue)
+        ].run(
+            output_untracked,
+            input.as_imm(),
+            filter.as_imm(),
+            conv_shape,
+            epilogue,
+        )
 
     # Check results, raise on the first failed comparison.
     var output_flat = output.reshape(row_major(output_size))

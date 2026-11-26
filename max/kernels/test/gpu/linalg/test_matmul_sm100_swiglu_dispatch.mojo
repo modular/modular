@@ -72,9 +72,7 @@ def test_strided[has_bias: Bool](ctx: DeviceContext) raises:
         w_dev, Layout((Idx[2 * h], Idx[k]), (Idx[stride], Idx[1]))
     ).as_imm()
     var output = TileTensor(out_dev, Layout((m, Idx[h]), (Idx[stride], Idx[1])))
-    var bias_ptr = ImmPointer[BFloat16, ImmutAnyOrigin](
-        unsafe_from_address=Int(bias_dev.unsafe_ptr())
-    )
+    var bias_ptr = bias_dev.unsafe_ptr().as_imm()
     matmul_swiglu_dispatch_sm100_bf16[has_bias=has_bias](
         output, a, w, ctx, OptionalReg(bias_ptr)
     )

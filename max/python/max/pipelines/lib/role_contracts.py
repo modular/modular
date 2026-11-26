@@ -137,9 +137,11 @@ class DecoderInputs(Generic[TensorT, _SignalT]):
     """
 
     ep: Any = None
-    """The expert-parallel communication buffers, under expert parallelism,
-    in the tree :meth:`~max.nn.legacy.comm.ep.EPBatchManager.input_tree`
-    declares."""
+    """The expert-parallel exchange's buffers, under expert parallelism. A
+    ModuleV3 decoder gets them as :class:`~max.nn.ep.EPBuffers` and passes
+    them to its MoE layers. The graph takes them as the per-device inputs of
+    :func:`~max.nn.ep.init.payload_types`, which a graph-API decoder reads
+    itself."""
 
     hisparse: tuple[TensorT, ...] | None = None
     """Host and hot page tables per device, followed by the host mirror."""

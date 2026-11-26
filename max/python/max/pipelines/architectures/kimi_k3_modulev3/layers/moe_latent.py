@@ -31,7 +31,7 @@ the expert output before the norm, then reduces the exit's and the shared
 branch's partial sums together.
 
 ``expert_parallel_latent_moe`` gives each device whole experts instead,
-exchanging tokens through :mod:`ep` (mirroring ``minimax_m3_modulev3/ep.py``).
+exchanging tokens through :mod:`max.nn.ep`.
 It dispatches the LATENT activations, not the hidden state, since that is
 what the experts actually consume. The block needs no allreduce under
 expert parallelism: the combine already returns final, correctly-ordered,
@@ -90,6 +90,7 @@ from max.nn._graph_ops import (
 from max.nn.activation import GatedActivation
 from max.nn.common_layers._sharding import shard_and_stack
 from max.nn.common_layers.mesh_axis import EP, TP
+from max.nn.ep import EPBuffers, combine, dispatch
 from max.nn.ep_config import EPConfig
 from max.nn.kernels import (
     grouped_matmul_ragged,
@@ -109,7 +110,6 @@ from max.tensor.sharding import (
     Partial,
 )
 
-from . import ep
 from .amd_w4a8_validation import validate_amd_packed_k, validate_amd_tp_w4a8
 from .mlp import (
     KimiK3DenseMLP,
@@ -479,9 +479,8 @@ class KimiK3LatentMoE(Module[..., Tensor]):
 
     Single-device, tensor-parallel after :func:`tensor_parallel_latent_moe`,
     or expert-parallel after :func:`expert_parallel_latent_moe` shards it.
-    Expert-parallel runs through :meth:`expert_parallel_forward` instead of
-    :meth:`forward`, since its exchange needs an ``ep_config``/``ep_buffers``
-    pair ``forward``'s plain-Tensor signature has no room for.
+    Expert-parallel, built with an ``ep_config``, it runs
+    :meth:`expert_parallel_forward` over the exchange's buffers.
     """
 
     def __init__(
@@ -504,6 +503,7 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         amd_w4a8: bool | None = None,
         max_tokens_per_expert: int = _DEFAULT_MAX_TOKENS_PER_EXPERT,
         amd_mega_ffn: bool = True,
+        ep_config: EPConfig | None = None,
     ) -> None:
         """Builds the latent MoE block.
 
@@ -541,8 +541,11 @@ class KimiK3LatentMoE(Module[..., Tensor]):
                 at decode and prefill, its weights preshuffled at model init,
                 rather than as the grouped-matmul chain. Builds without the
                 closed-source kernels keep the chain.
+            ep_config: The routed experts' exchange setup, sized for the
+                latent width, under expert parallelism.
         """
         super().__init__()
+        self.ep_config = ep_config
         self.latent_size = latent_size
         self.num_experts = num_experts
         self.num_experts_per_token = num_experts_per_token
@@ -684,28 +687,19 @@ class KimiK3LatentMoE(Module[..., Tensor]):
     def forward(
         self,
         hidden_states: Tensor,
-        *,
-        ep_config: EPConfig | None = None,
-        ep_buffers: ep.EPBuffers | None = None,
+        ep: EPBuffers | None = None,
     ) -> Tensor:
         """Runs the block over ``hidden_states``.
 
         Args:
             hidden_states: ``[T, hidden_size]``.
-            ep_config: This block's expert-parallel exchange setup. Given
-                with ``ep_buffers``, it routes to
-                :meth:`expert_parallel_forward` instead of running this
-                method's own body.
-            ep_buffers: The exchange's graph buffers.
+            ep: The exchange's buffers, under expert parallelism.
 
         Returns:
             ``[T, hidden_size]``, replicated.
         """
-        if ep_config is not None:
-            assert ep_buffers is not None
-            return self.expert_parallel_forward(
-                hidden_states, ep_config, ep_buffers
-            )
+        if ep is not None:
+            return self.expert_parallel_forward(hidden_states, ep)
 
         mesh = self.routed_expert_down_proj.weight.mesh
         sharded = TP in mesh.axis_names and mesh.axis_size(TP) > 1
@@ -1066,36 +1060,33 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         )
 
     def expert_parallel_forward(
-        self,
-        hidden_states: Tensor,
-        ep_config: EPConfig,
-        ep_buffers: ep.EPBuffers,
+        self, hidden_states: Tensor, ep: EPBuffers
     ) -> Tensor:
         """The expert-parallel forward; see :func:`expert_parallel_latent_moe`.
 
         Args:
             hidden_states: ``[T, hidden_size]``, replicated across the mesh.
-            ep_config: Sized for this block's latent width -- see
-                :func:`expert_parallel_latent_moe`.
-            ep_buffers: This block's own dispatch/combine exchange buffers.
+            ep: The exchange's buffers.
 
         Returns:
             ``[T, hidden_size]``, replicated, placed as ``hidden_states``
             was.
         """
+        assert self.ep_config is not None
         topk_idx, topk_weight = self.gate(hidden_states)
         latent = self.routed_expert_down_proj(hidden_states)
 
-        received, src_info = ep.dispatch(
-            ep_config, ep_buffers, latent, F.cast(topk_idx, DType.int32)
+        received, route = dispatch(
+            self.ep_config, ep, latent, F.cast(topk_idx, DType.int32)
         )
-        usage = ep.grouped_matmul_bounds(ep_config)
+        bounds = received.bounds
+        assert isinstance(bounds, Tensor), "a BF16 dispatch has bounds"
         gate_up = grouped_matmul_ragged(
             received.tokens,
             self.experts_gate_up_proj,
-            received.start,
-            received.ids,
-            usage,
+            received.expert_start,
+            received.expert_ids,
+            bounds,
         )
         activated = kimi_situ_and_mul(
             gate_up, self.beta, self.linear_beta, self.moe_intermediate_size
@@ -1103,16 +1094,16 @@ class KimiK3LatentMoE(Module[..., Tensor]):
         expert_out = grouped_matmul_ragged(
             activated,
             self.experts_down_proj,
-            received.start,
-            received.ids,
-            usage,
+            received.expert_start,
+            received.expert_ids,
+            bounds,
         )
 
         # The combine already restores token order and applies
         # `topk_weight`, so unlike `forward`, there is no `moe_finalize`
         # here -- the result is the complete, weighted-combined latent.
-        combined = ep.combine(
-            ep_config, ep_buffers, expert_out, src_info, latent, topk_weight
+        combined = combine(
+            self.ep_config, ep, expert_out, route, latent, topk_weight
         )
         normed = self.routed_expert_norm(combined)
         routed = self.routed_expert_up_proj(normed)

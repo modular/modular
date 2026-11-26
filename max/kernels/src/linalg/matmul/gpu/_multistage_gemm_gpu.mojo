@@ -60,7 +60,6 @@ from layout.tile_io import (
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 
 from std.utils import StaticTuple
-from std.utils.index import Index
 from std.utils.numerics import get_accum_type
 
 from ...utils import (
@@ -246,6 +245,7 @@ def multistage_mma[
     b_next_smem_layout: TensorLayout = b_smem_layout,
     next_op_b_iter_masked: Bool = False,
     k_group_size: Int = 1,
+    next_op_b_origin: ImmOrigin = ImmUntrackedOrigin,
 ](
     c: TileTensor[mut=True, c_type, c_layout, address_space=.LOCAL, ...],
     a_iter_arg: TileTensorIter[_, a_layout, ...],
@@ -272,10 +272,10 @@ def multistage_mma[
         TileTensorIter[
             b_type,
             b_next_gmem_layout,
-            ImmutAnyOrigin,
+            next_op_b_origin,
             masked=next_op_b_iter_masked,
         ]
-    ] = None,
+    ] = {},
 ):
     """Software-pipelined block MMA over `TileTensorIter` operands.
 
@@ -1082,9 +1082,9 @@ def _multistage_gemm_kernel_impl[
     # NOTE: the condition ( not (N // BN & 1)) is for a temporary solution
     # for solving mismatches in some shapes
     var block_idx_swizzle = block_swizzle(
-        Index[dtype=DType.uint32](block_idx.x, block_idx.y),
-        Index[dtype=DType.uint32](grid_dim.x, grid_dim.y),
-    ) if swizzle_block else Index[dtype=DType.uint32](block_idx.x, block_idx.y)
+        (UInt32(block_idx.x), UInt32(block_idx.y)),
+        (UInt32(grid_dim.x), UInt32(grid_dim.y)),
+    ) if swizzle_block else (UInt32(block_idx.x), UInt32(block_idx.y))
     var block_m = Int(block_idx_swizzle[1])
     var block_n = Int(block_idx_swizzle[0])
 
@@ -1256,6 +1256,7 @@ def _multistage_gemm_kernel_impl[
     # Stores `vec` at `(m, n)` through the output closure. `alignment` is in
     # bytes.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_output[
         dtype: DType, width: SIMDLength, //, alignment: Int
     ](m: Int, n: Int, vec: SIMD[dtype, width]) {imm}:
@@ -1268,6 +1269,7 @@ def _multistage_gemm_kernel_impl[
             epilogue_fn[dtype, width, alignment=alignment]((m, n), vec)
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def store_c_frags[in_range: Bool]() {imm}:
         """Writes the warp's accumulator fragments to C at their true
         `(row, col)`.

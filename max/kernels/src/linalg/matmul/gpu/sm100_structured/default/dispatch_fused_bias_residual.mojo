@@ -128,6 +128,7 @@ def fused_bias_residual_matmul_dispatch_sm100[
     # broadcasting row 0 for a 1D bias. Every non-TMA kernel (GEMV, small-MN,
     # cuBLAS) applies this exactly once.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bias_residual_compute_fn[
         dtype: DType, width: SIMDLength, *, alignment: Int
     ](idx: Coord, val: SIMD[dtype, width]) {var epilogue_tensor} -> SIMD[

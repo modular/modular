@@ -98,7 +98,7 @@ from max.gpu.host import DeviceBuffer, DeviceContext, default_accelerator
 from max.gpu.host import KernelLoadScope
 from max.gpu.host import HIP
 from max.gpu.host import CUDA
-from layout import Idx, TileTensor, row_major
+from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_tensor import (
     NullableTileTensor,
     _ComptimeConditionalTileTensor,
@@ -522,19 +522,19 @@ def matmul[
         return String(
             trace_arg(
                 "A",
-                (Int(a_tensor.dim[0]()), Int(a_tensor.dim[1]())),
+                Coord(Int(a_tensor.dim[0]()), Int(a_tensor.dim[1]())),
                 a_type,
             ),
             ";",
             trace_arg(
                 "B",
-                (Int(b_tensor.dim[0]()), Int(b_tensor.dim[1]())),
+                Coord(Int(b_tensor.dim[0]()), Int(b_tensor.dim[1]())),
                 b_type,
             ),
             ";",
             trace_arg(
                 "C",
-                (Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+                Coord(Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
                 c_type,
             ),
             ";transpose_a=",

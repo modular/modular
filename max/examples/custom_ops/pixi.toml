@@ -12,6 +12,9 @@ elementwise_addition = "python elementwise_addition.py"
 mandelbrot = "python mandelbrot.py"
 vector_addition = "python vector_addition.py"
 eager_vector_addition = "python eager_vector_addition.py"
+declared_addition = "python declared_addition.py"
+declared_vector_addition = "python declared_vector_addition.py"
+keep_positive = "python keep_positive.py"
 top_k = "python top_k.py"
 fused_attention = "python fused_attention.py"
 matrix_multiplication = "python matrix_multiplication.py"
@@ -24,6 +27,9 @@ test = { depends-on = [
   "mandelbrot",
   "vector_addition",
   "eager_vector_addition",
+  "declared_addition",
+  "declared_vector_addition",
+  "keep_positive",
   "matrix_multiplication",
   "benchmark",
   "image_pipeline",

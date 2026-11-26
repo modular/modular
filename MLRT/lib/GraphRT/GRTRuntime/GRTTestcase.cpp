@@ -15,6 +15,7 @@
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 GRTTestcase::GRTTestcase(const PrimitiveDescriptor &op)
     : name(*op.getAttr<StringRef>(0)), body(op.getInvokable(0)) {

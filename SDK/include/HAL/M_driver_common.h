@@ -32,27 +32,28 @@ extern "C" {
  * Semantic versioning: https://semver.org/
  *
  * The Modular stack and the hardware plugins may be developed by different
- * organizations at different times. Both Modular and plugins must declare to
- * each other the hardware interface version they implement at plugin
- * initialization, when Modular calls `M_driver_create()`. Plugins must also
- * return their version via the `M_driver_property()` query with the "version"
- * property name.
+ * organizations at different times. They agree on a version in
+ * `M_driver_create()`: Modular passes the version it was built with, and the
+ * plugin writes back the version it implements. Plugins also return their
+ * version through the "version" property of `M_driver_property()`.
  *
- * When comparing versions between the Modular stack and the HW plugins,
- * MAJOR version: When same, indicates compatibility.
- *                When different, indicates incompatibility.
- * MINOR version: Relevant only when the major version is the same. Then:
- *                - the same minor version indicates no new functionality and
- *                  that it is safe to proceed.
- *                - When the plugin's minor version is greater than the
- *                  Modular stack's minor version, it is safe to proceed,
- *                  since the plugin is backward compatible.
- *                - When the plugin's minor version is less than Modular's,
- *                  the plugin must overwrite Modular's version with its own
- *                  when returning from `M_driver_create()`. Modular will then
- *                  decide how to proceed.
+ * Modular uses a plugin only when the plugin's version is compatible with its
+ * own, and rejects any other plugin with M_DRIVER_STATUS_INCOMPATIBLE_VERSION:
+ *
+ * MAJOR version: Must be equal. A different major version, larger or smaller,
+ *                is incompatible. Major version 0 follows the same rule.
+ * MINOR version: The plugin's minor version must be greater than or equal to
+ *                Modular's. A minor version only adds to the interface, so a
+ *                plugin with a larger minor version serves Modular in full. A
+ *                plugin with a smaller minor version can lack entry points or
+ *                behavior that Modular uses, so Modular rejects it.
  * PATCH version: Increases monotonically for each backward compatible bug
- *                fix.
+ *                fix. Modular does not compare it.
+ *
+ * `M_driver_version`, `M_driver_create()`, `M_driver_destroy()`, and
+ * `M_driver_status_message()` keep the same layout and signatures in every
+ * version, so that Modular and a plugin can negotiate across any version
+ * difference.
  */
 typedef struct M_driver_version {
   uint32_t major;

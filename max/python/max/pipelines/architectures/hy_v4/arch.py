@@ -10,19 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Registers Hy4 with the ModuleV3 registry."""
+"""Registers Hy4 and Hy4 VL with the ModuleV3 registry."""
+
+from dataclasses import replace
+from pathlib import Path
 
 from max.graph.weights import WeightsFormat
-from max.pipelines.context import TextContext
+from max.pipelines.context import TextAndVisionContext, TextContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
-from max.pipelines.modeling.types import PipelineTask
+from max.pipelines.modeling.types import InputModality, PipelineTask
 
-from .decoder import HYV4Decoder
-from .model_config import HYV4Config
+from .batch_processor import HYV4VLBatchProcessor
+from .decoder import HYV4Decoder, HYV4VLDecoder
+from .layers.vision import HYV4VLVisionEncoder
+from .model_config import HYV4Config, HYV4VLConfig
 from .reasoning import HYV4ReasoningParser  # noqa: F401  registers "hy_v4"
 from .tokenizer import HYV4Tokenizer
 from .tool_parser import HYV4ToolParser  # noqa: F401  registers "hy_v4"
-from .weight_adapters import hy_v4_weight_rules
+from .vl_tokenizer import HYV4VLImageTokenizer
+from .weight_adapters import hy_v4_vl_weight_rules, hy_v4_weight_rules
 
 hy_v4_arch = SupportedArchitecture(
     name="HYV4ForCausalLM_ModuleV3",
@@ -36,16 +42,34 @@ hy_v4_arch = SupportedArchitecture(
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
     requires_max_batch_context_length=True,
-    # The DSA indexer picks its scorer and top-k arms from the host cache
-    # bound, so a capture keys and pins the bound's power-of-two bucket.
-    mla_decode_capture=True,
-    capture_cache_bound="bucketed",
-    # The indexer kernels size their own launches.
-    unread_dispatch_caches=("indexer",),
     checkpoint_drafts={"mtp": "MTPHYV4DraftModel"},
     weight_rules=hy_v4_weight_rules,
     use_weight_rules=True,
     config=HYV4Config,
     tool_parser="hy_v4",
     reasoning_parser="hy_v4",
+    format_spec=Path(__file__).parent / "formatspec.json",
+    mach_only=True,
+)
+
+# Hy4-FP8 ships a DFly2 drafter, not MTP layers; the text backbone reuses
+# Hy4's layers.
+hy_v4_vl_arch = replace(
+    hy_v4_arch,
+    name="HYV4VLForConditionalGeneration_ModuleV3",
+    example_repo_ids=["tencent/Hy4-FP8"],
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    modules={
+        GraphRole.DECODER: HYV4VLDecoder,
+        GraphRole.VISION: HYV4VLVisionEncoder,
+    },
+    batching=HYV4VLBatchProcessor,
+    tokenizer=HYV4VLImageTokenizer,
+    context_type=TextAndVisionContext,
+    config=HYV4VLConfig,
+    weight_rules=hy_v4_vl_weight_rules,
+    checkpoint_drafts={"dfly": "DFlyHYV4VLDraftModel"},
+    # replace() copies the pipeline model derived from HYV4Config; None
+    # re-derives it from HYV4VLConfig.
+    pipeline_model=None,
 )

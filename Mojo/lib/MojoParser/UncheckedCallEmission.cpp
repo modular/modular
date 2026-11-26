@@ -379,7 +379,10 @@ AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
     [[fallthrough]];
   case ArgConvention::ImmReg:
     return emitter.emitBValue(operand, EC_CallArgValue, expectedType);
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unknown argument convention");
   }
+
   llvm_unreachable("unknown argument convention");
 }
 
@@ -739,6 +742,12 @@ CallEmitter::emitArgValues(const CallOperands &operands) {
       assert(calleeSig.hasMemoryOnlyResult() ||
              (calleeSig.isThrows() &&
               pogAttr.getPassingKind() == PassingKind::Implicit));
+      // Overload resolution can already have made the result temporary. It is
+      // new, so it cannot alias an argument.
+      if (convention == ArgConvention::ByRefResult && operands.resultSlot) {
+        argumentValues.push_back({operands.resultSlot, callExpr});
+        continue;
+      }
       argumentValues.push_back({AnyValue(), callExpr});
       continue;
 
@@ -1061,23 +1070,11 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
 
     if (!refType.isDefaultAddrSpace()) {
       auto *expr = argValAndExpr.expr;
-      // Non-trivially copyable types cannot be copied from a non-default
-      // address space, because copyinit doesn't allow 'ref'.
-      if (!ASTType(refType.getElementType())
-               .isProvablyImplicitlyTriviallyCopyable(
-                   expr->getLoc(), emitter.shared, emitter.declScope)) {
-        emitter.emitError(
-            expr->getLoc(),
-            "non-implicitly trivially copyable value cannot be copied from a "
-            "non-default address space")
-            << expr->getRange();
+      RValue copy =
+          emitter.emitCopyFromNonDefaultAddressSpace({someMValue, expr}, ctx);
+      if (!copy)
         return {};
-      }
-
-      // If this is a trivially copyable value, then we can do a copy by doing a
-      // load.
-      auto srVal = emitter.emitSRValue({someMValue, expr}, ctx);
-      someMValue = emitter.emitMRValue({srVal, expr}, ctx);
+      someMValue = emitter.emitMRValue({copy, expr}, ctx);
       if (!someMValue)
         return {};
     }
@@ -1085,6 +1082,8 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
   };
 
   switch (convention) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::OwnedMem:
@@ -1219,8 +1218,10 @@ Value CallEmitter::emitPreemittedArgumentAsDynamicValue(
     } else {
       loadVal = emitter.emitRValue({lv, argValAndExpr.expr}, tmpValueDest);
     }
-    if (!loadVal)
+    if (!loadVal) {
+      tmpValueDest.resetForError(emitter);
       return {};
+    }
 
     // One interesting case to watch for are types like Dict.  These types have
     // both a getter and a setter, but the getter will return a mutable
@@ -1433,7 +1434,7 @@ struct ExclusivityChecker : public SharedStateUser {
         syntax(syntax), argumentValues(argumentValues),
         builder(emitter.builder), declScope(emitter.declScope) {
 
-    // Handle __unsafe_nested_origins_read_only.
+    // Handle either nested-origin read-only promise.
     originsAccessesAreReadOnly = getCalleeType().getIsNestedOriginsReadOnly();
 
     // Check capture origins first so we know if argument values may overlap.
@@ -1463,8 +1464,8 @@ private:
   std::optional<OpBuilder> builder;
   ASTDecl &declScope;
 
-  /// True if the __unsafe_nested_origins_read_only decorator is
-  /// on the callee. Nested type-embedded origins are treated as read-only.
+  /// True if the callee has either nested-origin read-only promise. Nested
+  /// type-embedded origins are treated as read-only.
   bool originsAccessesAreReadOnly = false;
   /// True if the call accesses AnyOriginAttr.
   bool hasAnyOriginAccess = false;
@@ -1658,17 +1659,13 @@ void ExclusivityChecker::checkOriginAccess(Value val,
       continue;
     }
 
-    // If this is derived from an interior origin, process the base as an
-    // immutable access.
+    // If this is derived from an interior origin, process the base next.
     if (auto interior = dyn_cast<InteriorOriginAttr>(origin)) {
       origin = interior.getBase();
-      // This is going to read the base.
-      isImmut = true;
       continue;
     }
 
-    // If this is derived from an subtree origin, process the base as an
-    // immutable access.
+    // If this is derived from a subtree origin, process the base.
     if (auto subtree = dyn_cast<OriginSubtreeAttr>(origin)) {
       origin = subtree.getBase();
       // Don't set isImmut; this could mutate the base if it's a mutable origin.
@@ -1736,9 +1733,9 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
           convention != ArgConvention::Mut)
         forceToImmutOrigin = true;
 
-      // Callees marked `@__unsafe_nested_origins_read_only` promise
-      // not to mutate origins of 'ref' arguments or nested arguments, but still
-      // affect 'mut' and result slots.
+      // Callees with a nested-origin read-only promise do not mutate origins
+      // of 'ref' arguments or nested arguments, but still affect 'mut' and
+      // result slots.
       if (originsAccessesAreReadOnly) {
         if (!isArgOrigin(origin) || convention == ArgConvention::Ref)
           forceToImmutOrigin = true;

@@ -1624,14 +1624,14 @@ def group_limited_router_kernel[
     var tid = thread_idx.x
     var warp_id = warp_id()
 
-    var shared_mem = unsafe_stack_allocation[
-        topk_group * n_experts_per_tok,
-        TopK_2[scores_type],
-        address_space=.SHARED,
-    ]()
-    var selected_group = unsafe_stack_allocation[
-        topk_group, DType.int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_mem_storage = Array[
+        TopK_2[scores_type], topk_group * n_experts_per_tok
+    ](uninitialized=True)
+    var shared_mem = shared_mem_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var selected_group_storage = Array[Int32, topk_group](uninitialized=True)
+    var selected_group = selected_group_storage.unsafe_ptr()
     var thread_group_id, tid_in_group = divmod(tid, group_size)
 
     var thread_expert_bias = expert_bias.load[width=1]((tid,)).cast[
@@ -1981,11 +1981,11 @@ def _block_top_k[
     var warp_id = warp_id()
     var lane_id = lane_id()
 
-    var shared_mem = unsafe_stack_allocation[
-        total_smem,
-        TopK_2[scores_type],
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var shared_mem_storage = Array[TopK_2[scores_type], total_smem](
+        uninitialized=True
+    )
+    var shared_mem = shared_mem_storage.unsafe_ptr()
 
     var shared_mem_phase1 = shared_mem
     var shared_mem_phase2 = shared_mem.unsafe_offset(phase1_candidates)
@@ -4111,17 +4111,15 @@ def eplb_remap_kernel[
 
     var tid = thread_idx.x
 
-    var smem_cnt = unsafe_stack_allocation[
-        num_log,
-        DType.int32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var smem_cnt_storage = Array[Int32, num_log](uninitialized=True)
+    var smem_cnt = smem_cnt_storage.unsafe_ptr()
 
-    var smem_phy = unsafe_stack_allocation[
-        num_log * max_replicas,
-        DType.int32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var smem_phy_storage = Array[Int32, num_log * max_replicas](
+        uninitialized=True
+    )
+    var smem_phy = smem_phy_storage.unsafe_ptr()
 
     # Release right after the wait; dependents wait for this kernel to finish
     # before they read what it writes (see `PDL`).

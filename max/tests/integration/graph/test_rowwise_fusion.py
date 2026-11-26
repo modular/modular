@@ -52,6 +52,28 @@ def _sum_of_squares_plus_bias(x: TensorValue, b: TensorValue) -> TensorValue:
     return ops.sum(x * x, axis=1) + b
 
 
+def _sum_last_of_3d(x: TensorValue) -> TensorValue:
+    return ops.sum(x, axis=2)
+
+
+def _sum_middle_of_5d(x: TensorValue) -> TensorValue:
+    return ops.sum(x, axis=2)
+
+
+def _softmax_last_of_3d(x: TensorValue) -> TensorValue:
+    e = ops.exp(x - ops.max(x, axis=2))
+    return e / ops.sum(e, axis=2)
+
+
+def _rms_norm_last_of_3d(x: TensorValue) -> TensorValue:
+    return x * ops.rsqrt(ops.mean(x * x, axis=2) + 1e-6)
+
+
+def _np_softmax(x: np.ndarray) -> np.ndarray:
+    e = np.exp(x - x.max(2, keepdims=True))
+    return e / e.sum(2, keepdims=True)
+
+
 _CASES: list[
     tuple[
         str,
@@ -68,6 +90,32 @@ _CASES: list[
         _sum_of_squares_plus_bias,
         [[4, 8], [4, 1]],
         lambda x, b: (x * x).sum(1, keepdims=True) + b,
+    ),
+    # Flattened to [12, 9] and [6, 5, 24] by map-flatten.
+    (
+        "sum_last_of_3d",
+        _sum_last_of_3d,
+        [[3, 4, 9]],
+        lambda x: x.sum(2, keepdims=True),
+    ),
+    (
+        "sum_middle_of_5d",
+        _sum_middle_of_5d,
+        [[2, 3, 5, 4, 6]],
+        lambda x: x.sum(2, keepdims=True),
+    ),
+    # A per-element phase after the folds, flattened to [12, 32].
+    (
+        "softmax_last_of_3d",
+        _softmax_last_of_3d,
+        [[3, 4, 32]],
+        _np_softmax,
+    ),
+    (
+        "rms_norm_last_of_3d",
+        _rms_norm_last_of_3d,
+        [[3, 4, 32]],
+        lambda x: x / np.sqrt((x * x).mean(2, keepdims=True) + 1e-6),
     ),
 ]
 

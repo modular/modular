@@ -1718,10 +1718,6 @@ struct _MirrorBound(RowBound):
     ):
         encoder.encode(self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        return "_MirrorBound"
-
 
 def _run_and_check_bounded[
     in_dtype: DType = .float32,
@@ -2525,7 +2521,7 @@ def _run_short_row_overrun[
             trespass,
             " of ",
             slack,
-            " guard slots clobbered, first at flat slot ",
+            " guard_value slots clobbered, first at flat slot ",
             first_bad,
             " (buffer holds B*K = ",
             B * K,
@@ -3557,21 +3553,21 @@ def test_topk_cluster_solo(ctx: DeviceContext) raises:
             )
         # `K = 0` selects nothing: the launcher returns before any launch, so
         # the output is never touched.
-        var guard = ctx.enqueue_create_buffer[.int32](4)
-        guard.enqueue_fill(Int32(-2))
+        var guard_value = ctx.enqueue_create_buffer[.int32](4)
+        guard_value.enqueue_fill(Int32(-2))
         var zs = ctx.enqueue_create_buffer[dt](4 * 16384)
         zs.enqueue_fill(Scalar[dt](1))
         topk_cluster_split(
             ctx,
             rebind[ImmPointer[Scalar[dt], ImmutAnyOrigin]](zs.unsafe_ptr()),
-            rebind[MutPointer[Int32, MutAnyOrigin]](guard.unsafe_ptr()),
+            rebind[MutPointer[Int32, MutAnyOrigin]](guard_value.unsafe_ptr()),
             16384,
             0,
             total_seq_len=4,
             row_bounds=None,
             cluster_size=4,
         )
-        with guard.map_to_host() as g:
+        with guard_value.map_to_host() as g:
             for i in range(4):
                 assert_true(
                     g[i] == -2, String("K=0 wrote slot ", i, " = ", g[i])

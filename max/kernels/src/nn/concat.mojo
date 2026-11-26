@@ -36,7 +36,6 @@ from layout import (
     TensorLayout,
     TensorEngine,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
 from std.memory import unsafe_memcpy
@@ -270,14 +269,10 @@ def memcpy_or_fuse[
             var load = input.load[width=simd_width, alignment=1](index)
 
             var out_index = _get_start_indices_of_nth_subvolume[0](
-                Int(index[0]) + typed_offset,
-                coord_to_index_list(out_shape),
+                Int(index[0]) + typed_offset, out_shape
             )
 
-            epilogue_fn[dtype, simd_width, alignment=1](
-                Coord(out_index),
-                load,
-            )
+            epilogue_fn[dtype, simd_width, alignment=1](out_index, load)
             return
 
         # We must run scalar to be conservative. This is because the fused

@@ -53,6 +53,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     mark_cancelled_if_past_deadline,
     progressbar_request_driver,
+    prompt_carries_image,
     tag_lora_route,
     tag_response_format_outcome,
 )
@@ -147,6 +148,9 @@ def build_single_turn_request_input(
             ignore_eos=request.ignore_eos and not disable_ignore_eos,
             response_format=request.response_format,
             tools=request.tools,
+            # Datasets such as batch-job attach images to the prompt messages
+            # and leave ``encoded_images`` empty.
+            prompt_carries_image=prompt_carries_image(prompt),
             lora_id=lora_id,
         )
     if benchmark_task in PIXEL_GENERATION_TASKS:

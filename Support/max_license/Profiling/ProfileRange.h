@@ -22,17 +22,22 @@
 //   - --config=tracy (TRACY_ENABLE): a Tracy zone, because Tracy and the MAX
 //     profiler plugin are never linked into the same binary.
 //
-// M_PROFILE_RANGE_TEXT attaches `text` only to Tracy zones at
-// TRACY_VERBOSITY >= 2. Ranges have no text field, so the other builds do not
-// evaluate `text`, and hot paths never build the string.
+// M_PROFILE_RANGE_TEXT and M_PROFILE_SPAN_TEXT attach `text` only to Tracy
+// zones at TRACY_VERBOSITY >= 2. Ranges have no text field, so the other
+// builds do not evaluate `text`, and hot paths never build the string.
 //
 // The MAX profiler attributes each GPU kernel and copy to the innermost range
-// open when it was submitted. Code below the op that submits device work
-// (driver bindings, device contexts) uses M_PROFILE_SPAN instead, which
-// records an M::Profiling::SpanScope: the span shows in the trace, but the
-// work stays attributed to the op. Wrappers around single vendor API calls use
-// M_PROFILE_TRACY_ZONE, which is a Tracy zone and nothing in other builds:
-// the vendor tracer already records each of those calls.
+// open when it was submitted, so the runtime code around and below the op
+// (executor, primitives, memory manager, driver bindings, device contexts) uses
+// M_PROFILE_SPAN instead, which records an M::Profiling::SpanScope: the span
+// shows in the trace, but the work stays attributed to the op. Recording a
+// range or a span costs tens of nanoseconds while a capture is live, and only
+// a range pushes a correlation id into the vendor tracer.
+//
+// M_PROFILE_TRACY_ZONE is a Tracy zone and nothing in other builds. Wrappers
+// around single vendor API calls use it, because the vendor tracer already
+// records each of those calls, and so do wrappers whose work is shorter than
+// recording a span (refcounting, accessors).
 //
 //===----------------------------------------------------------------------===//
 
@@ -56,6 +61,8 @@
 #define M_PROFILE_RANGE(name, color) ZoneScopedNC(name, color)
 #define M_PROFILE_SPAN(name, color) ZoneScopedNC(name, color)
 #define M_PROFILE_TRACY_ZONE(name, color) ZoneScopedNC(name, color)
+#define M_PROFILE_SPAN_TEXT(name, color, text)                                 \
+  M_PROFILE_RANGE_TEXT(name, color, text)
 
 #if TRACY_VERBOSITY >= 2
 #define M_PROFILE_RANGE_TEXT(name, color, text)                                \
@@ -80,6 +87,7 @@
 #define M_PROFILE_SPAN(name, color)                                            \
   ::M::Profiling::SpanScope M_PROFILE_RANGE_CONCAT(_mProfileSpan,              \
                                                    __LINE__)(name, color)
+#define M_PROFILE_SPAN_TEXT(name, color, text) M_PROFILE_SPAN(name, color)
 #define M_PROFILE_TRACY_ZONE(name, color)
 
 #else
@@ -87,6 +95,7 @@
 #define M_PROFILE_RANGE(name, color)
 #define M_PROFILE_RANGE_TEXT(name, color, text)
 #define M_PROFILE_SPAN(name, color)
+#define M_PROFILE_SPAN_TEXT(name, color, text)
 #define M_PROFILE_TRACY_ZONE(name, color)
 
 #endif

@@ -25,6 +25,6 @@ mogg.func @record_fused private dispatch(deferred) (%px: !mogg.pointer, %po: !mo
     mogg.tensor.store %cap[%i] = %val : !mogg.tensor, !mogg.dim, !mogg.simd<f32>
   }
   %x1 = mogg.trait.create(%x) contract = <{role = input, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
-  mogg.call.build_graph["testing_kernels.testing_kernels.FusedOutputBuildGraph"] inputs(%x1 : !mogg.tensor) outputs(%out : !mogg.tensor) builder(%builder) moOpName = "imposter_fused_output_build_graph" hasEpilogueFusion = true
+  mogg.call.build_graph @testing_kernels.testing_kernels.FusedOutputBuildGraph inputs(%x1 : !mogg.tensor) outputs(%out : !mogg.tensor) builder(%builder) hasEpilogueFusion = true
   mogg.output
 }

@@ -125,6 +125,103 @@ return from the current function?).
 This is used in Coroutines (presumably to store capture origins), but it looks
 like it may be useful for storing collections of references.
 
+### Nested-origin read-only decorators
+
+`@__nested_origins_read_only` and
+`@__unsafe_nested_origins_read_only` promise that a function does not mutate
+origins nested inside its arguments or captured values. For example, a
+`Pointer[Int, origin]` passed by value contains `origin`; the pointer value is
+the argument, while its pointee is reached through a nested origin.
+
+The promise is part of the function type. At a call, the compiler treats these
+nested origins as read-only for exclusivity checking and does not invalidate
+interior references merely because the call receives a value that contains
+their origin. The function can still read through such an origin:
+
+```mojo
+@__nested_origins_read_only
+def load[origin: Origin](ptr: Pointer[Int, origin]) -> Int:
+    return ptr[]
+```
+
+The checked decorator verifies the function body, including transitive effects
+from functions it calls. It rejects mutation through the pointer:
+
+```mojo
+@__nested_origins_read_only
+def invalid_store[origin: MutOrigin](ptr: Pointer[Int, origin]):
+    ptr[] = 0  # Error: mutable access to a nested origin.
+
+@__nested_origins_read_only
+def also_invalid[origin: MutOrigin](ptr: Pointer[Int, origin]):
+    mutate_through_pointer(ptr)  # Error if the callee may mutate `origin`.
+```
+
+The decorator does not make the entire function read-only. Direct mutation
+allowed by an argument convention remains allowed. This includes a `mut`
+argument, a `ref` whose origin is statically mutable, and result storage.
+Owned arguments and local variables can also be mutated because they are local
+to the call:
+
+```mojo
+@__nested_origins_read_only
+def reset(mut value: Int):
+    value = 0  # Allowed: this is direct access through `mut`.
+
+@__nested_origins_read_only
+def update_local(var value: Int) -> Int:
+    value += 1  # Allowed: `value` is owned by this call.
+    return value
+```
+
+Closure captures follow the same distinction. A capture declared `mut` grants
+direct mutable access to the captured value. Origins inside that value remain
+read-only:
+
+```mojo
+def mutate_capture():
+    var value = 0
+
+    @__nested_origins_read_only
+    def inner() {mut value}:
+        value = 1  # Allowed: direct access through a `mut` capture.
+
+    inner()
+
+
+def capture_pointer[origin: MutOrigin](ptr: Pointer[Int, origin]):
+    @__nested_origins_read_only
+    def inner() {ptr}:
+        ptr[] = 1  # Error: mutation through a nested captured origin.
+
+    inner()
+```
+
+`@__unsafe_nested_origins_read_only` makes the same call-site promise but does
+not verify the body. It exists for compiler builtins and implementation
+patterns that the current effect analysis cannot prove. Use the checked
+decorator whenever verification succeeds.
+
+> [!WARNING]
+> The unsafe decorator is a contract, not an escape from origin checking.
+> Breaking the promise can let the caller retain aliases or interior
+> references across a mutation that should have invalidated them.
+
+For example, the following function can compile, but its annotation is
+incorrect and can make callers unsound:
+
+```mojo
+@__unsafe_nested_origins_read_only
+def invalid_promise[origin: MutOrigin](ptr: Pointer[Int, origin]):
+    ptr[] = 0  # The compiler trusts the false read-only promise.
+```
+
+Neither decorator means that the function is pure, that it performs no writes,
+or that every value reachable by unsafe or untracked means becomes immutable.
+They refine only the modeled accesses to nested origins and parametric `ref`
+arguments. They do not narrow direct `mut` access, direct mutable captures,
+result slots, owned arguments, or local storage.
+
 ### The backing allocator(s) for `pop.aligned_alloc` and `pop.global_alloc`
 
 Time spent in GDB has led me to believe this is tcmalloc, but knowing for

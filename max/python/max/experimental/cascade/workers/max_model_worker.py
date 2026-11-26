@@ -72,7 +72,6 @@ def _sampling_params_input(req: TextGenOptions) -> SamplingParamsInput:
         frequency_penalty=req.frequency_penalty,
         presence_penalty=req.presence_penalty,
         repetition_penalty=req.repetition_penalty,
-        stop=req.stop,
         stop_token_ids=req.stop_token_ids,
     )
 

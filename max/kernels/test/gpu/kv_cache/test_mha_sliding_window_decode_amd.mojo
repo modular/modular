@@ -224,6 +224,7 @@ def run_case[
     var partitions = partitions_override()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def launch(
         ctx: DeviceContext[],
     ) raises {

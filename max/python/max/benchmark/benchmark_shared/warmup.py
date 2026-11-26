@@ -36,7 +36,9 @@ zero estimates the occupancy weight reduces exactly to ``D_k``.
 from __future__ import annotations
 
 import dataclasses
+import heapq
 import logging
+import math
 from collections.abc import Sequence
 from dataclasses import dataclass
 
@@ -94,6 +96,249 @@ def _prefix_delays_ms(s: ChatSession) -> np.ndarray:
     return _prefix_occupancy_ms(s)
 
 
+def _session_lifetime_ms(
+    s: ChatSession, est_ttft_ms: float = 0.0, est_tpot_ms: float = 0.0
+) -> float:
+    """Return how long a session stays open, first submit to last reply.
+
+    A turn costs its generation time plus the delay before the next turn; the
+    delay after the last turn never elapses inside the session. This is the
+    ``W`` of Little's law ``L = rate * W``.
+
+    Args:
+        s: The session.
+        est_ttft_ms: Estimated time to first token per turn, in milliseconds.
+        est_tpot_ms: Estimated time per output token, in milliseconds.
+
+    Returns:
+        The lifetime in milliseconds.
+    """
+    total = 0.0
+    turns = s.num_turns
+    for k in range(turns):
+        msg_idx = 2 * k + 1  # turn k's assistant message
+        if msg_idx >= len(s.messages):
+            break
+        assistant = s.messages[msg_idx]
+        total += est_ttft_ms + est_tpot_ms * assistant.num_tokens
+        if k + 1 < turns:
+            total += float(assistant.delay_until_next_message or 0.0)
+    return total
+
+
+@dataclass(frozen=True)
+class WarmupPlan:
+    """The warm-up population a run opens with, and the pool split it fits."""
+
+    # Sessions to start mid-conversation; 0 for none.
+    count: int
+    # Sessions the measured window keeps at the head of the task list.
+    main_pool_target: int
+    # Candidates per warm-up slot; 0 or 1 means a uniform pick.
+    oversample_factor: int
+
+
+def _cap_flag(max_concurrent_conversations: int | None) -> str:
+    """Name the flag that limited the sessions the run can hold in flight."""
+    if max_concurrent_conversations is not None:
+        return "--max-concurrent-conversations"
+    return "--max-concurrency"
+
+
+def _fit_warmup_pool(
+    count: int,
+    available: int,
+    main_pool_target: int,
+    oversample_factor: int,
+    rate_note: str,
+) -> WarmupPlan:
+    """Return the plan that fits ``count`` warm-up sessions into the dataset.
+
+    The pick gives up length bias before it gives up sessions: a smaller
+    candidate pool first, and then, when the dataset has nothing to spare, the
+    measured pool's tail. Those sessions start mid-conversation, so only their
+    later turns are measured.
+
+    Args:
+        count: The warm-up count to fit; this never raises it.
+        available: Sessions the dataset produced.
+        main_pool_target: Sessions the measured window asked for.
+        oversample_factor: Candidates per slot the run configured.
+        rate_note: The rate and lifetime, worded for the log line.
+
+    Returns:
+        The plan to hand to :func:`pick_warmup_population`.
+    """
+    per_slot = max(1, oversample_factor)
+    if count <= 0:
+        return WarmupPlan(0, main_pool_target, per_slot)
+
+    spare = max(0, available - main_pool_target)
+    if count * per_slot <= spare:
+        logger.info("Pre-warming %d sessions (%s).", count, rate_note)
+        return WarmupPlan(count, main_pool_target, per_slot)
+
+    affordable = spare // count
+    if affordable >= 1:
+        logger.info(
+            "Pre-warming %d sessions (%s) from %d candidates per slot rather"
+            " than %d: the dataset holds %d sessions beyond the %d it measures"
+            " for. Add --max-concurrency to inflate it, for a length-biased"
+            " pick.",
+            count,
+            rate_note,
+            affordable,
+            per_slot,
+            spare,
+            main_pool_target,
+        )
+        return WarmupPlan(count, main_pool_target, affordable)
+
+    count = min(count, available)
+    measured = max(0, min(main_pool_target, available) - count)
+    logger.info(
+        "Pre-warming %d sessions (%s) out of the measured pool: the dataset"
+        " holds no sessions beyond the %d it measures for, so %d of them start"
+        " mid-conversation with a uniform turn pick and the measured window"
+        " keeps %d. Their later turns are measured turns either way. Add"
+        " --max-concurrency to inflate the dataset and keep that pool whole.",
+        count,
+        rate_note,
+        main_pool_target,
+        count,
+        measured,
+    )
+    return WarmupPlan(count, measured, 1)
+
+
+def resolve_warmup_plan(
+    *,
+    warmup_count: int | None,
+    request_rate: float,
+    sessions: Sequence[ChatSession],
+    max_concurrent_conversations: int | None,
+    max_concurrency: int | None,
+    main_pool_target: int,
+    warmup_oversample_factor: int,
+    est_ttft_ms: float = 0.0,
+    est_tpot_ms: float = 0.0,
+) -> WarmupPlan:
+    """Return how many sessions to start mid-conversation, and the pool split.
+
+    A pre-warmed session is not an arrival: it is one of the sessions a running
+    server already holds open. A rate-paced run therefore opens with Little's
+    law, ``ceil(request_rate * mean session lifetime)``, which is the
+    population that rate holds. Sizing it from the conversation cap or the
+    turn-concurrency limit instead opens the run at that limit's load, and the
+    measured window drains from there instead of measuring the offered rate.
+
+    An unpaced run holds as many sessions as its concurrency allows, so its cap
+    is its population. A workload with no inter-turn delay and no runtime
+    estimate has a zero lifetime and pre-warms nothing.
+
+    Args:
+        warmup_count: The explicit ``--warmup-count``, if the user set one.
+        request_rate: Session arrivals per second; ``inf`` for unpaced load.
+        sessions: The workload's sessions, an unbiased sample of arrivals.
+        max_concurrent_conversations: The conversation cap, if any.
+        max_concurrency: The in-flight turn cap, if any.
+        main_pool_target: How many sessions the measured window asks for.
+        warmup_oversample_factor: Candidates the warm-up pick draws from, per
+            warm-up slot.
+        est_ttft_ms: Estimated time to first token per turn, in milliseconds.
+        est_tpot_ms: Estimated time per output token, in milliseconds.
+
+    Returns:
+        The plan to hand to :func:`pick_warmup_population`; ``count == 0``
+        pre-warms nothing.
+    """
+    session_cap = (
+        max_concurrent_conversations
+        if max_concurrent_conversations is not None
+        else max_concurrency
+    )
+    configured = WarmupPlan(0, main_pool_target, warmup_oversample_factor)
+
+    if warmup_count is not None:
+        if session_cap is not None and warmup_count > session_cap:
+            logger.warning(
+                "--warmup-count (%d) is more than the %d slots this run allows"
+                " (%s), so only that many are ever in flight. Raise it to"
+                " pre-warm the whole population.",
+                warmup_count,
+                session_cap,
+                _cap_flag(max_concurrent_conversations),
+            )
+        logger.info("Pre-warming %d sessions (--warmup-count).", warmup_count)
+        return dataclasses.replace(configured, count=warmup_count)
+
+    if request_rate == float("inf"):
+        return dataclasses.replace(configured, count=session_cap or 0)
+
+    lifetime_s = (
+        sum(_session_lifetime_ms(s, est_ttft_ms, est_tpot_ms) for s in sessions)
+        / (1000.0 * len(sessions))
+        if sessions
+        else 0.0
+    )
+    count = math.ceil(request_rate * lifetime_s)
+    if count == 0:
+        logger.info(
+            "Pre-warming no sessions: this workload has no inter-turn delay"
+            " and no --warmup-delay-estimated-* runtime estimate, so its"
+            " steady-state population is 0. Set --warmup-count to pre-warm"
+            " anyway."
+        )
+        return configured
+
+    rate_note = f"{request_rate:g} sessions/s x {lifetime_s:.1f} s mean session lifetime"
+    if session_cap is not None and count > session_cap:
+        logger.warning(
+            "%s is %d slots in flight, more than the %d this run allows (%s):"
+            " pre-warming %d. Raise it to serve the offered population.",
+            rate_note,
+            count,
+            session_cap,
+            _cap_flag(max_concurrent_conversations),
+            session_cap,
+        )
+        count = session_cap
+
+    return _fit_warmup_pool(
+        count,
+        len(sessions),
+        main_pool_target,
+        warmup_oversample_factor,
+        rate_note,
+    )
+
+
+def warn_if_warmup_count_ignored(
+    warmup_count: int | None, *, warmup_multiturn: bool, multi_turn: bool
+) -> None:
+    """Warn when ``--warmup-count`` is set but this run cannot honour it.
+
+    Args:
+        warmup_count: The explicit ``--warmup-count``, if the user set one.
+        warmup_multiturn: Whether the run pre-warms multi-turn sessions.
+        multi_turn: Whether the workload is multi-turn at all.
+    """
+    if warmup_count is None:
+        return
+    if not warmup_multiturn:
+        logger.warning(
+            "--warmup-count (%d) is ignored: --no-warmup-multiturn turns"
+            " pre-warming off.",
+            warmup_count,
+        )
+    elif not multi_turn:
+        logger.warning(
+            "--warmup-count (%d) is ignored: it applies to multi-turn"
+            " workloads only, and this run is single-turn.",
+            warmup_count,
+        )
+
+
 def _session_weights(
     sessions: Sequence[ChatSession],
     use_delay_bias: bool,
@@ -106,7 +351,7 @@ def _session_weights(
     occupancy ``R_k + D_k`` (clamped to ``>= 1`` so zero-occupancy sessions still
     draw); with zero runtime estimates this is just the sum of inter-turn delays.
     Otherwise it is the turn count (clamped to ``>= 1``). The same weighting
-    drives the PPS draw and the logged ``target_mean`` / ``realized_mean``
+    drives the pick and the logged ``target_mean`` / ``realized_mean``
     diagnostics so they stay directly comparable.
     """
     if use_delay_bias:
@@ -121,82 +366,39 @@ def _session_weights(
     return np.array([max(1, s.num_turns) for s in sessions], dtype=np.float64)
 
 
-def systematic_probability_proportional_to_size(
+def _nested_size_biased_pick(
     weights: np.ndarray,
     k: int,
-    rng: np.random.Generator,
-) -> np.ndarray:
-    """Pick ``k`` distinct indices into ``weights``.
+    streams: Sequence[np.random.Generator],
+) -> list[int]:
+    """Pick ``k`` distinct indices into ``weights``, size-biased and nested.
 
-    Each index is included with probability
-    ``min(1, k * weights[i] / sum(weights))``.
+    Slot ``j`` (from 1) takes the candidate with the smallest key
+    ``u_i / weights[i]`` among the first ``ceil(j * n / k)`` candidates that
+    no earlier slot took, where ``u_i`` is the first uniform draw of candidate
+    ``i``'s own stream. This is sequential Poisson sampling, so a candidate is
+    picked with probability close to ``min(1, k * weights[i] / sum(weights))``.
 
-    Algorithm (systematic PPS with iterated-cap handling):
-
-    1. Lay items end-to-end on a number line of length ``W = sum(weights)``,
-       item ``i`` occupying an interval of length ``weights[i]``.
-    2. Place ``k`` equally-spaced ticks at ``u, u + W/k, ..., u + (k-1)*W/k``
-       with a single shared offset ``u ~ Uniform(0, W/k)``. Each tick lands
-       in exactly one item's interval; that item is selected.
-    3. If any item has ``weights[i] >= W/k``, its interval is at least as wide
-       as the tick spacing and would be hit by 2+ ticks (a duplicate).
-       Pre-include such items, remove them from the pool, recompute the
-       threshold over the residual weight and residual tick count, and
-       repeat. Then run systematic PPS over the residual.
-
-    Why this removes the depletion bias of ``rng.choice(replace=False, p=...)``:
-    sequential PPSWOR (numpy's no-replacement weighted sampling) over-includes
-    small items because once a heavy item is drawn the remaining weights
-    renormalize. Systematic PPS, by contrast, gives ``pi_i = k*weights[i]/W``
-    *exactly* for any uncapped item: its interval is shorter than the tick
-    spacing, so at most one tick can land in it, with probability equal to
-    the interval length divided by the spacing. Plugging in:
-    ``E[mean] = (1/k) * sum_i weights[i] * pi_i = sum_i weights[i]^2 / W``
-    = the size-biased mean. No depletion, no convergence rate — equality
-    by construction.
-
-    Caps still leak some bias because pre-included items contribute
-    ``T_i * 1`` instead of the ideal ``T_i * (k * T_i / W)``. ``cap_count == 0``
-    is the condition for analytically zero bias; callers should warn the user
-    when caps occur.
+    With ``n = factor * k``, slot ``j`` sees the first ``factor * j``
+    candidates whatever ``k`` is. So the picks for a smaller ``k`` are the
+    first picks for any larger ``k``: a higher concurrency adds sessions to
+    the warmup and does not replace any.
     """
-    residual = np.asarray(weights, dtype=np.float64).copy()
-    n = len(residual)
+    n = len(weights)
+    keys = [
+        float(stream.uniform()) / float(w)
+        for stream, w in zip(streams, weights, strict=True)
+    ]
+    heap: list[tuple[float, int]] = []
+    pushed = 0
     chosen: list[int] = []
-
-    # Iterated cap: any item with weight >= W_remaining / k_remaining is
-    # wider than the tick spacing and would be hit by multiple ticks.
-    # Pre-include it (its ideal pi >= 1 anyway) and recompute the threshold
-    # over the residual.
-    while True:
-        remaining_k = k - len(chosen)
-        if remaining_k <= 0:
-            break
-        residual_sum = float(residual.sum())
-        if residual_sum <= 0.0:
-            break
-        cap = residual_sum / remaining_k
-        over = np.where(residual >= cap)[0]
-        if len(over) == 0:
-            break
-        chosen.extend(int(i) for i in over)
-        residual[over] = 0.0
-
-    # Run systematic PPS over the residual with the remaining ticks.
-    remaining_k = k - len(chosen)
-    if remaining_k > 0:
-        cum = np.cumsum(residual)
-        residual_sum = float(cum[-1])
-        if residual_sum > 0.0:
-            step = residual_sum / remaining_k
-            offset = float(rng.uniform(0.0, step))
-            ticks = offset + np.arange(remaining_k) * step
-            picks = np.searchsorted(cum, ticks)
-            # Guard the float-edge case where a tick equals the total sum.
-            picks = np.minimum(picks, n - 1)
-            chosen.extend(int(i) for i in picks)
-
-    return np.asarray(chosen[:k], dtype=np.int64)
+    for slot in range(1, k + 1):
+        visible = -(-slot * n // k)
+        while pushed < visible:
+            heapq.heappush(heap, (keys[pushed], pushed))
+            pushed += 1
+        chosen.append(heapq.heappop(heap)[1])
+    return chosen
 
 
 @dataclass
@@ -221,15 +423,14 @@ class _WarmupSamplingReport:
     # treating each pick as an independent length-biased draw:
     #   sb_var = sum(T**3)/sum(T) - target_mean**2
     #   stdev  = sqrt(sb_var / K)
-    # Systematic PPS picks are negatively correlated, so the true stdev is
-    # smaller (typically ~half). Used to report ``|realized - target|`` as
+    # Picks without replacement are negatively correlated, so the true
+    # stdev is smaller. Used to report ``|realized - target|`` as
     # a unitless ratio in stdev units; under this conservative bound,
     # anything below ~1 is unambiguously noise.
     realized_mean_stdev: float
     # Candidates whose ideal proportional inclusion probability would exceed 1
-    # (T_i > W/K). Systematic PPS pre-includes these with pi=1, which is the
-    # best a no-replacement scheme can do but introduces a small residual
-    # bias relative to ``target_mean``.
+    # (T_i > W/K). A no-replacement scheme picks these at most once, which
+    # introduces a small residual bias relative to ``target_mean``.
     cap_count: int
     # ``main_pool_target + warmup_oversample_factor * warmup_count``.
     ideal_total: int
@@ -258,12 +459,15 @@ def pick_warmup_population(
 ) -> tuple[list[ChatSession], _WarmupSamplingReport | None]:
     """Build the runner's task list with warmup picks at the head.
 
-    When ``warmup_multiturn=True`` and ``warmup_count > 0``, the
-    helper picks ``warmup_count`` warmup sessions from the leading
-    ``factor * warmup_count`` candidates (clamped to what's available)
-    and assigns each a ``prefix_turns`` value. The remaining trailing
-    slice is the main benchmark sessions (untouched, preserves natural
-    P(T)).
+    When ``warmup_multiturn=True`` and ``warmup_count > 0``, the leading
+    ``main_pool_target`` sessions are the main benchmark sessions (untouched,
+    preserves natural P(T)). The helper picks ``warmup_count`` warmup
+    sessions from the ``factor * warmup_count`` candidates after them
+    (clamped to what's available) and assigns each a ``prefix_turns`` value.
+
+    The main pool, the picks and their start turns depend only on the
+    sessions and ``rng``'s seed, not on ``warmup_count``: a larger warmup
+    count keeps every pick of a smaller one, with the same start turn.
 
     Delay biasing is opt-in via ``delay_biased`` and only takes effect
     when per-position occupancy is actually non-zero; otherwise selection
@@ -277,9 +481,8 @@ def pick_warmup_population(
     **Session selection**: with delay bias, sessions are selected with
     probability proportional to their total occupancy (sum of
     ``R_k + D_k``); without it, proportional to turn count.
-    For ``factor >= 2`` this is done via
-    :func:`systematic_probability_proportional_to_size`; for
-    ``factor < 2`` the picks are uniform.
+    For ``factor >= 2`` this is done via :func:`_nested_size_biased_pick`;
+    for ``factor < 2`` the picks are uniform.
 
     **Starting-turn selection**: with delay bias, ``prefix_turns`` is
     sampled proportional to the occupancy at each candidate position — turns
@@ -302,9 +505,11 @@ def pick_warmup_population(
 
     if n_total < warmup_count:
         raise ValueError(
-            f"Dataset produced {n_total} sessions but warmup needs at least"
-            f" {warmup_count}. Increase the dataset size or lower"
-            " --max-concurrency / --max-concurrent-conversations."
+            f"Dataset produced {n_total} sessions, but the warm-up needs at"
+            f" least {warmup_count}: it picks them from the"
+            f" {warmup_oversample_factor * warmup_count} candidates after the"
+            f" {main_pool_target} measured sessions. Raise --num-chat-sessions"
+            " or --max-concurrency, or lower --warmup-count."
         )
 
     # When the dataset under-produces, shrink both pools by the same
@@ -325,16 +530,22 @@ def pick_warmup_population(
         main_count = min(main_pool_target, n_total - candidate_pool)
 
     actual_warmup_count = min(warmup_count, candidate_pool)
-    candidates = chat_sessions[:candidate_pool]
-    main_sessions = list(
-        chat_sessions[candidate_pool : candidate_pool + main_count]
-    )
+    # The main pool comes first so that it does not shift when the
+    # candidate pool grows with the warmup count.
+    main_sessions = list(chat_sessions[:main_count])
+    candidates = chat_sessions[main_count : main_count + candidate_pool]
+    # Candidate i draws its pick key and start turn from its own stream, so
+    # both stay the same when the warmup count, and with it the pool, grows.
+    stream_seed = int(rng.integers(2**63))
+    streams = [
+        np.random.default_rng([stream_seed, i]) for i in range(len(candidates))
+    ]
 
     # Per-session occupancy arrays (one entry per valid prefix position) drive
     # the delay-biased starting-turn selection below. Occupancy is R_k + D_k;
     # with zero runtime estimates it is just the inter-turn delay D_k. Delay
     # bias is opt-in and only meaningful when some occupancy is present;
-    # otherwise weight by turn count. The same weights drive the PPS draw and
+    # otherwise weight by turn count. The same weights drive the pick and
     # the logged diagnostics.
     all_prefix_occupancy = [
         _prefix_occupancy_ms(s, est_ttft_ms, est_tpot_ms) for s in candidates
@@ -364,35 +575,35 @@ def pick_warmup_population(
     use_length_bias = (
         warmup_oversample_factor >= 2 and candidate_pool > actual_warmup_count
     )
-    if use_length_bias:
-        warmup_idx = systematic_probability_proportional_to_size(
-            candidate_weights, actual_warmup_count, rng
-        )
-    else:
-        warmup_idx = rng.choice(
-            candidate_pool, size=actual_warmup_count, replace=False
-        )
+    warmup_idx = _nested_size_biased_pick(
+        candidate_weights
+        if use_length_bias
+        else np.ones(len(candidates), dtype=np.float64),
+        actual_warmup_count,
+        streams,
+    )
 
     warmup_sessions: list[ChatSession] = []
     for i in warmup_idx:
-        s = candidates[int(i)]
+        s = candidates[i]
+        stream = streams[i]
         total_turns = max(1, s.num_turns)
         if total_turns <= 1:
             prefix_turns = 0
         elif use_delay_bias:
-            occupancy = all_prefix_occupancy[int(i)]
+            occupancy = all_prefix_occupancy[i]
             occupancy_total = float(occupancy.sum())
             if occupancy_total > 0.0:
                 # Sample prefix_turns ∝ (R_k + D_k): turns a session spends
                 # longer in (generating or sleeping) are proportionally more
                 # likely to be the one in progress.
                 probs = occupancy / occupancy_total
-                prefix_turns = int(rng.choice(total_turns - 1, p=probs)) + 1
+                prefix_turns = int(stream.choice(total_turns - 1, p=probs)) + 1
             else:
                 # This session has no occupancy; use uniform over {1, …, T-1}.
-                prefix_turns = int(rng.integers(1, total_turns))
+                prefix_turns = int(stream.integers(1, total_turns))
         else:
-            prefix_turns = int(rng.integers(0, total_turns))
+            prefix_turns = int(stream.integers(0, total_turns))
         warmup_sessions.append(
             dataclasses.replace(s, prefix_turns=prefix_turns)
         )
@@ -402,13 +613,13 @@ def pick_warmup_population(
     # over what was actually drawn, so the two are directly comparable.
     full_sum = float(full_weights.sum())
     target_mean = float((full_weights**2).sum() / full_sum)
-    realized_mean = float(candidate_weights[list(warmup_idx)].mean())
+    realized_mean = float(candidate_weights[warmup_idx].mean())
 
     # Per-draw stdev on ``realized_mean`` under a with-replacement bound.
     # Variance of a single size-biased pick is
     #   E[w^2 | size-bias] - sb_mean^2 = sum(w^3)/sum(w) - target_mean^2;
-    # K independent picks scale Var by 1/K. Systematic PPS picks are
-    # negatively correlated, so this overestimates by ~2x — that's in the
+    # K independent picks scale Var by 1/K. Picks without replacement are
+    # negatively correlated, so this overestimates — that's in the
     # safe direction: if ``|realized - target| / stdev`` is below ~1 even
     # under this conservative bound, it's unambiguously noise.
     sb_var = (full_weights**3).sum() / full_sum - target_mean**2

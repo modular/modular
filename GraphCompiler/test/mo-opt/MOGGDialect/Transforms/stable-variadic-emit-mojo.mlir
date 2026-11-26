@@ -34,6 +34,6 @@ mogg.func @consume_build_graph private dispatch(deferred) (%p0: !mogg.pointer, %
   %b1 = mogg.trait.create(%b) contract = <{role = input, fused = false, access = none, capabilities = none, stable = true}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
   %out1 = mogg.trait.create(%out) contract = <{role = output, fused = false, access = none, capabilities = none}>, device = "gpu" : (!mogg.tensor) -> !mogg.tensor
   %t = mogg.tuple.create(%a1, %b1) variadic_abi = <tensor_tuple> : !mogg.tensor, !mogg.tensor
-  mogg.call.build_graph["testing_kernels.testing_kernels.StableBuildGraph"] inputs(%t : !mogg.tuple) outputs(%out1 : !mogg.tensor) builder(%builder) moOpName = "imposter_stable_build_graph"
+  mogg.call.build_graph @testing_kernels.testing_kernels.StableBuildGraph inputs(%t : !mogg.tuple) outputs(%out1 : !mogg.tensor) builder(%builder)
   mogg.output
 }

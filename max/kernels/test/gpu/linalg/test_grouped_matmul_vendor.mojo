@@ -93,11 +93,11 @@ def test_vendor[
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
-        a_offsets_host_ptr.as_unsafe_any_origin(),
+        a_offsets_host_ptr,
         row_major(num_active_experts + 1),
     )
     var expert_ids_host = TileTensor(
-        expert_ids_host_ptr.as_unsafe_any_origin(),
+        expert_ids_host_ptr,
         row_major(num_active_experts),
     )
 
@@ -278,11 +278,11 @@ def test_negative_lora_id_vendor[
 
     # Create host TileTensors for offsets and expert_ids
     var a_offsets_host = TileTensor(
-        a_offsets_host_ptr.as_unsafe_any_origin(),
+        a_offsets_host_ptr,
         row_major(num_active_experts + 1),
     )
     var expert_ids_host = TileTensor(
-        expert_ids_host_ptr.as_unsafe_any_origin(),
+        expert_ids_host_ptr,
         row_major(num_active_experts),
     )
 
@@ -461,11 +461,11 @@ def test_vendor_expert_offset_past_int32(ctx: DeviceContext) raises:
         TileTensor[.bfloat16](a_dev, row_major(tokens, Idx[K])),
         TileTensor[.bfloat16](b_dev, row_major[num_experts, N, K]()),
         TileTensor(
-            offsets_host.unsafe_ptr().as_unsafe_any_origin(),
+            offsets_host.unsafe_ptr(),
             row_major(3),
         ),
         TileTensor(
-            ids_host.unsafe_ptr().as_unsafe_any_origin(),
+            ids_host.unsafe_ptr(),
             row_major(Idx[2]),
         ),
         tokens_per_expert,

@@ -417,6 +417,17 @@
             },
             {
               "type": "category",
+              "label": "ep",
+              "link": {
+                "type": "doc",
+                "id": "api/python/nn.ep"
+              },
+              "items": [
+                "__AUTOGEN:max.nn.ep__"
+              ]
+            },
+            {
+              "type": "category",
               "label": "kv_cache",
               "link": {
                 "type": "doc",
@@ -1193,6 +1204,7 @@
         "gpu/hardware-compatibility",
         "gpu/architecture",
         "gpu/fundamentals",
+        "gpu/memory",
         "gpu/block-and-warp",
         "gpu/debugging",
         {

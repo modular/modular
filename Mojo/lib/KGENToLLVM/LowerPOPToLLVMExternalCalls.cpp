@@ -154,6 +154,10 @@ public:
   LogicalResult matchAndRewrite(ExternalCallOp op,
                                 ExternalCallOpAdaptor adaptor,
                                 DirectRewriter &rewriter) const override {
+    if (op.getExpandPackOperandIdxAttr()) {
+      return op.emitOpError(
+          "pack operand must be expanded by lower-arg-conventions");
+    }
     Location loc = op.getLoc();
     const llvm::Triple &triple = getTypeConverter()->getTarget().getTriple();
     CABICallHelper cabi(getTypeConverter(), getContext(), op.getOperation());
@@ -209,9 +213,10 @@ public:
 
     mlir::ArrayAttr expectedArgAttrs =
         buildLLVMArgAttrs(argAttrs, sigClass, op, numFixedArgs, rewriter);
-    // resAttrs are dropped when sret is active (no LLVM-level return value).
+    // resAttrs are dropped when there is no LLVM-level return value: the
+    // result is sret or ignored.
     mlir::ArrayAttr expectedResAttrs;
-    if (!sigClass.ret.useSRet) {
+    if (!sigClass.ret.useSRet && !sigClass.ret.isIgnore()) {
       NamedAttrList attrs =
           resAttrs ? NamedAttrList(resAttrs) : NamedAttrList();
       // As for a struct argument, the padding of a struct result is not

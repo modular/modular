@@ -237,6 +237,7 @@ def dequant_mx(
     # `cols` is a multiple of 32 (checked above), so there is no scalar
     # tail; the `width` argument is the block size whenever the body runs.
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def dequant[width: Int, alignment: Int = 1](idx: Coord) {var}:
         _dequant_mx_block(
             out_tt,

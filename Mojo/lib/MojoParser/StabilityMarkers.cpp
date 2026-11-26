@@ -234,14 +234,16 @@ void M::KGEN::LIT::checkDeclUsageWarnings(ASTDecl &decl, SMLoc useLoc,
                                           ASTDecl &useSiteDecl,
                                           SharedState &shared,
                                           SourceRange range, CallSyntax syntax,
-                                          SMLoc fixitLoc) {
+                                          SMLoc fixitLoc,
+                                          bool checkDeprecation) {
   // Unavailability errors fire at every use site and are never suppressed.
   checkUnavailableAndError(decl, useLoc, shared, range, syntax, fixitLoc);
 
   // Deprecation warnings are never suppressed by @stable(recursive=True); the
   // only suppression mechanism is the --ignore-deprecated allowlist, applied
   // inside checkDeprecationAndWarn.
-  checkDeprecationAndWarn(decl, useLoc, shared, range, syntax, fixitLoc);
+  if (checkDeprecation)
+    checkDeprecationAndWarn(decl, useLoc, shared, range, syntax, fixitLoc);
 
   // Suppress stability warnings when the decl (or its owner type) was imported
   // with @stable(recursive=True) in the current scope.

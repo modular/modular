@@ -34,6 +34,10 @@ M_driver_status_t M_driver_memory::getProperty(llvm::StringRef name,
     *static_cast<uint64_t *>(value) = reinterpret_cast<uint64_t>(ptr);
     return M_DRIVER_STATUS_SUCCESS;
   }
+  if (name == M_DRIVER_MEMORY_PROPERTY_HOST_REACHABLE) {
+    *static_cast<bool *>(value) = true;
+    return M_DRIVER_STATUS_SUCCESS;
+  }
   return M_DRIVER_STATUS_UNKNOWN_PROPERTY_NAME;
 }
 

@@ -117,7 +117,6 @@ def test_nightly_8xb200_pinned() -> None:
     assert scheduled == {
         "MiniMaxAI/MiniMax-M3-MXFP8__mtp",
         "nvidia/GLM-5.2-NVFP4__mtp_tpep",
-        "nvidia/Kimi-K2.7-Code-NVFP4",
         "RadixArk/GLM-5.3-NVFP4__mtp_tpep",
     }
 
@@ -198,9 +197,25 @@ def test_mach_models_run_only_on_mach() -> None:
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4",
         "meta-models/Muse-Spark-Open-816B-A42B-NVFP4__dspark",
         "mistralai/Mistral-Large-4-1T-A52B-NVFP4",
-        "tencent/Hy4-preview-FP8",
-        "tencent/Hy4-preview-FP8__mtp",
+        "tencent/Hy4-FP8",
     }
     assert mach_only <= scheduled("mach-ci")
     for framework in ("max-ci", "vllm", "sglang"):
         assert not mach_only & scheduled(framework), framework
+
+
+def test_cascade_key_is_mach_only() -> None:
+    """The Cascade key has no MAX lane: only Mach CI schedules it."""
+
+    def scheduled(framework: str) -> set[str]:
+        result = CliRunner().invoke(
+            smoke_test_github_matrix.main,
+            ["--framework", framework, "--tier", "nightly", "--run-on-b200"],
+        )
+        assert result.exit_code == 0
+        return {job["model"] for job in json.loads(result.output)["include"]}
+
+    key = "google/gemma-4-31B-it__cascade"
+    assert key in scheduled("mach-ci")
+    for framework in ("max-ci", "vllm", "sglang"):
+        assert key not in scheduled(framework), framework

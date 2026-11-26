@@ -35,8 +35,8 @@ def widest_call[
         var widest_dev = ctx.enqueue_create_buffer[DType.int32](1)
         counts_dev.enqueue_fill(0)
         widest_dev.enqueue_fill(0)
-        var counts = counts_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
-        var widest = widest_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin]()
+        var counts = counts_dev.unsafe_ptr()
+        var widest = widest_dev.unsafe_ptr()
 
         def body[
             width: Int, alignment: Int = 1

@@ -1,0 +1,433 @@
+---
+title: GPU memory hierarchy
+sidebar_label: Memory hierarchy
+description: Where a kernel's data lives on a GPU, how to use each kind of memory from Mojo, and how data moves between the host and the device.
+---
+
+Data movement, not computation, limits the speed of many GPU kernels. To make a
+kernel fast, you decide where each piece of data lives while the kernel runs and
+how it gets there. This page explains the kinds of memory a GPU has, how Mojo
+names them in kernel code, and how data moves between the host and the device.
+For a high-level description of where memory sits in a GPU, see
+[Intro to GPUs](/gpu/architecture).
+
+## The memory hierarchy
+
+From a kernel's point of view, the fastest memory is the smallest and closest
+to the threads that use it:
+
+- **Registers** hold each thread's local variables. They're the fastest storage
+  on the GPU, and each thread can see only its own.
+- **Shared memory** is a small on-chip memory that all threads in a block can
+  read and write. You manage it yourself: your kernel decides what to put
+  there and when.
+- **Caches** (L1 and L2) sit between the threads and global memory. The
+  hardware manages them for you.
+- **Global memory** is the GPU's main memory. It's the largest and slowest
+  tier, it's visible to every thread on the device, and it's where the buffers
+  your host code allocates live.
+
+<figure>
+
+![Registers, shared memory, caches, and global memory stacked from fastest to largest, with host memory below, reached by copies](../images/gpu/memory-hierarchy.svg#light)
+![Registers, shared memory, caches, and global memory stacked from fastest to largest, with host memory below, reached by copies](../images/gpu/memory-hierarchy-dark.svg#dark)
+
+<figcaption><b>Figure 1.</b> The GPU memory hierarchy, and which threads can
+see each kind of memory. Host memory is reached only by copies.</figcaption>
+
+</figure>
+
+The usual pattern in a fast kernel follows from this hierarchy: load a block of
+data from global memory once, keep it in shared memory or registers while the
+threads reuse it, and write the results back to global memory once.
+
+## Shared memory limits
+
+Each GPU vendor uses its own name for shared memory: NVIDIA calls it shared
+memory, AMD calls it the local data share (LDS), and Apple calls it threadgroup
+memory. The amount available to a block varies by device. Table 1 lists it for
+several GPUs.
+
+| GPU                           | Default per block | Maximum per block | Source                                                                               |
+|-------------------------------|-------------------|-------------------|--------------------------------------------------------------------------------------|
+| NVIDIA B200                   | 48 KiB            | 227 KiB           | Measured                                                                             |
+| NVIDIA H100                   | 48 KiB            | 227 KiB           | [NVIDIA](https://docs.nvidia.com/cuda/hopper-tuning-guide/index.html)                |
+| NVIDIA GB10 (DGX Spark)       | 48 KiB            | 99 KiB            | Measured                                                                             |
+| AMD MI355X                    | 160 KiB           | 160 KiB           | Measured                                                                             |
+| AMD MI300X                    | 64 KiB            | 64 KiB            | [AMD](https://rocm.docs.amd.com/en/latest/reference/gpu-arch-specs.html)             |
+| AMD Radeon 8060S (Strix Halo) | 64 KiB            | 64 KiB            | Measured                                                                             |
+| Apple M5 Pro                  | 32 KiB            | 32 KiB            | Measured                                                                             |
+
+**Table 1.** Shared memory available to one block. "Measured" values come from
+the calls described below.
+
+To check the default for your own GPU, call
+`ctx.device().max_shared_memory_per_block()`, where `ctx` is a
+[`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/).
+[`device()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#device)
+returns the [`Device`](/api/mojo/max/gpu/host/device_context/Device/) the
+context runs on, and
+[`max_shared_memory_per_block()`](/api/mojo/max/gpu/host/device_context/Device/#max_shared_memory_per_block)
+returns the amount a block can use by default.
+
+On NVIDIA GPUs, a block can use more shared memory than the default, up to the
+device's maximum. To read the maximum, call
+[`get_attribute()`](/api/mojo/max/gpu/host/device_context/Device/#get_attribute)
+with
+[`DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN`](/api/mojo/max/gpu/host/device_attribute/DeviceAttribute/).
+AMD and Apple GPUs have no opt-in step, and they don't support this attribute:
+the default is also the maximum. A launch that asks for more than the maximum
+fails.
+
+To size a block's shared memory at launch, pass the size in bytes as the
+`shared_mem_bytes` argument of `enqueue_function()`. Mojo raises the limit for
+that kernel as needed. This code from
+[`dynamic_shared_memory.mojo`](https://github.com/modular/modular/blob/main/max/docs/site/code/gpu/memory/dynamic_shared_memory.mojo)
+asks for 128 KiB, or the device's maximum if that's smaller:
+
+```mojo title="dynamic_shared_memory.mojo"
+    # Only NVIDIA GPUs let a kernel opt in to more than the default. On AMD and
+    # Apple GPUs, the default is also the maximum.
+    var max_bytes = ctx.device().max_shared_memory_per_block()
+    if ctx.api() == "cuda":
+        max_bytes = ctx.device().get_attribute(
+            DeviceAttribute.MAX_SHARED_MEMORY_PER_BLOCK_OPTIN
+        )
+    var smem_bytes = min(TARGET_BYTES, max_bytes)
+    var count = smem_bytes // size_of[Scalar[dtype]]()
+```
+
+```mojo title="dynamic_shared_memory.mojo"
+    ctx.enqueue_function[reverse_in_shared_memory](
+        dev_in,
+        dev_out,
+        Int32(count),
+        grid_dim=1,
+        block_dim=BLOCK_SIZE,
+        shared_mem_bytes=smem_bytes,
+    )
+```
+
+In the kernel,
+[`external_memory()`](/api/mojo/max/gpu/memory/memory/external_memory/)
+returns a pointer to the block's shared memory, which holds as many bytes as
+the launch asked for. This kernel copies its input into shared memory and
+writes it back out in reverse order:
+
+```mojo title="dynamic_shared_memory.mojo"
+def reverse_in_shared_memory(
+    input: ImmPointer[Scalar[dtype], ImmUntrackedOrigin],
+    output: MutPointer[Scalar[dtype], MutUntrackedOrigin],
+    count: Int32,
+):
+    # The launch's `shared_mem_bytes` argument sets the size of this memory.
+    var smem = external_memory[
+        Scalar[dtype],
+        address_space=.SHARED,
+        alignment=align_of[Scalar[dtype]](),
+    ]()
+    var n = Int(count)
+    for i in range(thread_idx.x, n, block_dim.x):
+        smem[unsafe_offset=i] = input[unsafe_offset=i]
+    barrier()
+    for i in range(thread_idx.x, n, block_dim.x):
+        output[unsafe_offset=i] = smem[unsafe_offset=n - 1 - i]
+```
+
+More shared memory per block leaves room for fewer blocks to run at once on
+each multiprocessor, so use a larger allocation only when the data it lets a
+block reuse is worth that cost.
+
+## Memory spaces in Mojo
+
+Mojo identifies each kind of memory with an
+[`AddressSpace`](https://mojolang.org/docs/std/memory/address_space/AddressSpace/)
+value. It's a parameter of pointer and tensor types, so the compiler knows which
+kind of memory each one refers to, and you pass one as the `address_space`
+parameter when you allocate memory inside a kernel. Most of the time you don't
+write one, because the default is right for most data. The one you choose
+explicitly is `SHARED`, as in this allocation from
+[`shared_tile_transpose.mojo`](https://github.com/modular/modular/blob/main/max/docs/site/code/gpu/memory/shared_tile_transpose.mojo):
+
+```mojo title="shared_tile_transpose.mojo"
+    var tile = stack_allocation[dtype, address_space=.SHARED](
+        row_major[TILE, TILE + 1]()
+    )
+```
+
+The other values cover the rest of the hierarchy:
+
+- **`GENERIC`** is the default. A generic address doesn't say which kind of
+  memory it's in. On a CPU it's the only address space, and on a GPU the
+  hardware works out at run time whether a generic address is in global,
+  shared, or local memory. A [`TileTensor`](/tile-tensor/tensors) that you
+  build from a
+  [`DeviceBuffer`](/api/mojo/max/gpu/host/device_context/DeviceBuffer/) uses
+  `GENERIC` to point into global memory.
+- **`GLOBAL`** names global memory specifically. You rarely need it, because
+  generic addresses reach global memory too.
+- **`LOCAL`** places an allocation in memory private to each thread, as in
+  the next example.
+- **`CONSTANT`** names read-only constant memory.
+- **`SHARED_CLUSTER`** (NVIDIA) and **`BUFFER_RESOURCE`** (AMD) cover memory
+  that only one vendor's hardware has.
+
+A kernel's ordinary local variables live in registers, with no address space to
+choose. For a small array that each thread keeps to itself, such as a set of
+accumulators, allocate it in `LOCAL`. The `column_sums()` kernel in
+[`local_accumulators.mojo`](https://github.com/modular/modular/blob/main/max/docs/site/code/gpu/memory/local_accumulators.mojo)
+has each thread sum four columns of a matrix, with one accumulator per column:
+
+```mojo title="local_accumulators.mojo"
+    var acc = stack_allocation[dtype, address_space=.LOCAL](
+        row_major[COLS_PER_THREAD]()
+    )
+    comptime assert acc.flat_rank == 1
+    comptime for k in range(COLS_PER_THREAD):
+        acc[k] = 0
+    for row in range(ROWS):
+        comptime for k in range(COLS_PER_THREAD):
+            # Neighboring threads read neighboring columns, so loads coalesce.
+            acc[k] = acc[k] + input[row, k * THREADS + thread_idx.x]
+```
+
+Every index into `acc` is known at compile time, because the `comptime for`
+loops unroll, so the compiler keeps the array in registers. An index computed
+at run time forces the array into local memory instead, which on most GPUs is
+part of global memory and much slower.
+
+## Coalesce memory access
+
+The threads of a warp execute each load or store together. When they access
+neighboring addresses, the hardware combines their requests into a few wide
+memory transactions. When their addresses are far apart, each one needs its own
+transaction.
+
+<figure>
+
+![Eight threads reading neighboring addresses share one transaction; eight threads reading addresses far apart need eight](../images/gpu/memory-coalescing.svg#light)
+![Eight threads reading neighboring addresses share one transaction; eight threads reading addresses far apart need eight](../images/gpu/memory-coalescing-dark.svg#dark)
+
+<figcaption><b>Figure 2.</b> How a warp's addresses become memory
+transactions.</figcaption>
+
+</figure>
+
+A matrix transpose shows the difference. The `naive_transpose()` kernel reads
+a row of the input and writes it into a column of the output:
+
+```mojo title="shared_tile_transpose.mojo"
+def naive_transpose(
+    input: ImmTileTensor[dtype, type_of(matrix_layout), ImmUntrackedOrigin],
+    output: MutTileTensor[dtype, type_of(matrix_layout), MutUntrackedOrigin],
+):
+    comptime assert input.flat_rank == 2 and output.flat_rank == 2
+    var col = block_idx.x * TILE + thread_idx.x
+    var row = block_idx.y * TILE + thread_idx.y
+    comptime for i in range(0, TILE, ROWS_PER_PASS):
+        # The read walks a row, but the write walks a column: consecutive
+        # threads store SIZE elements apart.
+        output[col, row + i] = input[row + i, col]
+```
+
+The reads are contiguous, but neighboring threads write addresses `SIZE`
+elements apart, so each write needs its own transaction. The next section
+removes the scattered writes by staging the data in shared memory.
+
+## Stage a tile in shared memory
+
+The `staged_transpose()` kernel transposes the same matrix with contiguous
+reads and writes. Each block loads a 32×32 tile of the input into shared
+memory along rows, waits until the whole tile is there, and then writes it to
+the output, again along rows. The transpose itself happens in shared memory,
+where scattered access costs less.
+
+The kernel uses all three common kinds of memory. Its arguments point into
+global memory, `tile` is the shared-memory allocation shown earlier, and the
+index variables such as `tx` and `in_row` live in registers:
+
+```mojo title="shared_tile_transpose.mojo"
+def staged_transpose(
+    input: ImmTileTensor[dtype, type_of(matrix_layout), ImmUntrackedOrigin],
+    output: MutTileTensor[dtype, type_of(matrix_layout), MutUntrackedOrigin],
+):
+    comptime assert input.flat_rank == 2 and output.flat_rank == 2
+    # One extra element per row shifts each row of the tile by one bank, which
+    # spreads the column reads in the second loop across banks.
+    var tile = stack_allocation[dtype, address_space=.SHARED](
+        row_major[TILE, TILE + 1]()
+    )
+    comptime assert tile.flat_rank == 2
+
+    var tx = thread_idx.x
+    var ty = thread_idx.y
+    var in_col = block_idx.x * TILE + tx
+    var in_row = block_idx.y * TILE + ty
+    comptime for i in range(0, TILE, ROWS_PER_PASS):
+        tile[ty + i, tx] = input[in_row + i, in_col]
+
+    # Every thread reads values that other threads wrote.
+    barrier()
+
+    # Swap the block coordinates so the write also walks a row of `output`.
+    var out_col = block_idx.y * TILE + tx
+    var out_row = block_idx.x * TILE + ty
+    comptime for i in range(0, TILE, ROWS_PER_PASS):
+        output[out_row + i, out_col] = tile[tx, ty + i]
+```
+
+A shared-memory allocation belongs to the thread block, not to the code block
+that declares it. Each thread block gets its own copy when it starts running,
+every thread in the block sees that copy, and the hardware releases it when the
+block finishes. Its contents start out undefined, and nothing in it carries
+over to another block or another launch.
+
+In the second loop, each thread reads elements of `tile` that other threads
+wrote in the first loop. The threads in a block don't run in lockstep, so
+without a [`barrier()`](/api/mojo/max/gpu/sync/sync/barrier/) between the loops
+a thread could read an element before its writer has stored it. For the rules
+on when you need a barrier, see
+[Block and warp operations and synchronization](/gpu/block-and-warp).
+
+### Avoid bank conflicts
+
+Shared memory has its own access rule. It's divided into banks, and when threads
+access different addresses in the same bank at the same time, the hardware
+serializes their accesses. Reading a column of a 32-element-wide tile can put
+every element in the same bank, so the shared tile in `staged_transpose()` has
+one extra column: each row starts one bank later than the row above it, which
+spreads a column across banks. The number of banks varies by GPU, so treat the
+padding as a starting point and confirm it with a profiler on your target.
+
+<figure>
+
+![Reading a column of an 8 by 8 tile puts every element in one bank; padding each row by one element spreads the column across all banks](../images/gpu/shared-memory-banks.svg#light)
+![Reading a column of an 8 by 8 tile puts every element in one bank; padding each row by one element spreads the column across all banks](../images/gpu/shared-memory-banks-dark.svg#dark)
+
+<figcaption><b>Figure 3.</b> Reading one column of an 8×8 shared-memory tile,
+without and with padding. The figure uses 8 banks; real GPUs have
+more.</figcaption>
+
+</figure>
+
+## Store narrow, compute wide
+
+The data type you store determines how many bytes every copy and every global
+load moves. A common technique is to keep data in a narrow type such as
+`bfloat16` in memory and widen it to `float32` in registers for the arithmetic.
+The `scale()` kernel in
+[`host_device_movement.mojo`](https://github.com/modular/modular/blob/main/max/docs/site/code/gpu/memory/host_device_movement.mojo)
+does this:
+
+```mojo title="host_device_movement.mojo"
+def scale(
+    input: ImmTileTensor[storage_dtype, type_of(layout), ImmUntrackedOrigin],
+    output: MutTileTensor[storage_dtype, type_of(layout), MutUntrackedOrigin],
+):
+    comptime assert input.flat_rank == 1 and output.flat_rank == 1
+    var i = global_idx.x
+    if i < SIZE:
+        var x = input[i].cast[compute_dtype]()
+        output[i] = (x * SCALE).cast[storage_dtype]()
+```
+
+Each `bfloat16` value is half the size of a `float32`, so the copies and the
+global loads move half as many bytes, while the multiplication runs at
+`float32` precision.
+
+## Host and device memory
+
+The host is the CPU and the device is the GPU. On most systems each has its own
+memory, so you have to copy data to the device before a kernel can use it and
+copy it back before the host can read the results.
+
+In Mojo, a
+[`DeviceContext`](/api/mojo/max/gpu/host/device_context/DeviceContext/)
+allocates a `DeviceBuffer` in global memory and a `HostBuffer` in host memory,
+and copies data between them. Each `enqueue_` call adds an operation to the
+queue and returns immediately. Queued operations run in order, so a kernel
+launched after a copy sees the copied data, and the host must call
+[`synchronize()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#synchronize)
+before it reads anything the device wrote. This code copies an input to the
+device, runs `scale()` on it, and copies the result back:
+
+```mojo title="host_device_movement.mojo"
+    # Copies and the kernel run in order on the context's stream.
+    ctx.enqueue_copy(dev_in, host_in)
+    ctx.enqueue_function[scale](
+        TileTensor(dev_in, layout).as_imm(),
+        TileTensor(dev_out, layout),
+        grid_dim=ceildiv(SIZE, BLOCK_SIZE),
+        block_dim=BLOCK_SIZE,
+    )
+    ctx.enqueue_copy(host_out, dev_out)
+    # The host must wait before it reads what the device wrote.
+    ctx.synchronize()
+```
+
+For allocating buffers, copying between them, and when Mojo frees them, see
+[GPU programming fundamentals](/gpu/fundamentals).
+
+{/* TODO(DOCS-2984): move this section and Unified memory to the Buffers and
+data movement page, and link it from the hierarchy section and Next steps. */}
+
+## Unified memory
+
+On some systems the CPU and GPU share one physical pool of memory. Apple silicon
+works this way, and so do AMD Ryzen AI Max processors such as Strix Halo, whose
+CPU and GPU memory is
+[physically shared](https://rocm.docs.amd.com/en/latest/how-to/system-optimization/strixhalo.html),
+and NVIDIA DGX Spark. To check a device, call
+[`is_host_unified()`](/api/mojo/max/gpu/host/device_context/Device/#is_host_unified)
+on its `Device`, as in `ctx.device().is_host_unified()`. It returns `True` on
+these systems, and `False` on GPUs with their own memory, such as the NVIDIA
+B200 and AMD MI355X. The calls on this page work the same on every system, so
+the same program runs whether or not the memory is unified.
+
+Unified memory doesn't mean the GPU can use all of the host's memory.
+[`get_memory_info()`](/api/mojo/max/gpu/host/device_context/DeviceContext/#get_memory_info)
+reports the memory the GPU can map, which can be less than the machine has. On
+Strix Halo, for example, Linux lets the GPU map about half of system RAM by
+default.
+
+:::note Subject to change
+
+`DeviceBuffer.unsafe_host_ptr()` and `DeviceContext.wrap_host_memory()` give
+the host direct access to memory the device also uses, without a copy. Their
+behavior is still changing, so don't rely on them yet.
+
+Unified memory doesn't mean the host can read a `DeviceBuffer`.
+`unsafe_host_ptr()` returns a pointer only when the buffer's memory is
+reachable from the host. Today that's true on Apple silicon, but on NVIDIA and
+AMD GPUs device buffers aren't host-reachable, even on systems where
+`is_host_unified()` returns `True`. To move data between the host and the
+device on every system, use a `HostBuffer` and `enqueue_copy()`, as shown in
+[Host and device memory](#host-and-device-memory).
+
+:::
+
+Separately, some Linux systems with NVIDIA GPUs support
+[heterogeneous memory management](https://docs.nvidia.com/cuda/cuda-programming-guide/04-special-topics/unified-memory.html)
+(HMM), which lets a kernel read ordinary host memory. HMM needs a Turing or
+newer GPU, NVIDIA's open kernel modules with driver 535 or later, and a recent
+Linux kernel. To see whether a system has it, run `nvidia-smi -q` and look for
+`Addressing Mode : HMM`. On those systems a kernel that mistakenly reads a host
+address can appear to work, and then fail on a GPU without HMM. Make sure your
+tests check results, and test on more than one system when you can.
+
+## Hardware-specific memory
+
+Some memory exists only on certain GPUs, such as tensor memory on NVIDIA
+Blackwell GPUs. The architecture guides cover these features.
+
+{/* TODO(DOCS-2912): link the NVIDIA Blackwell guide's tensor memory section
+once it exists. */}
+
+## Next steps
+
+- [GPU programming fundamentals](/gpu/fundamentals) covers device buffers,
+  host buffers, and copies in more detail.
+- [Block and warp operations and synchronization](/gpu/block-and-warp)
+  explains synchronization and shared memory in a tiled matrix multiplication.
+- [Using TileTensor](/tile-tensor/tensors) shows how to build and tile the
+  tensors used on this page.

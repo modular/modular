@@ -20,7 +20,6 @@ iteration of its sweep.
 
 from __future__ import annotations
 
-import hashlib
 import logging
 
 import numpy as np
@@ -138,24 +137,6 @@ def resolve_seed(args: ServingBenchmarkConfig) -> None:
         args.seed = draw_seed()
     else:
         logger.info("Using seed=%d", args.seed)
-
-
-def seed_for_concurrency(seed: int, max_concurrency: int | None) -> int:
-    """Derives a per-concurrency-level seed from the base seed.
-
-    Each concurrency level gets its own request sample instead of replaying
-    the same requests as every other level, while staying reproducible from
-    the single base seed.
-
-    Args:
-        seed: The run's base seed.
-        max_concurrency: The concurrency level to seed.
-
-    Returns:
-        The level's seed.
-    """
-    digest = hashlib.sha256(f"{seed}:{max_concurrency}".encode()).digest()
-    return int.from_bytes(digest[:4], "big")
 
 
 def report_and_validate(

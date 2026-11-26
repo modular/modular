@@ -608,8 +608,8 @@ def _is_honest_rejection(status: int) -> bool:
 class ToolSchemaValidation(BaseScenario):
     name = "tool_schema_validation"
     description = (
-        "K2VV-style tool call schema validation: checks that tool call "
-        "arguments conform to declared JSON schemas"
+        "Tool call schema validation: checks that tool call arguments "
+        "conform to declared JSON schemas"
     )
     tags = ["tools", "schema", "compliance", "functional"]
 

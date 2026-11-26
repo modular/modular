@@ -24,7 +24,9 @@
 //
 //   * SinkRequest::Attach (enable, haveProfiler, canRecord) performs a full
 //     load attempt: MODULAR_PROFILER_PLUGIN (explicit path) → next to the
-//     host DSO (dladdr) → default dlopen search.
+//     host DSO (dladdr) → the plugin's bazel output path for the host's
+//     build configuration → the plugin in the host's runfiles tree →
+//     default dlopen search.
 //   * SinkRequest::DeviceInit (activatePendingTrace) performs a full
 //     attempt only when something asked for a profiler without calling
 //     enable() first: daemon-style setups (KINETO_USE_DAEMON or
@@ -54,16 +56,21 @@
 //===----------------------------------------------------------------------===//
 
 #include <atomic>
+#include <climits>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <mutex>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "Support/Configuration.h"
 #include "Support/Profiling/PluginABI.h"
 #include "Support/Profiling/Ranges.h"
+#include "Support/Profiling/TraceActivity.h"
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/StringRef.h"
 
 #ifndef _WIN32
@@ -119,20 +126,83 @@ PluginLoader &getLoader() {
   return loader;
 }
 
-// Directory (with trailing '/') of the DSO or executable this glue copy is
-// linked into — the first place a plugin dropped next to a deployment is
-// looked for. Empty when unresolvable.
-std::string selfDirectory() {
+// Path of the DSO or executable that contains `addr`, as the dynamic loader
+// opened it. Empty when unresolvable.
+std::string objectPath(const void *addr) {
   Dl_info info;
-  if (::dladdr(reinterpret_cast<void *>(&getLoader), &info) == 0 ||
-      info.dli_fname == nullptr)
+  if (::dladdr(addr, &info) == 0 || info.dli_fname == nullptr)
     return {};
-  std::string path = info.dli_fname;
-  const auto slash = path.rfind('/');
+  return info.dli_fname;
+}
+
+// The plugin next to the DSO or executable this glue copy is linked into —
+// the first place a plugin dropped next to a deployment is looked for. Empty
+// when unresolvable.
+std::string siblingCandidate(const std::string &self) {
+  const auto slash = self.rfind('/');
   if (slash == std::string::npos)
     return {};
-  path.resize(slash + 1);
-  return path;
+  return self.substr(0, slash + 1) + M_PROFILER_PLUGIN_SONAME;
+}
+
+// Where bazel builds the plugin for the configuration this glue copy was
+// built in: <output root>/bazel-out/<config>/bin/max/internal/profiler/.
+// Runfiles and _solib entries are symlinks into that tree, so the real path
+// of this copy's DSO names the output root even when the plugin is not a
+// dependency of the running binary. Lets a separately built plugin load with
+// no MODULAR_PROFILER_PLUGIN. Empty outside a bazel output tree.
+std::string bazelOutputCandidate(const std::string &self) {
+  if (self.empty())
+    return {};
+  char resolved[PATH_MAX];
+  if (::realpath(self.c_str(), resolved) == nullptr)
+    return {};
+  const llvm::StringRef path(resolved);
+  constexpr llvm::StringLiteral kOutputDir = "/bazel-out/";
+  const size_t outputDir = path.rfind(kOutputDir);
+  if (outputDir == llvm::StringRef::npos)
+    return {};
+  const size_t configEnd = path.find('/', outputDir + kOutputDir.size());
+  constexpr llvm::StringLiteral kBinDir = "/bin/";
+  if (configEnd == llvm::StringRef::npos ||
+      !path.substr(configEnd).starts_with(kBinDir))
+    return {};
+  return (path.take_front(configEnd + kBinDir.size()) +
+          "max/internal/profiler/" + M_PROFILER_PLUGIN_SONAME)
+      .str();
+}
+
+// The plugin in the runfiles tree this glue copy was loaded from, for a
+// bazel binary or test that carries the plugin as a data dependency. Remote
+// and sandboxed test executors stage only the runfiles, not the bazel output
+// tree, so this is the only candidate they can resolve. Empty when this copy
+// was not loaded through a runfiles tree.
+std::string runfilesCandidate(const std::string &self) {
+  constexpr llvm::StringLiteral kRunfilesDir = ".runfiles/";
+  const llvm::StringRef path(self);
+  const size_t runfilesDir = path.rfind(kRunfilesDir);
+  if (runfilesDir == llvm::StringRef::npos)
+    return {};
+  return (path.take_front(runfilesDir + kRunfilesDir.size()) +
+          "_main/max/internal/profiler/" + M_PROFILER_PLUGIN_SONAME)
+      .str();
+}
+
+// The probe locations derived from where this glue copy lives. They cannot
+// change during the process, and a missed adopt-only probe repeats on every
+// Observe call, so they are resolved once, in probe order.
+const std::vector<std::string> &getCandidates() {
+  static const std::vector<std::string> candidates = [] {
+    const std::string self =
+        objectPath(reinterpret_cast<const void *>(&getLoader));
+    std::vector<std::string> paths;
+    for (std::string path : {siblingCandidate(self), bazelOutputCandidate(self),
+                             runfilesCandidate(self)})
+      if (!path.empty())
+        paths.push_back(std::move(path));
+    return paths;
+  }();
+  return candidates;
 }
 
 void warnOnce(PluginLoader &loader, const char *fmt, const char *a,
@@ -173,15 +243,14 @@ const M_ProfilerPluginAPI *attemptLoad(bool allowFullLoad) {
   const char *loadedFrom = nullptr;
   if (envPath != nullptr)
     handle = probePlugin(envPath, kFlags | RTLD_NOLOAD, loadedFrom);
-  std::string sibling = selfDirectory();
-  if (!sibling.empty())
-    sibling += M_PROFILER_PLUGIN_SONAME;
-  if (handle == nullptr && !sibling.empty())
-    handle = probePlugin(sibling.c_str(), kFlags | RTLD_NOLOAD, loadedFrom);
+  for (const std::string &candidate : getCandidates())
+    if (handle == nullptr)
+      handle = probePlugin(candidate.c_str(), kFlags | RTLD_NOLOAD, loadedFrom);
   if (handle == nullptr)
     handle =
         probePlugin(M_PROFILER_PLUGIN_SONAME, kFlags | RTLD_NOLOAD, loadedFrom);
 
+  const bool adopted = handle != nullptr;
   if (handle == nullptr && allowFullLoad) {
     if (envPath != nullptr) {
       // An explicit path is an explicit request: failing to honor it gets a
@@ -194,8 +263,9 @@ const M_ProfilerPluginAPI *attemptLoad(bool allowFullLoad) {
                  "unavailable in this process\n",
                  envPath, ::dlerror());
     } else {
-      if (!sibling.empty())
-        handle = probePlugin(sibling.c_str(), kFlags, loadedFrom);
+      for (const std::string &candidate : getCandidates())
+        if (handle == nullptr)
+          handle = probePlugin(candidate.c_str(), kFlags, loadedFrom);
       if (handle == nullptr)
         handle = probePlugin(M_PROFILER_PLUGIN_SONAME, kFlags, loadedFrom);
     }
@@ -232,6 +302,17 @@ const M_ProfilerPluginAPI *attemptLoad(bool allowFullLoad) {
   static const M_ProfilerShimGates kGates = {&getEnabledGate(),
                                              &getRecordingGate()};
   api->registerShim(&kGates);
+  // A full load happens only when profiling was requested, and once per
+  // process: the other glue copies adopt it silently. The path comes from
+  // the mapped file, so a default-search load names the file it found, and
+  // a stale plugin from an earlier build is visible.
+  if (!adopted) {
+    const std::string mapped =
+        objectPath(reinterpret_cast<const void *>(getApi));
+    std::fprintf(stderr,
+                 "info: M::Profiling loaded the profiler plugin from '%s'\n",
+                 mapped.empty() ? loadedFrom : mapped.c_str());
+  }
   loader.api = api;
   loader.state = PluginLoader::State::Loaded;
   getCachedApi().store(api, std::memory_order_release);
@@ -322,6 +403,37 @@ bool sinkRangeBeginSpanOnly(StringRef name, uint32_t color) {
   return table->rangeBeginSpanOnly(name.data(), name.size(), color);
 }
 
+// Converts the plugin's C records to the caller's, which borrow the same
+// strings, for the length of the visitor call.
+void forwardTrace(void *context, const M_ProfilerActivity *activities,
+                  size_t activityCount, const M_ProfilerMetadataField *metadata,
+                  size_t metadataCount) {
+  std::vector<TraceActivity> converted;
+  converted.reserve(activityCount);
+  for (size_t i = 0; i < activityCount; ++i) {
+    const M_ProfilerActivity &a = activities[i];
+    converted.push_back({StringRef(a.name, a.nameLen),
+                         StringRef(a.category, a.categoryLen), a.startNs,
+                         a.durationNs, a.device, a.resource, a.threadId,
+                         a.correlationId, a.externalId});
+  }
+  std::vector<TraceMetadataField> fields;
+  fields.reserve(metadataCount);
+  for (size_t i = 0; i < metadataCount; ++i)
+    fields.push_back(
+        {StringRef(metadata[i].key, metadata[i].keyLen),
+         StringRef(metadata[i].jsonValue, metadata[i].jsonValueLen)});
+  (*static_cast<TraceVisitor *>(context))(converted, fields);
+}
+
+bool sinkDisableCollecting(TraceVisitor visitor, bool save) {
+  const M_ProfilerPluginAPI *table = api();
+  if (!M_PROFILER_API_HAS(table, disableCollecting))
+    return false;
+  table->disableCollecting(forwardTrace, &visitor, save);
+  return true;
+}
+
 constexpr RangeSink kSink = {
     .enable = sinkEnable,
     .disable = sinkDisable,
@@ -338,6 +450,7 @@ constexpr RangeSink kSink = {
     .requestBurst = sinkRequestBurst,
     .setTraceMetadata = sinkSetTraceMetadata,
     .rangeBeginSpanOnly = sinkRangeBeginSpanOnly,
+    .disableCollecting = sinkDisableCollecting,
 };
 
 } // namespace

@@ -55,3 +55,17 @@ def test_argminmax__invalid_axis(
     with graph_builder(input_types=[input_type]) as graph:
         with pytest.raises(ValueError):
             op(graph.inputs[0].tensor, axis=axis)
+
+
+@given(input_type=input_types, axis=axes(input_types))
+def test_argmax__out_dtype(
+    graph_builder: GraphBuilder, input_type: TensorType, axis: int
+) -> None:
+    with graph_builder(input_types=[input_type]) as graph:
+        out = ops.argmax(
+            graph.inputs[0].tensor, axis=axis, out_dtype=DType.int32
+        )
+        assert out.dtype == DType.int32
+        expected_shape = list(input_type.shape)
+        expected_shape[axis] = Dim(1)
+        assert out.shape == expected_shape

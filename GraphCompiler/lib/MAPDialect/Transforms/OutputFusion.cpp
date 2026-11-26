@@ -96,6 +96,134 @@ ReshapeIndexOp reshapeOnFusedInput(Block &srcBody, BlockArgument fusionArg) {
   return found;
 }
 
+// The layout of `tensor`, a block argument of `src`, in `src`'s loop shape
+// once read through `load`'s index ops; nullopt when a hop or the tensor
+// outside `src` has no known layout. Outside a kernel, a tensor without a
+// layout attribute is row-major unless it is a view.
+std::optional<Layout> loadLayout(IterElementwiseOp src, LoadOp load) {
+  Block &body = src.getBody().front();
+  Value loopIdx = body.getArguments().back();
+  auto arg = dyn_cast<BlockArgument>(load.getTensor());
+  if (!arg || arg.getOwner() != &body ||
+      arg.getArgNumber() >= src.getInputs().size())
+    return std::nullopt;
+  Value outer = src.getInputs()[arg.getArgNumber()];
+
+  SmallVector<FlattenableOpInterface> hops;
+  for (Value idx = load.getIndex(); idx != loopIdx;) {
+    auto transform = idx.getDefiningOp<IndexTransformOpInterface>();
+    auto flattenable = idx.getDefiningOp<FlattenableOpInterface>();
+    if (!transform || !flattenable)
+      return std::nullopt;
+    hops.push_back(flattenable);
+    idx = transform.getIndex();
+  }
+
+  std::optional<Layout> layout;
+  auto tensorTy = dyn_cast<MO::TensorType>(outer.getType());
+  if (tensorTy && tensorTy.getLayoutAttr())
+    return std::nullopt;
+  if (outer.getDefiningOp<FlattenableOpInterface>())
+    layout = layoutOf(outer);
+  else
+    layout = Layout::rowMajor(
+        MO::castFromTensorLike(outer.getType()).getShape().getRank());
+  // `hops` runs from the tensor towards the loop index: layouts propagate in
+  // that order.
+  for (FlattenableOpInterface hop : hops)
+    layout = hop.getOutputLayout(layout);
+  return layout;
+}
+
+// The outermost dim of `loopShape`, the shape the epilogue reads its tensors
+// in, whose rows a kernel vector can run across; none when no vector can.
+// `findFusibleEdge` asks it when a reshape sits between the kernel and `src`.
+// A vector never leaves a row of the kernel's output `kernelShape`
+// (each kernel's epilogue loop vectorizes one row at a time, e.g. the CPU
+// matmul's `vectorize` over N), so the rows below dim d are safe when they
+// are a whole number of kernel rows:
+//
+//   [3, 8] -> [4, 6]      rows of 6 over rows of 8              -> dim 0
+//   [4, 8] -> [2, 16]     a row of 16 is 2 rows of 8             -> none
+//   [4, 8] -> [2, 2, 8]   rows of 8 below dim 1, of 16 below 0   -> none
+//
+// A symbolic innermost kernel extent `k` divides the block only when it is
+// one of its factors; other symbolic factors count as 1.
+std::optional<size_t> firstCrossedDim(MOSH::ShapeAttr loopShape,
+                                      MOSH::ShapeAttr kernelShape) {
+  ArrayRef<TypedAttr> loopDims = loopShape.getValues();
+  ArrayRef<TypedAttr> kernelDims = kernelShape.getValues();
+  // A scalar kernel output has no rows.
+  if (kernelDims.empty())
+    return std::nullopt;
+  SmallVector<TypedAttr> kernelBlocks;
+  for (size_t n = 1; n <= kernelDims.size(); ++n)
+    kernelBlocks.push_back(
+        MOSH::ShapeAttr::get(kernelDims.take_back(n), kernelShape.getType())
+            .getSymbolicNumElements());
+  TypedAttr k = kernelDims.back();
+  std::optional<int64_t> staticK = MOSH::ShapeAttr::getStaticDim(k);
+  for (size_t d = 0; d + 1 < loopDims.size(); ++d) {
+    std::optional<int64_t> extent = MOSH::ShapeAttr::getStaticDim(loopDims[d]);
+    if (extent && *extent == 1)
+      continue;
+    ArrayRef<TypedAttr> below = loopDims.drop_front(d + 1);
+    if (llvm::is_contained(kernelBlocks,
+                           MOSH::ShapeAttr::get(below, loopShape.getType())
+                               .getSymbolicNumElements()))
+      continue;
+    if (!staticK) {
+      if (!llvm::is_contained(below, k))
+        return d;
+      continue;
+    }
+    int64_t block = 1;
+    for (TypedAttr dim : below)
+      if (std::optional<int64_t> v = MOSH::ShapeAttr::getStaticDim(dim))
+        block *= *v;
+    if (block % *staticK != 0)
+      return d;
+  }
+  return std::nullopt;
+}
+
+// Whether every load of `src` other than the fused value's reads dims
+// [d, rank) of `loopShape` as one row, so a vector crossing a row there still
+// reads the right elements: each lane steps by the innermost stride, which is
+// right only when the tensor lays those rows out one after the other, size-1
+// dims included. With d = 0 and `loopShape` [4, 6]:
+//
+//   %y[%i]              dense [4, 6]: row 2 follows row 1       -> yes
+//   %bias[bcast(%i)]    [6] broadcast: every row is the same    -> no
+//   %x[transpose(%i)]   [6, 4] transposed: a row is a column    -> no
+bool loadsReadAsOneRow(IterElementwiseOp src, MOSH::ShapeAttr loopShape,
+                       size_t d, BlockArgument fusionArg) {
+  WalkResult result = src.getBody().walk([&](LoadOp load) {
+    if (load.getTensor() == fusionArg)
+      return WalkResult::advance();
+    std::optional<Layout> layout = loadLayout(src, load);
+    if (!layout)
+      return WalkResult::interrupt();
+    for (size_t i = d; i + 1 < loopShape.getRank(); ++i)
+      if (!layout->merges(i))
+        return WalkResult::interrupt();
+    return WalkResult::advance();
+  });
+  return !result.wasInterrupted();
+}
+
+// Whether `src` calls a kernel that reads the element's index. Moved onto the
+// epilogue behind a reshape, such a call would get the kernel's vectors with
+// the first lane's reshaped index, and derive the other lanes' as if they
+// stayed in one row of `src`'s shape: wrong for a vector crossing a row, as a
+// load of a broadcast tensor would be.
+bool callsIndexReadingKernel(IterElementwiseOp src) {
+  WalkResult result = src.getBody().walk([&](CallElementwiseOp call) {
+    return call.readsIndex() ? WalkResult::interrupt() : WalkResult::advance();
+  });
+  return result.wasInterrupted();
+}
+
 // The block arg of the single `src` input that reads `dstResult`.
 BlockArgument fusedInputArg(IterElementwiseOp src, Value dstResult) {
   auto it = llvm::find(src.getInputs(), dstResult);
@@ -169,6 +297,48 @@ findFusibleEdge(IterOpaqueOp dst, const OutputFusionConfig &config) {
     if (!loadsOnlyAt(fusionArg, [&](Value i) { return i == loopIdx; })) {
       reshape = reshapeOnFusedInput(srcBody, fusionArg);
       if (!reshape)
+        continue;
+    }
+    // The kernel calls its epilogue with vectors along its own output's rows.
+    // Behind a reshape (this one, or one an earlier fusion moved onto the
+    // epilogue), a vector can run across a row of `src`'s shape. A load is
+    // fused only if its tensor lays those rows out one after the other, and an
+    // index-reading call never is. A [3, 8] matmul reshaped to [4, 6], plus a
+    // bias broadcast over the rows:
+    //
+    //   map.iter.epilogue (%val, %idx) {      // 8-wide vectors over [3, 8]
+    //     %i = reshape<[4, 6] -> [3, 8]>(%idx)
+    //     store %y[%i] = add(%val, %bias[bcast(%i)])
+    //   }
+    //
+    // The vector at %idx = [1, 0] covers y[1, 2..5] and y[2, 0..3], so it needs
+    // bias[2..5] then bias[0..3], but loads bias[2..9]: not fused. A dense
+    // [4, 6] operand lays row 2 right after row 1, so the same load is right.
+    //
+    // With a reshape fused, the epilogue keeps the kernel's shape while `res`
+    // takes the consumer's; otherwise both are the same. A reshape that keeps
+    // the shape keeps every offset, so comparing the shapes is exact.
+    MOSH::ShapeAttr loopShape = src.getShape();
+    MOSH::ShapeAttr kernelShape =
+        MO::castFromTensorLike(epilogueOp.getResult().getType()).getShape();
+    if (loopShape != kernelShape) {
+      if (callsIndexReadingKernel(src))
+        continue;
+      // `d` is the outermost dim whose rows a vector can cross, and every other
+      // load must lay out dims [d, rank) as one row. Above, d = 0 (rows of 6
+      // aren't a whole number of rows of 8), so the 8-wide vector at [1, 2]
+      // runs from row 1 into row 2. With one add or the other:
+      //
+      //   map.iter.epilogue (%val, %idx) {      // 8-wide vectors over [3, 8]
+      //     %i = reshape<[4, 6] -> [3, 8]>(%idx)
+      //     store %y[%i] = add(%val, %x[%i])            // %x dense [4, 6]
+      //  or store %y[%i] = add(%val, %bias[bcast(%i)])  // %bias [6]
+      //   }
+      //
+      // %x is fused: x[2, 0] sits right after x[1, 5]. %bias is not: row 2
+      // starts again at bias[0], not at bias[6].
+      std::optional<size_t> d = firstCrossedDim(loopShape, kernelShape);
+      if (d && !loadsReadAsOneRow(src, loopShape, *d, fusionArg))
         continue;
     }
 

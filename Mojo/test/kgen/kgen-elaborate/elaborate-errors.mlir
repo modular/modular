@@ -585,3 +585,18 @@ kgen.generator @shift_out_of_range_shr_index_32bit() {
   hlcf.return
 }
 }
+
+// -----
+
+// `get_source_name` on a symbol that names no generator reports an error.
+
+kgen.func @concrete() {
+  hlcf.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator @get_source_name_of_concrete_func() {
+  // expected-note @below {{'get_source_name' function argument does not name a function generator}}
+  %0 = kgen.param.constant: string = <#kgen.get_source_name<#kgen.gen<#kgen.func.symbol<@concrete>> : !kgen.generator<() -> ()>>>
+  hlcf.return
+}

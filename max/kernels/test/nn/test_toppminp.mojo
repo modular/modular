@@ -25,7 +25,7 @@ from layout import (
 from nn.toppminp import min_p_sampling, top_p_sampling
 from std.testing import assert_equal
 
-from std.utils import IndexList
+from std.utils.coord import Coord
 
 comptime DEBUG_BENCH = False
 comptime PRINT_OUTPUT = False
@@ -121,11 +121,9 @@ def test_is_sorted_descending[
                     break
 
     comptime parallelism_grain_size = 1
-    # Create shape with batch_size as the second dimension
-    var shape = IndexList[1](
-        batch_size,
+    parallelize_over_rows(
+        process_rows, Coord(batch_size), 0, parallelism_grain_size
     )
-    parallelize_over_rows(process_rows, shape, 0, parallelism_grain_size)
 
     # Check if all batches are sorted by AND-ing all flags
     var all_sorted = True

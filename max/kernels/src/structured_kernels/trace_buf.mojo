@@ -133,15 +133,6 @@ struct NullTrace(TraceBuf):
     ):
         pass
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"NullTrace"`.
-        """
-        return "NullTrace"
-
 
 struct GmemTrace(TraceBuf):
     """HBM-backed trace buffer.
@@ -200,15 +191,6 @@ struct GmemTrace(TraceBuf):
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"GmemTrace"`.
-        """
-        return "GmemTrace"
 
 
 # ===----------------------------------------------------------------------=== #

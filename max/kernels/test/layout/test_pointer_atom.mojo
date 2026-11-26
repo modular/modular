@@ -15,10 +15,11 @@ from layout import TileTensor, row_major
 from layout.atoms import (
     INDEX_LANE,
     AddressEncoding,
-    BarrierCompletion,
-    BatchCompletion,
-    CounterCompletion,
-    HandleCompletion,
+    HasBarrier,
+    HasCount,
+    HasGroups,
+    HasHandles,
+    Synchronous,
     registers_map,
 )
 from layout.bit_layout import bits
@@ -63,21 +64,34 @@ def test_shape() raises:
     assert_equal(s[0], 8)
 
 
-def test_completions() raises:
-    # Pointer accesses are synchronous: no wait mechanism applies.
-    comptime C = PointerLoad[.float32, 4].Completion
-    assert_false(conforms_to(C, CounterCompletion))
-    assert_false(conforms_to(C, BarrierCompletion))
-    assert_false(conforms_to(C, HandleCompletion))
-    assert_false(conforms_to(C, BatchCompletion))
-    # tcgen05 loads and stores wait on their family's counter, for all of
-    # this thread's outstanding issues.
-    comptime L = TMemLoad[.float32, 16].Completion
-    comptime S = TMemStore[.float32, 16].Completion
-    assert_true(conforms_to(L, CounterCompletion))
-    assert_true(conforms_to(S, CounterCompletion))
-    assert_equal(L.max_pending, 0)
-    assert_equal(S.max_pending, 0)
+def test_async_engines() raises:
+    # Pointer accesses are synchronous: their engine has no routes.
+    comptime P = PointerLoad[.float32, 4].AsyncEngine
+    assert_true(P.in_order)
+    assert_true(P == Synchronous)
+    assert_false(conforms_to(P, HasCount))
+    assert_false(conforms_to(P, HasGroups))
+    assert_false(conforms_to(P, HasBarrier))
+    assert_false(conforms_to(P, HasHandles))
+    assert_true(PointerStore[.float32, 4].AsyncEngine == Synchronous)
+    # tcgen05 loads and stores have only a count route, whose wait covers
+    # all of this thread's outstanding issues. As in Moka's `tcgen05ld` row:
+    # issuer only, out of order, not partial.
+    comptime L = TMemLoad[.float32, 16].AsyncEngine
+    comptime S = TMemStore[.float32, 16].AsyncEngine
+    assert_false(L == Synchronous)
+    assert_false(S == Synchronous)
+    assert_false(L.in_order)
+    assert_false(L.partial)
+    assert_false(S.in_order)
+    assert_false(S.partial)
+    assert_true(conforms_to(L, HasCount))
+    assert_true(conforms_to(S, HasCount))
+    assert_false(conforms_to(L, HasBarrier))
+    assert_false(conforms_to(L, HasGroups))
+    assert_false(conforms_to(L, HasHandles))
+    assert_equal(L.Count.Wait.max_pending, 0)
+    assert_equal(S.Count.Wait.max_pending, 0)
 
 
 def main() raises:

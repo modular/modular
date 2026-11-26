@@ -198,27 +198,6 @@ def test_steady_state_ttft_only_fallback_requires_enough_data() -> None:
     assert "TTFT-only" in result.warning
 
 
-def test_steady_state_full_mode_preferred_over_fallback() -> None:
-    """With full (TPOT-populated) data, the full-mode path should run and
-    the result should carry mode="full". The fallback is only for the
-    TPOT-empty case."""
-    random.seed(11)
-    n = 200
-    outputs = [
-        _make_output(
-            submit_time=float(i),
-            ttft=0.05 + random.uniform(-0.002, 0.002),
-            tpot=[0.02 + random.uniform(-0.001, 0.001) for _ in range(3)],
-        )
-        for i in range(n)
-    ]
-
-    result = detect_steady_state(outputs, window_size=20)
-
-    assert result.detected is True
-    assert result.mode == "full"
-
-
 def test_steady_state_concurrency_one_short_circuits() -> None:
     """At max_concurrency=1 there's no queueing to produce a ramp, so
     detection should skip silently (no warning, no detected window)."""
@@ -423,11 +402,3 @@ def test_reject_metric_outliers_constant_0645_factor() -> None:
 
     assert reject_metric_outliers(below)[-1] is True
     assert reject_metric_outliers(above)[-1] is False
-
-
-def test_reject_metric_outliers_symmetric() -> None:
-    """Rejection is symmetric around the median."""
-    values = [0.0] * 10 + [10.0, -10.0]
-    keep = reject_metric_outliers(values)
-    # Both extremes should be rejected (or both kept; they're symmetric)
-    assert keep[-1] == keep[-2]

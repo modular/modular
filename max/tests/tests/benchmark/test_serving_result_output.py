@@ -34,8 +34,9 @@ from max.benchmark.benchmark_shared.datasets.types import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkResult,
-    InteractivityMetrics,
+    DiagnosticsGroup,
     PercentileMetrics,
+    RatePercentileMetrics,
     StandardPercentileMetrics,
     TextGenAggregates,
     ThroughputMetrics,
@@ -52,6 +53,10 @@ from max.benchmark.benchmark_shared.serving_result_output import (
     print_benchmark_summary,
     print_workload_stats,
     save_result_json,
+)
+from tests.benchmark.benchmark_fakes import (
+    make_sample_interactivity,
+    make_text_aggregates,
 )
 
 
@@ -209,18 +214,7 @@ def _gpu_benchmark_result(
         available_gpu_memory_mib=[39000.0, 38500.0],
         gpu_utilization=[95.0, 97.0],
         gpu_utilization_by_group=gpu_utilization_by_group or {},
-        text_data=TextGenAggregates(
-            duration=60.0,
-            completed=100,
-            failures=0,
-            request_throughput=1.66,
-            total_input=5000,
-            total_output=8000,
-            nonempty_response_chunks=8000,
-            max_input=100,
-            max_output=200,
-            max_total=300,
-            global_cached_token_rate=0.42,
+        text_data=make_text_aggregates(
             tool_request_rate=tool_request_rate,
             tool_call_response_rate=tool_call_response_rate,
             image_request_rate=image_request_rate,
@@ -299,18 +293,102 @@ def test_print_benchmark_summary_omits_goodput_when_unset(
     assert "oodput" not in capsys.readouterr().out
 
 
+def _with_client_reads(
+    result: BenchmarkResult, *, reads: int, bunched: int, max_events: int
+) -> BenchmarkResult:
+    """Returns *result* carrying the supplied client-read diagnostics."""
+    groups = result.result_groups
+    assert groups is not None
+    return result.model_copy(
+        update={
+            "result_groups": groups.model_copy(
+                update={
+                    "diagnostics": DiagnosticsGroup(
+                        stream_reads=reads,
+                        stream_reads_bunched=bunched,
+                        events_per_read_max=max_events,
+                        events_per_read_p99=float(max_events),
+                        events_per_read_mean=1.0 + bunched / reads,
+                    )
+                }
+            )
+        }
+    )
+
+
+def test_print_benchmark_summary_reports_unmeasured_itl_events(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Text events a read could not separate are reported, not just dropped."""
+    result = _with_client_reads(
+        _gpu_benchmark_result(), reads=400, bunched=120, max_events=4
+    )
+    _print_summary(result.model_copy(update={"itl_unresolved": 900}))
+    out = capsys.readouterr().out
+    assert (
+        "900 text events shared their read's arrival with an earlier one" in out
+    )
+    assert "carry no ITL sample" in out
+
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=400, bunched=0, max_events=1
+        )
+    )
+    assert "carry no ITL sample" not in capsys.readouterr().out
+
+
+def test_print_benchmark_summary_reports_bunched_reads(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Bunched reads print a line; reads of one event each stay quiet."""
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=400, bunched=120, max_events=4
+        )
+    )
+    out = capsys.readouterr().out
+    assert "120 of 400 reads carried several text events;" in out
+    assert "their ITLs were split evenly" in out
+
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=400, bunched=0, max_events=1
+        )
+    )
+    assert "carried several events" not in capsys.readouterr().out
+
+
+def test_print_benchmark_summary_flags_client_bound_itl(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A bunched share above a percent warns that ITL p99 is the client's."""
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=1000, bunched=40, max_events=3
+        )
+    )
+    out = capsys.readouterr().out
+    assert "WARNING: 4.0% of reads carried several text events" in out
+    assert "ITL p99 is bounded by the client here" in out
+
+    # A share at or below a percent is ordinary scheduling, not a bound worth
+    # calling out.
+    _print_summary(
+        _with_client_reads(
+            _gpu_benchmark_result(), reads=1000, bunched=10, max_events=2
+        )
+    )
+    out = capsys.readouterr().out
+    assert "10 of 1000 reads carried several text events;" in out
+    assert "ITL p99 is bounded by the client" not in out
+
+
 def test_print_benchmark_summary_tabulates_gpu_stats(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """GPU stats reuse the shared percentile table, not one block per device."""
-    print_benchmark_summary(
-        metrics=_gpu_benchmark_result(),
-        request_rate=float("inf"),
-        max_concurrency=8,
-        achieved_request_rate=1.66,
-        collect_gpu_stats=True,
-        collect_cpu_stats=False,
-    )
+    _print_summary(_gpu_benchmark_result())
     out = capsys.readouterr().out
     assert "GPU Statistics (aggregated across 2 devices)" in out
     assert "For per-GPU metrics, dump the result JSON instead" in out
@@ -339,24 +417,52 @@ def test_print_benchmark_summary_splits_gpu_utilization_by_role(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     """A disaggregated run adds one utilization row per role and node."""
-    print_benchmark_summary(
-        metrics=_gpu_benchmark_result(
+    _print_summary(
+        _gpu_benchmark_result(
             gpu_utilization_by_group={
                 "prefill": [95.0],
                 "decode node 1": [97.0],
             }
-        ),
-        request_rate=float("inf"),
-        max_concurrency=8,
-        achieved_request_rate=1.66,
-        collect_gpu_stats=True,
-        collect_cpu_stats=False,
+        )
     )
     out = capsys.readouterr().out
     for label, mean in (("prefill", 95.0), ("decode node 1", 97.0)):
         row = re.search(rf"│\s*GPU utilization, {label} \(%\)\s*│([^│]+)│", out)
         assert row is not None, label
         assert float(row.group(1).strip()) == mean
+
+
+def test_print_benchmark_summary_reports_the_client_loop(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A probed run shows the client's loop and one saturation warning."""
+    saturate = "The benchmark client's event loop saturated (lag p90 120 ms)."
+    _print_summary(
+        _gpu_benchmark_result().updated(
+            client_loop_lag_ms=StandardPercentileMetrics(
+                [0.002, 0.120], scale_factor=1000.0, unit="ms"
+            ),
+            client_loop_lag_max_ms=412.5,
+            client_loop_busy=RatePercentileMetrics([0.6, 0.97]),
+            client_warning=saturate,
+        )
+    )
+    out = capsys.readouterr().out
+    assert "Client event-loop lag (ms)" in out
+    assert "Client loop thread busy (%)" in out
+    assert re.search(
+        r"Worst client loop lag \(ms, incl\. pauses\):\s+412\.50", out
+    )
+    assert f"WARNING: {saturate}" in out
+
+
+def test_print_benchmark_summary_omits_the_client_rows_without_a_probe(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _print_summary(_gpu_benchmark_result())
+    out = capsys.readouterr().out
+    assert "Client event-loop lag" not in out
+    assert "WARNING:" not in out
 
 
 def _make_request(
@@ -569,29 +675,13 @@ def test_print_benchmark_summary_prints_interactivity_and_per_gpu_throughput(
     per-GPU total token throughput renders in the headline block."""
     result = _gpu_benchmark_result()
     assert result.text_data is not None
-    result.text_data.interactivity_tok_s = InteractivityMetrics(
-        mean=120.0,
-        p50=120.0,
-        p75=115.0,
-        p90=110.0,
-        p95=105.0,
-        p99=100.0,
+    interactivity = make_sample_interactivity()
+    result.text_data.interactivity_tok_s = interactivity.content_bounded
+    result.text_data.full_response_interactivity_tok_s = (
+        interactivity.full_response
     )
-    result.text_data.full_response_interactivity_tok_s = InteractivityMetrics(
-        mean=110.0,
-        p50=110.0,
-        p75=106.0,
-        p90=102.0,
-        p95=98.0,
-        p99=94.0,
-    )
-    result.text_data.e2e_normalized_interactivity_tok_s = InteractivityMetrics(
-        mean=100.0,
-        p50=100.0,
-        p75=96.0,
-        p90=92.0,
-        p95=88.0,
-        p99=84.0,
+    result.text_data.e2e_normalized_interactivity_tok_s = (
+        interactivity.e2e_normalized
     )
     result.text_data.total_tokens_per_second_per_gpu = 2500.0
     # result_groups was auto-filled at construction; rebuild it so the

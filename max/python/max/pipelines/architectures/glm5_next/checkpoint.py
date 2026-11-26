@@ -23,33 +23,37 @@ from max.graph.weights import WeightData
 
 from .quantization import Glm5NextQuantScheme, parse_quant_scheme
 
-_HC_FN_SUFFIX = ".hc_fn"
+# FP8's block scale and NVFP4's per-tensor scale each mark a quantized
+# projection exactly once.
 _V3_SCALE = re.compile(
-    r"^language_model\.(layers\.\d+\.(?:mlp|self_attn)\..+?)\.weight_scale_inv$"
+    r"^language_model\.(layers\.\d+\.(?:mlp|self_attn)\..+?)"
+    r"\.weight_scale(?:_inv|_2)$"
 )
+_ROUTED_EXPERT = re.compile(r"^language_model\.layers\.(\d+)\.mlp\.experts\.")
 _MLA_PROJECTION = re.compile(
     r"^(language_model\.layers\.\d+\.self_attn\."
     r"(?:q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj))(\.weight)?$"
 )
 
 
-def _stored_hc_fn_dtype(state_dict: Mapping[str, WeightData]) -> DType:
-    """Returns the checkpoint dtype shared by every mHC stream projection.
+def _stored_dtype(
+    state_dict: Mapping[str, WeightData], suffix: str, default: DType
+) -> DType:
+    """Returns the checkpoint dtype shared by every weight named ``*suffix``.
 
-    One dtype is chosen for all sites, so a mix would narrow the float32
-    projections to bfloat16; it is rejected instead.
+    The module declares one dtype for all of them, so a mix is rejected.
     """
     stored = {
         weight.dtype
         for name, weight in state_dict.items()
-        if name.endswith(_HC_FN_SUFFIX)
+        if name.endswith(suffix)
     }
     if len(stored) > 1:
         raise ValueError(
-            "GLM-5.3-Flash expects every mHC projection (*.hc_fn) in one"
+            f"GLM-5.3-Flash expects every *{suffix} weight in one"
             f" dtype, but the checkpoint mixes {sorted(map(str, stored))}"
         )
-    return stored.pop() if stored else DType.float32
+    return stored.pop() if stored else default
 
 
 def checkpoint_quant_scheme(
@@ -63,8 +67,16 @@ def checkpoint_quant_scheme(
         for name, value in state_dict.items()
         if (match := _V3_SCALE.match(name)) is not None
     }
+    moe_layers = frozenset(
+        int(match.group(1))
+        for name in state_dict
+        if (match := _ROUTED_EXPERT.match(name)) is not None
+    )
     return parse_quant_scheme(
-        hf_quantization_config, renamed, declared_dtype or DType.bfloat16
+        hf_quantization_config,
+        renamed,
+        declared_dtype or DType.bfloat16,
+        moe_layers,
     )
 
 

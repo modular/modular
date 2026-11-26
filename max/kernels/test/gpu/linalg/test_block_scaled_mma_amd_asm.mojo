@@ -48,10 +48,10 @@ def _single_mfma_kernel[
     matrix_format: CDNA4F8F6F4MatrixFormat,
     accum_width: Int,
 ](
-    a_in: ImmPointer[UInt8, ImmutAnyOrigin],
-    b_in: ImmPointer[UInt8, ImmutAnyOrigin],
-    scales: ImmPointer[Int32, ImmutAnyOrigin],
-    dst: MutPointer[Float32, MutAnyOrigin],
+    a_in: ImmPointer[UInt8, ImmUntrackedOrigin],
+    b_in: ImmPointer[UInt8, ImmUntrackedOrigin],
+    scales: ImmPointer[Int32, ImmUntrackedOrigin],
+    dst: MutPointer[Float32, MutUntrackedOrigin],
 ):
     comptime fragment_width = matrix_format.simd_width()
     var lane = Int(lane_id())
@@ -68,11 +68,11 @@ def _single_mfma_kernel[
 
 
 def _directive_value(asm: String, directive: String) raises -> Int:
-    __guard case .Some(start) = asm.find(directive) else:
+    guard case .Some(start) = asm.find(directive) else:
         raise Error(t"assembly is missing {directive}")
     var line_end = asm.find("\n", start).or_else(asm.byte_length())
     var line = asm[byte=start:line_end]
-    __guard case .Some(colon) = line.find(":") else:
+    guard case .Some(colon) = line.find(":") else:
         raise Error(t"expected a value after {directive}")
     return Int(line[byte = colon + 1 :].strip())
 

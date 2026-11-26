@@ -921,12 +921,9 @@ ObjectCompiler::emitArchiveParallelCompilation(
   return cacheResults;
 }
 
-/// Answers `TargetBackend::isSharedMemoryGlobal` for a global that is still in
-/// the LLVM dialect. The backend takes an LLVM IR global and reads its name,
-/// address space and linkage, which the probe built here carries.
-static bool isSharedMemoryGlobal(const TargetBackend &backend,
-                                 mlir::LLVM::GlobalOp global,
-                                 llvm::LLVMContext &probeCtx) {
+bool KGEN::isSharedMemoryGlobal(const TargetBackend &backend,
+                                mlir::LLVM::GlobalOp global,
+                                llvm::LLVMContext &probeCtx) {
   std::unique_ptr<llvm::GlobalVariable> probe(new llvm::GlobalVariable(
       llvm::Type::getInt8Ty(probeCtx), /*isConstant=*/false,
       convertLinkageToLLVM(global.getLinkage()),

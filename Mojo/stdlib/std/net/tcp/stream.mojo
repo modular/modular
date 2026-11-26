@@ -108,9 +108,9 @@ struct TCPStream(Movable):
         Raises:
             If the read fails, such as when the peer resets the connection.
         """
-        # TODO: on Linux, a `recv` into an empty buffer waits for data to
-        # arrive instead of returning 0. Return 0 without calling `recv` when
-        # `buffer` is empty.
+        # On Linux, a `recv` into an empty buffer waits for data to arrive.
+        if len(buffer) == 0:
+            return 0
         return self._socket.recv(buffer)
 
     def write(self, bytes: ImmSpan[Byte, _]) raises IOError -> Int:
@@ -128,9 +128,6 @@ struct TCPStream(Movable):
             If the write fails, such as when the peer has closed the
             connection.
         """
-        # TODO(https://github.com/modular/modular/issues/7475): a write to a
-        # peer that has closed raises `SIGPIPE`, which ends the process instead
-        # of raising an error, until `Socket.send()` suppresses it.
         return self._socket.send(bytes)
 
     def write_all(self, bytes: ImmSpan[Byte, _]) raises IOError:

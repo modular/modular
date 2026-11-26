@@ -108,20 +108,33 @@ public:
 
   // NVPTX augments (rather than replaces) the standard pipeline with a leading
   // SetFunctionAttributes pass.
-  void addPipelineStartPasses(llvm::ModulePassManager &mpm,
-                              const CompilationOptions &) const override {
-    mpm.addPass(SetFunctionAttributes());
+  void
+  addPipelineStartPasses(llvm::ModulePassManager &mpm,
+                         const CompilationOptions &options) const override {
+    mpm.addPass(SetFunctionAttributes(options.denormalFP32Mode));
   }
 
+  // The pass takes the f32 denormal mode as a named parameter, as in
+  // `kgen-set-function-attrs<denormal-fp-math-f32=preserve-sign>`.
   void registerPipelinePasses(llvm::PassBuilder &passBuilder) const override {
     passBuilder.registerPipelineParsingCallback(
         [](llvm::StringRef name, llvm::ModulePassManager &mpm,
            llvm::ArrayRef<llvm::PassBuilder::PipelineElement>) -> bool {
-          if (name == "kgen-set-function-attrs") {
+          if (!name.consume_front("kgen-set-function-attrs"))
+            return false;
+          if (name.empty()) {
             mpm.addPass(SetFunctionAttributes());
             return true;
           }
-          return false;
+          if (!name.consume_front("<denormal-fp-math-f32=") ||
+              !name.consume_back(">") || name.empty())
+            return false;
+          llvm::DenormalMode::DenormalModeKind kind =
+              llvm::parseDenormalFPAttributeComponent(name);
+          if (kind == llvm::DenormalMode::Invalid)
+            return false;
+          mpm.addPass(SetFunctionAttributes(kind));
+          return true;
         });
   }
 

@@ -369,25 +369,13 @@ def test(ctx: DeviceContext[]) raises:
     # Naive gemm.
     comptime BLOCK_DIM = 16
 
-    # a/b are constructed as immutable to match the ImmutAnyOrigin
-    # parameters that matmul_kernel_naive expects (enqueue_function
-    # requires exact type matches).
+    # matmul_kernel_naive takes immutable a/b.
     var c_ref_tt = TileTensor(
         c_device_ref,
         row_major(M, N),
     )
-    var a_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(a_device.unsafe_ptr())
-        ),
-        row_major(M, K),
-    )
-    var b_tt = TileTensor(
-        ImmPointer[Float32, ImmutAnyOrigin](
-            unsafe_from_address=Int(b_device.unsafe_ptr())
-        ),
-        row_major(K, N),
-    )
+    var a_tt = TileTensor(a_device, row_major(M, K)).as_imm()
+    var b_tt = TileTensor(b_device, row_major(K, N)).as_imm()
 
     comptime gemm_naive = matmul_kernel_naive[
         DType.float32,

@@ -20,38 +20,13 @@
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/Value.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <optional>
+
 namespace M::MAP {
-/// In `IndexTransformOpInterface::mapLoopDims`, a coordinate that is 0 for
-/// every element.
-inline constexpr int64_t kPinnedCoordinate = -1;
-
-/// Whether `attr` is a SIMD width limit: a constant dim, a parameter dim, or a
-/// `GCDAttr` of limits.
-bool isWidthLimit(::mlir::Attribute attr);
-
-/// `limit` with nested GCDs flattened, constants folded, duplicate dims
-/// dropped and a 1 absorbing the rest; a GCD of one element is that element.
-::mlir::TypedAttr simplifyWidthLimit(::mlir::TypedAttr limit);
-
-/// The constant and parameter dims `limit` is the GCD of, nested GCDs
-/// flattened.
-void collectWidthLimitDims(::mlir::TypedAttr limit,
-                           ::llvm::SmallVectorImpl<::mlir::TypedAttr> &dims);
-
-/// Parses a limit: a dim (`2`, `N0`) or a `#map.gcd<[...]>`.
-::mlir::ParseResult parseWidthLimit(::mlir::AsmParser &parser,
-                                    ::mlir::TypedAttr &limit);
-
-/// Prints a limit as `parseWidthLimit` reads it.
-void printWidthLimit(::mlir::AsmPrinter &printer, ::mlir::TypedAttr limit);
-
-/// A number every SIMD width of the enclosing kernel must divide, for the ops
-/// in `region` (see `MaxSimdWidthInterface`); null for no limit. Not
-/// simplified.
-::mlir::TypedAttr getMaxSimdWidth(::mlir::Region &region);
-
 /// Whether `op`, which doesn't implement `MaxSimdWidthInterface`, produces an
 /// index or hands one to its regions: index computation the width inference
 /// can't follow.
@@ -60,6 +35,45 @@ bool computesIndex(::mlir::Operation *op);
 // What `RowwisePhaseOpInterface::getReadCache` returns.
 class IterCacheOp;
 
+/// A tensor seen through views, for `map-flatten-shapes`: whether each dim's
+/// stride is known to be 0, and whether each pair of adjacent dims (d, d+1) is
+/// laid out one row after the other, i.e. stride[d] == extent[d+1] *
+/// stride[d+1].
+struct Layout {
+  ::llvm::SmallVector<bool> zero;
+  ::llvm::SmallVector<bool> contiguous;
+
+  static Layout rowMajor(size_t rank) {
+    return {::llvm::SmallVector<bool>(rank, false),
+            ::llvm::SmallVector<bool>(rank ? rank - 1 : 0, true)};
+  }
+
+  /// Whether dims d and d+1 may merge into one.
+  bool merges(size_t d) const {
+    return contiguous[d] || (zero[d] && zero[d + 1]);
+  }
+};
+
+/// The loop `map-flatten-shapes` is flattening and the sizes of the groups its
+/// dims merge into, set for each loop, and the parameters declared so far for
+/// symbolic products, shared by every loop of the graph.
+struct FlattenDriver {
+  ::llvm::SmallVector<int64_t> groups;
+  /// The kernel being flattened: a loop body, an opaque kernel's call, or a
+  /// prologue or an epilogue.
+  ::mlir::Operation *body = nullptr;
+  ::llvm::DenseMap<::mlir::Attribute, ::mlir::TypedAttr> declared;
+};
+
+/// The layout of `value` from the views between it and the row-major tensor
+/// they read (a kernel input or output, or a constant); nullopt when unknown.
+std::optional<Layout> layoutOf(::mlir::Value value);
+
+/// Merges `shape`'s dims by the driver's groups; a symbolic product becomes a
+/// graph parameter, since a kernel's dims must be named. The plan clears the
+/// merges a loop outside the graph's own body can't declare, so a planned
+/// loop's groups always merge.
+MOSH::ShapeAttr mergeShape(MOSH::ShapeAttr shape, FlattenDriver &driver);
 } // namespace M::MAP
 
 //===----------------------------------------------------------------------===//
@@ -67,13 +81,5 @@ class IterCacheOp;
 //===----------------------------------------------------------------------===//
 
 #include "GraphCompiler/MAPDialect/Dialect/MAPOpInterfaces.h.inc"
-
-namespace M::MAP {
-/// The loop dimension each coordinate of `index` is (see
-/// `IndexTransformOpInterface::mapLoopDims`), following the index transforms
-/// from `loopIdx`. Nullopt when one of them doesn't map loop dimensions.
-std::optional<llvm::SmallVector<int64_t>> traceLoopDims(mlir::Value index,
-                                                        mlir::Value loopIdx);
-} // namespace M::MAP
 
 #endif // GENERICML_GRAPHCOMPILER_MAPDIALECT_MAPOPINTERFACES_H

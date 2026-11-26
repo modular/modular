@@ -30,7 +30,7 @@ from max.gpu.memory import external_memory
 from std.collections import Span
 
 from extensibility import Input, Output, Tensor, TileTensorable
-from layout import TensorLayout, TileTensor, coord_to_index_list
+from layout import TensorLayout, TileTensor
 
 from std.utils.coord import Coord
 
@@ -117,8 +117,8 @@ struct TopK:
             ctx.target.is_gpu() and K > WARP_SIZE
         ), "K can't be larger than warp size"
 
-        var shape = coord_to_index_list(in_vals.layout.shape_coord())
-        var batch_size = shape[0]
+        var shape = in_vals.layout.shape_coord()
+        var batch_size = Int(shape[0])
         var dev_ctx = ctx
 
         comptime OutVals = type_of(out_vals)

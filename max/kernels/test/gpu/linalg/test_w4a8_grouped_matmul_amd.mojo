@@ -70,16 +70,25 @@ def _e8m0(code: UInt8) -> Float32:
 
 
 def _reference[
-    N: Int, K: Int
+    N: Int,
+    K: Int,
+    a_origin: ImmOrigin,
+    b_origin: ImmOrigin,
+    sa_origin: ImmOrigin,
+    sb_origin: ImmOrigin,
+    offsets_origin: ImmOrigin,
+    ids_origin: ImmOrigin,
+    reference_origin: MutOrigin,
+    magnitude_origin: MutOrigin,
 ](
-    a: ImmPointer[UInt8, ImmutAnyOrigin],
-    b: ImmPointer[UInt8, ImmutAnyOrigin],
-    sa: ImmPointer[UInt8, ImmutAnyOrigin],
-    sb: ImmPointer[UInt8, ImmutAnyOrigin],
-    offsets: ImmPointer[UInt32, ImmutAnyOrigin],
-    ids: ImmPointer[Int32, ImmutAnyOrigin],
-    reference: MutPointer[Float32, MutAnyOrigin],
-    magnitude: MutPointer[Float32, MutAnyOrigin],
+    a: ImmPointer[UInt8, a_origin],
+    b: ImmPointer[UInt8, b_origin],
+    sa: ImmPointer[UInt8, sa_origin],
+    sb: ImmPointer[UInt8, sb_origin],
+    offsets: ImmPointer[UInt32, offsets_origin],
+    ids: ImmPointer[Int32, ids_origin],
+    reference: MutPointer[Float32, reference_origin],
+    magnitude: MutPointer[Float32, magnitude_origin],
     rows_dev: Int32,
     active_dev: Int32,
 ):
@@ -213,15 +222,36 @@ def _check[
             ct, at, bt, sat, sbt, ot, it, max_rows, num_active, ctx
         )
     if rows > 0:
-        ctx.enqueue_function[_reference[N, K]](
-            a.unsafe_ptr().as_imm(),
-            b.unsafe_ptr().as_imm(),
-            sa.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm(),
-            sb.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm(),
-            offsets.unsafe_ptr().as_imm(),
-            expert_ids.unsafe_ptr().as_imm(),
-            reference.unsafe_ptr(),
-            mag.unsafe_ptr(),
+        var a_ptr = a.unsafe_ptr().as_imm()
+        var b_ptr = b.unsafe_ptr().as_imm()
+        var sa_ptr = sa.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm()
+        var sb_ptr = sb.unsafe_ptr().unsafe_bitcast[UInt8]().as_imm()
+        var offsets_ptr = offsets.unsafe_ptr().as_imm()
+        var ids_ptr = expert_ids.unsafe_ptr().as_imm()
+        var reference_ptr = reference.unsafe_ptr()
+        var mag_ptr = mag.unsafe_ptr()
+        ctx.enqueue_function[
+            _reference[
+                N,
+                K,
+                a_ptr.origin,
+                b_ptr.origin,
+                sa_ptr.origin,
+                sb_ptr.origin,
+                offsets_ptr.origin,
+                ids_ptr.origin,
+                reference_ptr.origin,
+                mag_ptr.origin,
+            ]
+        ](
+            a_ptr,
+            b_ptr,
+            sa_ptr,
+            sb_ptr,
+            offsets_ptr,
+            ids_ptr,
+            reference_ptr,
+            mag_ptr,
             Int32(rows),
             Int32(num_active),
             grid_dim=(ceildiv(rows, 16), ceildiv(N, 16)),

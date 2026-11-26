@@ -472,20 +472,24 @@ def _topk_cluster_det_impl[
     comptime assert 2 * L + (_DTOPK_KEYS if CS > 1 else 0) <= _DTOPK_BINS
     var xbuf = hist
     var allk = hist.unsafe_offset(_DTOPK_BINS - _DTOPK_KEYS)
-    var wsum = unsafe_stack_allocation[
-        _DTOPK_GROUPS, UInt32, address_space=.SHARED
-    ]()
-    var pub = unsafe_stack_allocation[
-        _DTOPK_PUB + 1, UInt32, address_space=.SHARED
-    ]()
-    var peers = unsafe_stack_allocation[
-        _DTOPK_PUB * _DTOPK_MAX_CS, UInt32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var wsum_storage = Array[UInt32, _DTOPK_GROUPS](uninitialized=True)
+    var wsum = wsum_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var pub_storage = Array[UInt32, _DTOPK_PUB + 1](uninitialized=True)
+    var pub = pub_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var peers_storage = Array[UInt32, _DTOPK_PUB * _DTOPK_MAX_CS](
+        uninitialized=True
+    )
+    var peers = peers_storage.unsafe_ptr()
     # [0] split group, [1] count above it, [2] split bin, then fine bin, [3]
     # count above the split bin, [4] threshold `phi16`, [5] where this rank's
     # positions start, [6] how many of its threshold columns it takes, [7]
     # count above the threshold.
-    var ctl = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var ctl_storage = Array[UInt32, 8](uninitialized=True)
+    var ctl = ctl_storage.unsafe_ptr()
 
     var a = SIMD[.uint32, T](0)
     var select_all = count <= K

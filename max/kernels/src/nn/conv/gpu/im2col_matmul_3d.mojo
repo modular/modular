@@ -495,7 +495,7 @@ def dispatch_im2col_matmul_conv3d[
                 var batch_idx, sp = divmod(full_m, DHW_out)
                 var d_idx, rem2 = divmod(sp, HW_out)
                 var h_idx, w_idx = divmod(rem2, W_out)
-                epilogue_fn(
+                epilogue_fn[alignment=max(alignment, align_of[output_type]())](
                     (batch_idx, d_idx, h_idx, w_idx, n_idx),
                     rebind[SIMD[output_type, _width]](val),
                 )

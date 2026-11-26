@@ -53,7 +53,7 @@ def run_v1_single_static_capture(ctx: DeviceContext) raises:
                 (tid,), SIMD[dtype, 1](1.0)
             )
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,
@@ -83,7 +83,7 @@ def run_v2_static_capture_plus_scalar(ctx: DeviceContext) raises:
                 (tid,), SIMD[dtype, 1](scale)
             )
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,
@@ -114,7 +114,7 @@ def run_v3_two_static_captures(ctx: DeviceContext) raises:
             a_tt.store[alignment=align_of[dtype]()]((tid,), SIMD[dtype, 1](2.0))
             b_tt.store[alignment=align_of[dtype]()]((tid,), SIMD[dtype, 1](3.0))
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,
@@ -145,7 +145,7 @@ def run_v4_scalar_first_then_static(ctx: DeviceContext) raises:
                 (tid,), SIMD[dtype, 1](scale)
             )
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=ceildiv(N, block_dim),
         block_dim=block_dim,

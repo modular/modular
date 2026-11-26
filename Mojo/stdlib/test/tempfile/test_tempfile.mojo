@@ -245,7 +245,7 @@ def test_optional_named_temporary_file_uses_niche() raises:
     )
 
     var maybe = Optional(NamedTemporaryFile())
-    __guard case .Some(temp_file) = maybe else:
+    guard case .Some(temp_file) = maybe else:
         raise Error("expected a temporary file")
     var file_path = temp_file.name
     maybe = None

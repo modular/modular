@@ -64,9 +64,10 @@ SEQUENTIAL_METHODS: frozenset[SpeculativeMethod] = frozenset({"eagle", "mtp"})
 """The one-token-per-step methods :func:`sequential_proposer` runs."""
 
 BLOCK_METHODS: frozenset[SpeculativeMethod] = frozenset(
-    {"dflash", "dflash2", "dspark"}
+    {"dflash", "dflash2", "dspark", "dfly"}
 )
-"""The block-drafting methods :func:`block_proposer` runs."""
+"""The block-drafting methods. :func:`block_proposer` runs all but
+``dfly``, whose target adapter supplies its proposer."""
 
 
 def target_hidden_states(

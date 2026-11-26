@@ -669,6 +669,6 @@ struct assert_raises[T: Deinitable = String](not Movable):
 
         # if not error type is provided, then first lets check if a message was passed
         # if not, like in `assert_raises():` case, we just return True.
-        __guard case .Some(message_contains) = self.message_contains else:
+        guard case .Some(message_contains) = self.message_contains else:
             return True
         return message_contains in String(error)

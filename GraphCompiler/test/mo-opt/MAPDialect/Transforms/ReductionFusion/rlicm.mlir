@@ -56,3 +56,29 @@ mo.graph @indexedCall(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32
   %y = mo.mul(%x, %z) : !mo.tensor<[8, 128], f32>
   mo.output %y : !mo.tensor<[8, 128], f32>
 }
+
+// The same in a concat select's regions, which read their row: rotate-half
+// scales each partner by the row's rsqrt, which runs once per row.
+// CHECK-LABEL: mo.graph @hoistedFromSelect
+// CHECK:         map.iter.reduce
+// CHECK:         map.call.elementwise @builtin_kernels.elementwise.Rsqrt
+// CHECK:         map.iter.map
+// CHECK:           map.index.concat.select
+// CHECK-NOT:       Rsqrt
+// CHECK:       mo.output
+mo.graph @hoistedFromSelect(%x: !mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 128], f32> {
+  %s = mo.reduce.add(%x) : (!mo.tensor<[8, 128], f32>) -> !mo.tensor<[8, 1], f32>
+  %sb = mo.static.broadcast_to(%s) : !mo.tensor<[8, 1], f32> -> !mo.tensor<[8, 128], f32>
+  %inv = mo.rsqrt(%sb) : !mo.tensor<[8, 128], f32>
+  %y = mo.mul(%x, %inv) : !mo.tensor<[8, 128], f32>
+  %start1 = mo.constant <#M.dense_array<0, 0> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %start2 = mo.constant <#M.dense_array<0, 64> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop1 = mo.constant <#M.dense_array<8, 64> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %stop2 = mo.constant <#M.dense_array<8, 128> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %step = mo.constant <#M.dense_array<1, 1> : tensor<2xsi64>> : !mo.tensor<[2], si64>
+  %y1 = mo.slice(%y, %start1, %stop1, %step) : (!mo.tensor<[8, 128], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[8, 64], f32>
+  %y2 = mo.slice(%y, %start2, %stop2, %step) : (!mo.tensor<[8, 128], f32>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>, !mo.tensor<[2], si64>) -> !mo.tensor<[8, 64], f32>
+  %ny2 = mo.negative(%y2) : !mo.tensor<[8, 64], f32>
+  %r = mo.concat[1] (%ny2, %y1) : (!mo.tensor<[8, 64], f32>, !mo.tensor<[8, 64], f32>) -> !mo.tensor<[8, 128], f32>
+  mo.output %r : !mo.tensor<[8, 128], f32>
+}

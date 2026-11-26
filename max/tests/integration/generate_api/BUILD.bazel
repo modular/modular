@@ -21,6 +21,20 @@ _TAGS = [
 # to come from the cache, never from the Hub.
 _ENV = {"HF_HUB_OFFLINE": "1"}
 
+# The data tarballs and the LPIPS backbone come from the build, so the tests
+# need no network at run time. _generate_api.py reads these variables.
+_REFERENCES = "@generate_api_references//file"
+
+_REFERENCES_ENV = {"GENERATE_API_DATA_TAR": "$(rootpath %s)" % _REFERENCES}
+
+_FLUX2_GOLDEN = "@generate_api_flux2_dev_golden//file"
+
+_FLUX2_GOLDEN_ENV = {"FLUX2_GOLDEN_TAR_PATH": "$(rootpath %s)" % _FLUX2_GOLDEN}
+
+_LPIPS_BACKBONE = "@lpips_squeezenet1_1//file"
+
+_LPIPS_BACKBONE_ENV = {"LPIPS_SQUEEZENET_PATH": "$(rootpath %s)" % _LPIPS_BACKBONE}
+
 _ARCHITECTURES = [
     "//max/python/max/pipelines/architectures/flux2_modulev3",
     "//max/python/max/pipelines/architectures/gemma4_modulev3",
@@ -56,7 +70,8 @@ modular_py_test(
     name = "test_gemma4_text_gpu",
     size = "enormous",
     srcs = ["test_gemma4_text_gpu.py"],
-    env = _ENV,
+    data = [_REFERENCES],
+    env = _ENV | _REFERENCES_ENV,
     exec_properties = {"test.resources:gpu-memory": "180"},
     gpu_constraints = ["//:has_gpu"],
     ignore_extra_deps = _ARCHITECTURES + [requirement("jinja2")],
@@ -68,7 +83,8 @@ modular_py_test(
     name = "test_gemma4_multimodal_gpu",
     size = "enormous",
     srcs = ["test_gemma4_multimodal_gpu.py"],
-    env = _ENV,
+    data = [_REFERENCES],
+    env = _ENV | _REFERENCES_ENV,
     exec_properties = {"test.resources:gpu-memory": "180"},
     gpu_constraints = ["//:has_gpu"],
     ignore_extra_deps = _ARCHITECTURES + [requirement("jinja2")],
@@ -92,7 +108,11 @@ modular_py_test(
     name = "test_flux2_dev_gpu",
     size = "enormous",
     srcs = ["test_flux2_dev_gpu.py"],
-    env = _ENV,
+    data = [
+        _FLUX2_GOLDEN,
+        _LPIPS_BACKBONE,
+    ],
+    env = _ENV | _FLUX2_GOLDEN_ENV | _LPIPS_BACKBONE_ENV,
     exec_properties = {"test.resources:gpu-memory": "180"},
     gpu_constraints = ["//:has_gpu"],
     ignore_extra_deps = _ARCHITECTURES + [
@@ -136,7 +156,8 @@ _REGENERATE_DEPS = [
             "--run",
             run,
         ],
-        env = _ENV,
+        data = [_REFERENCES],
+        env = _ENV | _REFERENCES_ENV,
         exec_properties = {"test.resources:gpu-memory": "180"},
         gpu_constraints = ["//:has_gpu"],
         ignore_extra_deps = [

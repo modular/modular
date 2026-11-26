@@ -530,6 +530,17 @@ MojoTypeSystem::GetBitSize(lldb::opaque_compiler_type_t type,
   return llvm::createStringError("Unknown type: Cannot determine size");
 }
 
+std::optional<uint64_t>
+MojoTypeSystem::GetByteStride(lldb::opaque_compiler_type_t type) {
+  // A Mojo type's size includes its tail padding, so the stride is the size.
+  LIT::ASTType astType(Type::getFromOpaquePointer(type));
+  if (!astType)
+    return std::nullopt;
+  if (auto &layout = impl->dataLayoutContext->getOrCalculate(astType))
+    return layout->getByteSize();
+  return std::nullopt;
+}
+
 std::optional<size_t>
 MojoTypeSystem::GetTypeBitAlign(lldb::opaque_compiler_type_t type,
                                 lldb_private::ExecutionContextScope *exeScope) {

@@ -34,7 +34,6 @@ order: `linear_id = x + y * dim_x + z * dim_x * dim_y`.
 from std.math import align_up, ceildiv
 from std.math.uutils import ufloordiv
 
-from std.memory import unsafe_stack_allocation
 from std.utils.static_tuple import StaticTuple
 
 from max.gpu import barrier, syncwarp
@@ -71,9 +70,11 @@ def _block_reduce_with_padding[
 ) -> StaticTuple[Scalar[dtype], num_reductions]:
     comptime smem_stride = n_warps + padding
     # Add padding to avoid bank conflicts
-    var shared_mem = unsafe_stack_allocation[
-        num_reductions * smem_stride, dtype, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared = Array[Scalar[dtype], num_reductions * smem_stride](
+        uninitialized=True
+    )
+    var shared_mem = shared.unsafe_ptr()
 
     var lid = lane_id()
 
@@ -612,9 +613,9 @@ def broadcast[
         return warp.broadcast(val)
 
     # Multi-warp block - use shared memory
-    var shared_mem = unsafe_stack_allocation[
-        width, dtype, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared = Array[Scalar[dtype], width](uninitialized=True)
+    var shared_mem = shared.unsafe_ptr()
 
     # Source thread writes its value to shared memory
     if thread_idx.x == Int(src_thread):
@@ -668,9 +669,9 @@ def broadcast[
     comptime if block_size == WARP_SIZE:
         return warp.broadcast(val)
 
-    var shared_mem = unsafe_stack_allocation[
-        width, dtype, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared = Array[Scalar[dtype], width](uninitialized=True)
+    var shared_mem = shared.unsafe_ptr()
 
     var linear_tid = (
         thread_idx.x
@@ -708,9 +709,11 @@ def _prefix_sum[
     # Allocate shared memory for inter-warp communication
     # We need one slot per warp to store warp-level scan results
     comptime n_warps = block_size // WARP_SIZE
-    var warp_mem = unsafe_stack_allocation[
-        align_up(n_warps, WARP_SIZE), dtype, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var warp_storage = Array[Scalar[dtype], align_up(n_warps, WARP_SIZE)](
+        uninitialized=True
+    )
+    var warp_mem = warp_storage.unsafe_ptr()
 
     var thread_result = warp.prefix_sum[exclusive=exclusive](val)
 

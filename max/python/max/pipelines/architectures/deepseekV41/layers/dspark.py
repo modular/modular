@@ -245,63 +245,6 @@ class DSparkMarkovHead(Module):
         )
 
 
-class DSparkConfidenceHead(Module):
-    """Predicts one draft position's acceptance probability.
-
-    A single float32 linear over the concatenation of a hidden state and
-    that position's Markov embedding.
-    """
-
-    def __init__(
-        self, *, hidden_size: int, markov_rank: int, device: DeviceRef
-    ) -> None:
-        """Declares the float32 projection.
-
-        Args:
-            hidden_size: Width of the hidden state.
-            markov_rank: Width of the Markov embedding.
-            device: Device the weight lives on.
-        """
-        super().__init__()
-        self.proj = Linear(
-            in_dim=hidden_size + markov_rank,
-            out_dim=1,
-            dtype=DType.float32,
-            device=device,
-            has_bias=False,
-        )
-
-    def __call__(
-        self, hidden: TensorValue, markov_embed: TensorValue
-    ) -> TensorValue:
-        """Scores one position's acceptance probability.
-
-        Args:
-            hidden: ``[..., hidden_size]`` bfloat16 hidden state.
-            markov_embed: ``[..., markov_rank]`` bfloat16 Markov embedding,
-                :meth:`DSparkMarkovHead.__call__`'s first return value.
-
-        Returns:
-            ``[...]`` float32 confidence score.
-
-        Raises:
-            ValueError: If either input is not bfloat16.
-        """
-        if hidden.dtype != DType.bfloat16:
-            raise ValueError(
-                f"DSparkConfidenceHead expects bfloat16 hidden, got {hidden.dtype}"
-            )
-        if markov_embed.dtype != DType.bfloat16:
-            raise ValueError(
-                "DSparkConfidenceHead expects bfloat16 markov_embed, got "
-                f"{markov_embed.dtype}"
-            )
-        combined = ops.cast(
-            ops.concat([hidden, markov_embed], axis=-1), DType.float32
-        )
-        return ops.squeeze(self.proj(combined), axis=-1)
-
-
 @dataclass(frozen=True)
 class DSparkWindow:
     """One stage's context window, per request, as the block attention names it.

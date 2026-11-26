@@ -199,6 +199,35 @@ def _run_cpu_ctx_memcpy_async(
         assert_equal(host_buf[i], Int64(2 * i))
 
 
+def _run_host_buffer_fill_and_ptr_copies(
+    ctx: DeviceContext, length: Int
+) raises:
+    print("-")
+    print("_run_host_buffer_fill_and_ptr_copies(", length, ")")
+
+    var host_buf = ctx.enqueue_create_host_buffer[.int64](length)
+    host_buf.enqueue_fill(7)
+    ctx.synchronize()
+    for i in range(length):
+        assert_equal(host_buf[i], Int64(7))
+
+    var src = List[Int64](length=length, fill=0)
+    for i in range(length):
+        src[i] = Int64(3 * i)
+    host_buf.enqueue_copy_from(src.unsafe_ptr())
+    ctx.synchronize()
+    # The copy reads `src` asynchronously, so hold it until the copy finishes.
+    _ = src^
+    for i in range(length):
+        assert_equal(host_buf[i], Int64(3 * i))
+
+    var dst = List[Int64](length=length, fill=0)
+    host_buf.enqueue_copy_to(dst.unsafe_ptr())
+    ctx.synchronize()
+    for i in range(length):
+        assert_equal(dst[i], Int64(3 * i))
+
+
 def test_copies() raises:
     var ctx = create_test_device_context()
 
@@ -220,6 +249,8 @@ def test_copies() raises:
     var cpu_ctx = DeviceContext.cpu()
     _run_cpu_ctx_memcpy_async(ctx, cpu_ctx, 64)
     _run_cpu_ctx_memcpy_async(ctx, cpu_ctx, one_mb)
+
+    _run_host_buffer_fill_and_ptr_copies(ctx, 64)
 
     print("Done.")
 

@@ -117,6 +117,7 @@ def bench_decode[
     var scalar_args_tt = mla_args.gpu_tile_tensor()
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut b: Bencher,
     ) {var cb_q, var cb_k, var cb_o, var scalar_args_tt, imm,}:
@@ -500,6 +501,7 @@ def bench_prefill_sparse[
     )
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_func(
         mut b: Bencher,
     ) {

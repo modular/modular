@@ -120,5 +120,20 @@ def _mla_fp8_index_top_k_physical(
 
 mla_fp8_index_top_k_physical = _functional(_mla_fp8_index_top_k_physical)
 rope_ragged = _functional(kernels.rope_ragged)
+
+
+def rope_rows(
+    x: Tensor, input_row_offsets: Tensor, start_pos: Tensor, freqs_cis: Tensor
+) -> Tensor:
+    """Rotates the trailing ``freqs_cis`` columns of each ``[tokens, heads]``.
+
+    Token ``i`` of sequence ``b`` takes row ``start_pos[b] + i`` of the
+    interleaved table. The kernel runs per device, on that device's heads.
+    """
+    return rope_ragged(
+        x, input_row_offsets, start_pos, freqs_cis, interleaved=True
+    ).rebind_mapping(x.mapping)
+
+
 store_k_cache_ragged = _functional(kernels.store_k_cache_ragged)
 store_k_scale_cache_ragged = _functional(kernels.store_k_scale_cache_ragged)

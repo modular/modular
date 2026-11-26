@@ -33,32 +33,34 @@ from layout import (
     TensorEngine,
     TensorLayout,
     TileTensor,
-    coord_to_index_list,
     row_major,
 )
+from layout.coord import DynamicCoord
 
-from std.utils import IndexList
 from std.utils import StaticTuple
 
 
 def _collapse_dims_around_axis(
-    shape: IndexList, axis: Int
+    shape: Coord, axis: Int
 ) raises -> Tuple[Int, Int, Int]:
-    if axis >= shape.size:
-        raise Error("axis larger than provided shape")
+    comptime rank = type_of(shape).rank
+    if axis < 0 or axis >= rank:
+        raise Error("axis outside of provided shape")
 
-    comptime if shape.size == 0:
+    comptime if rank == 0:
         return (1, 1, 1)
 
-    var split = shape[axis]
-
     var before = 1
-    for i in range(axis):
-        before *= shape[i]
-
+    var split = 1
     var after = 1
-    for i in range(axis + 1, shape.size):
-        after *= shape[i]
+    comptime for i in range(rank):
+        var dim = Int(shape[i])
+        if i < axis:
+            before *= dim
+        elif i == axis:
+            split = dim
+        else:
+            after *= dim
 
     return (before, split, after)
 
@@ -97,10 +99,10 @@ def _repeat_interleave_cpu[
     # Compute the shape of the input and result buffers.
     # These are the shapes of the buffers we will be working on.
     var collapsed_input_shape = _collapse_dims_around_axis(
-        coord_to_index_list(input.layout.shape_coord()), axis
+        input.layout.shape_coord(), axis
     )
     var collapsed_output_shape = _collapse_dims_around_axis(
-        coord_to_index_list(output.layout.shape_coord()), axis
+        output.layout.shape_coord(), axis
     )
 
     assert collapsed_output_shape[0] == collapsed_input_shape[0]
@@ -144,16 +146,14 @@ def _repeat_interleave_cpu[
     def func[
         width: Int, alignment: Int = 1
     ](idx: Coord) {var offset_mapping_view, mut}:
-        var output_index = rebind[IndexList[3]](coord_to_index_list(idx))
-        var input_index = output_index
-        input_index[1] = offset_mapping_view[output_index[1]]
+        var input_index = Coord(
+            Int(idx[0]), offset_mapping_view[Int(idx[1])], Int(idx[2])
+        )
 
         var input_value = collapsed_input.load[
             width=width, alignment=align_of[dtype]()
-        ](Coord(input_index))
-        collapsed_output.store[alignment=align_of[dtype]()](
-            Coord(output_index), input_value
-        )
+        ](input_index)
+        collapsed_output.store[alignment=align_of[dtype]()](idx, input_value)
 
     elementwise[simd_width_of[output.dtype]()](
         func, collapsed_output.layout.shape_coord(), ctx
@@ -312,13 +312,14 @@ def _repeat_interleave_gpu[
     comptime assert input.flat_rank == output.flat_rank
     comptime assert repeats.flat_rank == 1
 
-    var input_dims = coord_to_index_list(input.layout.shape_coord())
-    var output_dims = coord_to_index_list(output.layout.shape_coord())
-    var in_axis = Int(input_dims[axis])
-    var out_axis = Int(output_dims[axis])
-
-    var collapsed_input_shape = _collapse_dims_around_axis(input_dims, axis)
-    var collapsed_output_shape = _collapse_dims_around_axis(output_dims, axis)
+    var collapsed_input_shape = _collapse_dims_around_axis(
+        input.layout.shape_coord(), axis
+    )
+    var collapsed_output_shape = _collapse_dims_around_axis(
+        output.layout.shape_coord(), axis
+    )
+    var in_axis = collapsed_input_shape[1]
+    var out_axis = collapsed_output_shape[1]
 
     assert collapsed_output_shape[0] == collapsed_input_shape[0]
     assert collapsed_output_shape[2] == collapsed_input_shape[2]
@@ -350,15 +351,15 @@ def _repeat_interleave_gpu[
 
         @inline(.always)
         def scalar_func[width: Int, alignment: Int = 1](idx: Coord) {var}:
-            var output_index = rebind[IndexList[3]](coord_to_index_list(idx))
-            var input_index = output_index
-            input_index[1] = output_index[1] // repeat_count
+            var input_index = Coord(
+                Int(idx[0]), Int(idx[1]) // repeat_count, Int(idx[2])
+            )
 
             var input_value = collapsed_input.load[
                 width=width, alignment=align_of[dtype]()
-            ](Coord(input_index))
+            ](input_index)
             collapsed_output.store[alignment=align_of[dtype]()](
-                Coord(output_index), input_value
+                idx, input_value
             )
 
         elementwise[simd_width_of[output.dtype]()](
@@ -463,24 +464,22 @@ def repeat_interleave[
 
 @inline(.always)
 def repeat_interleave_shape[
-    rank: Int,
     type_repeats: DType,
 ](
-    input_shape: IndexList[rank],
+    input_shape: Coord,
     repeats: TileTensor[type_repeats, ...],
     axis: Int,
-) raises -> IndexList[rank]:
+) raises -> DynamicCoord[.int, type_of(input_shape).rank]:
     """
     Computes the output shape of `repeat_interleave` for an input of shape
     `input_shape`, `repeats`, and `axis`.
 
-    The returned `IndexList` is `input_shape` with the size along `axis`
+    The returned shape is `input_shape` with the size along `axis`
     replaced by the summed `repeats` values, or by `input_shape[axis]`
     multiplied by the single repeat value when `repeats` is a size-1
     broadcast.
 
     Parameters:
-        rank: The rank of the input tensor.
         type_repeats: The integral element type of `repeats`.
 
     Args:
@@ -492,13 +491,25 @@ def repeat_interleave_shape[
     Returns:
         `input_shape` with the `axis` dimension updated to the total repeated
         size.
+
+    Raises:
+        Error: If `axis` is outside `[0, rank)`, or `repeats` is neither size 1
+            nor the size of `input_shape[axis]`.
     """
     comptime assert type_repeats.is_integral()
     comptime assert repeats.flat_rank == 1
 
+    comptime rank = type_of(input_shape).rank
+    if axis < 0 or axis >= rank:
+        raise Error("repeat_interleave: axis out of range")
+    var axis_dim = 0
+    comptime for i in range(rank):
+        if i == axis:
+            axis_dim = Int(input_shape[i])
+
     var repeats_size = repeats.dim[0]()
     if repeats_size != 1 and repeats_size != Scalar[repeats.linear_idx_type](
-        input_shape[axis]
+        axis_dim
     ):
         raise Error(
             "repeat_interleave: repeats must be size 1 or equal to "
@@ -510,12 +521,13 @@ def repeat_interleave_shape[
     for i in range(repeats_size):
         total_repeats += Int(repeats[i])
 
-    var result = input_shape
-
     # If the repeats is size 1, the repeat is treated as a broadcast
-    if repeats_size == 1:
-        result[axis] *= total_repeats
-    else:
-        result[axis] = total_repeats
-
+    var new_axis_dim = (
+        axis_dim * total_repeats if repeats_size == 1 else total_repeats
+    )
+    var result = DynamicCoord[.int, rank]()
+    comptime for i in range(rank):
+        result.replace_dynamic[i](
+            new_axis_dim if i == axis else Int(input_shape[i])
+        )
     return result

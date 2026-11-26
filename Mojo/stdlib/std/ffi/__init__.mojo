@@ -451,7 +451,7 @@ struct OwnedDLHandle(Boolable, Movable):
             ' `get_function[def(Arg) abi("C") -> Ret](name)` to'
             " `get_function[Ret](name)`."
         )
-        __guard case .Some(ptr) = self._handle.get_symbol[NoneType](
+        guard case .Some(ptr) = self._handle.get_symbol[NoneType](
             cstr_name=name.as_c_string_span()
         ) else:
             raise Error(t"symbol not found: {name}")
@@ -554,7 +554,7 @@ struct OwnedDLHandle(Boolable, Movable):
         Returns:
             An optional pointer to the symbol, or `None` if not found.
         """
-        __guard case .Some(res) = self._handle.get_symbol[result_type](
+        guard case .Some(res) = self._handle.get_symbol[result_type](
             cstr_name=cstr_name
         ) else:
             return None
@@ -794,7 +794,7 @@ struct _DLHandle(Boolable, ImplicitlyCopyable, RegisterPassable):
         Returns:
             A handle to the function.
         """
-        __guard case .Some(opaque_function_ptr) = self.get_symbol[NoneType](
+        guard case .Some(opaque_function_ptr) = self.get_symbol[NoneType](
             cstr_name=cstr_name
         ) else:
             abort(t"symbol not found: {cstr_name}")
@@ -1254,23 +1254,28 @@ def external_call[
             __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
                 numFixedArgs=fixed_args.__mlir_index__(),
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=None,
             ](loaded_pack)
         else:
-            __mlir_op.`pop.external_call`[func=callee_kgen_string, _type=None](
-                loaded_pack
-            )
+            __mlir_op.`pop.external_call`[
+                func=callee_kgen_string,
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
+                _type=None,
+            ](loaded_pack)
         return rebind_var[return_type](NoneType())
     else:
         comptime if declares_variadic:
             return __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
                 numFixedArgs=fixed_args.__mlir_index__(),
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=return_type,
             ](loaded_pack)
         else:
             return __mlir_op.`pop.external_call`[
                 func=callee_kgen_string,
+                expandPackOperandIdx=__mlir_attr.`0 : index`,
                 _type=return_type,
             ](loaded_pack)
 
@@ -1319,5 +1324,6 @@ def _external_call_const[
             `targetMem0 = none, `,
             `targetMem1 = none>`,
         ],
+        expandPackOperandIdx=__mlir_attr.`0 : index`,
         _type=return_type,
     ](loaded_pack)

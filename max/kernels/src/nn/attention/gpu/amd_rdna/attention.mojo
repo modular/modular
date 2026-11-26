@@ -595,20 +595,20 @@ struct AttentionRDNA[
         # P buffer: dedicated SMEM for prefill (BM*BK), borrows decode-mode
         # P SMEM region (BM*BN) otherwise.
         comptime if not Self.token_gen:
-            var p_ptr = unsafe_stack_allocation[
-                Self.BM * Self.BK,
-                Self.q_type,
-                address_space=.SHARED,
-            ]()
+            @__address_space(.SHARED)
+            var p_storage = Array[Scalar[Self.q_type], Self.BM * Self.BK](
+                uninitialized=True
+            )
+            var p_ptr = p_storage.unsafe_ptr()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
             )
         else:
-            var p_ptr = unsafe_stack_allocation[
-                Self._p_smem_size,
-                Self.q_type,
-                address_space=.SHARED,
-            ]()
+            @__address_space(.SHARED)
+            var p_storage = Array[Scalar[Self.q_type], Self._p_smem_size](
+                uninitialized=True
+            )
+            var p_ptr = p_storage.unsafe_ptr()
             self.p_reg_buffer = Self.PRegisterBufferType(
                 p_ptr.as_unsafe_any_origin()
             )

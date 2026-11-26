@@ -427,16 +427,25 @@ def bench_manual[
             s_base,
             row_major((total_heads, seq_len, num_keys)),
         )
+        # FIXME: Softmax reads and writes this buffer in place, but origin
+        # tracking cannot express that each row is read before it is written.
+        var score_3d_untracked = score_3d.unsafe_origin_cast[
+            MutUntrackedOrigin
+        ]()
 
         def input_fn[
             _simd_width: Int
-        ](coords: Coord) {var score_3d} -> SIMD[qkv_type, _simd_width]:
-            return score_3d.load[width=_simd_width, alignment=1](coords)
+        ](coords: Coord) {var score_3d_untracked} -> SIMD[
+            qkv_type, _simd_width
+        ]:
+            return score_3d_untracked.load[width=_simd_width, alignment=1](
+                coords
+            )
 
         softmax_inline[qkv_type, 1](
             input_fn,
             Coord(total_heads, seq_len, num_keys),
-            score_3d,
+            score_3d_untracked,
             2,
             ctx,
         )

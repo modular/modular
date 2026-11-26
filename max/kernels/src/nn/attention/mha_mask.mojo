@@ -731,10 +731,6 @@ struct CausalMask(Defaultable, MHAMask, TrivialRegisterPassable):
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "CausalMask"
-
-    @staticmethod
     def name() -> String:
         return "CausalMask"
 
@@ -926,10 +922,6 @@ struct NullMask(Defaultable, MHAMask, TrivialRegisterPassable):
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "NullMask"
-
-    @staticmethod
     def name() -> String:
         return "NullMask"
 
@@ -1086,10 +1078,6 @@ struct ChunkedMask[local_window_size: Int](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "ChunkedMask"
 
     @staticmethod
     def name() -> String:
@@ -1387,10 +1375,6 @@ struct SlidingWindowCausalMask[window_size: Int](
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "SlidingWindowCausalMask"
-
-    @staticmethod
     def name() -> String:
         return String(t"SlidingWindowCausalMask[{Self.window_size}]")
 
@@ -1682,10 +1666,6 @@ struct SlidingWindowNonCausalMask[window_size: Int](
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "SlidingWindowNonCausalMask"
-
-    @staticmethod
     def name() -> String:
         return String(t"SlidingWindowNonCausalMask[{Self.window_size}]")
 
@@ -1896,10 +1876,6 @@ struct CausalPaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "CausalPaddingMask"
-
-    @staticmethod
     def name() -> String:
         return "CausalPaddingMask"
 
@@ -2098,10 +2074,6 @@ struct PaddingMask[LayoutType: TensorLayout, origin_: ImmOrigin](
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "PaddingMask"
-
-    @staticmethod
     def name() -> String:
         return "PaddingMask"
 
@@ -2263,10 +2235,6 @@ struct SparseRowsDecodeMask[base_t: MHAOperand, //, row_width: Int](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "SparseRowsDecodeMask"
 
     @staticmethod
     def name() -> String:
@@ -2519,10 +2487,6 @@ struct MaterializedMask[
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "MaterializedMask"
 
     @staticmethod
     def name() -> String:
@@ -2818,10 +2782,6 @@ struct AndMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         encoder.encode_fields[Self](self, target)
 
     @staticmethod
-    def get_type_name() -> String:
-        return "AndMask"
-
-    @staticmethod
     def name() -> String:
         return "AndMask[" + Self.T.name() + ", " + Self.S.name() + "]"
 
@@ -2988,10 +2948,6 @@ struct OrMask[T: MHAMask, S: MHAMask, //, lhs: T, rhs: S](
         self, mut encoder: Some[DeviceTypeEncoder], target: MutOpaquePointer[_]
     ):
         encoder.encode_fields[Self](self, target)
-
-    @staticmethod
-    def get_type_name() -> String:
-        return "OrMask"
 
     @staticmethod
     def name() -> String:

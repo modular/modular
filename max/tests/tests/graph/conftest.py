@@ -232,6 +232,12 @@ def buffer_types(
     return st.builds(BufferType, dtypes, shapes, st.just(device))
 
 
+def mismatched_devices():  # noqa: ANN201
+    """Ordered pairs of distinct devices, for ops that need a common device."""
+    devices = [DeviceRef.CPU(), DeviceRef.GPU(0), DeviceRef.GPU(1)]
+    return st.sampled_from([(a, b) for a in devices for b in devices if a != b])
+
+
 def axes(shapes):  # noqa: ANN001, ANN201
     def strategy(shape):  # noqa: ANN001, ANN202
         assume(shape.rank > 0)

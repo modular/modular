@@ -28,7 +28,7 @@ import pytest
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.kv_cache.cache_params import MHAKVCacheParams
+from max.nn.kv_cache.cache_params import MHAKVCacheParams, MultiKVCacheParams
 from max.pipelines.architectures import hf_config_shims  # noqa: F401
 from max.pipelines.architectures.gemma4.model_config import (
     Gemma4ForConditionalGenerationConfig,
@@ -36,6 +36,9 @@ from max.pipelines.architectures.gemma4.model_config import (
     _resolve_head_dims,
     _resolve_num_global_kv_heads,
     max_images_per_request,
+)
+from max.pipelines.architectures.gemma4_modulev3.model_config import (
+    Gemma4Config,
 )
 from max.pipelines.lib import KVCacheConfig
 from max.pipelines.lib.pipeline_parallel import PipelineStage
@@ -256,3 +259,31 @@ def test_a_pipeline_stage_builds_only_its_layers() -> None:
             KVCacheConfig(),
             DType.bfloat16,
         )
+
+
+@pytest.mark.parametrize(
+    "config_cls", [Gemma4ForConditionalGenerationConfig, Gemma4Config]
+)
+def test_only_the_modulev3_config_replicates_kv_heads(
+    config_cls: type[Gemma4ForConditionalGenerationConfig],
+) -> None:
+    """Four devices exceed the E4B config's two KV heads."""
+    hf_config = _load_hf_config()
+    pipeline_config = _mock_pipeline_config()
+    pipeline_config.model.device_specs = [
+        DeviceSpec.accelerator(i) for i in range(4)
+    ]
+    if not config_cls.ALLOW_KV_HEAD_REPLICATION:
+        with pytest.raises(ValueError, match="divisible"):
+            config_cls.initialize_from_config(
+                pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+            )
+        return
+    config = config_cls.initialize_from_config(
+        pipeline_config, hf_config, max_seq_len=_MAX_SEQ_LEN
+    )
+    for params in (config.text_config.kv_params, config.kv_params):
+        assert isinstance(params, MultiKVCacheParams)
+        for leaf in params.children.values():
+            assert isinstance(leaf, MHAKVCacheParams)
+            assert leaf.n_kv_heads_per_device == 1

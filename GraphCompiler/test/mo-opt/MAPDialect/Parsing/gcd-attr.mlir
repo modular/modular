@@ -1,7 +1,7 @@
 // RUN: mo-opt %s | mo-opt | FileCheck %s
 
-// A SIMD width limit is a constant, a parameter dim, or a `#map.gcd<[...]>` of
-// limits, which nests. It prints as written: only the pass and the lowering
+// A SIMD width is a constant, a parameter dim, or a `#map.gcd<[...]>` of
+// widths, which nests. It prints as written: only the pass and the lowering
 // simplify it.
 
 !DType = !lit.struct<@std::@builtin::@dtype::@DType>

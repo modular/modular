@@ -40,7 +40,6 @@ afterwards.
 """
 
 from std.atomic import Atomic, Ordering
-from std.memory import unsafe_stack_allocation
 from std.os import abort
 from std.utils import StaticTuple
 
@@ -264,7 +263,9 @@ def _hisparse_resolve_kernel[
     var order1 = gbase.unsafe_offset(L.GROUP_ORDER1).unsafe_bitcast[Int16]()
 
     # [epoch, group initialized, which order, hits, chunk total]
-    var shared = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[UInt32, 8](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
     for h in range(tid, hash_capacity, BLOCK):
         keys[unsafe_offset=h] = 0
         firsts[unsafe_offset=h] = 0

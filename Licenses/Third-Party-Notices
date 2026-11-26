@@ -134,33 +134,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
    SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-8. Licensee's use of a derivative work of llama.cpp is subject to the terms and conditions of the MIT license.
-   All third-party software packages are copyright by their respective authors.
-   The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
-
-   MIT License
-
-   Copyright (c) 2023-2024 The ggml authors
-
-   Permission is hereby granted, free of charge, to any person obtaining a copy
-   of this software and associated documentation files (the "Software"), to deal
-   in the Software without restriction, including without limitation the rights
-   to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-   copies of the Software, and to permit persons to whom the Software is
-   furnished to do so, subject to the following conditions:
-
-   The above copyright notice and this permission notice shall be included in all
-   copies or substantial portions of the Software.
-
-   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-   AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-   SOFTWARE.
-
-9. Licensee's use of AMD's HIP runtime API is subject to terms and conditions of the AMD license.
+8. Licensee's use of AMD's HIP runtime API is subject to terms and conditions of the AMD license.
    The AMD license terms and conditions are hereby incorporated into the Agreement by this reference.
 
    Copyright (c) 2008 - 2024 Advanced Micro Devices, Inc. All rights reserved.
@@ -183,7 +157,7 @@ components are licensed to Licensee pursuant to the following terms and conditio
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
    THE SOFTWARE.
 
-10. Licensee's use of Protocol Buffers is subject to the terms and conditions of the 3-clause BSD license.
+9. Licensee's use of Protocol Buffers is subject to the terms and conditions of the 3-clause BSD license.
    All third-party software packages are copyright by their respective authors.
    The 3-clause BSD license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -220,12 +194,12 @@ components are licensed to Licensee pursuant to the following terms and conditio
    standalone and requires a support library to be linked with it.  This
    support library is itself covered by the above license.
 
-11. Licensee's use of metal-cpp is subject to the terms and conditions of the Apache 2.0 license.
+10. Licensee's use of metal-cpp is subject to the terms and conditions of the Apache 2.0 license.
    All third-party software packages are copyright by their respective authors.
    The Apache 2.0 license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the Apache 2.0 license can be found at: <https://www.apache.org/licenses/LICENSE-2.0>
 
-12. Licensee's use of NVSHMEM is subject to the terms and conditions of the below licenses.
+11. Licensee's use of NVSHMEM is subject to the terms and conditions of the below licenses.
    Copyright (c) 2016-2025, NVIDIA CORPORATION. All rights reserved.
 
    Unless otherwise noted in the ADDITIONAL LICENSES section, the entirety of the NVSHMEM repository is covered under the LICENSE AGREEMENT FOR NVIDIA SOFTWARE DEVELOPMENT KITS and the NVSHMEM SUPPLEMENT TO SOFTWARE LICENSE AGREEMENT FOR NVIDIA SOFTWARE DEVELOPMENT KITS supplement below.
@@ -609,7 +583,7 @@ END Inclusion of mlx5_ifc.h from RDMA Core
 END Inclusion of mlx5_prm.h from dpdk
    ----------------------------------------------------------------------------------
 
-13. Licensee's use of Cameron Desrochers' Concurrent Queue is subject to the terms and conditions of the BSD 2-Clause "Simplified" License.
+12. Licensee's use of Cameron Desrochers' Concurrent Queue is subject to the terms and conditions of the BSD 2-Clause "Simplified" License.
     All third-party software packages are copyright by their respective authors.
     The 2-Clause "Simplified" BSD License terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -637,7 +611,7 @@ END Inclusion of mlx5_prm.h from dpdk
     ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
     POSSIBILITY OF SUCH DAMAGE.
 
-14. Licensee's use of AMD's ROCR-Runtime is subject to the terms and conditions of the University of Illinois/NCSA Open Source License.
+13. Licensee's use of AMD's ROCR-Runtime is subject to the terms and conditions of the University of Illinois/NCSA Open Source License.
    The license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the license can be found at: <https://github.com/ROCm/ROCR-Runtime/blob/master/LICENSE.md>
 
@@ -667,7 +641,7 @@ END Inclusion of mlx5_prm.h from dpdk
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS WITH
    THE SOFTWARE.
 
-15. Licensee's use of AMD's rocprofiler-sdk is subject to the terms and conditions of the MIT license.
+14. Licensee's use of AMD's rocprofiler-sdk is subject to the terms and conditions of the MIT license.
    The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the license can be found at: <https://github.com/ROCm/rocprofiler-sdk/blob/main/LICENSE>
 
@@ -691,7 +665,7 @@ END Inclusion of mlx5_prm.h from dpdk
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
    THE SOFTWARE.
 
-16. Licensee's use of AMD's rocshmem is subject to the terms and conditions of the MIT license.
+15. Licensee's use of AMD's rocshmem is subject to the terms and conditions of the MIT license.
    The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the license can be found at: <https://github.com/ROCm/rocSHMEM/blob/develop_deprecated/LICENSE.md>
 
@@ -705,7 +679,7 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-17. Licensee's use of a derivative work of Black is subject to the terms and conditions of the MIT license.
+16. Licensee's use of a derivative work of Black is subject to the terms and conditions of the MIT license.
    All third-party software packages are copyright by their respective authors.
    The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
 
@@ -731,7 +705,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
    SOFTWARE.
 
-18. Licensee's use of a derivative work of lib2to3, a component of the Python standard library, is subject to the terms and conditions of the Python Software Foundation License Version 2.
+17. Licensee's use of a derivative work of lib2to3, a component of the Python standard library, is subject to the terms and conditions of the Python Software Foundation License Version 2.
    All third-party software packages are copyright by their respective authors.
    The PSF License Version 2 terms and conditions are hereby incorporated into the Agreement by this reference.
    The full text of the license can be found at: <https://docs.python.org/3/license.html>
@@ -779,7 +753,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 8. By copying, installing or otherwise using Python, Licensee agrees
    to be bound by the terms and conditions of this License Agreement.
 
-19. Licensee's use of a derivative work of FreeBSD msun (Sun Microsystems fdlibm) is subject to the following terms and conditions.
+18. Licensee's use of a derivative work of FreeBSD msun (Sun Microsystems fdlibm) is subject to the following terms and conditions.
    All third-party software packages are copyright by their respective authors.
    The Mojo standard library math module (std.math) contains code derived from FreeBSD msun (Sun Microsystems fdlibm).
 
@@ -835,7 +809,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
    Debugged and optimized by Bruce D. Evans.
 
-20. Licensee's use of a derivative work of musl is subject to the terms and conditions of the MIT license.
+19. Licensee's use of a derivative work of musl is subject to the terms and conditions of the MIT license.
    All third-party software packages are copyright by their respective authors.
    The MIT license terms and conditions are hereby incorporated into the Agreement by this reference.
    The Mojo standard library math module (std.math) contains code derived from musl (https://musl.libc.org/).
@@ -864,7 +838,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
    SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 
-21. Licensee's use of a derivative work of SLEEF is subject to the terms and conditions of the Boost Software License 1.0.
+20. Licensee's use of a derivative work of SLEEF is subject to the terms and conditions of the Boost Software License 1.0.
    All third-party software packages are copyright by their respective authors.
    The Boost Software License 1.0 terms and conditions are hereby incorporated into the Agreement by this reference.
    Used in the Mojo standard library math module.
@@ -896,7 +870,7 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
    ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
    DEALINGS IN THE SOFTWARE.
 
-22. Licensee's use of a derivative work of the Cephes Mathematical Library is subject to the following terms and conditions.
+21. Licensee's use of a derivative work of the Cephes Mathematical Library is subject to the following terms and conditions.
    All third-party software packages are copyright by their respective authors.
    Portions of the Mojo standard library math module are derived from the
    Cephes Mathematical Library by Stephen L. Moshier

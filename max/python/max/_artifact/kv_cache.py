@@ -108,6 +108,52 @@ class ContextParallel:
 
 
 @dataclass(frozen=True)
+class CacheDispatch:
+    """What a cache's decode dispatch reads, as the kernels' policy takes it.
+
+    It mirrors MAX's ``AttnDispatchDesc``. An engine hands it to the
+    kernels' dispatch entry as it is and needs no rule per attention kind.
+    A field the cache's attention does not set is ``None``.
+
+    Args:
+        kind: The attention family whose policy resolves the dispatch.
+        num_q_heads: The query heads on one device.
+        num_kv_heads: The key-value heads on one device.
+        head_dim: The cache row width the dispatch assumes.
+        page_size: The tokens one page holds.
+        window_size: The sliding window in tokens.
+        sparse_indices_stride: The cache rows a sparse decode selects per
+            token.
+        kv_dtype: The storage class of the values, an ``AttnKVDType`` value.
+        kv_form: The sparse cache form, an ``MLASparseKVForm`` value.
+        flags: The yes-or-no facts, an ``AttnDispatchFlag`` bitset.
+    """
+
+    kind: str
+    num_q_heads: int | None = None
+    num_kv_heads: int | None = None
+    head_dim: int | None = None
+    page_size: int | None = None
+    window_size: int | None = None
+    sparse_indices_stride: int | None = None
+    kv_dtype: int | None = None
+    kv_form: int | None = None
+    flags: int = 0
+
+
+_DISPATCH_INT_FIELDS = (
+    "num_q_heads",
+    "num_kv_heads",
+    "head_dim",
+    "page_size",
+    "window_size",
+    "sparse_indices_stride",
+    "kv_dtype",
+    "kv_form",
+)
+
+
+@dataclass(frozen=True)
 class MHAKVCache:
     """A multi-head attention cache the graphs read.
 
@@ -142,6 +188,8 @@ class MHAKVCache:
         context_parallel: How the cache splits token positions across a
             decode context parallel group, or ``None`` when every rank of a
             replica holds them all.
+        dispatch: What the cache's decode dispatch reads, or ``None`` for
+            a cache whose params state none.
     """
 
     kind: ClassVar[str] = "mha"
@@ -163,6 +211,7 @@ class MHAKVCache:
     num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
     context_parallel: ContextParallel | None = None
+    dispatch: CacheDispatch | None = None
 
 
 @dataclass(frozen=True)
@@ -219,11 +268,11 @@ class MLAKVCache:
         sparse_kv_form: The form sparse MLA decode dispatches on, or ``None``
             for dense MLA. An indexer cache records its MLA cache's form,
             whose capture key it follows.
-        dispatch_unread: Whether the kernels reading the cache never read
-            its dispatch record, so an engine need not key a capture on it.
         context_parallel: How the cache splits token positions across a
             decode context parallel group, or ``None`` when every rank of a
             replica holds them all.
+        dispatch: What the cache's decode dispatch reads, or ``None`` for
+            a cache whose params state none.
     """
 
     kind: ClassVar[str] = "mla"
@@ -245,8 +294,8 @@ class MLAKVCache:
     num_draft_tokens: int
     leaves: tuple[KVPoolLeaf, ...]
     sparse_kv_form: SparseKVForm | None = None
-    dispatch_unread: bool = False
     context_parallel: ContextParallel | None = None
+    dispatch: CacheDispatch | None = None
 
 
 @dataclass(frozen=True)
@@ -356,7 +405,7 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
                     "scratch": region.scratch,
                 }
                 for region in cache.regions
-            ]
+            ],
         }
     attention: dict[str, ArtifactType] = {
         "dtype": cache.dtype.name,
@@ -373,6 +422,7 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
         "speculative_method": cache.speculative_method,
         "num_draft_tokens": cache.num_draft_tokens,
         "context_parallel": _serialize_context_parallel(cache.context_parallel),
+        "dispatch": _serialize_dispatch(cache.dispatch),
     }
     if isinstance(cache, MLAKVCache):
         return (
@@ -382,7 +432,6 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
                 "num_q_heads": cache.num_q_heads,
                 "sparse_indices_stride": cache.sparse_indices_stride,
                 "sparse_kv_form": cache.sparse_kv_form,
-                "dispatch_unread": cache.dispatch_unread,
             }
         )
     return (
@@ -393,6 +442,21 @@ def _serialize_cache(cache: KVCache) -> dict[str, ArtifactType]:
             "allow_kv_head_replication": cache.allow_kv_head_replication,
         }
     )
+
+
+def _serialize_dispatch(
+    dispatch: CacheDispatch | None,
+) -> dict[str, ArtifactType] | None:
+    if dispatch is None:
+        return None
+    # An unset field is left out, so the record lists what the kind sets.
+    fields: dict[str, ArtifactType] = {"kind": dispatch.kind}
+    for name in _DISPATCH_INT_FIELDS:
+        if (value := getattr(dispatch, name)) is not None:
+            fields[name] = value
+    if dispatch.flags:
+        fields["flags"] = dispatch.flags
+    return fields
 
 
 def _serialize_leaf(leaf: KVPoolLeaf) -> dict[str, ArtifactType]:
@@ -498,8 +562,9 @@ def _mha(value: dict[str, ArtifactType], cls: type[MHAKVCache]) -> MHAKVCache:
         leaves=_tuple(_leaf)(obj["leaves"]),
         # An artifact exported before the field reads as unsplit.
         context_parallel=decode_optional(_context_parallel)(
-            obj.get("context_parallel")
+            obj["context_parallel"]
         ),
+        dispatch=decode_optional(_dispatch)(obj["dispatch"]),
     )
 
 
@@ -525,15 +590,26 @@ def _mla(value: dict[str, ArtifactType]) -> MLAKVCache:
         speculative_method=decode_optional(_str)(obj["speculative_method"]),
         num_draft_tokens=_int(obj["num_draft_tokens"]),
         leaves=_tuple(_leaf)(obj["leaves"]),
-        # An artifact written before the field existed reads as dense.
-        sparse_kv_form=decode_optional(_sparse_kv_form)(
-            obj.get("sparse_kv_form")
-        ),
-        dispatch_unread=_bool(obj.get("dispatch_unread", False)),
-        # An artifact exported before the field reads as unsplit.
+        sparse_kv_form=decode_optional(_sparse_kv_form)(obj["sparse_kv_form"]),
         context_parallel=decode_optional(_context_parallel)(
-            obj.get("context_parallel")
+            obj["context_parallel"]
         ),
+        dispatch=decode_optional(_dispatch)(obj["dispatch"]),
+    )
+
+
+def _dispatch(value: ArtifactType) -> CacheDispatch:
+    obj = dict(expect(value, dict))
+    if unknown := sorted(set(obj) - {"kind", "flags", *_DISPATCH_INT_FIELDS}):
+        raise ValueError(f"unknown fields {unknown}")
+    return CacheDispatch(
+        kind=_str(obj["kind"]),
+        flags=_int(obj.get("flags", 0)),
+        **{
+            name: _int(obj[name])
+            for name in _DISPATCH_INT_FIELDS
+            if name in obj
+        },
     )
 
 

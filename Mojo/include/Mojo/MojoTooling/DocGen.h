@@ -47,12 +47,19 @@ struct FrontendOptions;
 /// registerAllKGENDialects). Imports are resolved against \p includePaths.
 /// Diagnostics are written to stderr through the SourceMgr handler selected by
 /// \p diagnosticFormat.
+///
+/// \p outputNamespace, when not empty, is the namespace the package at
+/// \p resolvedPath is imported under once precompiled (outermost component
+/// first). The package is documented as `<namespace>.<name>`, so imports of
+/// itself spelled that way resolve to it, and the doc paths it generates
+/// include the namespace.
 bool generateMojoDocJSON(const std::filesystem::path &resolvedPath,
                          mlir::MLIRContext &context,
                          const KGEN::FrontendOptions &frontendOptions,
                          llvm::ArrayRef<std::string> includePaths,
                          DiagnosticFormat diagnosticFormat,
-                         llvm::raw_ostream &os);
+                         llvm::raw_ostream &os,
+                         llvm::ArrayRef<std::string> outputNamespace = {});
 
 } // namespace M
 

@@ -86,12 +86,12 @@ kgen.func @tryraise(%arg1: index, %arg2 : index) async -> index {
       // CHECK-NEXT: }
       // CHECK-NEXT: [[V11:%.*]] = kgen.struct.gep %arg0[[[#FRAME10 - 3]]]
       // CHECK-NEXT: [[V12:%.*]] = pop.load [[V11]] : !kgen.pointer<index>
-      // CHECK-NEXT: lit.try.raise "try0" [[V12]] : index
+      // CHECK-NEXT: lit.try.raise "try0" handler 0 [[V12]] : index
       %result2 = kgen.call @foo(%arg2) : (index) -> index
       co.suspend (%hdl) {
         co.suspend.end
       }
-      lit.try.raise "try0" %result2 : index
+      lit.try.raise "try0" handler 0 %result2 : index
     } else {
       hlcf.yield
     }
@@ -1612,11 +1612,11 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-NEXT:  hlcf.return
 
 // The first suspension point was handled by the hot ramp, so it does not store
-// a state again, but it still consumes state 1.
+// a state again. Its number came with the op instead of being counted here.
 // CHECK-LABEL: kgen.func @two_suspends_resume
 // CHECK-NEXT:  co.suspend {
 // CHECK-NEXT:  co.suspend.end
-// CHECK-NEXT:  }
+// CHECK-NEXT:  } <state = 1>
 // CHECK-NOT:   kgen.param.constant: i32 = <1>
 // CHECK:       [[STATE2:%.*]] = kgen.param.constant: i32 = <2>
 // CHECK-NEXT:  [[SLOT2:%.*]] = kgen.struct.gep %arg0[0]
@@ -1650,9 +1650,9 @@ kgen.func @trigger_trigger_two_suspends(%arg0: index, %arg1: index) {
 
 // COM: Hot only coroutine with more than one first-state suspension point (one
 // COM: per branch). The hot ramp stores states 1 and 2 for them. The kept
-// COM: first-state suspends in the resume function must each consume an id
-// COM: without storing a state, so the later suspends store 3 and 4. This is
-// COM: what the `firstSuspends()` check in `populateHotResumeFrom` is for.
+// COM: first-state suspends in the resume function keep those numbers without
+// COM: storing a state again, so the later suspends store 3 and 4. The
+// COM: `firstSuspends()` check in `populateHotResumeFrom` decides which.
 
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
 // CHECK-LABEL: kgen.func @branchy_hot_ramp
@@ -1664,8 +1664,10 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 // CHECK-LABEL: kgen.func @branchy_resume
 // CHECK:       hlcf.if
 // CHECK-NEXT:  co.suspend {
+// CHECK:       } <state = 1>
 // CHECK:       } else {
 // CHECK-NEXT:  co.suspend {
+// CHECK:       } <state = 2>
 // CHECK-NOT:   kgen.param.constant: i32
 // CHECK:       [[STATE3:%.*]] = kgen.param.constant: i32 = <3>
 // CHECK-NEXT:  [[SLOT3:%.*]] = kgen.struct.gep %arg0[0]

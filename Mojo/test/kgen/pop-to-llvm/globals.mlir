@@ -62,6 +62,34 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
 
 // -----
 
+// The alignment is a minimum: a global is at least as aligned as its element
+// type in memory, with or without an explicit alignment.
+module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
+  // CHECK-LABEL: kgen.func @global_alloc_struct_natural_alignment
+  kgen.func @global_alloc_struct_natural_alignment() -> !kgen.pointer<struct<(array<8, scalar<f32>>)>, 3> {
+    %0 = pop.global_alloc "my_struct" 1 x !kgen.struct<(array<8, scalar<f32>>)> address_space 3
+    hlcf.return %0 : !kgen.pointer<struct<(array<8, scalar<f32>>)>, 3>
+  }
+
+  // CHECK-LABEL: kgen.func @global_alloc_struct_low_alignment
+  kgen.func @global_alloc_struct_low_alignment() -> !kgen.pointer<struct<(array<8, scalar<f32>>)>, 3> {
+    %0 = pop.global_alloc "my_low" 1 x !kgen.struct<(array<8, scalar<f32>>)> address_space 3 align 1
+    hlcf.return %0 : !kgen.pointer<struct<(array<8, scalar<f32>>)>, 3>
+  }
+
+  // CHECK-LABEL: kgen.func @global_alloc_struct_high_alignment
+  kgen.func @global_alloc_struct_high_alignment() -> !kgen.pointer<struct<(array<8, scalar<f32>>)>, 3> {
+    %0 = pop.global_alloc "my_high" 1 x !kgen.struct<(array<8, scalar<f32>>)> address_space 3 align 16
+    hlcf.return %0 : !kgen.pointer<struct<(array<8, scalar<f32>>)>, 3>
+  }
+
+  // CHECK-DAG: llvm.mlir.global internal @my_struct() {addr_space = 3 : i32, alignment = 4 : i64}
+  // CHECK-DAG: llvm.mlir.global internal @my_low() {addr_space = 3 : i32, alignment = 4 : i64}
+  // CHECK-DAG: llvm.mlir.global internal @my_high() {addr_space = 3 : i32, alignment = 16 : i64}
+}
+
+// -----
+
 module attributes {M.target_info = #M.target<triple="", arch="", features="", data_layout="", simd_bit_width=128>} {
   // CHECK-LABEL: @global_alloc_initialized
   kgen.func @global_alloc_initialized() -> !kgen.pointer<scalar<si32>> {

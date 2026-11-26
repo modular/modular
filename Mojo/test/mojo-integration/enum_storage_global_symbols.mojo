@@ -10,8 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# Enum values in global constants:
-# 1. Read Bool, Int, wide, SIMD and empty enum globals.
+# Union values in global constants:
+# 1. Read Bool, Int, wide, SIMD and empty union globals.
 # 2. Relocate function and string fragments at offsets zero and eight.
 # 3. Preserve nested packed globals, typed-union layout and global alignment.
 # RUN: %mojo %s | FileCheck %s
@@ -20,17 +20,17 @@
 from std.builtin.globals import global_constant
 
 
-__enum Flag(ImplicitlyCopyable):
+__union Flag(ImplicitlyCopyable):
     case value(Bool)
-    case none
+    case none()
 
 
-__enum Word(ImplicitlyCopyable):
+__union Word(ImplicitlyCopyable):
     case value(Int)
-    case none
+    case none()
 
 
-__enum Uneven(ImplicitlyCopyable):
+__union Uneven(ImplicitlyCopyable):
     case aligned(SIMD[DType.int64, 4])
     case wide(Int64, Int64, Int64, Int64, Int64)
 
@@ -61,7 +61,7 @@ def aligned_address() abi("Mojo") -> Pointer[Uneven, ImmStaticOrigin]:
 
 @export
 def empty_address() abi("Mojo") -> Pointer[Word, ImmStaticOrigin]:
-    return Pointer(to=global_constant[Word.none]())
+    return Pointer(to=global_constant[Word.none()]())
 
 
 def print_flag(value: Flag):
@@ -69,7 +69,7 @@ def print_flag(value: Flag):
         case .value(payload):
             # CHECK-DAG: bool True
             print("bool", payload)
-        case .none:
+        case .none():
             print("none")
 
 
@@ -78,7 +78,7 @@ def print_word(value: Word):
         case .value(payload):
             # CHECK-DAG: int 17
             print("int", payload)
-        case .none:
+        case .none():
             # CHECK-DAG: none
             print("none")
 
@@ -93,7 +93,7 @@ def print_uneven(value: Uneven):
             print("wide", a, b, c, d, e)
 
 
-__enum NamedEvent(ImplicitlyCopyable):
+__union NamedEvent(ImplicitlyCopyable):
     case aligned(SIMD[DType.float32, 4])
     case wide(UInt32, UInt32, UInt32, UInt32, UInt32)
     case named(StaticString)
@@ -117,13 +117,13 @@ struct Callback(ImplicitlyCopyable):
     var b: Int
 
 
-__enum Event(ImplicitlyCopyable):
+__union Event(ImplicitlyCopyable):
     case aligned(SIMD[DType.int64, 2])
     case callback(Callback)
     case bytes(Int64, Int64, Int64)
 
 
-__enum Action(ImplicitlyCopyable):
+__union Action(ImplicitlyCopyable):
     case number(Int)
     case named(Int, StaticString)
     case call(Int, Callback)

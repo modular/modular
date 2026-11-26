@@ -13,13 +13,13 @@
 
 from .._trait import HalPluginHooks
 from ..._machine import DeviceRef
-from ...execution_config._apple import ExecutionConfigForTarget
+from ...execution_config.gpu_execution_config import GPUExecutionConfiguration
 from ...extensions.metal import MetalHALExtensions
 
 
 struct MetalHalPluginHooks(HalPluginHooks):
-    comptime ExecutionConfigType[device: DeviceRef] = ExecutionConfigForTarget[
-        device.spec.name
+    comptime ExecutionConfigType[device: DeviceRef] = GPUExecutionConfiguration[
+        has_constant_memory=True
     ]
     """Returns the execution configuration for the given device."""
 

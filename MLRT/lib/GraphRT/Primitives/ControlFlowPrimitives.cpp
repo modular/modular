@@ -25,6 +25,7 @@
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // grt.chain.create
@@ -358,7 +359,8 @@ static void repeat_i32(AsyncValueRef<int32_t> count, RemainingArguments args,
 //===----------------------------------------------------------------------===//
 
 /// This registers the 'graphrt' dialect primitives for control flow.
-void M::registerGraphRTControlFlowPrimitives(PrimitiveRegistry &registry) {
+void M::MLRT::registerGraphRTControlFlowPrimitives(
+    PrimitiveRegistry &registry) {
   ADD_PRIMITIVE(registry, "grt.chain.create", grt_chain_create);
   ADD_PRIMITIVE(registry, "grt.invoke", grt_invoke);
   ADD_PRIMITIVE(registry, "grt.if", grt_if);

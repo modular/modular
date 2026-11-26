@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# RUN: %parse-mojo-isolated %s -split-input-file | FileCheck %s
+# RUN: %parse-mojo-isolated %s | FileCheck %s
 
 # COM: Parameter inference from equality (`where a == b`) body constraints, as
 # COM: introduced by `ParamInf::inferFromBodyConstraints`. `R3` is inferred from
@@ -41,7 +41,7 @@ def use_split():
     split_chain(closure)
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 # COM: The *same* two equalities written as a single conjunction (`a and b`)
@@ -69,7 +69,7 @@ def use_conj():
     conj_chain(closure)
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 # COM: An equality whose open side is a *parametric type* binds more than one
@@ -97,7 +97,7 @@ def use_unpack():
     unpack(Pair[Int, Bool]())
 
 
-# // -----
+# ===----------------------------------------------------------------------=== #
 
 
 # COM: Default values are bound last

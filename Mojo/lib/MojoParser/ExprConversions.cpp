@@ -31,6 +31,7 @@
 #include "StructEmitter.h"
 #include "Traits.h"
 
+#include "Mojo/KGENDialect/CompilerCaches.h"
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
 #include "Mojo/KGENDialect/KGENUtils.h"
@@ -65,6 +66,8 @@ bool checkConventionsConvertible(ArgConvention expectedConv,
   // extracting the actual type to compare. This also doesn't check for
   // passing convention, since those are trivially convertible.
   switch (expectedConv) {
+  case ArgConvention::Unresolved:
+    llvm_unreachable("unresolved convention in a resolved signature");
   case ArgConvention::OwnedReg:
     llvm_unreachable("not used by the mojo parser");
   case ArgConvention::PackImmMem:
@@ -223,8 +226,9 @@ static FnMetadataAttr withoutCaptureOrigins(FnMetadataAttr metadata) {
     return metadata;
   return metadata.getWithMetadata(FnMetaOriginDataAttr::get(
       metadata.getContext(), originData.getNumImplicitOriginDecls(),
-      /*captureOrigins=*/{}, originData.getIsNestedOriginsReadOnly(),
-      originData.getDefinesInteriorOrigins()));
+      /*captureOrigins=*/{}, originData.getDefinesInteriorOrigins(),
+      originData.getIsUnsafeNestedOriginsReadOnly(),
+      originData.getIsEnforcedNestedOriginsReadOnly()));
 }
 
 // Strip out irrelevant details of a function that can be rebound away to make
@@ -467,6 +471,8 @@ static FnOp generateConversionThunk(Attribute key, ASTDecl &moduleDecl,
 
     AnyValue value;
     switch (convForActual) {
+    case ArgConvention::Unresolved:
+      llvm_unreachable("unresolved convention in a resolved signature");
     case ArgConvention::OwnedReg:
       llvm_unreachable("not used by the mojo parser");
     case ArgConvention::ByRefResult:
@@ -728,8 +734,9 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
   auto thunkMetadata = FnMetaOriginDataAttr::get(
       ctx, reducedExpected.getNumImplicitOriginDecls(),
       reducedExpected.getCaptureOrigins(),
-      reducedExpected.getIsNestedOriginsReadOnly(),
-      reducedExpected.getDefinesInteriorOrigins());
+      reducedExpected.getDefinesInteriorOrigins(),
+      reducedExpected.getFnMetaOriginData().getIsUnsafeNestedOriginsReadOnly(),
+      reducedExpected.getIsEnforcedNestedOriginsReadOnly());
   auto thunkFuncType = sugarCast<FunctionType>(
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
   SmallVector<ConstraintAttr> thunkBodyConstraints;
@@ -1072,6 +1079,59 @@ class CastRemover : public ParameterReplacer<CastRemover> {
 
   friend class ParameterReplacer<CastRemover>;
 };
+
+/// Rewrites every value of the stdlib `Origin` type to `{}`. `Origin` has no
+/// fields, so this only changes how a value is spelled. The same holds for any
+/// value of a singleton struct type, so this can extend to all of them.
+class SingletonOriginNormalizer
+    : public ParameterReplacer<SingletonOriginNormalizer> {
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  doReplace(T value, size_t depth) {
+    using Base =
+        std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>;
+    MLIRContext *context = value.getContext();
+    return Base::getFromOpaquePointer(CompilerCaches::getOrCompute(
+        context, &CompilerCaches::originNormalized, value.getAsOpaquePointer(),
+        [&] {
+          Base result = normalizeUncached(value, depth);
+          // A normalized value is its own normalized form.
+          if (result != Base(value))
+            CompilerCaches::insert(context, &CompilerCaches::originNormalized,
+                                   result.getAsOpaquePointer(),
+                                   result.getAsOpaquePointer());
+          return result.getAsOpaquePointer();
+        }));
+  }
+
+  template <typename T>
+  std::conditional_t<std::is_base_of_v<Type, T>, Type, Attribute>
+  normalizeUncached(T value, size_t depth) {
+    // Normalization never turns a non-`Origin` type into `Origin`, so the
+    // check can skip the operands of an `Origin` value.
+    if constexpr (std::is_base_of_v<Attribute, T>) {
+      if (auto typed = dyn_cast<TypedAttr>(value))
+        if (ASTType(typed.getType()).isOriginStruct())
+          return LITStructAttr::get({}, cast<LIT::StructType>(this->replaceImpl(
+                                            typed.getType(), depth)));
+    }
+    SmallVector<Attribute, 16> newAttrs;
+    SmallVector<Type, 16> newTypes;
+    bool changed = false;
+    auto walkFn = [&](auto value, SmallVectorImpl<decltype(value)> &values) {
+      auto newValue = this->replaceImpl(value, depth);
+      changed |= newValue != value;
+      values.push_back(newValue);
+    };
+    value.walkImmediateSubElements(
+        [&](Attribute attr) { walkFn(attr, newAttrs); },
+        [&](Type type) { walkFn(type, newTypes); });
+    return changed ? value.replaceImmediateSubElements(newAttrs, newTypes)
+                   : value;
+  }
+
+  friend class ParameterReplacer<SingletonOriginNormalizer>;
+};
 } // namespace
 
 // Returns true if `fromParam` and `toParam` denote the same parameter value up
@@ -1184,6 +1244,12 @@ canZeroCostConvertImpl(ASTType sugaredFromType, ASTType sugaredToType,
                        SmallVectorImpl<ConstraintAttr> *unprovenConstraints) {
   if (sugaredFromType.isEqualCanon(sugaredToType))
     return TriBool::yes(); // No rebind needed!
+
+  // Types that differ only in how they spell an `Origin` value are the same.
+  SingletonOriginNormalizer originNormalizer;
+  if (originNormalizer.replace(getCanonicalType(sugaredFromType)) ==
+      originNormalizer.replace(getCanonicalType(sugaredToType)))
+    return TriBool::yes();
 
   // A conditional type `A if c else B` is the same type as the arm that the
   // scope's assumptions select, so converting to or from that arm is free.

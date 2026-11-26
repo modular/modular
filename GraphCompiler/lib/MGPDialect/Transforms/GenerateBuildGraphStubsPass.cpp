@@ -158,24 +158,16 @@ FailureOr<RecordingStub> createRecordingStub(SymbolTable &symtab,
   // Snapshot before retyping the launch arg: `getKernelInputs()` drops the
   // context by its `!mogg.context` type.
   SmallVector<Value> kernelInputs, outputs;
-  StringAttr kernelSymName, moOpName;
-  UnitAttr isThrows;
+  FlatSymbolRefAttr kernelCallee;
   DictionaryAttr kernelParams;
   bool hasEpilogueFusion = false;
   if (useBuildGraph) {
     // `useBuildGraph` implies a decl, which only an opaque resolves.
     assert(opaque && "a build_graph producer is an opaque");
-    // `_call.opaque` keeps contexts in their own operand group. `moOpName` is
-    // unread provenance, so the decl's registration stands in.
+    // `mogg.call.opaque` keeps contexts in their own operand group.
     kernelInputs = llvm::to_vector(opaque.getInputs());
     outputs = llvm::to_vector(opaque.getOutputs());
-    kernelSymName = StringAttr::get(ctx, opaque.getCallee());
-    moOpName = StringAttr::get(ctx, decl.getRegistration());
-    // Raises comes from `build_graph`, which this dispatch calls.
-    // `CallOpaqueOp::isThrows()` would look up the decl by symbol, which fails
-    // silently (false) inside a detached clone.
-    auto buildGraphSignature = decl.getBuildGraph()->getSignature();
-    isThrows = buildGraphSignature.isThrows() ? UnitAttr::get(ctx) : UnitAttr();
+    kernelCallee = FlatSymbolRefAttr::get(ctx, opaque.getCallee());
     kernelParams = opaque.getKernelParamAttr();
     hasEpilogueFusion = opaque.getHasEpilogueFusion();
   }
@@ -193,9 +185,7 @@ FailureOr<RecordingStub> createRecordingStub(SymbolTable &symtab,
     // dropped.
     CallBuildGraphOp::create(builder,
                              /*location=*/producer.op->getLoc(),
-                             /*kernelSymName=*/kernelSymName,
-                             /*moOpName=*/moOpName,
-                             /*isThrows=*/isThrows,
+                             /*callee=*/kernelCallee,
                              /*inputs=*/kernelInputs,
                              /*outputs=*/outputs,
                              /*graphBuilder=*/launchArg,

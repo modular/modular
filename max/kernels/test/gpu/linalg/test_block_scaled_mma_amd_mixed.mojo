@@ -37,7 +37,8 @@ def _mixed_mma[
     Layout: TensorLayout,
     accum_width: Int,
     reverse: Bool,
-](out_tt: TileTensor[.float32, Layout, MutAnyOrigin]):
+    origin: MutOrigin,
+](out_tt: TileTensor[.float32, Layout, origin]):
     comptime fp8 = CDNA4F8F6F4MatrixFormat.FLOAT8_E4M3
     comptime fp4 = CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1
     var a = SIMD[.uint8, fp8.simd_width()](0x3C)  # E4M3 +1.5
@@ -58,10 +59,10 @@ def _check[accum_width: Int, reverse: Bool](ctx: DeviceContext) raises:
     var device = ctx.enqueue_create_buffer[.float32](count)
     var host = ctx.enqueue_create_host_buffer[.float32](count)
     var tt = TileTensor(device, row_major[warp_size, accum_width]())
-    comptime kernel = _mixed_mma[type_of(tt).LayoutType, accum_width, reverse]
-    ctx.enqueue_function[kernel](
-        tt.as_unsafe_any_origin(), grid_dim=1, block_dim=warp_size
-    )
+    comptime kernel = _mixed_mma[
+        type_of(tt).LayoutType, accum_width, reverse, tt.origin
+    ]
+    ctx.enqueue_function[kernel](tt, grid_dim=1, block_dim=warp_size)
     ctx.enqueue_copy(host, device)
     ctx.synchronize()
     # (+1.5 * 2) * (-2 * 2), accumulated over logical K.

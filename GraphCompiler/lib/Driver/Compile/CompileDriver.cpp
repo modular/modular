@@ -26,6 +26,7 @@
 #include "llvm/Support/MemoryBuffer.h"
 
 using namespace M;
+using namespace M::MLRT;
 
 #define _STRINGIFY(str) #str
 #define _X_STRINGIFY(str) _STRINGIFY(str)

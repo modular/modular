@@ -25,8 +25,6 @@ from max.gpu.host import DeviceContext
 from max.gpu.host.info import is_cpu, is_gpu
 
 from extensibility import Input, Output, Tensor, TileTensorable
-from std.utils.coord import coord_to_index_list
-from std.utils.index import IndexList
 
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
@@ -285,7 +283,7 @@ def selective_scan_fwd_shape(
     D: Some[Tensor],
     z: Some[Tensor],
     delta_bias: Some[Tensor],
-) -> IndexList[3]:
+) -> type_of(u.shape()):
     """Returns the output shape for the `selective_scan_fwd` op.
 
     The output of a selective scan forward pass has the same shape as the
@@ -333,7 +331,7 @@ def selective_scan_fwd_shape(
     comptime assert (
         type_of(delta_bias).dtype == type_of(u).dtype
     ), "delta_bias dtype must match u dtype"
-    return rebind[IndexList[3]](coord_to_index_list(u.shape()))
+    return u.shape()
 
 
 @extensibility.register("selective_scan_fwd_minimal")
@@ -534,7 +532,7 @@ def selective_scan_fwd_minimal_shape(
     A: Some[Tensor],
     B: Some[Tensor],
     C: Some[Tensor],
-) -> IndexList[3]:
+) -> type_of(u.shape()):
     """Returns the output shape for the `selective_scan_fwd_minimal` op.
 
     The output of the minimal selective scan forward pass has the same shape
@@ -567,7 +565,7 @@ def selective_scan_fwd_minimal_shape(
     comptime assert (
         type_of(C).dtype == type_of(u).dtype
     ), "C dtype must match u dtype"
-    return rebind[IndexList[3]](coord_to_index_list(u.shape()))
+    return u.shape()
 
 
 @extensibility.register("selective_scan_update")
@@ -807,7 +805,7 @@ def selective_scan_update_shape(
     D: Some[Tensor],
     z: Some[Tensor],
     dt_bias: Some[Tensor],
-) -> Tuple[IndexList[3], IndexList[2]]:
+) -> Tuple[type_of(state_in.shape()), type_of(x.shape())]:
     """Returns the output shapes for the `selective_scan_update` op.
 
     The update step produces two tensors: the updated SSM state and the
@@ -861,7 +859,4 @@ def selective_scan_update_shape(
     comptime assert (
         type_of(dt_bias).dtype == type_of(state_in).dtype
     ), "dt_bias dtype must match state_in dtype"
-    return (
-        rebind[IndexList[3]](coord_to_index_list(state_in.shape())),
-        rebind[IndexList[2]](coord_to_index_list(x.shape())),
-    )
+    return (state_in.shape(), x.shape())

@@ -91,13 +91,14 @@ modular_py_test(
         ":mimo_v3_runner",
         ":tiny_fixture",
         "//max/python/max:tensor",
+        "//max/python/max:tree",
         "//max/python/max/_interpreter_ops",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
+        "//max/python/max/nn",
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
-        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
@@ -161,7 +162,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/nn:core",
         "//max/python/max/nn/_graph_ops",
-        "//max/python/max/nn/legacy",
         "//max/python/max/pipelines/architectures/mimo_v2_modulev3",
         "//max/python/max/pipelines/lib",
         requirement("transformers"),
@@ -430,4 +430,10 @@ modular_py_test(
         "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
+)
+
+# The Python files, which test_no_legacy_ep_imports scans.
+filegroup(
+    name = "py_srcs",
+    srcs = glob(["**/*.py"]),
 )

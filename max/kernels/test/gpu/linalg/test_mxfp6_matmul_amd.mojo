@@ -190,12 +190,12 @@ def _fill_packed_random(
 def _mxfp6_matmul_ref[
     fmt: FP6Format
 ](
-    a_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    b_ptr: ImmPointer[UInt8, ImmutAnyOrigin],
-    a_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    b_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmutAnyOrigin],
-    c_ptr: MutPointer[Float32, MutAnyOrigin],
-    mag_ptr: MutPointer[Float32, MutAnyOrigin],
+    a_ptr: ImmPointer[UInt8, ImmUntrackedOrigin],
+    b_ptr: ImmPointer[UInt8, ImmUntrackedOrigin],
+    a_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmUntrackedOrigin],
+    b_sf_ptr: ImmPointer[Float8_e8m0fnu, ImmUntrackedOrigin],
+    c_ptr: MutPointer[Float32, MutUntrackedOrigin],
+    mag_ptr: MutPointer[Float32, MutUntrackedOrigin],
     M_dev: Int32,
     N_dev: Int32,
     K_dev: Int32,

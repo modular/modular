@@ -42,7 +42,6 @@ CPU path is the same arithmetic in the same order.
 """
 
 from std.math import ceildiv
-from std.memory import unsafe_stack_allocation
 
 import max.gpu.primitives.warp as warp
 from max.gpu import WARP_SIZE, block_idx, grid_dim, thread_idx
@@ -326,12 +325,14 @@ def _indexer_score_gpu[
             var base_b = Int(rebind[Int32](base.load((b,))))
             var cutoff_t = Int(rebind[Int32](cutoff.load((t,))))
 
-            var sq = unsafe_stack_allocation[
-                num_heads * head_dim, Float32, address_space=.SHARED
-            ]()
-            var sw = unsafe_stack_allocation[
-                num_heads, Float32, address_space=.SHARED
-            ]()
+            @__address_space(.SHARED)
+            var sq_storage = Array[Float32, num_heads * head_dim](
+                uninitialized=True
+            )
+            var sq = sq_storage.unsafe_ptr()
+            @__address_space(.SHARED)
+            var sw_storage = Array[Float32, num_heads](uninitialized=True)
+            var sw = sw_storage.unsafe_ptr()
             var query_staged = False
             for tile in range(block_idx.y, ceildiv(n, cols), grid_dim.y):
                 var c0 = tile * cols
@@ -420,7 +421,7 @@ def _indexer_score_gpu[
                 if part == 0 and c < n:
                     output.store((t, c), score)
 
-    ctx.enqueue_function(
+    ctx.enqueue_closure(
         kernel,
         grid_dim=(grid[0], grid[1]),
         block_dim=block_size,

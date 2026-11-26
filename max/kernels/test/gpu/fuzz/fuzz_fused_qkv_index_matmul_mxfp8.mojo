@@ -511,10 +511,10 @@ def run_one_case(
         kv_dtype,
         main_kv_params,
         PAGE_SIZE,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
+        origin_of(main_blocks_device),
+        ImmOrigin(origin_of(cache_lengths_device)),
+        ImmOrigin(origin_of(lookup_table_device)),
+        MutUntrackedOrigin,
     ]
     comptime MainCollectionLayout = MainCollection.blocks_tt_layout
     var main_blocks_shape = Coord[*MainCollectionLayout.shape_types]()
@@ -542,10 +542,10 @@ def run_one_case(
         kv_dtype,
         index_kv_params,
         PAGE_SIZE,
-        MutAnyOrigin,
-        ImmutAnyOrigin,
-        ImmutAnyOrigin,
-        MutAnyOrigin,
+        origin_of(index_blocks_device),
+        ImmOrigin(origin_of(cache_lengths_device)),
+        ImmOrigin(origin_of(lookup_table_device)),
+        MutUntrackedOrigin,
     ]
     comptime IndexCollectionLayout = IndexCollection.blocks_tt_layout
     var index_blocks_shape = Coord[*IndexCollectionLayout.shape_types]()
@@ -577,16 +577,16 @@ def run_one_case(
         row_major(Int64(batch_size), Int64(max_pages_per_batch)),
     )
     var main_kv = MainCollection(
-        main_blocks.as_unsafe_any_origin(),
-        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+        main_blocks,
+        cache_lengths_tensor.as_imm(),
+        lookup_table.as_imm(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )
     var index_kv = IndexCollection(
-        index_blocks.as_unsafe_any_origin(),
-        cache_lengths_tensor.as_imm().as_unsafe_any_origin(),
-        lookup_table.as_imm().as_unsafe_any_origin(),
+        index_blocks,
+        cache_lengths_tensor.as_imm(),
+        lookup_table.as_imm(),
         UInt32(q_max_seq_len),
         UInt32(max_cache_len),
     )

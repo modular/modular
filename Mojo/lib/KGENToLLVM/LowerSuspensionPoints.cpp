@@ -89,9 +89,7 @@ struct BuildContext {
   Type continuationType;
 };
 
-static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
-                               int32_t suspensionPointID,
-                               BuildContext &buildContext) {
+static void addSuspensionPoint(SuspendOp suspend, BuildContext &buildContext) {
   buildContext.builder.setInsertionPoint(suspend);
   // Move operations from suspend region. They represent code to execute after
   // update state but before return.
@@ -130,12 +128,13 @@ static void addSuspensionPoint(SuspendOp suspend, Block *currentBlock,
     }
   }
   buildContext.blockList.push_back(targetBlock);
-  buildContext.resumeValues.push_back(suspensionPointID);
+  IntegerAttr state = suspend.getStateAttr();
+  assert(state && "suspension point was not numbered before lowering");
+  buildContext.resumeValues.push_back(state.getInt());
 }
 
 static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
                                            StringAttr coroAttrName) {
-  int32_t suspensionPointID = 0;
   if (!funcOp->hasAttr(coroAttrName))
     return success();
 
@@ -151,8 +150,11 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
   LLVMBuilder b(opBuilder, target);
 
   // Find all suspension points. Create a new block for each suspension point.
+  // The resume switch reads each suspend's state number, so a suspend that
+  // reached here unnumbered is an error rather than a crash.
   BuildContext buildContext(b, coroType.getValue());
   SmallVector<Block *> exitPaths;
+  bool missingState = false;
   Block *block = &funcOp.getBody().front();
   while (block) {
     Block *nextBlock = block->getNextNode();
@@ -165,8 +167,12 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
                                              : block);
       if (auto suspend = dyn_cast<SuspendOp>(current)) {
         current = suspend->getNextNode();
-        Block *b = continueInResume ? buildContext.blockList.back() : block;
-        addSuspensionPoint(suspend, b, ++suspensionPointID, buildContext);
+        if (!suspend.getStateAttr()) {
+          mlir::emitError(suspend.getLoc(),
+                          "suspension point has no state number");
+          missingState = true;
+        }
+        addSuspensionPoint(suspend, buildContext);
         suspend->erase();
         continueInResume = true;
         continue;
@@ -175,6 +181,8 @@ static LogicalResult lowerSuspensionPoints(LLVMFuncOp funcOp,
     }
     block = nextBlock;
   }
+  if (missingState)
+    return failure();
 
   bool hasSuspensionPoints = !buildContext.blockList.empty();
   if (hasSuspensionPoints) {

@@ -229,6 +229,7 @@ def lamport_allreduce_test[
         comptime for i in range(ngpus):
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def lamport_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,
@@ -416,6 +417,7 @@ def lamport_mixed_size_test[
             comptime for i in range(ngpus):
 
                 @inline(.always)
+                @__allow_legacy_any_origin_fields
                 def mixed_epilogue[
                     _dtype: DType,
                     _width: SIMDLength,
@@ -905,6 +907,7 @@ def lamport_coexist_test[
         comptime for i in range(ngpus):
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def coexist_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,
@@ -1067,6 +1070,7 @@ def lamport_unsynced_skew_test[
         comptime for i in range(ngpus):
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def skew_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,
@@ -1227,6 +1231,7 @@ def lamport_wrap_test[
         comptime for i in range(ngpus):
 
             @inline(.always)
+            @__allow_legacy_any_origin_fields
             def wrap_epilogue[
                 _dtype: DType,
                 _width: SIMDLength,

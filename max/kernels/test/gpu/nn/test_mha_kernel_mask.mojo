@@ -142,11 +142,11 @@ def check_mask[dtype: DType, width: Int](ctx: DeviceContext) raises:
                     )
             else:
                 assert_equal(actual, expected)
-        var guard = output_host[r * (width + 1) + width]
+        var guard_value = output_host[r * (width + 1) + width]
         comptime if dtype.is_floating_point():
-            assert_true(isnan(guard))
+            assert_true(isnan(guard_value))
         else:
-            assert_equal(guard, max_finite[dtype]())
+            assert_equal(guard_value, max_finite[dtype]())
 
 
 def main() raises:

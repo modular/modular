@@ -169,15 +169,6 @@ struct RowBoundsPtr(RowBound):
     ):
         encoder.encode_fields[Self](self, target)
 
-    @staticmethod
-    def get_type_name() -> String:
-        """Returns the type name for runtime diagnostics.
-
-        Returns:
-            Always `"RowBoundsPtr"`.
-        """
-        return "RowBoundsPtr"
-
 
 # ===----------------------------------------------------------------------=== #
 # Compile-time constants
@@ -188,6 +179,25 @@ struct RowBoundsPtr(RowBound):
 # PERSISTENT_TOPK_MAX_N == _PTOPK_TOTAL. Changing the top-k capacity
 # means changing all of them.
 comptime PERSISTENT_TOPK_MAX_N: Int = 2048
+
+
+def persistent_topk_is_single_block(N: Int) -> Bool:
+    """Returns whether a top-k over `N` score columns selects with one block
+    per row.
+
+    `persistent_topk_block_split` and `filtered_topk_block_split` take their
+    other selects only past this, and a row's selection among tied scores is
+    the select's own. A captured device graph freezes the select, so a caller
+    that keys its captures keys on this.
+
+    Args:
+        N: Score columns per row, the row stride.
+
+    Returns:
+        True when the single-block select holds every column.
+    """
+    return N <= PERSISTENT_TOPK_MAX_N
+
 
 comptime _PTOPK_BLOCK: Int = 512
 comptime _PTOPK_ITEMS: Int = 4
@@ -759,14 +769,12 @@ def _persistent_topk_2048_impl[
     var tid = thread_idx.x
     var token = block_idx.x
 
-    var smem_v = unsafe_stack_allocation[
-        _PTOPK_TOTAL,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var smem_i = unsafe_stack_allocation[
-        _PTOPK_TOTAL, Int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_v_storage = Array[Float32, _PTOPK_TOTAL](uninitialized=True)
+    var smem_v = smem_v_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var smem_i_storage = Array[Int32, _PTOPK_TOTAL](uninitialized=True)
+    var smem_i = smem_i_storage.unsafe_ptr()
 
     var _N = Int(N)
     var _K = Int(K)
@@ -1885,8 +1893,10 @@ def _histsel_topk_impl[
     var tid = thread_idx.x
     var token = block_idx.x
 
-    var hist = unsafe_stack_allocation[
-        _HSEL_BINS + 1, UInt32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var hist_storage = Array[UInt32, _HSEL_BINS + 1](uninitialized=True)
+    var hist = hist_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
     var sel_k = unsafe_stack_allocation[
         sel_cap,
@@ -1896,15 +1906,15 @@ def _histsel_topk_impl[
     ]()
     # [0] split bin, [1] keys strictly above it, [2] keys at or above it,
     # [3] append cursor into `sel`, [4] collect cursor into `cand`.
-    var ctl = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
-    var wcur = unsafe_stack_allocation[
-        _HSEL_WARPS, UInt32, address_space=.SHARED
-    ]()
-    var wor = unsafe_stack_allocation[
-        2 * _HSEL_WARPS + 2,
-        UInt64,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var ctl_storage = Array[UInt32, 8](uninitialized=True)
+    var ctl = ctl_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var wcur_storage = Array[UInt32, _HSEL_WARPS](uninitialized=True)
+    var wcur = wcur_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var wor_storage = Array[UInt64, 2 * _HSEL_WARPS + 2](uninitialized=True)
+    var wor = wor_storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     var cand = external_memory[
         Int32,
         address_space=.SHARED,
@@ -3000,8 +3010,10 @@ def _histsel_resident_impl[
     var tid = thread_idx.x
     var token = block_idx.x
 
-    var hist = unsafe_stack_allocation[
-        _HSEL_BINS + 1, UInt32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var hist_storage = Array[UInt32, _HSEL_BINS + 1](uninitialized=True)
+    var hist = hist_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
     # Everything the rank needs is dead weight under the cheap contract, which
     # compacts straight from registers to the output and never packs a key.
@@ -3017,20 +3029,18 @@ def _histsel_resident_impl[
     # The leading slots are `_histsel_topk_kernel`'s: [0] split bin, [1] keys
     # strictly above it, [2] keys at or above it, [3] append cursor. [6] and [7]
     # are the plateau fold's reduction of the bracket's extremes.
-    var ctl = unsafe_stack_allocation[8, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var ctl_storage = Array[UInt32, 8](uninitialized=True)
+    var ctl = ctl_storage.unsafe_ptr()
     # The rank's per-bin cursor and its staged output. The streaming path folds
     # these into its dead candidate list; with no candidate list there is nothing
     # to fold into.
-    var cur = unsafe_stack_allocation[
-        cur_n,
-        UInt32,
-        address_space=.SHARED,
-    ]()
-    var wor = unsafe_stack_allocation[
-        wor_n,
-        UInt64,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var cur_storage = Array[UInt32, cur_n](uninitialized=True)
+    var cur = cur_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var wor_storage = Array[UInt64, wor_n](uninitialized=True)
+    var wor = wor_storage.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin]()
     # The one-barrier block scan is taken wherever it measured faster, which is
     # every instantiation except the ordered per-bin digit -- there it loses to the
     # stdlib's, so that one keeps the stdlib scan and needs no scratch at all.
@@ -3042,23 +3052,27 @@ def _histsel_resident_impl[
     comptime wscan_n = res_vecs * wscan_warps if (
         (not ordered) and deterministic
     ) else (wscan_warps if one_barrier_scan else 1)
-    var wscan = unsafe_stack_allocation[
-        wscan_n,
-        UInt32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var wscan_storage = Array[UInt32, wscan_n](uninitialized=True)
+    var wscan = wscan_storage.unsafe_ptr()
     # Round 0's occupied bins, numbered densely, and one representative key per
     # bin -- both only for the instantiation whose digit uses them.
     comptime nbin_aux = _HSEL_BINS if (bin_digit and ordered) else 1
-    var dmap = unsafe_stack_allocation[
-        nbin_aux, UInt32, address_space=.SHARED
+    @__address_space(.SHARED)
+    var dmap_storage = Array[UInt32, nbin_aux](uninitialized=True)
+    var dmap = dmap_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
-    var banchor = unsafe_stack_allocation[
-        nbin_aux, UInt64, address_space=.SHARED
+    @__address_space(.SHARED)
+    var banchor_storage = Array[UInt64, nbin_aux](uninitialized=True)
+    var banchor = banchor_storage.unsafe_ptr().unsafe_origin_cast[
+        MutUntrackedOrigin
     ]()
     # Each warp's largest and smallest key, for the range digit.
     comptime rmm_n = 2 * (_HSEL_RES_BLOCK // WARP_SIZE) if range_digit else 1
-    var rmm = unsafe_stack_allocation[rmm_n, UInt32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var rmm_storage = Array[UInt32, rmm_n](uninitialized=True)
+    var rmm = rmm_storage.unsafe_ptr()
 
     var _N = Int(N)
     var _K = Int(K)
@@ -5090,7 +5104,7 @@ def persistent_topk_block_split[
             histogram-select family) and on the 2048 single-block path.
     """
     _assert_scores_16b_aligned(in_scores, N, total_seq_len)
-    if N <= PERSISTENT_TOPK_MAX_N:
+    if persistent_topk_is_single_block(N):
         persistent_topk_block[RB=RB](
             ctx, in_scores, out_idxs, N, K, total_seq_len, row_bounds
         )
@@ -5177,6 +5191,7 @@ def persistent_topk_block_split[
         # wider the payload the more that is true, which is why the width below is
         # chosen by `N` rather than fixed at the widest that fits.
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def launch_resident[res_vecs: Int]() raises {imm}:
             comptime if not ordered:
                 # With no rank to feed there is no reason to hand over a superset

@@ -43,7 +43,6 @@ from layout import (
 from layout.tensor_core import get_mma_shape
 from std.utils.coord import Coord
 from std.logger import Logger
-from std.memory import unsafe_stack_allocation
 from std.utils.numerics import get_accum_type
 from ...gemv import (
     GEMVAlgorithm,
@@ -160,16 +159,16 @@ def matmul_kernel[
     )
 
     # Allocate A, B tile in shared memory.
-    var a_shared = unsafe_stack_allocation[
-        tile_size * tile_size,
-        a_type,
-        address_space=.SHARED,
-    ]()
-    var b_shared = unsafe_stack_allocation[
-        tile_size * tile_size,
-        b_type,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var a_shared_storage = Array[Scalar[a_type], tile_size * tile_size](
+        uninitialized=True
+    )
+    var a_shared = a_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var b_shared_storage = Array[Scalar[b_type], tile_size * tile_size](
+        uninitialized=True
+    )
+    var b_shared = b_shared_storage.unsafe_ptr()
 
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.
@@ -189,6 +188,7 @@ def matmul_kernel[
     var K_remainder = k - K_roundbytile if k - K_roundbytile > 0 else 1
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def update_tile[
         full_tile: Bool
     ](offset: Int, end: Int, tile_size: Int) {

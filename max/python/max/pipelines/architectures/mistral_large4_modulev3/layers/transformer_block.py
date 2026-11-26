@@ -27,12 +27,13 @@ from max.nn.common_layers.quant_tensor import (
     FP8BlockActivation,
     FP8BlockTensor,
 )
+from max.nn.ep import EPBuffers
+from max.nn.ep_config import EPConfig
 from max.nn.kv_cache import (
     KVCacheParamInterface,
     KVCacheParams,
     MultiKVCacheParams,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
 from max.nn.legacy.quant_config import QuantConfig
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
@@ -249,7 +250,7 @@ class MistralLarge4TransformerBlock(
         graph_mode: str,
         buffer_size: int,
         rope_interleaved: bool = True,
-        ep_batch_manager: EPBatchManager | None = None,
+        ep_config: EPConfig | None = None,
         index_norm_eps: float = 1e-6,
         row_invariant_decode: bool = False,
     ) -> None:
@@ -284,7 +285,7 @@ class MistralLarge4TransformerBlock(
             graph_mode: ``"prefill"``, ``"decode"`` or ``"auto"``.
             buffer_size: Dense prefill buffer size the sparse plan ignores.
             rope_interleaved: Whether both ropes are GPT-J interleaved.
-            ep_batch_manager: The expert-parallel runtime, when EP is on.
+            ep_config: The expert-parallel configuration, when EP is on.
             index_norm_eps: Epsilon of the indexer's two LayerNorms.
             row_invariant_decode: Whether the decode step takes the DSpark
                 verify's kernels; see :func:`row_invariant_decode_blocker`.
@@ -326,7 +327,7 @@ class MistralLarge4TransformerBlock(
             | MistralLarge4MLP
         )
         if is_moe:
-            if ep_batch_manager is not None:
+            if ep_config is not None:
                 self.mlp = MistralLarge4ExpertParallelMoE(
                     hidden_dim=hidden_size,
                     num_experts=num_experts,
@@ -334,7 +335,7 @@ class MistralLarge4TransformerBlock(
                     moe_dim=moe_intermediate_size,
                     expert_quant_config=expert_quant_config,
                     shared_expert_quant_config=attention_quant_config,
-                    ep_batch_manager=ep_batch_manager,
+                    ep_config=ep_config,
                 )
             elif self.mode is ParallelismMode.DP_EP or num_devices == 1:
                 self.mlp = MistralLarge4MoE(
@@ -401,7 +402,7 @@ class MistralLarge4TransformerBlock(
         prev_topk_indices: Tensor | None = None,
         reuse_prev_topk: bool = False,
         shared_kv: tuple[Tensor, Tensor] | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
         *,
         mla_prefill_metadata: tuple[Tensor, Tensor, Tensor] | None = None,
         ssmax_log_positions: Tensor | None = None,
@@ -423,8 +424,7 @@ class MistralLarge4TransformerBlock(
             reuse_prev_topk: Whether to carry ``prev_topk_indices`` forward.
             shared_kv: The source layer's ``(projection, norm_gamma)`` when this
                 layer reads another layer's cache rows.
-            comm_buffers: The expert-parallel communication buffers, when EP
-                is on.
+            ep: The exchange's buffers, when EP is on.
             mla_prefill_metadata: The prefill plan, built once for the batch.
             ssmax_log_positions: The rows' SSMax logs, built once for the
                 batch; ``None`` derives them from ``positions`` in the layer.
@@ -455,7 +455,7 @@ class MistralLarge4TransformerBlock(
         )
         norm_h = self.post_attention_layernorm(hidden_states)
         if isinstance(self.mlp, MistralLarge4ExpertParallelMoE):
-            mlp_out = self.mlp(norm_h, comm_buffers)
+            mlp_out = self.mlp(norm_h, ep=ep)
         else:
             mlp_out = self.mlp(norm_h)
         return (

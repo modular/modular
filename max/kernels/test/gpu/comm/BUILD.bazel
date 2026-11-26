@@ -215,6 +215,7 @@ mojo_test(
             "test_allreduce_residual_rmsnorm.mojo",  # Has its own standalone rule above
             "test_enum_like_conformance.mojo",  # Has its own standalone rule below
             "test_allreduce_peer_load_codegen.mojo",  # Host-only rule below
+            "test_lamport_arrive_codegen.mojo",  # Host-only rule below
             "test_bundled_allreduce_build_graph.mojo",  # Has its own standalone rule above
             "test_blocking_driver_calls.mojo",  # One rule per round, below
         ],
@@ -301,6 +302,18 @@ mojo_test(
         "//:asan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
+    deps = [
+        "//max:comm",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+# Host-only: which add the Lamport arrival lowers to for each world size and
+# architecture, by cross-compiling it.
+mojo_test(
+    name = "test_lamport_arrive_codegen.mojo.test",
+    srcs = ["test_lamport_arrive_codegen.mojo"],
     deps = [
         "//max:comm",
         "//max:max_mojo",

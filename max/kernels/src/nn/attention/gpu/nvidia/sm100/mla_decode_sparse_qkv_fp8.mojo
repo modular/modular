@@ -154,7 +154,7 @@ from layout import (
 )
 from layout.layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.common import NullPointer, OptionalPointer
-from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_mask import CausalMask, MHAMask, NullMask
 from nn.attention.mha_operand import MHAOperand
 from std.utils.numerics import get_accum_type, min_or_neg_inf
 from std.utils.static_tuple import StaticTuple
@@ -380,7 +380,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         and Self.config.BN_QK == 64
         and Self.sparse_row_parts == 2
         and not Self.has_extra_kv
-        and Self.MaskType.get_type_name() == "CausalMask"
+        and Self.MaskType == CausalMask
     )
     # Q and P are stored as column blocks of 64 columns: SW64 for FP8, SW128
     # for a 2-byte operand.
@@ -883,9 +883,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         A separate entry point because the cluster dimension is function
         metadata, and the unpaired forms launch without a cluster.
         """
-        comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
-            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+            Self.MaskType == NullMask or Self.MaskType == CausalMask
         ), (
             "MLA_SM100_Decode_Sparse_QKV_FP8 supports NullMask and CausalMask"
             " only. Sliding-window is not yet wired for sparse."
@@ -1030,7 +1029,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 not Self.fold_shared_index
             ), "skip_masked_tiles bounds one token per CTA"
             offset_position.skip_masked_tiles[
-                causal=Self.MaskType.get_type_name() == "CausalMask"
+                causal=Self.MaskType == CausalMask
             ](num_partitions, topk_stride, topk_lengths)
 
         var extra_topk: Int = 0
@@ -1362,7 +1361,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                         DType.float32
                     ]() * Float32(log2e)
 
-            comptime if Self.MaskType.get_type_name() == "CausalMask" and not Self.fold_shared_index:
+            comptime if Self.MaskType == CausalMask and not Self.fold_shared_index:
                 if not logical_indices:
                     offset_position.assert_row_packed[Self.sparse_row](
                         d_indices, indices_stride, selection_lag
@@ -1639,9 +1638,8 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
         selection_lag_dev: Int32,
         stamp_addr: UInt64,
     ):
-        comptime _mask_type_name: String = Self.MaskType.get_type_name()
         comptime assert (
-            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+            Self.MaskType == NullMask or Self.MaskType == CausalMask
         ), (
             "MLA_SM100_Decode_Sparse_QKV_FP8 supports NullMask and CausalMask"
             " only. Sliding-window is not yet wired for sparse."
@@ -1794,7 +1792,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                 not Self.fold_shared_index
             ), "skip_masked_tiles bounds one token per CTA"
             offset_position.skip_masked_tiles[
-                causal=Self.MaskType.get_type_name() == "CausalMask"
+                causal=Self.MaskType == CausalMask
             ](num_partitions, indices_stride, topk_lengths)
 
         var extra_topk: Int = 0
@@ -1874,9 +1872,9 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                     role_block_z=_role_block_z(),
                 )
                 comptime if Self.skip_masked_tiles:
-                    pos.skip_masked_tiles[
-                        causal=Self.MaskType.get_type_name() == "CausalMask"
-                    ](role_np, role_stride, topk_lengths)
+                    pos.skip_masked_tiles[causal=Self.MaskType == CausalMask](
+                        role_np, role_stride, topk_lengths
+                    )
                 return pos
 
         var num_orig_blocks = ceildiv(topk, Self.config.BN_QK)
@@ -2180,7 +2178,7 @@ struct MLA_SM100_Decode_Sparse_QKV_FP8[
                         DType.float32
                     ]() * Float32(log2e)
 
-            comptime if Self.MaskType.get_type_name() == "CausalMask" and not Self.fold_shared_index:
+            comptime if Self.MaskType == CausalMask and not Self.fold_shared_index:
                 if not logical_indices:
                     role_position.assert_row_packed[Self.sparse_row](
                         d_indices, indices_stride, selection_lag

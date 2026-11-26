@@ -744,6 +744,7 @@ def topk_topp_masked_probs_cluster[
             ):
                 cluster_size = c
 
+        @__allow_legacy_any_origin_fields
         def launch_cluster[vec_size: Int, cluster_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsClusterKernel[
                 block_size,
@@ -776,6 +777,7 @@ def topk_topp_masked_probs_cluster[
                 attributes=pdl_launch_attributes(PDLLevel.ON),
             )
 
+        @__allow_legacy_any_origin_fields
         def launch_single[vec_size: Int]() raises {imm}:
             comptime kernel = TopKTopPMaskedProbsKernel[
                 block_size,
@@ -895,9 +897,9 @@ def _sampling_rejection_loop_cluster[
         vec_end: One past the last vector of the slice.
     """
     var tx = thread_idx.x
-    var sampled_id_sram = unsafe_stack_allocation[
-        1, Int, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var sampled_id_sram_storage = Array[Int, 1](uninitialized=True)
+    var sampled_id_sram = sampled_id_sram_storage.unsafe_ptr()
 
     # Publish slots for this loop's combines, sized for the widest (the
     # rank gather) and used in turn: three combines per trial, so consecutive
@@ -1496,7 +1498,7 @@ def topk_topp_sampling_from_prob_cluster[
 
     Performs stochastic sampling considering only tokens that satisfy both the
     top-k count constraint AND the top-p nucleus constraint. When top_p_val is
-    1.0 (default) this behaves identically to topk_sampling_from_prob.
+    1.0 (default) this behaves identically to top-k sampling alone.
 
     When `emit_dist` is set, the masked renormalized distribution is written
     to `out_dist` as well; see the kernel docstring. A batch too small to
@@ -1630,7 +1632,7 @@ def topk_topp_sampling_from_prob_cluster[
         ] = None
 
         comptime if emit_dist:
-            __guard case .Some(dist) = out_dist else:
+            guard case .Some(dist) = out_dist else:
                 raise Error("out_dist is required when emit_dist is set")
             var dist_shape = dist.layout.shape_coord()
             if Int(dist_shape[0]) != batch_size or Int(dist_shape[1]) != d:
@@ -1657,6 +1659,7 @@ def topk_topp_sampling_from_prob_cluster[
                 ):
                     cluster_size = c
 
+        @__allow_legacy_any_origin_fields
         def launch_cluster[
             vec_size: Int, deterministic: Bool, cluster_size: Int
         ]() raises {imm}:
@@ -1701,6 +1704,7 @@ def topk_topp_sampling_from_prob_cluster[
                     attributes=pdl_launch_attributes(PDLLevel.ON),
                 )
 
+        @__allow_legacy_any_origin_fields
         def launch_single[vec_size: Int, deterministic: Bool]() raises {imm}:
             comptime kernel = TopKTopPSamplingFromProbKernel[
                 probs.LayoutType,

@@ -60,7 +60,7 @@ class ExplicitBufferLifetimesPass
         while (lcaNode) {
           bool hasMGPChainOutput = false;
           for (auto result : lcaNode->op->getResults())
-            if (isa<MEF::ChainType>(result.getType()))
+            if (isa<MLRT::MEF::ChainType>(result.getType()))
               hasMGPChainOutput = true;
           if (hasMGPChainOutput)
             break;
@@ -80,7 +80,7 @@ class ExplicitBufferLifetimesPass
 
         OpResult chainOutput;
         for (auto result : lca->getResults()) {
-          if (isa<MEF::ChainType>(result.getType())) {
+          if (isa<MLRT::MEF::ChainType>(result.getType())) {
             chainOutput = result;
             break;
           }

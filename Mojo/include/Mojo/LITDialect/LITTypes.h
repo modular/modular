@@ -126,6 +126,11 @@ public:
     return getBodyFnType().getIsNestedOriginsReadOnly();
   }
 
+  /// Get whether the checked nested-origin read-only promise is present.
+  bool getIsEnforcedNestedOriginsReadOnly() {
+    return getBodyFnType().getIsEnforcedNestedOriginsReadOnly();
+  }
+
   /// Get whether the function establishes new interior origins.
   bool getDefinesInteriorOrigins() {
     return getBodyFnType().getDefinesInteriorOrigins();
@@ -200,6 +205,10 @@ public:
   PogListAttr getParamListAttrs();
 
   FuncType getBody();
+
+  /// Return true if a `!lit.unresolved` type occurs anywhere in this
+  /// signature, including nested positions.
+  bool hasUnresolvedEntry();
 
   /// Reconstruct the generator using a list of named input parameters; these
   /// are prepended to the current signature and references are remapped to

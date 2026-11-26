@@ -132,7 +132,7 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
 
     comptime c_packed_row_stride = type_of(c_packed).static_shape[1]
     comptime sf_dim1 = type_of(c_swiglu_scales).static_shape[1]
-    var c_packed_ptr = rebind[MutPointer[UInt8, MutAnyOrigin]](
+    var c_packed_ptr = rebind[MutPointer[UInt8, MutUntrackedOrigin]](
         c_packed._storage
     )
 
@@ -143,11 +143,11 @@ def grouped_matmul_swiglu_mxfp8_dispatch[
         row_major(Idx[1], Idx[N]),
     )
     var c_swiglu_scales_ptr = rebind[
-        MutPointer[Scalar[MXFP8_SF_DTYPE], MutAnyOrigin]
+        MutPointer[Scalar[MXFP8_SF_DTYPE], MutUntrackedOrigin]
     ](c_swiglu_scales._storage)
     # MXFP8 doesn't use a per-expert tensor_sf; the trait method is
     # gated out for MXFP8 so this pointer is never dereferenced.
-    var c_input_scales_ptr = rebind[ImmPointer[Float32, ImmutAnyOrigin]](
+    var c_input_scales_ptr = rebind[ImmPointer[Float32, ImmUntrackedOrigin]](
         expert_scales._storage
     )
     var swiglu_out = RealSwiGLUOutput[

@@ -15,12 +15,23 @@ The memory manager implementation consists of three main components:
 - **MemoryManagerFreeList**: Hierarchical free list for allocation/deallocation
 - **Supporting classes**: Chunk, Desc, DescMap for internal management
 
-Test coverage now spans roughly 80 tests across eight files under
+Test coverage now spans roughly 90 tests across nine files under
 `MLRT/unittests/Driver/` (`MemoryManagerTest.cpp`,
-`MemoryManagerChunkGrowthTest.cpp`, the `MemoryManagerVMM*` suites, and the
-`GPUMemoryManager*` suites), in addition to the original allocation-pattern
-coverage in `DeviceContextTest.cpp`. This document tracks the remaining gaps
-against the components and behaviors enumerated below.
+`MemoryManagerChunkGrowthTest.cpp`, `MemoryManagerFakeBackingTest.cpp`, the
+`MemoryManagerVMM*` suites, and the `GPUMemoryManager*` suites), in addition to
+the original allocation-pattern coverage in `DeviceContextTest.cpp`. This
+document tracks the remaining gaps against the components and behaviors
+enumerated below.
+
+### CPU coverage with fakes
+
+`MemoryManagerFakeBackingTest.cpp` builds a manager with
+`MemoryManager::create()` over the fakes in `MemoryManagerFakes.h`, so it can
+see every driver call and make the driver refuse one. `FakeAllocatorVmm` checks
+the driver contract and can refuse reservations, creates, maps, and access
+grants. The tests check the driver calls the manager makes and its rollback
+after each refusal. The fakes back no memory, so the GPU suites cover real
+mappings, data, and the paths that need no injected refusal.
 
 ## Key Components to Test
 
@@ -48,7 +59,8 @@ against the components and behaviors enumerated below.
 
 #### `MemoryManagerCreation`
 
-- Test factory methods (`onDevice`, `onHost`) with various configurations
+- Test the factories (`createDeviceMemoryManager`, `createHostMemoryManager`)
+  with various configurations
 - Verify proper initialization of cache parameters
 - Test configuration parsing from environment variables
 - Edge cases: zero sizes, invalid configurations

@@ -243,6 +243,44 @@ def main() raises:
             ),  # pad: [pad_h_before, pad_h_after, pad_w_before, pad_w_after] (symmetric: pad_h=0, pad_w=3)
         ](ctx)
 
+        # Filter rows too long for the shared-memory layout change (64 KB):
+        # the direct kernel, with 8-wide and with scalar accesses.
+        test_conv_cudnn[
+            (1, 2, 2, 16384),
+            (1, 1, 16384, 8),
+            (1, 2, 2, 8),
+            .float32,
+            .float32,
+            .float32,
+            (1, 1),
+            (1, 1),
+            (0, 0, 0, 0),
+        ](ctx)
+        test_conv_cudnn[
+            (1, 2, 2, 16388),
+            (1, 1, 16388, 8),
+            (1, 2, 2, 8),
+            .float32,
+            .float32,
+            .float32,
+            (1, 1),
+            (1, 1),
+            (0, 0, 0, 0),
+        ](ctx)
+
+        # Odd channel counts and a 1 x 5 filter through the row kernel.
+        test_conv_cudnn[
+            (1, 1, 40, 3),
+            (1, 5, 3, 16),
+            (1, 1, 36, 16),
+            .float16,
+            .float16,
+            .float16,
+            (1, 1),
+            (1, 1),
+            (0, 0, 0, 0),
+        ](ctx)
+
         # Test different data types.
         comptime for i in range(len(dtype_configs)):
             comptime dtype = dtype_configs[i]

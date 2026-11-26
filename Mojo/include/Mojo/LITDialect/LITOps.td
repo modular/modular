@@ -509,9 +509,15 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
     // Read back through `#kgen.get_annotation_value`, which the reflection
     // library wraps as `reflect[T].annotation[index]`.
     DefaultValuedAttr<ArrayAttr, "{}">:$annotations,
-    // Present if the struct is declared with `__enum`. Its cases are the
-    // `lit.enum.case` ops in its body.
-    UnitAttr:$isEnum
+    // Present for `__enum`: every case is a payload-free `comptime` value,
+    // spelled `case red`, matched as `.red` and printed as `Color.red`. The
+    // struct stores only a scalar tag and conforms to `__Enum`. `__Union`
+    // supplies the separate payload-storage defaults for unions.
+    UnitAttr:$isEnum,
+    // Present if the struct is declared with `__union`. Its cases are the
+    // `lit.enum.case` ops in its body; every case takes parentheses, and its
+    // payload is the `Tuple` of the types in them.
+    UnitAttr:$isUnion
   );
   let regions = (region SizedRegion<1>:$fields);
   let assemblyFormat = [{
@@ -577,6 +583,11 @@ def LIT_StructDeclOp : LITOp<"struct.decl", [
 
     /// Return true if this struct is declared with `__enum`.
     bool isEnum() { return getIsEnum(); }
+    /// Return true if this struct is declared with `__union`.
+    bool isUnion() { return getIsUnion(); }
+    /// Return true if this struct is declared with `__enum` or `__union`,
+    /// whose state is declared by its cases.
+    bool isEnumOrUnion() { return isEnum() || isUnion(); }
   }];
 
   let builders = [
@@ -644,8 +655,8 @@ def LIT_StructFieldOp : LITOp<"struct.field", [
 def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
   let summary = "Enum case declaration.";
   let description = [{
-    The `lit.enum.case` operation declares a case of the enum whose
-    `lit.struct.decl` contains it. The cases of an enum are its
+    The `lit.enum.case` operation declares a case of the enum or union whose
+    `lit.struct.decl` contains it. The cases of an enum or union are its
     `lit.enum.case` ops, in declaration order. `payloadTypes` lists the
     case's payload types as written, empty for a case without a payload; it
     is absent until the payload is resolved.
@@ -659,7 +670,7 @@ def LIT_EnumCaseOp : LITOp<"enum.case", [HasParent<"StructDeclOp">]> {
     ```mlir
     lit.struct.decl @Color {
       lit.enum.case red : []
-      lit.enum.case rgb : [!alias_Int1, !alias_Int1, !alias_Int1]
+      lit.enum.case green : []
     } {isEnum}
     ```
   }];
@@ -913,8 +924,9 @@ def LIT_TryOp : LITOp<"try",
   let description = [{
     The `lit.try` operation represents a try-except-else statement. When inside
     the 'try' region, any implicitly propagated errors interrupt execution and
-    branch to the 'except' region. If the 'try' region completes execution
-    without any exceptions, control-flow branches to the 'else' region.
+    branch to the selected 'except' region. If the 'try' region completes
+    execution without any exceptions, control-flow branches to the 'else'
+    region.
 
     Example:
 
@@ -944,12 +956,12 @@ def LIT_TryOp : LITOp<"try",
       lit.try "INNER" {
         lit.if ... {
           ...
-          lit.try.raise "INNER"
+          lit.try.raise "INNER" handler 0
         }
 
         # finally block pasted before `return`
         ...
-        lit.try.raise "OUTER" # transfer control flow to outer scope.
+        lit.try.raise "OUTER" handler 0 # transfer to the outer try's handler.
         return
       } except {
         ...
@@ -963,32 +975,40 @@ def LIT_TryOp : LITOp<"try",
   let arguments = (ins
     OptionalAttr<StrAttr>:$label,
     DefaultValuedOptionalAttr<BoolAttr, "false">:$suppressWarnings);
-  let regions = (region SizedRegion<1>:$tryRegion, SizedRegion<1>:$exceptRegion,
+  // ODS requires the variadic region group to come last. The custom assembly
+  // format preserves source order.
+  let regions = (region SizedRegion<1>:$tryRegion,
                         SizedRegion<1>:$elseRegion,
-                        VariadicRegion<SizedRegion<1>>:$finallyRegions);
+                        SizedRegion<1>:$finallyRegion,
+                        VariadicRegion<SizedRegion<1>>:$exceptRegions);
   let results = (outs Variadic<AnyType>:$results);
   let assemblyFormat = [{
     ($label^)? (`->` type($results)^)? $tryRegion
-    `except` custom<RegionWithArgs>($exceptRegion)
-    `else` custom<RegionWithArgs>($elseRegion)
-    (`finally` $finallyRegions^)? prop-dict attr-dict
+    custom<TryHandlers>($exceptRegions, $elseRegion, $finallyRegion)
+    prop-dict attr-dict
   }];
 
   let builders = [
     OpBuilder<(ins CArg<"bool", "false">:$suppressWarnings),
-      [{ build($_builder, $_state, {}, /*label=*/{}, suppressWarnings, 1); }]>,
+      [{ build($_builder, $_state, {}, /*label=*/{}, suppressWarnings,
+               /*nExceptRegions=*/1); }]>,
   ];
 
   let extraClassDeclaration = [{
-    // The region indices of the try operation.
-    enum { kTRY, kEXCEPT, kELSE, kFINALLY };
+    /// Returns the except region selected by `handlerIndex`.
+    Region &getExceptRegion(size_t handlerIndex = 0) {
+      return getExceptRegions()[handlerIndex];
+    }
 
-    /// Get the finally region, assuming it is present.
-    Region &getFinallyRegion() { return getFinallyRegions().front(); }
+    /// Returns whether the semantic-only finally region is present. An empty
+    /// block is present but still under construction.
+    bool hasFinally();
 
-    /// Return true if the finally block is trivial.
+    /// Returns true if the finally block is absent or contains only a yield.
     bool hasTrivialFinally();
   }];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1018,20 +1038,27 @@ def LIT_TryRaiseOp : LITOp<"try.raise", [Terminator,
   let summary = "Try block raise an error.";
   let description = [{
     The `lit.try.raise` operation is used within a `lit.try` try region to
-    propagate an error to the except region.
+    propagate an error to the except region selected by `handlerIndex`. The
+    label identifies the target try when control crosses a nested try.
   }];
 
   let arguments = (ins
     Variadic<AnyType>:$operands,
-    StrAttr:$label
+    StrAttr:$label,
+    I64Attr:$handlerIndex
   );
-  let assemblyFormat = "$label ($operands^ `:` type($operands))? attr-dict";
+  let assemblyFormat = [{
+    $label `handler` $handlerIndex
+    ($operands^ `:` type($operands))? attr-dict
+  }];
 
   let builders = [
     OpBuilder<(ins "StringAttr": $label), [{
-      build($_builder, $_state, {}, label);
+      build($_builder, $_state, {}, label, $_builder.getI64IntegerAttr(0));
     }]>
   ];
+
+  let hasVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1324,7 +1351,9 @@ def LIT_RaiseOp : LITOp<"raise"> {
   let description = [{
     The `lit.raise` operation is not a terminator. It corresponds to a raise
     statement in Lit. This operation is only allowed inside the 'try' region of
-    a `lit.try` operation or within a `lit.fn` marked as `throws`.
+    a `lit.try` operation or within a `lit.fn` marked as `throws`. A raise
+    handled by a try carries its handler index; a raise leaving a function has
+    no handler index.
 
     Example:
 
@@ -1333,7 +1362,13 @@ def LIT_RaiseOp : LITOp<"raise"> {
     ```
   }];
 
-  let assemblyFormat = "attr-dict";
+  let arguments = (ins OptionalAttr<I64Attr>:$handlerIndex);
+  let assemblyFormat = "(`handler` $handlerIndex^)? attr-dict";
+  let builders = [
+    OpBuilder<(ins), [{
+      build($_builder, $_state, /*handlerIndex=*/{});
+    }]>
+  ];
   let hasVerifier = 1;
 }
 
@@ -2247,7 +2282,7 @@ def LIT_RefPackFromPointerPackOp : LITOp<"ref.pack.from_pointer_pack", [Pure]> {
 
     ```mlir
     %0 = lit.ref.pack.from_pointer_pack %pack
-      : !kgen.struct<[pointer<index>, pointer<f32>]> isParamPack>
+      : !kgen.struct<(pointer<index>, pointer<f32>)>
      -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin>
     ```
   }];

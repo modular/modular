@@ -64,6 +64,10 @@
 #include <optional>
 #include <signal.h>
 
+#ifdef __linux__
+#include <sys/prctl.h>
+#endif
+
 #ifdef KGEN_ENABLE_PASS_OPTIONS
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "llvm/Support/CommandLine.h"
@@ -145,9 +149,9 @@ static std::optional<int> parseArgs(State &state, llvm::opt::InputArgList &args,
 //===----------------------------------------------------------------------===//
 
 /// Executes the given module's `main` function, or returns an error indicating
-/// why it could not be executed.
-static ErrorOrSuccess executeMain(ExecutionEngine &engine,
-                                  AsyncRT::CPUDevice &cpuDevice,
+/// why it could not be executed. If the program crashes, reports the crash and
+/// terminates the process with the program's signal.
+static ErrorOrSuccess executeMain(const State &state, ExecutionEngine &engine,
                                   ArrayRef<const char *> arguments) {
   auto runFn = [arguments](void *fnPtr) -> ErrorOrSuccess {
     using FnType = int (*)(int, const char *const *);
@@ -159,16 +163,27 @@ static ErrorOrSuccess executeMain(ExecutionEngine &engine,
   llvm::CrashRecoveryContext crc;
   crc.Enable();
   ErrorOrSuccess result;
-  if (!crc.RunSafely(
-          [&]() { result = engine.runProgram("exec", "main", runFn); })) {
-    // With JIT compilation, printed stack trace is not useful. Recommend user
-    // to use build + run mode to get symbolicated stack trace.
-    return Error("execution crashed\nTo get a symbolicated stack trace, "
-                 "compile your program using `mojo build` with debug info "
-                 "enabled (e.g., `-debug-level=line-tables`) and execute it "
-                 "separately.");
-  }
-  return result;
+  if (crc.RunSafely(
+          [&]() { result = engine.runProgram("exec", "main", runFn); }))
+    return result;
+
+  // With JIT compilation, printed stack trace is not useful. Recommend user
+  // to use build + run mode to get symbolicated stack trace.
+  state.reportError("execution crashed\nTo get a symbolicated stack trace, "
+                    "compile your program using `mojo build` with debug info "
+                    "enabled (e.g., `-debug-level=line-tables`) and execute it "
+                    "separately.");
+  // A parent process must see the same wait status as for a `mojo build`
+  // binary. The runtime teardown is skipped, because it is not safe after a
+  // crash: in a forked child, the runtime's worker threads do not exist.
+#ifdef __linux__
+  // A core of `mojo` holds the compiler, not the program, and writing one can
+  // take over a minute: the process maps gigabytes, and a piped `core_pattern`
+  // makes the kernel wait for the dump to finish before the process exits.
+  prctl(PR_SET_DUMPABLE, 0, 0, 0, 0);
+#endif
+  llvm::CrashRecoveryContext::throwIfCrash(crc.RetCode);
+  return Error("execution crashed with exit code " + Twine(crc.RetCode));
 }
 
 /// Ensures that the context's profiler, if there is one, copies any outstanding
@@ -252,7 +267,7 @@ static int executeModule(
 
   // Finally, execute the 'main' function of the Mojo program.
   CompilerTimeTraceScope traceScope("execute-main");
-  ErrorOrSuccess result = executeMain(engine, cpuDevice, arguments);
+  ErrorOrSuccess result = executeMain(state, engine, arguments);
   if (failed(result))
     return state.reportError(result.getError());
 

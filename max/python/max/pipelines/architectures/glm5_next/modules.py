@@ -19,7 +19,6 @@ from typing import ClassVar
 from max import tree
 from max.dtype import DType
 from max.nn import Module
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.pipelines.lib.role_contracts import DecoderInputs, DecoderOutputs
 from max.tensor import Tensor, default_dtype
 
@@ -30,37 +29,36 @@ from .model_config import Glm5NextConfig
 class Glm5NextDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
     """Binds GLM's existing sparse-MLA and KDA computation to registered inputs.
 
+    It runs tensor-parallel attention over a ``tp`` mesh, or one attention
+    replica per device over a ``dp`` mesh, with its experts expert-parallel.
     It merges the batch's image rows into the token embeddings when the
     checkpoint ships a vision tower.
     """
 
     graph_name = "Glm5Next"
     consumes_vision: ClassVar[bool] = True
+    supports_data_parallel: ClassVar[bool] = True
 
     def __init__(self, config: Glm5NextConfig) -> None:
         super().__init__()
-        ep = (
-            None
-            if config.ep_config is None
-            else EPBatchManager(config.ep_config)
-        )
         dtype = (
             DType.bfloat16 if config.quant_config is not None else config.dtype
         )
         with default_dtype(dtype):
-            self.model = Glm5Next(config, config.kv_params, ep)
+            self.model = Glm5Next(config, config.kv_params, config.ep_config)
         self.model.name_transparent = True
 
     def forward(self, inputs: DecoderInputs[Tensor]) -> DecoderOutputs:
         """Runs the decoder with its KV state and optional expert exchange."""
         assert inputs.batch_context_lengths is not None
-        ep = () if inputs.ep is None else tuple(tree.leaves(inputs.ep))
         return self.model(
             inputs.tokens,
             inputs.return_n_logits,
             inputs.input_row_offsets,
             inputs.batch_context_lengths[0],
             *tree.leaves(inputs.kv),
-            *ep,
             vision=inputs.vision,
+            ep=inputs.ep,
+            host_input_row_offsets=inputs.host_input_row_offsets,
+            data_parallel_splits=inputs.data_parallel_splits,
         )

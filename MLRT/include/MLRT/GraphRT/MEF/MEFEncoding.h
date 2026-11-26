@@ -25,9 +25,7 @@
 #include "llvm/ADT/BitmaskEnum.h"
 #include "llvm/ADT/StringRef.h"
 
-namespace M {
-
-namespace MEF {
+namespace M::MLRT::MEF {
 
 //===----------------------------------------------------------------------===//
 // General MEF constants
@@ -51,7 +49,7 @@ enum {
 // (Attribute offsets are 64-bit, so we actually need to align to 8 bytes, but
 // even if that changes again, then this restriction is still required as long
 // as MEFInvokable.cpp still addresses it as a uint32_t array.)
-static_assert(MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
+static_assert(MLRT::MEF::kPrimitiveEntryAlignment % sizeof(uint32_t) == 0,
               "size of uint32_t must evenly divide kPrimitiveEntryAlignment");
 
 /// Return true if the magic number makes this look like a MEF file.
@@ -226,7 +224,6 @@ struct AttrKindForCXXType<TypeKind> {
   static constexpr AttributeKind kind = AttributeKind::kType;
 };
 
-} // namespace MEF
-} // namespace M
+} // namespace M::MLRT::MEF
 
 #endif // MLRT_GRAPHRT_MEF_MEFENCODING_H

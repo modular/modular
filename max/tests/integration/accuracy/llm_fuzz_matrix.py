@@ -90,18 +90,19 @@ PIPELINES: Final[list[PipelineEntry]] = [
         gpu_flag="--devices gpu:0,1,2,3",
         instance_type="bm.gpu.b200.4",
         timeout=210,
-        # Mach only, with the DFlash2 drafter the model ships with.
+        # Mach only, serving the export artifact with the DFlash2 drafter the
+        # model ships with.
         mach_key="reflection/Beam-1.0-501B-A23B-NVFP4__dflash2",
     ),
     PipelineEntry(
-        pipeline="tencent/Hy4-preview-FP8-ep-tp-mtp",
-        model_path="tencent/Hy4-preview-FP8",
+        pipeline="tencent/Hy4-FP8",
+        model_path="tencent/Hy4-FP8",
         runner="modrunner-b200-efa-8x",
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=210,
-        # Mach only, serving the MTP artifact.
-        mach_key="tencent/Hy4-preview-FP8__mtp",
+        # Mach only, serving the export artifact.
+        mach_key="tencent/Hy4-FP8",
     ),
     PipelineEntry(
         pipeline="minimax/MiniMax-M3-MXFP8-ep-tp",
@@ -133,17 +134,6 @@ PIPELINES: Final[list[PipelineEntry]] = [
         gpu_flag="--devices gpu:0,1,2,3,4,5,6,7",
         instance_type="bm.gpu.b200.8",
         timeout=120,
-    ),
-    # Laguna S-2.1 on one B200: the gated lane, carrying the mixed NVFP4/bf16
-    # expert split. Mach only.
-    PipelineEntry(
-        pipeline="poolside/Laguna-S-2.1-NVFP4",
-        model_path="poolside/Laguna-S-2.1-NVFP4",
-        runner="modrunner-b200",
-        gpu_flag="--devices gpu:0",
-        instance_type="bm.gpu.b200.1",
-        timeout=120,
-        mach_key="poolside/Laguna-S-2.1-NVFP4",
     ),
     # 8x B200: TP8 attention, EP8 MoE.
     PipelineEntry(

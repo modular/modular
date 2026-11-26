@@ -1401,10 +1401,6 @@ def KGEN_StructLoadIndirectOp : KGENOp<"struct.load_indirect", [Pure,
     The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
     values and loads each one into a struct without the pointer type.  This
     requires elements with trivially loadable types supported by pop.load.
-
-    When the operand struct is a variadic parameter pack (`isParamPack`), the
-    result struct is also marked `isParamPack` so downstream ABI lowering can
-    still recognize a pack.
   }];
 
   let arguments = (ins KGEN_StructType:$structValue);

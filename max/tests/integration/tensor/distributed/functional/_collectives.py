@@ -20,52 +20,99 @@ Subclasses must define:
     MESH_2D: DeviceMesh   — 4 devices, shape (2,2), axis_names=("dp","tp")
     partial_fn: Callable   — make_partial (CPU) or make_partial (GPU)
 
-Redistribute transition table (same-mesh):
-============================================
+Same-mesh transitions, per mesh axis:
 
-    Source → Target          | Action
+    Source → Target          | Collective
     -------------------------|------------------------------------------
-    Same → Same              | no-op
-    Partial → Replicated     | allreduce within group
-    Partial → Sharded(dim)   | allreduce + local split (reduce-scatter)
-    Sharded → Replicated     | allgather within group
-    Replicated → Sharded     | local split (no communication)
-    Sharded(i) → Sharded(j)  | allgather(i) + local split(j)
-    Partial → Partial        | no-op if same, else not supported
+    Same → Same              | none
+    Partial → Replicated     | allreduce
+    Partial → Sharded(dim)   | reduce_scatter
+    Sharded → Replicated     | allgather
+    Replicated → Sharded     | local split, no communication
+    Replicated → Partial     | one copy, zeros elsewhere
+    Sharded(i) → Sharded(j)  | all_to_all for equal static shards, else
+                             | allgather(i) and local split(j)
 
-Cross-mesh transitions:
-    1. Resolve to Replicated on source mesh
-    2. Transfer shard[0] to target mesh primary device
-    3. scatter to target placements on target mesh
+Cross-mesh: between meshes of one shape each shard moves to the device at
+its position; otherwise the tensor gathers, moves, and scatters.
 """
 
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from typing import Any, ClassVar
+from unittest.mock import patch
 
 import numpy as np
 import pytest
 from max.driver import Accelerator
 from max.dtype import DType
 from max.functional import (
+    all_to_all,
     allgather,
     allgather_rms_norm,
     allreduce_sum,
+    collective_ops,
     reduce_scatter,
     reduce_scatter_rms_norm,
     transfer_to,
 )
+from max.nn import Module
 from max.tensor import Tensor
 from max.tensor.sharding import (
     DeviceMapping,
     DeviceMesh,
     Partial,
+    Placement,
     Replicated,
     Sharded,
+    ShardingError,
+    TensorLayout,
 )
 from max.tensor.sharding.placements import local_shard_shape_from_global
+
+_COLLECTIVES = ("allreduce_sum", "allgather", "reduce_scatter", "all_to_all")
+
+
+@contextmanager
+def _collectives_called() -> Iterator[list[str]]:
+    """Records the collectives transfer_to calls in the block, by name."""
+    with ExitStack() as stack:
+        mocks = [
+            stack.enter_context(
+                patch.object(
+                    collective_ops, name, wraps=getattr(collective_ops, name)
+                )
+            )
+            for name in _COLLECTIVES
+        ]
+        names: list[str] = []
+        yield names
+        names.extend(
+            name
+            for name, mock in zip(_COLLECTIVES, mocks, strict=True)
+            for _ in range(mock.call_count)
+        )
+
+
+class _SymbolicTransfers(
+    Module[[Tensor, Tensor], tuple[Tensor, Tensor, Tensor, Tensor]]
+):
+    """Moves a row-split and a Partial input to Replicated and to a split."""
+
+    def forward(
+        self, rows: Tensor, partial: Tensor
+    ) -> tuple[Tensor, Tensor, Tensor, Tensor]:
+        mesh = rows.mesh
+        replicated = DeviceMapping(mesh, (Replicated(),))
+        return (
+            rows.to(replicated),
+            rows.to(DeviceMapping(mesh, (Sharded(1),))),
+            partial.to(replicated),
+            partial.to(DeviceMapping(mesh, (Sharded(0),))),
+        )
 
 
 class CollectivesTests:
@@ -325,6 +372,7 @@ class CollectivesTests:
         rms = np.sqrt(np.mean(x * x, axis=-1, keepdims=True) + cls._NORM_EPS)
         return x / rms * gamma
 
+    @pytest.mark.compile_on_gpu("the interpreter has no fused collective")
     def test_reduce_scatter_rms_norm_1d(self) -> None:
         mesh = self.MESH_1D
         dtype = self._norm_dtype()
@@ -359,6 +407,7 @@ class CollectivesTests:
                 normed.local_shards[i], self._rms_norm(rows, gamma), dtype
             )
 
+    @pytest.mark.compile_on_gpu("the interpreter has no fused collective")
     def test_allgather_rms_norm_1d(self) -> None:
         mesh = self.MESH_1D
         dtype = self._norm_dtype()
@@ -492,6 +541,77 @@ class CollectivesTests:
                 DeviceMapping(self.MESH_1D, (Partial(),)),
             )
 
+    def test_scatter_rejects_splitting_a_size_one_axis(self) -> None:
+        with pytest.raises(ShardingError, match="static extent 1"):
+            transfer_to(
+                Tensor(np.ones((1, 8), dtype=np.float32)),
+                DeviceMapping(self.MESH_1D, (Sharded(0),)),
+            )
+
+    def test_all_to_all_reads_a_negative_sharded_axis(self) -> None:
+        t_np = np.arange(32, dtype=np.float32).reshape(4, 8)
+        t = transfer_to(
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(-1),))
+        )
+        swapped = all_to_all(t, split_axis=0, concat_axis=-1)
+        self._assert_shards(swapped, t_np, self.MESH_1D, (Sharded(0),))
+
+    def test_all_to_all_rejects_an_indivisible_split(self) -> None:
+        t = transfer_to(
+            Tensor(np.ones((8, 3), dtype=np.float32)),
+            DeviceMapping(self.MESH_1D, (Sharded(0),)),
+        )
+        with pytest.raises(ValueError, match="multiple of the group size"):
+            all_to_all(t, split_axis=1, concat_axis=0)
+
+    @pytest.mark.parametrize(
+        "source,target", [(-1, 1), (1, -1)], ids=["S-1->S1", "S1->S-1"]
+    )
+    def test_transfer_between_negative_and_positive_axes(
+        self, source: int, target: int
+    ) -> None:
+        t_np = np.arange(64, dtype=np.float32).reshape(4, 16)
+        t = transfer_to(
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(source),))
+        )
+        moved = transfer_to(t, DeviceMapping(self.MESH_1D, (Sharded(target),)))
+        assert moved.placements == (Sharded(target),)
+        expected = transfer_to(
+            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(1),))
+        )
+        for actual, want in zip(
+            moved.local_shards, expected.local_shards, strict=True
+        ):
+            np.testing.assert_array_equal(actual.to_numpy(), want.to_numpy())
+
+    def test_scatter_splits_a_negative_and_positive_axis_once(self) -> None:
+        t_np = np.arange(40, dtype=np.float32).reshape(4, 10)
+        t = transfer_to(
+            Tensor(t_np),
+            DeviceMapping(self.MESH_2D, (Sharded(1), Sharded(-1))),
+        )
+        expected = transfer_to(
+            Tensor(t_np), DeviceMapping(self.MESH_2D, (Sharded(1), Sharded(1)))
+        )
+        for actual, want in zip(
+            t.local_shards, expected.local_shards, strict=True
+        ):
+            np.testing.assert_array_equal(actual.to_numpy(), want.to_numpy())
+
+    def test_swap_on_one_mesh_axis_checks_its_own_group(self) -> None:
+        # On distinct devices the groups launch as one kernel over the mesh.
+        t_np = np.arange(8, dtype=np.float32).reshape(4, 2)
+        t = transfer_to(
+            Tensor(t_np),
+            DeviceMapping(self.MESH_2D, (Replicated(), Sharded(0))),
+        )
+        moved = transfer_to(
+            t, DeviceMapping(self.MESH_2D, (Replicated(), Sharded(1)))
+        )
+        self._assert_shards(
+            moved, t_np, self.MESH_2D, (Replicated(), Sharded(1))
+        )
+
     # ═════════════════════════════════════════════════════════════════════
     #  Section 4: materialize / to_numpy
     # ═════════════════════════════════════════════════════════════════════
@@ -532,64 +652,6 @@ class CollectivesTests:
     #  Section 5: transfer_to — same mesh, 1D
     # ═════════════════════════════════════════════════════════════════════
 
-    def test_redistribute_noop(self) -> None:
-        t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
-        sharded = transfer_to(
-            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
-        )
-        result = transfer_to(
-            sharded, DeviceMapping(self.MESH_1D, (Sharded(0),))
-        )
-        self._assert_shards(result, t_np, self.MESH_1D, (Sharded(0),))
-
-    def test_redistribute_sharded_to_replicated(self) -> None:
-        t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
-        sharded = transfer_to(
-            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
-        )
-        result = transfer_to(
-            sharded, DeviceMapping(self.MESH_1D, (Replicated(),))
-        )
-        self._assert_shards(result, t_np, self.MESH_1D, (Replicated(),))
-
-    def test_redistribute_replicated_to_sharded(self) -> None:
-        t_np = np.arange(32, dtype=np.float32).reshape(8, 4)
-        replicated = transfer_to(
-            Tensor(t_np), DeviceMapping(self.MESH_1D, (Replicated(),))
-        )
-        result = transfer_to(
-            replicated, DeviceMapping(self.MESH_1D, (Sharded(0),))
-        )
-        self._assert_shards(result, t_np, self.MESH_1D, (Sharded(0),))
-
-    def test_redistribute_partial_to_replicated(self) -> None:
-        a = np.ones((4, 4), dtype=np.float32)
-        t = self.partial_fn(a, self.MESH_1D, (Partial(),))
-        result = transfer_to(t, DeviceMapping(self.MESH_1D, (Replicated(),)))
-        assert result.placements == (Replicated(),)
-        for i in range(4):
-            np.testing.assert_allclose(
-                result.local_shards[i].to_numpy(), a * 4, rtol=1e-5
-            )
-
-    def test_redistribute_partial_to_sharded(self) -> None:
-        a = np.ones((8, 4), dtype=np.float32)
-        t = self.partial_fn(a, self.MESH_1D, (Partial(),))
-        result = transfer_to(t, DeviceMapping(self.MESH_1D, (Sharded(0),)))
-        assert result.placements == (Sharded(0),)
-        expected = a * 4
-        self._assert_shards(result, expected, self.MESH_1D, (Sharded(0),))
-
-    def test_redistribute_sharded_to_sharded_different_axis(self) -> None:
-        t_np = np.arange(16, dtype=np.float32).reshape(4, 4)
-        sharded = transfer_to(
-            Tensor(t_np), DeviceMapping(self.MESH_1D, (Sharded(0),))
-        )
-        result = transfer_to(
-            sharded, DeviceMapping(self.MESH_1D, (Sharded(1),))
-        )
-        self._assert_shards(result, t_np, self.MESH_1D, (Sharded(1),))
-
     def test_redistribute_3d_tensor_sharded_axis0_to_axis2(self) -> None:
         t_np = np.arange(96, dtype=np.float32).reshape(4, 6, 4)
         t = transfer_to(
@@ -605,12 +667,6 @@ class CollectivesTests:
         )
         result = transfer_to(t, DeviceMapping(self.MESH_1D, (Replicated(),)))
         self._assert_shards(result, t_np, self.MESH_1D, (Replicated(),))
-
-    def test_redistribute_partial_same_is_noop(self) -> None:
-        a = np.ones((4, 4), dtype=np.float32)
-        t = self.partial_fn(a, self.MESH_1D, (Partial(),))
-        result = transfer_to(t, DeviceMapping(self.MESH_1D, (Partial(),)))
-        assert result.placements == (Partial(),)
 
     # ═════════════════════════════════════════════════════════════════════
     #  Section 6: transfer_to — same mesh, 2D, single-axis change
@@ -1074,3 +1130,92 @@ class CollectivesTests:
         assert [list(s.shape) for s in result.local_shards] == [
             list(t.shape) for t in result.layout.local_types
         ]
+
+    # ─── transfer_to: the collective each change runs ───────────────
+
+    @pytest.mark.parametrize(
+        ("rows", "source", "target", "expected"),
+        [
+            (8, (Sharded(0),), (Sharded(0),), []),
+            (8, (Partial(),), (Partial(),), []),
+            (8, (Partial(),), (Replicated(),), ["allreduce_sum"]),
+            (8, (Partial(),), (Sharded(0),), ["reduce_scatter"]),
+            (7, (Partial(),), (Sharded(0),), ["reduce_scatter"]),
+            (8, (Sharded(0),), (Replicated(),), ["allgather"]),
+            (8, (Sharded(0),), (Sharded(1),), ["all_to_all"]),
+            (7, (Sharded(0),), (Sharded(1),), ["allgather"]),
+            (8, (Replicated(),), (Sharded(1),), []),
+            (8, (Replicated(),), (Partial(),), []),
+        ],
+        ids=[
+            "S0->S0",
+            "P->P",
+            "P->R",
+            "P->S0",
+            "P->S0-uneven",
+            "S0->R",
+            "S0->S1",
+            "S0->S1-uneven",
+            "R->S1",
+            "R->P",
+        ],
+    )
+    def test_transfer_runs_the_collective_of_the_change(
+        self,
+        rows: int,
+        source: tuple[Placement, ...],
+        target: tuple[Placement, ...],
+        expected: list[str],
+    ) -> None:
+        """7 rows over 4 devices are uneven shards, the larger ones first,
+        so swapping their split axis gathers instead of an all_to_all."""
+        a = np.arange(rows * 8, dtype=np.float32).reshape(rows, 8)
+        mesh = self.MESH_1D
+        if source == (Partial(),):
+            t = self.partial_fn(a, mesh, source)
+            full = a * mesh.num_devices
+        else:
+            t = transfer_to(Tensor(a), DeviceMapping(mesh, source))
+            full = a
+        with _collectives_called() as names:
+            result = transfer_to(t, DeviceMapping(mesh, target))
+        assert names == expected
+        assert result.placements == target
+        if target == (Partial(),):
+            # Replicated to Partial keeps one copy, so the sum is the input.
+            np.testing.assert_allclose(result.to_numpy(), full, rtol=1e-5)
+            return
+        for i, shard in enumerate(result.local_shards):
+            np.testing.assert_allclose(
+                shard.to_numpy(),
+                self._expected_shard(full, i, mesh, target),
+                rtol=1e-5,
+            )
+
+    def test_transfer_symbolic_rows_in_one_graph(self) -> None:
+        """A symbolic row count may not split evenly, so swapping the split
+        axis gathers and slices instead of running an all-to-all."""
+        mesh = self.MESH_1D
+        sharded, partial = (
+            TensorLayout(
+                DType.float32, ["rows", 8], DeviceMapping(mesh, (placement,))
+            )
+            for placement in (Sharded(0), Partial())
+        )
+        with _collectives_called() as names:
+            staged = _SymbolicTransfers().trace(sharded, partial)
+        assert sorted(names) == [
+            "allgather",
+            "allgather",
+            "allreduce_sum",
+            "reduce_scatter",
+        ]
+        assert [layout.placements for layout in staged.out_layouts] == [
+            (Replicated(),),
+            (Sharded(1),),
+            (Replicated(),),
+            (Sharded(0),),
+        ]
+        for layout in staged.out_layouts:
+            rows, columns = layout.shape
+            assert "rows" in str(rows) and int(columns) == 8

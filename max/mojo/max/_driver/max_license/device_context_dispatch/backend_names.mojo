@@ -27,7 +27,7 @@ from max.gpu.host._legacy._nvidia_cuda import (
 from max.gpu.host._legacy.device_context import (
     DefaultDeviceTypeEncoder as _LegacyDefaultDeviceTypeEncoder,
 )
-from max._driver.max_license.device_context_dispatch.device_context import (
+from max._driver.max_license.device_context_dispatch.backend_selection import (
     HAL_DEVICE_CONTEXT,
 )
 

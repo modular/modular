@@ -28,7 +28,6 @@ from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
-from max.nn.legacy.comm.ep import EPBatchManager
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
@@ -74,9 +73,7 @@ class Glm5_1MTP(DeepseekV3_2NextN):
                 attention_scale=rotary_embedding(config).compute_scale(
                     math.sqrt(1.0 / qk_head_dim)
                 ),
-                ep_batch_manager=None
-                if config.ep_config is None
-                else EPBatchManager(config.ep_config),
+                ep_config=config.ep_config,
             )
 
 
@@ -187,8 +184,7 @@ def configure_mtp_draft(
                 dispatch_quant_config=None,
                 fused_shared_expert=target.n_shared_experts == 1,
             )
-        context.start_ep(ep)
-        runtime = replace(runtime, ep=ep)
+        runtime = replace(runtime, ep=context.start_ep(ep))
     config = target.apply_runtime(runtime)
 
     quant_config = config.quant_config

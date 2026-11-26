@@ -37,8 +37,6 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from nn.normalization import rms_norm_gpu
 
-from std.utils.index import Index, IndexList
-
 
 def test_blackwell_matmul_with_weight_prefetch[
     MType: CoordLike,
@@ -313,9 +311,7 @@ def test_rmsnorm_then_matmul[
         prefetch_tiles_n=prefetch_tiles_n,
     )
 
-    var out_shape = IndexList[2](
-        Int(c_ours_tensor.dim[0]()), Int(c_ours_tensor.dim[1]())
-    )
+    var out_shape = (Int(c_ours_tensor.dim[0]()), Int(c_ours_tensor.dim[1]()))
 
     def epilogue_fn[
         _dtype: DType, width: SIMDLength, *, alignment: Int

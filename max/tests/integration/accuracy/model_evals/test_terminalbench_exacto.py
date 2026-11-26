@@ -35,7 +35,11 @@ META: dict[str, object] = {
     "excluded_tasks": ["qemu-startup"],
     "task_subset": None,
     "planned_tasks": ["a", "b"],
+    "dataset_tasks": ["a", "b", "qemu-startup"],
 }
+
+# A meta.json from before the runner listed the dataset's tasks.
+LEGACY_META = {k: v for k, v in META.items() if k != "dataset_tasks"}
 
 
 def _trial(
@@ -201,3 +205,159 @@ def test_main_writes_score_config_and_trajectories(tmp_path: Path) -> None:
     assert json.loads((out / "config.json").read_text())["top_p"] == 1.0
     lines = (out / "trajectories.jsonl").read_text().splitlines()
     assert len(lines) == 4
+    uploads = (out / "results.jsonl").read_text().splitlines()
+    assert len(uploads) == 4
+    attempts = (out / "attempts.jsonl").read_text().splitlines()
+    assert len(attempts) == len(TRIALS)
+
+
+def test_main_writes_no_upload_rows_for_a_subset_run(
+    tmp_path: Path,
+) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    tb.write_jsonl(run / "results.jsonl", TRIALS)
+    (run / "meta.json").write_text(
+        json.dumps({**META, "task_subset": ["a", "b"]})
+    )
+    out = tmp_path / "out"
+    out.mkdir()
+    # Rows an earlier conversion left in the same directory.
+    (out / "results.jsonl").write_text('{"prompt_index": 0}\n')
+
+    assert tbx.main(["--run-dir", str(run), "--out-dir", str(out)]) == 0
+
+    assert not (out / "results.jsonl").exists()
+    assert (out / "attempts.jsonl").exists()
+    assert (out / "score.json").exists()
+
+
+def test_main_refuses_to_overwrite_the_runners_results(tmp_path: Path) -> None:
+    tb.write_jsonl(tmp_path / "results.jsonl", TRIALS)
+    (tmp_path / "meta.json").write_text(json.dumps(META))
+    before = (tmp_path / "results.jsonl").read_text()
+
+    with pytest.raises(SystemExit):
+        tbx.main(["--run-dir", str(tmp_path), "--out-dir", str(tmp_path)])
+
+    assert (tmp_path / "results.jsonl").read_text() == before
+
+
+def test_upload_rows_are_the_scored_trials_only() -> None:
+    rows = tbx.upload_rows(TRIALS, META)
+    assert len(rows) == 4
+    assert {r["error"] for r in rows} == {None}
+    assert [r["passed"] for r in rows].count(True) == 3
+    b = [r for r in rows if r["task_name"] == "b"]
+    assert [r["repeat_index"] for r in b] == [0, 1]
+    a = [r for r in rows if r["task_name"] == "a"]
+    assert [(r["repeat_index"], r["reward"]) for r in a] == [(0, 1.0), (1, 0.0)]
+
+
+def test_attempt_rows_keep_invalid_attempts_with_their_reason() -> None:
+    rows = tbx.attempt_rows(TRIALS, META)
+    assert len(rows) == len(TRIALS)
+    b = [r for r in rows if r["task_name"] == "b"]
+    assert [r["repeat_index"] for r in b] == [0, 1, 2]
+    assert b[0]["error"] == "no verifier reward"
+    assert b[0]["passed"] is False
+
+
+def test_task_indexes_come_from_the_whole_dataset() -> None:
+    meta = {
+        **META,
+        "task_subset": ["b"],
+        "dataset_tasks": ["c", "b", "a", "qemu-startup"],
+    }
+    assert tbx.task_indexes(meta) == {
+        "a": 0,
+        "b": 1,
+        "c": 2,
+        "qemu-startup": 3,
+    }
+
+
+def test_task_indexes_of_an_older_run_need_the_dataset_task_list() -> None:
+    assert tbx.task_indexes(LEGACY_META) == {}
+    rows = tbx.upload_rows(TRIALS, {**LEGACY_META, "task_subset": ["a", "b"]})
+    assert {r["prompt_index"] for r in rows} == {None}
+
+
+def test_task_indexes_of_an_older_run_come_from_the_given_tasks() -> None:
+    tasks = ["a", "b", "qemu-startup"]
+    assert tbx.task_indexes(LEGACY_META, tasks) == {
+        "a": 0,
+        "b": 1,
+        "qemu-startup": 2,
+    }
+
+
+@pytest.mark.parametrize(
+    "tasks",
+    [
+        # A sparse checkout without the excluded task.
+        ["a", "b"],
+        # A checkout with a task the run neither planned nor excluded.
+        ["a", "b", "c", "qemu-startup"],
+        # Missing a planned task.
+        ["a", "qemu-startup"],
+    ],
+)
+def test_older_run_tasks_must_match_the_given_tasks_exactly(
+    tasks: list[str],
+) -> None:
+    assert tbx.task_indexes(LEGACY_META, tasks) == {}
+
+
+def test_a_bad_legacy_exclusion_gives_no_indexes() -> None:
+    # "aa-typo" is not a task; trusting it would move "b" to index 2.
+    meta = {**LEGACY_META, "excluded_tasks": ["aa-typo"]}
+    assert tbx.task_indexes(meta, ["a", "b", "qemu-startup"]) == {}
+
+
+def test_an_older_subset_run_gives_no_indexes() -> None:
+    meta = {**LEGACY_META, "task_subset": ["a"]}
+    assert tbx.task_indexes(meta, ["a", "b", "qemu-startup"]) == {}
+
+
+def test_a_subset_run_is_not_uploadable() -> None:
+    meta = {**META, "task_subset": ["a"]}
+    assert tbx.task_indexes(meta)
+    assert not tbx.uploadable(meta)
+    assert tbx.uploadable(META)
+
+
+def test_main_indexes_an_older_run_from_the_tasks_dir(tmp_path: Path) -> None:
+    run = tmp_path / "run"
+    run.mkdir()
+    tb.write_jsonl(run / "results.jsonl", TRIALS)
+    (run / "meta.json").write_text(json.dumps(LEGACY_META))
+    tasks = tmp_path / "tasks"
+    for name in ("a", "b", "qemu-startup"):
+        (tasks / name).mkdir(parents=True)
+        (tasks / name / "task.toml").write_text("")
+    out = tmp_path / "out"
+
+    assert (
+        tbx.main(
+            [
+                *("--run-dir", str(run)),
+                *("--out-dir", str(out)),
+                *("--dataset-tasks-dir", str(tasks)),
+            ]
+        )
+        == 0
+    )
+
+    rows = [json.loads(line) for line in (out / "results.jsonl").open()]
+    assert {r["task_name"]: r["prompt_index"] for r in rows} == {"a": 0, "b": 1}
+
+
+def test_upload_rows_carry_the_uploaders_columns() -> None:
+    row = tbx.upload_rows(TRIALS, META)[0]
+    assert row["completion_tokens"] == 100
+    assert row["prompt_tokens"] == 1000
+    assert row["cached_tokens"] == 700
+    assert row["agent_turns"] == 4
+    assert row["max_turn_completion_tokens"] == 100
+    assert row["length_capped_turns"] == 1

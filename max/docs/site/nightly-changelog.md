@@ -156,7 +156,36 @@ This version is still a work in progress.
   deprecation warning. Result files record the option as `warmup_multiturn`
   under `client_args`.
 
+- `max benchmark` starts a rate-paced multi-turn run at the population its
+  `--request-rate` holds open, `ceil(rate x mean session lifetime)` sessions
+  (Little's law), instead of at the conversation cap; `--warmup-count`
+  overrides it. Pre-warmed sessions phase-spread their first turn over that
+  turn's occupancy window so the population's submits arrive at the offered
+  rate. Closed-loop runs keep their previous start behavior, and a rate-paced
+  workload with neither an inter-turn delay nor `--warmup-delay-estimated-*`
+  still pre-warms nothing.
+
 ## Python API
+
+- `max.functional.random.gaussian` and `max.graph.ops.random.gaussian` on the
+  CPU now draw the stream of PyTorch's CPU generator. For a given seed, a
+  float32 or float64 tensor equals
+  `torch.empty(shape).normal_(mean, std, generator=torch.Generator().manual_seed(seed))`
+  bit for bit on x86. float16 and bfloat16 samples are the float32 stream
+  rounded to that type. CPU values for a given seed differ from earlier
+  releases, so refresh any stored CPU samples. GPU results are unchanged.
+
+- `GGUFWeights` now reads checkpoints through MAX's own GGUF parser instead of
+  the `gguf` Python package, so loading no longer needs that dependency. The
+  parser skips tokenizer metadata, whose payload dominates a typical file, and
+  reads tensors from the file's own offsets. Quantized tensors are still
+  exposed as `uint8` blocks with their `QuantizationEncoding`. The same
+  binding writes checkpoints: `max._core.gguf.GGUFWriter` records string,
+  integer, float and boolean metadata plus float, integer and block-quantized
+  tensors, and `write()` emits the file.
+
+- `KVConnector.offload()` takes a keyword-only `placement_key`, the same for
+  every offload of one request. Custom connectors must accept it.
 
 - `AutoModel(eager=True)`, `AutoPipeline(eager=True)` and `max generate --eager`
   run the decoder op by op instead of as a compiled graph, so `pdb` stopped
@@ -367,7 +396,26 @@ This version is still a work in progress.
 
 ## C API
 
+- `M_loadGGUF()` loads GGUF checkpoints the way `M_loadSafetensors()` loads
+  Safetensors ones, with `M_getGGUFCount()`, `M_getGGUFData()`,
+  `M_getGGUFDtype()`, `M_getGGUFShape()` and
+  `M_newWeightsRegistryFromGGUF()` to inspect and use the tensors.
+  Block-quantized tensors are exposed as `uint8` data whose last dimension
+  counts quantization blocks, and `M_getGGUFQuantization()` names the
+  scheme. `M_newGGUFWriter()`, `M_setGGUFMetadata*()`, `M_addGGUFTensor()` and
+  `M_writeGGUF()` write checkpoints the same way.
+
 ## Kernels and GPU programming
+
+- A custom op's shape function, registered with
+  `@extensibility.register_shape_function`, can now return its output shape
+  as a `Coord` as well as an `IndexList`. A shape function that passes an
+  input's shape through can return `input.shape()` directly, declared as
+  `-> type_of(input.shape())`, without converting it to an `IndexList`.
+
+- A custom op's `elementwise` function that reads the element's position now
+  takes it as a trailing `Coord` argument. A trailing `IndexList` argument is
+  no longer recognized as the position; change its type to `Coord`.
 
 - A custom op's `execute` method no longer accepts `ManagedTensorSlice`
   arguments (`InputTensor`, `OutputTensor` and their fused, mutable and
@@ -471,6 +519,27 @@ This version is still a work in progress.
   attributes, such as the ones `pdl_launch_attributes()` returns for
   programmatic dependent launch.
 
+- Renamed the closure overloads of `DeviceContext.compile_function()` and
+  `DeviceContext.enqueue_function()` to `compile_closure()` and
+  `enqueue_closure()`. Kernels that capture state from their enclosing scope
+  now use the `*_closure()` methods, and `compile_function()` and
+  `enqueue_function()` take only kernels that are plain functions. The old
+  closure overloads are removed, so a call that passes a closure to
+  `enqueue_function()` no longer compiles:
+
+  ```mojo
+  var scale: Float32 = 2.0
+
+  def scale_kernel() {var scale}:
+      ...
+
+  # Before:
+  ctx.enqueue_function(scale_kernel, grid_dim=1, block_dim=256)
+
+  # After:
+  ctx.enqueue_closure(scale_kernel, grid_dim=1, block_dim=256)
+  ```
+
 - A bare `DeviceContext` is now an unbound parameterized type, not a concrete
   type.
 
@@ -508,6 +577,22 @@ This version is still a work in progress.
       var upper = StencilPoint(lower[0] + window_h, lower[1] + window_w)
       return lower, upper
   ```
+
+- `parallelize_over_rows()` in `max.algorithm` and `trace_arg()` in
+  `max.runtime.tracing` no longer accept an `IndexList` shape. Pass a `Coord`
+  instead, for example `Coord(shape)` or a tensor's `shape_coord()`.
+
+- Removed `trace_slice_arg()` from `extensibility`. Call
+  `trace_arg(name, tensor.shape_coord(), tensor.dtype)` from
+  `max.runtime.tracing` instead.
+
+- On DGX Spark, GPU kernels doing random reads or atomics on large host
+  buffers run up to 150x faster.
+
+- Launching an NVIDIA kernel with more than 48 KB of dynamic shared memory
+  now needs only `shared_mem_bytes`.
+  `FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES` is no longer needed and has
+  no effect.
 
 ## Tools
 

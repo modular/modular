@@ -584,6 +584,23 @@ modular_py_test(
     deps = [":deepswe_score"],
 )
 
+# Writes a MiniMax Provider Verifier run as uploader results. Stdlib only:
+# mcloudEvalMaxModel.yaml runs it with a bare python3.
+modular_py_binary(
+    name = "provider_verifier_score",
+    testonly = True,
+    srcs = ["provider_verifier_score.py"],
+    imports = ["."],
+    main = "provider_verifier_score.py",
+)
+
+modular_py_test(
+    name = "test_provider_verifier_score",
+    size = "small",
+    srcs = ["test_provider_verifier_score.py"],
+    deps = [":provider_verifier_score"],
+)
+
 # Scrubs the endpoint's API key from DeepSWE results; the agent can print it.
 # Stdlib only, like deepswe_score.
 modular_py_binary(

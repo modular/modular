@@ -103,8 +103,8 @@ def tma_umma_kernel_sgs[
     num_threads: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
-    b: TileTensor[b_gmem_type, b_layout, ImmutAnyOrigin],  # FP8 in gmem
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    b: TileTensor[b_gmem_type, b_layout, ImmUntrackedOrigin],  # FP8 in gmem
+    c: TileTensor[c_type, c_layout, MutUntrackedOrigin],
     num_iters_dev: Int32,
 ):
     """Kernel with A via TMA to smem, B from gmem->registers->cast->smem.
@@ -202,7 +202,6 @@ def tma_umma_kernel_sgs[
 
     var elect_one_warp = get_warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
-    var elect_one_cta = block_rank_in_cluster() % 2 == 0
     comptime max_tmem_cols = 512
 
     if elect_one_warp:

@@ -14,6 +14,7 @@
 #include "GraphCompiler/MGPDialect/Dialect/MGPBufferLifetimeAnalysis.h"
 #include "GraphCompiler/MOGGDialect/MOGGOps.h"
 #include "MLRT/GraphRT/GRTDialect/GRTControlFlowInterface.h"
+#include "Support/AssertStream.h"
 #include "Support/Compiler/Threading.h"
 
 #include "llvm/ADT/SparseBitVector.h"
@@ -109,10 +110,11 @@ static void buildRunsAfter(
   std::function<void(Operation *)> visit = [&](Operation *op) {
     if (visited.count(op))
       return;
-    if (tempMark.count(op)) {
-      llvm::report_fatal_error("Cycle detected in graph region: "
-                               "buffer lifetime analysis assumes a DAG");
-    }
+    // SSA in a block is a DAG, so a cycle means the GC produced one. Reported
+    // rather than asserted: a release build must still name it.
+    if (tempMark.count(op))
+      llvm::report_fatal_error("Cycle detected in graph region: buffer "
+                               "lifetime analysis assumes a DAG");
     tempMark.insert(op);
 
     for (Value operand : op->getOperands()) {
@@ -387,7 +389,7 @@ M::MGP::getAllocUses(MGP::BufferAllocOp allocOp) {
       if (!isa<MGP::TensorExtractTensorSpecOp>(*owner))
         uses.push_back(owner);
 
-      if (isa<GRT::GRTControlFlowInterface>(*owner))
+      if (isa<MLRT::GRT::GRTControlFlowInterface>(*owner))
         return Error("control flow op may alias");
 
       if (isa<MGP::CallOp>(owner))
@@ -403,7 +405,7 @@ M::MGP::getAllocUses(MGP::BufferAllocOp allocOp) {
       // view keeps the buffer live until the view's users.
       unsigned operandNumber = use.getOperandNumber();
       bool aliasesResult = false;
-      if (auto mayAlias = dyn_cast<GRT::GRTMayAliasInterface>(owner)) {
+      if (auto mayAlias = dyn_cast<MLRT::GRT::GRTMayAliasInterface>(owner)) {
         for (size_t r : llvm::seq(owner->getNumResults())) {
           if (mayAlias.mayAlias(operandNumber, r)) {
             aliasesResult = true;
@@ -414,7 +416,7 @@ M::MGP::getAllocUses(MGP::BufferAllocOp allocOp) {
 
       if (!aliasesResult) {
         if (auto extendsLife =
-                dyn_cast<GRT::GRTExtendsLifetimeInterface>(owner)) {
+                dyn_cast<MLRT::GRT::GRTExtendsLifetimeInterface>(owner)) {
           for (size_t r : llvm::seq(owner->getNumResults()))
             if (extendsLife.extendsLifetime(operandNumber, r)) {
               aliasesResult = true;

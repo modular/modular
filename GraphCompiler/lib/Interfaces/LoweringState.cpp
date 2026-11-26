@@ -117,10 +117,11 @@ Value MOGraphLoweringState::joinControlFlowChains(Location loc) {
     chains.push_back(execute.currentChain);
   llvm::append_range(chains, execute.controlFlowChains);
   execute.controlFlowChains.clear();
-  Value joined = chains.size() == 1
-                     ? chains.front()
-                     : GRT::ChainCreateOp::create(execute.builder, loc, chains)
-                           .getResult();
+  Value joined =
+      chains.size() == 1
+          ? chains.front()
+          : MLRT::GRT::ChainCreateOp::create(execute.builder, loc, chains)
+                .getResult();
   setCurrentExecuteChain(joined);
   return joined;
 }
@@ -242,7 +243,7 @@ MOGraphLoweringState::lowerArg(Region *parentRegion, BlockArgument inArg,
 
       if (!assertChains.empty()) {
         auto consolidatedChains =
-            GRT::ChainCreateOp::create(builder, loc, assertChains);
+            MLRT::GRT::ChainCreateOp::create(builder, loc, assertChains);
 
         auto guarded =
             MGP::GuardOp::create(builder, loc, consolidatedChains, outArg);
@@ -578,7 +579,7 @@ ErrorOr<Value> MOGraphLoweringState::lowerExpressionImpl(
     }
 
     auto [cond, maybeParentAssert] = [&]() -> std::pair<Value, Operation *> {
-      bool hasChain = isa<MEF::ChainType>(operands[0].getType());
+      bool hasChain = isa<MLRT::MEF::ChainType>(operands[0].getType());
 
       if (hasChain) {
         Value chain = operands[0];
@@ -694,7 +695,7 @@ void MOGraphLoweringState::lowerMOGGABI(MOGG::AsyncRoutineOp kernel) {
 
   // Chain inputs should never be used; replace them with a dummy chain.
   for (BlockArgument arg : kernel.getBodyBlock().getArguments()) {
-    if (isa<MEF::ChainType>(getAsyncElementOrSelf(arg.getType()))) {
+    if (isa<MLRT::MEF::ChainType>(getAsyncElementOrSelf(arg.getType()))) {
       arg.replaceAllUsesWith(
           MOGG::ChainDummyOp::create(builder, loc).getResult());
     }
@@ -704,7 +705,7 @@ void MOGraphLoweringState::lowerMOGGABI(MOGG::AsyncRoutineOp kernel) {
   // operands.
   builder.setInsertionPointToStart(&kernel.getBody().front());
   for (auto v : kernel.getBody().getArguments()) {
-    if (isa<MEF::ChainType>(getAsyncElementOrSelf(v.getType())))
+    if (isa<MLRT::MEF::ChainType>(getAsyncElementOrSelf(v.getType())))
       continue;
 
     auto unpackOp = MOGG::AsyncUnpackOp::create(builder, loc, v);
@@ -717,7 +718,7 @@ void MOGraphLoweringState::lowerMOGGABI(MOGG::AsyncRoutineOp kernel) {
   SmallVector<std::pair<size_t, Value>> deferredChainOps;
 
   for (auto [i, value] : llvm::enumerate(terminator->getOperands())) {
-    if (isa<MEF::ChainType>(value.getType())) {
+    if (isa<MLRT::MEF::ChainType>(value.getType())) {
       deferredChainOps.emplace_back(i, value);
       continue;
     }
@@ -731,7 +732,7 @@ void MOGraphLoweringState::lowerMOGGABI(MOGG::AsyncRoutineOp kernel) {
         newValue, [&](OpOperand &use) { return use.getOwner() == terminator; });
 
     // Sink chains so a sole chain output isn't DCE-ed.
-    if (isa<MEF::ChainType>(value.getType()) &&
+    if (isa<MLRT::MEF::ChainType>(value.getType()) &&
         !isa<MOGG::AsyncReadyOp>(value.getDefiningOp()))
       MOGG::ChainSinkOp::create(builder, loc, value);
   }
@@ -775,7 +776,7 @@ Value MOOpLoweringState::getGuardChain(Value chain) {
   }
   if (!inputChains.empty()) {
     inputChains.push_back(chain);
-    chain = create<GRT::ChainCreateOp>(inputChains).getResult();
+    chain = create<MLRT::GRT::ChainCreateOp>(inputChains).getResult();
   }
   return chain;
 }

@@ -21,7 +21,6 @@
 #include "Run/mojo-run.h"
 
 #include "Config/Version.h"
-#include "Mojo/Support/CLOptionUtils.h"
 #include "Mojo/Support/Configuration.h"
 #include "Mojo/Support/Constants.h"
 #include "Mojo/Support/ForceLinkMLIRC.h"
@@ -32,7 +31,6 @@
 #include "Support/LogicalResult.h"
 #include "Support/Process.h"
 
-#include "llvm/CodeGen/CommandFlags.h"
 #include "llvm/Option/ArgList.h"
 #include "llvm/Option/OptTable.h"
 #include "llvm/Option/Option.h"
@@ -61,7 +59,6 @@ int main(int argc, char **argv) {
   // Force linking of MLIR C symbols to JIT Mojo code relying on the mlir
   // bindings.
   KGEN::forceLinkMLIRC();
-  M::registerCommandFlags();
 
   // Install LLVM signal handlers and convert `argc` and `argv` for Windows
   // hosts.

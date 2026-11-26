@@ -183,6 +183,7 @@ def short_conv_ring[
     ring_dtype: DType,
     //,
     commit: Bool,
+    out_divisor: Float32 = 1.0,
 ](
     x: TileTensor[mut=False, dtype, ...],
     weight: TileTensor[mut=False, dtype, ...],
@@ -195,7 +196,9 @@ def short_conv_ring[
     context: DeviceContext,
 ) raises:
     """`x + conv(x)` over a ragged batch, committing each sequence's last `R`
-    inputs into the ring when `commit` is set.
+    inputs into the ring when `commit` is set. A non-unit `out_divisor` divides
+    the float32 sum before it rounds to `dtype`, so a scaled residual conv
+    rounds once.
 
     `x`, `output`: `[total_seq_len, channels]`. `weight`: `[channels,
     width]`. `ring`: `[slots, R, channels]`. `positions` is per token.
@@ -272,6 +275,8 @@ def short_conv_ring[
                     position,
                     position - (idx_in_seq + step),
                 )
+                comptime if out_divisor != 1.0:
+                    value = value / out_divisor.cast[accum_dtype]()
                 output.store((token, channel), value.cast[dtype]())
             comptime if commit:
                 if idx_in_seq == 0:
@@ -290,7 +295,7 @@ def short_conv_ring[
         String(t"short_conv_ring.channels_{channels}"),
         task_id=get_safe_task_id(context),
     ):
-        context.enqueue_function(
+        context.enqueue_closure(
             kernel,
             grid_dim=total_seq_len * Int(channel_blocks),
             block_dim=_BLOCK,
@@ -298,11 +303,6 @@ def short_conv_ring[
         )
 
 
-# HACK: the kernel closure stores through both `k_cache` and `v_cache`, the
-# disjoint halves of one `blocks` buffer that share the collection's mutable
-# origins, which the exclusivity checker cannot tell apart. Same stopgap as
-# `_rope_split_store_ragged_impl`; the proper fix is disjoint k/v origins.
-@__unsafe_nested_origins_read_only
 def _launch_fused_qk_rms_norm_short_conv[
     dtype: DType,
     ring_dtype: DType,
@@ -526,7 +526,7 @@ def _launch_fused_qk_rms_norm_short_conv[
                             channel,
                         )
 
-    context.enqueue_function(
+    context.enqueue_closure(
         kernel,
         grid_dim=Int(q_rows + 2 * kv_rows),
         block_dim=warps_per_block * WARP_SIZE,
@@ -603,6 +603,15 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
     if qkvr.dim[0]() == 0:
         return
 
+    # FIXME: K/V are disjoint planes of one allocation, but origin tracking
+    # cannot express that fact.
+    var k_cache = kv_collection.get_key_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
+    var v_cache = kv_collection.get_value_cache(
+        Int(layer_idx)
+    ).unsafe_origin_cast()
+
     with Trace[TraceLevel.OP, target=context.target.device_kind_label()](
         String(
             t"fused_qk_rms_norm_short_conv_ragged_paged.kv_nhead_{params.num_heads}.hdim_{head_dim}"
@@ -617,8 +626,8 @@ def fused_qk_rms_norm_short_conv_ragged_paged[
             commit=commit,
         ](
             qkvr,
-            kv_collection.get_key_cache(Int(layer_idx)),
-            kv_collection.get_value_cache(Int(layer_idx)),
+            k_cache,
+            v_cache,
             q_gamma,
             k_gamma,
             k_weight,

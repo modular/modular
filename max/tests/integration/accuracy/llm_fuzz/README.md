@@ -18,9 +18,6 @@ $LLM_FUZZ --url http://localhost:8000 --model your-model
 # Correctness validation
 $LLM_FUZZ --url http://localhost:8000 --model your-model --validation-only
 
-# Model-specific tests for Kimi K2.5
-$LLM_FUZZ --url http://localhost:8200 --model kimi-k2.5 --model-profile kimi-k2.5
-
 # List everything
 $LLM_FUZZ --list
 ```
@@ -31,7 +28,7 @@ Bazel manages all dependencies; no extra setup is needed.
 
 ```bash
 # Run all fuzz scenarios against a local vLLM/TGI/Dynamo server
-$LLM_FUZZ --url http://localhost:8000 --model nvidia/DeepSeek-V3.1-NVFP4
+$LLM_FUZZ --url http://localhost:8000 --model nvidia/DeepSeek-V4.1-Flash-NVFP4
 
 # Run against OpenAI
 $LLM_FUZZ --url https://api.openai.com --api-key $OPENAI_API_KEY --model gpt-4o-mini
@@ -50,7 +47,6 @@ $LLM_FUZZ --url http://localhost:8000 --model my-model --fuzz-only
 $LLM_FUZZ --url http://localhost:8000 --model my-model --validation-only
 
 # Model-specific testing (includes generic + model-specific scenarios)
-$LLM_FUZZ --url http://localhost:8200 --model kimi-k2.5 --model-profile kimi-k2.5
 $LLM_FUZZ --url http://localhost:8100 --model glm-5.1 --model-profile glm-5.1
 
 # Verbose output (show all details, not just failures)
@@ -96,7 +92,7 @@ test sizes to the model's actual parameters. The tool tries to fetch
 
 ```bash
 # Auto-detect: --model is used as HF repo ID to fetch max_position_embeddings
-$LLM_FUZZ --url http://localhost:8000 --model deepseek-ai/DeepSeek-R1
+$LLM_FUZZ --url http://localhost:8000 --model deepseek-ai/DeepSeek-V4-Flash-0731
 
 # Manual override (takes priority over HF config)
 $LLM_FUZZ --url http://localhost:8000 --model my-model \
@@ -140,7 +136,7 @@ conservative defaults (4096 tokens).
 | `openai_spec_compliance`           | ~27      | Response structure, finish_reason, usage math, streaming chunks                        |
 | `output_correctness`               | ~13      | Concurrent prompts with quality validation, cross-contamination detection              |
 | `openrouter_tests`                 | ~59      | OpenRouter provider validation (49 text-only tests)                                    |
-| `tool_schema_validation`           | ~24      | K2VV-style tool call schema validation                                                 |
+| `tool_schema_validation`           | ~24      | Tool call schema validation                                                            |
 | `json_schema_compliance`           | ~100     | 100-run cache-busted guided decoding validation                                        |
 | `constrained_decoding`             | 1.6-2.2k | Full draft-7 suite via tool-call (auto/required/named x strict) + response_format      |
 | `tool_arguments_json_stability`    | 32x      | Repeated forced tool calls, arguments must parse as JSON                               |
@@ -242,15 +238,10 @@ not blocks it had not finished saving.
 
 ### Model-specific scenarios
 
-Run with `--model-profile kimi-k2.5` or `--model-profile glm-5.1`.
+Run with `--model-profile glm-5.1`.
 
 | Scenario              | Model      | Tests | What it validates                                                                   |
 |-----------------------|------------|-------|-------------------------------------------------------------------------------------|
-| `kimi_battle`         | Kimi K2.5  | 15    | xgrammar edge cases, parallel TCs, structural tags                                  |
-| `kimi_3am`            | Kimi K2.5  | 12    | Production edge cases, soak tests, precision                                        |
-| `kimi_production`     | Kimi K2.5  | 10    | Long context, error recovery, token counting                                        |
-| `kimi_k2vv`           | Kimi K2.5  | 2K    | K2 Vendor Verifier benchmark (see below)                                            |
-| `kimi_freeze_repro`   | Kimi K2.5  | 6     | Production freeze repro: oneOf/const tool schemas under concurrent load             |
 | `glm_battle`          | GLM-5.1    | 12    | Schema compilation, tool calling, streaming                                         |
 | `glm_3am`             | GLM-5.1    | 10    | Edge cases, soak tests, concurrent stress                                           |
 | `image_stress`        | MiniMax-M3 | 11    | Huge image batches: max count/size/tokens, skewed ratios, cache-miss concurrency    |
@@ -375,35 +366,6 @@ decord reads far fewer formats than PyAV. AVI declares its length in the
 header, which keeps the server on the PyAV path these scenarios mean to
 exercise; an APNG, otherwise the obvious choice, reports zero frames.
 
-### K2 Vendor Verifier (K2VV)
-
-MoonshotAI's
-[official benchmark](https://github.com/MoonshotAI/K2-Vendor-Verifier) for
-validating Kimi K2 deployments. Measures two things:
-
-- **ToolCall-Trigger F1**: does the deployment trigger tool calls in the same
-  situations as the official Moonshot API? (F1 of
-  `finish_reason == "tool_calls"` vs reference)
-- **Schema Accuracy**: when tool calls fire, do the JSON arguments validate
-  against the tool's parameter schema?
-
-The dataset (~13MB) is downloaded from MoonshotAI's CDN on each run. Use
-`--k2vv-mode` to control sample count:
-
-```bash
-# Quick mode (default): 500 randomly sampled requests
-$LLM_FUZZ --url http://localhost:8200 --model kimi-k2.5 \
-    --model-profile kimi-k2.5 --scenarios kimi_k2vv
-
-# Full mode: all 2,000 requests
-$LLM_FUZZ --url http://localhost:8200 --model kimi-k2.5 \
-    --model-profile kimi-k2.5 --scenarios kimi_k2vv --k2vv-mode full
-```
-
-Thresholds (from K2VV README): F1 >= 73% (thinking mode), schema accuracy >=
-95%. vLLM currently scores 87% schema accuracy and 76% F1 on the official
-benchmark.
-
 ## Run logging
 
 Every run automatically saves a structured JSONL log to
@@ -457,7 +419,6 @@ scenarios/
   validation/        Correctness validation (any OpenAI-compatible endpoint)
     *.py             Tool calling, structured output, concurrency, production
   models/            Model-specific test suites
-    kimi_*.py        Kimi K2.5 battle, 3am edge cases, production readiness
     glm_*.py         GLM-5.1 battle, 3am edge cases
 ```
 

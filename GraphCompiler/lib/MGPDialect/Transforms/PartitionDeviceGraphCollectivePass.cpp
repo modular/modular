@@ -215,7 +215,7 @@ LogicalResult partitionStagingOp(DeviceGraphStagingOp stagingOp,
         // peers internally.
         auto remapRemoteChains = [&](AsyncRoutineOp compiledRegion) {
           for (Value operand : compiledRegion.getOperands()) {
-            if (!isa<M::MEF::ChainType>(operand.getType()) ||
+            if (!isa<M::MLRT::MEF::ChainType>(operand.getType()) ||
                 mapper.contains(operand))
               continue;
             Value dummyChain = M::MOGG::ChainDummyOp::create(builder, loc);

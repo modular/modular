@@ -22,6 +22,7 @@
 #include "MLRT/GraphRT/MEFExecutor/PrimitiveRegistry.h"
 #include "llvm/ADT/StringRef.h"
 using namespace M;
+using namespace M::MLRT;
 
 //===----------------------------------------------------------------------===//
 // Integer ops
@@ -42,7 +43,7 @@ static int32_t add_si32(int32_t lhs, int32_t rhs) { return lhs + rhs; }
 static bool lessequal_si32(int32_t lhs, int32_t rhs) { return lhs <= rhs; }
 
 /// This registers the 'graphrt' dialect integer primitives.
-void M::registerGraphRTIntegerPrimitives(PrimitiveRegistry &registry) {
+void M::MLRT::registerGraphRTIntegerPrimitives(PrimitiveRegistry &registry) {
   ADD_PRIMITIVE(registry, "grt.constant.i1", constant_i1);
   ADD_PRIMITIVE(registry, "grt.constant.si32", constant_si32);
   ADD_PRIMITIVE(registry, "grt.add.si32", add_si32);

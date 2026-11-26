@@ -103,10 +103,10 @@ private:
     return paramBindings.getParameters();
   }
 
-  FailureOr<SmartVariant<CValue, ASTType>>
-  inferCValue(ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
-              CallSyntax syntax, ASTType expectedType,
-              OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr);
+  FailureOr<SmartVariant<CValue, ASTType>> inferCValue(
+      ASTExprAnd<AnyValue> operand, size_t argIdx, PogListAttr argPogs,
+      CallSyntax syntax, ASTType expectedType,
+      OperandsNeedingReEmissionList *forwardedNeedingReEmission = nullptr);
 
   /// Core type matching logic for parameter inference, this matches expected
   /// type against the RValue type of the operand (which means this does not
@@ -114,7 +114,7 @@ private:
   LogicalResult inferFromRVType(
       ASTExprAnd<AnyValue> operand, size_t argIdx, ASTType expectedType,
       PogListAttr argPogs, CallSyntax syntax,
-      OperandsNeedingOriginsList *forwardedNeedingOrigins = nullptr);
+      OperandsNeedingReEmissionList *forwardedNeedingReEmission = nullptr);
 
   /// Infer and emit a single value for a parameter binding. This returns
   /// failure if it emits a diagnostic, otherwise is returns a parameter value
@@ -153,6 +153,9 @@ private:
   /// concrete real value).
   llvm::BitVector explicitlyUnboundParams;
 
+  // A list of parameter that need to be re-emitted.
+  ParamToReEmitList paramsNeedReEmissionList;
+
   /// True if implicit conversions in argument lists are permitted.
   const bool allowImplicitConversions;
   bool isInferForStruct = false;
@@ -176,7 +179,7 @@ public:
                bool discardError, FnTypeGeneratorType calleeSignature,
                const CallOperands &callOperands,
                const CallOperands::PogAssignment &pogAssignment,
-               OperandsNeedingOriginsList &operandsNeedingOrigins,
+               OperandsNeedingReEmissionList &operandsNeedingReEmission,
                TypedAttr additionalAssumptions);
 
   /// Given an incomplete parameter binding set and the arguments for a call to
@@ -197,12 +200,12 @@ private:
   FnTypeGeneratorType calleeSignature;
   const CallOperands &callOperands;
   const CallOperands::PogAssignment &pogAssignment;
-  OperandsNeedingOriginsList &operandsNeedingOrigins;
+  OperandsNeedingReEmissionList &operandsNeedingReEmission;
 
   LogicalResult inferOptionalLiteralSize();
 
   LogicalResult inferResultSlot(RefType expectedRef, size_t argIdx,
-                                const ExprDest &dest);
+                                const CallOperands &operands);
 
   /// Infer parameters from an operand being passed into this function. This is
   /// only called on the top level function operands being matched up, not

@@ -60,6 +60,33 @@ custom_op_example_py_binary(
 )
 
 custom_op_example_py_binary(
+    name = "declared_addition",
+    srcs = ["declared_addition.py"],
+    extra_deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "declared_vector_addition",
+    srcs = ["declared_vector_addition.py"],
+    extra_deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+    ],
+)
+
+custom_op_example_py_binary(
+    name = "keep_positive",
+    srcs = ["keep_positive.py"],
+    extra_deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/_interpreter_ops",
+    ],
+)
+
+custom_op_example_py_binary(
     name = "top_k",
     srcs = ["top_k.py"],
     # TODO: enable when test won't generate external memory on Apple GPU

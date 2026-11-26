@@ -50,7 +50,6 @@ from max.gpu.memory import build_edge_mask, gmem_edge_masked_load
 from std.collections import Optional
 from std.math import ceildiv, round
 from std.sys import align_of
-from std.memory import unsafe_stack_allocation
 
 from layout import Coord, TensorEngine, TileTensor, row_major
 from layout.layout import TensorLayout
@@ -1095,7 +1094,9 @@ def _threadgroup_max[nthreads: Int](val: Float32) -> Float32:
     broadcasts the max back through SMEM. `nthreads` is small (64) so the linear
     reduction is cheap and needs no tree.
     """
-    var s = unsafe_stack_allocation[nthreads, Float32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var s_storage = Array[Float32, nthreads](uninitialized=True)
+    var s = s_storage.unsafe_ptr()
     var tid = thread_idx.x
     s[tid] = val
     barrier()

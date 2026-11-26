@@ -29,7 +29,6 @@ _EXTRA_DEPS = {
         "//max:builtin_kernels",
         "//max/kernels/src/state_space",
     ],
-    "gpu/nn/bench_rms_norm_rope.mojo": ["//max:builtin_kernels"],
     "gpu/nn/bench_softmax.mojo": ["//max:builtin_kernels"],
     "gpu/state_space/bench_causal_conv1d_prefill.mojo": [
         "//max:extensibility",
@@ -402,9 +401,15 @@ mojo_binary(
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
             # Same reason: the MoE decode-shape ablation, timed on remote B200.
             "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Same reason: the DeepSeek-V4-Flash decode call of the grouped
+            # W4A8 matmul, timed on remote B200.
+            "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo",
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
+            # Same reason: the blockwise-FP8 grouped matmul at unpadded group
+            # starts, timed on remote B200.
+            "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo",
             # Same reason: the GLM-5.3-Flash router arms, timed on remote B200.
             "gpu/linalg/bench_router_gate_gemv_glm.mojo",
         ],
@@ -458,9 +463,15 @@ mojo_binary(
             "gpu/linalg/bench_grouped_matmul_bf16_tile_n.mojo",
             # Same reason: the MoE decode-shape ablation, timed on remote B200.
             "gpu/linalg/bench_moe_w4a8_decode.mojo",
+            # Same reason: the DeepSeek-V4-Flash decode call of the grouped
+            # W4A8 matmul, timed on remote B200.
+            "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo",
             # Same reason: the GLM-5.3-Flash EP4 MoE shapes of the blockwise-FP8
             # grouped matmul, timed on remote B200.
             "gpu/linalg/bench_grouped_fp8_ep_decode.mojo",
+            # Same reason: the blockwise-FP8 grouped matmul at unpadded group
+            # starts, timed on remote B200.
+            "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo",
             # Same reason: the GLM-5.3-Flash router arms, timed on remote B200.
             "gpu/linalg/bench_router_gate_gemv_glm.mojo",
         ],
@@ -522,6 +533,38 @@ build_test(
     name = "gpu/linalg/bench_moe_w4a8_decode.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/linalg/bench_moe_w4a8_decode.mojo.run"],
+)
+
+# SM100 grouped W4A8 matmul as DeepSeek-V4-Flash calls it at decode under TP2
+# (128 expert groups, most empty); without arguments it hashes the output at
+# 1 to 8 local rows so two builds compare bit for bit; `--test_arg=--bench`
+# times calls. Timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo.run",
+    size = "large",
+    srcs = ["gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_grouped_w4a8_deepseekv4_decode.mojo.run"],
 )
 
 # The GLM-5.3-Flash router per call at its decode row counts
@@ -595,6 +638,38 @@ build_test(
     name = "gpu/linalg/bench_grouped_fp8_ep_decode.mojo.test",
     tags = ["gpu"],
     targets = ["gpu/linalg/bench_grouped_fp8_ep_decode.mojo.run"],
+)
+
+# The blockwise-FP8 grouped matmul at unpadded `moe_create_indices` group
+# starts (`--test_arg=--tokens=...`), checked against the naive kernel and
+# timed on remote B200.
+mojo_test(
+    name = "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo"],
+    copts = IGNORED_POINTER_DEPRECATIONS_COPTS,
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "40",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:linalg",
+        "//max:max_mojo",
+        "@mojo//:std",
+    ],
+)
+
+build_test(
+    name = "gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo.test",
+    tags = ["gpu"],
+    targets = ["gpu/linalg/bench_grouped_fp8_unaligned_starts.mojo.run"],
 )
 
 # `mo.squeeze_shape` / `mo.unsqueeze_shape` through their registered
@@ -797,6 +872,52 @@ build_test(
     tags = ["gpu"],
     targets = ["gpu/nn/bench_fp8_index_prefill.mojo.run"],
 )
+
+# EPLB expert-load counting cost: NVFP4 dispatch_wait and fused dispatch timed
+# without and with the tally sink, at MiniMax-M3 shapes, one target per EP
+# size so it can be timed on remote B200. The glob above still builds the
+# all-formats binary from the same source.
+[
+    mojo_test(
+        name = "gpu/comm/bench_ep_dispatch.mojo.run_expert_load_ep%d" % n_ranks,
+        size = "enormous",
+        srcs = ["gpu/comm/bench_ep_dispatch.mojo"],
+        copts = IGNORED_POINTER_DEPRECATIONS_COPTS + [
+            "-D",
+            "expert_load=1",
+            "-D",
+            "n_ranks=%d" % n_ranks,
+        ],
+        data = ["@nvshmem_prebuilt//:host"],
+        enable_assertions = False,
+        env = {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+        exec_properties = {
+            # Ten prefill slots of an n_experts x 2048-token receive buffer.
+            "test.resources:gpu-memory": "24",
+        },
+        tags = [
+            "gpu",
+            "manual",
+        ],
+        target_compatible_with = select({
+            "//:b200_gpu": ["//:has_multi_gpu"],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:comm",
+            "//max:internal_utils",
+            "//max:layout",
+            "//max:max_mojo",
+            "//max:shmem",
+            "@mojo//:std",
+        ],
+    )
+    for n_ranks in [
+        2,
+        4,
+        8,
+    ]
+]
 
 # SM100 attention over a split 192/128 KV cache against the cache padded to
 # 256, at MiMo-V2.6-Flash decode, verify and prefill shapes. Out of the

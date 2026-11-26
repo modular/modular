@@ -231,6 +231,12 @@ def test_tokens_per_request_carry_the_turn_when_given(
             "max.dkv.settle_jobs_finished",
             False,
         ),
+        (
+            "dkv_offloads_capacity_refused",
+            4,
+            "max.dkv.offloads_capacity_refused",
+            False,
+        ),
     ],
 )
 def test_dkv_settle_metrics_record_on_their_own_instruments(
@@ -306,6 +312,25 @@ def test_dkv_orphan_metrics_record_on_their_own_instruments(
     assert (measurement.instrument_name, measurement.value) == (instrument, 7)
     assert (
         isinstance(metrics.SERVE_METRICS[instrument], _ProxyGauge) == is_gauge
+    )
+
+
+def test_connector_quarantined_blocks_record_on_a_gauge() -> None:
+    """Quarantined blocks are a level, so they land on a gauge."""
+    client = mock.Mock()
+    recorder = metrics._AsyncMetrics()
+    recorder.configure(client, {"model": "m"})
+
+    recorder.cache_connector_quarantined_blocks(7)
+
+    measurement = client.send_measurement.call_args.args[0]
+    assert (measurement.instrument_name, measurement.value) == (
+        "max.cache.connector_quarantined_blocks",
+        7,
+    )
+    assert isinstance(
+        metrics.SERVE_METRICS["max.cache.connector_quarantined_blocks"],
+        _ProxyGauge,
     )
 
 
@@ -742,6 +767,10 @@ def test_dkv_overlapped_lookup_counters_are_counters() -> None:
         "max.dkv.own_runs_short_of_hint",
         "max.dkv.split_loads",
         "max.dkv.overlapped_peer_lookups",
+        "max.dkv.overlap_reads_moved_by_probe",
+        "max.dkv.overlap_blocks_moved_by_probe",
+        "max.dkv.own_runs_short_of_probe",
+        "max.dkv.own_run_blocks_short_of_probe",
         "max.dkv.hinted_lookups",
     ):
         assert isinstance(metrics.SERVE_METRICS[name], _ProxyCounter), name

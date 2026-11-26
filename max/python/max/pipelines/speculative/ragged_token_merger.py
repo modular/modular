@@ -141,16 +141,23 @@ class RaggedTokenMerger(Module):
 
 def compute_host_merged_offsets(
     host_input_row_offsets: TensorValue,
-    draft_tokens: TensorValue,
+    width: Dim | TensorValue,
 ) -> TensorValue:
     """Computes merged offsets on CPU, avoiding D2H copies.
 
-    ``merged_offsets[i] = host_input_row_offsets[i] + i * K`` where ``K`` is
-    the number of draft tokens per request. This mirrors the GPU-side merge
-    logic in :class:`RaggedTokenMerger` but stays on CPU so CUDA graph capture
-    is not blocked by a device-to-host transfer.
+    ``merged_offsets[i] = host_input_row_offsets[i] + i * width``, where
+    ``width`` is the drafts' column dim or a per-row verify's uniform width
+    on CPU. This mirrors the device-side merge but stays on CPU so CUDA
+    graph capture is not blocked by a device-to-host transfer. Under a
+    per-row verify only the replica boundaries are read, and each
+    replica's rows sum to ``B_r * width``, so the uniform width serves
+    those entries.
     """
-    K = ops.shape_to_tensor([draft_tokens.shape[1]])[0].cast(DType.uint32)
+    K = (
+        ops.shape_to_tensor([width])[0].cast(DType.uint32)
+        if isinstance(width, Dim)
+        else width.cast(DType.uint32)
+    )
     batch_size_plus_one = ops.shape_to_tensor(
         [host_input_row_offsets.shape[0]]
     )[0]

@@ -491,13 +491,13 @@ def snapshot[
             dc.index_offset, dc.n_index * EP_TOKEN_INDEX_BYTES
         ),
     )
-    var guard = List[UInt8](length=RECV_GUARD, fill=0)
+    var guard_value = List[UInt8](length=RECV_GUARD, fill=0)
     ctx.enqueue_copy(
-        guard.unsafe_ptr(),
+        guard_value.unsafe_ptr(),
         dc.recv[r].create_sub_buffer[.uint8](dc.recv_bytes, RECV_GUARD),
     )
     ctx.synchronize()
-    for b in guard:
+    for b in guard_value:
         assert_equal(b, UInt8(0xFF), "a dispatch wrote past its receive buffer")
     return s^
 

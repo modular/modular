@@ -76,7 +76,7 @@ def kernel_3[
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_shape, b_desc_shape],
-    c: TileTensor[c_type, c_layout, MutAnyOrigin],
+    c: TileTensor[c_type, c_layout, MutUntrackedOrigin],
     num_iters_dev: Int32,
 ):
     var num_iters = Int(num_iters_dev)

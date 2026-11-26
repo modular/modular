@@ -65,7 +65,7 @@ def test_a_per_row_view_reads_each_rows_last_token(
         per_row=True,
         ctx=ctx,
     )
-    __guard case .Some(gathered) = owned else:
+    guard case .Some(gathered) = owned else:
         raise Error("a per-row view gathers into its own buffer")
     var host = ctx.enqueue_create_host_buffer[.int32](VIEW_ROWS)
     ctx.enqueue_copy(host, gathered)

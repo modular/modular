@@ -387,7 +387,9 @@ def argmin(x: TensorValueLike, axis: int = -1) -> TensorValue:
     return _reduce(mo.ReduceArgMinOp, x, axis, out_dtype=DType.int64)
 
 
-def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
+def argmax(
+    x: TensorValueLike, axis: int = -1, out_dtype: DType = DType.int64
+) -> TensorValue:
     """Returns the indices of the maximum values along an axis.
 
     It's useful for finding the position of the largest element along a
@@ -430,16 +432,19 @@ def argmax(x: TensorValueLike, axis: int = -1) -> TensorValue:
         x: The input tensor.
         axis: The axis along which to compute the argmax. Negative values
             index from the last dimension. Defaults to ``-1``.
+        out_dtype: The dtype of the indices. Defaults to ``int64``. A
+            backend whose kernels compute no 64-bit integers takes
+            ``int32``.
 
     Returns:
-        A ``TensorValue`` with ``int64`` dtype representing the indices of the
-        maximum values along ``axis``. The result has the same rank as
-        ``x``, with the ``axis`` dimension reduced to size ``1``.
+        A ``TensorValue`` with ``out_dtype`` dtype representing the indices
+        of the maximum values along ``axis``. The result has the same rank
+        as ``x``, with the ``axis`` dimension reduced to size ``1``.
 
     Raises:
         ValueError: If ``axis`` is out of range for the input's rank.
     """
-    return _reduce(mo.ReduceArgMaxOp, x, axis, out_dtype=DType.int64)
+    return _reduce(mo.ReduceArgMaxOp, x, axis, out_dtype=out_dtype)
 
 
 def logsoftmax(value: TensorValueLike, axis: int = -1) -> TensorValue:

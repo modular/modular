@@ -119,7 +119,7 @@ def _assert_register_budget(asm: String, label: String, marker: String) raises:
         ".sgpr_spill_count",
         ".private_segment_fixed_size",
     ]:
-        __guard case .Some(at) = asm.find(directive + ":") else:
+        guard case .Some(at) = asm.find(directive + ":") else:
             raise Error(t"assembly metadata is missing {directive}")
         var rest = asm[byte = at + directive.byte_length() + 1 :]
         var line_end = rest.find("\n").or_else(rest.byte_length())

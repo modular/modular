@@ -162,6 +162,7 @@ def _config(hisparse: HiSparseParams | None) -> Glm5_1Config:
     pipeline_config = Mock()
     pipeline_config.model.data_parallel_degree = 1
     pipeline_config.model.decode_context_parallel_degree = 1
+    pipeline_config.model.pipeline_stage = None
     # The pairing's config: the caches carry the draft slots the fused graph
     # reads, which a speculative export's construct_kv_params adds.
     pipeline_config.speculative = SimpleNamespace(

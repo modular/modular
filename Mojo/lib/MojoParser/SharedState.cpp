@@ -1122,6 +1122,10 @@ ASTType SharedState::getBuiltinSliceType(llvm::SMLoc loc, StringRef name) {
   return getCachedBuiltinType({"std", "builtin", "builtin_slice"}, name, loc);
 }
 
+ASTType SharedState::getBuiltinEnumType(llvm::SMLoc loc, StringRef name) {
+  return getCachedBuiltinType({"std", "builtin", "_enum"}, name, loc);
+}
+
 ASTType SharedState::getBuiltinStubsMLIRType(llvm::SMLoc loc) {
   return getCachedBuiltinType({"std", "builtin", "_stubs"}, "__MLIRType", loc);
 }

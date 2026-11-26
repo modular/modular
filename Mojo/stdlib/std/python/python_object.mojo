@@ -1396,14 +1396,14 @@ struct PythonObject(
         if opt:
             return opt.unsafe_take()
 
-        if func:
+        if case .Some(func_name) = func:
             raise Error(
                 String.format(
                     (
                         "TypeError: {}() expected Mojo '{}' type argument, got"
                         " '{}'"
                     ),
-                    func[],
+                    func_name,
                     reflect[T].name(),
                     _get_type_name(self),
                 )

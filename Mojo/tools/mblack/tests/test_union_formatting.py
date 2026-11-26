@@ -42,10 +42,9 @@ __union Tok(Copyable, Writable):
     assert_mojo_format(source, source)
 
 
-@pytest.mark.parametrize("kw", ["__enum", "__union"])
-def test_union_body_formats_like_enum_body(kw):
-    source = f"""\
-{kw} Tok(Writable,Copyable):
+def test_union_body_formats_like_enum_body():
+    source = """\
+__union Tok(Writable,Copyable):
     \"\"\"A lexer token.\"\"\"
     case eof ()
     \"\"\"The end of the input.\"\"\"
@@ -58,8 +57,8 @@ def test_union_body_formats_like_enum_body(kw):
         return False
     comptime Name = "Tok"
 """
-    expected = f"""\
-{kw} Tok(Copyable, Writable):
+    expected = """\
+__union Tok(Copyable, Writable):
     \"\"\"A lexer token.\"\"\"
 
     case eof()
@@ -75,6 +74,36 @@ def test_union_body_formats_like_enum_body(kw):
         return False
 
     comptime Name = "Tok"
+"""
+    assert_mojo_format(source, expected)
+
+
+def test_union_case_payload_splits_like_a_call():
+    source = """\
+__union Payloads:
+    case long_payload_case_name(List[Int], Dict[String, Int], Optional[String], Int)
+    case trailing_comma(Int, Bool,)
+    case one_trailing_comma(Int,)
+    case multi_line(
+        Int,
+        Bool
+    )
+    case none()
+"""
+    expected = """\
+__union Payloads:
+    case long_payload_case_name(
+        List[Int], Dict[String, Int], Optional[String], Int
+    )
+    case trailing_comma(
+        Int,
+        Bool,
+    )
+    case one_trailing_comma(
+        Int,
+    )
+    case multi_line(Int, Bool)
+    case none()
 """
     assert_mojo_format(source, expected)
 

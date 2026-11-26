@@ -136,7 +136,7 @@ static void startVisiting(DenseSet<Operation *> &visited,
   stack.emplace_back(currOp, 0);
 
   // Free values of nested regions are dependencies too.
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(currOp)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(currOp)) {
     mlir::SetVector<Value> freeValues;
     for (Region &region : cfOp->getRegions())
       accumFreeValues(freeValues, &region.front(), &region.front());
@@ -193,7 +193,7 @@ bool M::MGP::isExactlyOnce(Operation *op) {
   while (op) {
     if (auto modelOp = dyn_cast<ModelOp>(op))
       return true;
-    if (isa<GRT::GRTControlFlowInterface>(op))
+    if (isa<MLRT::GRT::GRTControlFlowInterface>(op))
       return false;
     op = op->getParentOp();
   }
@@ -205,8 +205,8 @@ bool M::MGP::isAtMostOnce(Operation *op) {
   while (op) {
     if (auto modelOp = dyn_cast<ModelOp>(op))
       return true;
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
-      if (cfOp.getFlavor() == GRT::kLoopLike)
+    if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
+      if (cfOp.getFlavor() == MLRT::GRT::kLoopLike)
         return false;
     }
     op = op->getParentOp();
@@ -229,8 +229,9 @@ SmallVector<Value> M::MGP::allLoopBoundArgs(Operation *op) {
 SmallVector<Value> M::MGP::allLoopResults(Operation *op) {
   SmallVector<Value> result;
   while (op->getBlock()) {
-    if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op->getParentOp())) {
-      if (cfOp.getFlavor() == GRT::kLoopLike) {
+    if (auto cfOp =
+            dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op->getParentOp())) {
+      if (cfOp.getFlavor() == MLRT::GRT::kLoopLike) {
         for (Value res : cfOp->getResults())
           result.emplace_back(res);
       }
@@ -242,14 +243,14 @@ SmallVector<Value> M::MGP::allLoopResults(Operation *op) {
 
 SmallVector<Value> M::MGP::getIndicatingResults(Operation *op) {
   // A control flow op is finished when any of its results is ready.
-  if (!isa<MEF::ChainIndicatesFinishedInterface>(op))
+  if (!isa<MLRT::MEF::ChainIndicatesFinishedInterface>(op))
     // All results are indicating.
     return op->getResults();
 
   // Only chain results, if any, are indicating.
   SmallVector<Value> results;
   for (Value result : op->getResults()) {
-    if (isa<MEF::MEFChainTypeInterface>(result.getType()))
+    if (isa<MLRT::MEF::MEFChainTypeInterface>(result.getType()))
       results.emplace_back(result);
   }
   return results;
@@ -267,17 +268,17 @@ SmallVector<Value> M::MGP::getGatingOperands(Operation *op) {
 bool M::MGP::isGatingOperand(const OpOperand *opOperand) {
   Operation *op = opOperand->getOwner();
 
-  if (auto cfOp = dyn_cast<GRT::GRTControlFlowInterface>(op)) {
+  if (auto cfOp = dyn_cast<MLRT::GRT::GRTControlFlowInterface>(op)) {
     // Only the extra strict operands are gating for control flow ops.
     auto extraOperands = cfOp.getStrictExtraOperands();
     return llvm::is_contained(extraOperands, opOperand->get());
   }
 
-  if (isa<MEF::OutputOp>(op))
+  if (isa<MLRT::MEF::OutputOp>(op))
     // Nothing gates a mef.output.
     return false;
 
-  if (!isa<MEF::NonStrictInterface>(op))
+  if (!isa<MLRT::MEF::NonStrictInterface>(op))
     // All operands are gating for strict ops.
     return true;
 
@@ -301,7 +302,7 @@ OpOperand *M::MGP::getUniqueMutator(Value value) {
 SmallVector<OpOperand *, 1> M::MGP::getInputChainOpOperands(Operation *op) {
   SmallVector<OpOperand *, 1> result;
   for (auto &operand : op->getOpOperands()) {
-    if (isa<MEF::MEFChainTypeInterface>(operand.get().getType()))
+    if (isa<MLRT::MEF::MEFChainTypeInterface>(operand.get().getType()))
       result.emplace_back(&operand);
   }
   return result;
@@ -311,7 +312,7 @@ SmallVector<OpOperand *, 1> M::MGP::getInputChainOpOperands(Operation *op) {
 void M::MGP::accumulatePrimitiveChains(ValueSetVector &primitiveChains,
                                        Value chain) {
   if (auto chainCreateOp =
-          chain.getDefiningOp<GRT::GRTChainCreateOpInterface>()) {
+          chain.getDefiningOp<MLRT::GRT::GRTChainCreateOpInterface>()) {
     for (auto operand : chainCreateOp.getInputChains())
       accumulatePrimitiveChains(primitiveChains, operand);
   } else {
@@ -323,7 +324,7 @@ void M::MGP::accumulatePrimitiveChains(ValueSetVector &primitiveChains,
 static Value waitForChainsReusing(
     OpBuilder &builder, mlir::Location loc, TypedValue<ContextType> context,
     MGPBufferBuilder *optBufferBuilder,
-    GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp,
+    MLRT::GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp,
     ArrayRef<Value> chains) {
   assert(!chains.empty());
 
@@ -332,11 +333,11 @@ static Value waitForChainsReusing(
 
   if (existingUniqueChainCreateOp) {
     existingUniqueChainCreateOp.setInputChains(chains);
-    return dyn_cast<GRT::GRTChainCreateOpInterface>(
+    return dyn_cast<MLRT::GRT::GRTChainCreateOpInterface>(
                existingUniqueChainCreateOp.getOperation())
         .getChainResult();
   }
-  return GRT::ChainCreateOp::create(builder, loc, chains);
+  return MLRT::GRT::ChainCreateOp::create(builder, loc, chains);
 }
 
 Value M::MGP::waitForChains(OpBuilder &builder, mlir::Location loc,
@@ -400,10 +401,10 @@ M::MGP::alsoWaitForChains(OpBuilder &builder,
       existingPrimitiveChains.insert(newChain);
 
     // A chain.create used only here can be modified in place.
-    GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp = nullptr;
+    MLRT::GRT::GRTGatedOnChainOpInterface existingUniqueChainCreateOp = nullptr;
     if (inChain.hasOneUse()) {
       if (auto chainCreateOp =
-              inChain.getDefiningOp<GRT::GRTGatedOnChainOpInterface>())
+              inChain.getDefiningOp<MLRT::GRT::GRTGatedOnChainOpInterface>())
         existingUniqueChainCreateOp = chainCreateOp;
     }
 
@@ -432,8 +433,8 @@ InitState::InitState(ModelOp model)
   builder.setInsertionPoint(&init->back());
 }
 
-TypedValue<MEF::ChainType> InitState::getFinalChain() {
-  return cast<TypedValue<MEF::ChainType>>(init->back().getOperand(0));
+TypedValue<MLRT::MEF::ChainType> InitState::getFinalChain() {
+  return cast<TypedValue<MLRT::MEF::ChainType>>(init->back().getOperand(0));
 }
 
 void InitState::updateFinalChain(Value newChain) {
@@ -450,14 +451,14 @@ TypedValue<ContextType> InitState::getContext() {
 
 ExecuteState::ExecuteState(MLIRContext *context, ModelOp model)
     : execute(model.getExecuteBlock()), model(model), builder(context) {
-  assert(isa<MEF::ChainType>(execute->getArgument(0).getType()));
+  assert(isa<MLRT::MEF::ChainType>(execute->getArgument(0).getType()));
   assert(isa<ContextType>(execute->getArgument(1).getType()));
 }
 
 /// The 'execute' block's first argument. It is ready whenever any other chain
 /// is, so it can be ignored.
-TypedValue<MEF::ChainType> ExecuteState::getRootChain() const {
-  return cast<TypedValue<MEF::ChainType>>(execute->getArgument(0));
+TypedValue<MLRT::MEF::ChainType> ExecuteState::getRootChain() const {
+  return cast<TypedValue<MLRT::MEF::ChainType>>(execute->getArgument(0));
 }
 
 TypedValue<ContextType> ExecuteState::getContext() const {

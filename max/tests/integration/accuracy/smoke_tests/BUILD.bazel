@@ -32,6 +32,19 @@ modular_py_library(
     ],
 )
 
+modular_py_library(
+    name = "reasoning_parser_selection",
+    testonly = True,
+    srcs = ["reasoning_parser_selection.py"],
+    data = ["reasoning_parsers.yaml"],
+    imports = ["."],
+    deps = [
+        requirement("huggingface-hub"),
+        requirement("pyyaml"),
+        requirement("requests"),
+    ],
+)
+
 modular_py_binary(
     name = "smoke_test",
     testonly = True,
@@ -53,6 +66,7 @@ modular_py_binary(
     deps = [
         ":eval_runner",
         ":inference_server_harness",
+        ":reasoning_parser_selection",
         requirement("click"),
         requirement("pydantic"),
         requirement("pyyaml"),

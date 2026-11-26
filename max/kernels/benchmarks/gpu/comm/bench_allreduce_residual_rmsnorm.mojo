@@ -1009,6 +1009,7 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 1: allreduce only =====
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_allreduce_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
@@ -1044,6 +1045,7 @@ def bench_allreduce_rmsnorm_fp8[
     comptime if quantize:
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_ar_fused_iter(
             mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_tensors, imm}:
@@ -1117,6 +1119,7 @@ def bench_allreduce_rmsnorm_fp8[
     comptime if not quantize:
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_ar_norm_iter(
             mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_tensors, imm}:
@@ -1162,6 +1165,7 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 3: fully fused allreduce+RMSNorm (single kernel) =====
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fully_fused_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:
@@ -1216,6 +1220,7 @@ def bench_allreduce_rmsnorm_fp8[
     comptime if quantize:
 
         @inline(.always)
+        @__allow_legacy_any_origin_fields
         def bench_ar_add_fused_iter(
             mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
         ) raises {mut in_tensors, mut ar_out_dev, imm}:
@@ -1311,6 +1316,7 @@ def bench_allreduce_rmsnorm_fp8[
     # ===== Benchmark 5: fused allreduce+add+RMSNorm (single kernel) =====
 
     @inline(.always)
+    @__allow_legacy_any_origin_fields
     def bench_fused_add_iter(
         mut bench: Bencher, ctx: DeviceContext[], ctx_idx: Int
     ) raises {mut in_tensors, imm}:

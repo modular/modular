@@ -108,8 +108,10 @@ def si_dist_name(d: Int) -> String:
     return "valid"
 
 
-def corrupt_src_info_kernel(
-    src_info: MutPointer[Int32, MutAnyOrigin],
+def corrupt_src_info_kernel[
+    src_info_origin: MutOrigin
+](
+    src_info: MutPointer[Int32, src_info_origin],
     n_rows_dev: Int32,
     bad_src_idx: Int32,
     bad_topk_idx: Int32,
@@ -275,17 +277,27 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
 
     var format_handler = token_fmt_type(out_t)
 
-    var recv_bufs: Array[_, n_ranks] = [
-        dispatch_recv.unsafe_ptr().as_unsafe_any_origin(),
+    var recv_bufs: Array[MutPointer[UInt8, MutUntrackedOrigin], n_ranks] = [
+        dispatch_recv.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
     ]
-    var recv_count_bufs: Array[_, n_ranks] = [
-        dispatch_recv_count.unsafe_ptr().as_unsafe_any_origin(),
+    var recv_count_bufs: Array[
+        MutPointer[UInt64, MutUntrackedOrigin], n_ranks
+    ] = [
+        dispatch_recv_count.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ](),
     ]
-    var combine_recv_bufs: Array[_, n_ranks] = [
-        combine_recv.unsafe_ptr().as_unsafe_any_origin(),
+    var combine_recv_bufs: Array[
+        MutPointer[UInt8, MutUntrackedOrigin], n_ranks
+    ] = [
+        combine_recv.unsafe_ptr().unsafe_origin_cast[MutUntrackedOrigin](),
     ]
-    var combine_recv_count_bufs: Array[_, n_ranks] = [
-        combine_recv_count.unsafe_ptr().as_unsafe_any_origin(),
+    var combine_recv_count_bufs: Array[
+        MutPointer[UInt64, MutUntrackedOrigin], n_ranks
+    ] = [
+        combine_recv_count.unsafe_ptr().unsafe_origin_cast[
+            MutUntrackedOrigin
+        ](),
     ]
 
     var counters = EPLocalSyncCounters[n_experts](atomic_counters.unsafe_ptr())
@@ -345,7 +357,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
         block_dim=hw_info.max_thread_block_size,
     )
     ctx.enqueue_function[dispatch_wait](
-        token_fmt_type(out_t),
+        format_handler,
         row_offsets_t,
         expert_ids_t,
         src_info_t,
@@ -362,7 +374,7 @@ def run_one_case(ctx: DeviceContext, spec: CaseSpec) raises:
     # ----- stamp the fuzzed src_info distribution (the stale-row condition) ---
     if spec.dist != SI_VALID:
         var pair = bad_indices(spec.dist)
-        ctx.enqueue_function[corrupt_src_info_kernel](
+        ctx.enqueue_function[corrupt_src_info_kernel[origin_of(src_info_dev)]](
             src_info_dev.unsafe_ptr(),
             Int32(max_recv_num_tokens),
             pair[0],

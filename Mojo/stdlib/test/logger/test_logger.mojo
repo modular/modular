@@ -12,32 +12,32 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.reflection import SourceLocation
-from std.logger import Level, Logger
+from std.logger import Logger
 from std.testing import TestSuite
 
 
 # CHECK-LABEL: Test logging at trace level
 def test_log_trace() raises:
     print("=== Test logging at trace level")
-    var log = Logger[Level.TRACE]()
+    var log = Logger[.trace]()
 
-    # CHECK: {{.*}}TRACE{{.*}}::: hello
+    # CHECK: {{.*}}trace{{.*}}::: hello
     log.trace("hello")
 
-    var log2 = Logger[Level.DEBUG]()
-    # CHECK-NOT: {{.*}}TRACE{{.*}}::: hello
+    var log2 = Logger[.debug]()
+    # CHECK-NOT: {{.*}}trace{{.*}}::: hello
     log2.trace("hello")
 
 
 # CHECK-LABEL: Test logging at info level
 def test_log_info() raises:
     print("=== Test logging at info level")
-    var log = Logger[Level.INFO]()
+    var log = Logger[.info]()
 
-    # CHECK-NOT: {{.*}}DEBUG{{.*}}::: hello world
+    # CHECK-NOT: {{.*}}debug{{.*}}::: hello world
     log.debug("hello", "world")
 
-    # CHECK: {{.*}}INFO{{.*}}::: hello
+    # CHECK: {{.*}}info{{.*}}::: hello
     log.info("hello")
 
 
@@ -46,10 +46,10 @@ def test_log_noset() raises:
     print("=== Test no logging by default")
     var log = Logger()
 
-    # CHECK-NOT: {{.*}}DEBUG{{.*}}::: hello world
+    # CHECK-NOT: {{.*}}debug{{.*}}::: hello world
     log.debug("hello", "world")
 
-    # CHECK-NOT: {{.*}}INFO{{.*}}::: hello
+    # CHECK-NOT: {{.*}}info{{.*}}::: hello
     log.info("hello")
 
 
@@ -57,7 +57,7 @@ def test_log_noset() raises:
 def test_log_with_prefix() raises:
     print("=== Test logging with prefix")
 
-    var log = Logger[Level.TRACE](prefix="[XYZ] ")
+    var log = Logger[.trace](prefix="[XYZ] ")
 
     # CHECK: [XYZ]
     # CHECK: hello
@@ -68,7 +68,7 @@ def test_log_with_prefix() raises:
 def test_log_with_location() raises:
     print("=== Test logging with location")
 
-    comptime log = Logger[Level.TRACE](prefix="", source_location=True)
+    comptime log = Logger[.trace](prefix="", source_location=True)
 
     # CHECK: test_logger.mojo:74:14] hello
     log.trace("hello")
@@ -78,7 +78,7 @@ def test_log_with_location() raises:
 def test_log_with_custom_location() raises:
     print("=== Test logging with custom location")
 
-    comptime log = Logger[Level.TRACE](prefix="", source_location=True)
+    comptime log = Logger[.trace](prefix="", source_location=True)
 
     # CHECK: somefile.mojo:42:999] hello
     log.trace("hello", location=SourceLocation(42, 999, "somefile.mojo"))
@@ -88,7 +88,7 @@ def test_log_with_custom_location() raises:
 def test_log_with_sep_end() raises:
     print("=== Test logging with sep/end")
 
-    var log = Logger[Level.TRACE]()
+    var log = Logger[.trace]()
 
     # CHECK: hello mojo world!!!
     log.trace("hello", "world", sep=" mojo ", end="!!!\n")

@@ -888,7 +888,6 @@ struct Dict[
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     def __getitem__(
         ref self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[
@@ -907,7 +906,7 @@ struct Dict[
         """
         return self._find_ref(key)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __setitem__(
         mut self, var key: Self.K, var value: Self.V
@@ -924,7 +923,7 @@ struct Dict[
         """
         self._insert(key^, value^)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     def insert(
         mut self, var key: Self.K, var value: Self.V
     ) -> Optional[DictEntry[Self.K, Self.V, Self.H]]:
@@ -1250,7 +1249,6 @@ struct Dict[
             return Optional[Self.V](None)
         return (self._table._slots.unsafe_offset(slot_idx))[].value.copy()
 
-    @__unsafe_nested_origins_read_only
     def _find_ref(
         ref self, ref key: Self.K
     ) raises DictKeyError[Self.K] -> ref[
@@ -1278,7 +1276,6 @@ struct Dict[
 
         raise DictKeyError[Self.K]()
 
-    @__unsafe_nested_origins_read_only
     def _find_ref_matching(
         ref self, hash: UInt64, key_matches: Some[def(Self.K) -> Bool]
     ) raises DictKeyError[Self.K] -> ref[
@@ -1759,7 +1756,7 @@ struct Dict[
         self._table.clear_with(destroy_func)
         self._order.clear()
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def setdefault(
         mut self, var key: Self.K, var default: Self.V
@@ -1832,16 +1829,6 @@ struct Dict[
             A tuple of (found, slot_index).
         """
         return self._table.find_slot(hash, key)
-
-    @inline(.always)
-    def _set_ctrl(mut self, index: Int, value: UInt8):
-        """Set a control byte. Forwards to the underlying SwissTable.
-
-        Args:
-            index: The slot index.
-            value: The control byte value.
-        """
-        self._table.set_ctrl(index, value)
 
     @inline(.always)
     def _place_new_entry(
@@ -2077,7 +2064,6 @@ struct StringDict[V: Movable](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, ref key: Self.key_type
@@ -2095,7 +2081,6 @@ struct StringDict[V: Movable](
         """
         return self._dict[key]
 
-    @__unsafe_nested_origins_read_only
     @inline(.always)
     def __getitem__(
         ref self, key: StringSpan
@@ -2121,7 +2106,7 @@ struct StringDict[V: Movable](
             ),
         )
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def __setitem__(
         mut self, key: Self.key_type, var value: Self.V
@@ -2217,7 +2202,7 @@ struct StringDict[V: Movable](
         """
         return self._dict.find(key)
 
-    @__unsafe_nested_origins_read_only
+    @__nested_origins_read_only
     @inline(.always)
     def insert(
         mut self, var key: Self.key_type, var value: Self.V

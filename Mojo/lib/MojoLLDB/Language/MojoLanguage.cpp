@@ -281,7 +281,7 @@ public:
     // internal — elision is harmless there.
     //
     // Known gap: single-element Tuple[T] also has a 1-child _mlir_value
-    // (!kgen.struct<T> isParamPack>), so elision does not fire and the expanded
+    // (!kgen.struct<(T)>), so elision does not fire and the expanded
     // children view shows `_mlir_value = ([0] = v)` rather than `[0] = v`
     // directly.  The one-liner summary is still correct because
     // packTypeSummaryProvider formats _mlir_value via the wrapping-type summary

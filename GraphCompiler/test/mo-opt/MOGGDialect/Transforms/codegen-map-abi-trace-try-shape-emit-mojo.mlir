@@ -5,12 +5,12 @@
 // the shape is computed inside a region and discarded.
 
 // CHECK:       def __shapeof_imposter_add_raising_shape{{[_0-9]*}}(
-// CHECK-SAME:    -> std.utils.IndexList[
-// CHECK:         var [[OUT:[a-z_0-9]+]]: std.utils.IndexList[
+// CHECK-SAME:    -> std.utils.coord.DynamicCoord[DType.int,
+// CHECK:         var [[OUT:[a-z_0-9]+]]: std.utils.coord.DynamicCoord[DType.int,
 // CHECK:         try:
-// CHECK:           var [[TRACED:[a-z_0-9]+]]: std.utils.IndexList[
+// CHECK:           var [[TRACED:[a-z_0-9]+]]: std.utils.coord.DynamicCoord[DType.int,
 // CHECK:           with max.runtime.tracing.Trace[{{.*}}]("shapeof(imposter_add_raising_shape)"
-// CHECK:             var [[VAL:[a-z_0-9]+]] = {{.*}}imposter_add_raising_shape_shape(
+// CHECK:             var [[VAL:[a-z_0-9]+]] = {{.*}}shape_func_result({{.*}}imposter_add_raising_shape_shape(
 // CHECK:             [[TRACED]] = [[VAL]]
 // CHECK:           [[OUT]] = [[TRACED]]
 // CHECK:         except

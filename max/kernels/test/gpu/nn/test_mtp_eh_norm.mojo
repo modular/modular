@@ -641,8 +641,16 @@ def main() raises:
             bench_case[hidden_size=4096, block_threads=256](counts, ctx)
             return
         comptime warp_size = ctx.default_device_info.warp_size
-        # GLM-5.3-Flash / DeepSeek-V3.2 draft width.
+        # GLM-5.3-Flash draft width.
         test_mtp_eh_norm[hidden_size=4096, block_threads=256](
+            num_tokens=3, ctx=ctx
+        )
+        # GLM-5.3's and DeepSeek-V3.2's draft widths on the register path, at
+        # warp counts that are not powers of two.
+        test_mtp_eh_norm[hidden_size=6144, block_threads=384](
+            num_tokens=3, ctx=ctx
+        )
+        test_mtp_eh_norm[hidden_size=7168, block_threads=448](
             num_tokens=3, ctx=ctx
         )
         # 384 is not a multiple of 256: the last strided pass is ragged.
@@ -651,8 +659,7 @@ def main() raises:
         )
         # Three warps, stated in `warp_size` so it stays three on every
         # target. `block_reduce_dual_sum` reduces over a power-of-two lane
-        # group, so a non-power-of-two warp count can drop a warp's sum. The
-        # other shapes here all have power-of-two warp counts.
+        # group, so a non-power-of-two warp count can drop a warp's sum.
         test_mtp_eh_norm[hidden_size=384, block_threads=3 * warp_size](
             num_tokens=2, ctx=ctx
         )

@@ -631,6 +631,7 @@ def run_nvfp4_vs_fp8[
 
     comptime if perf_iters > 0:
 
+        @__allow_legacy_any_origin_fields
         def _launch_fp8(ctx: DeviceContext[]) raises {imm}:
             _prefill[num_heads, row_depth, topk](
                 kv_fp8,
@@ -642,6 +643,7 @@ def run_nvfp4_vs_fp8[
                 ctx,
             )
 
+        @__allow_legacy_any_origin_fields
         def _launch_fp4(ctx: DeviceContext[]) raises {imm}:
             _prefill[num_heads, row_depth, 2 * topk](
                 kv_fp4,

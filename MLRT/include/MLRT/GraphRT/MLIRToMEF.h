@@ -26,6 +26,9 @@ class DialectRegistry;
 
 namespace M {
 class ConcatenationTree;
+} // namespace M
+
+namespace M::MLRT {
 
 /// This function converts the specified MLIR module containing a executor
 /// compatible program to the BinaryExecutableFormat (MEF) format, which is the
@@ -41,6 +44,6 @@ ConcatenationTree translateMLIRToMEF(ModuleOp module,
 // Register this translation for GraphRTTranslate.
 void registerMLIRToMEFTranslation(DialectRegistry &otherDialects);
 
-} // namespace M
+} // namespace M::MLRT
 
 #endif // MLRT_GRAPHRT_MLIRTOMEF_H

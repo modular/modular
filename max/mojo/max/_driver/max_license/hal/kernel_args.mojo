@@ -23,6 +23,7 @@ from std.builtin.device_passable import (
 )
 from std.builtin.rebind import downcast
 from std.math import align_up
+from std.memory import unsafe_memcpy
 from std.reflection import reflect
 from std.sys import size_of
 from std.sys.info import _TargetType, _current_target
@@ -198,32 +199,41 @@ trait HalArgPacker:
         Wrapper: DeviceFunctionWrapper,
         declared_arg_types: TypeList[Trait=AnyType, ...],
         Ts: TypeList[Trait=AnyType, ...],
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
     ]: HalKernelArgs
     """The packed arguments of a launch on `spec`'s device of a kernel
     compiled behind `Wrapper`, declaring `declared_arg_types`, with arguments
-    of types `Ts`."""
+    of types `Ts` followed by host-layout arguments of types `HostArgs`."""
 
     @staticmethod
     def pack[
         spec: DeviceSpec,
+        Ts: TypeList[Trait=AnyType, ...],
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         Wrapper: DeviceFunctionWrapper,
         declared_arg_types: TypeList[Trait=AnyType, ...],
-        *Ts: AnyType,
-    ](context: Context[spec], *args: *Ts) raises HALError -> Self.Packed[
-        spec, Wrapper, declared_arg_types, Ts
+    ](
+        context: Context[spec],
+        *args: *Ts,
+        host_args: Tuple[*HostArgs] = (),
+    ) raises HALError -> Self.Packed[
+        spec, Wrapper, declared_arg_types, Ts, HostArgs
     ]:
         """Packs `args` for a launch on `context`'s device.
 
         Parameters:
             spec: The device the launch runs on.
+            Ts: The argument types.
+            HostArgs: The types of the host-layout arguments.
             Wrapper: The wrapper the kernel was compiled behind.
             declared_arg_types: The kernel's declared argument types.
-            Ts: The argument types.
 
         Args:
             context: The context of the queue the launch runs on.
             args: The arguments.
+            host_args: Arguments that follow `args`, passed with their host
+                layout, such as a capturing closure.
 
         Returns:
             The packed arguments.
@@ -238,19 +248,22 @@ struct DenseKernelArgs[
     spec: DeviceSpec,
     declared_arg_types: TypeList[Trait=AnyType, ...],
     Ts: TypeList[Trait=AnyType, ...],
+    HostArgs: TypeList[Trait=RegisterPassable, ...],
 ](HalKernelArgs):
     """Arguments packed back to back, each encoded as the kernel declares it.
 
     Every argument takes one slot holding its device encoding, the layout
     `DeviceContext.enqueue_function` launches with, and a device memory
-    handle takes one slot holding its device address. Zero-sized arguments
-    take no slot.
+    handle takes one slot holding its device address. Each host-layout
+    argument then takes one slot holding a copy of its bytes. Zero-sized
+    arguments take no slot.
 
     Parameters:
         spec: The device the arguments are encoded for.
         declared_arg_types: The kernel's declared argument types.
         Ts: The argument types, each a `DeviceMemoryHandle` or
             `DevicePassable`.
+        HostArgs: The types of the host-layout arguments that follow them.
     """
 
     comptime device_spec = Self.spec
@@ -284,17 +297,38 @@ struct DenseKernelArgs[
                 count += 1
         return count
 
-    comptime _num_slots = Self._slot_count[Self.Ts.length]()
+    @staticmethod
+    def _host_offset[index: Int]() -> Int:
+        var offset = Self._offset[Self.Ts.length]()
+        comptime for i in range(index):
+            offset += align_up(size_of[Self.HostArgs[i]](), 8)
+        return offset
+
+    @staticmethod
+    def _host_slot_count[index: Int]() -> Int:
+        var count = Self._slot_count[Self.Ts.length]()
+        comptime for i in range(index):
+            comptime if size_of[Self.HostArgs[i]]() != 0:
+                count += 1
+        return count
+
+    comptime _num_slots = Self._host_slot_count[Self.HostArgs.length]()
     comptime max_slots = max(Self._num_slots, 1)
     # Words rather than bytes, so every slot is 8-byte aligned.
-    comptime _num_words = max(Self._offset[Self.Ts.length]() // 8, 1)
+    comptime _num_words = max(Self._host_offset[Self.HostArgs.length]() // 8, 1)
 
     var _words: Array[UInt64, Self._num_words]
 
     def __init__[
         *ArgTs: AnyType
-    ](out self, context: Context[Self.spec], *args: *ArgTs) raises HALError:
-        """Encodes `args` as `declared_arg_types` declares them.
+    ](
+        out self,
+        context: Context[Self.spec],
+        *args: *ArgTs,
+        host_args: Tuple[*Self.HostArgs],
+    ) raises HALError:
+        """Encodes `args` as `declared_arg_types` declares them, and copies
+        `host_args` after them.
 
         Parameters:
             ArgTs: The argument types, which must be `Ts`.
@@ -302,11 +336,23 @@ struct DenseKernelArgs[
         Args:
             context: The context of the queue the launch runs on.
             args: The arguments.
+            host_args: The host-layout arguments.
 
         Raises:
             If a handle's device address can't be resolved.
         """
         comptime assert ArgTs.length == Self.Ts.length
+        comptime for i in range(ArgTs.length):
+            comptime assert ArgTs[i] == Self.Ts[i]
+        comptime assert (
+            Self.Ts.length + Self.HostArgs.length
+            == Self.declared_arg_types.length
+        ), String(
+            "the kernel takes ",
+            Self.declared_arg_types.length,
+            " arguments but the launch passes ",
+            Self.Ts.length + Self.HostArgs.length,
+        )
         self._words = Array[UInt64, Self._num_words](fill=0)
         var encoder = Self._Encoder()
 
@@ -348,6 +394,17 @@ struct DenseKernelArgs[
                 ]()
                 rebind[DevT](args[i])._to_device_type(encoder, dst)
 
+        comptime for i in range(Self.HostArgs.length):
+            comptime size = size_of[Self.HostArgs[i]]()
+            comptime if size != 0:
+                unsafe_memcpy(
+                    dest=self._words.unsafe_ptr()
+                    .unsafe_bitcast[UInt8]()
+                    .unsafe_offset(Self._host_offset[i]()),
+                    src=Pointer(to=host_args[i]).unsafe_bitcast[UInt8](),
+                    count=size,
+                )
+
     def num_slots(self) -> Int:
         return Self._num_slots
 
@@ -368,6 +425,14 @@ struct DenseKernelArgs[
                     Self._offset[i]()
                 ).unsafe_bitcast[NoneType]()
                 result.sizes.unsafe_get(slot) = UInt64(size)
+        comptime for i in range(Self.HostArgs.length):
+            comptime size = size_of[Self.HostArgs[i]]()
+            comptime if size != 0:
+                comptime slot = Self._host_slot_count[i]()
+                result.addrs.unsafe_get(slot) = base.unsafe_offset(
+                    Self._host_offset[i]()
+                ).unsafe_bitcast[NoneType]()
+                result.sizes.unsafe_get(slot) = UInt64(size)
 
 
 struct DenseArgPacker(HalArgPacker):
@@ -379,16 +444,24 @@ struct DenseArgPacker(HalArgPacker):
         Wrapper: DeviceFunctionWrapper,
         declared_arg_types: TypeList[Trait=AnyType, ...],
         Ts: TypeList[Trait=AnyType, ...],
-    ] = DenseKernelArgs[spec, declared_arg_types, Ts]
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
+    ] = DenseKernelArgs[spec, declared_arg_types, Ts, HostArgs]
 
     @staticmethod
     def pack[
         spec: DeviceSpec,
+        Ts: TypeList[Trait=AnyType, ...],
+        HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,
         Wrapper: DeviceFunctionWrapper,
         declared_arg_types: TypeList[Trait=AnyType, ...],
-        *Ts: AnyType,
-    ](context: Context[spec], *args: *Ts) raises HALError -> Self.Packed[
-        spec, Wrapper, declared_arg_types, Ts
+    ](
+        context: Context[spec],
+        *args: *Ts,
+        host_args: Tuple[*HostArgs] = (),
+    ) raises HALError -> Self.Packed[
+        spec, Wrapper, declared_arg_types, Ts, HostArgs
     ]:
-        return DenseKernelArgs[spec, declared_arg_types, Ts](context, *args)
+        return DenseKernelArgs[spec, declared_arg_types, Ts, HostArgs](
+            context, *args, host_args=host_args
+        )

@@ -3802,6 +3802,7 @@ class _DeferringConnector(NullConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         lookup = _DeferredLookup(
             len(block_hashes), self.answers_on, hit=self.hits
@@ -3833,6 +3834,11 @@ class _DeferredProbe:
         return [
             {"full": [False] * self._num_blocks} for _ in self._replica_idxs
         ]
+
+    def colocated_runs(self) -> Sequence[Mapping[str, int]] | None:
+        if not self.answered:
+            raise RuntimeError("the probe has not answered")
+        return None
 
     def answer(self) -> None:
         self.answered = True
@@ -3916,6 +3922,7 @@ class _OnloadingConnector(NullConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         return _AnsweredLookup(len(block_hashes))
 
@@ -4375,6 +4382,7 @@ class _ClockedConnector(NullConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         answer_after = self._answers_after[len(self.started)]
         lookup = _ClockedLookup(
@@ -5918,6 +5926,7 @@ class _ScheduledConnector(_DeferringConnector):
         replica_idx: int = 0,
         hint: bytes | None = None,
         chain_start: int | None = None,
+        colocated_runs: Mapping[str, int] | None = None,
     ) -> KVLookup:
         lookup = _DeferredLookup(
             len(block_hashes),

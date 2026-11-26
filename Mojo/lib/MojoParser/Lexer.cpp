@@ -85,6 +85,7 @@ bool Token::isStatementKeyword() const {
   case kw_match:
   case kw_case:
   case kw___match:
+  case kw_guard:
   case kw___guard:
   case kw___async:
   case kw___await:
@@ -104,6 +105,7 @@ bool Token::isDeclKeyword() const {
   case kw_fn:
   case kw_struct:
   case kw___enum:
+  case kw___union:
   case kw_trait:
   case kw_var:
     return true;

@@ -38,7 +38,7 @@ from max.nn.common_layers.quant_moe import (
     QuantizedMoE,
     TensorParallelMoE,
 )
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommBuffers
+from max.nn.ep import EPBuffers
 from max.nn.norm import RMSNorm
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh, Partial
@@ -51,13 +51,13 @@ def _get_mlp(
     config: DeepseekV3Config,
     mode: ParallelismMode,
     layer_idx: int,
-    ep_batch_manager: EPBatchManager | None = None,
 ) -> Module[[Tensor], Tensor]:
     """Returns either an MoE or MLP module for the given layer index.
 
-    The MoE variant is selected by the parallelism strategy: expert parallelism
-    (``ep_batch_manager`` set) → :class:`ExpertParallelMoE`; multi-device tensor
-    parallelism → :class:`TensorParallelMoE`; single device → :class:`QuantizedMoE`.
+    The MoE variant is selected by the parallelism strategy: expert
+    parallelism (``config.ep_config`` set) → :class:`ExpertParallelMoE`;
+    multi-device tensor parallelism → :class:`TensorParallelMoE`; single
+    device → :class:`QuantizedMoE`.
     """
     use_moe = (
         config.n_routed_experts is not None
@@ -86,10 +86,8 @@ def _get_mlp(
             * config.moe_intermediate_size,
             quant_config=config.quant_config,
         )
-        if ep_batch_manager is not None:
-            return ExpertParallelMoE(
-                **moe_kwargs, ep_batch_manager=ep_batch_manager
-            )
+        if config.ep_config is not None:
+            return ExpertParallelMoE(**moe_kwargs, ep_config=config.ep_config)
         if (
             mode is not ParallelismMode.DP_EP
             and config.mesh is not None
@@ -141,7 +139,6 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         config: DeepseekV3Config,
         layer_idx: int,
         attention_scale: float,
-        ep_batch_manager: EPBatchManager | None = None,
     ) -> None:
         self.config = config
         num_devices = len(config.devices)
@@ -178,7 +175,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
             quantize_o_proj=config.mla_o_proj_quantized,
         )
         tensor_parallel_latent_attention_with_rope(self.self_attn)
-        self.mlp = _get_mlp(config, self.mode, layer_idx, ep_batch_manager)
+        self.mlp = _get_mlp(config, self.mode, layer_idx)
         self.input_layernorm = RMSNorm(
             dim=config.hidden_size, eps=config.rms_norm_eps
         )
@@ -194,7 +191,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         input_row_offsets: Tensor,
         freqs_cis: Tensor,
         mla_prefill_metadata: MLAPrefillMetadata | None = None,
-        comm_buffers: EPCommBuffers | None = None,
+        ep: EPBuffers | None = None,
     ) -> Tensor:
         """Runs one decoder block over ``x``."""
         residual = x
@@ -211,8 +208,7 @@ class DeepseekV3TransformerBlock(Module[..., Tensor]):
         hidden_states = self._post_attention(residual, attn_out)
         norm_h = self.post_attention_layernorm(hidden_states)
         if isinstance(self.mlp, ExpertParallelMoE):
-            assert comm_buffers is not None
-            mlp_out = self.mlp(norm_h, comm_buffers)
+            mlp_out = self.mlp(norm_h, ep=ep)
         else:
             mlp_out = self.mlp(norm_h)
         hidden_states = self._post_mlp(hidden_states, mlp_out)

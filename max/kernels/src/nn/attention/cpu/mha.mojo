@@ -610,13 +610,23 @@ struct _FlashAttention[
             sink_logit = weight
 
         for m in range(count_m):
-            var qk_row = TileTensor(qk_row_ptr, row_major(Int64(kv_seq_cnt)))
+            # FIXME: The input and output closures alias this row, but origin
+            # tracking cannot express that each chunk is loaded before it is
+            # overwritten.
+            var untracked_qk_row_ptr = qk_row_ptr.unsafe_origin_cast[
+                MutUntrackedOrigin
+            ]()
+            var qk_row = TileTensor(
+                untracked_qk_row_ptr, row_major(Int64(kv_seq_cnt))
+            )
 
             @inline(.always)
             def pass1_input_gen_fn[
                 _dtype: DType, _simd_width: Int
             ](idx: Int) {imm} -> SIMD[_dtype, _simd_width]:
-                var val = qk_row_ptr.unsafe_load[width=_simd_width](idx)
+                var val = untracked_qk_row_ptr.unsafe_load[width=_simd_width](
+                    idx
+                )
                 return mask_fn(
                     m, idx, val * scale.cast[Self._accum_type]()
                 ).cast[_dtype]()
@@ -649,7 +659,9 @@ struct _FlashAttention[
             def pass2_input_gen_fn[
                 _dtype: DType, _simd_width: Int
             ](idx: Int) {imm} -> SIMD[_dtype, _simd_width]:
-                var val = qk_row_ptr.unsafe_load[width=_simd_width](idx)
+                var val = untracked_qk_row_ptr.unsafe_load[width=_simd_width](
+                    idx
+                )
                 return rebind[SIMD[_dtype, _simd_width]](exp(val - max_val))
 
             # Update the row with the exponential of each value and accumulate
@@ -741,6 +753,7 @@ struct _FlashAttention[
 
         var num_threads = min(work_count, parallelism_level(ctx))
 
+        @__allow_legacy_any_origin_fields
         def task_func(
             task_id: Int,
         ) {
@@ -1585,9 +1598,6 @@ def _flash_attention_kv_cache[
     )
 
 
-# See the note on the ragged overload below: `k`/`v` alias the same `blocks`
-# buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1632,9 +1642,6 @@ def flash_attention_kv_cache[
     )
 
 
-# See the note on the ragged overload below: `k`/`v` alias the same `blocks`
-# buffer and are read-only here, so disable the nested-origin exclusivity check.
-@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,
@@ -1679,12 +1686,6 @@ def flash_attention_kv_cache[
     _flash_attention_kv_cache[4](mask_fn, q, k, v, scale, output, sink_weights)
 
 
-# `k` and `v` are disjoint views into the same `blocks` buffer, so they share the
-# collection's mutable `blocks_origin`. Attention only READS them, but the
-# exclusivity checker can't prove that and rejects passing both. Disabling the
-# nested-origin exclusivity check is safe here (read-only) and lets direct
-# callers pass `get_key_cache()`/`get_value_cache()` without a copy-capture shim.
-@__unsafe_nested_origins_read_only
 def flash_attention_kv_cache[
     dtype: DType,
     cache_t: KVCacheT,

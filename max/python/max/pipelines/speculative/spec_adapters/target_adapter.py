@@ -94,6 +94,12 @@ def _default_trailing_input_types(target_config: Any) -> list[TensorType]:
     return []
 
 
+def _default_takes_vision_inputs(target_config: Any) -> bool:
+    """Preserves architecture-declared vision inputs by default."""
+    del target_config
+    return True
+
+
 def _default_trailing_input_tree(
     target_config: Any,
 ) -> Mapping[str, object] | None:
@@ -332,12 +338,34 @@ class TargetAdapter:
     """Whether an engine replays a cached prompt row's boundary token
     for the draft head."""
 
+    per_row_verify_methods: frozenset[str] = frozenset()
+    """The speculative methods whose verify path wires per-row prefix
+    selection into the graph; an export may ask for per-row verify only
+    under one of them."""
+
+    per_row_verify_layout_error: (
+        (Callable[[int, bool, int], str | None]) | None
+    ) = None
+    """Returns why an export layout cannot serve the per-row verify its
+    method wires, or ``None`` when it can. The arguments are the export's
+    data-parallel degree, HiSparse flag and decode-context-parallel degree.
+    ``None`` (unset) serves every layout the method does, the behavior of
+    every adapter that has not checked layouts apart."""
+
+    head_score_methods: frozenset[str] = frozenset()
+    """The speculative methods whose drafter wires a checkpoint confidence
+    head into its graph; an export may ask for the ``head`` score source
+    only under one of them."""
+
     signal_buffer_index: int | None = None
     """Where a ModuleV3 target's fused graph takes its signal buffers, on
     every device count, for an engine that binds them there. It counts the
     inputs of an undistributed, text-only signature; the distributed inputs
     and the image rows come ahead of it. ``None`` takes them after every
     other input, and none on one device."""
+
+    takes_vision_inputs: Callable[[Any], bool] = _default_takes_vision_inputs
+    """Whether the deployment takes the architecture's cached vision inputs."""
 
     trailing_input_types: Callable[[Any], Sequence[TensorType | BufferType]] = (
         _default_trailing_input_types

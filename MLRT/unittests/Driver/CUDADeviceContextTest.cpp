@@ -362,6 +362,28 @@ TEST_F(CUDADeviceContextTest, LoadFunctionDistinctEntryPointsSameBlob) {
   runAndCheck(funcB, 2.0f);
 }
 
+// No cap is passed, yet the launch goes past CUDA's 48 KB default.
+TEST_F(CUDADeviceContextTest, LoadFunctionLiftsDynamicSharedMemoryCap) {
+  ASSIGN_NO_ERR(DeviceContextRef, ctx,
+                DeviceContext::create(Device::cudaAPI, /*id=*/0));
+  ASSERT_TRUE(ctx);
+
+  ASSIGN_NO_ERR(DeviceFunctionRef, func,
+                ctx->loadFunction(/*moduleName=*/"", "kernel_a", twoKernelPtx));
+
+  constexpr int64_t length = 32;
+  constexpr uint32_t sharedMemBytes = 64 * 1024;
+  ASSIGN_NO_ERR(DeviceBufferRef, outDevice,
+                ctx->enqueueCreateBuffer(length * sizeof(float)));
+  void *outPtr = outDevice->ptr();
+  void *args[] = {&outPtr, (void *)&length};
+  size_t argSizes[] = {sizeof(outPtr), sizeof(length)};
+  EXPECT_NO_ERR(ctx->enqueueFunctionExecDirect(
+      *func, 1, 1, 1, length, 1, 1, sharedMemBytes, /*attrs=*/nullptr,
+      /*numAttrs=*/0, args, sizeof(args) / sizeof(void *), argSizes));
+  EXPECT_NO_ERR(ctx->synchronize());
+}
+
 TEST_F(CUDADeviceContextTest, WrappedCuMemGetAddressRangeV2Works) {
   constexpr size_t byteSize = 64 * 1024;
 

@@ -67,7 +67,7 @@ __extension Attention:
             empty: Whether this split visited no key tiles.
         """
         # Required whenever `split_kv` is set; the launcher always passes it
-        # for a split launch. A device-side `__guard`/`abort` on it does not
+        # for a split launch. A device-side `guard`/`abort` on it does not
         # lower (the offload pass cannot prove the binding dominates), so this
         # is the one place the split path unwraps the pointer.
         var lse_tt = TileTensor(

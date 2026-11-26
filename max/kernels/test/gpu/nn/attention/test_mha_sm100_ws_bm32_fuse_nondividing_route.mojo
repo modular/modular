@@ -52,8 +52,10 @@ comptime _PAGE_SIZE = 128
 comptime _SPLITK_P = [1, 2, 4, 10]
 
 
-def _base_config[group: Int, depth: Int = 128]() -> FA4Config[DType.bfloat16]:
-    return FA4Config[DType.bfloat16](
+def _base_config[
+    group: Int, depth: Int = 128, dtype: DType = .bfloat16
+]() -> FA4Config[dtype]:
+    return FA4Config[dtype](
         num_q_heads=group * _NUM_KV_HEADS,
         group=group,
         qk_depth=depth,
@@ -104,6 +106,25 @@ def _check_configs[group: Int, fused_bm_eff: Int]() raises:
         assert_false(unfused_sk.fuse_gqa)
         assert_equal(unfused_sk.BM_eff(), unfused.BM_eff())
         assert_equal(unfused_sk.splitk_partitions, p)
+
+
+def _check_fp8_fused_1q[group: Int]() raises:
+    # The dispatch's packed 1Q arm is a comptime conjunction of these, so a
+    # false one compiles the arm out for e4m3 KV without an error.
+    comptime base = _base_config[group, dtype=.float8_e4m3fn]()
+    comptime fused_1q = base.with_bm(128, fuse_nondividing=True)
+    assert_true(base.with_bm(32, fuse_nondividing=True).fuse_nondividing)
+    assert_true(fused_1q.fuse_nondividing)
+    assert_true(fused_1q.fuse_gqa)
+    assert_equal(fused_1q.num_q, 1)
+    assert_equal(fused_1q.BM_eff(), 128 // group)
+    assert_equal(fused_1q.gqa_pad_rows(), 128 % group)
+    assert_true(fused_1q.swizzle_mode == TensorMapSwizzle.SWIZZLE_64B)
+    assert_true(fused_1q.supported())
+    comptime for p in _SPLITK_P:
+        comptime fused_1q_sk = fused_1q.with_splitk(p)
+        assert_true(fused_1q_sk.fuse_nondividing)
+        assert_true(fused_1q_sk.supported())
 
 
 def _check_route[group: Int, fused_bm_eff: Int]() raises:
@@ -173,6 +194,8 @@ def main() raises:
     # group 9: BM_eff = 32 // 9 = 3. group 6: BM_eff = 32 // 6 = 5.
     _check_configs[9, 3]()
     _check_configs[6, 5]()
+    _check_fp8_fused_1q[9]()
+    _check_fp8_fused_1q[6]()
     _check_route[9, 3]()
     _check_route[6, 5]()
     _check_not_requested_or_not_eligible()

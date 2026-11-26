@@ -1273,8 +1273,17 @@ struct FieldParser<llvm::Reloc::Model> {
 
 namespace llvm {
 /// Provide the ability to hash triples for attribute uniquing.
+///
+/// Hash exactly the components compared by `Triple::operator==` so that equal
+/// triples hash equal, without materializing the normalized triple string on
+/// every attribute hash.
 static hash_code hash_value(const llvm::Triple &triple) {
-  return hash_value(triple.normalize());
+  return hash_combine(static_cast<unsigned>(triple.getArch()),
+                      triple.getSubArch(),
+                      static_cast<unsigned>(triple.getVendor()),
+                      static_cast<unsigned>(triple.getOS()),
+                      static_cast<unsigned>(triple.getEnvironment()),
+                      static_cast<unsigned>(triple.getObjectFormat()));
 }
 
 /// Allow the attribute printer to print a target triple.

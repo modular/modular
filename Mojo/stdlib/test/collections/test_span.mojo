@@ -25,6 +25,7 @@ from test_utils import (
 from std.memory import MaybeUninit, forget_deinit
 from std.math import iota
 from std.hash import Hasher
+from std.collections.string._utf8 import _is_utf8_continuation_byte
 
 
 def test_span_list_int() raises:
@@ -835,6 +836,64 @@ def test_span_niche() raises:
 
     var none = Optional[SpanType](None)
     assert_false(none)
+
+
+def test_map_reduce() raises:
+    def _count_utf8_continuation_bytes(span: Span[Byte, _]) -> Int:
+        return span.map_reduce(
+            _is_utf8_continuation_byte,
+            lambda (mask: SIMD[.bool, _]) -> Int: mask.reduce_bit_count(),
+        )
+
+    comptime c = UInt8(0b1000_0000)
+    comptime b1 = UInt8(0b0100_0000)
+    comptime b2 = UInt8(0b1100_0000)
+    comptime b3 = UInt8(0b1110_0000)
+    comptime b4 = UInt8(0b1111_0000)
+
+    def _test(amnt: Int, items: Span[Byte, _]) raises:
+        assert_equal(amnt, _count_utf8_continuation_bytes(items))
+
+    _test(5, Span([c, c, c, c, c]))
+    _test(2, Span([b2, c, b2, c, b1]))
+    _test(2, Span([b2, c, b1, b2, c]))
+    _test(2, Span([b2, c, b2, c, b1]))
+    _test(2, Span([b2, c, b1, b2, c]))
+    _test(2, Span([b1, b2, c, b2, c]))
+    _test(2, Span([b3, c, c, b1, b1]))
+    _test(2, Span([b1, b1, b3, c, c]))
+    _test(2, Span([b1, b3, c, c, b1]))
+    _test(3, Span([b1, b4, c, c, c]))
+    _test(3, Span([b4, c, c, c, b1]))
+    _test(3, Span([b3, c, c, b2, c]))
+    _test(3, Span([b2, c, b3, c, c]))
+
+    var data = Span([1, 2, 3, 4, 5])
+    var start = 10
+    assert_equal(
+        25,
+        Int(
+            data.map_reduce(
+                lambda [w: SIMDLength](value: SIMD[DType.int, w]) -> SIMD[
+                    DType.int, w
+                ]: value,
+                lambda (value: SIMD[DType.int, _]) -> Int: value.reduce_add(),
+                start=start,
+            )
+        ),
+    )
+    assert_equal(
+        start,
+        Int(
+            data[:0].map_reduce(
+                lambda [w: SIMDLength](value: SIMD[DType.int, w]) -> SIMD[
+                    DType.int, w
+                ]: value,
+                lambda (value: SIMD[DType.int, _]) -> Int: value.reduce_add(),
+                start=start,
+            )
+        ),
+    )
 
 
 def main() raises:

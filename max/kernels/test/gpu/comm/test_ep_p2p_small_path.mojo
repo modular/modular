@@ -631,6 +631,7 @@ def time_path[
 
     var times = List[Int](length=world, fill=0)
 
+    @__allow_legacy_any_origin_fields
     def per_rank(r: Int) raises {mut times, imm}:
         var ctx = ctxs[r]
         for _ in range(20):

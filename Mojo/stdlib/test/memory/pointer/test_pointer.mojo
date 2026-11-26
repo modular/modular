@@ -238,6 +238,14 @@ def test_pointer_to_infers_address_space() raises:
     _ = local
 
 
+def test_pointer_to_address_space_var() raises:
+    @__address_space(.SHARED)
+    var x = Array[Int, 1](uninitialized=True)
+    var ptr = Pointer(to=x)
+    comptime assert type_of(ptr).address_space == .SHARED
+    assert_equal(Int(ptr), Int(x.unsafe_ptr()))
+
+
 def test_explicit_copy_of_pointer_address() raises:
     var local = 1
     var ptr = Pointer[Int](to=local)

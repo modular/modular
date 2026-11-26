@@ -87,6 +87,7 @@ def start_workers(
 
         # Load the Tokenizer and Pipeline Factory
         pipeline_config = PipelineConfig.from_args(pipeline_args)
+        PIPELINE_REGISTRY.refuse_mach_only(pipeline_config)
         retrieved = PIPELINE_REGISTRY.retrieve_factory(
             pipeline_config,
             task=pipeline_args.task,

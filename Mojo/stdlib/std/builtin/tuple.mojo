@@ -110,7 +110,7 @@ struct Tuple[*Ts: AnyType](
         `!kgen.struct<:`,
         type_of(Self.Ts.values),
         Self.Ts.values,
-        ` isParamPack>`,
+        `>`,
     ]
 
     var _mlir_value: Self._mlir_type

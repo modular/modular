@@ -98,6 +98,7 @@ from ..graph_specs import (
     GraphSpec,
     _EagerCallable,
     compile_and_init_graphs,
+    roles_compile_separately,
 )
 from ..interfaces import (
     ModelInputs,
@@ -123,6 +124,9 @@ def load_sampler_graphs(
     """Compiles the sampler, and the bitmask sampler if constraints may fire.
 
     The bitmask sampler compiles when ``needs_bitmask_constraints`` is set.
+    Where nothing would be reused or recorded the two compile as one module,
+    which skips the session's MEF store and gives the bitmask sampler a
+    distinct graph name; see :func:`sampler_specs`.
 
     Args:
         session: The session that compiles and initializes the samplers.
@@ -137,26 +141,73 @@ def load_sampler_graphs(
         :attr:`GraphRole.SAMPLER` role, and the
         :attr:`GraphRole.SAMPLER_BITMASK` role if compiled.
     """
-    specs: dict[str, GraphSpec] = {}
     with CompilationTimer("sampler") as sampler_timer:
-        variants = [(GraphRole.SAMPLER, False)]
-        if pipeline_config.needs_bitmask_constraints:
-            variants.insert(0, (GraphRole.SAMPLER_BITMASK, True))
-        for role, needs_bitmask in variants:
-            sampler = TopKSampler(
-                pipeline_config.sampling,
-                device=device,
-                needs_bitmask_input=needs_bitmask,
-                unpadded_vocab_size=vocab_size,
-            )
-            specs[role] = GraphSpec(
-                sampler,
-                TopKSampler.GRAPH_NAME,
-                sampler.input_types,
-                custom_extensions=custom_extensions,
-            )
+        specs = sampler_specs(
+            pipeline_config, device, vocab_size, custom_extensions
+        )
         sampler_timer.mark_build_complete()
         return compile_and_init_graphs(session, specs)
+
+
+def sampler_specs(
+    pipeline_config: PipelineConfig,
+    device: DeviceRef,
+    vocab_size: int | None,
+    custom_extensions: Sequence[Path] = (),
+) -> dict[str, GraphSpec]:
+    """Builds the sampler specs, grouped when nothing would be reused.
+
+    Separate from compiling them because the grouping decision and the names
+    that follow from it are a pure function of the configuration, which is
+    what makes them testable without a compile.
+
+    Args:
+        pipeline_config: The pipeline's configuration.
+        device: The device the samplers run on.
+        vocab_size: The tokenizer's token count, which bounds the ids the
+            samplers produce, or ``None`` for no bound.
+        custom_extensions: Paths to custom kernel libraries the samplers use.
+
+    Returns:
+        One spec per role, carrying a group only when the group will form.
+    """
+    # Compiling a graph costs around ten seconds before its own ops are
+    # reached, so the two samplers compile as one module. Only when nothing
+    # would be reused or recorded: a module of several graphs does not consult
+    # the session's MEF store, and reusing an artifact beats sharing the cost.
+    # `roles_compile_separately` is in the same condition so that a group here
+    # means a group forms, which is what the naming below relies on.
+    grouped = not (
+        roles_compile_separately()
+        or pipeline_config.runtime.precompiled_mefs is not None
+        or pipeline_config.runtime.export_mefs is not None
+        or InferenceSession.default_mef_store is not None
+    )
+    specs: dict[str, GraphSpec] = {}
+    variants = [(GraphRole.SAMPLER, False)]
+    if pipeline_config.needs_bitmask_constraints:
+        variants.insert(0, (GraphRole.SAMPLER_BITMASK, True))
+    for role, needs_bitmask in variants:
+        sampler = TopKSampler(
+            pipeline_config.sampling,
+            device=device,
+            needs_bitmask_input=needs_bitmask,
+            unpadded_vocab_size=vocab_size,
+        )
+        # Graphs in one group need distinct names, and a name a store recorded
+        # an artifact under must not move, so the suffix appears only where
+        # the group actually forms.
+        name = TopKSampler.GRAPH_NAME
+        if grouped and needs_bitmask:
+            name = f"{name}_bitmask"
+        specs[role] = GraphSpec(
+            sampler,
+            name,
+            sampler.input_types,
+            custom_extensions=custom_extensions,
+            group="sampler" if grouped else None,
+        )
+    return specs
 
 
 @dataclasses.dataclass
