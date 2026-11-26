@@ -249,6 +249,7 @@ struct _AnyError(Deinitable, Equatable, Movable, Writable):
     """
     This type represents an Error type
     """
+
     pass
 
 

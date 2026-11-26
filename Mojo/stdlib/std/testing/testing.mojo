@@ -556,7 +556,12 @@ struct assert_raises[
     with assert_raises(contains="Some"):
         raise Error("OtherError")
 
-    with assert_raises[IoError](error=IoError("error reading input stream")):
+    # This will strictly compare the error type and contents
+    with assert_raises(error=IoError("error reading input stream"):
+      raise IoError("error reading input stream")
+
+    # This will strictly compare the error type only
+    with assert_raises[IoError]():
       raise IoError("error reading input stream")
     ```
     """
