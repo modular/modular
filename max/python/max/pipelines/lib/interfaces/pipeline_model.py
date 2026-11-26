@@ -346,6 +346,11 @@ class ModuleV3Outputs(Generic[_OutputTensorT]):
     :mod:`~max.pipelines.lib.request_state`). A decoder whose state the graph
     updates in place returns none."""
 
+    next_tokens: _OutputTensorT | None = None
+    """Each row's greedy next token, the argmax of :attr:`next_token_logits`,
+    shape ``[B]``, when the graph picks it. A serving engine may read these
+    in place of sampling a batch whose every row decodes greedily."""
+
 
 @dataclass(kw_only=True)
 class ModelInputs:

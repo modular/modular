@@ -1011,6 +1011,7 @@ def _grouped_outputs(
             next_token_logits=outputs.next_token_logits,
             logits=outputs.logits,
             logit_offsets=outputs.logit_offsets,
+            next_tokens=outputs.next_tokens,
         )
     )
     if outputs.hidden_states is not None:
@@ -1034,6 +1035,7 @@ def _role_outputs(outputs: _GroupedOutputs) -> DecoderOutputs:
         (hidden_states,) = outputs.hidden_states.tensors()
     return DecoderOutputs(
         next_token_logits=logits["next_token_logits"],
+        next_tokens=logits.get("next_tokens"),
         logits=logits.get("logits"),
         logit_offsets=logits.get("logit_offsets"),
         hidden_states=hidden_states,
