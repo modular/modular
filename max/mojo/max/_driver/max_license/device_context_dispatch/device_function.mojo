@@ -315,7 +315,10 @@ struct DeviceFunction[
         """
         self._impl = _legacy
 
+    # Out of line, x86 copies by-value arguments such as 128-byte TMA
+    # descriptors one byte at a time.
     @doc_hidden
+    @inline(.always)
     def _call_with_pack_checked[
         HostArgs: TypeList[Trait=RegisterPassable, ...],
         //,

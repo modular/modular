@@ -2261,6 +2261,7 @@ struct DeviceContext[target: CompilationTarget = default_accelerator()](
     # Compiling and launching functions
     # ===-------------------------------------------------------------------===#
 
+    @inline(.always)
     def compile_function[
         declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
