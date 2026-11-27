@@ -528,13 +528,17 @@ def per_step_dims(layouts: Sequence[TensorLayout]) -> list[str]:
 def _verify_facts(pipeline: object) -> SpecGraphFacts | None:
     """Returns the fused graph's verify facts off the built pipeline model.
 
-    ``None`` for a pipeline whose model is not a fused spec-decode one.
+    A fused spec-decode model built outside ``SpecDecodePipelineModel``
+    (MiniMax-M3 with its DSpark draft) states them as
+    ``export_verify_facts``. ``None`` for a pipeline whose model is not a
+    fused spec-decode one, or one that states none.
     """
     if not isinstance(pipeline, TextGenerationPipelineInterface):
         return None
     model = pipeline._pipeline_model
     if not isinstance(model, SpecDecodePipelineModel):
-        return None
+        facts = getattr(model, "export_verify_facts", None)
+        return facts if isinstance(facts, SpecGraphFacts) else None
     return SpecGraphFacts(
         verify_takes_prefill_rows=model.verify_takes_prefill_rows,
         verify_commits_long_rows=model.verify_commits_long_rows,

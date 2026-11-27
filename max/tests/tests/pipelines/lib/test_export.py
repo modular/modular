@@ -1509,6 +1509,21 @@ def test_verify_facts_read_the_spec_pipeline_model() -> None:
     # A pipeline whose model is not a fused spec-decode one has no facts.
     assert _verify_facts(_PlainPipeline()) is None
 
+    # A fused model built outside SpecDecodePipelineModel states its own.
+    stated = SpecGraphFacts(
+        verify_takes_prefill_rows=True,
+        verify_commits_long_rows=False,
+        successor_replay=False,
+    )
+
+    class _StatedModel:
+        export_verify_facts = stated
+
+    class _StatedPipeline(_PlainPipeline):
+        _pipeline_model = cast(PipelineModelWithKVCache[Any], _StatedModel())
+
+    assert _verify_facts(_StatedPipeline()) == stated
+
 
 def _mha(num_layers: int, window_size: int | None = None) -> MHAKVCacheParams:
     return MHAKVCacheParams(
