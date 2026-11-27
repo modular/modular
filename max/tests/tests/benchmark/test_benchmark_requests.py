@@ -1410,28 +1410,6 @@ def _sse(payload: dict[str, Any]) -> bytes:
     return b"data: " + json.dumps(payload).encode() + b"\n\n"
 
 
-def _patch_slow_encode(mocker: MockerFixture, *, seconds: float) -> list[float]:
-    """Makes msgspec's encoder take *seconds*, recording when it finished.
-
-    A slow encode stands in for a body large enough to matter, and its
-    timestamp shows whether it ran before the request's clock started.
-    """
-    finished: list[float] = []
-    encode = msgspec.json.encode
-
-    def encode_slowly(payload: Any) -> bytes:
-        body = encode(payload)
-        time.sleep(seconds)
-        finished.append(time.perf_counter())
-        return body
-
-    mocker.patch(
-        "max.benchmark.benchmark_shared.request.msgspec.json.encode",
-        side_effect=encode_slowly,
-    )
-    return finished
-
-
 class _CountingClock:
     """A stand-in for the ``time`` module whose ``perf_counter`` counts reads.
 
