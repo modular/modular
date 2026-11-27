@@ -1523,6 +1523,16 @@ CallParamInf::CallParamInf(
       pogAssignment(pogAssignment),
       operandsNeedingReEmission(operandsNeedingReEmission) {}
 
+/// Returns true if binding the value that `refType` refers to an argument with
+/// `convention` copies the value out of its address space.
+static bool copiesOutOfAddressSpace(RefType refType, ArgConvention convention) {
+  // Only a 'ref' argument can take a value outside the default address space in
+  // place.
+  if (convention == ArgConvention::Ref || convention == ArgConvention::MutRef)
+    return false;
+  return !refType.isDefaultAddrSpace();
+}
+
 /// Check the expected type against the provided operand. This identifies any
 /// problems with the operand type, which it handled by emitting a diagnostic
 /// and returning failure.
@@ -1755,6 +1765,13 @@ LogicalResult CallParamInf::inferOneOperand(ASTExprAnd<AnyValue> operand,
   if (expectedConvention != ArgConvention::ImmReg &&
       expectedRVType.isRegisterPassable(operand.expr->getLoc(), getShared()))
     ++numMismatchedConventions;
+
+  // Penalize a copy out of the operand's address space as much as an implicit
+  // copy, so an overload that takes the operand by 'ref' in its own address
+  // space is preferred.
+  if (operand.ir.isMValue() &&
+      copiesOutOfAddressSpace(operand.ir.getMValueType(), expectedConvention))
+    numMismatchedConventions += 2;
 
   // Allow overloading on "owned" vs "by-ref" arguments.
   // If the argument convention is owned but the operand is not an RValue then

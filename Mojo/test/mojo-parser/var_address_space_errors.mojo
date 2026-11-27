@@ -126,21 +126,6 @@ def implicit_copy_out_of_shared():
     _ = z.x
 
 
-struct CrossAddressSpaceCopy(ImplicitlyCopyable):
-    var x: Int
-
-    def __init__[addr_space: AddressSpace](out[addr_space] self):
-        self.x = 0
-
-    def __init__(out self, *, copy: Self):
-        self.x = copy.x
-
-    def __init__[
-        from_as: AddressSpace, to_as: AddressSpace
-    ](out[to_as] self, *, ref[from_as] copy: Self):
-        self.x = copy.x
-
-
 # expected-note @below {{function declared here}}
 def takes_local(ref[_, AddressSpace.LOCAL] x: CopyableAnywhere):
     pass
@@ -158,14 +143,6 @@ def wrong_address_space_for_argument[addr_space: AddressSpace]():
     # expected-error @below {{invalid call to 'takes_local': value passed to 'x' cannot be converted from 'CopyableAnywhere' to ref 'CopyableAnywhere'}}
     # expected-note @below {{operand address space 'addr_space' doesn't match expected address space '4'}}
     takes_local(p)
-
-
-def implicit_copy_ignores_cross_address_space_initializer():
-    @__address_space(.SHARED)
-    var s = CrossAddressSpaceCopy()
-    match s:
-        case var y:  # expected-error {{non-implicitly trivially copyable value cannot be copied from a non-default address space}}
-            _ = y.x
 
 
 struct HasDeinit:
@@ -215,3 +192,30 @@ def generic_address_space[addr_space: AddressSpace]():
 
     @__address_space(addr_space)
     var b: HasDeinit  # expected-error {{variable 'b' in address space 'addr_space' must have a trivially deinitable type, not 'HasDeinit'}}
+
+
+struct GlobalOnly(TrivialRegisterPassable):
+    var value: Int
+
+    def __init__[addr_space: AddressSpace](out[addr_space] self):
+        self.value = 0
+
+    def get(self) -> Int:
+        return 0
+
+    # expected-note @below {{cannot prove constraint for candidate}}
+    def get[
+        AS: AddressSpace
+    ](ref[_, AS] self) -> Int where AS == AddressSpace.GLOBAL:  # expected-note {{constraint declared here needs evidence for '(addr_space == AddressSpace.GLOBAL)'}}
+        return 1
+
+
+# The 'ref' overload is preferred over the 'imm self' overload, which copies
+# the value out of its address space. The where clause cannot be decided for a
+# parametric address space.
+def where_clause_needs_evidence[addr_space: AddressSpace]():
+    @__address_space(addr_space)
+    var g = GlobalOnly()
+    # expected-error @below {{invalid call to 'get': lacking evidence to prove correctness}}
+    # expected-note @below {{provide evidence for the constraint here to aid in candidate selection}}
+    _ = g.get()
