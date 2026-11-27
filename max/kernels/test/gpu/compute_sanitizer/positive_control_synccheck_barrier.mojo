@@ -26,8 +26,6 @@
 #
 # Tagged `manual`, so it never runs in the normal suite.
 
-from std.memory import unsafe_stack_allocation
-
 from max.gpu import thread_idx
 from max.gpu.globals import WARPGROUP_SIZE
 from max.gpu.host import DeviceContext
@@ -42,9 +40,9 @@ def two_warpgroup_barrier[
     var tid = Int(thread_idx.x)
     var wg = tid // WARPGROUP_SIZE
     var slot = tid % WARPGROUP_SIZE
-    var published = unsafe_stack_allocation[
-        WARPGROUP_SIZE, Int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var published_storage = Array[Int32, WARPGROUP_SIZE](uninitialized=True)
+    var published = published_storage.unsafe_ptr()
 
     if wg == 1:
         published[unsafe_offset=slot] = Int32(slot + 1)

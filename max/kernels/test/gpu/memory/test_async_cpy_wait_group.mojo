@@ -21,7 +21,6 @@ from max.gpu.memory import (
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
@@ -30,7 +29,9 @@ def copy_via_shared[
     src_origin: ImmOrigin, dst_origin: MutOrigin
 ](src: ImmPointer[Float32, src_origin], dst: MutPointer[Float32, dst_origin],):
     var thread_id = thread_idx.x
-    var mem_buff = unsafe_stack_allocation[16, Float32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var mem_buff_storage = Array[Float32, 16](uninitialized=True)
+    var mem_buff = mem_buff_storage.unsafe_ptr()
     var src_global: ImmPointer[
         Float32, src_origin, address_space=.GLOBAL
     ] = src.unsafe_address_space_cast[.GLOBAL]()
@@ -93,9 +94,9 @@ def copy_with_src_size[
 ):
     # `Int` is not device-passable; widen the fixed-width arg.
     var src_size = Int(src_size_dev)
-    var smem = unsafe_stack_allocation[
-        8, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[Float32, 8](uninitialized=True)
+    var smem = smem_storage.unsafe_ptr()
 
     for i in range(8):
         smem[i] = -1.0
@@ -125,9 +126,9 @@ def copy_with_non_zero_fill[
     src: ImmPointer[BFloat16, src_origin],
     dst: MutPointer[BFloat16, dst_origin],
 ):
-    var smem = unsafe_stack_allocation[
-        smem_size, DType.bfloat16, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[BFloat16, smem_size](uninitialized=True)
+    var smem = smem_storage.unsafe_ptr()
 
     for i in range(smem_size):
         smem[i] = 0

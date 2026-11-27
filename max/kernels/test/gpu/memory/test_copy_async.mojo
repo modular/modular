@@ -16,7 +16,6 @@ from max.gpu.host import get_gpu_target
 from max.gpu.host.compile import _compile_code
 from max.gpu.memory import CacheEviction, async_copy
 from max.gpu.sync import async_copy_arrive, mbarrier_init, mbarrier_test_wait
-from std.memory import unsafe_stack_allocation
 from std.testing import assert_true
 
 
@@ -150,9 +149,9 @@ def test_mbarrier_test_wait_sm90() raises:
 def test_async_copy[
     origin: ImmOrigin
 ](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
-    var shared_mem = unsafe_stack_allocation[
-        4, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_mem_storage = Array[Float32, 4](uninitialized=True)
+    var shared_mem = shared_mem_storage.unsafe_ptr()
     async_copy[4](src, shared_mem)
     async_copy[16](src, shared_mem)
 
@@ -181,9 +180,9 @@ def test_async_copy_sm90() raises:
 def test_async_copy_l2_prefetch[
     origin: ImmOrigin
 ](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
-    var shared_mem = unsafe_stack_allocation[
-        4, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_mem_storage = Array[Float32, 4](uninitialized=True)
+    var shared_mem = shared_mem_storage.unsafe_ptr()
     async_copy[4, bypass_L1_16B=False, l2_prefetch=128](src, shared_mem)
     async_copy[16, bypass_L1_16B=False, l2_prefetch=64](src, shared_mem)
 
@@ -213,9 +212,9 @@ def test_async_copy_l2_prefetch_sm90() raises:
 def test_async_copy_with_zero_fill_kernel[
     origin: ImmOrigin
 ](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
-    var shared_mem = unsafe_stack_allocation[
-        4, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_mem_storage = Array[Float32, 4](uninitialized=True)
+    var shared_mem = shared_mem_storage.unsafe_ptr()
     async_copy[4, bypass_L1_16B=False, l2_prefetch=128, fill=Float32(0)](
         src, shared_mem
     )
@@ -287,9 +286,9 @@ def test_async_copy_with_eviction[
     origin: ImmOrigin
 ](src: ImmPointer[Float32, origin, address_space=.GLOBAL]):
     print("test_async_copy_with_eviction")
-    var shared_mem = unsafe_stack_allocation[
-        4, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_mem_storage = Array[Float32, 4](uninitialized=True)
+    var shared_mem = shared_mem_storage.unsafe_ptr()
     async_copy[4, eviction_policy=CacheEviction.EVICT_FIRST](src, shared_mem)
     async_copy[16, eviction_policy=CacheEviction.EVICT_FIRST](src, shared_mem)
     async_copy[16, eviction_policy=CacheEviction.EVICT_LAST](src, shared_mem)
@@ -298,9 +297,9 @@ def test_async_copy_with_eviction[
 def async_copy_with_non_zero_fill_kernel[
     origin: ImmOrigin
 ](src: ImmPointer[Int32, origin, address_space=.GLOBAL]):
-    var shared_mem = unsafe_stack_allocation[
-        4, DType.int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_mem_storage = Array[Int32, 4](uninitialized=True)
+    var shared_mem = shared_mem_storage.unsafe_ptr()
     async_copy[16, bypass_L1_16B=False, l2_prefetch=128, fill=Int32(32)](
         src, shared_mem, predicate=True
     )

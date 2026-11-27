@@ -52,7 +52,6 @@ so the 64-register cap is what keeps a wide copy inside a budget that an
 """
 
 from std.itertools import product
-from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal, assert_true
 from std.utils.static_tuple import StaticTuple
 
@@ -176,9 +175,9 @@ def _round_trip(
 def _tmem_round_trip_kernel[
     num_cols: Int, output_origin: MutOrigin
 ](output: MutPointer[Float32, output_origin]):
-    var smem_addr = unsafe_stack_allocation[
-        1, DType.uint32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_addr_storage = Array[UInt32, 1](uninitialized=True)
+    var smem_addr = smem_addr_storage.unsafe_ptr()
     if warp_id() == 0:
         tcgen05_alloc[1](smem_addr, UInt32(num_cols))
     barrier()
@@ -208,9 +207,9 @@ comptime tmem_wide_round_trip_kernel = _tmem_round_trip_kernel[WIDE_COLS, ...]
 def tmem_async_round_trip_kernel[
     output_origin: MutOrigin
 ](output: MutPointer[Float32, output_origin]):
-    var smem_addr = unsafe_stack_allocation[
-        1, DType.uint32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_addr_storage = Array[UInt32, 1](uninitialized=True)
+    var smem_addr = smem_addr_storage.unsafe_ptr()
     if warp_id() == 0:
         tcgen05_alloc[1](smem_addr, UInt32(NUM_COLS))
     barrier()
@@ -261,9 +260,9 @@ def tmem_budget_round_trip_kernel[
     input: MutPointer[Float32, input_origin],
     output: MutPointer[Float32, output_origin],
 ):
-    var smem_addr = unsafe_stack_allocation[
-        1, DType.uint32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_addr_storage = Array[UInt32, 1](uninitialized=True)
+    var smem_addr = smem_addr_storage.unsafe_ptr()
     if warp_id() == 0:
         tcgen05_alloc[1](smem_addr, UInt32(WIDE_COLS))
     barrier()
@@ -295,9 +294,9 @@ def tmem_budget_round_trip_kernel[
 def tmem_m64_round_trip_kernel[
     output_origin: MutOrigin
 ](output: MutPointer[Float32, output_origin]):
-    var smem_addr = unsafe_stack_allocation[
-        1, DType.uint32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_addr_storage = Array[UInt32, 1](uninitialized=True)
+    var smem_addr = smem_addr_storage.unsafe_ptr()
     if warp_id() == 0:
         tcgen05_alloc[1](smem_addr, UInt32(NUM_COLS))
     barrier()
@@ -333,9 +332,9 @@ def tmem_16x256b_load_kernel[
 ](mismatches: MutPointer[Int32, mismatches_origin]):
     """Writes rows, reads both halves through `tmem_16x256b`, and counts the
     registers that disagree with the cell `tmem_cell` names."""
-    var smem_addr = unsafe_stack_allocation[
-        1, DType.uint32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_addr_storage = Array[UInt32, 1](uninitialized=True)
+    var smem_addr = smem_addr_storage.unsafe_ptr()
     if warp_id() == 0:
         tcgen05_alloc[1](smem_addr, UInt32(NUM_COLS))
     barrier()
@@ -379,9 +378,9 @@ def tmem_16x256b_store_kernel[
 ](output: MutPointer[Float32, output_origin]):
     """Fills both halves through `tmem_16x256b` from the cells `tmem_cell`
     names, reads the rows back, and writes `output[lane * NUM_COLS + col]`."""
-    var smem_addr = unsafe_stack_allocation[
-        1, DType.uint32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_addr_storage = Array[UInt32, 1](uninitialized=True)
+    var smem_addr = smem_addr_storage.unsafe_ptr()
     if warp_id() == 0:
         tcgen05_alloc[1](smem_addr, UInt32(NUM_COLS))
     barrier()

@@ -23,7 +23,7 @@ Validates:
 - Bounded store with partial output region
 """
 
-from std.memory import AddressSpace, unsafe_stack_allocation
+from std.memory import AddressSpace
 from std.random import random_si64
 from std.sys.info import _accelerator_arch
 
@@ -538,12 +538,12 @@ def mma_shared_kernel[
     better perf. This confirms the MMA path works when fragments come
     from an `AddressSpace.SHARED` TileTensor.
     """
-    var a_shared = unsafe_stack_allocation[
-        _NUM_ELEMENTS, DType.float16, address_space=.SHARED
-    ]()
-    var b_shared = unsafe_stack_allocation[
-        _NUM_ELEMENTS, DType.float16, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var a_shared_storage = Array[Float16, _NUM_ELEMENTS](uninitialized=True)
+    var a_shared = a_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var b_shared_storage = Array[Float16, _NUM_ELEMENTS](uninitialized=True)
+    var b_shared = b_shared_storage.unsafe_ptr()
 
     # 32 threads cooperatively copy 256 elements (8 per lane, strided).
     var lid = Int(lane_id())

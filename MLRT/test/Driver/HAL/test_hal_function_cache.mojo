@@ -24,7 +24,6 @@ from std.memory import (
     ArcPointer,
     OpaquePointer,
     Pointer,
-    unsafe_stack_allocation,
 )
 from std.sys import size_of
 from std.testing import assert_equal, assert_not_equal
@@ -106,8 +105,12 @@ def test_compile_function_inline_launches[
 
     var data_addr = ctx.memory_get_address(buf)
     var n_val = Int(n)
-    var args = unsafe_stack_allocation[2, OpaquePointer[ImmUntrackedOrigin]]()
-    var arg_sizes = unsafe_stack_allocation[2, UInt64]()
+    var args_storage = Array[OpaquePointer[ImmUntrackedOrigin], 2](
+        uninitialized=True
+    )
+    var args = args_storage.unsafe_ptr()
+    var arg_sizes_storage = Array[UInt64, 2](uninitialized=True)
+    var arg_sizes = arg_sizes_storage.unsafe_ptr()
     args[unsafe_offset=0] = rebind[OpaquePointer[MutUntrackedOrigin]](
         Pointer(to=data_addr)
     )

@@ -19,7 +19,6 @@ once per direction. Every thread passes its quadrant's row 0 as the TMEM
 operand and its own register row as the other.
 """
 
-from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal, assert_true
 
 from layout import Idx, TileTensor, coord, row_major
@@ -60,9 +59,9 @@ def _expected(lane: Int, col: Int) -> Float32:
 def tmem_atom_kernel[
     output_origin: MutOrigin
 ](output: MutPointer[Float32, output_origin]):
-    var smem_addr = unsafe_stack_allocation[
-        1, DType.uint32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_addr_storage = Array[UInt32, 1](uninitialized=True)
+    var smem_addr = smem_addr_storage.unsafe_ptr()
     if warp_id() == 0:
         tcgen05_alloc[1](smem_addr, UInt32(NUM_COLS))
     barrier()

@@ -18,7 +18,6 @@ from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from layout import TileTensor, row_major
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_false
 
@@ -57,16 +56,16 @@ def matmul_sram[
     var c = TileTensor(c_ptr, row_major(M, N))
 
     # Allocate A, B tile in shared memory.
-    var a_shared = unsafe_stack_allocation[
-        tile_size * tile_size,
-        DType.float32,
-        address_space=.SHARED,
-    ]()
-    var b_shared = unsafe_stack_allocation[
-        tile_size * tile_size,
-        DType.float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var a_shared_storage = Array[Float32, tile_size * tile_size](
+        uninitialized=True
+    )
+    var a_shared = a_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var b_shared_storage = Array[Float32, tile_size * tile_size](
+        uninitialized=True
+    )
+    var b_shared = b_shared_storage.unsafe_ptr()
 
     # Global index in C.
     # These are the same indices in A and B when loading to SRAM.

@@ -17,10 +17,7 @@ from std.math.uutils import udivmod
 from max.gpu import block_idx, global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import (
-    unsafe_memset_zero,
-    unsafe_stack_allocation,
-)
+from std.memory import unsafe_memset_zero
 from std.memory.alloc import unsafe_alloc
 from layout import TileTensor, row_major
 
@@ -57,18 +54,19 @@ def matmul[
     # NOTE: A and C are column major, B is row major.
 
     # Allocate B array into shared memory for tiling.
-    var b_shared = unsafe_stack_allocation[
-        TILE_SZ_RATIO * TILE_SZ_B,
-        DType.int,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var b_shared_storage = Array[Scalar[DType.int], TILE_SZ_RATIO * TILE_SZ_B](
+        uninitialized=True
+    )
+    var b_shared = b_shared_storage.unsafe_ptr()
 
     # Thread indexing offsets.
     var row = global_idx.x
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = unsafe_stack_allocation[TILE_SZ_B, DType.int]()
+    var c_reg_storage = Array[Scalar[DType.int], TILE_SZ_B](uninitialized=True)
+    var c_reg = c_reg_storage.unsafe_ptr()
 
     unsafe_memset_zero(c_reg, TILE_SZ_B)
 

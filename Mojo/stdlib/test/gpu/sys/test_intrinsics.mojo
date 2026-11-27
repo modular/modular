@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests strided intrinsics on GPU in shared memory."""
 
-from std.memory import unsafe_stack_allocation
 from std.sys.intrinsics import strided_load, strided_store
 from std.testing import TestSuite, assert_equal
 
@@ -24,9 +23,9 @@ comptime _EVEN_LANES = SIMD[.bool, 4](True, False, True, False)
 def _strided_load_shared_kernel[
     masked: Bool
 ](output: MutPointer[Float32, MutAnyOrigin]):
-    var shared = unsafe_stack_allocation[
-        16, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[Float32, 16](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
     for i in range(16):
         shared.unsafe_offset(i).unsafe_store(Float32(i))
 
@@ -41,9 +40,9 @@ def _strided_load_shared_kernel[
 def _strided_store_shared_kernel[
     masked: Bool
 ](output: MutPointer[Float32, MutAnyOrigin]):
-    var shared = unsafe_stack_allocation[
-        8, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[Float32, 8](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
     for i in range(8):
         shared.unsafe_offset(i).unsafe_store(Float32(0))
 

@@ -63,7 +63,6 @@
 # Tagged `manual` so it is excluded from `//...` and
 # `//max/kernels/test/gpu/...` wildcard expansion.
 
-from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 from max.gpu import thread_idx
@@ -93,9 +92,9 @@ def two_warpgroup_handoff[
     var wg = tid // WARPGROUP_SIZE
     var slot = tid % WARPGROUP_SIZE
 
-    var published = unsafe_stack_allocation[
-        WARPGROUP_SIZE, Int32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var published_storage = Array[Int32, WARPGROUP_SIZE](uninitialized=True)
+    var published = published_storage.unsafe_ptr()
 
     if wg == 1:
         published[unsafe_offset=slot] = Int32(slot + 1)
@@ -176,10 +175,12 @@ def partial_cta_handoff[
     var tid = Int(thread_idx.x)
     var wid = tid // WARP_SIZE
 
-    var staged = unsafe_stack_allocation[
-        CONS_THREADS, Int32, address_space=.SHARED
-    ]()
-    var ready = unsafe_stack_allocation[1, Int32, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var staged_storage = Array[Int32, CONS_THREADS](uninitialized=True)
+    var staged = staged_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var ready_storage = Array[Int32, 1](uninitialized=True)
+    var ready = ready_storage.unsafe_ptr()
 
     if wid < CONS_WARPS:
         staged[unsafe_offset=tid] = Int32(tid + 1)

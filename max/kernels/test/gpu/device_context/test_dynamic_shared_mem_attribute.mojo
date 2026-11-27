@@ -15,7 +15,6 @@ from max.gpu import thread_idx
 from max.gpu.host import DeviceContext, FuncAttribute
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
-from std.memory import unsafe_stack_allocation
 from std.sys import size_of
 from std.testing import TestSuite, assert_equal
 
@@ -59,9 +58,11 @@ def test_static_counts_toward_default_cap() raises:
     def static_and_dynamic_kernel[
         data_origin: MutOrigin
     ](data: MutPointer[Float32, data_origin]):
-        var static_smem = unsafe_stack_allocation[
-            STATIC_WORDS, Float32, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var static_smem_storage = Array[Float32, STATIC_WORDS](
+            uninitialized=True
+        )
+        var static_smem = static_smem_storage.unsafe_ptr()
         var dynamic_smem = external_memory[
             Float32, address_space=.SHARED, alignment=4
         ]()

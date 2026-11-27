@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.atomic import Atomic
-from std.memory import unsafe_stack_allocation
 from std.sys.intrinsics import prefetch, strided_load, strided_store
 from std.testing import assert_equal
 
@@ -28,9 +27,9 @@ def _kernel[
 ](output: MutPointer[Float32, output_origin]):
     # Threadgroup memory is where losing the address space shows up: a
     # pointer rebuilt from an integer address cannot reach it on Metal.
-    var shared = unsafe_stack_allocation[
-        _N, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[Float32, _N](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
     for i in range(_N):
         shared.unsafe_offset(i).unsafe_store(Float32(i))
 

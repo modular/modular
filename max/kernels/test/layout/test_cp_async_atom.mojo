@@ -14,7 +14,6 @@
 async engines, and the PTX they and their routes' sync atoms issue when
 compiled for sm_100a."""
 
-from std.memory import unsafe_stack_allocation
 from std.sys.info import _is_sm_100x_or_newer
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
@@ -61,11 +60,11 @@ def cp_async_sealed_kernel(
     comptime if _is_sm_100x_or_newer():
         comptime A = CpAsync[.float32, 16]
         var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 4]())
-        var barrier = unsafe_stack_allocation[
-            1, SharedMemBarrier, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var barrier_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+        var barrier = barrier_storage.unsafe_ptr()
         A()(TileTensor(smem), TileTensor(src, row_major[1, 4]()))
-        A.AsyncEngine.Barrier.Seal[MutUntrackedOrigin](barrier)()
+        A.AsyncEngine.Barrier.Seal[origin_of(barrier_storage)](barrier)()
         A.AsyncEngine.Barrier.Wait()(barrier, .even)
 
 
@@ -76,10 +75,10 @@ def cp_async_bulk_kernel(
     # instruction's sm_100 check fails.
     comptime if _is_sm_100x_or_newer():
         var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 64]())
-        var barrier = unsafe_stack_allocation[
-            1, SharedMemBarrier, address_space=.SHARED
-        ]()
-        comptime A = CpAsyncBulk[.float32, 256, MutUntrackedOrigin]
+        @__address_space(.SHARED)
+        var barrier_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+        var barrier = barrier_storage.unsafe_ptr()
+        comptime A = CpAsyncBulk[.float32, 256, origin_of(barrier_storage)]
         A.AsyncEngine.Barrier.Arm()(barrier, 256)
         A(barrier)(TileTensor(smem), TileTensor(src, row_major[1, 64]()))
         A.AsyncEngine.Barrier.Wait()(barrier, .even)

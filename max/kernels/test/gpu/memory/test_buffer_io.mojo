@@ -20,7 +20,6 @@ from max.gpu.host.compile import _compile_code
 from max.gpu.host.info import MI355X
 from max.gpu.intrinsics import AMDBufferResource
 from max.gpu.memory import CacheOperation
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal, assert_true
 
@@ -44,7 +43,9 @@ def kernel[
 def kernel_lds[
     dtype: DType, width: Int, a_origin: MutOrigin
 ](a: MutPointer[Scalar[dtype], a_origin]):
-    var a_shared = unsafe_stack_allocation[size, dtype, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var a_shared_storage = Array[Scalar[dtype], size](uninitialized=True)
+    var a_shared = a_shared_storage.unsafe_ptr()
 
     var aligned_size = align_down(size, width)
     var buffer = AMDBufferResource(a, size_clip)

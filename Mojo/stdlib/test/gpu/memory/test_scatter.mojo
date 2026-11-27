@@ -17,7 +17,6 @@ shared-window offset as if it were a generic address, which faulted with
 `CUDA_ERROR_ILLEGAL_ADDRESS`.
 """
 
-from std.memory import unsafe_stack_allocation
 from std.testing import TestSuite, assert_equal
 
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -34,9 +33,9 @@ def _scatter_global_kernel(output: MutPointer[Float32, MutAnyOrigin]):
 def _scatter_shared_kernel[
     masked: Bool
 ](output: MutPointer[Float32, MutAnyOrigin]):
-    var shared = unsafe_stack_allocation[
-        4, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[Float32, 4](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
     for i in range(4):
         shared.unsafe_offset(i).unsafe_store(Float32(-1))
 

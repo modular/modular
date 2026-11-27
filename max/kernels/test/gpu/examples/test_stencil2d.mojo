@@ -16,7 +16,6 @@ from std.math import ceildiv
 from max.gpu import global_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from layout import TileTensor, Idx, row_major
 
@@ -95,11 +94,11 @@ def stencil2d_smem[
     var a = TileTensor(a_ptr, row_major(arr_size))
     var b = TileTensor(b_ptr, row_major(arr_size))
 
-    var a_shared_ptr = unsafe_stack_allocation[
-        (BLOCK_DIM + 2) * (BLOCK_DIM + 2),
-        DType.float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var a_shared_storage = Array[Float32, (BLOCK_DIM + 2) * (BLOCK_DIM + 2)](
+        uninitialized=True
+    )
+    var a_shared_ptr = a_shared_storage.unsafe_ptr()
     var a_shared = TileTensor(
         a_shared_ptr, row_major[BLOCK_DIM + 2, BLOCK_DIM + 2]()
     )

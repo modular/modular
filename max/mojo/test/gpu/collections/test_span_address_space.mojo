@@ -21,7 +21,6 @@ memory and read the results back.
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.testing import assert_equal
 
 comptime TILE_SIZE = 32
@@ -45,13 +44,13 @@ def _tile_sum(tile: Span[Float32, _, address_space=_]) -> Float32:
 
 
 def _kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
-    var smem = unsafe_stack_allocation[
-        TILE_SIZE, Float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[Float32, TILE_SIZE](uninitialized=True)
+    var smem = smem_storage.unsafe_ptr()
     var tile = Span[
         mut=True,
         Float32,
-        MutUntrackedOrigin,
+        origin_of(smem_storage),
         address_space=.SHARED,
     ](unsafe_ptr=smem, length=TILE_SIZE)
 
@@ -68,31 +67,31 @@ def _kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
 
 
 def _fill_kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
-    var f_smem = unsafe_stack_allocation[
-        TILE_SIZE, Float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var f_smem_storage = Array[Float32, TILE_SIZE](uninitialized=True)
+    var f_smem = f_smem_storage.unsafe_ptr()
     var f_tile = Span[
         mut=True,
         Float32,
-        MutUntrackedOrigin,
+        origin_of(f_smem_storage),
         address_space=.SHARED,
     ](unsafe_ptr=f_smem, length=TILE_SIZE)
 
     # Guards multi-instantiation: three element types force three copies of the
     # address-space-generic `fill` into one module, the shape a kernel with
     # mixed-dtype tiles produces.
-    var b_smem = unsafe_stack_allocation[
-        TILE_SIZE, UInt8, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var b_smem_storage = Array[UInt8, TILE_SIZE](uninitialized=True)
+    var b_smem = b_smem_storage.unsafe_ptr()
     var b_tile = Span[
-        mut=True, UInt8, MutUntrackedOrigin, address_space=.SHARED
+        mut=True, UInt8, origin_of(b_smem_storage), address_space=.SHARED
     ](unsafe_ptr=b_smem, length=TILE_SIZE)
 
-    var v_smem = unsafe_stack_allocation[
-        TILE_SIZE, Vec2, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var v_smem_storage = Array[Vec2, TILE_SIZE](uninitialized=True)
+    var v_smem = v_smem_storage.unsafe_ptr()
     var v_tile = Span[
-        mut=True, Vec2, MutUntrackedOrigin, address_space=.SHARED
+        mut=True, Vec2, origin_of(v_smem_storage), address_space=.SHARED
     ](unsafe_ptr=v_smem, length=TILE_SIZE)
 
     if thread_idx.x == 0:
@@ -112,13 +111,13 @@ def _fill_kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
 def _local_fill_kernel(out_ptr: Pointer[Float32, MutAnyOrigin]):
     # Local memory is thread-private, so every thread fills its own tile with a
     # distinct value and two of them are read back.
-    var l_mem = unsafe_stack_allocation[
-        TILE_SIZE, Float32, address_space=.LOCAL
-    ]()
+    @__address_space(.LOCAL)
+    var l_mem_storage = Array[Float32, TILE_SIZE](uninitialized=True)
+    var l_mem = l_mem_storage.unsafe_ptr()
     var l_tile = Span[
         mut=True,
         Float32,
-        MutUntrackedOrigin,
+        origin_of(l_mem_storage),
         address_space=.LOCAL,
     ](unsafe_ptr=l_mem, length=TILE_SIZE)
     l_tile.fill(Float32(thread_idx.x) + 0.5)

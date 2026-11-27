@@ -22,7 +22,6 @@ exactly that instruction. There is one for every wait, commit, seal and arm
 the layout atoms define, so the gate cannot pass vacuously.
 """
 
-from std.memory import unsafe_stack_allocation
 from std.sys.info import _is_sm_100x_or_newer
 from std.testing import assert_equal, assert_true, TestSuite
 
@@ -183,10 +182,10 @@ def cp_async_bulk_atom_kernel(
     # instruction's sm_100 check fails.
     comptime if _is_sm_100x_or_newer():
         var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 64]())
-        var barrier = unsafe_stack_allocation[
-            1, SharedMemBarrier, address_space=.SHARED
-        ]()
-        CpAsyncBulk[.float32, 256, MutUntrackedOrigin](barrier)(
+        @__address_space(.SHARED)
+        var barrier_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+        var barrier = barrier_storage.unsafe_ptr()
+        CpAsyncBulk[.float32, 256, origin_of(barrier_storage)](barrier)(
             TileTensor(smem), TileTensor(src, row_major[1, 64]())
         )
 
@@ -260,12 +259,12 @@ def cp_async_sealed_kernel(
 ):
     comptime if _is_sm_100x_or_newer():
         var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 4]())
-        var barrier = unsafe_stack_allocation[
-            1, SharedMemBarrier, address_space=.SHARED
-        ]()
+        @__address_space(.SHARED)
+        var barrier_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+        var barrier = barrier_storage.unsafe_ptr()
         comptime A = CpAsync[.float32, 16]
         A()(TileTensor(smem), TileTensor(src, row_major[1, 4]()))
-        A.AsyncEngine.Barrier.Seal[MutUntrackedOrigin](barrier)()
+        A.AsyncEngine.Barrier.Seal[origin_of(barrier_storage)](barrier)()
 
 
 def cp_async_bulk_armed_kernel(
@@ -273,10 +272,10 @@ def cp_async_bulk_armed_kernel(
 ):
     comptime if _is_sm_100x_or_newer():
         var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 64]())
-        var barrier = unsafe_stack_allocation[
-            1, SharedMemBarrier, address_space=.SHARED
-        ]()
-        comptime A = CpAsyncBulk[.float32, 256, MutUntrackedOrigin]
+        @__address_space(.SHARED)
+        var barrier_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+        var barrier = barrier_storage.unsafe_ptr()
+        comptime A = CpAsyncBulk[.float32, 256, origin_of(barrier_storage)]
         A.AsyncEngine.Barrier.Arm()(barrier, 256)
         A(barrier)(TileTensor(smem), TileTensor(src, row_major[1, 64]()))
 
@@ -286,10 +285,10 @@ def cp_async_bulk_waited_kernel(
 ):
     comptime if _is_sm_100x_or_newer():
         var smem = OwnedGPUTensor[.float32, .SHARED](row_major[1, 64]())
-        var barrier = unsafe_stack_allocation[
-            1, SharedMemBarrier, address_space=.SHARED
-        ]()
-        comptime A = CpAsyncBulk[.float32, 256, MutUntrackedOrigin]
+        @__address_space(.SHARED)
+        var barrier_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+        var barrier = barrier_storage.unsafe_ptr()
+        comptime A = CpAsyncBulk[.float32, 256, origin_of(barrier_storage)]
         A(barrier)(TileTensor(smem), TileTensor(src, row_major[1, 64]()))
         A.AsyncEngine.Barrier.Wait()(barrier, .even)
 

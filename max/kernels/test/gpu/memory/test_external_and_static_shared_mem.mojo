@@ -18,7 +18,6 @@ from max.gpu.host import DeviceContext, GridBlockLaunchConfig
 from max.gpu import thread_idx
 from max.gpu.memory import external_memory
 from max.gpu.sync import barrier
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
@@ -27,11 +26,9 @@ def test_external_shared_mem(ctx: DeviceContext) raises:
     def dynamic_smem_kernel[
         data_origin: MutOrigin
     ](data: MutPointer[Float32, data_origin]):
-        var sram = unsafe_stack_allocation[
-            16,
-            Float32,
-            address_space=.SHARED,
-        ]()
+        @__address_space(.SHARED)
+        var sram_storage = Array[Float32, 16](uninitialized=True)
+        var sram = sram_storage.unsafe_ptr()
         var dynamic_sram = external_memory[
             Float32,
             address_space=.SHARED,

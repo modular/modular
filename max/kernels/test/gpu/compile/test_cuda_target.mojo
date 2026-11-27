@@ -308,7 +308,8 @@ def gemm[
     var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
-    var c_reg = unsafe_stack_allocation[TILE_SZ_B, DType.float32]()
+    var c_reg_storage = Array[Float32, TILE_SZ_B](uninitialized=True)
+    var c_reg = c_reg_storage.unsafe_ptr()
 
     unsafe_memset_zero(c_reg, TILE_SZ_B)
 
@@ -473,9 +474,9 @@ def test_warp_sum_reduce_sm90() raises:
 
 
 def block_reduce(val: Float32) -> Float32:
-    var shared = unsafe_stack_allocation[
-        WARP_SIZE, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[Float32, WARP_SIZE](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
 
     comptime warp_shift = log2_floor(WARP_SIZE)
 

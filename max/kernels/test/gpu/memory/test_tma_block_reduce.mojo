@@ -36,7 +36,6 @@ from max.gpu.sync import (
     mbarrier_init,
     mbarrier_try_wait_parity_shared,
 )
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_almost_equal
 
@@ -50,12 +49,14 @@ from layout import TileTensor, Coord, row_major, Idx
 def block_reduce[
     dtype: DType, max_warps_per_block: Int = 32
 ](val: Scalar[dtype]) -> Scalar[dtype]:
-    var m2_shared = unsafe_stack_allocation[
-        max_warps_per_block, dtype, address_space=.SHARED
-    ]()
-    var m2_broadcast = unsafe_stack_allocation[
-        1, dtype, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var m2_shared_storage = Array[Scalar[dtype], max_warps_per_block](
+        uninitialized=True
+    )
+    var m2_shared = m2_shared_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var m2_broadcast_storage = Array[Scalar[dtype], 1](uninitialized=True)
+    var m2_broadcast = m2_broadcast_storage.unsafe_ptr()
 
     var tid = thread_idx.x
     for i in range(tid, max_warps_per_block, block_dim.x):
@@ -142,7 +143,9 @@ def tma_reduction_kernel[
     var block_offset = block_idx.x
 
     # Create barrier for TMA transfer from GMEM to SMEM.
-    var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var mbar_storage = Array[Int64, 1](uninitialized=True)
+    var mbar = mbar_storage.unsafe_ptr()
 
     var descriptor_ptr = Pointer(to=descriptor).unsafe_bitcast[NoneType]()
     mbarrier_init(mbar, 1)

@@ -33,7 +33,6 @@ slot reads back as 0 and the bug hides.
 from max.gpu.host import DeviceContext
 from max.gpu.sync import barrier
 from max.gpu import block_idx, thread_idx
-from std.memory import unsafe_stack_allocation
 from layout import Coord, TileTensor, row_major
 from nn.sampling import topk_topp_sampling_from_prob
 from std.testing import assert_true
@@ -52,7 +51,9 @@ comptime ROW_ALL_NAN = 3
 
 
 def poison_lds_kernel[nbytes: Int]():
-    var p = unsafe_stack_allocation[nbytes // 8, Int64, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var p_storage = Array[Int64, nbytes // 8](uninitialized=True)
+    var p = p_storage.unsafe_ptr()
     for i in range(thread_idx.x, nbytes // 8, BLOCK):
         p[i] = Int64(0x0BADF00DDEADBEEF)
     barrier()

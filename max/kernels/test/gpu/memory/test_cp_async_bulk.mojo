@@ -29,7 +29,6 @@ from max.gpu.sync import (
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
 )
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.testing import assert_equal
 
@@ -46,12 +45,12 @@ def kernel_bulk_g2s[
 ](src: ImmPointer[Float32, src_origin], dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=.SHARED
-    ]()
-    var mbar = unsafe_stack_allocation[
-        1, SharedMemBarrier, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[Float32, NUM_ELEMS](uninitialized=True)
+    var smem = smem_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var mbar_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+    var mbar = mbar_storage.unsafe_ptr()
 
     var tid = thread_idx.x
 
@@ -116,9 +115,9 @@ def kernel_bulk_s2g[
 ](dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[Float32, NUM_ELEMS](uninitialized=True)
+    var smem = smem_storage.unsafe_ptr()
 
     var tid = thread_idx.x
     smem[tid] = Float32(tid + 1)
@@ -164,9 +163,9 @@ def kernel_bulk_reduce_s2g[
 ](dst: MutPointer[Float32, dst_origin],):
     comptime BYTES = NUM_ELEMS * size_of[Float32]()
 
-    var smem = unsafe_stack_allocation[
-        NUM_ELEMS, Float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[Float32, NUM_ELEMS](uninitialized=True)
+    var smem = smem_storage.unsafe_ptr()
 
     var tid = thread_idx.x
     smem[tid] = Float32(tid + 1)

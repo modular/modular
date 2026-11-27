@@ -20,17 +20,14 @@
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 
 
 def _kernel(out_ptr: Pointer[UInt16, MutAnyOrigin]):
     # Keep the buffer as an `Pointer`: this test pins the
     # `Pointer` address-space-cast and bitcast codegen path.
-    var smem = unsafe_stack_allocation[
-        1,
-        UInt32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var smem_storage = Array[UInt32, 1](uninitialized=True)
+    var smem = smem_storage.unsafe_ptr()
 
     if thread_idx.x == 0:
         smem[unsafe_offset=0] = UInt32(0xCAFEBABE)

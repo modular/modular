@@ -110,7 +110,9 @@ def gather4_raw_smoke_kernel[
         alignment=128,
     ]()
 
-    var mbar = unsafe_stack_allocation[1, Int64, address_space=.SHARED]()
+    @__address_space(.SHARED)
+    var mbar_storage = Array[Int64, 1](uninitialized=True)
+    var mbar = mbar_storage.unsafe_ptr()
     var descriptor_ptr = Pointer(to=descriptor).unsafe_bitcast[NoneType]()
     mbarrier_init(mbar, 1)
 

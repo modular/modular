@@ -130,9 +130,10 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
         type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
-    var tensormaps_host_ptr = unsafe_stack_allocation[
-        num_of_tensormaps * 128, UInt8
-    ]()
+    var tensormaps_host_storage = Array[UInt8, num_of_tensormaps * 128](
+        uninitialized=True
+    )
+    var tensormaps_host_ptr = tensormaps_host_storage.unsafe_ptr()
 
     for i in range(num_of_tensormaps):
         for j in range(128):
@@ -299,9 +300,10 @@ def test_tma_replace_global_addr_in_smem_descriptor[
         type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
-    var tensormaps_host_ptr = unsafe_stack_allocation[
-        num_of_tensormaps * 128, UInt8
-    ]()
+    var tensormaps_host_storage = Array[UInt8, num_of_tensormaps * 128](
+        uninitialized=True
+    )
+    var tensormaps_host_ptr = tensormaps_host_storage.unsafe_ptr()
 
     for i in range(num_of_tensormaps):
         for j in range(128):
@@ -500,9 +502,10 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var device_tensormaps = ctx.enqueue_create_buffer[.uint8](
         128 * num_of_subtensors
     )
-    var tensormaps_host_ptr = unsafe_stack_allocation[
-        num_of_subtensors * 128, UInt8
-    ]()
+    var tensormaps_host_storage = Array[UInt8, num_of_subtensors * 128](
+        uninitialized=True
+    )
+    var tensormaps_host_ptr = tensormaps_host_storage.unsafe_ptr()
 
     for i in range(num_of_subtensors):
         for j in range(128):

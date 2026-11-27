@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Tests `Pointer.unsafe_gather` on GPU in shared memory."""
 
-from std.memory import unsafe_stack_allocation
 from std.testing import TestSuite, assert_equal
 
 from max.gpu.host import DeviceBuffer, DeviceContext
@@ -24,9 +23,9 @@ comptime _EVEN_LANES = SIMD[.bool, 4](True, False, True, False)
 def _gather_shared_kernel[
     masked: Bool
 ](output: MutPointer[Float32, MutAnyOrigin]):
-    var shared = unsafe_stack_allocation[
-        4, DType.float32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var shared_storage = Array[Float32, 4](uninitialized=True)
+    var shared = shared_storage.unsafe_ptr()
     for i in range(4):
         shared.unsafe_offset(i).unsafe_store(Float32(i))
 

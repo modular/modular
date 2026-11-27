@@ -16,16 +16,14 @@
 # A commit atom is linear: issuing it is the only thing that consumes it, so
 # a seal built with its barrier cannot be dropped before it is issued.
 
-from std.memory import unsafe_stack_allocation
-
 from layout.atoms.cp_async import CpAsync
 from layout.tma_async import SharedMemBarrier
 
 
 def main():
-    var barrier = unsafe_stack_allocation[
-        1, SharedMemBarrier, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var barrier_storage = Array[SharedMemBarrier, 1](uninitialized=True)
+    var barrier = barrier_storage.unsafe_ptr()
     comptime E = CpAsync[.float32, 16].AsyncEngine
     # CHECK: 'seal' abandoned without being explicitly destroyed: type 'CpAsyncMBarrierArrive' does not conform to 'Deinitable'
-    var seal = E.Barrier.Seal[MutUntrackedOrigin](barrier)
+    var seal = E.Barrier.Seal[origin_of(barrier_storage)](barrier)

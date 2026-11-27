@@ -41,7 +41,7 @@ envelopes.
 """
 
 from std.atomic import Atomic, Ordering
-from std.memory import bitcast, unsafe_stack_allocation
+from std.memory import bitcast
 from std.random import random_float64, random_ui64, seed
 from std.utils.numerics import inf, nan
 from std.sys import align_of
@@ -552,15 +552,17 @@ def _moe_sort_broken_rank_kernel[
     var wid = warp_id()
     var nw = block_dim.x // WARP_SIZE
 
-    var hist = unsafe_stack_allocation[
-        NUM_EXPERTS, UInt32, address_space=.SHARED
-    ]()
-    var part = unsafe_stack_allocation[
-        MAX_QUERIES * MAX_WARPS, UInt32, address_space=.SHARED
-    ]()
-    var result = unsafe_stack_allocation[
-        MAX_QUERIES, UInt32, address_space=.SHARED
-    ]()
+    @__address_space(.SHARED)
+    var hist_storage = Array[UInt32, NUM_EXPERTS](uninitialized=True)
+    var hist = hist_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var part_storage = Array[UInt32, MAX_QUERIES * MAX_WARPS](
+        uninitialized=True
+    )
+    var part = part_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var result_storage = Array[UInt32, MAX_QUERIES](uninitialized=True)
+    var result = result_storage.unsafe_ptr()
 
     with PDL[overlap_at_beginning=True]():
         var e_i = UInt32(topk_ids.unsafe_offset(i).unsafe_load())
