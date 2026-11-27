@@ -36,7 +36,7 @@ from std.math import isclose
 from std.reflection import call_location, SourceLocation
 from std.python import PythonObject
 from std.utils._ansi import Color, Text
-from std.builtin.error import Error, _AnyError
+from std.builtin.error import Error
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -524,6 +524,14 @@ def _assert_cmp_error[
     return _assert_error(err, loc)
 
 
+struct _AnyError(Equatable, Movable, Writable):
+    """
+    This type represents an Error type
+    """
+
+    pass
+
+
 struct assert_raises[
     T: Movable & Deinitable & Writable & Equatable = _AnyError
 ]:
@@ -654,6 +662,8 @@ struct assert_raises[
                 2. If `error` is set and the caught error type does
                   not match the expected error, or if the error message
                   does not equal.
+                3. If only T passed, then we perform only strict type
+                   checking and ignore error contents
 
         Returns:
             True if the error was successfully caught and matched.
@@ -664,10 +674,15 @@ struct assert_raises[
         ), "assert_raises(contains=...) requires a Writable error type"
 
         # assert_raises(error=error-instance())
-        if self.error:
-            return (Self.T == CaughtError or Self.T == _AnyError) and (
-                String(self.error) == String(error)
-            )
+        if case .Some(_err) = self.error:
+            # if the specified error type matches the caught error instantiate
+            # the caught error and compare error contents to the specified error
+            comptime if Self.T == CaughtError:
+                return _err == rebind[Self.T](error)
+            else:
+                # if they don't match, then just compare the type
+                return Self.T == _AnyError
+        # assert_raises(contains="...")
         elif case .Some(message_contains) = self.message_contains:
             # if not error type is provided, then first lets check if a message was passed
             # if not, like in `assert_raises():` case, we just return True.
