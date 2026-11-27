@@ -834,22 +834,29 @@ def test_unenforceable_top_level_keywords_rejected() -> None:
             _compiler().compile_json_schema(schema, reject_unsupported=True)
 
 
-def test_ambiguous_type_keywords_rejected() -> None:
-    # minLength implies string, minItems implies array: JSON Schema keywords are
-    # type-conditional and do not union, so an ambiguous keyword mix is rejected
-    # rather than picking an arbitrary type.
-    with pytest.raises(Exception):
-        _compiler().compile_json_schema(
-            '{"minLength": 5, "minItems": 2}', reject_unsupported=True
-        )
+def test_untyped_multi_kind_keywords_split_by_kind() -> None:
+    # JSON Schema keywords are type-conditional: minLength binds only strings
+    # and minItems only arrays, and every other kind passes both unconstrained.
+    # The converter splits such a node into one typed branch per kind
+    # (AGENT-914) instead of refusing it.
+    compiled = _compiler().compile_json_schema(
+        '{"minLength": 5, "minItems": 2}', reject_unsupported=True
+    )
+    for accepted in ('"abcde"', "[1, 2]", "7", "true", "null", "{}"):
+        assert _accepts(compiled, accepted), accepted
+    for refused in ('"ab"', "[1]"):
+        assert not _accepts(compiled, refused), refused
 
 
-def test_conflicting_type_keywords_rejected() -> None:
-    # pattern implies string, minimum implies number: another ambiguous mix.
-    with pytest.raises(Exception):
-        _compiler().compile_json_schema(
-            '{"pattern": "[a-z]+", "minimum": 0}', reject_unsupported=True
-        )
+def test_untyped_string_number_keywords_split_by_kind() -> None:
+    # pattern binds strings and minimum binds numbers.
+    compiled = _compiler().compile_json_schema(
+        '{"pattern": "^[a-z]+$", "minimum": 0}', reject_unsupported=True
+    )
+    for accepted in ('"abc"', "0", "5", "true", "null"):
+        assert _accepts(compiled, accepted), accepted
+    for refused in ('"ABC"', "-1"):
+        assert not _accepts(compiled, refused), refused
 
 
 def test_annotation_only_keyword_accepted() -> None:
@@ -2621,12 +2628,15 @@ def test_typeless_inference_enforced() -> None:
     assert not _accepts(c_str, "1")
 
 
-def test_ambiguous_object_number_keywords_rejected() -> None:
-    # required implies object, minimum implies number -> ambiguous.
-    with pytest.raises(Exception):
-        _compiler().compile_json_schema(
-            '{"required": ["a"], "minimum": 0}', reject_unsupported=True
-        )
+def test_untyped_object_number_keywords_split_by_kind() -> None:
+    # required binds objects and minimum binds numbers.
+    compiled = _compiler().compile_json_schema(
+        '{"required": ["a"], "minimum": 0}', reject_unsupported=True
+    )
+    for accepted in ('{"a": 1}', "3", '"x"'):
+        assert _accepts(compiled, accepted), accepted
+    for refused in ("{}", "-1"):
+        assert not _accepts(compiled, refused), refused
 
 
 def test_tool_call_carries_reject_unsupported() -> None:
@@ -5610,25 +5620,62 @@ def test_exclusive_keyword_beside_sibling_union_rejected() -> None:
             _compiler().compile_json_schema(schema, reject_unsupported=True)
 
 
-def test_ref_beside_same_object_sibling_rejected() -> None:
-    # A sibling in the SAME object shares the $ref's source, so the cross-side
-    # fold check cannot see it, yet the dispatch drops it just the same. Draft 7
-    # ignores such a sibling and 2019-09 conjoins it, so neither reading is safe
-    # to guess. The last shape arrives through a single-member allOf, where the
-    # fold has nothing to compare against.
-    for schema in (
-        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
-        ' "maxLength": 3}',
-        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
-        ' "pattern": "^zz$"}',
-        '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
-        ' "type": "integer"}',
-        '{"$defs": {"i": {"type": "object", "properties":'
-        ' {"a": {"type": "string"}}}},'
-        ' "allOf": [{"$ref": "#/$defs/i", "minProperties": 1}]}',
-    ):
-        with pytest.raises(Exception, match="takes dispatch priority"):
-            _compiler().compile_json_schema(schema, reject_unsupported=True)
+def test_ref_beside_same_object_sibling_conjoined() -> None:
+    # A document that declares no draft, or 2019-09 or later, conjoins a
+    # $ref's siblings with its target (AGENT-914): the converter moves the $ref
+    # into an allOf beside them. The last shape arrives through a single-member
+    # allOf, where the fold has nothing to compare against.
+    cases = (
+        (
+            '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+            ' "maxLength": 3}',
+            ('"ab"',),
+            ('"abcd"', "1"),
+        ),
+        (
+            '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+            ' "pattern": "^zz$"}',
+            ('"zz"',),
+            ('"ab"', "1"),
+        ),
+        (
+            '{"$defs": {"i": {"type": "object", "properties":'
+            ' {"a": {"type": "string"}}}},'
+            ' "allOf": [{"$ref": "#/$defs/i", "minProperties": 1}]}',
+            ('{"a": "x"}',),
+            ("{}", "1"),
+        ),
+    )
+    for schema, accepted, refused in cases:
+        compiled = _compiler().compile_json_schema(
+            schema, reject_unsupported=True
+        )
+        for value in accepted:
+            assert _accepts(compiled, value), (schema, value)
+        for value in refused:
+            assert not _accepts(compiled, value), (schema, value)
+
+
+def test_ref_beside_conflicting_type_sibling_rejected() -> None:
+    # Conjoined, a string target and an integer sibling admit no value.
+    with pytest.raises(Exception):
+        _compiler().compile_json_schema(
+            '{"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+            ' "type": "integer"}',
+            reject_unsupported=True,
+        )
+
+
+def test_ref_beside_sibling_in_draft_7_document_rejected() -> None:
+    # Draft 7 and earlier ignore a $ref's siblings, so a document that declares
+    # one of them keeps the refusal rather than enforcing what it ignores.
+    with pytest.raises(Exception, match="takes dispatch priority"):
+        _compiler().compile_json_schema(
+            '{"$schema": "http://json-schema.org/draft-07/schema#",'
+            ' "$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x",'
+            ' "maxLength": 3}',
+            reject_unsupported=True,
+        )
 
 
 def test_finite_value_beside_dropped_sibling_rejected() -> None:
