@@ -535,7 +535,7 @@ struct assert_raises[
 
 
     Parameters:
-        T: The type of Error passed. Defaults to String.
+        T: The type of Error passed. Defaults to _AnyError.
 
     ```mojo
     from std.testing import assert_raises
