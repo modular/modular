@@ -803,3 +803,16 @@ def test_inferred_member_runtime_arg(level: Int):
     # CHECK: %[[C:[0-9]+]] = lit.ref.immut %[[TMP]]
     # CHECK: lit.call @call_emission::@"paint(call_emission::Color)"{{.*}}(%[[C]])
     paint(.gray(level))
+
+
+# CHECK-LABEL: lit.fn @"test_inferred_member_ifelse_arg
+def test_inferred_member_ifelse_arg(flag: Bool, level: Int):
+    # Both branches get `paint`'s parameter type; the condition is emitted once.
+    # CHECK: lit.call {{.*}}__mlir_bool__{{.*}}(%flag)
+    # CHECK-NOT: __mlir_bool__
+    # CHECK: hlcf.if
+    # CHECK: lit.call @call_emission::@Color::@"gray({{.*}}"{{.*}}(%level,
+    # CHECK: } else {
+    # CHECK: lit.call @call_emission::@Color::@"gray({{.*}}"
+    # CHECK: lit.call @call_emission::@"paint(call_emission::Color)"
+    paint(.gray(level) if flag else .gray(0))
