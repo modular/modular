@@ -286,6 +286,64 @@ described by origins carried inside the object. For example, `none self.origin`
 can prevent element dereferences while allowing a `Span` method to read its
 pointer and size metadata.
 
+### Argument storage and embedded origins are independent
+
+An argument's origin describes the storage of the argument itself. Origins
+carried by its type describe other storage that the value can access. These
+origins are separate roots, even when substitution makes them refer to the same
+caller storage.
+
+For example, `ptr` and `origin` identify independent capabilities in this
+signature:
+
+```mojo
+def update[origin: MutOrigin](
+    mut ptr: Pointer[Int, origin],
+    mut value: Int,
+) accesses(imm ptr):
+    ...
+```
+
+The `imm ptr` refinement changes access to the slot containing the `Pointer`
+value. It does not make `origin` immutable. Because `origin` is unmentioned,
+access through the pointer retains its mutable default. A call that passes
+`Pointer(to=value)` as `ptr` and the same `value` as the second argument still
+has two mutable accesses to `value` and violates exclusivity.
+
+This distinction is analogous to the independent `const` qualifiers on a C++
+pointer and its pointee. Changing whether the pointer value can be reassigned
+does not change whether the pointee can be mutated, and changing pointee access
+does not change access to the pointer value.
+
+The converse refinement affects only the pointee:
+
+```mojo
+def forward_without_dereference[origin: MutOrigin](
+    mut ptr: Pointer[Int, origin],
+) accesses(none origin):
+    ...
+```
+
+Here, the function retains the default mutable access to the `ptr` argument
+slot, but it cannot access memory through the pointer. To refine both roots, the
+clause must name both, such as `accesses(imm ptr, none origin)`.
+
+An explicit origin can also be carried by several arguments:
+
+```mojo
+def compare_pointers[origin: MutOrigin](
+    lhs: Pointer[Int, origin],
+    rhs: Pointer[Int, origin],
+) accesses(none origin):
+    ...
+```
+
+The clause defines one empty replacement set for `origin`, not one set per
+argument. It suppresses pointee access through both pointers while leaving the
+independent defaults for `lhs` and `rhs` unchanged. By contrast, specifications
+rooted in two arguments remain distinct and can conflict if call substitution
+makes their origins alias.
+
 ### Access-path replacement
 
 The compiler applies an `accesses` clause in the following order:
