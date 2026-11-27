@@ -240,19 +240,6 @@ struct Error(
         return None
 
 
-# ===-----------------------------------------------------------------------===#
-# AnyError
-# ===-----------------------------------------------------------------------===#
-
-
-struct _AnyError(Deinitable, Equatable, Movable, Writable):
-    """
-    This type represents an Error type
-    """
-
-    pass
-
-
 @doc_hidden
 def __mojo_debugger_raise_hook():
     """This function is used internally by the Mojo Debugger."""
