@@ -471,4 +471,7 @@ ADAPTER = TargetAdapter(
     # The pairing this fold was written for: K3's accept graph answers its
     # per-step index glue in one launch. Every other target keeps the chain.
     fold_index_glue=True,
+    # K3 has no single-token think delimiters, so the thinking phase is not
+    # tracked, and the frozen DSpark contract refuses ``in_thinking_phase``.
+    relaxed_thinking_acceptance=False,
 )

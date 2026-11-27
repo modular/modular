@@ -87,7 +87,29 @@ def expand_image_tokens(
     return np.concatenate(parts), spans
 
 
-class KimiK3VLTokenizer(TextAndVisionTokenizer):
+class _KimiK3ReasoningIds:
+    """Reports no single-token reasoning delimiters for K3's reasoning parser.
+
+    K3 delimits reasoning with multi-token frames, so -1 leaves the
+    pipeline's thinking-phase tracking off.
+    """
+
+    @property
+    def reasoning_start_token_id(self) -> int:
+        """Returns -1: K3 has no single-token reasoning start."""
+        return -1
+
+    @property
+    def reasoning_end_token_id(self) -> int:
+        """Returns -1: K3 has no single-token reasoning end."""
+        return -1
+
+
+class KimiK3TextTokenizer(_KimiK3ReasoningIds, TextTokenizer):
+    """Tokenizes text-only K3 checkpoints."""
+
+
+class KimiK3VLTokenizer(_KimiK3ReasoningIds, TextAndVisionTokenizer):
     """Preserves K3's segment tokenization and original-size media headers."""
 
     def __init__(
@@ -313,12 +335,12 @@ def kimi_k3_tokenizer(
     enable_llama_whitespace_fix: bool = False,
     chat_template: str | None = None,
     **kwargs: object,
-) -> TextTokenizer | KimiK3VLTokenizer:
+) -> KimiK3TextTokenizer | KimiK3VLTokenizer:
     """Selects text-only tokenization when the checkpoint has no image tower."""
     tokenizer_type = (
         KimiK3VLTokenizer
         if has_vision_tower(pipeline_config.model.huggingface_config)
-        else TextTokenizer
+        else KimiK3TextTokenizer
     )
     return tokenizer_type(
         model_path,

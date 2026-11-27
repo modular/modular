@@ -57,6 +57,7 @@ kimi_k3_modulev3_arch = SupportedArchitecture(
     batching=KimiK3BatchProcessor,
     tokenizer=kimi_k3_tokenizer,
     tokenizer_family=("kimi-k3", None),
+    reasoning_parser="kimi_k3",
     context_type=KimiK3TextAndVisionContext,
     weight_rules=kimi_k3_weight_rules,
     use_weight_rules=True,

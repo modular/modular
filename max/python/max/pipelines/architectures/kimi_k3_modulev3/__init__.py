@@ -27,10 +27,12 @@ from .arch import kimi_k3_modulev3_arch
 from .kimi_k3 import KimiK3Decoder
 from .model import KimiK3Model
 from .model_config import KimiK3Config
+from .reasoning import KimiK3ReasoningParser
 
 __all__ = [
     "KimiK3Config",
     "KimiK3Decoder",
     "KimiK3Model",
+    "KimiK3ReasoningParser",
     "kimi_k3_modulev3_arch",
 ]
