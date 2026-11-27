@@ -892,6 +892,13 @@ CValue InferredBaseAttrRefUValue::emitAsCValue(IREmitter &emitter,
                                                ExprDest &dest) {
   // If we have the inferred contextual type, resolve this expression.
   ASTType expectedType = dest.getExpectedTypeIfSpecified();
+  // An un-emitted assignment target, like `b.get()` in `b.get() = .blue()`,
+  // may supply the type.  A failed emit reports an error and clears `dest`.
+  if (!expectedType && dest.getLValueExprNode()) {
+    expectedType = dest.resolveImpliedType(expr->getLoc(), Type(), emitter);
+    if (!expectedType && !dest.isSpecified())
+      return {};
+  }
   if (!expectedType) {
     emitter.emitError(expr->getLoc(), "cannot resolve inferred member "
                                       "without a contextual type");

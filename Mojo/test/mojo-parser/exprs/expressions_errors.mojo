@@ -1473,6 +1473,33 @@ def takes_color(c: Color):
 def takes_colors(colors: List[Color]):
   pass
 
+struct ColorBox:
+  var color: Color
+
+  def __init__(out self):
+    self.color = Color()
+
+  def get(ref self) -> ref[self.color] Color:
+    return self.color
+
+  def get_copy(self) -> Color:
+    return self.color
+
+def test_inferred_attribute_ref_through_ref(mut box: ColorBox, imm_box: ColorBox):
+  # A `ref` result gives the assigned value its contextual type.
+  box.get() = .blue
+  box.get() = .hsb_to_rgb(120, 100, 50)
+
+  # Calls that don't return a mutable reference still can't be assigned to.
+  # expected-error @below {{expression must be mutable in assignment}}
+  box.get_copy() = .blue
+  # expected-error @below {{expression must be mutable in assignment}}
+  imm_box.get() = .blue
+
+  # An error in the target is only reported once.
+  # expected-error @below {{'ColorBox' value has no attribute 'missing'}}
+  box.missing() = .blue
+
 def test_inferred_attribute_ref():
   # Without a contextual type the base cannot be inferred.
   # expected-error @below {{cannot resolve inferred member without a contextual type}}
