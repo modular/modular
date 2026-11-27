@@ -15,7 +15,7 @@
 # As with `where (condition, "message")`, only string literals are accepted:
 # a non-literal expression would need comptime evaluation that the parser
 # cannot perform, so it is rejected with the same targeted diagnostic (see
-# `where_message_parse_errors.mojo`).
+# `where_message_parse_diags.mojo`).
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 

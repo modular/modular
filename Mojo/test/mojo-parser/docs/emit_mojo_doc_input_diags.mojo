@@ -19,7 +19,7 @@
 # UNKNOWN-FLAG: error: unrecognized argument '--verify-diagnostics'
 
 # RUN: not %mojo-docs-isolated %s %s 2>&1 | FileCheck %s --check-prefix=TWO-INPUTS
-# TWO-INPUTS: error: too many input files, cannot process both '{{.*}}mojo_doc_input_errors.mojo' and '{{.*}}mojo_doc_input_errors.mojo'
+# TWO-INPUTS: error: too many input files, cannot process both '{{.*}}mojo_doc_input_diags.mojo' and '{{.*}}mojo_doc_input_diags.mojo'
 
 # RUN: not %mojo-docs-isolated %t.dir/notes.txt 2>&1 | FileCheck %s --check-prefix=NOT-MOJO
 # RUN: not %mojo-docs-isolated %t.dir/empty 2>&1 | FileCheck %s --check-prefix=NOT-MOJO
@@ -31,7 +31,7 @@
 # RUN: %mojo-docs-isolated %s -o %t.dir/out.json | FileCheck %s --allow-empty --check-prefix=NO-STDOUT
 # RUN: FileCheck %s --check-prefix=OUTPUT-FILE < %t.dir/out.json
 # NO-STDOUT-NOT: {
-# OUTPUT-FILE: "name": "emit_mojo_doc_input_errors"
+# OUTPUT-FILE: "name": "emit_mojo_doc_input_diags"
 
 # RUN: not %mojo-docs-isolated %s -o %t.dir/missing/out.json 2>&1 | FileCheck %s --check-prefix=BAD-OUTPUT
 # BAD-OUTPUT: kgen-translate: error: {{.*}}out.json

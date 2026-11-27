@@ -14,7 +14,7 @@
 # Test that a message written `where <condition> else "<message>"` reaches the
 # constraint diagnostics exactly as the equivalent `where (condition,
 # "message")` does. The two forms differ only in surface syntax, so these are
-# the `where_message_errors.mojo` and `where_message_conformance.mojo` cases
+# the `where_message_diags.mojo` and `where_message_conformance.mojo` cases
 # respelled, and the expected notes are character-for-character the same.
 #
 # Each section uses its own struct/function decl so per-section diagnostic

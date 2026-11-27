@@ -15,7 +15,7 @@
 # (`where (condition, "message")`). The message is stored on the emitted
 # `#kgen.constraint` attribute (printed as its trailing `"..."` field) and is
 # surfaced in the diagnostic when the constraint fails (see
-# `where_message_errors.mojo`).
+# `where_message_diags.mojo`).
 #
 # The message lives inside the parentheses, so the trailing comma that
 # separates the next conformance entry is unambiguous.

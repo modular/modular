@@ -16,7 +16,7 @@
 # Not tested (rejected forms have no runnable behavior to assert). Each is
 # documented in the page as a paraphrased error gist; the compiler tests that
 # pin the exact diagnostics live in
-# KGEN/test/mojo-parser/exprs/expressions_errors.mojo:
+# KGEN/test/mojo-parser/exprs/expressions_diags.mojo:
 #   - `lambda x, y: x + y` (unparenthesized arguments)
 #   - `lambda (x) {} -> Int: x` (untyped argument)
 #   - `lambda: 5` and `lambda (x: Int) {}: x + 1` (non-`None` body under an

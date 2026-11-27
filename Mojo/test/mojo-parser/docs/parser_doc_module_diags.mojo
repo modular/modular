@@ -14,7 +14,7 @@
 # RUN: %parse-mojo-isolated -o /dev/null --diagnose-missing-doc-strings -verify-diagnostics %s
 # FileModuleOp is located at line 1, col 1 of the buffer, so the diagnostic
 # fires there. @-16 counts back from this line to line 1.
-# expected-warning @-16 {{public module 'parser_doc_module_errors' is missing a doc string}}
+# expected-warning @-16 {{public module 'parser_doc_module_diags' is missing a doc string}}
 
 # A public module without a doc string should raise a diagnostic.
 # This file intentionally has no module-level doc string.

@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# Module imported by deprecated_errors.mojo to test cross-module deprecation warnings.
+# Module imported by deprecated_diags.mojo to test cross-module deprecation warnings.
 
 
 @deprecated("use of deprecated struct 'DeprecatedInAnotherModule'")

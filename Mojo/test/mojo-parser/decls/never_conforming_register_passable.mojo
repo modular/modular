@@ -21,7 +21,7 @@
 #
 # A genuinely conditional `TrivialRegisterPassable` (a satisfiable where-clause)
 # is still rejected with "conditional conformance ... is not supported"; that
-# route is pinned in struct_conditional_trait_conformance_errors.mojo. The
+# route is pinned in struct_conditional_trait_conformance_diags.mojo. The
 # contrast matters: opt-out (nullopt) is silent, a real conditional is an error.
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s

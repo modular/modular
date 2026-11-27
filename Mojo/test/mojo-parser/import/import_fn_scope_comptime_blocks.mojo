@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 # Imports are allowed inside comptime control flow (unlike runtime control
-# flow, see import_errors.mojo), but the binding is scoped to the comptime
+# flow, see import_diags.mojo), but the binding is scoped to the comptime
 # block like any other declaration there: it is usable within the block and
 # does not escape to the rest of the function, regardless of whether the
 # branch is taken. Imports in dead comptime branches are still resolved

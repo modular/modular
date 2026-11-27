@@ -147,7 +147,7 @@ struct NotCompositionWithReason(not (Base & Other) else "not a plain payload"):
 
 # Opting out of `Deinitable` makes the struct linear, and the reason becomes
 # the message for abandoning one -- the replacement for `@explicit_destroy`.
-# See `explicit_destroy_errors.mojo` for the diagnostic it reaches.
+# See `explicit_destroy_diags.mojo` for the diagnostic it reaches.
 # CHECK-LABEL: lit.struct.decl @NotDeinitableWithReason
 # CHECK: } <{{.*}}call `close()` instead
 struct NotDeinitableWithReason(not Deinitable else "call `close()` instead"):

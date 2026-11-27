@@ -15,7 +15,7 @@
 # resolves from a single origin: the package __init__.mojo re-exports
 # module1's `foo`, and module2's same-named `foo` is reachable only via
 # qualified access or its own import - importing both under one name is
-# deprecated (see decls/conflicting_imports_errors.mojo).
+# deprecated (see decls/conflicting_imports_diags.mojo).
 
 # RUN: %parse-mojo-isolated -split-input-file -I%S/inputs -verify-diagnostics %s
 

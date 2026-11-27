@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 # Tests for @unavailable decorator IR generation (LIT tests).
-# For error emission tests, see unavailable_errors.mojo.
+# For error emission tests, see unavailable_diags.mojo.
 #
 # @unavailable is only supported on functions and methods. Tests for the
 # restriction on structs/traits/comptime aliases live in
-# unavailable_errors.mojo.
+# unavailable_diags.mojo.
 
 # RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values | FileCheck %s
 

@@ -14,7 +14,7 @@
 # Binding a function to a function type carrying trailing `where` clauses. The
 # obligations are part of the type, so the direction decides whether the
 # conversion is free: a function may promise less than the type it is bound to,
-# never more. See `fn_type_where_conversion_errors.mojo` for the refusals.
+# never more. See `fn_type_where_conversion_diags.mojo` for the refusals.
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
 

@@ -23,7 +23,7 @@
 # belongs in every row rather than in a matrix of its own.
 #
 # The use-site "value has no attribute" diagnostics for these opt-outs are
-# pinned separately in `traits_errors.mojo`.
+# pinned separately in `traits_diags.mojo`.
 #
 # The ambient-false spelling (`... where False` on the struct) additionally makes
 # the struct linear: an unsatisfiable body clause contradicts even the
@@ -137,7 +137,7 @@ struct GreeterAmbient[T: AnyType](
 
 # --- Deinitable: struct becomes linear, no destructor per spelling --
 # The default abandonment message for each spelling is checked in
-# explicit_destroy_errors.mojo.
+# explicit_destroy_diags.mojo.
 
 # CHECK-LABEL: lit.struct.decl @IDLiteral
 # CHECK-NOT: __deinit__

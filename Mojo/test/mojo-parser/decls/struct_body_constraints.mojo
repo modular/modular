@@ -18,7 +18,7 @@
 #
 # Each section uses its own struct/function decl so per-section diagnostic
 # notes don't bleed across test sites (mirrors the convention in
-# `constraint_overload_errors.mojo`).
+# `constraint_overload_diags.mojo`).
 
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 

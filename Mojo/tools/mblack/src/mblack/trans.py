@@ -1128,7 +1128,7 @@ class BaseStringSplitter(StringTransformer):
         # literal at parse time. Wrapping it in an extra atom (`("msg")`)
         # invalidates the source. See Mojo/lib/MojoParser/Signatures.cpp
         # around the "message in a 'where' clause must be a string literal"
-        # diagnostic and KGEN/test/mojo-parser/decls/where_message_parse_errors.mojo.
+        # diagnostic and KGEN/test/mojo-parser/decls/where_message_parse_diags.mojo.
         if _is_where_clause_tuple_element(LL[0]):
             return None
 

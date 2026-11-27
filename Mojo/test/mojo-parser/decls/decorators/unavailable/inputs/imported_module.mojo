@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
-# Module imported by unavailable_errors.mojo to test cross-module
+# Module imported by unavailable_diags.mojo to test cross-module
 # unavailability errors.
 
 

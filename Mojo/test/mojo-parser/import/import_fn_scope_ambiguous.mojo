@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Function-scope variant of decls/conflicting_imports_errors.mojo: importing
+# Function-scope variant of decls/conflicting_imports_diags.mojo: importing
 # the same name from two different modules into one function scope. For
 # functions this is a deprecation warning and the overload sets merge (the
 # same-signature call below is then ambiguous); for values it is a hard

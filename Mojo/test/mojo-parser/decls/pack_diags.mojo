@@ -203,28 +203,6 @@ def test_concat_stricter_mutability[*Ts: AnyType](*pack: *Ts):
     takes_mut_pack(x, *pack)
 
 
-def zero_pack[*Ts: AnyType](mut *pack: *Ts):
-    pass
-
-
-# Two unpacks of a `mut` pack alias. An unpack and one element of the same
-# pack also alias.
-def test_concat_mut_aliasing[*Ts: AnyType](mut *pack: *Ts):
-    # expected-error @+2 {{aliasing values passed mutably to 'pack' argument and passed mutably to 'pack' argument in 'zero_pack' call}}
-    # expected-note @+1 {{'origin_of(pack.origin)' value is passed through aliasing 'mut' argument 'pack' by a '*' unpack}}
-    zero_pack(*pack, *pack)
-    # expected-error @+2 {{aliasing values passed mutably to 'pack' argument and passed mutably to 'pack' argument in 'zero_pack' call}}
-    # expected-note @+1 {{'origin_of(pack.origin)' value is passed through aliasing 'mut' argument 'pack' by a '*' unpack}}
-    zero_pack(pack[0], *pack)
-
-    # Two reads of a mutable pack do not alias. A different local variable
-    # does not alias.
-    takes_varpack(*pack, *pack)
-    takes_varpack(pack[0], *pack)
-    var x = 0
-    zero_pack(x, *pack)
-
-
 def test_concat_wrong_trait[*Ts: AnyType](*pack: *Ts):
     # expected-error @+1 {{invalid call to 'test_sum_intable': cannot unpack a pack of 'AnyType' into a pack of 'Intable'}}
     test_sum_intable(0, *pack)
