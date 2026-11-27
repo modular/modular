@@ -41,3 +41,16 @@ def test_def_py_c_method() -> None:
     # Test static methods
     assert mojo_module.TestCounter.static_count_args(1, 2) == 2
     assert mojo_module.TestCounter.static_count_args_with_kwargs(1, 2, 3) == 3
+
+
+def test_fastcall_with_keywords() -> None:
+    counter = mojo_module.TestCounter()
+    for call, receiver in (
+        (mojo_module.fastcall_args, mojo_module),
+        (counter.fastcall_args, counter),
+        (mojo_module.TestCounter.static_fastcall_args, None),
+    ):
+        assert call() == (receiver, 0, (), [])
+        assert call(1, 2) == (receiver, 2, (), [1, 2])
+        assert call(b=7, a=5) == (receiver, 0, ("b", "a"), [7, 5])
+        assert call(3, b=7, a=5) == (receiver, 1, ("b", "a"), [3, 7, 5])

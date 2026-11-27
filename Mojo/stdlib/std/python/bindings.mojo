@@ -38,6 +38,7 @@ from std.python._cpython import (
     Py_ssize_t,
     PyCFunction,
     PyCFunctionFast,
+    PyCFunctionFastWithKeywords,
     PyCFunctionWithKeywords,
     PyMethodDef,
     PyObject,
@@ -412,6 +413,26 @@ struct PythonModuleBuilder:
 
         self.functions.append(PyMethodDef.function(func, func_name, docstring))
 
+    def def_py_c_function(
+        mut self,
+        func: PyCFunctionFastWithKeywords,
+        func_name: StaticString,
+        docstring: StaticString = "",
+    ):
+        """Registers a module function with `METH_FASTCALL | METH_KEYWORDS`.
+
+        For example, a callback registered with
+        `builder.def_py_c_function(callback, "lookup")` receives a call to
+        `lookup(3, key=5)` as `nargs=1`, `kwnames=("key",)` and values
+        `[3, 5]`. All argument references are borrowed.
+
+        Args:
+            func: The callback with the `PyCFunctionFastWithKeywords` signature.
+            func_name: The name exposed to Python.
+            docstring: The Python docstring.
+        """
+        self.functions.append(PyMethodDef.function(func, func_name, docstring))
+
     def def_py_function[
         func: PyFunctionRaising
     ](mut self, func_name: StaticString, docstring: StaticString = ""):
@@ -491,11 +512,6 @@ struct PythonModuleBuilder:
                 module.
             docstring: The docstring for the function in the module.
         """
-        # Keyword-accepting functions still go through the
-        # `METH_VARARGS | METH_KEYWORDS` dispatch path. The
-        # corresponding `METH_FASTCALL | METH_KEYWORDS` protocol (with
-        # `kwnames`) is a separate vectorcall shape and is not
-        # implemented here yet.
         self._generic_def_py_function[_py_kwargs_function_wrapper[func]()](
             func_name, docstring
         )
@@ -876,6 +892,36 @@ struct PythonTypeBuilder(Copyable):
             The builder with the method binding declared.
         """
 
+        self.methods.append(
+            PyMethodDef.function[static_method](method, method_name, docstring)
+        )
+        return self
+
+    def def_py_c_method[
+        static_method: Bool = False
+    ](
+        mut self,
+        method: PyCFunctionFastWithKeywords,
+        method_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> ref[self] Self:
+        """Registers a method with `METH_FASTCALL | METH_KEYWORDS`.
+
+        For example, `builder.def_py_c_method(callback, "lookup")` exposes
+        `callback` to Python as an instance method named `lookup`.
+
+        Parameters:
+            static_method: Whether to expose a static method. CPython passes
+                a null receiver to static methods.
+
+        Args:
+            method: The callback with the `PyCFunctionFastWithKeywords` signature.
+            method_name: The name exposed to Python.
+            docstring: The Python docstring.
+
+        Returns:
+            The builder with the method binding declared.
+        """
         self.methods.append(
             PyMethodDef.function[static_method](method, method_name, docstring)
         )
@@ -1511,11 +1557,6 @@ def _py_function_fastcall_wrapper[
     _ = py_self_ptr
 
     try:
-        # CPython's vectorcall protocol (PEP 590) guarantees `args` is
-        # non-null for every METH_FASTCALL invocation, including the
-        # `nargs == 0` case (CPython hands the callee a pointer into a
-        # cached empty tuple). `_dispatch_python_object_function` therefore
-        # accepts a plain `Pointer` rather than `Optional[Pointer]`.
         return _dispatch_python_object_function[func](
             args, Int(nargs)
         ).steal_data()
