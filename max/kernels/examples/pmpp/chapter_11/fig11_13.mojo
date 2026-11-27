@@ -14,7 +14,6 @@
 from max.gpu import block_idx, thread_idx, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from max.gpu.primitives.id import lane_id, warp_id
 from max.gpu.primitives.warp import shuffle_up
@@ -67,21 +66,17 @@ def scan_kernel(
     var block_segment = block_idx.x * COARSE_FACTOR * BLOCK_DIM
 
     # Allocate shared memory
-    var buffer_s = unsafe_stack_allocation[
-        COARSE_FACTOR * BLOCK_DIM,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var warp_sums = unsafe_stack_allocation[
-        NUM_WARPS,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var thread_sums = unsafe_stack_allocation[
-        BLOCK_DIM,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var buffer_s_storage = Array[Float32, COARSE_FACTOR * BLOCK_DIM](
+        uninitialized=True
+    )
+    var buffer_s = buffer_s_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var warp_sums_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var warp_sums = warp_sums_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var thread_sums_storage = Array[Float32, BLOCK_DIM](uninitialized=True)
+    var thread_sums = thread_sums_storage.unsafe_ptr()
 
     # Load data to shared memory
     for c in range(COARSE_FACTOR):

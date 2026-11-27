@@ -18,7 +18,6 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 comptime bM = 64
@@ -101,16 +100,12 @@ def mm_tiled_kernel(
     var Cr = SIMD[.float32, tM * tN](0.0)
 
     # Allocate shared memory
-    var A_s = unsafe_stack_allocation[
-        bM * bK,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var B_s = unsafe_stack_allocation[
-        bK * bN,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var A_s_storage = Array[Float32, bM * bK](uninitialized=True)
+    var A_s = A_s_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var B_s_storage = Array[Float32, bK * bN](uninitialized=True)
+    var B_s = B_s_storage.unsafe_ptr()
 
     # Iterate over tiles
     for i in range(ceildiv(Int(K), bK)):

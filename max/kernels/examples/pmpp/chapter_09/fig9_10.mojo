@@ -14,7 +14,6 @@
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.math import ceildiv
 from std.atomic import Atomic
@@ -40,11 +39,9 @@ def histogram_kernel(
         height: Image height.
     """
     # Allocate shared memory for private bins
-    var bins_s = unsafe_stack_allocation[
-        NUM_BINS,
-        UInt32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var bins_s_storage = Array[UInt32, NUM_BINS](uninitialized=True)
+    var bins_s = bins_s_storage.unsafe_ptr()
 
     # Initialize shared memory bins to zero
     var b = UInt32(thread_idx.x)

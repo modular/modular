@@ -14,7 +14,6 @@
 from max.gpu import thread_idx, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from max.gpu.primitives.id import lane_id, warp_id
 from max.gpu.primitives.warp import shuffle_up
@@ -65,11 +64,9 @@ def block_scan(val: Float32) -> Float32:
     var result = warp_scan(val)
 
     # Allocate shared memory for warp sums
-    var warp_sums_s = unsafe_stack_allocation[
-        NUM_WARPS,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var warp_sums_s_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var warp_sums_s = warp_sums_s_storage.unsafe_ptr()
 
     # Step 2: Collect warp sums
     if lane_id() == WARP_SIZE - 1:
@@ -113,11 +110,9 @@ def inter_block_scan(
         Sum from all previous blocks.
     """
     # Allocate shared memory for previous block's partial sum
-    var prev_block_partial_sum_s = unsafe_stack_allocation[
-        1,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var prev_block_partial_sum_s_storage = Array[Float32, 1](uninitialized=True)
+    var prev_block_partial_sum_s = prev_block_partial_sum_s_storage.unsafe_ptr()
 
     if thread_idx.x == BLOCK_DIM - 1:
         if bid == 0:
@@ -160,11 +155,9 @@ def scan_kernel(
         N: Number of elements.
     """
     # Assign block index dynamically
-    var bid_s = unsafe_stack_allocation[
-        1,
-        UInt32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var bid_s_storage = Array[UInt32, 1](uninitialized=True)
+    var bid_s = bid_s_storage.unsafe_ptr()
 
     if thread_idx.x == 0:
         bid_s[0] = Atomic.fetch_add(block_counter, UInt32(1))
@@ -174,11 +167,11 @@ def scan_kernel(
     var block_segment = Int(bid) * COARSE_FACTOR * BLOCK_DIM
 
     # Allocate shared memory for buffer
-    var buffer_s = unsafe_stack_allocation[
-        COARSE_FACTOR * BLOCK_DIM,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var buffer_s_storage = Array[Float32, COARSE_FACTOR * BLOCK_DIM](
+        uninitialized=True
+    )
+    var buffer_s = buffer_s_storage.unsafe_ptr()
 
     # Load data to shared memory
     for c in range(COARSE_FACTOR):
@@ -201,11 +194,9 @@ def scan_kernel(
     thread_sum = block_scan(thread_sum)
 
     # Collect thread partial sums
-    var thread_sums = unsafe_stack_allocation[
-        BLOCK_DIM,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var thread_sums_storage = Array[Float32, BLOCK_DIM](uninitialized=True)
+    var thread_sums = thread_sums_storage.unsafe_ptr()
     thread_sums[thread_idx.x] = thread_sum
 
     barrier()

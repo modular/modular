@@ -18,7 +18,6 @@ from std.math import ceildiv
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 # ========================== KERNEL CODE ==========================
@@ -43,16 +42,12 @@ def matrix_mul_tiled_kernel(
     comptime TILE_WIDTH = 16
 
     # Allocate shared memory tiles
-    var sA = unsafe_stack_allocation[
-        TILE_WIDTH * TILE_WIDTH,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var sB = unsafe_stack_allocation[
-        TILE_WIDTH * TILE_WIDTH,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var sA_storage = Array[Float32, TILE_WIDTH * TILE_WIDTH](uninitialized=True)
+    var sA = sA_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var sB_storage = Array[Float32, TILE_WIDTH * TILE_WIDTH](uninitialized=True)
+    var sB = sB_storage.unsafe_ptr()
 
     # Get global and shared indices
     var g_row = block_idx.y * TILE_WIDTH + thread_idx.y

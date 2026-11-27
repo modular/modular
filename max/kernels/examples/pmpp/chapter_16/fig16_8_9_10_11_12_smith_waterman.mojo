@@ -18,7 +18,6 @@ from std.math import ceildiv
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 # Scoring constants
@@ -81,11 +80,11 @@ def sw_kernel_square(
     var d = Int(d_dev)
     var tile_width = Int(tile_width_dev)
     # Allocate shared memory for tile
-    var swTile = unsafe_stack_allocation[
-        MAX_TILE_WIDTH * MAX_TILE_WIDTH,
-        Int32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var swTile_storage = Array[Int32, MAX_TILE_WIDTH * MAX_TILE_WIDTH](
+        uninitialized=True
+    )
+    var swTile = swTile_storage.unsafe_ptr()
 
     var numTiles_x = ceildiv(L - 1, tile_width)
 

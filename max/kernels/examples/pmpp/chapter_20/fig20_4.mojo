@@ -16,7 +16,6 @@ from std.random import rand
 from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 comptime BLOCK_SIZE = 256
@@ -74,16 +73,12 @@ def softmax_kernel(
     var D_ptr = D
     var P_ptr = P
 
-    var temp_store = unsafe_stack_allocation[
-        BLOCK_SIZE,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var broadcast_slot = unsafe_stack_allocation[
-        1,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var temp_store_storage = Array[Float32, BLOCK_SIZE](uninitialized=True)
+    var temp_store = temp_store_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var broadcast_slot_storage = Array[Float32, 1](uninitialized=True)
+    var broadcast_slot = broadcast_slot_storage.unsafe_ptr()
 
     var row = block_idx.x
     var tid = thread_idx.x

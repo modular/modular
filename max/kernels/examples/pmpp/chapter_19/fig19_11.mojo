@@ -29,7 +29,6 @@ complex indexing that implicitly performs the im2col transformation.
 from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 from conv_utils import idx_x, idx_y, conv_cpu, init_data, verify_results
@@ -78,16 +77,16 @@ def conv_layer_mm_kernel(
 
     # Allocate shared memory for tiles
     # Fds[TILE_WIDTH][TILE_WIDTH] + Bds[TILE_WIDTH][TILE_WIDTH]
-    var Fds = unsafe_stack_allocation[
-        TILE_WIDTH * TILE_WIDTH,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var Bds = unsafe_stack_allocation[
-        TILE_WIDTH * TILE_WIDTH,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var Fds_storage = Array[Float32, TILE_WIDTH * TILE_WIDTH](
+        uninitialized=True
+    )
+    var Fds = Fds_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var Bds_storage = Array[Float32, TILE_WIDTH * TILE_WIDTH](
+        uninitialized=True
+    )
+    var Bds = Bds_storage.unsafe_ptr()
 
     var bx = block_idx.x
     var by = block_idx.y

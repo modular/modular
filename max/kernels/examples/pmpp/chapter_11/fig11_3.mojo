@@ -14,7 +14,6 @@
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 from std.math import abs
@@ -37,11 +36,9 @@ def scan_kernel(
         N: Number of elements.
     """
     # Allocate shared memory
-    var buffer_s = unsafe_stack_allocation[
-        SEG_SIZE,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var buffer_s_storage = Array[Float32, SEG_SIZE](uninitialized=True)
+    var buffer_s = buffer_s_storage.unsafe_ptr()
 
     var tx = thread_idx.x
     var idx = block_idx.x * SEG_SIZE + tx

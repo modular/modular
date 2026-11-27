@@ -18,7 +18,6 @@ from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 comptime bM = 64
@@ -104,16 +103,12 @@ def mm_tiled_kernel_double_buffer(
     var Cr = SIMD[.float32, tM * tN](0.0)
 
     # Allocate double-buffered shared memory (2 sets of tiles)
-    var A_s = unsafe_stack_allocation[
-        2 * bM * bK,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var B_s = unsafe_stack_allocation[
-        2 * bK * bN,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var A_s_storage = Array[Float32, 2 * bM * bK](uninitialized=True)
+    var A_s = A_s_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var B_s_storage = Array[Float32, 2 * bK * bN](uninitialized=True)
+    var B_s = B_s_storage.unsafe_ptr()
 
     # Pointers to current and next buffers (using offsets)
     var A_curr_offset = 0

@@ -14,7 +14,6 @@
 from max.gpu import block_idx, thread_idx, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from max.gpu.primitives.id import lane_id, warp_id
 from max.gpu.primitives.warp import shuffle_up
@@ -71,16 +70,12 @@ def test_interblock_scan(
     var val = Float32(0.0) if i >= Int(N) else input[i]
 
     # Allocate shared memory
-    var warp_sums = unsafe_stack_allocation[
-        NUM_WARPS,
-        Float32,
-        address_space=.SHARED,
-    ]()
-    var prev_block_sum_ptr = unsafe_stack_allocation[
-        1,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var warp_sums_storage = Array[Float32, NUM_WARPS](uninitialized=True)
+    var warp_sums = warp_sums_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var prev_block_sum_ptr_storage = Array[Float32, 1](uninitialized=True)
+    var prev_block_sum_ptr = prev_block_sum_ptr_storage.unsafe_ptr()
 
     # Block-level scan using warp primitives
     var result = warp_scan(val)

@@ -17,7 +17,6 @@ from std.itertools import product
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 # ========================== TILING CONFIGURATION ==========================
@@ -45,11 +44,11 @@ def stencil_kernel(
     # `Int` is not device-passable; widen the fixed-width arg.
     var N = Int(n_dev)
     # Allocate shared memory tile (includes halo cells)
-    var in_s = unsafe_stack_allocation[
-        IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var in_s_storage = Array[Float32, IN_TILE_DIM * IN_TILE_DIM * IN_TILE_DIM](
+        uninitialized=True
+    )
+    var in_s = in_s_storage.unsafe_ptr()
 
     # Get thread and block indices
     var tx = thread_idx.x

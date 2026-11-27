@@ -16,7 +16,6 @@
 from max.gpu import block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.math import ceildiv, min, max
 
@@ -190,16 +189,12 @@ def merge_circular_buffer_kernel(
     var n = Int(n_dev)
     var tile_size = Int(tile_size_dev)
     # Allocate shared memory
-    var A_S = unsafe_stack_allocation[
-        1024,
-        Int32,
-        address_space=.SHARED,
-    ]()
-    var B_S = unsafe_stack_allocation[
-        1024,
-        Int32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var A_S_storage = Array[Int32, 1024](uninitialized=True)
+    var A_S = A_S_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var B_S_storage = Array[Int32, 1024](uninitialized=True)
+    var B_S = B_S_storage.unsafe_ptr()
 
     # Block-level co-rank (same as tiled version)
     # Dynamic grid size based on launch configuration

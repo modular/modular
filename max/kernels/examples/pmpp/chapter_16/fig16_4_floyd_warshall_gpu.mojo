@@ -19,7 +19,6 @@ from max.gpu import block_dim, block_idx, thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
 from std.itertools import product
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 
 comptime INF_DIST = Float32.MAX
@@ -45,11 +44,9 @@ def floyd_warshall_kernel(
     var num_vertices = Int(num_vertices_dev)
     var curr_k = Int(curr_k_dev)
     # Allocate shared memory for row value - all threads in block share same i
-    var k_row_shared = unsafe_stack_allocation[
-        1,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var k_row_shared_storage = Array[Float32, 1](uninitialized=True)
+    var k_row_shared = k_row_shared_storage.unsafe_ptr()
 
     # blockIdx.y gives row i, blockIdx.x and threadIdx.x give column j
     var i = block_idx.y

@@ -20,7 +20,6 @@ reducing contention on global memory atomics.
 from max.gpu import block_idx, thread_idx, block_dim, grid_dim
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.atomic import Atomic
 from std.collections import List
@@ -50,16 +49,14 @@ def bfs_kernel(
     """BFS kernel with private frontier in shared memory."""
     # `Int` is not device-passable; widen the fixed-width arg.
     var num_prev_frontier = Int(num_prev_frontier_dev)
-    var curr_frontier_s = unsafe_stack_allocation[
-        PRIVATE_FRONTIER_CAPACITY,
-        UInt32,
-        address_space=.SHARED,
-    ]()
-    var num_curr_frontier_s = unsafe_stack_allocation[
-        1,
-        UInt32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var curr_frontier_s_storage = Array[UInt32, PRIVATE_FRONTIER_CAPACITY](
+        uninitialized=True
+    )
+    var curr_frontier_s = curr_frontier_s_storage.unsafe_ptr()
+    @__address_space(.SHARED)
+    var num_curr_frontier_s_storage = Array[UInt32, 1](uninitialized=True)
+    var num_curr_frontier_s = num_curr_frontier_s_storage.unsafe_ptr()
 
     if thread_idx.x == 0:
         num_curr_frontier_s[0] = 0
@@ -99,11 +96,9 @@ def bfs_kernel(
 
     barrier()
 
-    var start_idx_ptr = unsafe_stack_allocation[
-        1,
-        UInt32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var start_idx_ptr_storage = Array[UInt32, 1](uninitialized=True)
+    var start_idx_ptr = start_idx_ptr_storage.unsafe_ptr()
     if thread_idx.x == 0:
         var local_count = Int(num_curr_frontier_s[0])
         start_idx_ptr[0] = Atomic.fetch_add(

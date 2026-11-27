@@ -14,7 +14,6 @@
 from max.gpu import block_idx, thread_idx, block_dim, WARP_SIZE
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from max.gpu.primitives.warp import shuffle_down
 from max.gpu.primitives.id import (
@@ -72,11 +71,11 @@ def reduce_kernel(
     partial_sum = warp_reduce(partial_sum)
 
     # Allocate shared memory for partial sums from each warp
-    var partial_sums_s = unsafe_stack_allocation[
-        BLOCK_DIM // WARP_SIZE,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var partial_sums_s_storage = Array[Float32, BLOCK_DIM // WARP_SIZE](
+        uninitialized=True
+    )
+    var partial_sums_s = partial_sums_s_storage.unsafe_ptr()
 
     # Store warp results to shared memory
     if lane_id() == 0:

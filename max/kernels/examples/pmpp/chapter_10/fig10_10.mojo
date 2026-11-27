@@ -13,7 +13,6 @@
 from max.gpu import thread_idx
 from max.gpu.sync import barrier
 from max.gpu.host import DeviceContext
-from std.memory import unsafe_stack_allocation
 from std.memory.alloc import unsafe_alloc
 from std.random import random_float64
 from std.math import abs
@@ -35,11 +34,9 @@ def shared_memory_sum_reduction_kernel(
         output: Output scalar for the sum result.
     """
     # Allocate shared memory
-    var input_s = unsafe_stack_allocation[
-        BLOCK_DIM,
-        Float32,
-        address_space=.SHARED,
-    ]()
+    @__address_space(.SHARED)
+    var input_s_storage = Array[Float32, BLOCK_DIM](uninitialized=True)
+    var input_s = input_s_storage.unsafe_ptr()
 
     var t = thread_idx.x
     # Load data into shared memory with initial reduction
