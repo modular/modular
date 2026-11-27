@@ -355,6 +355,49 @@ def parenthesized_refined_field_access(
     pass
 
 
+def refined_read(mut point: RefinedAccessPoint) __accesses(imm point):
+    pass
+
+
+def refined_no_access(mut point: RefinedAccessPoint) __accesses(none point):
+    pass
+
+
+def refined_read_x(
+    mut point: RefinedAccessPoint
+) __accesses(imm point.x):
+    pass
+
+
+def refined_mut_x_read_y(
+    mut point: RefinedAccessPoint
+) __accesses(mut point.x, imm point.y):
+    pass
+
+
+def test_refined_access_function_conversions():
+    # A narrower access contract can substitute for a wider one.
+    comptime read_as_unrestricted: def(
+        mut point: RefinedAccessPoint
+    ) thin = refined_read
+    comptime none_as_read: def(
+        mut point: RefinedAccessPoint
+    ) thin __accesses(imm point) = refined_no_access
+    comptime field_as_whole: def(
+        mut point: RefinedAccessPoint
+    ) thin __accesses(imm point) = refined_read_x
+    # Field refinements can substitute for the unrestricted mutable contract.
+    comptime fields_as_unrestricted: def(
+        mut point: RefinedAccessPoint
+    ) thin = refined_mut_x_read_y
+    # Each field is checked independently, so readonly y satisfies readwrite y.
+    comptime fields_narrow_capability: def(
+        mut point: RefinedAccessPoint
+    ) thin __accesses(
+        mut point.x, mut point.y
+    ) = refined_mut_x_read_y
+
+
 def constrained_nested_origins_read_only[N: Int](x: Int) where N > 0 __accesses(
     "__unsafe_nested_origins_read_only"
 ):

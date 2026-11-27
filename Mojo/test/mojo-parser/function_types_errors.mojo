@@ -74,6 +74,99 @@ def test_checked_nested_origins_read_only_conversion():
     requires_checked_nested_origins_read_only(legacy_nested_origins_read_only)
     requires_checked_nested_origins_read_only(checked_nested_origins_read_only)
 
+
+struct AccessSubtypePoint:
+    var x: Int
+    var y: Int
+
+
+def unrestricted_access(mut x: Int):
+    pass
+
+
+def read_access(mut x: Int) __accesses(imm x):
+    pass
+
+
+def read_whole_point(
+    mut point: AccessSubtypePoint
+) __accesses(imm point):
+    pass
+
+
+def mutate_whole_point(mut point: AccessSubtypePoint):
+    pass
+
+
+def mutate_x_read_y(
+    mut point: AccessSubtypePoint
+) __accesses(mut point.x, imm point.y):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def requires_read_access(
+    f: def(mut x: Int) thin __accesses(imm x),
+):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def requires_no_access(
+    f: def(mut x: Int) thin __accesses(none x),
+):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def requires_read_x(
+    f: def(
+        mut point: AccessSubtypePoint
+    ) thin __accesses(imm point.x),
+):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def requires_mut_x_read_y(
+    f: def(
+        mut point: AccessSubtypePoint
+    ) thin __accesses(mut point.x, imm point.y),
+):
+    pass
+
+
+# expected-note @below {{function declared here}}
+def requires_read_x_mut_y(
+    f: def(
+        mut point: AccessSubtypePoint
+    ) thin __accesses(imm point.x, mut point.y),
+):
+    pass
+
+
+def test_refined_access_function_conversion_errors():
+    # expected-error @below {{function may exceed the permitted accesses for argument 'x'}}
+    requires_read_access(unrestricted_access)
+    # expected-error @below {{function may exceed the permitted accesses for argument 'x'}}
+    requires_no_access(read_access)
+    # expected-error @below {{function may exceed the permitted accesses for argument 'point'}}
+    requires_read_x(read_whole_point)
+    # An unrestricted mutable argument cannot satisfy field-level promises.
+    # expected-error @below {{function may exceed the permitted accesses for argument 'point'}}
+    requires_mut_x_read_y(mutate_whole_point)
+    # The fields are compared independently; mutable x cannot satisfy readonly x.
+    # expected-error @below {{function may exceed the permitted accesses for argument 'point'}}
+    requires_read_x_mut_y(mutate_x_read_y)
+
+
+# A redundant refinement is equivalent to the argument's default contract.
+# expected-warning @+3 {{access specification is redundant with the argument's default access}}
+comptime redundant_expected_access: def(
+    mut x: Int
+) thin __accesses(mut x) = unrestricted_access
+
+
 # A nested-origins decorator has no effect when the method's type has no
 # nested origins to refine.
 struct NoNestedOrigins:

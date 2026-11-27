@@ -113,6 +113,10 @@ static void addFnTypeMismatchReason(MojoInflightDiag &diag,
           [&](const FnMismatch::NestedOriginsReadOnlyRequired &) {
             diag << "function may mutate nested origins";
           },
+          [&](const FnMismatch::AccessesNotSubtype &d) {
+            diag << "function may exceed the permitted accesses for argument ";
+            addArgName(diag, d.argIdx, d.argName);
+          },
           [&](const FnMismatch::KwargsDiffer &d) {
             diag << (d.actualHasKwargs
                          ? "function must not take a '**kwargs' argument"
@@ -570,6 +574,14 @@ LogicalResult ParamMatcher::matchFunctionTypes(FnTypeGeneratorType actual,
       // Now check that the argument types line up.
       PROP(matchTypes(actualValueAstType, expectedValueAstType));
     }
+
+    // A callable may promise fewer accesses than its expected type permits.
+    // For example, `accesses(imm x)` satisfies an unrestricted `mut x`
+    // contract, while an unrestricted callable cannot satisfy `imm x`.
+    if (!areArgumentAccessesSubtype(actualFnTp, actualArgIndex, expectedFnTp,
+                                    expectedArgIndex))
+      return error(FnMismatch{FnMismatch::AccessesNotSubtype{
+          actualArgIndex, nameOrEmpty(actualFnTp.getArgName(actualArgIndex))}});
 
     // If the argument has a required keyword, then the two must match names.
     if (actualFnTp.getArgListAttrs().getPassingKind(actualArgIndex) ==

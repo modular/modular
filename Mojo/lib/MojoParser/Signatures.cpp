@@ -2820,31 +2820,6 @@ static StringRef getAccessPathRootName(const ExprNode *expr) {
   return {};
 }
 
-// Return the access implied for an argument's implicit reference origin.
-static std::optional<OriginAccessKind>
-getDefaultRootAccess(ArgConvention convention) {
-  switch (convention) {
-  case ArgConvention::ImmReg:
-  case ArgConvention::ImmMem:
-  case ArgConvention::Ref:
-  case ArgConvention::PackImmMem:
-    return OriginAccessKind::ReadOnly;
-  case ArgConvention::Mut:
-  case ArgConvention::MutRef:
-  case ArgConvention::PackMut:
-    return OriginAccessKind::ReadWrite;
-  case ArgConvention::OwnedReg:
-  case ArgConvention::OwnedMem:
-  case ArgConvention::DeinitMem:
-  case ArgConvention::ByRefResult:
-  case ArgConvention::ByRefError:
-  case ArgConvention::PackOwnedMem:
-  case ArgConvention::Unresolved:
-    return std::nullopt;
-  }
-  llvm_unreachable("unknown argument convention");
-}
-
 /// Type check the source access specifications in `argList.refinedAccesses`
 /// and produce the resolved, validated `refinedArgs` IR. This resolves each
 /// path to an origin and argument, rejects inaccessible or ambiguous origins,
@@ -2961,7 +2936,7 @@ void TypeCheckedFnSignature::checkAccessesSpec() {
       continue;
     }
     // Check to see if this is a completely redundant access specification.
-    auto defaultRootAccess = getDefaultRootAccess(argument.kgenConvention);
+    auto defaultRootAccess = getDefaultArgumentAccess(argument.kgenConvention);
     auto argumentType = dyn_cast<RefType>(fullArgTypes[argumentIndex]);
     // Refinements may only narrow the default access of the reference origin.
     if (parsed.kind == OriginAccessKind::ReadWrite && argumentType &&

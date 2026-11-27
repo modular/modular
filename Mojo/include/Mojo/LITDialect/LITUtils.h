@@ -153,6 +153,15 @@ bool originsOverlap(TypedAttr lhs, TypedAttr rhs);
 /// Return true if `origin` is `root` or is projected from it.
 bool isOriginWithin(TypedAttr origin, TypedAttr root);
 
+/// Return the default access through an argument's implicit reference origin.
+std::optional<OriginAccessKind>
+getDefaultArgumentAccess(ArgConvention convention);
+
+/// Return true if the actual argument's refined access contract is no broader
+/// than the expected argument's contract.
+bool areArgumentAccessesSubtype(FuncType actual, size_t actualIndex,
+                                FuncType expected, size_t expectedIndex);
+
 /// Pretty print a nested symbol reference to a name.
 void printNestedSymbolReference(raw_ostream &os, SymbolRefAttr symbol);
 

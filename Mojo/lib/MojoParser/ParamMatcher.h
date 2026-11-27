@@ -94,6 +94,12 @@ struct MatchFailure {
     /// The expected function promises not to mutate nested origins, but the
     /// actual function does not.
     struct NestedOriginsReadOnlyRequired {};
+    /// The actual function may access an argument more broadly than the
+    /// expected function type permits.
+    struct AccessesNotSubtype {
+      size_t argIdx;
+      StringRef argName;
+    };
     /// Only one of the two functions takes `**kwargs`.
     struct KwargsDiffer {
       bool actualHasKwargs;
@@ -125,8 +131,8 @@ struct MatchFailure {
 
     std::variant<TooManyParams, UnmatchedParam, RefResultRequired,
                  RefResultNotCopyable, EffectsDiffer,
-                 NestedOriginsReadOnlyRequired, KwargsDiffer,
-                 ArgConventionsIncompatible, ArgCountsDiffer,
+                 NestedOriginsReadOnlyRequired, AccessesNotSubtype,
+                 KwargsDiffer, ArgConventionsIncompatible, ArgCountsDiffer,
                  KwOnlyArgNamesDiffer, VariadicElementTypeMismatch>
         detail;
   };

@@ -232,6 +232,22 @@ static FnMetadataAttr withoutCaptureOrigins(FnMetadataAttr metadata) {
       originData.getRefinedArgs()));
 }
 
+/// Return metadata with origin information that does not affect the runtime
+/// representation cleared. Refined accesses are checked for subtyping
+/// separately.
+static FnMetadataAttr
+withoutRepresentationOnlyOriginMetadata(FnMetadataAttr metadata) {
+  auto originData = cast_or_null<FnOriginMetadataAttr>(metadata.getMetadata());
+  if (!originData)
+    return metadata;
+  return metadata.getWithMetadata(FnOriginMetadataAttr::get(
+      metadata.getContext(), originData.getNumImplicitOriginDecls(),
+      /*captureOrigins=*/{}, originData.getDefinesInteriorOrigins(),
+      originData.getIsUnsafeNestedOriginsReadOnly(),
+      originData.getIsEnforcedNestedOriginsReadOnly(),
+      /*refinedArgs=*/{}));
+}
+
 // Strip out irrelevant details of a function that can be rebound away to make
 // convertibility checking easier.
 static FuncType getReducedFnType(FuncType sig) {
@@ -1199,11 +1215,10 @@ isValidUpCastToTypeType(SharedState &shared, ASTType fromType, ASTType toType) {
 /// match is intentionally looser than `getWithoutBodyConstraints()` equality.
 static bool canZeroCostConvertFnTypes(FnTypeGeneratorType from,
                                       FnTypeGeneratorType to) {
-  // If the fn meta data mismatches (different arg conventions, effects, or
-  // origin metadata), return false. Capture origins are excluded from the
-  // comparison (it will be deleted anyway in the near future).
-  if (withoutCaptureOrigins(from.getFnMetadata()) !=
-      withoutCaptureOrigins(to.getFnMetadata()))
+  // Capture origins and refined accesses do not affect representation.
+  // Refined accesses are checked for subtyping below.
+  if (withoutRepresentationOnlyOriginMetadata(from.getFnMetadata()) !=
+      withoutRepresentationOnlyOriginMetadata(to.getFnMetadata()))
     return false;
 
   // Allow signature types to be converted for free if they differ only in
@@ -1217,6 +1232,13 @@ static bool canZeroCostConvertFnTypes(FnTypeGeneratorType from,
 
   for (auto [idx, fromTy, toTy, conv] : llvm::enumerate(
            from.getArguments(), to.getArguments(), from.getArgConventions())) {
+    // Access refinements do not change representation, but conversion must
+    // preserve their semantic promise. For example, `accesses(imm x)` can
+    // convert to an unrestricted `mut x` type, but not the reverse.
+    if (!areArgumentAccessesSubtype(cast<FuncType>(from.getBody()), idx,
+                                    cast<FuncType>(to.getBody()), idx))
+      return false;
+
     Type fromCmpTy = RefType::stripRefConvention(fromTy, conv);
     Type toCmpTy = RefType::stripRefConvention(toTy, conv);
     if (!ASTType(fromCmpTy).isEqualCanon(toCmpTy))

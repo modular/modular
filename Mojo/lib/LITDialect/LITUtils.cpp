@@ -351,8 +351,7 @@ bool LIT::isOriginWithin(TypedAttr origin, TypedAttr root) {
   if (origin == root)
     return true;
 
-  if (auto subtree = dyn_cast<OriginSubtreeAttr>(root))
-    return isOriginWithin(origin, subtree.getBase());
+  // Walk from a field projection toward its enclosing origin.
   if (auto field = dyn_cast<OriginFieldAttr>(origin))
     return isOriginWithin(field.getBase(), root);
   return false;
@@ -393,6 +392,97 @@ bool LIT::originsOverlap(TypedAttr lhs, TypedAttr rhs) {
     return false;
 
   // Distinct origin parameters may be instantiated with the same origin.
+  return true;
+}
+
+// Return the refinement for one argument, or null when the argument retains
+// its default access.
+static RefinedArgAccessAttr getRefinedArgAccess(FuncType type,
+                                                size_t argumentIndex) {
+  auto metadata = cast<FnOriginMetadataAttr>(type.getMetadata());
+  for (RefinedArgAccessAttr refined : metadata.getRefinedArgs())
+    if (refined.getArgumentIndex() == argumentIndex)
+      return refined;
+  return {};
+}
+
+// Access kinds form the capability lattice none < readonly < readwrite.
+static bool isAccessKindSubset(OriginAccessKind actual,
+                               OriginAccessKind expected) {
+  if (actual == OriginAccessKind::None)
+    return true;
+  if (expected == OriginAccessKind::ReadWrite)
+    return true;
+  return actual == expected;
+}
+
+std::optional<OriginAccessKind>
+LIT::getDefaultArgumentAccess(ArgConvention convention) {
+  switch (convention) {
+  // Immutable and shared references permit reads.
+  case ArgConvention::ImmReg:
+  case ArgConvention::ImmMem:
+  case ArgConvention::Ref:
+  case ArgConvention::PackImmMem:
+    return OriginAccessKind::ReadOnly;
+  // Exclusive references permit reads and writes.
+  case ArgConvention::Mut:
+  case ArgConvention::MutRef:
+  case ArgConvention::PackMut:
+    return OriginAccessKind::ReadWrite;
+  // Owned and compiler-generated slots cannot have access refinements.
+  case ArgConvention::OwnedReg:
+  case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
+  case ArgConvention::PackOwnedMem:
+  case ArgConvention::Unresolved:
+    return std::nullopt;
+  }
+  llvm_unreachable("unknown argument convention");
+}
+
+bool LIT::areArgumentAccessesSubtype(FuncType actual, size_t actualIndex,
+                                     FuncType expected, size_t expectedIndex) {
+  RefinedArgAccessAttr expectedAccess =
+      getRefinedArgAccess(expected, expectedIndex);
+  // An unrefined expected argument permits its full default access set.
+  if (!expectedAccess)
+    return true;
+
+  RefinedArgAccessAttr actualAccess = getRefinedArgAccess(actual, actualIndex);
+  if (!actualAccess) {
+    // The default contract is a single access through the argument's implicit
+    // reference origin. It satisfies a refinement only when one expected rule
+    // covers that entire access.
+    auto kind = getDefaultArgumentAccess(actual.getArgConvention(actualIndex));
+    auto refType = dyn_cast<RefType>(actual.getArgument(actualIndex));
+    if (!kind || !refType)
+      return false;
+    return llvm::any_of(
+        expectedAccess.getRules(), [&](OriginAccessAttr expectedRule) {
+          return isAccessKindSubset(*kind, expectedRule.getKind()) &&
+                 isOriginWithin(refType.getOrigin(), expectedRule.getOrigin());
+        });
+  }
+
+  for (OriginAccessAttr actualRule : actualAccess.getRules()) {
+    // A `none` rule contributes no access and is therefore a subset of every
+    // expected contract.
+    if (actualRule.getKind() == OriginAccessKind::None)
+      continue;
+    // Every effective actual rule needs an expected rule with at least the
+    // same capability over the same origin or one of its ancestors.
+    if (llvm::none_of(expectedAccess.getRules(),
+                      [&](OriginAccessAttr expectedRule) {
+                        return isAccessKindSubset(actualRule.getKind(),
+                                                  expectedRule.getKind()) &&
+                               isOriginWithin(actualRule.getOrigin(),
+                                              expectedRule.getOrigin());
+                      }))
+      return false;
+  }
   return true;
 }
 
