@@ -141,21 +141,12 @@ origin is statically known to be mutable remains a mutable reference and uses
 the corresponding mutable argument convention.
 
 This change establishes `imm` as the default access for a parametric `ref`
-before the general `accesses` syntax is available. Once access clauses are
-implemented, the rare function that conditionally mutates can request that
-capability explicitly with `accesses(mut value)`:
-
-```mojo
-def maybe_update(ref value: T)
-  accesses(mut value):
-    comptime if origin_of(value).mut:
-        value.update()
-```
-
-At the call site, the mutable instantiation permits reads and writes, and the
-immutable instantiation permits reads. The body must still establish that the
-origin is mutable before writing through it. The spelling of the compile-time
-mutability test is illustrative; this opt-in behavior is future work.
+before the general `accesses` syntax is available. Access clauses initially
+only narrow an argument's default access. They cannot upgrade a parametric
+`ref` from `imm` to `mut`, even when a specialization supplies a mutable
+origin. This keeps the initial feature aligned with the access permitted in
+function bodies. A future proposal can add widening if a concrete use case
+justifies the additional semantics.
 
 ### Expressing an argument that is not accessed
 
@@ -253,8 +244,9 @@ def update_from_y(mut p: Point)
 ```
 
 A `ref` with parametric mutability now defaults to `imm` for its referent. The
-proposed access clauses will allow that default to be explicitly relaxed to
-`none` or upgraded to `mut` if the callee needs to. The relevant defaults are:
+proposed access clauses allow that default to be narrowed to `none`, but not
+upgraded to `mut`. More generally, an explicit access set must be a subset of
+the default access set it replaces. The relevant defaults are:
 
 - A read-only borrow permits immutable access.
 - A `mut` argument permits mutable (and immutable) access.

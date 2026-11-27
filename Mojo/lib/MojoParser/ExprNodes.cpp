@@ -5087,6 +5087,7 @@ AnyValue FunctionTypeNode::emitIR(ExprDest &dest, IREmitter &emitter) const {
   argList.isThin = isThin;
   argList.isUnsafeNestedOriginsReadOnly = isUnsafeNestedOriginsReadOnly;
   argList.isNestedOriginsReadOnly = isNestedOriginsReadOnly;
+  argList.refinedAccesses = llvm::to_vector(refinedAccesses);
   argList.isParsingClosure = !isThin;
   argList.thrownTypeExpr = const_cast<ExprNode *>(thrownTypeExpr);
 

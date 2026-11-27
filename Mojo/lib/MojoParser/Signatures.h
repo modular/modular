@@ -295,6 +295,13 @@ public:
 // ParsedArgumentList
 //===----------------------------------------------------------------------===//
 
+/// One source-level entry in an experimental `__accesses(...)` clause.
+struct ParsedOriginAccess {
+  OriginAccessKind kind;
+  ExprNode *originExpr;
+  SMLoc loc;
+};
+
 /// This is all the state built up when parsing a function signature.
 class ParsedArgumentList {
 public:
@@ -318,6 +325,8 @@ public:
   bool isUnsafeNestedOriginsReadOnly = false;
   /// Whether the checked nested-origin access promise was specified.
   bool isNestedOriginsReadOnly = false;
+  /// Explicit origin accesses that replace an argument's default access set.
+  SmallVector<ParsedOriginAccess> refinedAccesses;
 
   /// Parse an argument list, including the parentheses around them. This also
   /// parses 'raises' and other effects.
@@ -412,6 +421,8 @@ public:
   /// Whether the function has an explicitly declared return type containing an
   /// interior origin, so calls establish those interior origins.
   bool definesInteriorOrigins = false;
+  /// Resolved replacement access sets, grouped by argument.
+  SmallVector<RefinedArgAccessAttr> refinedArgs;
 
   /// This performs any special checks over the declaration based on its name
   /// and whether it is a method.  This happens after decorator processing
@@ -437,6 +448,9 @@ public:
   /// Form a LIT signature packaging up all the stuff we need to know about this
   /// type checked function.
   FnTypeGeneratorType getFnTypeGeneratorType() const;
+
+private:
+  void checkAccessesSpec();
 };
 
 } // namespace M::KGEN::LIT

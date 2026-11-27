@@ -17,7 +17,8 @@ decorators: decorator+
 decorated: decorators (classdef | funcdef | async_funcdef | if_stmt | for_stmt | var_stmt NEWLINE | comptime_stmt | import_stmt)
 async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test ['else' test]
-accesses_clause: '__accesses' '(' STRING ')'
+accesses_clause: '__accesses' '(' (STRING | [access_spec (',' access_spec)* [',']]) ')'
+access_spec: (NAME | IMM | MUT) dotted_name
 # Mojo terms: metaparams [..] = parameter list; parameters (..) = argument list;
 # captures {..} = capture list (production names kept from black's Python grammar).
 funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [captures] ['->' result_type] (where_clause)* [accesses_clause] ':' suite

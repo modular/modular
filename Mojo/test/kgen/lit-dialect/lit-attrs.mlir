@@ -38,13 +38,17 @@ kgen.generator @origin_access_attrs<
       none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
   } : () -> ()
 
-  // CHECK: #lit.refined_arg_access<1 : [<readonly, #kgen.param.decl.ref<"x"> : !lit.origin<false>>, <readwrite, #kgen.param.decl.ref<"y"> : !lit.origin<true>>]>
+  // CHECK: #lit.refined_arg_access<1 : [<readonly, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "left"> : !lit.origin<true>>, <readwrite, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "right"> : !lit.origin<true>>]>
   "refined.arg"() {
     accesses = #lit.refined_arg_access<1: [
       #lit.origin_access<
-        readonly, #kgen.param.decl.ref<"x"> : !lit.origin<false>>,
+        readonly, #lit.origin.field<
+          #kgen.param.decl.ref<"y"> : !lit.origin<true>,
+          "left"> : !lit.origin<true>>,
       #lit.origin_access<
-        readwrite, #kgen.param.decl.ref<"y"> : !lit.origin<true>>
+        readwrite, #lit.origin.field<
+          #kgen.param.decl.ref<"y"> : !lit.origin<true>,
+          "right"> : !lit.origin<true>>
     ]>
   } : () -> ()
 

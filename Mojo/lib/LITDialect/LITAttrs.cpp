@@ -52,6 +52,10 @@ OriginAccessAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                          OriginAccessKind, TypedAttr origin) {
   if (!isa<OriginType>(origin.getType()))
     return emitError() << "origin must have `!lit.origin` type";
+  if (sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
+               InteriorOriginAttr>(origin))
+    return emitError() << "origin must not be AnyOrigin, an origin union, a "
+                          "subtree origin, or an interior origin";
   return success();
 }
 
@@ -64,6 +68,13 @@ RefinedArgAccessAttr::verify(function_ref<InFlightDiagnostic()> emitError,
                              size_t, ArrayRef<OriginAccessAttr> rules) {
   if (rules.empty())
     return emitError() << "refined argument access must contain a rule";
+  for (auto [index, rule] : llvm::enumerate(rules)) {
+    for (OriginAccessAttr previous : rules.take_front(index)) {
+      if (originsOverlap(rule.getOrigin(), previous.getOrigin()))
+        return emitError() << "refined argument access contains overlapping "
+                              "origin rules";
+    }
+  }
   return success();
 }
 
@@ -169,6 +180,18 @@ LogicalResult FnOriginMetadataAttr::verifyFuncType(
              << "' in signature type should be a `!lit.ref` but got: "
              << argType;
     }
+  }
+
+  SmallVector<size_t> refinedArgumentIndices;
+  for (RefinedArgAccessAttr refinedArg : getRefinedArgs()) {
+    size_t index = refinedArg.getArgumentIndex();
+    if (index >= numInputs)
+      return emitError() << "refined argument index " << index
+                         << " is out of range for " << numInputs << " inputs";
+    if (llvm::is_contained(refinedArgumentIndices, index))
+      return emitError() << "argument #" << index
+                         << " has multiple refined access sets";
+    refinedArgumentIndices.push_back(index);
   }
 
   return success();

@@ -181,10 +181,6 @@ kgen.generator @fn_types<x: index, y: index>() {
   kgen.param.declare type2: type = <!kgen.func<!lit.fn<(index, i8) -> ()>>>
   // CHECK-NEXT: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
   kgen.param.declare type3: type = <!lit.fn<("a": index, "b": i8 = 2) -> none>>
-  // CHECK-NEXT: type = <!lit.fn<("a": index) -> () accesses[0: [readonly mut #lit.any.origin]]>>
-  kgen.param.declare type4: type = <
-    !lit.fn<("a": index) -> () accesses[0: [readonly mut #lit.any.origin]]>
-  >
   hlcf.return
 }
 

@@ -293,6 +293,68 @@ def explicit_checked_nested_origins_read_only(x: Int)
     pass
 
 
+# CHECK-LABEL: lit.fn @"refined_origin_accesses
+# CHECK-SAME: accesses[0: [readonly mut *[0,0]], 1: [none mut *[0,1]]]
+def refined_origin_accesses(mut x: Int, mut y: Int) __accesses(imm x, none y):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"multiline_refined_origin_accesses
+# CHECK-SAME: accesses[0: [none mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1)],
+# CHECK-SAME: 1: [readonly mut *[0,0]]]
+def multiline_refined_origin_accesses[origin: Origin](
+    ref[origin] value: Int, mut other: Int
+) __accesses(
+    none value,
+    imm other,
+):
+    pass
+
+
+comptime RefinedOriginAccesses = def(
+    mut x: Int, mut y: Int
+) thin __accesses(imm x, none y)
+
+
+struct RefinedAccessCarrier[origin: Origin]:
+    var ptr: Pointer[Int, Self.origin]
+
+    def through_value(self) __accesses(none self.origin):
+        pass
+
+    def through_type(self) __accesses(none Self.origin):
+        pass
+
+
+# CHECK-LABEL: lit.fn @"refined_explicit_origin
+# CHECK-SAME: accesses[0: [readonly mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1)]]
+def refined_explicit_origin[origin: Origin](
+    ptr: Pointer[Int, origin]
+) __accesses(imm origin):
+    pass
+
+
+struct RefinedAccessPoint:
+    var x: Int
+    var y: Int
+
+
+struct NestedRefinedAccessPoint:
+    var point: RefinedAccessPoint
+
+
+def refined_field_accesses(
+    mut point: RefinedAccessPoint
+) __accesses(mut point.x, imm point.y):
+    pass
+
+
+def parenthesized_refined_field_access(
+    mut nested: NestedRefinedAccessPoint
+) __accesses(imm (nested.point).x):
+    pass
+
+
 def constrained_nested_origins_read_only[N: Int](x: Int) where N > 0 __accesses(
     "__unsafe_nested_origins_read_only"
 ):

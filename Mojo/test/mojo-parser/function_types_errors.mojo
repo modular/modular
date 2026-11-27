@@ -153,6 +153,84 @@ def unsupported_access_set(x: Int) __accesses("unknown"):
     pass
 
 
+# expected-warning @below {{access specification is redundant with the argument's default access}}
+def redundant_access_spec(mut x: Int) __accesses(mut x):
+    pass
+
+
+# expected-error @below {{access specification may not expand the argument's default access}}
+comptime ExpandedImmAccess = def(imm y: String) thin __accesses(mut y)
+
+
+# expected-error @below {{access specification may not expand the argument's default access}}
+comptime ExpandedParametricRefAccess = def[origin: Origin](ref[origin] y: String) thin __accesses(mut y)
+
+
+# expected-error @below {{'var' arguments are always mutable and cannot have refined access specifications}}
+def refined_var_access(var x: Int) __accesses(imm x):
+    pass
+
+
+# expected-error @below {{'out' arguments cannot have refined access specifications}}
+def refined_out_access(out x: Int) __accesses(imm x):
+    pass
+
+
+# expected-error @below {{variadic arguments and packs cannot have refined access specifications}}
+def refined_varargs_access(*xs: Int) __accesses(imm xs):
+    pass
+
+
+# expected-error @below {{variadic arguments and packs cannot have refined access specifications}}
+def refined_pack_access[*Ts: AnyType](*xs: *Ts) __accesses(imm xs):
+    pass
+
+
+# expected-error @below {{'__accesses' requires at least one access specifier}}
+def empty_access_set(x: Int) __accesses():
+    pass
+
+
+# expected-note @below {{previous access specification is here}}
+# expected-error @below {{overlapping origin access specifications}}
+def overlapping_accesses(mut x: Int) __accesses(imm x, mut x):
+    pass
+
+
+struct RefinedAccessErrorPoint:
+    var x: Int
+
+
+# expected-note @below {{previous access specification is here}}
+# expected-error @below {{overlapping origin access specifications}}
+def overlapping_field_accesses(mut point: RefinedAccessErrorPoint) __accesses(imm point, mut point.x):
+    pass
+
+
+# expected-error @below {{access origin must be a name or field path}}
+def computed_access(mut x: Int) __accesses(imm String(x)):
+    pass
+
+
+# expected-error @below {{access specifications may not use AnyOrigin, origin unions, subtree origins, or interior origins}}
+def any_origin_access(x: Int) __accesses(imm MutAnyOrigin):
+    pass
+
+
+# expected-error @+3 {{access specifications may not use AnyOrigin, origin unions, subtree origins, or interior origins}}
+def subtree_origin_access[origin: Origin](
+    ref[origin] x: Int
+) __accesses(imm origin.subtree):
+    pass
+
+
+# expected-error @+3 {{access origin is reachable through multiple arguments; qualify it through an argument name}}
+def ambiguous_explicit_origin_access[origin: Origin](
+    ref[origin] x: Int, ref[origin] y: Int
+) __accesses(imm origin):
+    pass
+
+
 # Tests that we detect too few arguments when doing function conversions.
 
 

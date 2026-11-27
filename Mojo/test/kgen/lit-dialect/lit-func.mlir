@@ -217,9 +217,9 @@ lit.fn @different_param_name<["a"]param, |>() {
   hlcf.return
 }
 
-// CHECK-LABEL: lit.fn @refined_accesses(%arg: index)
-// CHECK-SAME: accesses[0: [readonly mut #lit.any.origin]]
-lit.fn @refined_accesses(%arg: index) accesses[0: [readonly mut #lit.any.origin]] {
+// CHECK-LABEL: lit.fn @refined_accesses<origin: origin<true>>(%arg: index)
+// CHECK-SAME: accesses[0: [readonly mut *(0,0)]]
+lit.fn @refined_accesses<origin: origin<true>>(%arg: index) accesses[0: [readonly mut origin]] {
   hlcf.return
 }
 

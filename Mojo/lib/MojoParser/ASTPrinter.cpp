@@ -1694,11 +1694,36 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
   else
     ASTType(resultType).print(os, ctx);
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
-  if (fnType.getIsEnforcedNestedOriginsReadOnly())
+  auto originMetadata = cast<FnOriginMetadataAttr>(fnType.getMetadata());
+  if (!originMetadata.getRefinedArgs().empty()) {
+    os << " __accesses(";
+    bool first = true;
+    for (RefinedArgAccessAttr refinedArg : originMetadata.getRefinedArgs()) {
+      for (OriginAccessAttr rule : refinedArg.getRules()) {
+        if (!first)
+          os << ", ";
+        first = false;
+        switch (rule.getKind()) {
+        case OriginAccessKind::None:
+          os << "none ";
+          break;
+        case OriginAccessKind::ReadOnly:
+          os << "imm ";
+          break;
+        case OriginAccessKind::ReadWrite:
+          os << "mut ";
+          break;
+        }
+        ASTType::printOriginParam(os, rule.getOrigin(), ctx.shared,
+                                  /*elideOriginOf=*/true);
+      }
+    }
+    os << ')';
+  } else if (fnType.getIsEnforcedNestedOriginsReadOnly()) {
     os << " __accesses(\"__nested_origins_read_only\")";
-  else if (cast<FnOriginMetadataAttr>(fnType.getMetadata())
-               .getIsUnsafeNestedOriginsReadOnly())
+  } else if (originMetadata.getIsUnsafeNestedOriginsReadOnly()) {
     os << " __accesses(\"__unsafe_nested_origins_read_only\")";
+  }
 }
 
 static bool tryPrintParamClosureSourceName(ASTTypePrinterContext ctx,

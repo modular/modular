@@ -1885,31 +1885,74 @@ void ParsedArgumentList::parseResultIfPresent(
                                      : ParsedArgument::kConventionOut;
 }
 
-/// Parses the experimental `__accesses(...)` clause and records its access
-/// promise for later function type construction.
+/// Parses the experimental `__accesses(...)` clause for later resolution.
 ParseResult ParsedArgumentList::parseAccessesIfPresent(ParserBase &p) {
-  while (p.consumeIfSoftIdentifier("__accesses")) {
-    auto loc = p.getToken().getLoc();
+  while (p.getToken().isIdentifier() && p.getTokenSpelling() == "__accesses") {
+    SMLoc loc = p.getToken().getLoc();
+    p.consumeIdentifier();
     if (p.parseToken(Token::l_paren, "expected '(' after '__accesses'"))
       return failure();
-    StringRef spelling = p.getTokenSpelling();
-    if (p.parseToken(Token::string, "expected access-set string") ||
-        p.parseToken(Token::r_paren, "expected ')' after access-set string"))
-      return failure();
 
-    std::string access = Lexer::getStringLiteralValue(spelling);
-    if (access != "__unsafe_nested_origins_read_only" &&
-        access != "__nested_origins_read_only") {
-      p.emitError(loc, "unsupported experimental access set ") << spelling;
+    bool alreadySpecified = isUnsafeNestedOriginsReadOnly ||
+                            isNestedOriginsReadOnly || !refinedAccesses.empty();
+
+    // Preserve the temporary string form used by the nested-origin promises.
+    if (p.getToken().is(Token::string)) {
+      StringRef spelling = p.getTokenSpelling();
+      p.consumeToken();
+      if (p.parseToken(Token::r_paren, "expected ')' after access-set string"))
+        return failure();
+
+      std::string access = Lexer::getStringLiteralValue(spelling);
+      if (access != "__unsafe_nested_origins_read_only" &&
+          access != "__nested_origins_read_only") {
+        p.emitError(loc, "unsupported experimental access set ") << spelling;
+        continue;
+      }
+
+      if (alreadySpecified)
+        p.emitError(loc, "'__accesses' clause was already specified");
+      if (access == "__unsafe_nested_origins_read_only")
+        isUnsafeNestedOriginsReadOnly = true;
+      else
+        isNestedOriginsReadOnly = true;
       continue;
     }
 
-    if (isUnsafeNestedOriginsReadOnly || isNestedOriginsReadOnly)
+    if (alreadySpecified)
       p.emitError(loc, "'__accesses' clause was already specified");
-    if (access == "__unsafe_nested_origins_read_only")
-      isUnsafeNestedOriginsReadOnly = true;
-    else
-      isNestedOriginsReadOnly = true;
+
+    if (p.consumeIf(Token::r_paren))
+      return p.emitError(loc,
+                         "'__accesses' requires at least one access specifier");
+
+    while (true) {
+      SMLoc specifierLoc = p.getToken().getLoc();
+      OriginAccessKind kind;
+      if (p.consumeIfSoftIdentifier("none"))
+        kind = OriginAccessKind::None;
+      else if (p.consumeIfSoftIdentifier("imm"))
+        kind = OriginAccessKind::ReadOnly;
+      else if (p.consumeIfSoftIdentifier("mut"))
+        kind = OriginAccessKind::ReadWrite;
+      else
+        return p.emitError(specifierLoc,
+                           "expected 'none', 'imm', or 'mut' access specifier");
+
+      ExprNode *originExpr = nullptr;
+      if (p.parseExpression(originExpr, /*stmtIndent=*/std::nullopt,
+                            ParserBase::Precedence::kPrimary))
+        return failure();
+      refinedAccesses.push_back({kind, originExpr, specifierLoc});
+
+      if (p.consumeIf(Token::r_paren))
+        break;
+      if (p.parseToken(Token::comma,
+                       "expected ',' or ')' after access specifier"))
+        return failure();
+      if (p.consumeIf(Token::r_paren))
+        break;
+    }
   }
   return success();
 }
@@ -2760,6 +2803,218 @@ static void typeCheckResult(ParsedArgument resultArg, DefASTDecl *fnDecl,
   tcSignature.fullResultType = fullResultType;
 }
 
+// Return the declaration name at the root of a parenthesized field path.
+static StringRef getAccessPathRootName(const ExprNode *expr) {
+  while (true) {
+    if (auto *attr = dyn_cast<AttributeRefNode>(expr))
+      expr = attr->base;
+    else if (auto *paren = dyn_cast<ParenNode>(expr))
+      expr = paren->subExpr;
+    else
+      break;
+  }
+  if (auto *declRef = dyn_cast<DeclRefNode>(expr))
+    return declRef->spelling;
+  if (expr->kind == ExprNode::kSelfLiteral)
+    return "self";
+  return {};
+}
+
+// Return the access implied for an argument's implicit reference origin.
+static std::optional<OriginAccessKind>
+getDefaultRootAccess(ArgConvention convention) {
+  switch (convention) {
+  case ArgConvention::ImmReg:
+  case ArgConvention::ImmMem:
+  case ArgConvention::Ref:
+  case ArgConvention::PackImmMem:
+    return OriginAccessKind::ReadOnly;
+  case ArgConvention::Mut:
+  case ArgConvention::MutRef:
+  case ArgConvention::PackMut:
+    return OriginAccessKind::ReadWrite;
+  case ArgConvention::OwnedReg:
+  case ArgConvention::OwnedMem:
+  case ArgConvention::DeinitMem:
+  case ArgConvention::ByRefResult:
+  case ArgConvention::ByRefError:
+  case ArgConvention::PackOwnedMem:
+  case ArgConvention::Unresolved:
+    return std::nullopt;
+  }
+  llvm_unreachable("unknown argument convention");
+}
+
+/// Type check the source access specifications in `argList.refinedAccesses`
+/// and produce the resolved, validated `refinedArgs` IR. This resolves each
+/// path to an origin and argument, rejects inaccessible or ambiguous origins,
+/// overlapping rules, and expansions of the argument's default access, and
+/// diagnoses rules that only restate the default.
+void TypeCheckedFnSignature::checkAccessesSpec() {
+  if (partial || argList.refinedAccesses.empty())
+    return;
+
+  SharedState &shared = paramList.shared;
+  IREmitter emitter(paramList.declScope, EC_Origin);
+  SmallVector<SmallVector<OriginAccessAttr>> rulesByArgument(
+      argList.parsedArgs.size());
+  SmallVector<SmallVector<SMLoc>> ruleLocations(argList.parsedArgs.size());
+
+  for (const ParsedOriginAccess &parsed : argList.refinedAccesses) {
+    // Verify that it is syntactically valid so we can reject invalid cases with
+    // a good error message.
+    StringRef rootName = getAccessPathRootName(parsed.originExpr);
+    if (rootName.empty()) {
+      shared.emitError(parsed.originExpr->getLoc(),
+                       "access origin must be a name or field path");
+      continue;
+    }
+    // Result slots are not in the expression scope, so reject an `out`
+    // argument here before resolving its name.
+    if (argList.resultArg.convention == ParsedArgument::kConventionOut &&
+        argList.resultArg.name && argList.resultArg.name.strref() == rootName) {
+      shared.emitError(parsed.loc, "'out' arguments cannot have refined access "
+                                   "specifications");
+      continue;
+    }
+
+    TypedAttr origin;
+    // An access path may name a value field, an explicit origin parameter, or
+    // another expression that resolves to an origin.
+    emitter.emitExpressionWithoutEvaluatingIt(
+        parsed.originExpr, EC_Origin,
+        [&](CValue result, IREmitter &emitter, Block &) {
+          origin = emitter.extractOriginOf(parsed.originExpr, result);
+        });
+    if (!origin) {
+      shared.emitError(parsed.originExpr->getLoc(),
+                       "access path does not resolve to an origin");
+      continue;
+    }
+    if (sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
+                 InteriorOriginAttr>(origin)) {
+      shared.emitError(parsed.originExpr->getLoc(),
+                       "access specifications may not use AnyOrigin, origin "
+                       "unions, subtree origins, or interior origins");
+      continue;
+    }
+
+    std::optional<size_t> candidateArgumentIndex;
+    // A path rooted in an argument name identifies that argument directly.
+    for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
+      if (arg.name && arg.name.strref() == rootName) {
+        candidateArgumentIndex = idx;
+        break;
+      }
+    }
+
+    // An explicit origin parameter, including `Self.element_origin`, has no
+    // argument name at its root. Associate it with the argument type that
+    // carries that origin.
+    if (!candidateArgumentIndex) {
+      auto reachesOrigin = [&](Type argType) {
+        SmallVector<TypedAttr> argumentOrigins =
+            shared.cachedOriginFinder.findOriginsIn({argType});
+        return llvm::any_of(argumentOrigins, [&](TypedAttr argumentOrigin) {
+          return isOriginWithin(origin, argumentOrigin);
+        });
+      };
+      auto first = llvm::find_if(fullArgTypes, reachesOrigin);
+      if (first != fullArgTypes.end()) {
+        if (llvm::any_of(llvm::drop_begin(fullArgTypes,
+                                          first - fullArgTypes.begin() + 1),
+                         reachesOrigin)) {
+          shared.emitError(parsed.originExpr->getLoc(),
+                           "access origin is reachable through multiple "
+                           "arguments; qualify it through an argument name");
+          continue;
+        }
+        candidateArgumentIndex = first - fullArgTypes.begin();
+      }
+    }
+
+    if (!candidateArgumentIndex) {
+      shared.emitError(parsed.originExpr->getLoc(),
+                       "access origin is not reachable through any argument");
+      continue;
+    }
+
+    // At this point, we know the argument associated with this access path, so
+    // we can record it.  Before we do, check that it is a simple argument type.
+    size_t argumentIndex = *candidateArgumentIndex;
+    auto &argument = argList.parsedArgs[argumentIndex];
+    if (argument.convention == ParsedArgument::kConventionVar) {
+      shared.emitError(parsed.loc,
+                       "'var' arguments are always mutable and cannot have "
+                       "refined access specifications");
+      continue;
+    }
+    if (argument.convention == ParsedArgument::kConventionByRefResult) {
+      shared.emitError(parsed.loc, "'out' arguments cannot have refined access "
+                                   "specifications");
+      continue;
+    }
+    if (argument.variadicKind != VariadicKind::None) {
+      shared.emitError(parsed.loc,
+                       "variadic arguments and packs cannot have refined "
+                       "access specifications");
+      continue;
+    }
+    // Check to see if this is a completely redundant access specification.
+    auto defaultRootAccess = getDefaultRootAccess(argument.kgenConvention);
+    auto argumentType = dyn_cast<RefType>(fullArgTypes[argumentIndex]);
+    // Refinements may only narrow the default access of the reference origin.
+    if (parsed.kind == OriginAccessKind::ReadWrite && argumentType &&
+        defaultRootAccess == OriginAccessKind::ReadOnly &&
+        isOriginWithin(origin, argumentType.getOrigin())) {
+      shared.emitError(
+          parsed.loc,
+          "access specification may not expand the argument's default access");
+      continue;
+    }
+
+    auto &rules = rulesByArgument[argumentIndex];
+    auto &locations = ruleLocations[argumentIndex];
+    // A rule for an enclosing or enclosed origin would give one access two
+    // potentially conflicting specifications.
+    auto overlap = llvm::find_if(rules, [&](OriginAccessAttr existing) {
+      return originsOverlap(origin, existing.getOrigin());
+    });
+    if (overlap != rules.end()) {
+      size_t previousIndex = overlap - rules.begin();
+      auto diag = shared.emitError(parsed.originExpr->getLoc(),
+                                   "overlapping origin access specifications");
+      diag.attachNote(locations[previousIndex])
+          << "previous access specification is here";
+      continue;
+    }
+
+    if (defaultRootAccess) {
+      if (argumentType && *defaultRootAccess == parsed.kind &&
+          isEqualCanon(argumentType.getOrigin(), origin))
+        shared.emitWarning(
+            parsed.loc,
+            "access specification is redundant with the argument's default "
+            "access");
+    }
+
+    rules.push_back(
+        OriginAccessAttr::get(shared.getContext(), parsed.kind, origin));
+    locations.push_back(parsed.loc);
+  }
+
+  // Now that we've processed all the access specifications and associated with
+  // arguments, build the data structure to represent the access set.
+  for (auto [idx, rules] : llvm::enumerate(rulesByArgument)) {
+    // Omit arguments with no refinements so the common case has no IR
+    // metadata or printed syntax.
+    if (rules.empty())
+      continue;
+    refinedArgs.push_back(
+        RefinedArgAccessAttr::get(shared.getContext(), idx, rules));
+  }
+}
+
 /// Emit the argument types, default values, and result type and determine
 /// the argument conventions.
 ///
@@ -2897,6 +3152,9 @@ TypeCheckedFnSignature::TypeCheckedFnSignature(TypeCheckedParamList &paramList,
 
   // Compute the result type.
   typeCheckResult(argList.resultArg, fnDecl, *this);
+
+  // Type check any "accesses(imm arg)" specifications.
+  checkAccessesSpec();
 
   // If a capture origin set was specified, emit it. It will be added to the
   // signature type later.
@@ -3303,7 +3561,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),
       definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
-      isNestedOriginsReadOnly);
+      isNestedOriginsReadOnly, refinedArgs);
 
   /// We shouldn't have internal verifier errors here, but if we do, try to
   /// emit them at some location of merit because something snuck through

@@ -334,6 +334,68 @@ InteriorOriginAttr LIT::getInteriorForSubtreeOrigin(OriginSubtreeAttr subtree) {
   return cast<InteriorOriginAttr>(result);
 }
 
+// Strip sugar that does not affect whether two access paths overlap.
+static TypedAttr normalizeAccessOrigin(TypedAttr origin) {
+  auto result = OriginMutCastAttr::strip(getCanonicalAttr(origin));
+  assert((!sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
+                    InteriorOriginAttr>(result) &&
+          "unsupported origin in an access specification"));
+  return result;
+}
+
+// Return whether `origin` is contained within `root`, accounting for
+// projections.
+bool LIT::isOriginWithin(TypedAttr origin, TypedAttr root) {
+  origin = normalizeAccessOrigin(origin);
+  root = normalizeAccessOrigin(root);
+  if (origin == root)
+    return true;
+
+  if (auto subtree = dyn_cast<OriginSubtreeAttr>(root))
+    return isOriginWithin(origin, subtree.getBase());
+  if (auto field = dyn_cast<OriginFieldAttr>(origin))
+    return isOriginWithin(field.getBase(), root);
+  return false;
+}
+
+// Return whether field projections from a common base first diverge at
+// different fields, which proves that they are disjoint.
+static bool areDisjointFieldProjections(TypedAttr lhs, TypedAttr rhs) {
+  lhs = normalizeAccessOrigin(lhs);
+  rhs = normalizeAccessOrigin(rhs);
+  SmallVector<StringAttr> lhsFields;
+  SmallVector<StringAttr> rhsFields;
+  while (auto field = dyn_cast<OriginFieldAttr>(lhs)) {
+    lhsFields.push_back(field.getField());
+    lhs = field.getBase();
+  }
+  while (auto field = dyn_cast<OriginFieldAttr>(rhs)) {
+    rhsFields.push_back(field.getField());
+    rhs = field.getBase();
+  }
+  if (lhs != rhs) // The base should be the same after fields are removed.
+    return false;
+
+  for (auto [lhsField, rhsField] :
+       llvm::zip(llvm::reverse(lhsFields), llvm::reverse(rhsFields)))
+    if (lhsField != rhsField)
+      return true;
+  return false;
+}
+
+// Return whether two origins may designate overlapping memory. This is
+// conservative for unrelated origin parameters because they may be
+// instantiated with the same origin.
+bool LIT::originsOverlap(TypedAttr lhs, TypedAttr rhs) {
+  if (isOriginWithin(lhs, rhs) || isOriginWithin(rhs, lhs))
+    return true;
+  if (areDisjointFieldProjections(lhs, rhs))
+    return false;
+
+  // Distinct origin parameters may be instantiated with the same origin.
+  return true;
+}
+
 ParseResult LIT::parseOriginParamValue(AsmParser &p, TypedAttr &result) {
   OriginType type;
   // Parse the pretty type specifier if present.
@@ -473,6 +535,11 @@ OptionalParseResult LIT::parseOptionalRefinedArgAccesses(
       TypedAttr origin;
       if (parseOriginParamValue(p, origin))
         return failure();
+      if (sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
+                   InteriorOriginAttr>(origin))
+        return p.emitError(
+            loc, "access rules may not use AnyOrigin, origin unions, subtree "
+                 "origins, or interior origins");
       rules.push_back(OriginAccessAttr::get(p.getContext(), kind, origin));
       return success();
     };
@@ -489,6 +556,7 @@ OptionalParseResult LIT::parseOptionalRefinedArgAccesses(
   return mlir::success();
 }
 
+// Print the refined-access list attached to a function type or operation.
 void LIT::printRefinedArgAccesses(AsmPrinter &p,
                                   ArrayRef<RefinedArgAccessAttr> refinedArgs) {
   p << "accesses[";

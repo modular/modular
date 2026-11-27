@@ -70,6 +70,19 @@ def test_accesses_clause():
     assert_mojo_format(source, expected)
 
 
+def test_structured_accesses_clause():
+    """Formats origin access specifiers."""
+    source = (
+        "def foo(mut x: Int) __accesses (imm x,mut x.field,none x.other):"
+        " pass\n"
+    )
+    expected = (
+        "def foo(mut x: Int) __accesses(imm x, mut x.field, none x.other):\n"
+        "    pass\n"
+    )
+    assert_mojo_format(source, expected)
+
+
 def test_accesses_clause_on_function_type():
     """Formats accesses clauses on function type annotations."""
     source = (
