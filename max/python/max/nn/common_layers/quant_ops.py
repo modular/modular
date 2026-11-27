@@ -1604,12 +1604,14 @@ def grouped_matmul_silu(
         # carry a float32 gate/up accumulation. ``ExpertParallelMoE``'s weight
         # layout is gated on the same condition.
         and accum_dtype is None
-        and not swiglu_limit
     ):
         assert isinstance(gate_up, NVFP4Tensor) and isinstance(
             down, NVFP4Tensor
         )
         assert offset is not None
+        # The fused kernel takes the clamp as its activation's limit.
+        if activation is None and swiglu_limit:
+            activation = GatedActivation("silu", limit=swiglu_limit)
         # Gate/up epilogue uses the uniform scale the dispatch quantized with;
         # the down input is re-quantized with the per-expert down.input_scale.
         scales = scales or NVFP4ExpertScales.of(

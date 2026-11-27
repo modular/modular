@@ -1049,10 +1049,10 @@ def test_expert_parallel_moe_nvfp4_fused_swiglu_permutes_gate_up(
         chained = _build(nvfp4_quant_config)
         assert not chained._uses_fused_swiglu
 
-        # The fused kernel has no clamp, so a SwiGLU limit keeps the chained
-        # path and its unpermuted weights.
+        # The fused NVFP4 kernel takes the clamp as its activation's limit, so
+        # a SwiGLU limit keeps the fused path and its permuted weights.
         clamped = _build(fused, swiglu_limit=10.0)
-        assert not clamped._uses_fused_swiglu
+        assert clamped._uses_fused_swiglu
 
         layer = _build(fused)
         assert layer._uses_fused_swiglu

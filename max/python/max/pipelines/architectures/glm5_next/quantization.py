@@ -46,13 +46,14 @@ that has to fail at load time rather than in the logits.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
 from max.dtype import DType
 from max.graph.weights import WeightData
-from max.nn.quant_config import QuantConfig
+from max.nn.quant_config import DISABLE_FUSED_SWIGLU_NVFP4_ENV, QuantConfig
 
 __all__ = [
     "UNQUANTIZED_ATTN_PROJECTIONS",
@@ -237,13 +238,20 @@ def parse_quant_scheme(
             "'weight_scale'; check that it ran."
         )
     if fmt == "NVFP4":
+        config = QuantConfig.nvfp4(
+            mlp_quantized_layers=mlp_layers,
+            attn_quantized_layers=attn_layers,
+            embedding_output_dtype=compute_dtype,
+            shared_experts_weight_dtype=compute_dtype,
+        )
+        # The routed experts' gate/up GEMM fuses the clamped SwiGLU and the
+        # NVFP4 re-quantize, which lets the graph compiler fuse it with the
+        # down GEMM into one MegaFFN launch.
+        config.can_use_fused_swiglu = (
+            os.environ.get(DISABLE_FUSED_SWIGLU_NVFP4_ENV) != "1"
+        )
         return Glm5NextQuantScheme(
-            config=QuantConfig.nvfp4(
-                mlp_quantized_layers=mlp_layers,
-                attn_quantized_layers=attn_layers,
-                embedding_output_dtype=compute_dtype,
-                shared_experts_weight_dtype=compute_dtype,
-            ),
+            config=config,
             mlp_layers=mlp_layers,
             attn_layers=attn_layers,
             compute_dtype=compute_dtype,

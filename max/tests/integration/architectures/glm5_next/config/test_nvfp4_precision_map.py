@@ -27,7 +27,7 @@ from types import SimpleNamespace
 
 import pytest
 from max.dtype import DType
-from max.nn.quant_config import QuantFormat
+from max.nn.quant_config import DISABLE_FUSED_SWIGLU_NVFP4_ENV, QuantFormat
 from max.pipelines.architectures.glm5_next.checkpoint import (
     checkpoint_quant_scheme,
 )
@@ -147,6 +147,14 @@ def test_the_mlps_are_nvfp4_and_everything_else_bf16() -> None:
     assert config.shared_experts_dtype(DType.uint8) == DType.bfloat16
     assert config.embedding_output_dtype == DType.bfloat16
     assert scheme.compute_dtype == DType.bfloat16
+
+
+def test_the_routed_experts_take_the_fused_swiglu_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    assert _scheme(_stub(with_mtp=True)).config.can_use_fused_swiglu
+    monkeypatch.setenv(DISABLE_FUSED_SWIGLU_NVFP4_ENV, "1")
+    assert not _scheme(_stub(with_mtp=True)).config.can_use_fused_swiglu
 
 
 def test_the_mtp_layer_builds_bf16_experts_and_dispatches_bf16() -> None:
