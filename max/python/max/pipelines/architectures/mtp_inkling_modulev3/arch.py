@@ -17,14 +17,14 @@ from max.pipelines.context import TextAndVisionContext
 from max.pipelines.lib import GraphRole, SupportedArchitecture
 from max.pipelines.modeling.types import PipelineTask
 
-from ..inkling.model_config import InklingConfig
-from ..inkling.tokenizer import InklingTokenizer
-from ..mtp_inkling.model_config import (
+from ..inkling_modulev3.arch_config import InklingArchConfig
+from ..inkling_modulev3.tokenizer import InklingTokenizer
+from .draft import InklingMTPDraft, mtp_draft_registration
+from .model_config import (
     MTPInklingDraftArchConfig,
     inkling_mtp_draft_width,
 )
-from ..mtp_inkling.weight_adapters import inkling_mtp_weight_rules
-from .draft import InklingMTPDraft, mtp_draft_registration
+from .weight_adapters import inkling_mtp_weight_rules
 
 __all__ = ["mtp_inkling_modulev3_draft_arch"]
 
@@ -34,8 +34,8 @@ mtp_inkling_modulev3_draft_arch = SupportedArchitecture(
     name="MTPInklingDraftModel_ModuleV3",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=["thinkingmachines/Inkling"],
-    default_encoding=InklingConfig.DEFAULT_ENCODING,
-    supported_encodings=InklingConfig.SUPPORTED_ENCODINGS,
+    default_encoding=InklingArchConfig.DEFAULT_ENCODING,
+    supported_encodings=InklingArchConfig.SUPPORTED_ENCODINGS,
     # Split over the target's devices, as the target is.
     multi_gpu_supported=True,
     supports_device_graph_capture=True,

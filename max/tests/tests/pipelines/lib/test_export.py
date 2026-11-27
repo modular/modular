@@ -721,7 +721,7 @@ def test_architecture_names_the_checkpoints_tokenizer_family(
         "deepseekV41",
         "gemma4",
         "glm5_1",
-        "inkling",
+        "inkling_modulev3",
         "laguna",
         "lfm3",
         "mimo_v2_modulev3",

@@ -32,7 +32,6 @@ from max.pipelines.lib.pipeline_variants.spec_decode_pipeline_model import (
     "target",
     [
         "Glm5NextForConditionalGeneration",
-        "InklingForConditionalGeneration",
         "Qwen3_5ForConditionalGeneration",
     ],
 )

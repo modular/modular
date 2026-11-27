@@ -72,7 +72,7 @@ modular_py_test(
         "MODULAR_PATH": ".",
     },
     deps = [
-        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/inkling_modulev3",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/architectures/inkling:grammar_harness",
@@ -116,7 +116,7 @@ modular_py_test(
         "//max/python/max/_xgrammar",
         "//max/python/max/pipelines/architectures/gemma4",
         "//max/python/max/pipelines/architectures/glm5_1",
-        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/pipelines/architectures/inkling_modulev3",
         "//max/python/max/pipelines/architectures/kimik2_5",
         "//max/python/max/pipelines/architectures/minimax_m2",
         "//max/python/max/pipelines/architectures/muse_glimmer",

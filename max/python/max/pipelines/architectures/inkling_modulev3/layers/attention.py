@@ -21,7 +21,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max import functional as F
-from max.graph import BufferValue, TensorValue
+from max.dtype import DType
+from max.graph import BufferValue, TensorValue, ops
 from max.nn import Module
 from max.nn._graph_ops import flash_attention_ragged
 from max.nn.attention_mask import MHAMaskVariant
@@ -35,13 +36,33 @@ from max.nn.kv_cache import PagedCacheValues as PagedCacheGraphValues
 from max.nn.linear import Linear
 from max.tensor import Tensor
 
-from ...inkling.layers.attention import _scale_rows
-from ...inkling.layers.short_convolution import (
+from ..arch_config import InklingTextConfig
+from .placement import as_sharded, shard_axis
+from .short_convolution import (
+    InklingRMSNorm,
+    ShortConvolution,
     fused_qk_rms_norm_short_conv_ragged,
 )
-from ...inkling.model_config import InklingTextConfig
-from .placement import as_sharded, shard_axis
-from .short_convolution import InklingRMSNorm, ShortConvolution
+
+_TAU_DTYPE = DType.float32
+
+
+def log_scaling_tau(
+    positions: TensorValue, *, alpha: float, n_floor: int
+) -> TensorValue:
+    """``tau = 1 + alpha * log(max(1, (position + 1) / n_floor))``, float32."""
+    effective = (ops.cast(positions, _TAU_DTYPE) + 1.0) / float(n_floor)
+    return 1.0 + alpha * ops.log(ops.max(effective, 1.0))
+
+
+def _scale_rows(x: TensorValue, factor: TensorValue) -> TensorValue:
+    """Scales each token's rows by ``factor``.
+
+    The product is computed in float32 with a round-trip cast, matching the
+    reference's precision on a bf16 tensor.
+    """
+    rows = ops.reshape(factor, [factor.shape[0]] + [1] * (x.rank - 1))
+    return ops.cast(ops.cast(x, _TAU_DTYPE) * rows, x.dtype)
 
 
 @dataclass(frozen=True)

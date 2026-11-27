@@ -39,7 +39,7 @@ import numpy.typing as npt
 from PIL import Image
 from transformers import PreTrainedTokenizerBase
 
-from .model_config import InklingVisionConfig
+from .arch_config import InklingVisionConfig
 
 PROCESSOR_CONFIG_FILE = "processor_config.json"
 

@@ -17,10 +17,10 @@ from types import SimpleNamespace
 from unittest.mock import NonCallableMock
 
 import pytest
-from max.pipelines.architectures.inkling.model_config import (
+from max.pipelines.architectures.inkling_modulev3.arch_config import (
     parse_inkling_mtp_config,
 )
-from max.pipelines.architectures.mtp_inkling.weight_adapters import (
+from max.pipelines.architectures.mtp_inkling_modulev3.weight_adapters import (
     inkling_mtp_weight_rules,
 )
 from max.pipelines.lib.weight_transform import WeightTransform

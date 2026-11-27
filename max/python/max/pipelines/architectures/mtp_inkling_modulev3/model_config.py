@@ -28,10 +28,10 @@ from max.pipelines.lib.interfaces.pipeline_model import (
 from max.pipelines.speculative.config import SpeculativeConfig
 from transformers import AutoConfig
 
-from ..inkling.model_config import (
+from ..inkling_modulev3.arch_config import (
     GLOBAL_ATTENTION,
     LOCAL_ATTENTION,
-    InklingConfig,
+    InklingArchConfig,
     InklingMTPConfig,
     parse_inkling_mtp_config,
 )
@@ -66,7 +66,7 @@ def inkling_mtp_draft_width(
 
 
 @dataclass(kw_only=True)
-class MTPInklingDraftArchConfig(InklingConfig):
+class MTPInklingDraftArchConfig(InklingArchConfig):
     """The depths' config: their target's, with a KV leaf per flavor.
 
     Each attention flavor the depths use gets its own leaf.
@@ -92,7 +92,7 @@ class MTPInklingDraftArchConfig(InklingConfig):
         Each leaf is sized for the depths of its flavor; one depth writes one
         layer.
         """
-        target = InklingConfig.construct_kv_params(
+        target = InklingArchConfig.construct_kv_params(
             huggingface_config,
             pipeline_config,
             devices,

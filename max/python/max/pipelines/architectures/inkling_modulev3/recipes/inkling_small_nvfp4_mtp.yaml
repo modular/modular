@@ -10,9 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
-# Inkling Small NVFP4 on the ModuleV3 architecture.
+# 2x B200 recipe for Inkling Small NVFP4 with MTP (K=2).
 model:
   model_path: thinkingmachines/Inkling-Small-NVFP4
+  device_specs: [0, 1]
+  quantization_encoding: float4_e2m1fnx2
+  trust_remote_code: true
+  max_length: 8192
+  kv_cache:
+    device_memory_utilization: 0.95
 
 runtime:
-  prefer_module_v3: true
+  max_batch_size: 64
+
+speculative:
+  speculative_method: mtp
+  num_speculative_tokens: 2

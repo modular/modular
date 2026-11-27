@@ -51,7 +51,6 @@ family.
    pipelines.architectures.hy_v3
    pipelines.architectures.idefics3
    pipelines.architectures.ideogram4
-   pipelines.architectures.inkling
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
    pipelines.architectures.laguna
@@ -71,7 +70,6 @@ family.
    pipelines.architectures.mpnet
    pipelines.architectures.mtp_deepseekV3
    pipelines.architectures.mtp_glm5_next
-   pipelines.architectures.mtp_inkling
    pipelines.architectures.mtp_qwen3_5
    pipelines.architectures.muse_glimmer
    pipelines.architectures.nemotron_h
@@ -128,7 +126,6 @@ Text generation
    ~max.pipelines.architectures.granite
    ~max.pipelines.architectures.hy_v3
    ~max.pipelines.architectures.idefics3
-   ~max.pipelines.architectures.inkling
    ~max.pipelines.architectures.internvl
    ~max.pipelines.architectures.kimik2_5
    ~max.pipelines.architectures.laguna
@@ -146,7 +143,6 @@ Text generation
    ~max.pipelines.architectures.mistral3
    ~max.pipelines.architectures.mtp_deepseekV3
    ~max.pipelines.architectures.mtp_glm5_next
-   ~max.pipelines.architectures.mtp_inkling
    ~max.pipelines.architectures.mtp_qwen3_5
    ~max.pipelines.architectures.muse_glimmer
    ~max.pipelines.architectures.nemotron_h

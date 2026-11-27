@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_library")
+load("//bazel:api.bzl", "modular_py_library", "requirement")
 
 package(default_visibility = ["//max:consumers"])
 
@@ -6,13 +6,15 @@ modular_py_library(
     name = "mtp_inkling_modulev3",
     srcs = glob(["**/*.py"]),
     deps = [
+        requirement("transformers"),
         "//max/python/max:tensor",
+        "//max/python/max/dtype",
         "//max/python/max/graph",
-        "//max/python/max/pipelines/architectures/inkling",
+        "//max/python/max/nn/kv_cache",
         "//max/python/max/pipelines/architectures/inkling_modulev3",
-        "//max/python/max/pipelines/architectures/mtp_inkling",
         "//max/python/max/pipelines/context",
         "//max/python/max/pipelines/lib",
         "//max/python/max/pipelines/modeling",
+        "//max/python/max/pipelines/speculative",
     ],
 )

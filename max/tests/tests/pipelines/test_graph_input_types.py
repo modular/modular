@@ -75,14 +75,7 @@ from max.pipelines.architectures.gemma4.vision_model.vision_model import (
     Gemma4VisionModel,
 )
 from max.pipelines.architectures.gemma4_modulev3.modules import Gemma4Decoder
-from max.pipelines.architectures.inkling.inkling import Inkling
-from max.pipelines.architectures.inkling.layers.vision import InklingVisionModel
-from max.pipelines.architectures.inkling.state_cache import (
-    InklingConvStateLayout,
-)
-from max.pipelines.architectures.inkling_modulev3.modules import (
-    InklingVision as InklingVisionV3,
-)
+from max.pipelines.architectures.inkling_modulev3.modules import InklingVision
 from max.pipelines.architectures.lfm2_vl.model_config import (
     ATTN_CACHE_KEY as LFM2_VL_ATTN_CACHE_KEY,
 )
@@ -536,35 +529,6 @@ def _text_model(cls: Any, **attrs: object) -> tuple[_InputTree, _InputTypes]:
     return input_tree, tuple(tree.leaves(input_tree))
 
 
-def _inkling(devices: list[DeviceRef]) -> tuple[_InputTree, _InputTypes]:
-    """Inkling's global/sliding caches and all eight convolution-state leaves."""
-    channels = 16 // len(devices)
-    state = RecurrentStateParams(
-        regions=InklingConvStateLayout(
-            ring_len=3,
-            layers=((channels, channels, _HIDDEN, _HIDDEN),) * 2,
-            is_local=(False, True),
-        ).regions(),
-        devices=devices,
-    )
-    kv_params = MultiKVCacheParams.from_params(
-        {
-            "full_attention": _kv_params(devices),
-            "sliding_attention": _kv_params(devices),
-            "conv_state": state,
-        }
-    )
-    model = _model(
-        Inkling,
-        devices=devices,
-        num_devices=len(devices),
-        dtype=DType.bfloat16,
-        text_config=_fake(hidden_size=_HIDDEN),
-        kv_params=kv_params,
-    )
-    return Inkling.input_tree(model), Inkling.input_types(model)
-
-
 def _lfm2_vl() -> tuple[_InputTree, _InputTypes]:
     """LFM2-VL's registered decoder: paged attention, the conv state pool
     and the vision merge, in the input order its MEFs took before the
@@ -683,10 +647,8 @@ def _deepseek_v41_artifact(replicas: int) -> tuple[_InputTree, _InputTypes]:
 
 
 _CASES: dict[str, Callable[[], tuple[_InputTree, _InputTypes]]] = {
-    "inkling_single_device": lambda: _inkling(_gpus(1)),
     "deepseekV41_artifact_dp4": lambda: _deepseek_v41_artifact(4),
     "deepseekV41_artifact_dp8": lambda: _deepseek_v41_artifact(8),
-    "inkling_multi_device": lambda: _inkling(_gpus(2)),
     "llama3_single_device": lambda: _llama3(_gpus(1)),
     "llama3_eagle_draft": lambda: _llama3(_gpus(1), hidden=True),
     "llama3_multi_device": _distributed_llama3,
@@ -732,28 +694,18 @@ def _qwen_vl_vision(cls: Any, patch_dim: int) -> _InputTree:
     )
 
 
-def _inkling_vision() -> _InputTree:
-    model = _bare(
-        InklingVisionModel,
-        config=_fake(patch_size=40, n_channels=3),
-        dtype=DType.bfloat16,
-        device=DeviceRef.GPU(0),
-    )
-    return InklingVisionModel.input_tree(model)
-
-
 def _lfm2_vl_vision() -> _InputTree:
     config = _fake(devices=[DeviceRef.GPU(0)], vision_patch_dim=768)
     return Lfm2VlVision.input_types(_bare(Lfm2VlVision, config=config))
 
 
-def _inkling_modulev3_vision() -> _InputTree:
+def _inkling_vision() -> _InputTree:
     model = _fake(
         config=_fake(patch_size=40, n_channels=3),
         _registered_config=_fake(devices=_gpus(1)),
     )
-    model.patch_type = partial(InklingVisionV3.patch_type, model)
-    return InklingVisionV3.input_types(model)
+    model.patch_type = partial(InklingVision.patch_type, model)
+    return InklingVision.input_types(model)
 
 
 def _muse_glimmer_vision() -> _InputTree:
@@ -778,7 +730,6 @@ def _muse_glimmer_vision() -> _InputTree:
 
 _VISION_CASES: dict[str, Callable[[], _InputTree]] = {
     "inkling": _inkling_vision,
-    "inkling_modulev3": _inkling_modulev3_vision,
     "gemma4": _gemma4_vision,
     "muse_glimmer": _muse_glimmer_vision,
     "qwen3_5": lambda: _qwen_vl_vision(Qwen3_5VisionTransformer, 1536),

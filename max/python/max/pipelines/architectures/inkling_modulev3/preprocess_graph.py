@@ -34,7 +34,7 @@ from max.pipelines.lib import PipelineConfig
 from max.pipelines.lib.graph_specs import GraphSpec
 from transformers import AutoTokenizer
 
-from .model_config import InklingConfig
+from .arch_config import InklingArchConfig
 from .processor import load_processor_config
 
 
@@ -138,7 +138,7 @@ class InklingImagePreprocess(Module):
 
 
 def inkling_vision_preprocess_spec(
-    config: InklingConfig, dtype: DType
+    config: InklingArchConfig, dtype: DType
 ) -> GraphSpec:
     """Returns the CPU graph that packs one image's patches for the tower.
 
@@ -158,7 +158,7 @@ def inkling_vision_preprocess_spec(
 
 
 def inkling_vision_metadata(
-    pipeline_config: PipelineConfig, config: InklingConfig
+    pipeline_config: PipelineConfig, config: InklingArchConfig
 ) -> VisionMetadata:
     """Returns Inkling's patch-row image layout and image placeholder.
 

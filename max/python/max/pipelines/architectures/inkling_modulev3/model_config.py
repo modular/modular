@@ -26,8 +26,8 @@ from max.pipelines.lib.registration_runtime import DeploymentConfig
 from transformers import AutoConfig
 from typing_extensions import Self
 
-from ..inkling.model_config import InklingConfig as BaseInklingConfig
-from ..inkling.processor import load_processor_config
+from .arch_config import InklingArchConfig
+from .processor import load_processor_config
 
 _EXPERT_SCALE = re.compile(
     r"(\.experts\.w(?:13|2))_(weight_scale(?:_2)?|input_amax)$"
@@ -35,7 +35,7 @@ _EXPERT_SCALE = re.compile(
 
 
 @dataclass(kw_only=True)
-class InklingConfig(BaseInklingConfig, DeploymentConfig):
+class InklingConfig(InklingArchConfig, DeploymentConfig):
     """Finalizes both roles and records image preprocessing and outputs."""
 
     weight_prefixes: ClassVar[Mapping[str, str]] = {

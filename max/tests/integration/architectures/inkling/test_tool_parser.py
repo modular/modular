@@ -40,11 +40,15 @@ from _grammar_harness import (
     opened,
     tool,
 )
-from max.pipelines.architectures.inkling.reasoning import (
+from max.pipelines.architectures.inkling_modulev3.reasoning import (
     InklingReasoningParser,
 )
-from max.pipelines.architectures.inkling.tokenizer import TOOL_CALL_JSON_MARKER
-from max.pipelines.architectures.inkling.tool_parser import InklingToolParser
+from max.pipelines.architectures.inkling_modulev3.tokenizer import (
+    TOOL_CALL_JSON_MARKER,
+)
+from max.pipelines.architectures.inkling_modulev3.tool_parser import (
+    InklingToolParser,
+)
 from max.pipelines.context.exceptions import InputError
 from max.pipelines.modeling.types import ParsedToolCallDelta
 

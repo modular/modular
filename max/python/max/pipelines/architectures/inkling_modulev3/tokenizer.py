@@ -26,7 +26,7 @@ from max.pipelines.lib.tokenizer import (
 from max.pipelines.modeling.types import TokenIds
 from transformers import AutoTokenizer
 
-from .model_config import InklingVisionConfig
+from .arch_config import InklingVisionConfig
 from .processor import InklingProcessor, load_processor_config
 
 if TYPE_CHECKING:

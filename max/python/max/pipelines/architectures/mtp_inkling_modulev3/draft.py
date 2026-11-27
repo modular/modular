@@ -16,7 +16,7 @@ from max.pipelines.lib.registration_draft import DraftRegistration
 from max.tensor import default_dtype
 
 from ..inkling_modulev3.mtp import InklingMultiTokenPredictor
-from ..mtp_inkling.model_config import (
+from .model_config import (
     MTPInklingDraftArchConfig,
     configure_mtp_draft,
 )

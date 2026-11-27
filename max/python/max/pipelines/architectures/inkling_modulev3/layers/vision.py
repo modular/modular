@@ -18,6 +18,8 @@ Ported from ``vllm/models/inkling/common/towers.py`` at vLLM v0.26.0
 
 from __future__ import annotations
 
+import itertools
+import math
 from collections.abc import Sequence
 
 from max import functional as F
@@ -29,12 +31,87 @@ from max.nn.norm import RMSNorm
 from max.nn.sequential import ModuleList
 from max.tensor import Tensor
 
-from ...inkling.layers.vision import plan_folds
-from ...inkling.model_config import InklingVisionConfig
+from ..arch_config import InklingVisionConfig
 
 # The vision config carries no epsilon of its own, and the reference never
 # reads the text config's.
 _NORM_EPS = 1e-6
+
+
+# The reference rounds every intermediate width up to a multiple of this.
+_WIDTH_GRANULARITY = 64
+
+
+def _prime_factors(value: int) -> list[int]:
+    factors: list[int] = []
+    divisor = 2
+    while divisor * divisor <= value:
+        if value % divisor:
+            divisor += 1
+        else:
+            factors.append(divisor)
+            value //= divisor
+    if value > 1:
+        factors.append(value)
+    return factors
+
+
+def plan_folds(config: InklingVisionConfig) -> list[tuple[int, int, int]]:
+    """Plans the tower's ``n_layers`` steps as ``(t_fold, hw_fold, out_dim)``.
+
+    A patch is folded into its channels one prime factor at a time, spatially
+    first and then temporally; the tower's linears interpolate that chain by
+    taking the ``n_layers + 1`` stops closest to evenly spaced in log scale.
+    """
+
+    def round_up(width: int) -> int:
+        return -(-width // _WIDTH_GRANULARITY) * _WIDTH_GRANULARITY
+
+    # Reachable folds as (temporal, spatial, channels), coarsening.
+    stops = [(1, 1, config.n_channels)]
+    spatial = temporal = 1
+    for factor in reversed(_prime_factors(config.patch_size)):
+        spatial *= factor
+        stops.append((1, spatial, round_up(spatial**2 * config.n_channels)))
+    for factor in reversed(_prime_factors(config.temporal_patch_size)):
+        temporal *= factor
+        stops.append(
+            (
+                temporal,
+                spatial,
+                round_up(temporal * spatial**2 * config.n_channels),
+            )
+        )
+
+    # The reference spaces its targets over the full element count but measures
+    # the stops without their channels, so the two scales do not line up.
+    reached = [math.log(t * s * s) for t, s, _ in stops]
+    full = math.log(
+        config.temporal_patch_size * config.patch_size**2 * config.n_channels
+    )
+    chosen = [
+        min(
+            range(len(stops)),
+            key=lambda stop: abs(full * step / config.n_layers - reached[stop]),
+        )
+        for step in range(config.n_layers + 1)
+    ]
+    # The chain must start unfolded and end fully folded whatever the spacing.
+    chosen[0] = 0
+    chosen[-1] = len(stops) - 1
+
+    folds = []
+    for step, (before, after) in enumerate(itertools.pairwise(chosen)):
+        t_fold = stops[after][0] // stops[before][0]
+        hw_fold = stops[after][1] // stops[before][1]
+        # The last linear projects into the decoder instead of the next stop.
+        out_dim = (
+            config.decoder_dmodel
+            if step == config.n_layers - 1
+            else stops[after][2]
+        )
+        folds.append((t_fold, hw_fold, out_dim))
+    return folds
 
 
 def fold_timespace_to_depth(x: Tensor, t_fold: int, hw_fold: int) -> Tensor:

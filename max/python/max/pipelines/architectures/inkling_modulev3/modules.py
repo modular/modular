@@ -32,13 +32,13 @@ from max.pipelines.lib.role_contracts import (
 from max.tensor import Tensor, default_dtype
 from max.tensor.sharding import DeviceMesh
 
-from ..inkling.preprocess_graph import (
-    inkling_vision_metadata,
-    inkling_vision_preprocess_spec,
-)
 from .inkling import Inkling
 from .layers.vision import InklingVisionModel
 from .model_config import InklingConfig
+from .preprocess_graph import (
+    inkling_vision_metadata,
+    inkling_vision_preprocess_spec,
+)
 
 
 class InklingDecoder(Module[[DecoderInputs[Tensor]], DecoderOutputs]):
@@ -116,10 +116,9 @@ class InklingVision(InklingVisionModel):
         self.embedding_dim = config.text_config.hidden_size
 
     def input_types(self) -> OrderedDict[str, object]:
-        """Groups the raw patches as rows a serving engine concatenates.
+        """Groups the raw int16 patches on the encoder device as rows.
 
-        The group is the graph-API Inkling's, with int16 patches on the
-        encoder device.
+        A serving engine concatenates the rows of a batch's images.
         """
         return OrderedDict(
             patches=VisionRows(
@@ -138,7 +137,7 @@ class InklingVision(InklingVisionModel):
     def vision_preprocess_spec(
         cls, pipeline_config: PipelineConfig, config: InklingConfig
     ) -> GraphSpec:
-        """Returns the graph-API Inkling's image preprocessing graph.
+        """Returns Inkling's image preprocessing graph.
 
         It emits the int16 patches this tower takes.
         """

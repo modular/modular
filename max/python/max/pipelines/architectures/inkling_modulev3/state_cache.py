@@ -43,7 +43,7 @@ from typing_extensions import Self
 if TYPE_CHECKING:
     # `model_config` imports this module for the regions a cache declares,
     # and every use here is an annotation.
-    from .model_config import InklingTextConfig
+    from .arch_config import InklingTextConfig
 
 # The conv kernel accumulates in float32 regardless of the model dtype.
 CONV_STATE_DTYPE: Final = DType.float32

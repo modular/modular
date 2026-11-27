@@ -49,7 +49,7 @@ from max.pipelines.speculative.spec_target import Verified
 from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, DeviceMesh
 
-from ..inkling.model_config import (
+from .arch_config import (
     GLOBAL_ATTENTION,
     LOCAL_ATTENTION,
     STATE_CACHE_KEY,

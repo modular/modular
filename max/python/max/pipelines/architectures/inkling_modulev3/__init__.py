@@ -13,11 +13,10 @@
 
 """The Inkling architecture on ModuleV3.
 
-A text-and-vision pipeline model with KV cache and short-convolution state.
+A text-and-vision model with KV cache and short-convolution state.
 """
 
 from .arch import inkling_modulev3_arch
-from .model import InklingModel
 from .model_config import InklingConfig
 
-__all__ = ["InklingConfig", "InklingModel", "inkling_modulev3_arch"]
+__all__ = ["InklingConfig", "inkling_modulev3_arch"]

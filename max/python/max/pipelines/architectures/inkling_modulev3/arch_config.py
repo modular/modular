@@ -337,7 +337,7 @@ def parse_inkling_mtp_config(
 
 
 @dataclass(kw_only=True)
-class InklingConfig(ArchConfigWithKVCache):
+class InklingArchConfig(ArchConfigWithKVCache):
     """Top-level Inkling config wrapping the text and vision backbones."""
 
     DEFAULT_ENCODING: ClassVar[SupportedEncoding] = "bfloat16"

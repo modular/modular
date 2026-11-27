@@ -124,7 +124,6 @@ modular_py_test(
         "//max/python/max/pipelines/architectures/gemma4_modulev3",
         "//max/python/max/pipelines/architectures/gpt_oss",
         "//max/python/max/pipelines/architectures/gpt_oss_modulev3",
-        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/inkling_modulev3",
         "//max/python/max/pipelines/architectures/granite",
         "//max/python/max/pipelines/architectures/granite_modulev3",
@@ -353,9 +352,7 @@ modular_py_test(
     # unused.
     ignore_extra_deps = [
         "//max/python/max/pipelines/architectures/glm5_next",
-        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/mtp_glm5_next",
-        "//max/python/max/pipelines/architectures/mtp_inkling",
         "//max/python/max/pipelines/architectures/mtp_qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3_5",
     ],
@@ -366,9 +363,7 @@ modular_py_test(
     deps = [
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/architectures/glm5_next",
-        "//max/python/max/pipelines/architectures/inkling",
         "//max/python/max/pipelines/architectures/mtp_glm5_next",
-        "//max/python/max/pipelines/architectures/mtp_inkling",
         "//max/python/max/pipelines/architectures/mtp_qwen3_5",
         "//max/python/max/pipelines/architectures/qwen3_5",
         "//max/python/max/pipelines/lib",

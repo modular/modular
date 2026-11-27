@@ -18,8 +18,11 @@ from collections.abc import Sequence
 from dataclasses import fields, replace
 from typing import Any
 
+import numpy as np
+import numpy.typing as npt
 from max import tree
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, Usage
+from max.dtype import DType
 from max.engine import InferenceSession
 from max.nn.kv_cache import KVCacheInputs
 from max.pipelines.context import (
@@ -38,8 +41,29 @@ from max.pipelines.lib.vision_batching import (
 from max.pipelines.lib.vision_encoder_cache import VisionEncodeResult
 from max.tensor.compilation import CompiledCallable
 
-from ..inkling.batch_processor import _pinned_copy
 from .model_config import InklingConfig
+
+
+def _pinned_copy(
+    arrays: Sequence[npt.NDArray[np.generic]],
+    device: Device,
+    *,
+    dtype: DType | None = None,
+) -> Buffer:
+    """Stacks arrays along their first axis into a copy on device.
+
+    The stack is written straight into pinned host memory, so the copy to the
+    device is asynchronous. The host buffer is fresh each call, so a later
+    step never overwrites one an earlier copy is still reading.
+    """
+    host = Buffer(
+        shape=(sum(len(array) for array in arrays), *arrays[0].shape[1:]),
+        dtype=dtype or DType.from_numpy(arrays[0].dtype),
+        device=device,
+        usage=Usage.STAGING | Usage.UNTRACKED,
+    )
+    np.concatenate(arrays, out=host.to_numpy())
+    return host.to(device)
 
 
 class _InklingInputs(DecoderModelInputs):

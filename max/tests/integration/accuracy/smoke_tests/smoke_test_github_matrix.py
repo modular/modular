@@ -144,7 +144,6 @@ MODELS: Mapping[str, set[str]] = {
     "tencent/Hy4-FP8": NIGHTLY | MACH | _8xB200,
     "thinkingmachines/Inkling-2-Small": NIGHTLY | _4xB200,
     "thinkingmachines/Inkling-Small-NVFP4": NIGHTLY | _2xB200,
-    "thinkingmachines/Inkling-Small-NVFP4__modulev3": VARIANT | _2xB200,
     "thinkingmachines/Inkling-Small-NVFP4__mtp": NIGHTLY | VARIANT | _2xB200,
     "XiaomiMiMo/MiMo-V2.6-Flash-RL": NIGHTLY | _2xB200,
     "XiaomiMiMo/MiMo-V2.6-Flash-RL__dflash": NIGHTLY | VARIANT | _2xB200,

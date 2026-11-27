@@ -21,7 +21,9 @@ from max.pipelines.architectures.deepseekV4.tool_parser import (
 )
 from max.pipelines.architectures.gemma4.tool_parser import Gemma4ToolParser
 from max.pipelines.architectures.glm5_1.tool_parser import GlmToolParser
-from max.pipelines.architectures.inkling.tool_parser import InklingToolParser
+from max.pipelines.architectures.inkling_modulev3.tool_parser import (
+    InklingToolParser,
+)
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.architectures.minimax_m2.tool_parser import (
     MinimaxM2ToolParser,

@@ -25,22 +25,18 @@ from max.graph import DeviceRef, Graph, TensorValue
 from max.graph.weights import WeightData
 from max.nn.legacy.graph_groups import VisionRows
 from max.nn.legacy.image_preprocess import image_preprocess_input_types
-from max.pipelines.architectures.inkling.layers.moe import InklingMLP
-from max.pipelines.architectures.inkling.model import InklingModel
-from max.pipelines.architectures.inkling.preprocess_graph import (
-    InklingImagePreprocess,
-)
-from max.pipelines.architectures.inkling.weight_adapters import (
-    inkling_weight_rules,
-)
-from max.pipelines.architectures.inkling_modulev3 import weight_adapters
 from max.pipelines.architectures.inkling_modulev3.model_config import (
     InklingConfig,
+)
+from max.pipelines.architectures.inkling_modulev3.preprocess_graph import (
+    InklingImagePreprocess,
 )
 from max.pipelines.architectures.inkling_modulev3.registered_batch_processor import (
     _InklingInputs,
 )
-from max.pipelines.lib.interfaces.pipeline_model import ModelLoadContext
+from max.pipelines.architectures.inkling_modulev3.weight_adapters import (
+    inkling_modulev3_weight_rules,
+)
 from max.pipelines.lib.role_contracts import VisionInputs
 from max.pipelines.lib.weight_transform import WeightTransform
 
@@ -55,7 +51,7 @@ def test_expert_scale_weights_keep_role_and_quantization_names(
         "model.visual.encoder.weight": value,
     }
     converted = WeightTransform(
-        weight_adapters.inkling_modulev3_weight_rules(NonCallableMock())
+        inkling_modulev3_weight_rules(NonCallableMock())
     )(original)
     assert set(converted) == {
         "decoder.layers.0.mlp.experts.w13_weight_scale",
@@ -99,10 +95,7 @@ def test_late_cache_attachments_pack_only_device_zero_vision() -> None:
     assert inputs.buffers == (buffers[0], buffers[3], buffers[5])
 
 
-@pytest.mark.parametrize("module_v3", [False, True])
-def test_rules_preserve_stored_projection_shapes_and_buffers(
-    module_v3: bool,
-) -> None:
+def test_rules_preserve_stored_projection_shapes_and_buffers() -> None:
     weights = {
         "model.llm.layers.0.mlp.w13_dn.weight": np.zeros((16, 8), np.float32),
         "model.llm.layers.1.mlp.shared_experts.shared_w13_weight": np.zeros(
@@ -120,45 +113,12 @@ def test_rules_preserve_stored_projection_shapes_and_buffers(
         name: WeightData.from_numpy(value, name)
         for name, value in weights.items()
     }
-    rules = (
-        weight_adapters.inkling_modulev3_weight_rules
-        if module_v3
-        else inkling_weight_rules
-    )
-    transformed = WeightTransform(rules(NonCallableMock())).apply_data(original)
+    transformed = WeightTransform(
+        inkling_modulev3_weight_rules(NonCallableMock())
+    ).apply_data(original)
     assert len(transformed) == len(original)
     assert {id(value) for value in transformed.values()} == {
         id(value) for value in original.values()
-    }
-
-
-def test_dense_mlp_declares_the_stored_fused_projections() -> None:
-    module = InklingMLP(
-        dtype=DType.bfloat16,
-        hidden_dim=8,
-        feed_forward_length=4,
-        devices=[DeviceRef.CPU()],
-    )
-    weights = module.raw_state_dict()
-    assert set(weights) == {"w13_dn.weight", "w2_md.weight"}
-    assert tuple(weights["w13_dn.weight"].shape) == (8, 8)
-    assert tuple(weights["w2_md.weight"].shape) == (8, 4)
-
-
-def test_fused_pipeline_weight_entry_names_both_towers() -> None:
-    context = NonCallableMock(spec=ModelLoadContext)
-    context.adapter = WeightTransform(inkling_weight_rules(NonCallableMock()))
-    original = {
-        name: WeightData.from_numpy(np.zeros((1,), np.float32), name)
-        for name in (
-            "model.llm.embed.weight",
-            "model.visual.layers.linear_0.weight",
-        )
-    }
-    (entry,) = InklingModel.weight_entries(context, None)
-    assert set(entry.transform.apply_data(original)) == {
-        "embed.weight",
-        "linears.0.weight",
     }
 
 

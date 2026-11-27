@@ -44,10 +44,12 @@ from _grammar_harness import (
     Grammar,
     tool,
 )
-from max.pipelines.architectures.inkling.reasoning import (
+from max.pipelines.architectures.inkling_modulev3.reasoning import (
     InklingReasoningParser,
 )
-from max.pipelines.architectures.inkling.tool_parser import InklingToolParser
+from max.pipelines.architectures.inkling_modulev3.tool_parser import (
+    InklingToolParser,
+)
 from max.pipelines.context import (
     GrammarEnforcementState,
     StructuredOutputRegionDelimiters,

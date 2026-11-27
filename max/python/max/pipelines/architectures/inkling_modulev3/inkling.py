@@ -22,7 +22,7 @@ from max import functional as F
 from max import tree
 from max.driver import CPU
 from max.dtype import DType
-from max.graph import BufferType, DeviceRef, TensorType
+from max.graph import BufferType, DeviceRef, Dim, TensorType, TensorValue, ops
 from max.nn import Module, as_subgraph
 from max.nn.common_layers.embedding import VocabParallelEmbedding
 from max.nn.common_layers.kv_cache import PagedCacheValues, kv_input_values
@@ -48,20 +48,63 @@ from max.tensor.sharding import (
     Partial,
 )
 
-from ..inkling.inkling import _subgraph_layer_groups, token_positions
-from ..inkling.layers.attention import log_scaling_tau
-from ..inkling.model_config import (
+from .arch_config import (
     GLOBAL_ATTENTION,
     LOCAL_ATTENTION,
     STATE_CACHE_KEY,
-    InklingConfig,
+    InklingArchConfig,
     InklingTextConfig,
 )
-from ..inkling.state_cache import ConvSite, InklingConvStateLayout
-from .layers.attention import InklingAttention
+from .layers.attention import InklingAttention, log_scaling_tau
 from .layers.moe import InklingDenseMLP, InklingMoE
 from .layers.placement import as_partial, as_replicated, reduce_partial
 from .layers.short_convolution import InklingRMSNorm, ShortConvolution
+from .state_cache import ConvSite, InklingConvStateLayout
+
+
+def _subgraph_layer_groups(
+    text_config: InklingTextConfig, quant_config: QuantConfig | None
+) -> tuple[list[str], list[list[int]]]:
+    """Groups the decoder layers that can share one compiled subgraph."""
+    groups: dict[tuple[bool, bool, bool], list[int]] = {}
+    for layer_idx in range(text_config.num_hidden_layers):
+        is_moe = text_config.is_moe_layer(layer_idx)
+        key = (
+            text_config.is_local_attention(layer_idx),
+            is_moe,
+            is_moe
+            and quant_config is not None
+            and layer_idx in quant_config.mlp_quantized_layers,
+        )
+        groups.setdefault(key, []).append(layer_idx)
+
+    names = []
+    shared = []
+    for (local, is_moe, quantized), layer_indices in groups.items():
+        if len(layer_indices) == 1:
+            continue
+        flavor = "local" if local else "global"
+        mlp = "nvfp4_moe" if quantized else "moe" if is_moe else "dense"
+        names.append(f"inkling_{flavor}_{mlp}_block")
+        shared.append(layer_indices)
+    return names, shared
+
+
+def token_positions(
+    row_offsets: TensorValue, cache_lengths: TensorValue, total_tokens: Dim
+) -> TensorValue:
+    """Expands each row's cached length into absolute token positions."""
+    offsets = row_offsets.cast(DType.int64)
+    lengths = offsets[1:] - offsets[:-1]
+    bases = (
+        cache_lengths.rebind([offsets.shape[0] - 1]).cast(DType.int64)
+        - offsets[:-1]
+    )
+    return (
+        ops.range(0, total_tokens, dtype=DType.int64, device=row_offsets.device)
+        + ops.repeat_interleave(bases, lengths, out_dim=total_tokens)
+    ).cast(DType.uint32)
+
 
 _log_scaling_tau = F.functional(log_scaling_tau)
 _merge_multimodal_embeddings = F.functional(merge_multimodal_embeddings)
@@ -255,7 +298,7 @@ class Inkling(Module[..., ModuleV3Outputs]):
 
     def __init__(
         self,
-        config: InklingConfig,
+        config: InklingArchConfig,
         *,
         return_logits: ReturnLogits = ReturnLogits.LAST_TOKEN,
         return_hidden_states: ReturnHiddenStates = ReturnHiddenStates.NONE,

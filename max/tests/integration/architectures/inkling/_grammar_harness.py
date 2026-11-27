@@ -26,8 +26,12 @@ from typing import Any
 
 import numpy as np
 from max._core import xgrammar as xgr
-from max.pipelines.architectures.inkling.tokenizer import TOOL_CALL_JSON_MARKER
-from max.pipelines.architectures.inkling.tool_parser import InklingToolParser
+from max.pipelines.architectures.inkling_modulev3.tokenizer import (
+    TOOL_CALL_JSON_MARKER,
+)
+from max.pipelines.architectures.inkling_modulev3.tool_parser import (
+    InklingToolParser,
+)
 
 MESSAGE_MODEL = "<|message_model|>"
 THINKING = "<|content_thinking|>"

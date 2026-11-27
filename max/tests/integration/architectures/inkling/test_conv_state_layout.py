@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from max.pipelines.architectures.inkling.state_cache import (
+from max.pipelines.architectures.inkling_modulev3.state_cache import (
     CONV_STATE_DTYPE,
     ConvSite,
     InklingConvStateLayout,

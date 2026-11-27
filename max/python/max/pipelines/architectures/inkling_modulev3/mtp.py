@@ -34,19 +34,19 @@ from max.tensor import Tensor
 from max.tensor.sharding import DeviceMapping, NamedMapping, Partial
 from max.tensor.sharding.action import PerShard
 
-from ..inkling.model_config import (
+from .arch_config import (
     GLOBAL_ATTENTION,
     LOCAL_ATTENTION,
-    InklingConfig,
-)
-from ..inkling.state_cache import (
-    CONV_STATE_DTYPE,
-    ConvSite,
-    InklingConvStateLayout,
+    InklingArchConfig,
 )
 from .inkling import InklingDecoderLayer, _ConvSites, _log_scaling_tau
 from .layers.placement import as_partial, as_replicated, reduce_partial
 from .layers.short_convolution import InklingRMSNorm
+from .state_cache import (
+    CONV_STATE_DTYPE,
+    ConvSite,
+    InklingConvStateLayout,
+)
 
 __all__ = ["InklingMTPDepth", "InklingMultiTokenPredictor"]
 
@@ -56,7 +56,7 @@ class InklingMTPDepth(Module[..., Tensor]):
 
     def __init__(
         self,
-        config: InklingConfig,
+        config: InklingArchConfig,
         *,
         depth_idx: int,
         is_local: bool,
@@ -119,7 +119,7 @@ class InklingMultiTokenPredictor(Module[..., Tensor]):
 
     def __init__(
         self,
-        config: InklingConfig,
+        config: InklingArchConfig,
         n_depths: int,
         kv_params: MultiKVCacheParams,
     ) -> None:

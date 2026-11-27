@@ -34,13 +34,32 @@ from max.nn._graph_ops.ep import fused_silu
 from max.nn._graph_ops.moe_quant import Nvfp4Scales, NvMxf4f8Strategy
 from max.nn.activation import GatedActivation
 from max.nn.quant_config import QuantConfig, fp4_packed_k
+from max.support.math import ceildiv
 from max.tensor import Tensor
 from max.tensor.realization_context import ensure_context
 
-from ...inkling.layers.moe import nvfp4_input_scale, padded_router_rows
 from .placement import as_partial, as_replicated, shard_axis
 
 _moe_sink_gate_router = F.functional(moe_sink_gate_router)
+
+# Inkling's 256 routed + 2 sink rows are the router GEMM's N, 2 short of the
+# 16-byte alignment a bf16 TMA epilogue needs. Padding to 264 costs 2.3% of
+# this narrow projection and keeps every batch size on the aligned path.
+_ROUTER_ROW_ALIGN = 8
+
+
+def padded_router_rows(num_rows: int) -> int:
+    """Returns the gate's row count, aligned for the router GEMM.
+
+    The padded rows hold no expert: the router reads only the leading
+    ``n_routed_experts + n_shared_experts`` logits.
+    """
+    return ceildiv(num_rows, _ROUTER_ROW_ALIGN) * _ROUTER_ROW_ALIGN
+
+
+def nvfp4_input_scale(input_amax: TensorValue) -> TensorValue:
+    """Derives the multiplicative input scale from the stored BF16 absmax."""
+    return (input_amax.cast(DType.float64) / (448.0 * 6.0)).cast(DType.float32)
 
 
 def _scale_value(out: TensorValue, scale: TensorValue) -> TensorValue:

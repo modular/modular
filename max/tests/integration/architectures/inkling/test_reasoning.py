@@ -15,7 +15,7 @@ from unittest.mock import Mock
 
 import numpy as np
 import pytest
-from max.pipelines.architectures.inkling.reasoning import (
+from max.pipelines.architectures.inkling_modulev3.reasoning import (
     InklingReasoningParser,
 )
 
