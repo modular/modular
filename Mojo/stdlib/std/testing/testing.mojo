@@ -526,7 +526,7 @@ def _assert_cmp_error[
 
 struct assert_raises[
     T: Movable & Deinitable & Writable & Equatable = _AnyError
-](not Movable):
+]:
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
