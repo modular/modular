@@ -795,6 +795,54 @@ def paint(c: Color):
     pass
 
 
+@fieldwise_init
+struct ColorBox:
+    var color: Color
+
+    def get(ref self) -> ref[self.color] Color:
+        return self.color
+
+
+def next_level() -> Int:
+    return 0
+
+
+# CHECK-LABEL: lit.fn @"test_inferred_member_assign_through_ref
+def test_inferred_member_assign_through_ref(mut box: ColorBox):
+    # `.gray` gets its type from the `ref` result.  As with `Color.gray(...)`,
+    # the argument is evaluated before `box.get()`, and the result is written
+    # straight into the reference.
+    # CHECK: lit.call {{.*}}@"next_level()"
+    # CHECK: %[[REF:[0-9]+]] = lit.call {{.*}}@ColorBox::@"get{{.*}}(%box)
+    # CHECK-NEXT: lit.call {{.*}}@Color::@"gray({{.*}}"{{.*}}(%{{[0-9]+}}, %[[REF]])
+    box.get() = .gray(next_level())
+
+
+def overloaded_fn(x: Int) -> Int:
+    return x
+
+
+def overloaded_fn(x: String) -> String:
+    return x
+
+
+@fieldwise_init
+struct FnBox:
+    var f: def(Int) thin -> Int
+
+    def get(ref self) -> ref[self.f] def(Int) thin -> Int:
+        return self.f
+
+
+# CHECK-LABEL: lit.fn @"test_overloaded_fn_assign_through_ref
+def test_overloaded_fn_assign_through_ref(mut box: FnBox):
+    # The `ref` result type picks the overload, as in `box.f = overloaded_fn`.
+    # CHECK: %[[REF:[0-9]+]] = lit.call {{.*}}@FnBox::@"get{{.*}}(%box)
+    # CHECK-NEXT: %[[FN:[0-9]+]] = kgen.create_func_ptr{{.*}}@call_emission::@"overloaded_fn(::SIMD[DType.int, 1])"
+    # CHECK-NEXT: lit.ref.store %[[FN]], %[[REF]]
+    box.get() = overloaded_fn
+
+
 # CHECK-LABEL: lit.fn @"test_inferred_member_runtime_arg
 def test_inferred_member_runtime_arg(level: Int):
     # `.gray` resolves against `paint`'s parameter type even when its argument

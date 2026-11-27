@@ -287,6 +287,21 @@ ASTType ExprDest::resolveImpliedType(SMLoc loc, Type existingValueType,
     if (!existingValueType) {
       if (isa<LValueContextualType>(representation))
         return cast<LValueContextualType>(representation).type;
+
+      // A call target like `b.get()` in `b.get() = .blue()` has a type that
+      // doesn't depend on the assigned value.  Get that type without
+      // evaluating the call, so the target is still evaluated after the value.
+      if (expr->kind == ExprNode::kCall &&
+          patternDeclKind == PatternDeclKind::kNone) {
+        ASTType exprType;
+        emitter.emitExpressionWithoutEvaluatingIt(
+            expr, context, [&](CValue result, IREmitter &, Block &) {
+              exprType = result.getRValueType();
+            });
+        if (!exprType) // Error already emitted.
+          representation = NullRepresentation();
+        return exprType;
+      }
       return {};
     }
 
