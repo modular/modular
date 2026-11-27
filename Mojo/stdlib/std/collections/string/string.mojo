@@ -1324,9 +1324,9 @@ struct String(
 
         var s = "abc"
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
-        assert_equal(iter.__next__(), Codepoint.ord("b"))
-        assert_equal(iter.__next__(), Codepoint.ord("c"))
+        assert_equal(iter.__next__(), Codepoint("a"))
+        assert_equal(iter.__next__(), Codepoint("b"))
+        assert_equal(iter.__next__(), Codepoint("c"))
         with assert_raises():
             _ = iter.__next__() # raises StopIteration
         ```
@@ -1342,7 +1342,7 @@ struct String(
         assert_equal(s.byte_length(), 3)
 
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
+        assert_equal(iter.__next__(), Codepoint("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
         with assert_raises():
@@ -2443,7 +2443,7 @@ def ord(s: StringSpan) raises -> Int:
         print(e)  # ord() expected a single codepoint, but got a string of 2 codepoints: 'ab'
     ```
     """
-    return Int(Codepoint.ord(s))
+    return Int(Codepoint(s))
 
 
 def ord(s: StringLiteral[_]) -> Int:
@@ -2471,7 +2471,7 @@ def ord(s: StringLiteral[_]) -> Int:
     comptime fire = ord("🔥")  # 128293, usable at compile time
     ```
     """
-    return Int(Codepoint.ord(s))
+    return comptime (Int(Codepoint(type_of(s)())))
 
 
 # ===----------------------------------------------------------------------=== #

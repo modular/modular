@@ -1331,9 +1331,9 @@ def test_indexing() raises:
 def test_string_codepoints_iter() raises:
     var s = "abc"
     var iter = s.codepoints()
-    assert_equal(iter.__next__(), Codepoint.ord("a"))
-    assert_equal(iter.__next__(), Codepoint.ord("b"))
-    assert_equal(iter.__next__(), Codepoint.ord("c"))
+    assert_equal(iter.__next__(), Codepoint("a"))
+    assert_equal(iter.__next__(), Codepoint("b"))
+    assert_equal(iter.__next__(), Codepoint("c"))
     with assert_raises():
         _ = iter.__next__()  # raises StopIteration
 
@@ -1678,7 +1678,7 @@ def test_unshare_keeps_capacity() raises:
     assert_equal(appended.capacity_bytes(), capacity)
 
     var pushed = original.copy()
-    pushed.append(Codepoint.ord("y"))
+    pushed.append(Codepoint("y"))
     assert_equal(pushed.capacity_bytes(), capacity)
 
     var edited = original.copy()
@@ -2058,35 +2058,35 @@ def test_from_utf8() raises:
 
 def test_append_codepoint() raises:
     var s = String()
-    s.append(Codepoint.ord("a"))
+    s.append(Codepoint("a"))
     assert_equal(s, "a")
     assert_equal(s.byte_length(), 1)
 
-    s.append(Codepoint.ord("€"))
+    s.append(Codepoint("€"))
     assert_equal(s, "a€")
     assert_equal(s.byte_length(), 4)
 
-    s.append(Codepoint.ord("🔥"))
+    s.append(Codepoint("🔥"))
     assert_equal(s, "a€🔥")
     assert_equal(s.byte_length(), 8)
 
     # A short static string moves inline.
     var short = String("hi")
-    short.append(Codepoint.ord("!"))
+    short.append(Codepoint("!"))
     assert_equal(short, "hi!")
     assert_true(short._is_inline())
 
     # Appending to a shared buffer leaves the other owner untouched.
     var heap = String("x") * 40
     var shared = heap.copy()
-    shared.append(Codepoint.ord("€"))
+    shared.append(Codepoint("€"))
     assert_equal(shared, "x" * 40 + "€")
     assert_equal(heap, "x" * 40)
 
     # Overflowing the inline buffer moves the string to the heap.
     var full = String("a") * String.INLINE_CAPACITY
     assert_true(full._is_inline())
-    full.append(Codepoint.ord("🔥"))
+    full.append(Codepoint("🔥"))
     assert_equal(full, "a" * String.INLINE_CAPACITY + "🔥")
     assert_false(full._is_inline())
 

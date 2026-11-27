@@ -64,7 +64,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     from std.testing import assert_true
 
     # Create a codepoint from a character
-    var c = Codepoint.ord('A')
+    var c = Codepoint('A')
 
     # Check properties
     assert_true(c.is_ascii())
@@ -162,33 +162,73 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         assert_equal(a.to_u32(), 65)
 
         var space = Codepoint(" ")
-        assert_equal(space, Codepoint.ord(" "))
+        assert_equal(space.to_u32(), 32)
 
         # Multi-byte UTF-8 codepoints also work
         var emoji = Codepoint("🔥")
-        assert_equal(emoji, Codepoint.ord("🔥"))
+        assert_equal(emoji.to_u32(), 0x1F525)
         ```
         """
         # Reconstruct the literal from the type parameter to force compile-time
         # evaluation.
         comptime sl: StringLiteral[lit.value] = {}
 
-        # Compile-time validation for proper UTF-8 codepoint.
-        comptime assert (
-            sl.byte_length() > 0
-        ), "Cannot construct an empty codepoint"
+        # TODO(#7470): Use a plain `comptime assert` once it is checked
+        # before the fold below. Until then the fold sits in a branch so an
+        # empty literal never reaches it.
+        comptime if sl.byte_length() > 0:
+            # SAFETY:
+            #   This is safe because `StringLiteral` is guaranteed to point to
+            #   valid UTF-8.
+            comptime char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+                sl.as_bytes()
+            )
+
+            comptime assert sl.byte_length() == Int(
+                num_bytes
+            ), "input string must be one character"
+
+            self = char
+        else:
+            comptime assert False, "Cannot construct an empty codepoint"
+
+    def __init__(out self, string: StringSpan) raises:
+        """Construct a `Codepoint` from a single-codepoint string.
+
+        Args:
+            string: The input string, which must contain exactly one codepoint.
+
+        Raises:
+            Error: If `string` is empty or contains more than one codepoint.
+
+        Examples:
+
+        ```mojo
+        from std.collections.string import Codepoint
+        from std.testing import assert_equal
+
+        var text = String("🔥")
+        var fire = Codepoint(text)
+        assert_equal(fire.to_u32(), 0x1F525)
+        ```
+        """
+        var byte_length = string.byte_length()
+        if byte_length == 0:
+            raise Error(
+                "ord() expected a single codepoint, but got an empty string"
+            )
 
         # SAFETY:
-        #   This is safe because `StringLiteral` is guaranteed to point to
-        #   valid UTF-8.
-        comptime char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-            sl.as_bytes()
+        #   This is safe because `StringSpan` is guaranteed to point to valid
+        #   UTF-8, and we verified above that the input is non-empty.
+        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            string.as_bytes()
         )
-
-        comptime assert sl.byte_length() == Int(
-            num_bytes
-        ), "input string must be one character"
-
+        if num_bytes != byte_length:
+            raise Error(
+                t"ord() expected a single codepoint, but got a string of"
+                t" {string.count_codepoints()} codepoints: '{string}'"
+            )
         self = char
 
     # ===-------------------------------------------------------------------===#
@@ -213,6 +253,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         else:
             return None
 
+    @deprecated("Use the Codepoint(string) constructor instead.")
     @staticmethod
     def ord(string: StringSpan[_]) raises -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
@@ -235,25 +276,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Raises:
             Error: If `string` is empty or contains more than one codepoint.
         """
-        var byte_length = string.byte_length()
-        if byte_length == 0:
-            raise Error(
-                "ord() expected a single codepoint, but got an empty string"
-            )
+        return Codepoint(string)
 
-        # SAFETY:
-        #   This is safe because `StringSpan` is guaranteed to point to valid
-        #   UTF-8, and we verified above that the input is non-empty.
-        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-            string.as_bytes()
-        )
-        if num_bytes != byte_length:
-            raise Error(
-                t"ord() expected a single codepoint, but got a string of"
-                t" {string.count_codepoints()} codepoints: '{string}'"
-            )
-        return char
-
+    @deprecated("Use the Codepoint(string) constructor instead.")
     @staticmethod
     def ord(string: StringLiteral[_]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
@@ -506,14 +531,14 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         from std.testing import assert_true, assert_false
 
         # ASCII space characters
-        assert_true(Codepoint.ord(" ").is_python_space())
-        assert_true(Codepoint.ord("\t").is_python_space())
+        assert_true(Codepoint(" ").is_python_space())
+        assert_true(Codepoint("\t").is_python_space())
 
         # Unicode paragraph separator:
         assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
         # Letters are not space characters
-        assert_false(Codepoint.ord("a").is_python_space())
+        assert_false(Codepoint("a").is_python_space())
         ```
         """
 

@@ -15,5 +15,5 @@
 
 
 def main():
-    # CHECK: ord() expects a string literal containing exactly one character
+    # CHECK: Cannot construct an empty codepoint
     print(ord(""))

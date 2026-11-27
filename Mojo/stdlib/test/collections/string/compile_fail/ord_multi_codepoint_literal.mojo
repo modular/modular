@@ -15,5 +15,5 @@
 
 
 def main():
-    # CHECK: ord() expects a string literal containing exactly one character
+    # CHECK: input string must be one character
     print(ord("ab"))

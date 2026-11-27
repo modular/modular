@@ -374,16 +374,16 @@ struct CodepointsIter[origin: ImmOrigin](
         var input = StringSpan("123")
         var iter = input.codepoints()
 
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
 
         # A call to `next()` return the same value as `peek_next()` had,
         # but also advance the iterator.
-        assert_equal(iter.next().value(), Codepoint.ord("1"))
+        assert_equal(iter.next().value(), Codepoint("1"))
 
         # Later `peek_next()` calls will return the _new_ next character:
-        assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
+        assert_equal(iter.peek_next().value(), Codepoint("2"))
         ```
         """
         if self._slice.byte_length() > 0:
