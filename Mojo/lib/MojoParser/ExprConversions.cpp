@@ -229,7 +229,7 @@ static FnMetadataAttr withoutCaptureOrigins(FnMetadataAttr metadata) {
       /*captureOrigins=*/{}, originData.getDefinesInteriorOrigins(),
       originData.getIsUnsafeNestedOriginsReadOnly(),
       originData.getIsEnforcedNestedOriginsReadOnly(),
-      originData.getRefinedArgs()));
+      originData.getAccessSets()));
 }
 
 /// Return metadata with origin information that does not affect the runtime
@@ -245,7 +245,7 @@ withoutRepresentationOnlyOriginMetadata(FnMetadataAttr metadata) {
       /*captureOrigins=*/{}, originData.getDefinesInteriorOrigins(),
       originData.getIsUnsafeNestedOriginsReadOnly(),
       originData.getIsEnforcedNestedOriginsReadOnly(),
-      /*refinedArgs=*/{}));
+      /*accessSets=*/{}));
 }
 
 // Strip out irrelevant details of a function that can be rebound away to make
@@ -754,7 +754,7 @@ static CValue convertFunctionGeneratorValue(CValue value, const ExprNode *expr,
       reducedExpected.getDefinesInteriorOrigins(),
       reducedExpected.getFnOriginMetadata().getIsUnsafeNestedOriginsReadOnly(),
       reducedExpected.getIsEnforcedNestedOriginsReadOnly(),
-      reducedExpected.getFnOriginMetadata().getRefinedArgs());
+      reducedExpected.getFnOriginMetadata().getAccessSets());
   auto thunkFuncType = sugarCast<FunctionType>(
       paramRefsReplacer.getReboundType(reducedExpected.getValues()));
   SmallVector<ConstraintAttr> thunkBodyConstraints;

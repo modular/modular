@@ -71,42 +71,22 @@ def LIT_SymbolAttr : LITAttr<"Symbol", "symbol"> {
 }
 
 //===----------------------------------------------------------------------===//
-// OriginAccessAttr
+// OriginAccessSetAttr
 //===----------------------------------------------------------------------===//
 
-def LIT_OriginAccessAttr : LITAttr<"OriginAccess", "origin_access"> {
-  let summary = "an access rule for a resolved origin";
+def LIT_OriginAccessSetAttr : LITAttr<"OriginAccessSet", "origin_access_set"> {
+  let summary = "replacement accesses for one origin root";
   let description = [{
-    This attribute specifies the access permitted through one resolved origin
-    in a refined function argument. The origin may identify the argument
-    itself, one of its fields, or an origin parameter in its type.
+    This attribute replaces the default accesses through `root` with
+    `accesses`. Origin mutability distinguishes read-write from read-only
+    access. An empty list permits no access through the root.
   }];
 
   let parameters = (ins
-    EnumParameter<LIT_OriginAccessKind>:$kind,
-    "TypedAttr":$origin
+    "TypedAttr":$root,
+    OptionalArrayRefParameter<"TypedAttr">:$accesses
   );
-  let assemblyFormat = "`<` $kind `,` $origin `>`";
-  let genVerifyDecl = 1;
-}
-
-//===----------------------------------------------------------------------===//
-// RefinedArgAccessAttr
-//===----------------------------------------------------------------------===//
-
-def LIT_RefinedArgAccessAttr
-    : LITAttr<"RefinedArgAccess", "refined_arg_access"> {
-  let summary = "replacement access rules for one function argument";
-  let description = [{
-    This attribute associates a function argument index with the access rules
-    that replace that argument's default origin accesses.
-  }];
-
-  let parameters = (ins
-    "size_t":$argumentIndex,
-    ArrayRefParameter<"OriginAccessAttr">:$rules
-  );
-  let assemblyFormat = "`<` $argumentIndex `:` `[` $rules `]` `>`";
+  let assemblyFormat = "`<` $root `:` custom<OriginSet>($accesses) `>`";
   let genVerifyDecl = 1;
 }
 
@@ -121,9 +101,9 @@ def LIT_FnOriginMetadataAttr : LITAttr<"FnOriginMetadata",
   let description = [{
     The `#lit.fn_origin_metadata` attribute carries LIT-specific origin and
     lifetime information for a function: the number of implicit origin
-    declarations, the captured origin set, refined argument accesses, and the
-    function's nested-origin access promises. The parameter (POG) list lives on
-    [[kgen.func]]'s `argListAttrs` field, not here.
+    declarations, the captured origin set, replacement origin access sets, and
+    the function's nested-origin access promises. The parameter (POG) list
+    lives on [[kgen.func]]'s `argListAttrs` field, not here.
 
     Example:
 
@@ -142,7 +122,7 @@ def LIT_FnOriginMetadataAttr : LITAttr<"FnOriginMetadata",
     // to not be dereferenced.
     OptionalParameter<"bool">:$isUnsafeNestedOriginsReadOnly,
     OptionalParameter<"bool">:$isEnforcedNestedOriginsReadOnly,
-    OptionalArrayRefParameter<"RefinedArgAccessAttr">:$refinedArgs
+    OptionalArrayRefParameter<"OriginAccessSetAttr">:$accessSets
   );
   let assemblyFormat = [{
     `<` $numImplicitOriginDecls
@@ -150,7 +130,7 @@ def LIT_FnOriginMetadataAttr : LITAttr<"FnOriginMetadata",
     (`,` $definesInteriorOrigins^
       (`,` $isUnsafeNestedOriginsReadOnly^
         (`,` $isEnforcedNestedOriginsReadOnly^)? )? )?
-    (`:` `accesses` `=` `[` $refinedArgs^ `]`)?
+    (`:` `accesses` `=` `[` $accessSets^ `]`)?
     `>`
   }];
 
@@ -162,7 +142,7 @@ def LIT_FnOriginMetadataAttr : LITAttr<"FnOriginMetadata",
                      "bool":$definesInteriorOrigins,
                      "bool":$isUnsafeNestedOriginsReadOnly,
                      CArg<"bool", "false">:$isEnforcedNestedOriginsReadOnly,
-                     CArg<"ArrayRef<RefinedArgAccessAttr>", "{}">:$refinedArgs)>,
+                     CArg<"ArrayRef<OriginAccessSetAttr>", "{}">:$accessSets)>,
   ];
 
   let extraClassDeclaration = [{

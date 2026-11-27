@@ -154,8 +154,9 @@ bool originsOverlap(TypedAttr lhs, TypedAttr rhs);
 bool isOriginWithin(TypedAttr origin, TypedAttr root);
 
 /// Return the default access through an argument's implicit reference origin.
-std::optional<OriginAccessKind>
-getDefaultArgumentAccess(ArgConvention convention);
+/// Returns the mutability of the default root access, or nullopt when the
+/// convention cannot be refined.
+std::optional<bool> getDefaultArgumentAccess(ArgConvention convention);
 
 /// Return true if the actual argument's refined access contract is no broader
 /// than the expected argument's contract.
@@ -182,10 +183,11 @@ parseOptionalOriginSet(AsmParser &p, SmallVectorImpl<TypedAttr> &lifetimes);
 void printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes);
 
 /// Parse and print refined argument access specifications.
-OptionalParseResult parseOptionalRefinedArgAccesses(
-    AsmParser &p, SmallVectorImpl<RefinedArgAccessAttr> &refinedArgs);
-void printRefinedArgAccesses(AsmPrinter &p,
-                             ArrayRef<RefinedArgAccessAttr> refinedArgs);
+OptionalParseResult
+parseOptionalOriginAccessSets(AsmParser &p,
+                              SmallVectorImpl<OriginAccessSetAttr> &accessSets);
+void printOriginAccessSets(AsmPrinter &p,
+                           ArrayRef<OriginAccessSetAttr> accessSets);
 
 /// Return true if the origin set parameter is an empty set.
 bool isEmptyOriginSet(TypedAttr attr);

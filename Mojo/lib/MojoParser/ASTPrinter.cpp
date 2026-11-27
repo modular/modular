@@ -1695,27 +1695,28 @@ static void printFnGeneratorType(FnOrFnLiteralTypeGeneratorType type,
     ASTType(resultType).print(os, ctx);
   printGeneratorBodyConstraints(os, type.getParamListAttrs(), evaluator, ctx);
   auto originMetadata = cast<FnOriginMetadataAttr>(fnType.getMetadata());
-  if (!originMetadata.getRefinedArgs().empty()) {
+  if (!originMetadata.getAccessSets().empty()) {
     os << " __accesses(";
     bool first = true;
-    for (RefinedArgAccessAttr refinedArg : originMetadata.getRefinedArgs()) {
-      for (OriginAccessAttr rule : refinedArg.getRules()) {
+    for (OriginAccessSetAttr accessSet : originMetadata.getAccessSets()) {
+      if (accessSet.getAccesses().empty()) {
         if (!first)
           os << ", ";
         first = false;
-        switch (rule.getKind()) {
-        case OriginAccessKind::None:
-          os << "none ";
-          break;
-        case OriginAccessKind::ReadOnly:
-          os << "imm ";
-          break;
-        case OriginAccessKind::ReadWrite:
-          os << "mut ";
-          break;
-        }
-        ASTType::printOriginParam(os, rule.getOrigin(), ctx.shared,
+        os << "none ";
+        ASTType::printOriginParam(os, accessSet.getRoot(), ctx.shared,
                                   /*elideOriginOf=*/true);
+        continue;
+      }
+      for (TypedAttr access : accessSet.getAccesses()) {
+        if (!first)
+          os << ", ";
+        first = false;
+        bool isMutable =
+            cast<OriginType>(access.getType()).isMutableKnown(true);
+        os << (isMutable ? "mut " : "imm ");
+        ASTType::printOriginParam(os, OriginMutCastAttr::strip(access),
+                                  ctx.shared, /*elideOriginOf=*/true);
       }
     }
     os << ')';

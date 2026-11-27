@@ -317,13 +317,6 @@ def subtree_origin_access[origin: Origin](
     pass
 
 
-# expected-error @+3 {{access origin is reachable through multiple arguments; qualify it through an argument name}}
-def ambiguous_explicit_origin_access[origin: Origin](
-    ref[origin] x: Int, ref[origin] y: Int
-) __accesses(imm origin):
-    pass
-
-
 # Tests that we detect too few arguments when doing function conversions.
 
 

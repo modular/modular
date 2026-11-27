@@ -1928,13 +1928,13 @@ ParseResult ParsedArgumentList::parseAccessesIfPresent(ParserBase &p) {
 
     while (true) {
       SMLoc specifierLoc = p.getToken().getLoc();
-      OriginAccessKind kind;
+      ParsedOriginAccess::Kind accessKind;
       if (p.consumeIfSoftIdentifier("none"))
-        kind = OriginAccessKind::None;
+        accessKind = ParsedOriginAccess::None;
       else if (p.consumeIfSoftIdentifier("imm"))
-        kind = OriginAccessKind::ReadOnly;
+        accessKind = ParsedOriginAccess::Immutable;
       else if (p.consumeIfSoftIdentifier("mut"))
-        kind = OriginAccessKind::ReadWrite;
+        accessKind = ParsedOriginAccess::Mutable;
       else
         return p.emitError(specifierLoc,
                            "expected 'none', 'imm', or 'mut' access specifier");
@@ -1943,7 +1943,7 @@ ParseResult ParsedArgumentList::parseAccessesIfPresent(ParserBase &p) {
       if (p.parseExpression(originExpr, /*stmtIndent=*/std::nullopt,
                             ParserBase::Precedence::kPrimary))
         return failure();
-      refinedAccesses.push_back({kind, originExpr, specifierLoc});
+      refinedAccesses.push_back({accessKind, originExpr, specifierLoc});
 
       if (p.consumeIf(Token::r_paren))
         break;
@@ -2821,19 +2821,22 @@ static StringRef getAccessPathRootName(const ExprNode *expr) {
 }
 
 /// Type check the source access specifications in `argList.refinedAccesses`
-/// and produce the resolved, validated `refinedArgs` IR. This resolves each
-/// path to an origin and argument, rejects inaccessible or ambiguous origins,
-/// overlapping rules, and expansions of the argument's default access, and
-/// diagnoses rules that only restate the default.
+/// and produce the resolved, validated `accessSets` IR. This resolves each
+/// path to an origin, rejects inaccessible origins, overlapping rules, and
+/// expansions of the default access, and diagnoses redundant rules.
 void TypeCheckedFnSignature::checkAccessesSpec() {
   if (partial || argList.refinedAccesses.empty())
     return;
 
   SharedState &shared = paramList.shared;
   IREmitter emitter(paramList.declScope, EC_Origin);
-  SmallVector<SmallVector<OriginAccessAttr>> rulesByArgument(
-      argList.parsedArgs.size());
-  SmallVector<SmallVector<SMLoc>> ruleLocations(argList.parsedArgs.size());
+  struct AccessSet {
+    TypedAttr root;
+    SmallVector<TypedAttr> accesses;
+    SmallVector<TypedAttr> specifiedOrigins;
+    SmallVector<SMLoc> locations;
+  };
+  SmallVector<AccessSet> sets;
 
   for (const ParsedOriginAccess &parsed : argList.refinedAccesses) {
     // Verify that it is syntactically valid so we can reject invalid cases with
@@ -2874,98 +2877,102 @@ void TypeCheckedFnSignature::checkAccessesSpec() {
       continue;
     }
 
-    std::optional<size_t> candidateArgumentIndex;
+    std::optional<size_t> namedArgumentIndex;
     // A path rooted in an argument name identifies that argument directly.
     for (auto [idx, arg] : llvm::enumerate(argList.parsedArgs)) {
       if (arg.name && arg.name.strref() == rootName) {
-        candidateArgumentIndex = idx;
+        namedArgumentIndex = idx;
         break;
       }
     }
 
-    // An explicit origin parameter, including `Self.element_origin`, has no
-    // argument name at its root. Associate it with the argument type that
-    // carries that origin.
-    if (!candidateArgumentIndex) {
-      auto reachesOrigin = [&](Type argType) {
-        SmallVector<TypedAttr> argumentOrigins =
-            shared.cachedOriginFinder.findOriginsIn({argType});
-        return llvm::any_of(argumentOrigins, [&](TypedAttr argumentOrigin) {
-          return isOriginWithin(origin, argumentOrigin);
-        });
-      };
-      auto first = llvm::find_if(fullArgTypes, reachesOrigin);
-      if (first != fullArgTypes.end()) {
-        if (llvm::any_of(llvm::drop_begin(fullArgTypes,
-                                          first - fullArgTypes.begin() + 1),
-                         reachesOrigin)) {
-          shared.emitError(parsed.originExpr->getLoc(),
-                           "access origin is reachable through multiple "
-                           "arguments; qualify it through an argument name");
-          continue;
-        }
-        candidateArgumentIndex = first - fullArgTypes.begin();
-      }
-    }
-
-    if (!candidateArgumentIndex) {
+    auto argumentContainsOrigin = [&](Type argType) {
+      SmallVector<TypedAttr> argumentOrigins =
+          shared.cachedOriginFinder.findOriginsIn({argType});
+      return llvm::any_of(argumentOrigins, [&](TypedAttr argumentOrigin) {
+        return isOriginWithin(origin, argumentOrigin);
+      });
+    };
+    if (!namedArgumentIndex &&
+        llvm::none_of(fullArgTypes, argumentContainsOrigin)) {
       shared.emitError(parsed.originExpr->getLoc(),
                        "access origin is not reachable through any argument");
       continue;
     }
 
-    // At this point, we know the argument associated with this access path, so
-    // we can record it.  Before we do, check that it is a simple argument type.
-    size_t argumentIndex = *candidateArgumentIndex;
-    auto &argument = argList.parsedArgs[argumentIndex];
-    if (argument.convention == ParsedArgument::kConventionVar) {
-      shared.emitError(parsed.loc,
-                       "'var' arguments are always mutable and cannot have "
-                       "refined access specifications");
-      continue;
+    if (namedArgumentIndex) {
+      auto &argument = argList.parsedArgs[*namedArgumentIndex];
+      if (argument.convention == ParsedArgument::kConventionVar) {
+        shared.emitError(parsed.loc,
+                         "'var' arguments are always mutable and cannot have "
+                         "refined access specifications");
+        continue;
+      }
+      if (argument.convention == ParsedArgument::kConventionByRefResult) {
+        shared.emitError(
+            parsed.loc,
+            "'out' arguments cannot have refined access specifications");
+        continue;
+      }
+      if (argument.variadicKind != VariadicKind::None) {
+        shared.emitError(parsed.loc,
+                         "variadic arguments and packs cannot have refined "
+                         "access specifications");
+        continue;
+      }
     }
-    if (argument.convention == ParsedArgument::kConventionByRefResult) {
-      shared.emitError(parsed.loc, "'out' arguments cannot have refined access "
-                                   "specifications");
-      continue;
-    }
-    if (argument.variadicKind != VariadicKind::None) {
-      shared.emitError(parsed.loc,
-                       "variadic arguments and packs cannot have refined "
-                       "access specifications");
-      continue;
-    }
-    // Check to see if this is a completely redundant access specification.
-    auto defaultRootAccess = getDefaultArgumentAccess(argument.kgenConvention);
-    auto argumentType = dyn_cast<RefType>(fullArgTypes[argumentIndex]);
+
     // Refinements may only narrow the default access of the reference origin.
-    if (parsed.kind == OriginAccessKind::ReadWrite && argumentType &&
-        defaultRootAccess == OriginAccessKind::ReadOnly &&
-        isOriginWithin(origin, argumentType.getOrigin())) {
+    bool expandsDefault =
+        parsed.kind == ParsedOriginAccess::Mutable &&
+        llvm::any_of(llvm::enumerate(fullArgTypes), [&](auto indexed) {
+          auto defaultAccess = getDefaultArgumentAccess(
+              argList.parsedArgs[indexed.index()].kgenConvention);
+          return argumentContainsOrigin(indexed.value()) && defaultAccess &&
+                 !*defaultAccess;
+        });
+    if (expandsDefault) {
       shared.emitError(
           parsed.loc,
           "access specification may not expand the argument's default access");
       continue;
     }
 
-    auto &rules = rulesByArgument[argumentIndex];
-    auto &locations = ruleLocations[argumentIndex];
+    // Field projections share one replacement root. Explicit origin
+    // parameters naturally remain their own roots, even when several
+    // arguments carry them.
+    TypedAttr root = OriginMutCastAttr::strip(origin);
+    while (auto field = dyn_cast<OriginFieldAttr>(root))
+      root = OriginMutCastAttr::strip(field.getBase());
+    auto setIt = llvm::find_if(sets, [&](const AccessSet &set) {
+      return isEqualCanon(set.root, root);
+    });
+    if (setIt == sets.end()) {
+      sets.push_back({root, {}, {}, {}});
+      setIt = std::prev(sets.end());
+    }
+
     // A rule for an enclosing or enclosed origin would give one access two
     // potentially conflicting specifications.
-    auto overlap = llvm::find_if(rules, [&](OriginAccessAttr existing) {
-      return originsOverlap(origin, existing.getOrigin());
+    auto overlap = llvm::find_if(setIt->specifiedOrigins, [&](TypedAttr other) {
+      return originsOverlap(origin, other);
     });
-    if (overlap != rules.end()) {
-      size_t previousIndex = overlap - rules.begin();
+    if (overlap != setIt->specifiedOrigins.end()) {
+      size_t previousIndex = overlap - setIt->specifiedOrigins.begin();
       auto diag = shared.emitError(parsed.originExpr->getLoc(),
                                    "overlapping origin access specifications");
-      diag.attachNote(locations[previousIndex])
+      diag.attachNote(setIt->locations[previousIndex])
           << "previous access specification is here";
       continue;
     }
 
-    if (defaultRootAccess) {
-      if (argumentType && *defaultRootAccess == parsed.kind &&
+    if (namedArgumentIndex) {
+      auto defaultAccess = getDefaultArgumentAccess(
+          argList.parsedArgs[*namedArgumentIndex].kgenConvention);
+      auto argumentType = dyn_cast<RefType>(fullArgTypes[*namedArgumentIndex]);
+      bool specifiesMutable = parsed.kind == ParsedOriginAccess::Mutable;
+      if (defaultAccess && parsed.kind != ParsedOriginAccess::None &&
+          *defaultAccess == specifiesMutable && argumentType &&
           isEqualCanon(argumentType.getOrigin(), origin))
         shared.emitWarning(
             parsed.loc,
@@ -2973,21 +2980,17 @@ void TypeCheckedFnSignature::checkAccessesSpec() {
             "access");
     }
 
-    rules.push_back(
-        OriginAccessAttr::get(shared.getContext(), parsed.kind, origin));
-    locations.push_back(parsed.loc);
+    setIt->specifiedOrigins.push_back(origin);
+    setIt->locations.push_back(parsed.loc);
+    if (parsed.kind == ParsedOriginAccess::Mutable)
+      setIt->accesses.push_back(origin);
+    else if (parsed.kind == ParsedOriginAccess::Immutable)
+      setIt->accesses.push_back(OriginMutCastAttr::get(origin, false));
   }
 
-  // Now that we've processed all the access specifications and associated with
-  // arguments, build the data structure to represent the access set.
-  for (auto [idx, rules] : llvm::enumerate(rulesByArgument)) {
-    // Omit arguments with no refinements so the common case has no IR
-    // metadata or printed syntax.
-    if (rules.empty())
-      continue;
-    refinedArgs.push_back(
-        RefinedArgAccessAttr::get(shared.getContext(), idx, rules));
-  }
+  for (const AccessSet &set : sets)
+    accessSets.push_back(
+        OriginAccessSetAttr::get(shared.getContext(), set.root, set.accesses));
 }
 
 /// Emit the argument types, default values, and result type and determine
@@ -3536,7 +3539,7 @@ FnTypeGeneratorType TypeCheckedFnSignature::getFnTypeGeneratorType() const {
       getOriginsAccessibleByParams(paramListAttr, paramList.paramDeclAttrs,
                                    paramList.shared, captureOrigins),
       definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
-      isNestedOriginsReadOnly, refinedArgs);
+      isNestedOriginsReadOnly, accessSets);
 
   /// We shouldn't have internal verifier errors here, but if we do, try to
   /// emit them at some location of merit because something snuck through

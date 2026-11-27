@@ -21,21 +21,6 @@
 include "mlir/IR/EnumAttr.td"
 
 //===----------------------------------------------------------------------===//
-// OriginAccessKind
-//===----------------------------------------------------------------------===//
-
-def LIT_OriginAccessKind : I32EnumAttr<
-  "OriginAccessKind", "origin access kind",
-[
-  I32EnumAttrCase<"None", 0, "none">,
-  I32EnumAttrCase<"ReadOnly", 1, "readonly">,
-  I32EnumAttrCase<"ReadWrite", 2, "readwrite">
-]> {
-  let cppNamespace = "::M::KGEN::LIT";
-  let genSpecializedAttr = 0;
-}
-
-//===----------------------------------------------------------------------===//
 // ImplicitConversionKind
 //===----------------------------------------------------------------------===//
 

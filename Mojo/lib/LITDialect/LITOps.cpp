@@ -775,9 +775,8 @@ static ParseResult parseLITFunctionSignature(
                                   /*optionalResultList=*/true)))
     return failure();
 
-  SmallVector<RefinedArgAccessAttr> refinedArgs;
-  if (OptionalParseResult result =
-          parseOptionalRefinedArgAccesses(p, refinedArgs);
+  SmallVector<OriginAccessSetAttr> accessSets;
+  if (OptionalParseResult result = parseOptionalOriginAccessSets(p, accessSets);
       result.has_value() && failed(*result))
     return failure();
 
@@ -791,7 +790,7 @@ static ParseResult parseLITFunctionSignature(
   auto metadata = FnOriginMetadataAttr::get(
       p.getContext(), originDecls.size(), captureOrigins,
       definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
-      isEnforcedNestedOriginsReadOnly, refinedArgs);
+      isEnforcedNestedOriginsReadOnly, accessSets);
   signature = FuncTypeGeneratorType::remapToFuncTypeGenerator(
       params, functionType, argConventions, effects, metadata, paramListAttr,
       [&] { return p.emitError(startLoc); }, pogList);
@@ -908,9 +907,9 @@ static void printLITFunctionSignature(OpAsmPrinter &p, Region *region,
   printSignatureValues(p, printElt, functionType, signature.getArgConventions(),
                        signature.getFnEffects(),
                        /*optionalResultList=*/true);
-  if (!originData.getRefinedArgs().empty()) {
+  if (!originData.getAccessSets().empty()) {
     p << ' ';
-    printRefinedArgAccesses(p, originData.getRefinedArgs());
+    printOriginAccessSets(p, originData.getAccessSets());
   }
 }
 

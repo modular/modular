@@ -297,7 +297,8 @@ public:
 
 /// One source-level entry in an experimental `__accesses(...)` clause.
 struct ParsedOriginAccess {
-  OriginAccessKind kind;
+  enum Kind { None, Immutable, Mutable };
+  Kind kind;
   ExprNode *originExpr;
   SMLoc loc;
 };
@@ -421,8 +422,8 @@ public:
   /// Whether the function has an explicitly declared return type containing an
   /// interior origin, so calls establish those interior origins.
   bool definesInteriorOrigins = false;
-  /// Resolved replacement access sets, grouped by argument.
-  SmallVector<RefinedArgAccessAttr> refinedArgs;
+  /// Resolved replacement access sets, grouped by their canonical root.
+  SmallVector<OriginAccessSetAttr> accessSets;
 
   /// This performs any special checks over the declaration based on its name
   /// and whether it is a method.  This happens after decorator processing

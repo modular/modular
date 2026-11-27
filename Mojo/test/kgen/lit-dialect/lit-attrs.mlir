@@ -32,40 +32,36 @@
 // CHECK-LABEL: kgen.generator @origin_access_attrs
 kgen.generator @origin_access_attrs<
     x: !lit.origin<false>, y: !lit.origin<true>>() {
-  // CHECK: #lit.origin_access<none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
+  // CHECK: #lit.origin_access_set<#kgen.param.decl.ref<"x"> : !lit.origin<false> : {}>
   "none.access"() {
-    access = #lit.origin_access<
-      none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
+    access = #lit.origin_access_set<
+      #kgen.param.decl.ref<"x"> : !lit.origin<false> : {}>
   } : () -> ()
 
-  // CHECK: #lit.refined_arg_access<1 : [<readonly, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "left"> : !lit.origin<true>>, <readwrite, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "right"> : !lit.origin<true>>]>
+  // CHECK: #lit.origin_access_set<#kgen.param.decl.ref<"y"> : !lit.origin<true> : {imm (mutcast mut y->left), mut y->right}>
   "refined.arg"() {
-    accesses = #lit.refined_arg_access<1: [
-      #lit.origin_access<
-        readonly, #lit.origin.field<
+    accesses = #lit.origin_access_set<
+      #kgen.param.decl.ref<"y"> : !lit.origin<true> : {
+        imm #lit.origin.mutcast<#lit.origin.field<
           #kgen.param.decl.ref<"y"> : !lit.origin<true>,
-          "left"> : !lit.origin<true>>,
-      #lit.origin_access<
-        readwrite, #lit.origin.field<
+          "left"> : !lit.origin<true>> : !lit.origin<false>,
+        mut #lit.origin.field<
           #kgen.param.decl.ref<"y"> : !lit.origin<true>,
-          "right"> : !lit.origin<true>>
-    ]>
+          "right"> : !lit.origin<true>
+      }>
   } : () -> ()
 
-  // CHECK: #lit.fn_origin_metadata<2 : accesses = [<0 : [<none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>]>, <1 : [<readonly, #lit.origin.field<#kgen.param.decl.ref<"y"> : !lit.origin<true>, "field"> : !lit.origin<true>>]>]>
+  // CHECK: #lit.fn_origin_metadata<2 : accesses = [<#kgen.param.decl.ref<"x"> : !lit.origin<false> : {}>, <#kgen.param.decl.ref<"y"> : !lit.origin<true> : {imm (mutcast mut y->field)}>]>
   "metadata.accesses"() {
     metadata = #lit.fn_origin_metadata<2: accesses = [
-      #lit.refined_arg_access<0: [
-        #lit.origin_access<
-          none, #kgen.param.decl.ref<"x"> : !lit.origin<false>>
-      ]>,
-      #lit.refined_arg_access<1: [
-        #lit.origin_access<
-          readonly,
-          #lit.origin.field<
+      #lit.origin_access_set<
+        #kgen.param.decl.ref<"x"> : !lit.origin<false> : {}>,
+      #lit.origin_access_set<
+        #kgen.param.decl.ref<"y"> : !lit.origin<true> : {
+          imm #lit.origin.mutcast<#lit.origin.field<
             #kgen.param.decl.ref<"y"> : !lit.origin<true>,
-            "field"> : !lit.origin<true>>
-      ]>
+            "field"> : !lit.origin<true>> : !lit.origin<false>
+        }>
     ]>
   } : () -> ()
 

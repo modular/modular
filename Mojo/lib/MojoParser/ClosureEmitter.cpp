@@ -468,17 +468,13 @@ addClosureSelfArgToFunctionSignature(Type closureType, ArgConvention convention,
 
   // Closure storage is carried by the inserted self argument, not by FnEffects.
   auto newArgListAttr = argListAttr.cloneWith(argPogs);
-  SmallVector<RefinedArgAccessAttr> refinedArgs;
-  refinedArgs.reserve(oldFnMetadata.getRefinedArgs().size());
-  for (auto refinedArg : oldFnMetadata.getRefinedArgs())
-    refinedArgs.push_back(RefinedArgAccessAttr::get(
-        ctx, refinedArg.getArgumentIndex() + 1, refinedArg.getRules()));
   auto metadata = FnOriginMetadataAttr::get(
       ctx, oldFnMetadata.getNumImplicitOriginDecls(),
       oldFnMetadata.getCaptureOrigins(),
       oldFnMetadata.getDefinesInteriorOrigins(),
       oldFnMetadata.getIsUnsafeNestedOriginsReadOnly(),
-      oldFnMetadata.getIsEnforcedNestedOriginsReadOnly(), refinedArgs);
+      oldFnMetadata.getIsEnforcedNestedOriginsReadOnly(),
+      oldFnMetadata.getAccessSets());
   return FuncTypeGeneratorType::get(
       sig.getInputParamTypes(),
       FunctionType::get(ctx, signatureInputs, sig.getResults()), argConventions,
@@ -930,7 +926,7 @@ static FnTypeGeneratorType prependImplicitOriginDecl(FnTypeGeneratorType sig) {
       sig.getContext(), oldMeta.getNumImplicitOriginDecls() + 1,
       oldMeta.getCaptureOrigins(), oldMeta.getDefinesInteriorOrigins(),
       oldMeta.getIsUnsafeNestedOriginsReadOnly(),
-      oldMeta.getIsEnforcedNestedOriginsReadOnly(), oldMeta.getRefinedArgs());
+      oldMeta.getIsEnforcedNestedOriginsReadOnly(), oldMeta.getAccessSets());
   return FnTypeGeneratorType::get(sig.getInputParamTypes(), sig.getValues(),
                                   sig.getArgConventions(), sig.getFnEffects(),
                                   newMeta, sig.getParamListAttrs(),

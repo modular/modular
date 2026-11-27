@@ -430,6 +430,13 @@ need to enforce every memory access in the body of the function during ordinary
 type checking. Enforcement belongs primarily in `CheckLifetimes` in its initial
 “uninit pass,” which already processes every access.
 
+The IR stores a sparse list of replacement sets. Each entry contains an origin
+root and the origins accessible beneath that root. A missing root retains its
+default access, while an entry with an empty list represents `none`. A mutable
+origin represents `mut`; an `OriginMutCastAttr` to an immutable origin
+represents `imm`. Roots are independent of argument ownership, so one entry can
+refine an explicit origin carried by multiple arguments.
+
 `accesses` can be a contextual keyword. The lexer can continue to produce an
 identifier, and the function-signature parser recognizes it only after the
 optional result type, or after the argument list and other effects when the

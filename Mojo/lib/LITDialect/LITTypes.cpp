@@ -1346,9 +1346,8 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   if (failed(*result))
     return failure();
 
-  SmallVector<RefinedArgAccessAttr> refinedArgs;
-  if (OptionalParseResult result =
-          parseOptionalRefinedArgAccesses(p, refinedArgs);
+  SmallVector<OriginAccessSetAttr> accessSets;
+  if (OptionalParseResult result = parseOptionalOriginAccessSets(p, accessSets);
       result.has_value() && failed(*result))
     return failure();
 
@@ -1362,7 +1361,7 @@ static OptionalParseResult parseOptionalLITFuncType(AsmParser &p,
   auto metadata = FnOriginMetadataAttr::get(
       ctx, numOriginDecls, captureOrigins, definesInteriorOrigins,
       isUnsafeNestedOriginsReadOnly, isEnforcedNestedOriginsReadOnly,
-      refinedArgs);
+      accessSets);
   signature =
       FuncType::getChecked([&] { return p.emitError(startLoc); }, functionType,
                            argConventions, effects, metadata, pogList);
@@ -1525,7 +1524,7 @@ FuncType FuncType::getWithCaptureOrigins(TypedAttr origins) {
                                 origins, getDefinesInteriorOrigins(),
                                 metadata.getIsUnsafeNestedOriginsReadOnly(),
                                 getIsEnforcedNestedOriginsReadOnly(),
-                                metadata.getRefinedArgs()),
+                                metadata.getAccessSets()),
       getArgListAttrs());
 }
 

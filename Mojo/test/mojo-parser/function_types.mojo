@@ -294,14 +294,14 @@ def explicit_checked_nested_origins_read_only(x: Int)
 
 
 # CHECK-LABEL: lit.fn @"refined_origin_accesses
-# CHECK-SAME: accesses[0: [readonly mut *[0,0]], 1: [none mut *[0,1]]]
+# CHECK-SAME: accesses[mut *[0,0]: [muttoimm *[0,0]], mut *[0,1]: []]
 def refined_origin_accesses(mut x: Int, mut y: Int) __accesses(imm x, none y):
     pass
 
 
 # CHECK-LABEL: lit.fn @"multiline_refined_origin_accesses
-# CHECK-SAME: accesses[0: [none mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1)],
-# CHECK-SAME: 1: [readonly mut *[0,0]]]
+# CHECK-SAME: accesses[mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1): [],
+# CHECK-SAME: mut *[0,0]: [muttoimm *[0,0]]]
 def multiline_refined_origin_accesses[origin: Origin](
     ref[origin] value: Int, mut other: Int
 ) __accesses(
@@ -327,10 +327,19 @@ struct RefinedAccessCarrier[origin: Origin]:
 
 
 # CHECK-LABEL: lit.fn @"refined_explicit_origin
-# CHECK-SAME: accesses[0: [readonly mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1)]]
+# CHECK-SAME: accesses[mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1):
+# CHECK-SAME: [imm (mutcast mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1))]]
 def refined_explicit_origin[origin: Origin](
     ptr: Pointer[Int, origin]
 ) __accesses(imm origin):
+    pass
+
+
+# CHECK-LABEL: lit.fn @"shared_explicit_origin_access
+# CHECK-SAME: accesses[mut=#lit.struct.extract<:!Bool *(0,0), "_mlir_value">, *(0,1): []]
+def shared_explicit_origin_access[origin: Origin](
+    ref[origin] lhs: Int, ref[origin] rhs: Int
+) __accesses(none origin):
     pass
 
 

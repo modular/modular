@@ -2817,20 +2817,16 @@ IREmitter::bindParamsToClosureTraitFromSig(FnTypeGeneratorType sig) {
   // convention and one implicit origin decl); we can only do it here since we
   // cannot build a parameter expression on the metadata when constructing the
   // alias decl op in the closure trait.
-  SmallVector<RefinedArgAccessAttr> refinedArgs;
-  refinedArgs.reserve(sig.getFnOriginMetadata().getRefinedArgs().size());
-  for (auto refinedArg : sig.getFnOriginMetadata().getRefinedArgs()) {
-    auto shifted = cast<RefinedArgAccessAttr>(shifter.replace(refinedArg));
-    refinedArgs.push_back(RefinedArgAccessAttr::get(
-        ctx, shifted.getArgumentIndex() + 1, shifted.getRules()));
-  }
+  SmallVector<OriginAccessSetAttr> accessSets;
+  for (OriginAccessSetAttr set : sig.getFnOriginMetadata().getAccessSets())
+    accessSets.push_back(cast<OriginAccessSetAttr>(shifter.replace(set)));
   auto originData = FnOriginMetadataAttr::get(
       ctx, sig.getFnOriginMetadata().getNumImplicitOriginDecls() + 1,
       sig.getFnOriginMetadata().getCaptureOrigins(),
       sig.getFnOriginMetadata().getDefinesInteriorOrigins(),
       sig.getFnOriginMetadata().getIsUnsafeNestedOriginsReadOnly(),
       sig.getFnOriginMetadata().getIsEnforcedNestedOriginsReadOnly(),
-      refinedArgs);
+      accessSets);
   SmallVector<ArgConvention> argConventions;
   // FIXME:(MOCO-4812): this should not be an ImmMem unconditionally.
   argConventions.push_back(ArgConvention::ImmMem);
@@ -2882,15 +2878,9 @@ IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
          "expected a signature carrying the closure trait's `Self`");
 
   SelfSlotShifter shifter(/*prepend=*/false);
-  SmallVector<RefinedArgAccessAttr> refinedArgs;
-  refinedArgs.reserve(originData.getRefinedArgs().size());
-  for (auto refinedArg : originData.getRefinedArgs()) {
-    assert(refinedArg.getArgumentIndex() != 0 &&
-           "closure self cannot have a refined access");
-    auto shifted = cast<RefinedArgAccessAttr>(shifter.replace(refinedArg));
-    refinedArgs.push_back(RefinedArgAccessAttr::get(
-        ctx, shifted.getArgumentIndex() - 1, shifted.getRules()));
-  }
+  SmallVector<OriginAccessSetAttr> accessSets;
+  for (OriginAccessSetAttr set : originData.getAccessSets())
+    accessSets.push_back(cast<OriginAccessSetAttr>(shifter.replace(set)));
   return FnTypeGeneratorType::get(
       shifter.replace(sigWithSelf.getInputParamTypes().drop_front()),
       FunctionType::get(ctx, shifter.replace(body.getArguments().drop_front()),
@@ -2901,7 +2891,7 @@ IREmitter::stripSelfFromClosureSig(FnTypeGeneratorType sigWithSelf) {
                                 originData.getDefinesInteriorOrigins(),
                                 originData.getIsUnsafeNestedOriginsReadOnly(),
                                 originData.getIsEnforcedNestedOriginsReadOnly(),
-                                refinedArgs),
+                                accessSets),
       dropFrontPog(sigWithSelf.getParamListAttrs()),
       dropFrontPog(sigWithSelf.getArgListAttrs()));
 }

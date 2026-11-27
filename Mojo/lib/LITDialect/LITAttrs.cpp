@@ -44,35 +44,27 @@ void LITDialect::registerAttributes() {
 }
 
 //===----------------------------------------------------------------------===//
-// OriginAccessAttr
+// OriginAccessSetAttr
 //===----------------------------------------------------------------------===//
 
 LogicalResult
-OriginAccessAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                         OriginAccessKind, TypedAttr origin) {
-  if (!isa<OriginType>(origin.getType()))
-    return emitError() << "origin must have `!lit.origin` type";
-  if (sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
-               InteriorOriginAttr>(origin))
-    return emitError() << "origin must not be AnyOrigin, an origin union, a "
-                          "subtree origin, or an interior origin";
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
-// RefinedArgAccessAttr
-//===----------------------------------------------------------------------===//
-
-LogicalResult
-RefinedArgAccessAttr::verify(function_ref<InFlightDiagnostic()> emitError,
-                             size_t, ArrayRef<OriginAccessAttr> rules) {
-  if (rules.empty())
-    return emitError() << "refined argument access must contain a rule";
-  for (auto [index, rule] : llvm::enumerate(rules)) {
-    for (OriginAccessAttr previous : rules.take_front(index)) {
-      if (originsOverlap(rule.getOrigin(), previous.getOrigin()))
-        return emitError() << "refined argument access contains overlapping "
-                              "origin rules";
+OriginAccessSetAttr::verify(function_ref<InFlightDiagnostic()> emitError,
+                            TypedAttr root, ArrayRef<TypedAttr> accesses) {
+  auto isSupportedOrigin = [](TypedAttr origin) {
+    return isa<OriginType>(origin.getType()) &&
+           !sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
+                     InteriorOriginAttr>(origin);
+  };
+  if (!isSupportedOrigin(root))
+    return emitError() << "access root must be a supported `!lit.origin` value";
+  for (auto [index, access] : llvm::enumerate(accesses)) {
+    if (!isSupportedOrigin(access))
+      return emitError() << "access must be a supported `!lit.origin` value";
+    if (!isOriginWithin(access, root))
+      return emitError() << "access must be contained within its origin root";
+    for (TypedAttr previous : accesses.take_front(index)) {
+      if (originsOverlap(access, previous))
+        return emitError() << "origin access set contains overlapping accesses";
     }
   }
   return success();
@@ -105,7 +97,7 @@ FnOriginMetadataAttr FnOriginMetadataAttr::get(MLIRContext *context) {
       /*definesInteriorOrigins=*/false,
       /*isUnsafeNestedOriginsReadOnly=*/false,
       /*isEnforcedNestedOriginsReadOnly=*/false,
-      /*refinedArgs=*/{});
+      /*accessSets=*/{});
 }
 
 FnOriginMetadataAttr
@@ -113,12 +105,12 @@ FnOriginMetadataAttr::get(MLIRContext *ctx, size_t numImplicitOriginDecls,
                           TypedAttr captureOrigins, bool definesInteriorOrigins,
                           bool isUnsafeNestedOriginsReadOnly,
                           bool isEnforcedNestedOriginsReadOnly,
-                          ArrayRef<RefinedArgAccessAttr> refinedArgs) {
+                          ArrayRef<OriginAccessSetAttr> accessSets) {
   if (!captureOrigins)
     captureOrigins = OriginSetAttr::get(ctx, {});
   return Base::get(ctx, numImplicitOriginDecls, captureOrigins,
                    definesInteriorOrigins, isUnsafeNestedOriginsReadOnly,
-                   isEnforcedNestedOriginsReadOnly, refinedArgs);
+                   isEnforcedNestedOriginsReadOnly, accessSets);
 }
 
 SmallVector<VariadicKind>
@@ -182,17 +174,10 @@ LogicalResult FnOriginMetadataAttr::verifyFuncType(
     }
   }
 
-  SmallVector<size_t> refinedArgumentIndices;
-  for (RefinedArgAccessAttr refinedArg : getRefinedArgs()) {
-    size_t index = refinedArg.getArgumentIndex();
-    if (index >= numInputs)
-      return emitError() << "refined argument index " << index
-                         << " is out of range for " << numInputs << " inputs";
-    if (llvm::is_contained(refinedArgumentIndices, index))
-      return emitError() << "argument #" << index
-                         << " has multiple refined access sets";
-    refinedArgumentIndices.push_back(index);
-  }
+  for (auto [index, accessSet] : llvm::enumerate(getAccessSets()))
+    for (OriginAccessSetAttr previous : getAccessSets().take_front(index))
+      if (isEqualCanon(accessSet.getRoot(), previous.getRoot()))
+        return emitError() << "origin has multiple refined access sets";
 
   return success();
 }
@@ -206,7 +191,7 @@ FnOriginMetadataAttr::addCaptureOrigins(TypedAttr origins) {
   return get(getContext(), getNumImplicitOriginDecls(),
              OriginSetAttr::get(getContext(), originUnion),
              getDefinesInteriorOrigins(), getIsUnsafeNestedOriginsReadOnly(),
-             getIsEnforcedNestedOriginsReadOnly(), getRefinedArgs());
+             getIsEnforcedNestedOriginsReadOnly(), getAccessSets());
 }
 
 void FnOriginMetadataAttr::printFuncTypeBody(AsmPrinter &p,
@@ -239,7 +224,7 @@ bool FnOriginMetadataAttr::equals(FnMetadataAttrInterface otherMetadata) const {
          getDefinesInteriorOrigins() == other.getDefinesInteriorOrigins() &&
          getIsEnforcedNestedOriginsReadOnly() ==
              other.getIsEnforcedNestedOriginsReadOnly() &&
-         getRefinedArgs() == other.getRefinedArgs();
+         getAccessSets() == other.getAccessSets();
 }
 
 //===----------------------------------------------------------------------===//

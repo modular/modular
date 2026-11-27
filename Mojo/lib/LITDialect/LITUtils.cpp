@@ -395,41 +395,19 @@ bool LIT::originsOverlap(TypedAttr lhs, TypedAttr rhs) {
   return true;
 }
 
-// Return the refinement for one argument, or null when the argument retains
-// its default access.
-static RefinedArgAccessAttr getRefinedArgAccess(FuncType type,
-                                                size_t argumentIndex) {
-  auto metadata = cast<FnOriginMetadataAttr>(type.getMetadata());
-  for (RefinedArgAccessAttr refined : metadata.getRefinedArgs())
-    if (refined.getArgumentIndex() == argumentIndex)
-      return refined;
-  return {};
-}
-
-// Access kinds form the capability lattice none < readonly < readwrite.
-static bool isAccessKindSubset(OriginAccessKind actual,
-                               OriginAccessKind expected) {
-  if (actual == OriginAccessKind::None)
-    return true;
-  if (expected == OriginAccessKind::ReadWrite)
-    return true;
-  return actual == expected;
-}
-
-std::optional<OriginAccessKind>
-LIT::getDefaultArgumentAccess(ArgConvention convention) {
+std::optional<bool> LIT::getDefaultArgumentAccess(ArgConvention convention) {
   switch (convention) {
   // Immutable and shared references permit reads.
   case ArgConvention::ImmReg:
   case ArgConvention::ImmMem:
   case ArgConvention::Ref:
   case ArgConvention::PackImmMem:
-    return OriginAccessKind::ReadOnly;
+    return false;
   // Exclusive references permit reads and writes.
   case ArgConvention::Mut:
   case ArgConvention::MutRef:
   case ArgConvention::PackMut:
-    return OriginAccessKind::ReadWrite;
+    return true;
   // Owned and compiler-generated slots cannot have access refinements.
   case ArgConvention::OwnedReg:
   case ArgConvention::OwnedMem:
@@ -443,45 +421,73 @@ LIT::getDefaultArgumentAccess(ArgConvention convention) {
   llvm_unreachable("unknown argument convention");
 }
 
+// Return the set whose root matches `root`, or null when that root retains its
+// default access.
+static OriginAccessSetAttr findAccessSet(FuncType type, TypedAttr root) {
+  auto metadata = cast<FnOriginMetadataAttr>(type.getMetadata());
+  for (OriginAccessSetAttr set : metadata.getAccessSets())
+    if (isEqualCanon(set.getRoot(), root))
+      return set;
+  return {};
+}
+
+// Return whether one effective access is permitted by an expected access.
+static bool isAccessSubset(TypedAttr actual, TypedAttr expected) {
+  bool actualIsMutable =
+      cast<OriginType>(actual.getType()).isMutableKnown(true);
+  bool expectedIsMutable =
+      cast<OriginType>(expected.getType()).isMutableKnown(true);
+  return (!actualIsMutable || expectedIsMutable) &&
+         isOriginWithin(OriginMutCastAttr::strip(actual),
+                        OriginMutCastAttr::strip(expected));
+}
+
 bool LIT::areArgumentAccessesSubtype(FuncType actual, size_t actualIndex,
                                      FuncType expected, size_t expectedIndex) {
-  RefinedArgAccessAttr expectedAccess =
-      getRefinedArgAccess(expected, expectedIndex);
-  // An unrefined expected argument permits its full default access set.
-  if (!expectedAccess)
-    return true;
+  auto actualRef = dyn_cast<RefType>(actual.getArgument(actualIndex));
+  auto expectedRef = dyn_cast<RefType>(expected.getArgument(expectedIndex));
 
-  RefinedArgAccessAttr actualAccess = getRefinedArgAccess(actual, actualIndex);
-  if (!actualAccess) {
-    // The default contract is a single access through the argument's implicit
-    // reference origin. It satisfies a refinement only when one expected rule
-    // covers that entire access.
-    auto kind = getDefaultArgumentAccess(actual.getArgConvention(actualIndex));
-    auto refType = dyn_cast<RefType>(actual.getArgument(actualIndex));
-    if (!kind || !refType)
-      return false;
-    return llvm::any_of(
-        expectedAccess.getRules(), [&](OriginAccessAttr expectedRule) {
-          return isAccessKindSubset(*kind, expectedRule.getKind()) &&
-                 isOriginWithin(refType.getOrigin(), expectedRule.getOrigin());
-        });
-  }
-
-  for (OriginAccessAttr actualRule : actualAccess.getRules()) {
-    // A `none` rule contributes no access and is therefore a subset of every
-    // expected contract.
-    if (actualRule.getKind() == OriginAccessKind::None)
+  for (OriginAccessSetAttr expectedSet :
+       cast<FnOriginMetadataAttr>(expected.getMetadata()).getAccessSets()) {
+    if (auto ref = dyn_cast<ImplicitOriginRefAttr>(expectedSet.getRoot());
+        ref && ref.getIndex() != expectedIndex)
       continue;
-    // Every effective actual rule needs an expected rule with at least the
-    // same capability over the same origin or one of its ancestors.
-    if (llvm::none_of(expectedAccess.getRules(),
-                      [&](OriginAccessAttr expectedRule) {
-                        return isAccessKindSubset(actualRule.getKind(),
-                                                  expectedRule.getKind()) &&
-                               isOriginWithin(actualRule.getOrigin(),
-                                              expectedRule.getOrigin());
-                      }))
-      return false;
+
+    TypedAttr actualRoot = expectedSet.getRoot();
+    if (expectedRef &&
+        isEqualCanon(expectedSet.getRoot(), expectedRef.getOrigin())) {
+      if (!actualRef)
+        return false;
+      actualRoot = actualRef.getOrigin();
+    }
+
+    OriginAccessSetAttr actualSet = findAccessSet(actual, actualRoot);
+    if (!actualSet) {
+      // An absent set contributes the root's default access.
+      bool isMutable =
+          cast<OriginType>(actualRoot.getType()).isMutableKnown(true);
+      if (actualRef && isEqualCanon(actualRoot, actualRef.getOrigin())) {
+        auto defaultAccess =
+            getDefaultArgumentAccess(actual.getArgConvention(actualIndex));
+        if (!defaultAccess)
+          return false;
+        isMutable = *defaultAccess;
+      }
+      TypedAttr defaultAccess =
+          isMutable ? actualRoot : OriginMutCastAttr::get(actualRoot, false);
+      if (llvm::none_of(expectedSet.getAccesses(), [&](TypedAttr access) {
+            return isAccessSubset(defaultAccess, access);
+          }))
+        return false;
+      continue;
+    }
+
+    // Empty sets represent no access and are subsets of every contract.
+    for (TypedAttr actualAccess : actualSet.getAccesses())
+      if (llvm::none_of(expectedSet.getAccesses(), [&](TypedAttr access) {
+            return isAccessSubset(actualAccess, access);
+          }))
+        return false;
   }
   return true;
 }
@@ -593,68 +599,41 @@ void LIT::printOriginSet(AsmPrinter &p, ArrayRef<TypedAttr> lifetimes) {
   p << '}';
 }
 
-// Parse an optional refined-access list, for example:
-//   accesses[0: [readonly mut #lit.any.origin]]
-OptionalParseResult LIT::parseOptionalRefinedArgAccesses(
-    AsmParser &p, SmallVectorImpl<RefinedArgAccessAttr> &refinedArgs) {
+// Parse an optional replacement-access list.
+OptionalParseResult LIT::parseOptionalOriginAccessSets(
+    AsmParser &p, SmallVectorImpl<OriginAccessSetAttr> &accessSets) {
   if (failed(p.parseOptionalKeyword("accesses")))
     return std::nullopt;
 
-  auto parseRefinedArg = [&]() -> ParseResult {
-    size_t argumentIndex;
-    if (p.parseInteger(argumentIndex) || p.parseColon())
+  auto parseAccessSet = [&]() -> ParseResult {
+    TypedAttr root;
+    if (parseOriginParamValue(p, root) || p.parseColon())
       return failure();
 
-    SmallVector<OriginAccessAttr> rules;
-    auto parseRule = [&]() -> ParseResult {
-      llvm::SMLoc loc;
-      StringRef spelling;
-      if (p.getCurrentLocation(&loc) || p.parseKeyword(&spelling))
-        return failure();
-
-      OriginAccessKind kind;
-      if (spelling == "none")
-        kind = OriginAccessKind::None;
-      else if (spelling == "readonly")
-        kind = OriginAccessKind::ReadOnly;
-      else if (spelling == "readwrite")
-        kind = OriginAccessKind::ReadWrite;
-      else
-        return p.emitError(loc, "expected 'none', 'readonly', or 'readwrite'");
-
-      TypedAttr origin;
-      if (parseOriginParamValue(p, origin))
-        return failure();
-      if (sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
-                   InteriorOriginAttr>(origin))
-        return p.emitError(
-            loc, "access rules may not use AnyOrigin, origin unions, subtree "
-                 "origins, or interior origins");
-      rules.push_back(OriginAccessAttr::get(p.getContext(), kind, origin));
-      return success();
-    };
-
-    if (p.parseCommaSeparatedList(AsmParser::Delimiter::Square, parseRule))
+    SmallVector<TypedAttr> accesses;
+    if (p.parseCommaSeparatedList(AsmParser::Delimiter::Square, [&] {
+          return parseOriginParamValue(p, accesses.emplace_back());
+        }))
       return failure();
-    refinedArgs.push_back(
-        RefinedArgAccessAttr::get(p.getContext(), argumentIndex, rules));
+    accessSets.push_back(
+        OriginAccessSetAttr::get(p.getContext(), root, accesses));
     return success();
   };
 
-  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Square, parseRefinedArg))
+  if (p.parseCommaSeparatedList(AsmParser::Delimiter::Square, parseAccessSet))
     return failure();
   return mlir::success();
 }
 
-// Print the refined-access list attached to a function type or operation.
-void LIT::printRefinedArgAccesses(AsmPrinter &p,
-                                  ArrayRef<RefinedArgAccessAttr> refinedArgs) {
+// Print the replacement-access list attached to a function type or operation.
+void LIT::printOriginAccessSets(AsmPrinter &p,
+                                ArrayRef<OriginAccessSetAttr> accessSets) {
   p << "accesses[";
-  llvm::interleaveComma(refinedArgs, p, [&](RefinedArgAccessAttr refinedArg) {
-    p << refinedArg.getArgumentIndex() << ": [";
-    llvm::interleaveComma(refinedArg.getRules(), p, [&](OriginAccessAttr rule) {
-      p << stringifyEnum(rule.getKind()) << ' ';
-      printOriginParamValue(p, rule.getOrigin());
+  llvm::interleaveComma(accessSets, p, [&](OriginAccessSetAttr set) {
+    printOriginParamValue(p, set.getRoot());
+    p << ": [";
+    llvm::interleaveComma(set.getAccesses(), p, [&](TypedAttr access) {
+      printOriginParamValue(p, access);
     });
     p << ']';
   });
@@ -726,9 +705,9 @@ void LIT::printFnType(AsmPrinter &p, FuncType signature) {
   printSignatureValues(p, printElt, signature.getValues(),
                        signature.getArgConventions(), signature.getFnEffects(),
                        /*optionalResultList=*/false);
-  if (!metadata.getRefinedArgs().empty()) {
+  if (!metadata.getAccessSets().empty()) {
     p << ' ';
-    printRefinedArgAccesses(p, metadata.getRefinedArgs());
+    printOriginAccessSets(p, metadata.getAccessSets());
   }
   assert(argListAttr.getBodyConstraints().empty());
 }
