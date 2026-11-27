@@ -30,6 +30,16 @@
       mlir::memref::DimOp::*;
       mlir::memref::LoadOp::*;
       mlir::memref::MemRefDialect::*;
+      mlir::shape::AssumingOp::*;
+      mlir::shape::AssumingYieldOp::*;
+      mlir::shape::BroadcastOp::*;
+      mlir::shape::ConstShapeOp::*;
+      mlir::shape::CstrBroadcastableOp::*;
+      mlir::shape::ShapeOfOp::*;
+      mlir::tensor::CastOp::*;
+      mlir::tensor::DimOp::*;
+      mlir::tensor::ExtractOp::*;
+      mlir::tensor::FromElementsOp::*;
       mlir::vector::BroadcastOp::*;
       mlir::vector::ExtractOp::*;
       mlir::vector::VectorDialect::*;
@@ -37,6 +47,8 @@
       # Other classes and functions this repo uses from the hidden dialects.
       mlir::arith::ArithDialect::*;
       mlir::async::AsyncDialect::*;
+      mlir::complex::NumberAttr::*;
+      mlir::func::detail::*OpGenericAdaptorBase::*;
       mlir::func::FuncDialect::*;
       mlir::gpu::TargetOptions::*;
       mlir::index::IndexDialect::*;
@@ -90,6 +102,9 @@
       mlir::scf::populateSCFStructuralTypeConversionsAndLegality?*;
       mlir::scf::SCFDialect::*;
       mlir::scf::populateSCFStructuralTypeConversionsAndLegality?*;
+      mlir::shape::getExtentTensorType?*;
+      mlir::shape::ShapeDialect::*;
+      mlir::tensor::TensorDialect::*;
       mlir::ub::PoisonOp::*;
       mlir::ub::UBDialect::*;
       vtable?for?mlir::ROCDL::SerializeGPUModuleBase;
@@ -126,6 +141,8 @@
       mlir::createTopologicalSortPass?*;
       mlir::createTrivialDeadCodeEliminationPass?*;
       mlir::createViewOpGraphPass?*;
+      mlir::populateFunctionOpInterfaceTypeConversionPattern?*;
+      mlir::populateReturnOpTypeConversionPattern?*;
       mlir::registerAndParseCLIOptions?abi?cxx11??*;
       mlir::registerAsmPrinterCLOptions?*;
       mlir::registerBuiltinDialectTranslation?*;
