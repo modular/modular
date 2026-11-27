@@ -1508,6 +1508,22 @@ def test_inferred_attribute_ref():
   # expected-error @below {{cannot implicitly convert 'Int' value to 'Color'}}
   takes_color(.size)
 
+def takes_color_param[c: Color]():
+  pass
+
+def test_inferred_attribute_ref_through_ifelse(flag: Bool):
+  # A conditional expression passes its contextual type down to both branches.
+  takes_color(.red if flag else .blue)
+  takes_color(.hsb_to_rgb(120, 100, 50) if flag else .alpha_blended[42](1, 2))
+  takes_color((.red if flag else .blue).opacity(0.5))
+  takes_color(.red if flag else (.green if flag else .blue))
+  takes_colors([.red if flag else .blue, .green])
+  takes_color_param[.red if True else .blue]()
+
+  # Still an error without a contextual type.
+  # expected-error @below {{cannot resolve inferred member without a contextual type}}
+  _ = .red if flag else .blue
+
 def test_dtype_error_message():
     # expected-error @below {{cannot implicitly convert 'SIMD[.float32, 3]' value to 'SIMD[.float32, 4]'}}
     var x: SIMD[DType.float32, 4] = SIMD[DType.float32, 3](1.0)
