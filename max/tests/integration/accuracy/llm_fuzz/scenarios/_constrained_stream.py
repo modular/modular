@@ -15,10 +15,11 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 
 from jsonschema import Draft7Validator
+from jsonschema.protocols import Validator
 
 
 @dataclass
@@ -182,9 +183,15 @@ def enforcement_overrun(output: str) -> str | None:
 
 
 def classify_served_json(
-    body: str, schema: Mapping[str, object]
+    body: str,
+    schema: Mapping[str, object],
+    validator: Callable[[Mapping[str, object]], Validator] = Draft7Validator,
 ) -> tuple[str, str | None]:
     """Grades a non-streaming chat-completion body against ``schema``.
+
+    ``validator`` picks the draft the schema is read under; a case whose
+    meaning depends on a later draft (``$ref`` siblings, ``prefixItems``)
+    passes ``Draft202012Validator``.
 
     Returns ``truncated``, ``conformant``, or ``invalid``. Length
     truncation is not conformance. A length finish whose content is a
@@ -207,7 +214,7 @@ def classify_served_json(
     if parse_error:
         return "invalid", parse_error
     try:
-        errors = sorted(Draft7Validator(schema).iter_errors(parsed), key=str)
+        errors = sorted(validator(schema).iter_errors(parsed), key=str)
     except Exception as error:
         return "invalid", f"schema not judgeable: {error}"
     if not errors:

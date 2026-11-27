@@ -21,6 +21,10 @@ SERVE: Literal["serve"] = "serve"
 REFUSE: Literal["refuse"] = "refuse"
 
 
+DRAFT_7: Literal["7"] = "7"
+DRAFT_2020_12: Literal["2020-12"] = "2020-12"
+
+
 @dataclass(frozen=True)
 class AdmissionCase:
     name: str
@@ -28,15 +32,27 @@ class AdmissionCase:
     schema: dict[str, object]
     prompt: str
     why: str
+    # The draft served output is graded under. Cases whose meaning only a
+    # later draft defines (``$ref`` siblings, ``prefixItems``) use 2020-12.
+    draft: Literal["7", "2020-12"] = DRAFT_7
+    # Also send the schema as the parameters of a named tool: the grammar
+    # compiler refused these shapes for tool calls as well (AGENT-914).
+    as_tool: bool = False
 
 
-def _object(property_schema: dict[str, object]) -> dict[str, object]:
-    return {
+def _object(
+    property_schema: dict[str, object],
+    defs: dict[str, object] | None = None,
+) -> dict[str, object]:
+    schema: dict[str, object] = {
         "type": "object",
         "properties": {"v": property_schema},
         "required": ["v"],
         "additionalProperties": False,
     }
+    if defs:
+        schema["$defs"] = defs
+    return schema
 
 
 CASES: tuple[AdmissionCase, ...] = (
@@ -131,17 +147,90 @@ CASES: tuple[AdmissionCase, ...] = (
         "Return the allowed string.",
         "one rule cannot enforce both regex tiers without dropping one",
     ),
+    # AGENT-914: valid shapes the grammar compiler refused with "invalid
+    # grammar" until the converter learned to rewrite them into equivalent
+    # schemas. Each is served, as response_format and as a named tool, and
+    # graded under the draft that gives it its meaning.
     AdmissionCase(
         "ref_beside_same_object_sibling",
-        REFUSE,
-        {
-            "type": "object",
-            "$defs": {"x": {"type": "string"}},
-            "properties": {"v": {"$ref": "#/$defs/x", "maxLength": 3}},
-            "required": ["v"],
-            "additionalProperties": False,
-        },
-        "Return a short string.",
-        "the supported drafts disagree on whether the sibling applies",
+        SERVE,
+        _object(
+            {"$ref": "#/$defs/x", "maximum": 3},
+            defs={"x": {"type": "integer"}},
+        ),
+        "Return a small integer.",
+        "2019-09+ conjoins the sibling with the target: an integer at most 3",
+        draft=DRAFT_2020_12,
+        as_tool=True,
+    ),
+    AdmissionCase(
+        "ref_beside_properties_and_required",
+        SERVE,
+        _object(
+            {
+                "$ref": "#/$defs/Base",
+                "properties": {"n": {"type": "integer"}},
+                "required": ["n"],
+            },
+            defs={
+                "Base": {
+                    "type": "object",
+                    "properties": {"id": {"type": "string"}},
+                    "required": ["id"],
+                }
+            },
+        ),
+        'Return v with id "a" and n 1.',
+        "the object needs both the target's id and the sibling's n",
+        draft=DRAFT_2020_12,
+        as_tool=True,
+    ),
+    AdmissionCase(
+        "all_of_with_two_any_ofs",
+        SERVE,
+        _object(
+            {
+                "type": "object",
+                "properties": {
+                    "a": {"type": "integer"},
+                    "b": {"type": "integer"},
+                    "c": {"type": "integer"},
+                },
+                "allOf": [
+                    {"anyOf": [{"required": ["a"]}, {"required": ["b"]}]},
+                    {"anyOf": [{"required": ["b"]}, {"required": ["c"]}]},
+                ],
+            }
+        ),
+        "Return v with a set to 1 and c set to 2.",
+        "the unions distribute into one: b, or a with c",
+        as_tool=True,
+    ),
+    AdmissionCase(
+        "prefix_items_past_max_items",
+        SERVE,
+        _object(
+            {
+                "type": "array",
+                "prefixItems": [
+                    {"type": "string"},
+                    {"type": "integer"},
+                    {"type": "boolean"},
+                ],
+                "maxItems": 2,
+            }
+        ),
+        'Return v as ["a", 1].',
+        "no position past maxItems can exist, so the third prefix is moot",
+        draft=DRAFT_2020_12,
+        as_tool=True,
+    ),
+    AdmissionCase(
+        "untyped_keywords_of_two_kinds",
+        SERVE,
+        _object({"minimum": 0, "pattern": "^[a-z]+$"}),
+        'Set v to the word "hello".',
+        "minimum binds numbers and pattern binds strings; other kinds pass",
+        as_tool=True,
     ),
 )
