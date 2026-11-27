@@ -633,6 +633,30 @@ params:
   NUM_CLC_PIPELINE_STAGES: 0
   NUM_SPLIT_K: 16
   NUM_PIPELINE_STAGES: 5
+# GLM-5.3-Flash's router gate GEMM, fp32 logits of bf16 [M, 4096] x
+# [288, 4096]^T, above the fused router's 128-row GEMV window: under the EP
+# all-reduce exchange every GPU routes all of a verify step's rows. Vendor
+# BLAS runs it as a split-K GEMM plus a reduce kernel and breaks the
+# programmatic dependent launch chain into the router's top-k; the split-K
+# row reduces inside the GEMM and keeps the chain.
+- <<: *defaults
+  M: 129
+  M_END: 257
+  N: 288
+  K: 4096
+  MMA_M: 128
+  MMA_N: 96
+  CTA_GROUP: 1
+  CLUSTER_X: 1
+  CLUSTER_Y: 1
+  BLOCK_SWIZZLE_SIZE: 0
+  RASTERIZE_ORDER: 1
+  SWAP_AB: true
+  K_GROUP_SIZE: 1
+  NUM_ACCUM_PIPELINE_STAGES: 1
+  NUM_CLC_PIPELINE_STAGES: 0
+  NUM_SPLIT_K: 8
+  NUM_PIPELINE_STAGES: 4
 # The served vocab-weight GEMM has K 5120. These rows hold the measured
 # winners for the M ranges where the wave heuristic's tile loses: a 2-SM
 # 128x256 tile for the small-M range and a 2-SM 256x192 tile with a 2-wide

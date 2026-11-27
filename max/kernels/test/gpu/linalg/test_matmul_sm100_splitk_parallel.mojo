@@ -748,6 +748,22 @@ def main() raises:
             test_dispatch_exact[512, 5120](ctx, m)
             test_pdl_chain[512, 5120](ctx, m)
 
+        # GLM-5.3-Flash's router gate (288, 4096) above the fused router's
+        # 128-row GEMV window: M 129-256 takes up to three 96-wide X tiles
+        # split 8 ways (72 CTAs at most); M 128 and 257 are the vendor
+        # controls.
+        for m in [129, 144, 192, 193, 255, 256]:
+            test_dispatch_f32_out[288, 4096](ctx, m, True)
+        for m in [128, 257]:
+            test_dispatch_f32_out[288, 4096](ctx, m, False)
+        for m in [129, 144, 192, 256]:
+            test_dispatch_out_random[DType.float32, 288, 4096](ctx, m, 1e-4)
+            test_pdl_chain[288, 4096](ctx, m)
+        # The row is keyed on (N, K) alone, so a bf16-output GEMM of this
+        # shape takes it too.
+        for m in [129, 192, 256]:
+            test_dispatch_exact[288, 4096](ctx, m)
+
         # Splits must be whole k-groups of 2: 6 K tiles split 4 + 2 (3 + 3
         # would end mid group); 224 K tiles split 76/76/72 (S=3) and
         # 46 x 4 + 40 (S=5); S=4 (56 each) is the aligned control.
