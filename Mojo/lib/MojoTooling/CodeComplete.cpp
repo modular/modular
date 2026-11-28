@@ -616,7 +616,10 @@ static void parseCompletionInContextImpl(
 
   auto &sourceMgr = context.getSourceMgr();
   int bufId = sourceMgr.AddNewSourceBuffer(
-      llvm::MemoryBuffer::getMemBuffer(buffer), SMLoc());
+      llvm::MemoryBuffer::getMemBufferCopy(buffer.getBuffer(),
+                                         buffer.getBufferIdentifier()),
+      SMLoc());
+  buffer = sourceMgr.getMemoryBuffer(bufId)->getMemBufferRef();
   listener.completionBufferId = bufId;
 
   // Suppress diagnostics during completion.
