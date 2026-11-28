@@ -251,6 +251,17 @@ toolchain(
 )
 
 toolchain(
+    name = "macos-x86_64-toolchain",
+    exec_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:macos",
+    ],
+    tags = [TOP_LEVEL_TAG],  # Used from MODULE.bazel
+    toolchain = ":macos-x86_64_clang_toolchain",
+    toolchain_type = "@bazel_tools//tools/cpp:toolchain_type",
+)
+
+toolchain(
     name = "macos-toolchain",
     exec_compatible_with = [
         "@platforms//cpu:aarch64",
@@ -270,19 +281,26 @@ cc_import(
     shared_library = select({
         "//:linux_aarch64": "@clang-linux-aarch64//:lib/clang/23/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so",
         "//:linux_x86_64": "@clang-linux-x86_64//:lib/clang/23/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so",
-        "@platforms//os:macos": "@clang-macos//:lib/clang/23/lib/darwin/libclang_rt.asan_osx_dynamic.dylib",
+        "//:macos_arm64": "@clang-macos//:lib/clang/23/lib/darwin/libclang_rt.asan_osx_dynamic.dylib",
+        "//:macos_x86_64": "@clang-macos-x86_64//:lib/clang/23/lib/darwin/libclang_rt.asan_osx_dynamic.dylib",
     }),
 )
 
 cc_import(
     name = "tsan_macos_lib",
-    shared_library = "@clang-macos//:lib/clang/23/lib/darwin/libclang_rt.tsan_osx_dynamic.dylib",
+    shared_library = select({
+        "//:macos_arm64": "@clang-macos//:lib/clang/23/lib/darwin/libclang_rt.tsan_osx_dynamic.dylib",
+        "//:macos_x86_64": "@clang-macos-x86_64//:lib/clang/23/lib/darwin/libclang_rt.tsan_osx_dynamic.dylib",
+    }),
     target_compatible_with = ["@platforms//os:macos"],
 )
 
 cc_import(
     name = "ubsan_macos_lib",
-    shared_library = "@clang-macos//:lib/clang/23/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib",
+    shared_library = select({
+        "//:macos_arm64": "@clang-macos//:lib/clang/23/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib",
+        "//:macos_x86_64": "@clang-macos-x86_64//:lib/clang/23/lib/darwin/libclang_rt.ubsan_osx_dynamic.dylib",
+    }),
     target_compatible_with = ["@platforms//os:macos"],
 )
 
@@ -311,9 +329,13 @@ filegroup(
             "@clang-linux-x86_64//:bin/llvm-cov",
             "@clang-linux-x86_64//:bin/llvm-profdata",
         ],
-        "@platforms//os:macos": [
+        "//:macos_arm64": [
             "@clang-macos//:bin/llvm-cov",
             "@clang-macos//:bin/llvm-profdata",
+        ],
+        "//:macos_x86_64": [
+            "@clang-macos-x86_64//:bin/llvm-cov",
+            "@clang-macos-x86_64//:bin/llvm-profdata",
         ],
     }),
     tags = [TOP_LEVEL_TAG],  # Used from .bazelrc

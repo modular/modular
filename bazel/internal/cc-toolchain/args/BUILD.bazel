@@ -34,7 +34,8 @@ cc_args(
         "//:linux_x86_64": ["--target=x86_64-unknown-linux-gnu"],
         "//:linux_aarch64": ["--target=aarch64-unknown-linux-gnu"],
         # TODO: Pull 11.0 from config set in .bazelrc
-        "@platforms//os:macos": ["--target=arm64-apple-macosx11.0"],
+        "//:macos_arm64": ["--target=arm64-apple-macosx11.0"],
+        "//:macos_x86_64": ["--target=x86_64-apple-macosx11.0"],
     }) + select({
         "@platforms//os:linux": [
             # Compress debug info to improve binary size, not supported on macOS

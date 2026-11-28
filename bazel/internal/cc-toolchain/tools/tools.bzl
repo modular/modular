@@ -8,7 +8,30 @@ PLATFORMS = [
     "linux-aarch64",
     "linux-x86_64",
     "macos",
+    "macos-x86_64",
 ]
+
+# Platforms with their own wrapper scripts instead of the shared multi-platform
+# ones. Intel Macs have their own, so the shared scripts need no Intel code.
+_OWN_SCRIPTS = {
+    "macos-x86_64": {
+        "clang": ":intel-mac-clang.sh",
+        "clang++": ":intel-mac-clang++.sh",
+        "linker_driver": ":intel-mac-linker-driver.sh",
+    },
+}
+
+def _script(platform, tool, shared_script):
+    return _OWN_SCRIPTS.get(platform, {}).get(tool, shared_script)
+
+def _tool_alias(platform, tool):
+    # Platforms with their own scripts always use them.
+    if platform in _OWN_SCRIPTS:
+        return ":{}-single-platform-{}".format(platform, tool)
+    return select({
+        "//:host_modular_config_ci_build": ":{}-single-platform-{}".format(platform, tool),
+        "//conditions:default": ":multi-platform-{}".format(tool),
+    })
 
 # buildifier: disable=unnamed-macro
 def declare_tools():
@@ -121,39 +144,33 @@ def _declare_tools(platform):
 
     cc_tool(
         name = "{}-single-platform-clang".format(platform),
-        src = ":multi-platform-clang.sh",
+        src = _script(platform, "clang", ":multi-platform-clang.sh"),
         data = ["@clang-{}//:bin/clang".format(platform)],
         tags = ["manual"],
     )
 
     native.alias(
         name = "{}-clang".format(platform),
-        actual = select({
-            "//:host_modular_config_ci_build": ":{}-single-platform-clang".format(platform),
-            "//conditions:default": ":multi-platform-clang",
-        }),
+        actual = _tool_alias(platform, "clang"),
         tags = ["manual"],
     )
 
     cc_tool(
         name = "{}-single-platform-clang++".format(platform),
-        src = ":multi-platform-clang++.sh",
+        src = _script(platform, "clang++", ":multi-platform-clang++.sh"),
         data = ["@clang-{}//:bin/clang++".format(platform)],
         tags = ["manual"],
     )
 
     native.alias(
         name = "{}-clang++".format(platform),
-        actual = select({
-            "//:host_modular_config_ci_build": ":{}-single-platform-clang++".format(platform),
-            "//conditions:default": ":multi-platform-clang++",
-        }),
+        actual = _tool_alias(platform, "clang++"),
         tags = ["manual"],
     )
 
     cc_tool(
         name = "{}-single-platform-linker_driver".format(platform),
-        src = ":linker-driver.sh",
+        src = _script(platform, "linker_driver", ":linker-driver.sh"),
         data = [
             "@clang-{}//:bin/clang".format(platform),
             "@clang-{}//:bin/clang++".format(platform),  # symlink to clang
@@ -171,9 +188,6 @@ def _declare_tools(platform):
 
     native.alias(
         name = "{}-linker_driver".format(platform),
-        actual = select({
-            "//:host_modular_config_ci_build": ":{}-single-platform-linker_driver".format(platform),
-            "//conditions:default": ":multi-platform-linker_driver",
-        }),
+        actual = _tool_alias(platform, "linker_driver"),
         tags = ["manual"],
     )
