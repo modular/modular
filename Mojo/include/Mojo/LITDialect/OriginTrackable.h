@@ -266,6 +266,9 @@ struct OperationEffects {
   /// Interior origins guaranteed live by this operation, e.g. a call to a
   /// callee whose declared return type contains an interior origin.
   SmallVector<InteriorOriginAttr> interiorOriginsDefined;
+  /// True when the operation invokes a callee. CreateFuncPtrOp has call-like
+  /// operands but does not invoke its callee.
+  bool isCall = false;
 
   OperationEffects(CachedOriginFinder &originFinder)
       : originFinder(originFinder) {}

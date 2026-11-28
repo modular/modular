@@ -3188,7 +3188,10 @@ void UninitializedValueScan::scanBlock(Block &block) {
         hasAnyOrigin |= sugarIsa<AnyOriginAttr>(
             cast<RefType>(operand.getType()).getOrigin());
         checkUse(operand, op, /*isDeref=*/true);
-        checkDef(operand, op, /*isDeref=*/true);
+        // Call access contracts model their mutations below. Other operations
+        // define the operand directly.
+        if (!opEffects.isCall)
+          checkDef(operand, op, /*isDeref=*/true);
         break;
       case OperandEffect::memConsume:
         hasAnyOrigin |= sugarIsa<AnyOriginAttr>(
@@ -3208,13 +3211,36 @@ void UninitializedValueScan::scanBlock(Block &block) {
       hasAnyOrigin |= sugarIsa<AnyOriginAttr>(origin);
     }
 
-    // Invalidate any origins reachable from the argument type rather than just
-    // the one on the ref itself.
-    for (TypedAttr origin : llvm::make_first_range(opEffects.origins)) {
-      if (OriginType::isMutableKnown(origin, false))
-        continue;
-      interiorOriginTracker.invalidateOnMutation(
-          OriginMutCastAttr::strip(origin), liveness, op);
+    if (opEffects.isCall) {
+      // Apply the callee's refined argument accesses after specializing them
+      // into the caller. For example, `__accesses(mut pair.first)` only
+      // invalidates interior origins below `pair.first`, not below `pair`.
+      EffectiveCallAccesses accesses(op, valueSet.getOriginFinder());
+      for (const EffectiveCallAccess &access : accesses.getAccesses()) {
+        if (OriginType::isMutableKnown(access.origin, false))
+          continue;
+        interiorOriginTracker.invalidateOnMutation(
+            OriginMutCastAttr::strip(access.origin), liveness, op);
+      }
+
+      // Captures are not associated with call arguments, so they are not part
+      // of EffectiveCallAccesses. OperationEffects represents them with a null
+      // value.
+      for (auto [origin, value] : opEffects.origins) {
+        if (value || OriginType::isMutableKnown(origin, false))
+          continue;
+        interiorOriginTracker.invalidateOnMutation(
+            OriginMutCastAttr::strip(origin), liveness, op);
+      }
+    } else {
+      // Invalidate any origins reachable from the argument type rather than
+      // just the one on the ref itself.
+      for (TypedAttr origin : llvm::make_first_range(opEffects.origins)) {
+        if (OriginType::isMutableKnown(origin, false))
+          continue;
+        interiorOriginTracker.invalidateOnMutation(
+            OriginMutCastAttr::strip(origin), liveness, op);
+      }
     }
 
     assert(opEffects.results.size() == op.getNumResults() &&

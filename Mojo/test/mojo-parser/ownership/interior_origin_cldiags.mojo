@@ -85,6 +85,39 @@ struct TwoIntLists(Movable where False):
       self.first = MyList[Int]()
       self.second = MyList[Int]()
 
+def inspect_mutably(mut list: MyList[Int]) __accesses(imm list):
+    pass
+
+def mutate_first(mut lists: TwoIntLists) __accesses(mut lists.first):
+    pass
+
+def test_refined_call_invalidation():
+    var list = MyList[Int]()
+    ref element = list[]
+
+    # The mutable convention does not invalidate the interior origin because
+    # the explicit access set promises that the argument is only read.
+    inspect_mutably(list)
+    element += 1
+
+def test_mutate_first_preserves_second():
+    var lists = TwoIntLists()
+    ref second_element = lists.second[]
+
+    # Mutating the first list does not invalidate interior origins in the
+    # second list.
+    mutate_first(lists)
+    second_element += 1
+
+def test_mutate_first_invalidates_first():
+    var lists = TwoIntLists()
+    ref first_element = lists.first[]
+
+    mutate_first(lists) # expected-note {{origin was invalidated here}}
+
+    # expected-error @+1 {{use of invalidated interior reference 'lists.first["element"]'}}
+    first_element += 1
+
 # Test that we can handle nested field sensitivity correctly.
 def test_field_sensitive_nested_invalidation():
     var list_of_two_intlists = MyList[TwoIntLists]()

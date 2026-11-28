@@ -283,9 +283,13 @@ EffectiveCallAccesses::EffectiveCallAccesses(Operation &call,
       bool isArgumentOrigin = refType && hasAddress(convention) &&
                               isEqualCanon(refType.getOrigin(), origin);
       bool forceImmutable = false;
-      if (isArgumentOrigin && convention != ArgConvention::Mut &&
-          cast<RefType>(signature.getArgument(argumentIndex))
-              .isMutableKnown(false))
+      // A read-only convention applies to the argument's storage, not to
+      // origins nested in its type. For example, `ref p: Pointer[T, O]` reads
+      // `origin_of(p)` but may still access mutable `O`.
+      if (isArgumentOrigin && (convention == ArgConvention::Ref ||
+                               convention == ArgConvention::ImmMem ||
+                               convention == ArgConvention::PackImmMem ||
+                               convention == ArgConvention::PackMut))
         forceImmutable = true;
       if (isa<RefPackType>(value.getType()) && convention != ArgConvention::Mut)
         forceImmutable = true;
@@ -551,6 +555,8 @@ Value OriginTrackable::findUnderlyingValueFromField(Value value) {
 /// This is a helper for `OperationEffects::analyze` split out since calls are
 /// so interesting.
 void OperationEffects::analyzeCallOp(Operation &op) {
+  isCall = !isa<CreateFuncPtrOp>(op);
+
   FuncType signature;
   OperandRange callArguments = op.getOperands();
   ArrayRef<ArgConvention> conventions;
@@ -755,6 +761,7 @@ OverallOpValueEffect OperationEffects::analyze(Operation &op) {
   results.clear();
   origins.clear();
   interiorOriginsDefined.clear();
+  isCall = false;
 
   // Debuginfo ops may reference values that aren't fully initialized, so we
   // skip over them.  These indexing operations are handled specially.
