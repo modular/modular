@@ -17,6 +17,7 @@ from std.math.math import (
     _UnaryMathOp,
     _UnaryMathPluginHookFnType,
     _llvm_unary_fn,
+    _tanh_impl,
 )
 from std.sys._assembly import inlined_assembly
 from std.sys.info import CompilationTarget, _is_sm_9x_or_newer
@@ -272,6 +273,17 @@ def _cos(x: SIMD) -> type_of(x):
 
 @inline(.always)
 def _tanh(x: SIMD) -> type_of(x):
+    # tanh.approx.{f16,f32,bf16} need sm_75+ (PTX ISA 7.0): ptxas rejects them for
+    # Maxwell/Pascal/Volta ("Feature 'tanh' requires .target sm_75 or higher"). Use the generic
+    # rational approximation there, in fp32.
+    comptime target = CompilationTarget.current()
+    comptime if (
+        target.is_nvidia_gpu["sm_52"]()
+        or target.is_nvidia_gpu["sm_60"]()
+        or target.is_nvidia_gpu["sm_61"]()
+        or target.is_nvidia_gpu["sm_70"]()
+    ):
+        return _tanh_impl(x.cast[.float32]()).cast[x.dtype]()
     comptime if x.dtype == .float16:
         return _call_ptx_intrinsic[
             scalar_instruction="tanh.approx.f16",
