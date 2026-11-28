@@ -42,6 +42,13 @@ M_newRuntimeContext(const M_RuntimeConfig *config, M_Status *status) {
   M::Engine::Config runtimeConfig = config->config;
 
   if (runtimeConfig.getDevices().empty()) {
+    auto maxContextOr = Engine::Context::getOrCreateMaxContext(runtimeConfig);
+    if (maxContextOr.isError()) {
+      M::Detail::setError(status, maxContextOr.takeError());
+      return nullptr;
+    }
+    runtimeConfig.setMaxContext(maxContextOr->getPointer());
+
     // Creates CPU Device by default. `M_newDevice` sets `status` on failure,
     // and applies the same host-target-info and isCompatible() setup the
     // config's own devices get. The config copies the context ref, so the

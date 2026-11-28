@@ -51,15 +51,12 @@ static CPUDeviceOptions
 getOrCreateCPUDeviceOptions(const Engine::Config &config,
                             StringRef profileFilename) {
   AsyncRT::CPUDeviceOptions cpuDeviceOptions;
-  cpuDeviceOptions.numThreads = config.getNumThreads();
   cpuDeviceOptions.maxThreads = config.getMaxThreads();
   cpuDeviceOptions.tcmallocAllocator =
       config.getAllocatorType() == (int)kCaching;
   cpuDeviceOptions.threadBusyWaitTime = config.getThreadBusyWaitTime().count();
   cpuDeviceOptions.profileFilename = profileFilename;
   cpuDeviceOptions.poolName = config.getContextName();
-  if (cpuDeviceOptions.numThreads == 1)
-    cpuDeviceOptions.withSingleThreaded();
   // Previously mainWillDonate was required to be false in order to avoid the
   // Runtime created by the Engine from overwriting the Runtime created by the
   // Mojo stdlib during startup, this is no longer the case. Though there is
@@ -166,26 +163,29 @@ executeExecutableModel(const ExecutableModel &executableModel,
   return TensorMap(std::move(resultMap), cpuDevice);
 }
 
-ErrorOr<Engine::Context>
-Engine::Context::create(const M::Engine::Config &config) {
+ErrorOr<ContextRef>
+Engine::Context::getOrCreateMaxContext(const M::Engine::Config &config) {
+  if (ContextRef ctx = config.getMaxContext()) {
+    return std::move(ctx);
+  }
+
+  Init::Options options;
   std::string profileFilename =
       llvm::sys::Process::GetEnv("MODULAR_PROFILE_FILENAME").value_or("");
+  CPUDeviceOptions rtOptions =
+      getOrCreateCPUDeviceOptions(config, profileFilename);
+  options.withCPUDeviceOptions(rtOptions);
+  options.withForceDisableCrashReporting(!config.isCrashLogEnabled());
+  return Init::getOrCreateContext("max-engine", options);
+}
 
-  ContextRef maxContext;
-  if (ContextRef ctx = config.getMaxContext()) {
-    maxContext = std::move(ctx);
-  } else {
-    Init::Options options;
-    CPUDeviceOptions rtOptions =
-        getOrCreateCPUDeviceOptions(config, profileFilename);
-    options.withCPUDeviceOptions(rtOptions);
-    options.withForceDisableCrashReporting(!config.isCrashLogEnabled());
-
-    auto contextOr = Init::getOrCreateContext("max-engine", options);
-    if (contextOr.isError())
-      return contextOr.takeError();
-    maxContext = contextOr.takeValue();
+ErrorOr<Engine::Context>
+Engine::Context::create(const M::Engine::Config &config) {
+  auto contextOr = getOrCreateMaxContext(config);
+  if (contextOr.isError()) {
+    return contextOr.takeError();
   }
+  ContextRef maxContext = contextOr.takeValue();
   auto runtimeContext = Engine::Context(config, maxContext.copy());
   auto &maxTelemetryContext =
       runtimeContext.maxContext

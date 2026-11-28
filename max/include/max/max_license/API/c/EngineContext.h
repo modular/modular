@@ -36,6 +36,10 @@ namespace Engine {
 /// and is agnostic to the program being executed.
 class MODULAR_CXX_EXPORT Context {
 public:
+  /// Initialize the process context before creating implicit host devices.
+  /// The returned reference must remain alive until the engine context owns it.
+  static ErrorOr<ContextRef> getOrCreateMaxContext(const Config &config);
+
   /// Create a RuntimeContext object. This will create 'numThreads'
   /// threads. If \p config has no max context, checks for a global Max context
   /// and reuses it when options match (supporting concurrent

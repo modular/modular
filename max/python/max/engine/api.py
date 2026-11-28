@@ -19,6 +19,7 @@ import os
 import signal
 import sys
 import threading
+import warnings
 from collections.abc import Iterable, Mapping, Sequence
 from enum import Enum, IntEnum, auto
 from inspect import Parameter, Signature
@@ -38,7 +39,7 @@ from max._core.mlrt import AsyncValue as _AsyncValue
 from max._core.profiler import (
     set_gpu_profiling_state,
 )
-from max.driver import CPU, Buffer, Device, DLPackArray, is_virtual_device_mode
+from max.driver import Buffer, Device, DLPackArray, is_virtual_device_mode
 from max.engine._compilation_stats import _record_phase
 from max.graph import Graph, Module
 from max.profiler import traced
@@ -697,8 +698,12 @@ class InferenceSession:
     Args:
         devices: A list of devices on which to run inference. The host CPU
             is always included automatically.
-        num_threads: The number of execution threads. Defaults to ``None``,
-            which lets the runtime choose automatically.
+        num_threads: Deprecated. Omit this argument to use the process-wide
+            ``runtime.num_threads`` setting. For example, run
+            ``MODULAR_RUNTIME_NUM_THREADS=1 python app.py`` and call
+            ``InferenceSession()`` in the app. Passing ``0`` or a matching
+            positive count emits a :exc:`DeprecationWarning`. A different
+            positive count raises :exc:`ValueError`.
         custom_extensions: The extensions to load for the model. Supports
             paths to a ``.mojoc`` custom ops library or a ``.mojo`` source file.
         precompiled_mefs: A directory of compiled-graph artifacts written by an
@@ -752,6 +757,13 @@ class InferenceSession:
         export_mefs: str | Path | None = None,
         verify_body: bool = True,
     ) -> None:
+        if num_threads is not None:
+            max_threads = np.iinfo(np.uintp).max
+            if not 0 <= num_threads <= max_threads:
+                raise ValueError(
+                    f"num_threads must be between 0 and {max_threads}. "
+                    "Omit it to use runtime.num_threads."
+                )
         if precompiled_mefs is not None and export_mefs is not None:
             raise ValueError(
                 "pass at most one of precompiled_mefs and export_mefs: a "
@@ -776,10 +788,6 @@ class InferenceSession:
             if device not in seen_devices:
                 final_devices.append(device)
                 seen_devices.add(device)
-        host_cpu = CPU()
-        if host_cpu not in seen_devices:
-            final_devices.append(host_cpu)
-            seen_devices.add(host_cpu)
 
         custom_extensions_final = []
 
@@ -798,6 +806,13 @@ class InferenceSession:
             custom_extensions_final,
             num_threads or 0,
         )
+        if num_threads is not None:
+            warnings.warn(
+                "InferenceSession(num_threads=...) is deprecated. Omit num_threads "
+                "and use MODULAR_RUNTIME_NUM_THREADS to configure CPU threads.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
 
         # Register async-safe Python stack trace handler
         # This enables Python stack traces in crash reports without GIL deadlocks

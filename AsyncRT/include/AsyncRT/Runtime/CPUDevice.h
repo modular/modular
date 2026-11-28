@@ -96,7 +96,10 @@ struct MODULAR_CXX_EXPORT CPUDeviceOptions {
     kSOProfiler
   };
 
-  size_t numThreads = 0;
+  /// Process-wide runtime.num_threads setting, or zero for automatic selection.
+  static size_t getConfiguredNumThreads();
+
+  size_t numThreads = getConfiguredNumThreads();
   size_t maxThreads = 0;
 
   /// Filepath to write profile to, which enables profiling only if set.

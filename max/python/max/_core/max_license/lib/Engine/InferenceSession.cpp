@@ -14,6 +14,7 @@
 #include "_core/Engine/InferenceSession.h"
 #include "AsyncRT/Runtime/Algorithms.h"
 #include "AsyncRT/Runtime/AnyAsyncValueRef.h"
+#include "AsyncRT/Runtime/CPUDevice.h"
 #include "GraphCompiler/Driver/Device/DeviceExecution.h"
 #include "GraphCompiler/Support/Telemetry.h"
 #include "Init/DevelopmentSignalHandler.h"
@@ -541,14 +542,31 @@ std::vector<Driver::Python::Buffer> ModelHandle::executePreparedDeviceTensors(
 M::Core::InferenceSession::InferenceSession(
     std::vector<Driver::Python::PyDeviceTy> &&devices,
     std::vector<std::filesystem::path> &&customExtensions, size_t numThreads) {
+  if (numThreads != 0) {
+    size_t configured = AsyncRT::CPUDeviceOptions::getConfiguredNumThreads();
+    if (numThreads != configured)
+      throw std::invalid_argument(
+          "num_threads=" + std::to_string(numThreads) +
+          " does not match runtime.num_threads=" + std::to_string(configured) +
+          ". Set MODULAR_RUNTIME_NUM_THREADS before starting the process.");
+  }
+
+  auto maxContextOr = Engine::Context::getOrCreateMaxContext(runtimeConfig);
+  if (maxContextOr.isError()) {
+    throw std::invalid_argument(maxContextOr.takeError().get());
+  }
+  runtimeConfig.setMaxContext(maxContextOr->getPointer());
+
   // Ideally this does direct initialization, populateCompileConfig reads
   // the current value.
   sessionCompileConfig = populateCompileConfig(std::move(customExtensions));
 
-  // Defaults to 0 (use all threads)
-  runtimeConfig.setNumThreads(numThreads);
-
   this->devices = std::move(devices);
+  auto hostCPU = Driver::Python::getCpuDevice(0);
+  if (llvm::none_of(this->devices,
+                    [&](const auto &device) { return *device == *hostCPU; })) {
+    this->devices.push_back(std::move(hostCPU));
+  }
   for (const auto &device : this->devices)
     runtimeConfig.addDevice(
         {std::make_shared<const M::DeviceSpec>(device->deviceSpec),

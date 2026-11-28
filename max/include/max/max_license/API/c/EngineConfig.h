@@ -37,10 +37,6 @@ class MODULAR_CXX_EXPORT Config {
 public:
   Config();
 
-  void setNumThreads(size_t count);
-
-  size_t getNumThreads() const { return numThreads; }
-
   /// Internal only: this is used to limit the runtime.
 
   void setMaxThreads(size_t count);
@@ -96,7 +92,6 @@ public:
   }
 
 private:
-  size_t numThreads = 0;
   size_t maxThreads = 0;
 
   std::vector<ConfiguredDevice> devices;

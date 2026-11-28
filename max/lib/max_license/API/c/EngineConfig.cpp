@@ -36,14 +36,6 @@ M::Engine::Config::Config() {
     contextThreadPoolName = val.str();
   }
 
-  // Consider a default num_threads.
-  val = config.getValue("runtime.num_threads");
-  if (!val.empty()) {
-    int parsedValue;
-    if (llvm::to_integer<int>(val, parsedValue))
-      setNumThreads(parsedValue);
-  }
-
   // Extract a thread busy wait time.
   val = config.getValue("runtime.thread_busy_wait_time_us");
   if (!val.empty()) {
@@ -51,10 +43,6 @@ M::Engine::Config::Config() {
     if (llvm::to_integer<size_t>(val, parsedValue))
       threadBusyWaitTime = std::chrono::microseconds(parsedValue);
   }
-}
-
-void M::Engine::Config::setNumThreads(size_t count) {
-  numThreads = count; // May still be zero (intentional).
 }
 
 void M::Engine::Config::setMaxThreads(size_t count) {
