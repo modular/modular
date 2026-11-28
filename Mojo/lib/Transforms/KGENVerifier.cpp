@@ -12,8 +12,10 @@
 //===----------------------------------------------------------------------===//
 
 #include "Mojo/KGENDialect/KGENTypes.h"
+#include "Mojo/POPDialect/POPTypes.h"
 #include "Mojo/ToolCommon/CLOptions.h"
 #include "Mojo/ToolCommon/KGENPasses.h"
+#include "Support/MDialect/MTypeInterfaces.h"
 #include "Target/TargetLowering.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/Dialect.h"
@@ -93,6 +95,81 @@ static LogicalResult verifySIMDLengths(Operation *op,
          << invalid;
 }
 
+/// True when a fully resolved type's layout overflows signed 64-bit object
+/// size. Unknown / parametric layouts return false so they can be checked
+/// after elaboration.
+static bool hasOverflowingLayout(Type type, TargetInfoAttr target) {
+  if (auto arr = dyn_cast<POP::ArrayType>(type)) {
+    std::optional<int64_t> n = arr.getResolvedSize();
+    if (!n)
+      return false;
+    if (*n < 0)
+      return true;
+    std::optional<int64_t> elem =
+        DataLayoutInterface::getTypeAllocSize(target, arr.getElementType());
+    if (!elem)
+      return false;
+    return !DataLayoutInterface::checkedSizeMul(*n, *elem);
+  }
+  if (auto simd = dyn_cast<SIMDType>(type)) {
+    std::optional<int64_t> n = simd.getResolvedSize();
+    std::optional<KGENDType> dtype = simd.getResolvedDType();
+    if (!n || !dtype)
+      return false;
+    if (*n < 0)
+      return true;
+    if (simd.getTypeSize(target))
+      return false;
+    return dtype->isArithmetic() || dtype->isBool() || dtype->isAddress();
+  }
+  if (auto strct = dyn_cast<StructType>(type)) {
+    std::optional<SmallVector<Type>> elems = strct.getElementTypes();
+    if (!elems)
+      return false;
+    for (Type elem : *elems) {
+      if (!DataLayoutInterface::getTypeAllocSize(target, elem) ||
+          !DataLayoutInterface::getTypeABIAlign(target, elem))
+        return false;
+    }
+    return !strct.getTypeSize(target);
+  }
+  return false;
+}
+
+/// Reject types whose size wraps in layout math. Wrapped sizes used to
+/// lower to zero-byte stack slots that aliased neighbouring locals.
+static LogicalResult verifyOversizedTypes(Operation *op, TargetInfoAttr target,
+                                          DenseSet<Type> &checkedTypes) {
+  Type invalid;
+  auto checkType = [&](Type type) {
+    if (!type) {
+      llvm::reportFatalInternalError(
+          Twine("'") + op->getName().getStringRef() +
+          "' has a null operand, result or block argument type");
+    }
+    if (!checkedTypes.insert(type).second)
+      return;
+    type.walk([&](Type t) {
+      if (hasOverflowingLayout(t, target))
+        invalid = t;
+    });
+  };
+
+  for (Type type : op->getOperandTypes())
+    checkType(type);
+  for (Type type : op->getResultTypes())
+    checkType(type);
+  for (Region &region : op->getRegions())
+    for (Block &block : region.getBlocks())
+      for (BlockArgument arg : block.getArguments())
+        checkType(arg.getType());
+
+  if (!invalid)
+    return success();
+  return op->emitError("type is too large to fit in addressable memory, found ")
+         << invalid;
+}
+
 namespace {
 struct KGENVerifierPass : public impl::KGENVerifierPassBase<KGENVerifierPass> {
   using KGENVerifierPassBase::KGENVerifierPassBase;
@@ -105,19 +182,25 @@ struct KGENVerifierPass : public impl::KGENVerifierPassBase<KGENVerifierPass> {
 
     // Per-op (non-recursive): skips off-allowlist ops; structural/dominance
     // checks come from the PM verifier (off in MODULAR_PRODUCTION).
-    // SIMD lengths are checked on every op regardless of dialect, since
-    // mid-lowering ops can still carry KGEN types.
-    auto verifyOp = [&](Operation *operation, DenseSet<Type> &checkedTypes) {
-      if (failed(verifySIMDLengths(operation, checkedTypes)))
+    // SIMD lengths and oversized layouts are checked on every op regardless
+    // of dialect, since mid-lowering ops can still carry KGEN types.
+    TargetInfoAttr target = lookupTargetInfo(op);
+    auto verifyOp = [&](Operation *operation, DenseSet<Type> &checkedSIMD,
+                        DenseSet<Type> &checkedSizes) {
+      if (failed(verifySIMDLengths(operation, checkedSIMD)))
+        ++numErrors;
+      if (target &&
+          failed(verifyOversizedTypes(operation, target, checkedSizes)))
         ++numErrors;
       if (shouldVerifyOp(operation) &&
           failed(mlir::verify(operation, /*verifyRecursively=*/false)))
         ++numErrors;
     };
     auto verifyTree = [&](Operation *root) {
-      DenseSet<Type> checkedTypes;
+      DenseSet<Type> checkedSIMD;
+      DenseSet<Type> checkedSizes;
       return root->walk([&](Operation *operation) {
-        verifyOp(operation, checkedTypes);
+        verifyOp(operation, checkedSIMD, checkedSizes);
         return numErrors >= maxErrors ? WalkResult::interrupt()
                                       : WalkResult::advance();
       });
@@ -133,16 +216,15 @@ struct KGENVerifierPass : public impl::KGENVerifierPassBase<KGENVerifierPass> {
       mlir::parallelForEach(&getContext(), children,
                             [&](Operation *child) { (void)verifyTree(child); });
       if (numErrors < maxErrors) {
-        DenseSet<Type> checkedTypes;
-        verifyOp(op, checkedTypes);
+        DenseSet<Type> checkedSIMD;
+        DenseSet<Type> checkedSizes;
+        verifyOp(op, checkedSIMD, checkedSizes);
       }
       if (numErrors >= maxErrors)
         signalPassFailure();
     } else if (verifyTree(op).wasInterrupted()) {
       signalPassFailure();
     }
-
-    TargetInfoAttr target = lookupTargetInfo(op);
     const TargetLowering *lowering = nullptr;
     if (target) {
       ErrorOr<const TargetLowering *> loweringOr =

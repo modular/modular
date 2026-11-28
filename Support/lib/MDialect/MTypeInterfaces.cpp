@@ -22,6 +22,7 @@
 #include "llvm/Support/MathExtras.h"
 #include <climits>
 #include <cstdint>
+#include <limits>
 #include <optional>
 
 using namespace M;
@@ -112,7 +113,38 @@ DataLayoutInterface::getTypeAllocSize(TargetInfoAttr target, Type type) {
   std::optional<int64_t> typeABIAlign = getTypeABIAlign(target, type);
   if (!typeSize || !typeABIAlign)
     return {};
-  return llvm::alignTo(*typeSize, *typeABIAlign);
+  return checkedSizeAlignTo(*typeSize, *typeABIAlign);
+}
+
+std::optional<int64_t> DataLayoutInterface::checkedSizeMul(int64_t lhs,
+                                                           int64_t rhs) {
+  if (lhs < 0 || rhs < 0)
+    return {};
+  int64_t result;
+  if (llvm::MulOverflow(lhs, rhs, result))
+    return {};
+  return result;
+}
+
+std::optional<int64_t> DataLayoutInterface::checkedSizeAdd(int64_t lhs,
+                                                           int64_t rhs) {
+  if (lhs < 0 || rhs < 0)
+    return {};
+  int64_t result;
+  if (llvm::AddOverflow(lhs, rhs, result))
+    return {};
+  return result;
+}
+
+std::optional<int64_t>
+DataLayoutInterface::checkedSizeAlignTo(int64_t size, int64_t align) {
+  if (size < 0 || align <= 0)
+    return {};
+  uint64_t aligned = llvm::alignTo(static_cast<uint64_t>(size),
+                                   static_cast<uint64_t>(align));
+  if (aligned > uint64_t(std::numeric_limits<int64_t>::max()))
+    return {};
+  return static_cast<int64_t>(aligned);
 }
 
 std::optional<int64_t>

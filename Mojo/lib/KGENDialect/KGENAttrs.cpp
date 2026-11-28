@@ -4090,7 +4090,9 @@ static Attribute simplifyGetSizeOf(SmallVectorImpl<TypedAttr> &operands,
   // semantics in C: it is the stride between adjacent array elements.
   std::optional<int64_t> size = DataLayoutInterface::getTypeAllocSize(
       target.getTarget(), typeCst.getMlirType());
-  if (!size)
+  // Refuse to fold a wrapped or unknown size. Overflowing layout math used to
+  // return 0 / INT64_MIN, which made oversized arrays look empty.
+  if (!size || *size < 0)
     return {};
 
   return SIMDAttr::get(uint64_t(*size), indexTy);

@@ -57,6 +57,19 @@ def DataLayoutInterface : TypeInterface<"DataLayoutInterface"> {
     /// Get the ABI alignment of the type in bytes.
     static std::optional<int64_t>
     getTypeABIAlign(TargetInfoAttr target, Type type);
+
+    /// Multiply two non-negative object sizes. Returns nullopt if either
+    /// operand is negative or the product overflows signed 64-bit
+    /// (`ptrdiff_t` / `isize::MAX`), so pointer differences stay
+    /// representable.
+    static std::optional<int64_t> checkedSizeMul(int64_t lhs, int64_t rhs);
+    /// Add two non-negative object sizes. Returns nullopt on a negative
+    /// operand or signed 64-bit overflow.
+    static std::optional<int64_t> checkedSizeAdd(int64_t lhs, int64_t rhs);
+    /// Align `size` up to `align`. Returns nullopt if `size` is negative,
+    /// `align` is not positive, or the result overflows signed 64-bit.
+    static std::optional<int64_t> checkedSizeAlignTo(int64_t size,
+                                                     int64_t align);
   }];
 }
 
