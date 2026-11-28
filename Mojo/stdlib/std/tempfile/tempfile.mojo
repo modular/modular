@@ -228,13 +228,16 @@ def _rmtree(path: String, ignore_errors: Bool = False) raises:
 
     for file_or_dir in std.os.listdir(path):
         var curr_path = std.os.path.join(path, file_or_dir)
-        if std.os.path.isfile(curr_path):
+
+        # unlink path if the current path is a link or file
+        if std.os.path.islink(curr_path) or std.os.path.isfile(curr_path):
             try:
                 std.os.remove(curr_path)
             except e:
                 if not ignore_errors:
                     raise e
-            continue
+                continue
+        # recursively unlink all links or file in this directory
         if std.os.path.isdir(curr_path):
             try:
                 _rmtree(curr_path, ignore_errors)

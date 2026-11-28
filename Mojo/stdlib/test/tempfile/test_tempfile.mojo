@@ -239,6 +239,15 @@ def test_named_temporary_file_write() raises:
     std.os.remove(file_name)
 
 
+def test_symlinks_are_cleaned_up_on_exit() raises:
+    var path: String
+    with TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        path = std.os.path.join(tmp, "link")
+        var keep = mkdtemp()
+        std.os.symlink(keep, path)
+    assert_false(exists(path), "path is cleaned up " + path)
+
+
 def test_optional_named_temporary_file_uses_niche() raises:
     comptime assert (
         size_of[Optional[NamedTemporaryFile]]() == size_of[NamedTemporaryFile]()
