@@ -215,15 +215,23 @@ class RSMIContext:
         )
         return result.value
 
-    def _get_memory_busy_percent(self, index: int) -> int:
+    def _get_memory_busy_percent(self, index: int) -> int | None:
         assert self._library is not None
         result = ctypes.c_uint32()
-        _check_rsmi_status(
-            self._library,
-            self._library.rsmi_dev_memory_busy_percent_get(
-                index, _bindtools.byref(result)
-            ),
-        )
+        try:
+            _check_rsmi_status(
+                self._library,
+                self._library.rsmi_dev_memory_busy_percent_get(
+                    index, _bindtools.byref(result)
+                ),
+            )
+        except RSMIError as e:
+            # Integrated GPUs (for example the gfx1036 in Ryzen 7000 desktop
+            # CPUs) answer NOT_SUPPORTED. The field is optional, as for clocks;
+            # other RSMI failures still propagate.
+            if e.code == _RSMI_STATUS_NOT_SUPPORTED:
+                return None
+            raise
         return result.value
 
     def _get_device_busy_percent(self, index: int) -> int:
