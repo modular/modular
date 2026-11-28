@@ -81,14 +81,14 @@ Operation *LIT::findOpProcessingRaise(Block *currentBlock) {
 }
 
 FnTypeGeneratorType LIT::getCalleeType(Operation *op) {
-  if (auto call = dyn_cast<LIT::CallOp>(op))
-    return call.getCalleeType();
+  if (auto call = dyn_cast<KGENCallOpInterface>(op))
+    return cast<FnTypeGeneratorType>(call.getCalleeType());
   return cast<LIT::CallIndirectOp>(op).getCalleeType();
 }
 
 ValueRange LIT::getCalleeArguments(Operation *op) {
-  if (auto call = dyn_cast<LIT::CallOp>(op))
-    return call.getOperands();
+  if (auto call = dyn_cast<KGENCallOpInterface>(op))
+    return call.getArguments();
   return cast<LIT::CallIndirectOp>(op).getArguments();
 }
 

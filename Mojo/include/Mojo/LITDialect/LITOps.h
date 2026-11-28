@@ -52,9 +52,9 @@ class SpecialFunctionInfo;
 /// the TryOp or FuncOp if found, or null if raise is not valid.
 Operation *findOpProcessingRaise(Block *currentBlock);
 
-/// Given a call or indirect call, return the callee signature type.
+/// Given a direct or indirect call, return the callee signature type.
 FnTypeGeneratorType getCalleeType(Operation *op);
-/// Given a call or indirect call, return the callee argument values.
+/// Given a direct or indirect call, return the callee argument values.
 ValueRange getCalleeArguments(Operation *op);
 
 /// Return the fully resolved symbol reference for the given declaration,

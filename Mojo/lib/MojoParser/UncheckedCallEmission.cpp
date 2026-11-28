@@ -1423,8 +1423,8 @@ void CallEmitter::emitDirectCallWarnings(LIT::CallOp call,
   }
 }
 
-// As we emit the arguments, we check to see if there are any exclusivity
-// violations provided by the argument.
+// Check a fully emitted call for exclusivity violations among its arguments
+// and captures.
 namespace {
 struct ExclusivityChecker : public SharedStateUser {
   ExclusivityChecker(RValue callee, const ExprNode *callExpr, CallSyntax syntax,
@@ -1432,28 +1432,16 @@ struct ExclusivityChecker : public SharedStateUser {
                      IREmitter &emitter)
       : SharedStateUser(emitter.shared), callee(callee), callExpr(callExpr),
         syntax(syntax), argumentValues(argumentValues),
-        builder(emitter.builder), declScope(emitter.declScope) {
+        builder(emitter.builder), declScope(emitter.declScope) {}
 
-    // Handle either nested-origin read-only promise.
-    originsAccessesAreReadOnly = getCalleeType().getIsNestedOriginsReadOnly();
-
-    // Check capture origins first so we know if argument values may overlap.
-    checkCaptureOrigins();
-  }
-
-  /// As each argument is emitted, check against previous arguments for
-  /// exclusivity violations.
-  void checkArgument(Value val, unsigned argIdx, FnTypeGeneratorType signature);
+  /// Check the arguments and captures of a fully emitted call for exclusivity
+  /// violations.
+  void checkCall(Operation &call);
 
   /// This method takes a look at the origins accessed by the call.  If any of
   /// them might be to the current caller's stack frame, it returns true. This
   /// allows us to set the LLVM tailcall marker.
   bool mayAccessCallerStack() const;
-
-  /// Return the type of the callee.
-  FnTypeGeneratorType getCalleeType() const {
-    return sugarCast<FnTypeGeneratorType>(callee.getRValueType());
-  }
 
 private:
   RValue callee;
@@ -1463,6 +1451,7 @@ private:
   ArrayRef<ASTExprAnd<AnyValue>> argumentValues;
   std::optional<OpBuilder> builder;
   ASTDecl &declScope;
+  FnTypeGeneratorType calleeType;
 
   /// True if the callee has either nested-origin read-only promise. Nested
   /// type-embedded origins are treated as read-only.
@@ -1488,6 +1477,9 @@ private:
   /// never conflict with themselves, but they may conflict with argument
   /// accesses.
   void checkCaptureOrigins();
+
+  /// Check one argument against the arguments and captures already seen.
+  void checkArgument(Value val, unsigned argIdx);
 
   void checkOriginAccess(Value val, std::optional<unsigned> argIdx,
                          TypedAttr origin);
@@ -1566,7 +1558,7 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
 }
 
 void ExclusivityChecker::checkCaptureOrigins() {
-  TypedAttr captureOrigins = getCalleeType().getCaptureOrigins();
+  TypedAttr captureOrigins = calleeType.getCaptureOrigins();
   for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
            /*types=*/{}, captureOrigins)) {
     // If we are to treat all these as read-only, then strip the mutability.
@@ -1678,13 +1670,32 @@ void ExclusivityChecker::checkOriginAccess(Value val,
   }
 }
 
-/// As each argument is emitted, check against previous arguments for
-/// exclusivity violations. This handles normal scalar arguments as well as
-/// unpacking the elements passed to variadic lists and packs and processing
-/// each independently.
-void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
-                                       FnTypeGeneratorType signature) {
-  ArgConvention convention = signature.getArgConvention(argIdx);
+/// Check the arguments and captures of a fully emitted call for exclusivity
+/// violations.
+void ExclusivityChecker::checkCall(Operation &call) {
+  calleeType = LIT::getCalleeType(&call);
+
+  // Handle either nested-origin read-only promise.
+  originsAccessesAreReadOnly = calleeType.getIsNestedOriginsReadOnly();
+
+  // Check captures first so argument accesses are compared against them.
+  checkCaptureOrigins();
+
+  ValueRange arguments = LIT::getCalleeArguments(&call);
+  ArrayRef<ArgConvention> conventions =
+      calleeType.getArgConventions().drop_back(
+          calleeType.getNumAsyncReturnSlots());
+  assert(arguments.size() == conventions.size() &&
+         "call arguments do not match callee signature");
+  for (auto [argIdx, argument] : llvm::enumerate(arguments))
+    checkArgument(argument, argIdx);
+}
+
+/// Check one argument against the arguments and captures already seen. This
+/// handles normal scalar arguments as well as unpacking the elements passed to
+/// variadic lists and packs and processing each independently.
+void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx) {
+  ArgConvention convention = calleeType.getArgConvention(argIdx);
 
   // If this is a result argument, then we only look at the origin of the
   // destination that we're storing into, not any nested references that may
@@ -1724,7 +1735,7 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
       bool forceToImmutOrigin = false;
       if (isArgOrigin(origin) && hasAddress(convention) &&
           convention != ArgConvention::Mut &&
-          cast<RefType>(signature.getArgument(argIdx)).isMutableKnown(false))
+          cast<RefType>(calleeType.getArgument(argIdx)).isMutableKnown(false))
         forceToImmutOrigin = true;
 
       // The callee mutates an unpacked pack segment only through a `mut`
@@ -1748,14 +1759,14 @@ void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx,
   };
 
   // Normal arguments.
-  if (!signature.isPack(argIdx) && !signature.isPosVarArg(argIdx)) {
+  if (!calleeType.isPack(argIdx) && !calleeType.isPosVarArg(argIdx)) {
     checkArg(argVal);
     return;
   }
 
   // Handle VariadicList and VariadicPack.  They are constructed objects dumped
   // into a VarDecl because they need to be passed to the callee with ownership.
-  convention = signature.getVariadicConvention(argIdx);
+  convention = calleeType.getVariadicConvention(argIdx);
   TypedAttr extraOrigin; // Unused here.
   for (auto elt :
        OriginTrackable::decodeIndividualVariadicArguments(argVal, extraOrigin))
@@ -1778,7 +1789,6 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
   bool isImmut = OriginType::isMutableKnown(origin, false);
   origin = OriginMutCastAttr::strip(origin);
 
-  FnTypeGeneratorType calleeType = getCalleeType();
   MojoInflightDiag diag = emitError(callExpr->getLoc());
   ArgConvention convention = calleeType.getArgConvention(argIdx);
 
@@ -2043,8 +2053,8 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
   // Otherwise, materialize PValue and DLValue's as SSA values for emission.
   Location loc = translateLocation(callExpr->getLoc());
 
-  // As we emit the arguments, we check to see if there are any exclusivity
-  // violations provided by the argument.
+  // Check exclusivity after creating the call so the analysis can use the
+  // canonical argument values attached to the operation.
   ExclusivityChecker exclusivityChecker(callee, callExpr, callOperands.syntax,
                                         argumentValues, *this);
 
@@ -2100,10 +2110,6 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     if (needsImplicitOrigin)
       implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
 
-    // The argument looks good on its own, check to see if it is an exclusivity
-    // violation with a previous argument.
-    exclusivityChecker.checkArgument(arg, argIdx, calleeSig);
-
     // All looks good!
     callArgs.push_back(arg);
   }
@@ -2143,6 +2149,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
       // `!co.routine<T>` result in a `Coroutine[T]` object.
       auto call = AsyncCallOp::create(*builder, loc, target.get(),
                                       implicitOrigins, callArgs);
+      exclusivityChecker.checkCall(*call);
       // Emit the implicit conversion to Coroutine[T]. We emit into the call's
       // destination to avoid an extra copy/move of the Coroutine object.
       callResult = materializeAsyncCallAsCoroutine(
@@ -2154,6 +2161,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                  implicitOrigins, callArgs);
       callOp = call;
       callResult = SRValue(call.getResult(0));
+      exclusivityChecker.checkCall(*call);
 
       // Set the LLVM "tail" marker if the call may not access the caller's
       // stack.  This flag doesn't force a tail call, it says the call is
@@ -2180,6 +2188,7 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
                                        implicitOrigins, callArgs);
     callOp = call;
     callResult = SRValue(call.getResult(0));
+    exclusivityChecker.checkCall(*call);
 
     if (!exclusivityChecker.mayAccessCallerStack())
       call.setTailKind(TailKind::Tail);
