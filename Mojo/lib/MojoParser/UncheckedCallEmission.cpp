@@ -32,6 +32,7 @@
 #include "Mojo/KGENDialect/ParameterReplacer.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
+#include "Mojo/LITDialect/OriginTrackable.h"
 #include "Mojo/POPDialect/POPAttrs.h"
 #include "Mojo/POPDialect/POPOps.h"
 
@@ -73,7 +74,7 @@ public:
   /// Emit IR for a single argument, according to its convention.
   /// For a pack argument, `packEltType` replaces the element type at
   /// `sequenceIndex` in the resolved list of the pack.
-  AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, unsigned argIdx,
+  AnyValue emitOneArgVal(ASTExprAnd<AnyValue> operand, size_t argIdx,
                          ArgConvention convention, Type expectedType,
                          size_t sequenceIndex = 0, TypedAttr packEltType = {});
 
@@ -284,9 +285,9 @@ AnyValue CallEmitter::emitWholePackForward(ASTExprAnd<AnyValue> operand,
   return CValue::getMValueForRef(refValue);
 }
 
-AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand,
-                                    unsigned argIdx, ArgConvention convention,
-                                    Type expectedType, size_t sequenceIndex,
+AnyValue CallEmitter::emitOneArgVal(ASTExprAnd<AnyValue> operand, size_t argIdx,
+                                    ArgConvention convention, Type expectedType,
+                                    size_t sequenceIndex,
                                     TypedAttr packEltType) {
   // Convert to the element type of a variadic list or pack.
   if (calleeSig.isPosVarArg(argIdx)) {
@@ -1463,7 +1464,7 @@ private:
   /// from, and whether it was potentially mutated.
   struct OriginInfo {
     /// The argument that accessed this origin, or the capture set if null.
-    std::optional<unsigned> argIdx;
+    std::optional<size_t> argIdx;
     bool isImmut;
     /// True if this is the leaf of a nested access (e.g. "a.x.y.z"), false if
     /// this is the parent origin of a leaf access (e.g. "a.x" from that
@@ -1472,19 +1473,10 @@ private:
   };
   SmallDenseMap<TypedAttr, OriginInfo, 8> originAccesses;
 
-  /// Look at the capture origin set on the callee and register uses of them.
-  /// The capture origins are considered accessed as a single unit, so they
-  /// never conflict with themselves, but they may conflict with argument
-  /// accesses.
-  void checkCaptureOrigins();
-
-  /// Check one argument against the arguments and captures already seen.
-  void checkArgument(Value val, unsigned argIdx);
-
-  void checkOriginAccess(Value val, std::optional<unsigned> argIdx,
+  void checkOriginAccess(Value val, std::optional<size_t> argIdx,
                          TypedAttr origin);
 
-  void diagViolation(Value val, unsigned argIdx, TypedAttr origin,
+  void diagViolation(Value val, size_t argIdx, TypedAttr origin,
                      const OriginInfo &previousAccess);
 };
 } // end anonymous namespace
@@ -1557,23 +1549,12 @@ bool ExclusivityChecker::mayAccessCallerStack() const {
   return false;
 }
 
-void ExclusivityChecker::checkCaptureOrigins() {
-  TypedAttr captureOrigins = calleeType.getCaptureOrigins();
-  for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
-           /*types=*/{}, captureOrigins)) {
-    // If we are to treat all these as read-only, then strip the mutability.
-    if (originsAccessesAreReadOnly)
-      origin = OriginMutCastAttr::get(origin, false);
-    checkOriginAccess(Value(), /*argIdx=*/{}, origin);
-  }
-}
-
 /// Given an argument value being passed with a specified convention, check to
 /// see if the following origin (which may be part of the argument convention,
 /// or buried in the type) is a legal access given the other things we've
 /// already seen.
 void ExclusivityChecker::checkOriginAccess(Value val,
-                                           std::optional<unsigned> argIdx,
+                                           std::optional<size_t> argIdx,
                                            TypedAttr rawOrigin) {
 
   // Accesses to an origin union is an access to each of the members.
@@ -1674,116 +1655,26 @@ void ExclusivityChecker::checkOriginAccess(Value val,
 /// violations.
 void ExclusivityChecker::checkCall(Operation &call) {
   calleeType = LIT::getCalleeType(&call);
-
-  // Handle either nested-origin read-only promise.
   originsAccessesAreReadOnly = calleeType.getIsNestedOriginsReadOnly();
 
-  // Check captures first so argument accesses are compared against them.
-  checkCaptureOrigins();
-
-  ValueRange arguments = LIT::getCalleeArguments(&call);
-  ArrayRef<ArgConvention> conventions =
-      calleeType.getArgConventions().drop_back(
-          calleeType.getNumAsyncReturnSlots());
-  assert(arguments.size() == conventions.size() &&
-         "call arguments do not match callee signature");
-  for (auto [argIdx, argument] : llvm::enumerate(arguments))
-    checkArgument(argument, argIdx);
-}
-
-/// Check one argument against the arguments and captures already seen. This
-/// handles normal scalar arguments as well as unpacking the elements passed to
-/// variadic lists and packs and processing each independently.
-void ExclusivityChecker::checkArgument(Value argVal, unsigned argIdx) {
-  ArgConvention convention = calleeType.getArgConvention(argIdx);
-
-  // If this is a result argument, then we only look at the origin of the
-  // destination that we're storing into, not any nested references that may
-  // be in the result. This returned value is derived from the other arguments
-  // passed to the function, it doesn't conflict with them.
-  if (convention == ArgConvention::ByRefResult ||
-      convention == ArgConvention::ByRefError) {
-    argVal = RebindOp::strip(argVal);
-    checkOriginAccess(argVal, argIdx,
-                      sugarCast<RefType>(argVal.getType()).getOrigin());
-    return;
+  // For `closure(arg)` where `closure` captures `x`, account for the implicit
+  // access to `x` before processing accesses through `arg`. Captures have no
+  // argument index and are considered one source.
+  for (TypedAttr origin : shared.cachedOriginFinder.findOriginsIn(
+           /*types=*/{}, calleeType.getCaptureOrigins())) {
+    if (originsAccessesAreReadOnly)
+      origin = OriginMutCastAttr::get(origin, false);
+    checkOriginAccess(Value(), /*argIdx=*/{}, origin);
   }
 
-  // We get passed the MLIR representation for the dynamic argument, which
-  // includes variadic and pack constructions.  Make sure to handle each
-  // variadic argument separately.
-  auto checkArg = [&](Value argVal) {
-    // We sometimes get rebinds for downcasts of origins or for sugar alignment.
-    // Ignore those so we can see the actual incoming value's origin.
-    argVal = RefImmutOp::stripRebinds(argVal);
-
-    // Return true if this is the origin of the argument itself. An unpacked
-    // `!lit.ref.pack` segment is a register value, not a reference. The
-    // access to its origin has the mutability of the pack.
-    auto isArgOrigin = [&](TypedAttr origin) -> bool {
-      auto refType = dyn_cast<RefType>(argVal.getType());
-      return refType && hasAddress(convention) &&
-             isEqualCanon(refType.getOrigin(), origin);
-    };
-
-    // Find all the of the origins that are buried in the specified type.
-    for (TypedAttr origin :
-         shared.cachedOriginFinder.findOriginsIn(argVal.getType())) {
-      // We may have looked through a rebind and got to a mutable origin. If
-      // we are only reading, force the origin back to immutable so we don't
-      // get confused.
-      bool forceToImmutOrigin = false;
-      if (isArgOrigin(origin) && hasAddress(convention) &&
-          convention != ArgConvention::Mut &&
-          cast<RefType>(calleeType.getArgument(argIdx)).isMutableKnown(false))
-        forceToImmutOrigin = true;
-
-      // The callee mutates an unpacked pack segment only through a `mut`
-      // pack. This is also true when the pack of the caller is mutable.
-      if (isa<RefPackType>(argVal.getType()) &&
-          convention != ArgConvention::Mut)
-        forceToImmutOrigin = true;
-
-      // Callees with a nested-origin read-only promise do not mutate origins
-      // of 'ref' arguments or nested arguments, but still affect 'mut' and
-      // result slots.
-      if (originsAccessesAreReadOnly) {
-        if (!isArgOrigin(origin) || convention == ArgConvention::Ref)
-          forceToImmutOrigin = true;
-      }
-
-      if (forceToImmutOrigin)
-        origin = OriginMutCastAttr::get(origin, false);
-      checkOriginAccess(argVal, argIdx, origin);
-    }
-  };
-
-  // Normal arguments.
-  if (!calleeType.isPack(argIdx) && !calleeType.isPosVarArg(argIdx)) {
-    checkArg(argVal);
-    return;
-  }
-
-  // Handle VariadicList and VariadicPack.  They are constructed objects dumped
-  // into a VarDecl because they need to be passed to the callee with ownership.
-  convention = calleeType.getVariadicConvention(argIdx);
-  TypedAttr extraOrigin; // Unused here.
-  for (auto elt :
-       OriginTrackable::decodeIndividualVariadicArguments(argVal, extraOrigin))
-    checkArg(elt);
-
-  // The elements are checked above, but the container is passed too. A locally
-  // built container has a mutable origin yet reaches the callee through an
-  // immutable view, so casting its origin is equivalent to that view.
-  if (auto refType =
-          dyn_cast<RefType>(RefImmutOp::stripRebinds(argVal).getType()))
-    checkOriginAccess(argVal, argIdx,
-                      OriginMutCastAttr::get(refType.getOrigin(), false));
+  EffectiveCallAccesses effectiveAccesses(call, shared.cachedOriginFinder);
+  for (const EffectiveCallAccess &access : effectiveAccesses.getAccesses())
+    checkOriginAccess(access.value, access.argumentIndex, access.origin);
 }
 
 /// Emit an error about an access to a conflicting origin after a previous
 /// access was seen.
-void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
+void ExclusivityChecker::diagViolation(Value val, size_t argIdx,
                                        TypedAttr origin,
                                        const OriginInfo &previousAccess) {
   bool isImmut = OriginType::isMutableKnown(origin, false);
@@ -1794,7 +1685,7 @@ void ExclusivityChecker::diagViolation(Value val, unsigned argIdx,
 
   diag << "aliasing values passed ";
   diag << (previousAccess.isImmut ? "immutably" : "mutably");
-  if (std::optional<unsigned> prevIdx = previousAccess.argIdx) {
+  if (std::optional<size_t> prevIdx = previousAccess.argIdx) {
     diag << " to " << calleeType.getArgName(*prevIdx) << " argument";
     diag << argumentValues[*prevIdx].expr->getRange();
   } else {

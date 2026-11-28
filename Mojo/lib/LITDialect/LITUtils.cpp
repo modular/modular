@@ -26,6 +26,7 @@
 #include "Mojo/KGENDialect/PropositionFold.h"
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITTypes.h"
+#include "Mojo/LITDialect/OriginTrackable.h"
 #include "Support/Compiler/OperationUtils.h"
 #include "Support/MDialect/ParserUtils.h"
 #include "mlir/AsmParser/AsmParser.h"
@@ -334,67 +335,6 @@ InteriorOriginAttr LIT::getInteriorForSubtreeOrigin(OriginSubtreeAttr subtree) {
   return cast<InteriorOriginAttr>(result);
 }
 
-// Strip sugar that does not affect whether two access paths overlap.
-static TypedAttr normalizeAccessOrigin(TypedAttr origin) {
-  auto result = OriginMutCastAttr::strip(getCanonicalAttr(origin));
-  assert((!sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
-                    InteriorOriginAttr>(result) &&
-          "unsupported origin in an access specification"));
-  return result;
-}
-
-// Return whether `origin` is contained within `root`, accounting for
-// projections.
-bool LIT::isOriginWithin(TypedAttr origin, TypedAttr root) {
-  origin = normalizeAccessOrigin(origin);
-  root = normalizeAccessOrigin(root);
-  if (origin == root)
-    return true;
-
-  // Walk from a field projection toward its enclosing origin.
-  if (auto field = dyn_cast<OriginFieldAttr>(origin))
-    return isOriginWithin(field.getBase(), root);
-  return false;
-}
-
-// Return whether field projections from a common base first diverge at
-// different fields, which proves that they are disjoint.
-static bool areDisjointFieldProjections(TypedAttr lhs, TypedAttr rhs) {
-  lhs = normalizeAccessOrigin(lhs);
-  rhs = normalizeAccessOrigin(rhs);
-  SmallVector<StringAttr> lhsFields;
-  SmallVector<StringAttr> rhsFields;
-  while (auto field = dyn_cast<OriginFieldAttr>(lhs)) {
-    lhsFields.push_back(field.getField());
-    lhs = field.getBase();
-  }
-  while (auto field = dyn_cast<OriginFieldAttr>(rhs)) {
-    rhsFields.push_back(field.getField());
-    rhs = field.getBase();
-  }
-  if (lhs != rhs) // The base should be the same after fields are removed.
-    return false;
-
-  for (auto [lhsField, rhsField] :
-       llvm::zip(llvm::reverse(lhsFields), llvm::reverse(rhsFields)))
-    if (lhsField != rhsField)
-      return true;
-  return false;
-}
-
-// Return whether two origins may designate overlapping memory. This is
-// conservative for unrelated origin parameters because they may be
-// instantiated with the same origin.
-bool LIT::originsOverlap(TypedAttr lhs, TypedAttr rhs) {
-  if (isOriginWithin(lhs, rhs) || isOriginWithin(rhs, lhs))
-    return true;
-  if (areDisjointFieldProjections(lhs, rhs))
-    return false;
-
-  // Distinct origin parameters may be instantiated with the same origin.
-  return true;
-}
-
 std::optional<bool> LIT::getDefaultArgumentAccess(ArgConvention convention) {
   switch (convention) {
   // Immutable and shared references permit reads.
@@ -438,8 +378,8 @@ static bool isAccessSubset(TypedAttr actual, TypedAttr expected) {
   bool expectedIsMutable =
       cast<OriginType>(expected.getType()).isMutableKnown(true);
   return (!actualIsMutable || expectedIsMutable) &&
-         isOriginWithin(OriginMutCastAttr::strip(actual),
-                        OriginMutCastAttr::strip(expected));
+         isUnspecializedOriginWithin(OriginMutCastAttr::strip(actual),
+                                     OriginMutCastAttr::strip(expected));
 }
 
 bool LIT::areArgumentAccessesSubtype(FuncType actual, size_t actualIndex,

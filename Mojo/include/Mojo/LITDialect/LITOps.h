@@ -56,6 +56,8 @@ Operation *findOpProcessingRaise(Block *currentBlock);
 FnTypeGeneratorType getCalleeType(Operation *op);
 /// Given a direct or indirect call, return the callee argument values.
 ValueRange getCalleeArguments(Operation *op);
+/// Given a direct or indirect call, return its implicit origin bindings.
+ArrayRef<TypedAttr> getCallImplicitOrigins(Operation *op);
 
 /// Return the fully resolved symbol reference for the given declaration,
 /// including all scoping that may be needed, making it unique for every

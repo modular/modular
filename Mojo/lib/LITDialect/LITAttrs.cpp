@@ -20,6 +20,7 @@
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITTypes.h"
 #include "Mojo/LITDialect/LITUtils.h"
+#include "Mojo/LITDialect/OriginTrackable.h"
 #include "Support/STLExtras.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -60,7 +61,7 @@ OriginAccessSetAttr::verify(function_ref<InFlightDiagnostic()> emitError,
   for (auto [index, access] : llvm::enumerate(accesses)) {
     if (!isSupportedOrigin(access))
       return emitError() << "access must be a supported `!lit.origin` value";
-    if (!isOriginWithin(access, root))
+    if (!isUnspecializedOriginWithin(access, root))
       return emitError() << "access must be contained within its origin root";
     for (TypedAttr previous : accesses.take_front(index)) {
       if (originsOverlap(access, previous))

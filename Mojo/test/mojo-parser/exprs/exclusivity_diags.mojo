@@ -419,3 +419,60 @@ def test_array_pointer_exclusivity():
     # expected-note @below {{'origin_of(rhs)' memory accessed through reference embedded in value of type 'Pointer[Int, origin_of(lhs, rhs)]'}}
     for element in [Pointer(to=lhs), Pointer(to=rhs)]:
         element[] *= 2
+
+# ===----------------------------------------------------------------------=== #
+# "accesses" exclusivity.
+# ===----------------------------------------------------------------------=== #
+
+
+def no_pointee_access[origin: MutOrigin](
+    lhs: Pointer[Int, origin],
+    rhs: Pointer[Int, origin],
+    mut value: Int,
+) __accesses(none origin):
+    pass
+
+
+def no_pointee_access_with_aliasing_args[origin: MutOrigin](
+    ptr: Pointer[Int, origin],
+    mut lhs: Int,
+    mut rhs: Int,
+) __accesses(none origin):
+    pass
+
+
+def immutable_pointer_storage[origin: MutOrigin](
+    mut ptr: Pointer[Int, origin],
+    mut value: Int,
+) __accesses(imm ptr):
+    pass
+
+
+def read_first_field(
+    mut value: MyStruct,
+    mut other: Int,
+) __accesses(imm value.a):
+    pass
+
+
+def test_refined_exclusivity():
+    var value = 0
+    no_pointee_access(Pointer(to=value), Pointer(to=value), value)
+
+    # Refining the pointee origin does not refine either argument's storage.
+    # expected-error @below {{aliasing values passed mutably to 'lhs' argument and passed mutably to 'rhs' argument in 'no_pointee_access_with_aliasing_args' call}}
+    # expected-note @below {{'origin_of(value)' value is passed through aliasing 'mut' argument 'rhs'}}
+    no_pointee_access_with_aliasing_args(Pointer(to=value), value, value)
+
+    var ptr = Pointer(to=value)
+    # Access to the argument's storage is independent of its pointee origin.
+    # expected-error @below {{aliasing values passed mutably to 'ptr' argument and passed mutably to 'value' argument in 'immutable_pointer_storage' call}}
+    # expected-note @below {{'origin_of(value)' value is passed through aliasing 'mut' argument 'value'}}
+    immutable_pointer_storage(ptr, value)
+
+    var fields = MyStruct(1, 2)
+    read_first_field(fields, fields.b)
+
+    # expected-error @below {{aliasing values passed mutably to 'other' argument and passed immutably to 'value' argument in 'read_first_field' call}}
+    # expected-note @below {{'origin_of(fields.a)' memory accessed through reference embedded in value of type 'MyStruct'}}
+    read_first_field(fields, fields.a)

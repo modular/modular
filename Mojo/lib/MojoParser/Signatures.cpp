@@ -35,6 +35,7 @@
 
 #include "Mojo/LITDialect/LITOps.h"
 #include "Mojo/LITDialect/LITUtils.h"
+#include "Mojo/LITDialect/OriginTrackable.h"
 
 #include "Mojo/KGENDialect/KGENOps.h"
 #include "Mojo/KGENDialect/KGENParameters.h"
@@ -2890,7 +2891,7 @@ void TypeCheckedFnSignature::checkAccessesSpec() {
       SmallVector<TypedAttr> argumentOrigins =
           shared.cachedOriginFinder.findOriginsIn({argType});
       return llvm::any_of(argumentOrigins, [&](TypedAttr argumentOrigin) {
-        return isOriginWithin(origin, argumentOrigin);
+        return isUnspecializedOriginWithin(origin, argumentOrigin);
       });
     };
     if (!namedArgumentIndex &&

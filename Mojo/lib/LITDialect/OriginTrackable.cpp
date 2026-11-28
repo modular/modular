@@ -53,6 +53,286 @@ static void collectInteriorOriginsDefinedByType(
   }
 }
 
+// Strip sugar that does not affect whether two access paths overlap.
+static TypedAttr normalizeAccessOrigin(TypedAttr origin) {
+  auto result = OriginMutCastAttr::strip(getCanonicalAttr(origin));
+  assert((!sugarIsa<AnyOriginAttr, OriginUnionAttr, OriginSubtreeAttr,
+                    InteriorOriginAttr>(result) &&
+          "unsupported origin in an access specification"));
+  return result;
+}
+
+// Return whether `origin` is contained within `root`, accounting for
+// projections. `isSpecialized` allows post-substitution unions and AnyOrigin.
+static bool isOriginWithinImpl(TypedAttr origin, TypedAttr root,
+                               bool isSpecialized) {
+  if (isSpecialized) {
+    origin = OriginType::stripMutCastAndRebind(origin);
+    root = OriginType::stripMutCastAndRebind(root);
+    if (auto unionAttr = sugarDynCast<OriginUnionAttr>(origin))
+      return llvm::all_of(unionAttr.getOperands(), [&](TypedAttr element) {
+        return isOriginWithinImpl(element, root, isSpecialized);
+      });
+    if (auto unionAttr = sugarDynCast<OriginUnionAttr>(root))
+      return llvm::any_of(unionAttr.getOperands(), [&](TypedAttr element) {
+        return isOriginWithinImpl(origin, element, isSpecialized);
+      });
+    if (sugarIsa<AnyOriginAttr, OriginSubtreeAttr, InteriorOriginAttr>(
+            origin) ||
+        sugarIsa<AnyOriginAttr, OriginSubtreeAttr, InteriorOriginAttr>(root))
+      return false;
+  } else {
+    origin = normalizeAccessOrigin(origin);
+    root = normalizeAccessOrigin(root);
+  }
+  if (origin == root)
+    return true;
+
+  // Walk from a field projection toward its enclosing origin.
+  if (auto field = dyn_cast<OriginFieldAttr>(origin))
+    return isOriginWithinImpl(field.getBase(), root, isSpecialized);
+  return false;
+}
+
+bool LIT::isUnspecializedOriginWithin(TypedAttr origin, TypedAttr root) {
+  return isOriginWithinImpl(origin, root, /*isSpecialized=*/false);
+}
+
+// Return whether `origin` is contained in `root` after specialization.
+//
+// Source access specifications cannot name unions or AnyOrigin, but generic
+// substitution can produce them. A union is contained only when each element
+// is contained; a root union contains an origin when any element contains it.
+bool LIT::isSpecializedOriginWithin(TypedAttr origin, TypedAttr root) {
+  return isOriginWithinImpl(origin, root, /*isSpecialized=*/true);
+}
+
+// Return whether field projections from a common base first diverge at
+// different fields, which proves that they are disjoint.
+static bool areDisjointFieldProjections(TypedAttr lhs, TypedAttr rhs) {
+  lhs = normalizeAccessOrigin(lhs);
+  rhs = normalizeAccessOrigin(rhs);
+  SmallVector<StringAttr> lhsFields;
+  SmallVector<StringAttr> rhsFields;
+  while (auto field = dyn_cast<OriginFieldAttr>(lhs)) {
+    lhsFields.push_back(field.getField());
+    lhs = field.getBase();
+  }
+  while (auto field = dyn_cast<OriginFieldAttr>(rhs)) {
+    rhsFields.push_back(field.getField());
+    rhs = field.getBase();
+  }
+  if (lhs != rhs) // The base should be the same after fields are removed.
+    return false;
+
+  for (auto [lhsField, rhsField] :
+       llvm::zip(llvm::reverse(lhsFields), llvm::reverse(rhsFields)))
+    if (lhsField != rhsField)
+      return true;
+  return false;
+}
+
+// Return whether two origins may designate overlapping memory. This is
+// conservative for unrelated origin parameters because they may be
+// instantiated with the same origin.
+bool LIT::originsOverlap(TypedAttr lhs, TypedAttr rhs) {
+  if (isUnspecializedOriginWithin(lhs, rhs) ||
+      isUnspecializedOriginWithin(rhs, lhs))
+    return true;
+  if (areDisjointFieldProjections(lhs, rhs))
+    return false;
+
+  // Distinct origin parameters may be instantiated with the same origin.
+  return true;
+}
+
+//===----------------------------------------------------------------------===//
+// EffectiveCallAccesses
+//===----------------------------------------------------------------------===//
+
+namespace {
+struct OriginSubstitutor : IndexParameterReplacer<OriginSubstitutor> {
+  Type tryReplace(Type, size_t) { return {}; }
+  Attribute tryReplace(Attribute attr, size_t depth) {
+    if (auto ref = dyn_cast<ImplicitOriginRefAttr>(attr);
+        ref && ref.getDepth() == depth)
+      return values[ref.getIndex()];
+    return {};
+  }
+  ArrayRef<TypedAttr> values;
+};
+
+static ImplicitOriginRefAttr getImplicitAccessRoot(TypedAttr origin) {
+  origin = OriginType::stripMutCastAndRebind(origin);
+  while (auto field = dyn_cast<OriginFieldAttr>(origin))
+    origin = OriginType::stripMutCastAndRebind(field.getBase());
+  return dyn_cast<ImplicitOriginRefAttr>(origin);
+}
+
+static bool typeContainsAccessRoot(Type type, TypedAttr root,
+                                   CachedOriginFinder &originFinder) {
+  for (TypedAttr origin : originFinder.findOriginsIn(type))
+    if (isSpecializedOriginWithin(root, origin) ||
+        isSpecializedOriginWithin(origin, root))
+      return true;
+  return false;
+}
+} // namespace
+
+EffectiveCallAccesses::EffectiveCallAccesses(Operation &call,
+                                             CachedOriginFinder &originFinder) {
+  FnTypeGeneratorType signature = getCalleeType(&call);
+  ValueRange arguments = getCalleeArguments(&call);
+  ArrayRef<TypedAttr> implicitOrigins = getCallImplicitOrigins(&call);
+
+  OriginSubstitutor substitutor;
+  substitutor.values = implicitOrigins;
+
+  SmallVector<SmallVector<std::pair<TypedAttr, TypedAttr>>>
+      argumentOriginMappings(signature.getNumArguments());
+  for (auto [index, argumentType] : llvm::enumerate(signature.getArguments())) {
+    for (TypedAttr formalOrigin : originFinder.findOriginsIn(argumentType)) {
+      auto origin =
+          cast<TypedAttr>(substitutor.replace(Attribute(formalOrigin)));
+      argumentOriginMappings[index].push_back({formalOrigin, origin});
+    }
+  }
+
+  auto accessSets = signature.getFnOriginMetadata().getAccessSets();
+  auto findArgumentIndex = [&](OriginAccessSetAttr set, TypedAttr root) {
+    std::optional<size_t> argumentIndex;
+    // Prefer the formal signature because it preserves declaration identity
+    // when several arguments specialize to the same caller origin.
+    for (auto [index, argument] : llvm::enumerate(arguments)) {
+      if (typeContainsAccessRoot(signature.getArgument(index), set.getRoot(),
+                                 originFinder)) {
+        argumentIndex = index;
+        break;
+      }
+    }
+    // Generic binding may already have specialized an explicit root while the
+    // signature still carries its declaration form.
+    if (!argumentIndex) {
+      for (auto [index, argument] : llvm::enumerate(arguments)) {
+        if (typeContainsAccessRoot(argument.getType(), root, originFinder)) {
+          argumentIndex = index;
+          break;
+        }
+      }
+    }
+    assert(argumentIndex &&
+           "access root must be reachable through an argument");
+    return *argumentIndex;
+  };
+
+  auto isOverridden = [&](TypedAttr formalOrigin, TypedAttr origin,
+                          size_t argumentIndex, bool isArgumentOrigin) {
+    auto formalImplicitRoot = getImplicitAccessRoot(formalOrigin);
+    return llvm::any_of(accessSets, [&](OriginAccessSetAttr set) {
+      auto setImplicitRoot = getImplicitAccessRoot(set.getRoot());
+      auto root =
+          cast<TypedAttr>(substitutor.replace(Attribute(set.getRoot())));
+      // Argument storage and origins embedded in its value are independent
+      // even when substitution aliases them.
+      if (setImplicitRoot)
+        return isArgumentOrigin &&
+               findArgumentIndex(set, root) == argumentIndex;
+      if (isArgumentOrigin || formalImplicitRoot)
+        return false;
+      return isSpecializedOriginWithin(formalOrigin, set.getRoot()) ||
+             isSpecializedOriginWithin(origin, root);
+    });
+  };
+
+  auto addAccess = [&](TypedAttr formalOrigin, TypedAttr origin,
+                       size_t argumentIndex, Value value,
+                       bool isArgumentOrigin) {
+    if (auto unionAttr = sugarDynCast<OriginUnionAttr>(origin)) {
+      for (TypedAttr element : unionAttr.getOperands())
+        if (!isOverridden(formalOrigin, element, argumentIndex,
+                          isArgumentOrigin))
+          accesses.push_back({formalOrigin, element, argumentIndex, value});
+      return;
+    }
+    if (!isOverridden(formalOrigin, origin, argumentIndex, isArgumentOrigin))
+      accesses.push_back({formalOrigin, origin, argumentIndex, value});
+  };
+
+  bool nestedOriginsReadOnly = signature.getIsNestedOriginsReadOnly();
+  auto addValueAccesses = [&](Value value, size_t argumentIndex,
+                              ArgConvention convention) {
+    auto refType = dyn_cast<RefType>(value.getType());
+    if (convention == ArgConvention::ByRefResult ||
+        convention == ArgConvention::ByRefError) {
+      assert(refType && "result argument must have reference type");
+      addAccess(refType.getOrigin(), refType.getOrigin(), argumentIndex, value,
+                /*isArgumentOrigin=*/true);
+      return;
+    }
+
+    for (TypedAttr origin : originFinder.findOriginsIn(value.getType())) {
+      TypedAttr formalOrigin = origin;
+      auto mapping = llvm::find_if(
+          argumentOriginMappings[argumentIndex], [&](const auto &entry) {
+            return isSpecializedOriginWithin(origin, entry.second) &&
+                   isSpecializedOriginWithin(entry.second, origin);
+          });
+      if (mapping != argumentOriginMappings[argumentIndex].end())
+        formalOrigin = mapping->first;
+
+      bool isArgumentOrigin = refType && hasAddress(convention) &&
+                              isEqualCanon(refType.getOrigin(), origin);
+      bool forceImmutable = false;
+      if (isArgumentOrigin && convention != ArgConvention::Mut &&
+          cast<RefType>(signature.getArgument(argumentIndex))
+              .isMutableKnown(false))
+        forceImmutable = true;
+      if (isa<RefPackType>(value.getType()) && convention != ArgConvention::Mut)
+        forceImmutable = true;
+      if (nestedOriginsReadOnly &&
+          (!isArgumentOrigin || convention == ArgConvention::Ref))
+        forceImmutable = true;
+      if (forceImmutable)
+        origin = OriginMutCastAttr::get(origin, false);
+      addAccess(formalOrigin, origin, argumentIndex, value, isArgumentOrigin);
+    }
+  };
+
+  for (auto [argumentIndex, argument] : llvm::enumerate(arguments)) {
+    ArgConvention convention = signature.getArgConvention(argumentIndex);
+    if (!signature.isPack(argumentIndex) &&
+        !signature.isPosVarArg(argumentIndex)) {
+      argument = RefImmutOp::stripRebinds(argument);
+      addValueAccesses(argument, argumentIndex, convention);
+      continue;
+    }
+
+    convention = signature.getVariadicConvention(argumentIndex);
+    TypedAttr extraOrigin;
+    for (Value element : OriginTrackable::decodeIndividualVariadicArguments(
+             argument, extraOrigin))
+      addValueAccesses(RefImmutOp::stripRebinds(element), argumentIndex,
+                       convention);
+
+    Value container = RefImmutOp::stripRebinds(argument);
+    if (auto refType = dyn_cast<RefType>(container.getType()))
+      addAccess(refType.getOrigin(),
+                OriginMutCastAttr::get(refType.getOrigin(), false),
+                argumentIndex, container, /*isArgumentOrigin=*/true);
+  }
+
+  for (OriginAccessSetAttr set : accessSets) {
+    auto root = cast<TypedAttr>(substitutor.replace(Attribute(set.getRoot())));
+    size_t argumentIndex = findArgumentIndex(set, root);
+    for (TypedAttr access : set.getAccesses()) {
+      auto specializedAccess =
+          cast<TypedAttr>(substitutor.replace(Attribute(access)));
+      accesses.push_back(
+          {access, specializedAccess, argumentIndex, arguments[argumentIndex]});
+    }
+  }
+}
+
 //===----------------------------------------------------------------------===//
 // OriginTrackable
 //===----------------------------------------------------------------------===//

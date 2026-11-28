@@ -35,6 +35,62 @@ private:
   llvm::DenseSet<const void *> typesAndAttrsWithoutOrigins;
 };
 
+/// Return true unless the origin model proves that two origins are disjoint.
+bool originsOverlap(TypedAttr lhs, TypedAttr rhs);
+
+/// Return true if `origin` is `root` or is projected from it.
+///
+/// This is suitable for use on an unspecialized function signature, e.g. when
+/// doing body processing.
+bool isUnspecializedOriginWithin(TypedAttr origin, TypedAttr root);
+
+/// Return true if every possible `origin` is within some possible `root`.
+///
+/// Unlike isUnspecializedOriginWithin(), this accepts post-substitution
+/// origins, suitable for use at a call site. This tolerates unions and
+/// AnyOrigin.
+bool isSpecializedOriginWithin(TypedAttr origin, TypedAttr root);
+
+/// One effective origin access made through a call argument.
+struct EffectiveCallAccess {
+  /// The origin as represented in the callee signature.
+  TypedAttr formalOrigin;
+  /// The origin after substituting the caller's implicit origins.
+  TypedAttr origin;
+  /// The position of the argument through which the access occurs.
+  size_t argumentIndex;
+  /// The caller value through which the access occurs.
+  Value value;
+};
+
+/// Computes a callee's effective default and explicit argument accesses in the
+/// caller's origin space. For example, consider a function with the following
+/// signature and call:
+///
+///   def foo(mut a: String, b: IntPair) __accesses(imm b.first):
+///       ...
+///
+///   foo(string, pair)
+///
+/// This computes the following accesses:
+///
+///   {formalOrigin = mut origin_of(a), origin = mut origin_of(string),
+///    argumentIndex = 0, value = string}
+///   {formalOrigin = imm origin_of(b).first,
+///    origin = imm origin_of(pair).first, argumentIndex = 1, value = pair}
+///
+/// The first entry is the convention-derived default for `mut a`. The explicit
+/// access set replaces the default access to `b` with the second entry.
+class EffectiveCallAccesses {
+public:
+  EffectiveCallAccesses(Operation &call, CachedOriginFinder &originFinder);
+
+  ArrayRef<EffectiveCallAccess> getAccesses() const { return accesses; }
+
+private:
+  SmallVector<EffectiveCallAccess> accesses;
+};
+
 /// This class provide an abstraction for analyzing origin-trackable values,
 /// e.g. variable definitions and owned arguments to functions.  This class can
 /// also be used to query whether something is origin trackable or not, by

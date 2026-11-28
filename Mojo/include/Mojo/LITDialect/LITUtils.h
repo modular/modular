@@ -147,12 +147,6 @@ static constexpr StringRef subtreeInteriorOriginAttrName =
 /// it.  This is used by CheckLifetimes to model subtree origins.
 InteriorOriginAttr getInteriorForSubtreeOrigin(OriginSubtreeAttr subtree);
 
-/// Return true unless the origin model proves that two origins are disjoint.
-bool originsOverlap(TypedAttr lhs, TypedAttr rhs);
-
-/// Return true if `origin` is `root` or is projected from it.
-bool isOriginWithin(TypedAttr origin, TypedAttr root);
-
 /// Return the default access through an argument's implicit reference origin.
 /// Returns the mutability of the default root access, or nullopt when the
 /// convention cannot be refined.

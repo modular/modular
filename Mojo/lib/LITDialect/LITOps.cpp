@@ -92,6 +92,14 @@ ValueRange LIT::getCalleeArguments(Operation *op) {
   return cast<LIT::CallIndirectOp>(op).getArguments();
 }
 
+ArrayRef<TypedAttr> LIT::getCallImplicitOrigins(Operation *op) {
+  if (auto call = dyn_cast<LIT::CallOp>(op))
+    return call.getImplicitOrigins();
+  if (auto call = dyn_cast<LIT::AsyncCallOp>(op))
+    return call.getImplicitOrigins();
+  return cast<LIT::CallIndirectOp>(op).getImplicitOrigins();
+}
+
 SymbolRefAttr LIT::getFullyResolvedSymbolRef(mlir::SymbolOpInterface op) {
   SmallVector<FlatSymbolRefAttr> symbols;
   do {

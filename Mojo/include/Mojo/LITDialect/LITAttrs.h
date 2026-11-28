@@ -33,6 +33,8 @@ class RefPackType;
 class TraitType;
 class StructFieldOp;
 class FnOriginMetadataAttr;
+class FnTypeGeneratorType;
+class CachedOriginFinder;
 } // namespace LIT
 } // namespace M::KGEN
 
