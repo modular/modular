@@ -813,3 +813,9 @@ Most code that no longer compiles matches one of these patterns:
 - Fixed the lifetime checker to now invalidate uses of an interior reference
   after its owner was mutated through a type holding the origin as a parameter.
   This includes closures which capture `mut` data.
+
+- [#7760](https://github.com/modular/modular/issues/7760) - Assigning a
+  trivially copyable struct to itself (`v = v`), or from a ternary that may
+  pick it (`v = v if c else w`), now keeps its value. Previously, at `-O1` and
+  above, the copy read the variable after its lifetime had ended and produced
+  garbage, and the compiler warned that the original value was never used.

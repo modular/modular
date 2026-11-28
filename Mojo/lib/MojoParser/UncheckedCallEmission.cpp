@@ -991,56 +991,10 @@ bool CallEmitter::isSafeToUseValueDestForDirectResult(
     argTypes.push_back(value.getType());
   }
 
-  // We're doing field sensitive comparisons below, so we record a destination
-  // "x.y" as a full "x.y" path, to make sure it doesn't conflict with reads of
-  // "x.z".  We do want "x.y.q" and "x" to conflict with "x.y" though.  Keep
-  // track of the fully field sensitive origin, and the containing origins.
-  SmallPtrSet<Attribute, 2> destOrigins, destContainerOrigins;
-
-  // processOriginUnionElts takes apart origin unions for us.
-  auto refOrigin = sugarCast<RefType>(destBuffer.getType()).getOrigin();
-  processOriginUnionElts(getCanonicalAttr(refOrigin), [&](TypedAttr origin) {
-    // AnyOrigin is assumed to be ok since it is used for
-    // Pointer etc.  We don't want to track it.
-    if (sugarIsa<AnyOriginAttr>(origin))
-      return;
-    // We want to track the fully field sensitive origin, and
-    // the containing origins.
-    destOrigins.insert(origin);
-    while (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin)) {
-      origin = fieldAttr.getBase();
-      destContainerOrigins.insert(origin);
-    }
-  });
-
-  // Check to see if any of the the origins they may be accessing are the
-  // origin in question.  If any of them is a possible reference to the
-  // destination slot, then we must fail.
-  CachedOriginFinder &finder = emitter.shared.cachedOriginFinder;
-  for (TypedAttr origin :
-       finder.findOriginsIn(argTypes, calleeSig.getCaptureOrigins())) {
-    // Look through any immcasts.
-    origin = OriginType::stripMutCastAndRebind(origin);
-
-    // If this is accessing any container origins directly, then we have a store
-    // to "x.y" and another use of "x" which can't be allowed.
-    if (destContainerOrigins.contains(origin))
-      return false;
-
-    // Otherwise, check to see if this is descended from the specific
-    // destination, e.g. the dest is "x.y" and this is "x.y.z".
-    while (1) {
-      if (destOrigins.contains(origin))
-        return false;
-      if (auto fieldAttr = dyn_cast<OriginFieldAttr>(origin))
-        origin = fieldAttr.getBase();
-      else
-        break;
-    }
-  }
-
-  // If no problems are found, it is safe!
-  return true;
+  // If any of the arguments may refer to the destination slot, then we must
+  // fail.
+  return !emitter.mayReferToDestination(destBuffer, argTypes,
+                                        calleeSig.getCaptureOrigins());
 }
 
 /// This function emits the specified pre-emitted argument into a single MLIR
