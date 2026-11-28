@@ -619,11 +619,13 @@ def targets():
         testonly = True,
         actual = select({{
             ":_env_python_3.10_aarch64-apple-darwin": ":numpy@2.2.6",
+            ":_env_python_3.10_x86_64-apple-darwin": ":numpy@2.2.6",
             ":_env_python_3.10_aarch64-unknown-linux-gnu": ":numpy@2.2.6",
             ":_env_python_3.10_x86_64-unknown-linux-gnu": ":numpy@2.2.6",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":numpy@2.2.6",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":numpy@2.2.6",
             ":_env_python_3.15_aarch64-apple-darwin": ":numpy@2.5.4",
+            ":_env_python_3.15_x86_64-apple-darwin": ":numpy@2.5.4",
             ":_env_python_3.15_aarch64-unknown-linux-gnu": ":numpy@2.5.4",
             ":_env_python_3.15_x86_64-unknown-linux-gnu": ":numpy@2.5.4",
             ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu": ":numpy@2.5.4",
@@ -637,11 +639,13 @@ def targets():
         testonly = True,
         actual = select({{
             ":_env_python_3.10_aarch64-apple-darwin": ":scipy@1.14.1",
+            ":_env_python_3.10_x86_64-apple-darwin": ":scipy@1.14.1",
             ":_env_python_3.10_aarch64-unknown-linux-gnu": ":scipy@1.14.1",
             ":_env_python_3.10_x86_64-unknown-linux-gnu": ":scipy@1.14.1",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":scipy@1.14.1",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_nvidia_gpu": ":scipy@1.14.1",
             ":_env_python_3.15_aarch64-apple-darwin": ":scipy@1.18.1",
+            ":_env_python_3.15_x86_64-apple-darwin": ":scipy@1.18.1",
             ":_env_python_3.15_aarch64-unknown-linux-gnu": ":scipy@1.18.1",
             ":_env_python_3.15_x86_64-unknown-linux-gnu": ":scipy@1.18.1",
             ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu": ":scipy@1.18.1",
@@ -655,6 +659,7 @@ def targets():
         testonly = True,
         actual = select({{
             ":_env_python_3.10_aarch64-apple-darwin": ":pyarrow@25.0.0",
+            ":_env_python_3.10_x86_64-apple-darwin": ":pyarrow@25.0.0",
             ":_env_python_3.10_aarch64-unknown-linux-gnu": ":pyarrow@25.0.0",
             ":_env_python_3.10_x86_64-unknown-linux-gnu": ":pyarrow@25.0.0",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":pyarrow@25.0.0",
@@ -668,6 +673,7 @@ def targets():
         testonly = True,
         actual = select({{
             ":_env_python_3.10_aarch64-apple-darwin": ":rpds-py@0.30.0",
+            ":_env_python_3.10_x86_64-apple-darwin": ":rpds-py@0.30.0",
             ":_env_python_3.10_aarch64-unknown-linux-gnu": ":rpds-py@0.30.0",
             ":_env_python_3.10_x86_64-unknown-linux-gnu": ":rpds-py@0.30.0",
             ":_env_python_3.10_x86_64-unknown-linux-gnu_amd_gpu": ":rpds-py@0.30.0",
@@ -681,6 +687,7 @@ def targets():
         testonly = True,
         actual = select({{
             ":_env_python_3.15_aarch64-apple-darwin": ":pandas@3.1.0",
+            ":_env_python_3.15_x86_64-apple-darwin": ":pandas@3.1.0",
             ":_env_python_3.15_aarch64-unknown-linux-gnu": ":pandas@3.1.0",
             ":_env_python_3.15_x86_64-unknown-linux-gnu": ":pandas@3.1.0",
             ":_env_python_3.15_x86_64-unknown-linux-gnu_amd_gpu": ":pandas@3.1.0",
@@ -704,7 +711,7 @@ def targets():
 
     build_targets = {{}}
     for version in PYTHON_VERSIONS_DOTTED:
-        for platform in ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
+        for platform in ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
             alias_name = "_env_python_{{}}_{{}}".format(version, platform)
             build_targets[":" + alias_name] = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{{}}_{{}}.json".format(version, platform)
             native.alias(
@@ -722,7 +729,7 @@ def targets():
             )
 
     for version in [v for v in PYTHON_VERSIONS_DOTTED if v >= "3.14"]:
-        for platform in ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
+        for platform in ["aarch64-apple-darwin", "x86_64-apple-darwin", "aarch64-unknown-linux-gnu", "x86_64-unknown-linux-gnu"]:
             alias_name = "_env_python_{{}}_{{}}-freethreaded".format(version, platform)
             build_targets[":" + alias_name] = "@@rules_pycross++environments+rules_pycross_all_environments//:python_{{}}_{{}}-freethreaded.json".format(version, platform)
             native.alias(

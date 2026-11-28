@@ -160,6 +160,29 @@ def test_freethreaded_constraint() -> None:
     )
 
 
+def test_darwin_x86_64_constraint() -> None:
+    platform = Platform(
+        python_version="3.12",
+        operating_system="darwin",
+        arch="x86_64",
+    )
+    assert platform.constraint == ":_env_python_3.12_x86_64-apple-darwin"
+    wheel = Download(
+        {
+            "url": "https://files.pythonhosted.org/packages/x/y/numpy-2.3.5-cp312-cp312-macosx_10_13_x86_64.whl",
+            "hash": "sha256:00",
+        }
+    )
+    assert platform.is_compatible_with(wheel)
+    arm_wheel = Download(
+        {
+            "url": "https://files.pythonhosted.org/packages/x/y/numpy-2.3.5-cp312-cp312-macosx_14_0_arm64.whl",
+            "hash": "sha256:00",
+        }
+    )
+    assert not platform.is_compatible_with(arm_wheel)
+
+
 def test_non_freethreaded_constraint() -> None:
     platform = Platform(
         python_version="3.14",

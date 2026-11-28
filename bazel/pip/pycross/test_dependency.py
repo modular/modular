@@ -94,6 +94,7 @@ def test_python_version_constraints() -> None:
     assert constraints == [
         ":_env_python_3.10_aarch64-apple-darwin",
         ":_env_python_3.10_aarch64-unknown-linux-gnu",
+        ":_env_python_3.10_x86_64-apple-darwin",
         ":_env_python_3.10_x86_64-unknown-linux-gnu",
     ]
 
@@ -110,12 +111,19 @@ def test_aiperf_group_constraints() -> None:
     assert not gpu_constraints
     assert constraints == [
         ":_env_python_3.11_aarch64-apple-darwin",
+        ":_env_python_3.11_x86_64-apple-darwin",
         ":_env_python_3.12_aarch64-apple-darwin",
+        ":_env_python_3.12_x86_64-apple-darwin",
         ":_env_python_3.13_aarch64-apple-darwin",
+        ":_env_python_3.13_x86_64-apple-darwin",
         ":_env_python_3.14_aarch64-apple-darwin",
         ":_env_python_3.14_aarch64-apple-darwin-freethreaded",
+        ":_env_python_3.14_x86_64-apple-darwin",
+        ":_env_python_3.14_x86_64-apple-darwin-freethreaded",
         ":_env_python_3.15_aarch64-apple-darwin",
         ":_env_python_3.15_aarch64-apple-darwin-freethreaded",
+        ":_env_python_3.15_x86_64-apple-darwin",
+        ":_env_python_3.15_x86_64-apple-darwin-freethreaded",
     ]
 
 
@@ -176,6 +184,7 @@ def test_wild_constraint() -> None:
     assert constraints == [
         ":_env_python_3.10_aarch64-apple-darwin",
         ":_env_python_3.10_aarch64-unknown-linux-gnu",
+        ":_env_python_3.10_x86_64-apple-darwin",
         ":_env_python_3.10_x86_64-unknown-linux-gnu",
     ]
 

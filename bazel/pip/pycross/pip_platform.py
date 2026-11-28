@@ -32,6 +32,7 @@ SUPPORTED_PLATFORMS = {
     ("linux", "aarch64"),
     ("linux", "x86_64"),
     ("darwin", "arm64"),
+    ("darwin", "x86_64"),
 }
 
 # NOTE: Order matters, earlier ones will be preferred. This list must be
@@ -129,7 +130,9 @@ class Platform:
     @functools.cached_property
     def tags(self) -> list[Tag]:
         if self.operating_system == "darwin":
-            # NOTE: The version here must match the oldest macOS version we support for developers
+            # NOTE: The version here must match the oldest macOS version we support for developers.
+            # Intel Macs use the same floor, so x86_64 wheels built for macOS 15 or
+            # newer are skipped there too.
             platforms = list(mac_platforms(version=(14, 0), arch=self.arch))
         else:
             platforms = [x.format(arch=self.arch) for x in _LINUX_PLATFORM_TAGS]
@@ -185,7 +188,9 @@ class Platform:
         """Return the platform constraint for bazel."""
         suffix = "-freethreaded" if self.is_freethreaded else ""
         if self.operating_system == "darwin":
-            return f":_env_python_{self.python_version}_aarch64-apple-darwin{suffix}"
+            # Bazel calls Apple Silicon "aarch64" but pip calls it "arm64".
+            bazel_arch = "aarch64" if self.arch == "arm64" else self.arch
+            return f":_env_python_{self.python_version}_{bazel_arch}-apple-darwin{suffix}"
         return f":_env_python_{self.python_version}_{self.arch}-unknown-linux-gnu{suffix}"
 
     @property

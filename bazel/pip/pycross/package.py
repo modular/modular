@@ -171,7 +171,17 @@ class Package:
             )
 
         unique_downloads = set(select_values.values())
-        if len(unique_downloads) == 1:
+        # A macOS-only wheel must not be used as the one answer for every
+        # platform. Otherwise an Intel Mac would get an Apple Silicon wheel.
+        mac_wheel_only = (
+            bool(downloads_by_platform)
+            and len(select_values) < len(self.platforms)
+            and all(
+                all(t.platform.startswith("macosx") for t in d.tags)
+                for d in downloads_by_platform.values()
+            )
+        )
+        if len(unique_downloads) == 1 and not mac_wheel_only:
             actual = f'"{next(iter(unique_downloads))}",'
         else:
             no_match_error = ""

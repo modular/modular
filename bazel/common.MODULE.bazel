@@ -252,6 +252,8 @@ environments.create_for_python_toolchains(
         "aarch64-unknown-linux-gnu-freethreaded",
         "aarch64-apple-darwin",
         "aarch64-apple-darwin-freethreaded",
+        "x86_64-apple-darwin",
+        "x86_64-apple-darwin-freethreaded",
     ],
     python_versions = [x.replace("_", ".") for x in PYTHON_VERSIONS],
 )
