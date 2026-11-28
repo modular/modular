@@ -212,6 +212,19 @@ def cache_budget(ledgers: Sequence[DeviceLedger], utilization: float) -> int:
     return max(0, per_device) * len(ledgers)
 
 
+def device_totals(ledgers: Sequence[DeviceLedger]) -> str:
+    """What each device reported as total and held, for a does-not-fit error.
+
+    A driver that reports the wrong total makes every model "not fit"; naming
+    the total in the error shows that at once.
+    """
+    return ", ".join(
+        f"device {i}: {to_human_readable_bytes(m.total_bytes)} total, "
+        f"{to_human_readable_bytes(m.resident_bytes)} held"
+        for i, m in enumerate(ledgers)
+    )
+
+
 def log_ledger(ledgers: Sequence[DeviceLedger], utilization: float) -> None:
     """Logs each device's ledger: usable, claims, and the cache it leaves."""
     margin = margin_bytes()
@@ -1025,7 +1038,8 @@ def size_kv_cache(pipeline: Any, plan: MemoryPlan) -> MemoryPlan:
         if user_batch or batch <= 1:
             log_ledger(ledgers, utilization)
             raise RuntimeError(
-                f"The model does not fit at max_batch_size={batch}: {detail}. "
+                f"The model does not fit at max_batch_size={batch}: {detail} "
+                f"({device_totals(ledgers)}). "
                 "Try a smaller --max-batch-size, a smaller "
                 "--max-batch-input-tokens, a higher "
                 "--device-memory-utilization, or more devices."

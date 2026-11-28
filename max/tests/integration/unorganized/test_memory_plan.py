@@ -260,6 +260,15 @@ def test_cache_budget__the_least_free_device_bounds_every_device(
     assert memory_ledger.cache_budget(ledgers, 0.9) == 2 * 33 * GIB
 
 
+def test_device_totals__names_each_device_total_and_held() -> None:
+    """A driver that reports a wrong total (0.48 GiB on a 24 GB card) shows in the error."""
+    ledgers = [_ledger(resident=1, total=24), _ledger(resident=0, total=1)]
+    assert memory_ledger.device_totals(ledgers) == (
+        "device 0: 24.00 GiB total, 1.00 GiB held, "
+        "device 1: 1.00 GiB total, 0.00 KiB held"
+    )
+
+
 def test_cache_budget__never_negative(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(memory_ledger.MARGIN_ENV, raising=False)
     assert memory_ledger.cache_budget([_ledger(resident=95)], 0.9) == 0
@@ -419,6 +428,30 @@ def test_size_kv_cache__claims_eager_plus_capture_and_installs_once(
     installs = pipeline.install_kv_manager.call_args_list
     assert [c.args[0] for c in installs] == [None, load.return_value]
     assert pipeline.memory_ledger.devices[0].capture_bytes == 2 * GIB
+
+
+def test_size_kv_cache__does_not_fit_names_the_device_total(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(memory_ledger.MARGIN_ENV, str(GIB))
+    pipeline = _sizing_pipeline(max_batch_size=1)
+    plan = MemoryPlan(
+        planned_max_batch_size=1,
+        footprint=0,
+        planned_max_length=32768,
+        device_specs=(),
+    )
+    peaks = {"prefill": [60 * GIB], "prefill_long": [60 * GIB], "decode": [0]}
+    with (
+        patch.object(memory_ledger, "run_warmups", return_value=peaks),
+        patch("max.pipelines.kv_cache.kv_cache_memory_size", return_value=GIB),
+        patch("max.pipelines.kv_cache.load_kv_manager"),
+        pytest.raises(
+            RuntimeError,
+            match=r"\(device 0: 100\.00 GiB total, 50\.00 GiB held\)\. Try",
+        ),
+    ):
+        memory_ledger.size_kv_cache(pipeline, plan)
 
 
 def test_size_kv_cache__eager_skips_the_warmups(
