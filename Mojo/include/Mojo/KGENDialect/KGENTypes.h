@@ -64,6 +64,10 @@ class ParamListAttr;
 #pragma GCC visibility pop
 
 namespace M::KGEN {
+/// Return the layout offsets for a struct, cached on the interpreter's target.
+std::optional<ArrayRef<int64_t>>
+getInterpreterStructElementOffsets(StructType type, InterpreterState &state);
+
 //===----------------------------------------------------------------------===//
 // FuncTypeGeneratorType
 //===----------------------------------------------------------------------===//
