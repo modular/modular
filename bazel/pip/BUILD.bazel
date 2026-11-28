@@ -1,1 +1,5 @@
+load(":mypy.bzl", "mypy_toggle")
+
 package(default_visibility = ["//visibility:public"])
+
+mypy_toggle()
