@@ -440,11 +440,139 @@ struct TrivialRange(Iterator, TrivialRegisterPassable):
 
 
 # Issue #98: https://github.com/modular/mojo/issues/98
+# A loop that only stores to a field keeps the rest of the value alive across
+# iterations, so it is destroyed once, on the loop exit path.
+# Issue #7759: https://github.com/modular/modular/issues/7759
 # CHECK-LABEL: lit.fn @"mojo98
 def mojo98(n: Int):
     var a = MemExample()
+    # CHECK: hlcf.loop "_loop_0" {
+    # CHECK: hlcf.if
+    # CHECK-NOT: hlcf.continue
+    # CHECK: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%a)
+    # CHECK: hlcf.break "_loop_0"
+    # CHECK: lit.ref.struct.ger %a[x]
+    # CHECK: lit.ref.store
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.continue "_loop_0"
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.return
     for i in TrivialRange():
         a.x = i
+
+
+# CHECK-LABEL: lit.fn @"field_store_in_while(
+def field_store_in_while(cond: Bool):
+    var a = MemExample()
+    # CHECK: hlcf.loop "_loop_0" {
+    # CHECK: hlcf.if
+    # CHECK-NEXT: hlcf.yield
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%a)
+    # CHECK-NEXT: lit.var.lifetime.end %a
+    # CHECK-NEXT: hlcf.break "_loop_0"
+    # CHECK: lit.ref.store
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.continue "_loop_0"
+    while cond:
+        a.x = 2
+
+
+# Reading the stored field later in the iteration doesn't make it the last use.
+# CHECK-LABEL: lit.fn @"field_store_then_field_read(
+def field_store_then_field_read():
+    var a = MemExample()
+    # CHECK: hlcf.loop "_loop_0" {
+    # CHECK: hlcf.if
+    # CHECK-NOT: hlcf.continue
+    # CHECK: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%a)
+    # CHECK: hlcf.break "_loop_0"
+    # CHECK: lit.ref.struct.ger %a[x]
+    # CHECK: lit.ref.store
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.continue "_loop_0"
+    for i in TrivialRange():
+        a.x = i
+        _ = a.x
+
+
+# `a` dies after the store on the path that leaves the loop, but the path that
+# keeps iterating must not destroy it.
+# CHECK-LABEL: lit.fn @"field_store_then_break(
+def field_store_then_break(cond: Bool):
+    var a = MemExample()
+    # CHECK: hlcf.loop "_loop_0" {
+    # CHECK: hlcf.break "_loop_0"
+    # CHECK: lit.ref.struct.ger %a[x]
+    # CHECK: lit.ref.store
+    # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}(%a)
+    # CHECK-NEXT: lit.var.lifetime.end %a
+    # CHECK-NEXT: hlcf.break "_loop_0"
+    # CHECK-NEXT: } else {
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.continue "_loop_0"
+    for i in TrivialRange():
+        if cond:
+            a.x = i
+            break
+
+
+# Compound assignment mutates the field in place; this already kept `a` alive.
+# CHECK-LABEL: lit.fn @"field_compound_assign_in_loop(
+def field_compound_assign_in_loop():
+    var a = MemExample()
+    # CHECK: hlcf.loop "_loop_0" {
+    # CHECK: hlcf.break "_loop_0"
+    # CHECK: lit.call {{.*}}__iadd__
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.continue "_loop_0"
+    for i in TrivialRange():
+        a.x += i
+
+
+@fieldwise_init
+struct MemHolder(Movable):
+    var mem: MemExample
+
+
+# When the value is reassigned whole after the loop, each iteration destroys
+# only the old field value, and the whole value dies once, on the exit path.
+# CHECK-LABEL: lit.fn @"field_store_reassign_after_loop(
+def field_store_reassign_after_loop():
+    var h = MemHolder(MemExample())
+    # CHECK: hlcf.loop "_loop_0" {
+    # CHECK: hlcf.if
+    # CHECK-NOT: hlcf.continue
+    # CHECK: lit.call {{.*}}MemHolder::@"__deinit__{{.*}}(%h)
+    # CHECK: hlcf.break "_loop_0"
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT: [[MEM:%.*]] = lit.ref.struct.ger %h[mem]
+    # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}([[MEM]])
+    # CHECK-NEXT: hlcf.yield
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.continue "_loop_0"
+    for _ in TrivialRange():
+        h.mem = MemExample()
+    h = MemHolder(MemExample())
+    use(h.mem)
+
+
+# CHECK-LABEL: lit.fn @"mut_arg_field_store_reassign_after_loop(
+def mut_arg_field_store_reassign_after_loop(mut h: MemHolder):
+    # CHECK: hlcf.loop "_loop_0" {
+    # CHECK: hlcf.if
+    # CHECK-NOT: hlcf.continue
+    # CHECK: lit.call {{.*}}MemHolder::@"__deinit__{{.*}}(%h)
+    # CHECK: hlcf.break "_loop_0"
+    # CHECK-NEXT: } else {
+    # CHECK-NEXT: [[MEM:%.*]] = lit.ref.struct.ger %h[mem]
+    # CHECK-NEXT: lit.call {{.*}}MemExample::@"__deinit__{{.*}}([[MEM]])
+    # CHECK-NEXT: hlcf.yield
+    # CHECK-NOT: __deinit__
+    # CHECK: hlcf.continue "_loop_0"
+    for _ in TrivialRange():
+        h.mem = MemExample()
+    h = MemHolder(MemExample())
 
 
 struct MyStringReturningCtx(Movable):
