@@ -1731,8 +1731,9 @@ class PipelineConfig(ConfigFileModel):
                     exc_info=True,
                 )
                 draft_arch_name = None
-            # Mirrors the registry's draft lookup, which passes no task. The
-            # prefer flag is deliberately not forwarded either: it selects
+            # The registry's draft lookup passes the text generation task;
+            # this one resolves only the validation alias and passes none.
+            # The prefer flag is deliberately not forwarded either: it selects
             # the target's build, while this lookup only resolves the draft's
             # validation alias. A draft's rename target can name a real
             # architecture with a `_ModuleV3` namesake of a different shape;

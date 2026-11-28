@@ -782,9 +782,12 @@ class PipelineRegistry:
                     f"'{pipeline_config.draft_model.model_path}': "
                     "no 'architectures' field in HuggingFace config."
                 )
+            # a draft model generates text; without the task, a name shared
+            # with an embedding arch (Qwen3ForCausalLM) resolves to that one
             draft_arch = self.retrieve_architecture(
                 architecture_name=draft_arch_name,
                 prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+                task=PipelineTask.TEXT_GENERATION,
             )
             if not draft_arch:
                 if not pipeline_config.runtime.prefer_module_v3:
