@@ -76,6 +76,11 @@ MODULAR_CXX_EXPORT std::string getHostCPUFeatures();
 /// architecture features and `-mcpu` the CPU and its default extensions. If
 /// only an architecture is specified, `-mcpu=generic` will be used.
 ///
+/// For RISC-V architectures, `-march` specifies the ISA string and `-mcpu` the
+/// specific CPU kind; when both are given, `-march` supplies all the extensions
+/// and `-mcpu` only the CPU, as in clang. If only a CPU is specified, its
+/// default extensions are used.
+///
 /// `-mtune` will specify the CPU to specifically tune code for.
 MODULAR_CXX_EXPORT ErrorOr<TargetInfo>
 getMArchTargetInfo(StringRef targetTriple, StringRef march, StringRef mcpu,
