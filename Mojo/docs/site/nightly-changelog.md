@@ -10,6 +10,27 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- The `assert_raises` api now supports assertions on error types and error
+  content.
+
+```mojo
+  # 1. Error is strictly compared based on type and error content
+  with assert_raises(error=IoError("error reading from input stream"):
+    raise IoError("error reading from input stream") # passes
+
+  # 2. Error type is strictly compared only
+  with assert_raises[IoError]():
+    raise IoError("error type compared not content") # passes
+
+  # 3. Error type mismatch but content match
+  with assert_raises(error=IoError("error reading from input stream"):
+    raise TimeoutError("error reading from input stream") # fails
+
+  # 4. Error type matches but error content differs
+  with assert_raises(error=IoError("error reading from input stream"):
+    raise IoError("database took to long to respond") # fails
+```
+
 - `if`, `comptime if`, and `guard` now support semicolon-separated
   condition clauses that mix Boolean conditions and `case` patterns. Clauses
   evaluate left to right, and successful pattern bindings are available to

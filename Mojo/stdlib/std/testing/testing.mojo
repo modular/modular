@@ -36,6 +36,7 @@ from std.math import isclose
 from std.reflection import call_location, SourceLocation
 from std.python import PythonObject
 from std.utils._ansi import Color, Text
+from std.builtin.error import Error
 
 # ===----------------------------------------------------------------------=== #
 # Assertions
@@ -523,12 +524,26 @@ def _assert_cmp_error[
     return _assert_error(err, loc)
 
 
-struct assert_raises:
+struct _AnyError(Equatable, Movable, Writable):
+    """
+    This type represents an Error type
+    """
+
+    pass
+
+
+struct assert_raises[
+    T: Movable & Deinitable & Writable & Equatable = _AnyError
+]:
     """Context manager that asserts that the block raises an exception.
 
     You can use this to test expected error cases, and to test that the correct
     errors are raised. Works with `Error` and any custom `Writable` error type.
     For instance:
+
+
+    Parameters:
+        T: The type of Error passed. Defaults to _AnyError.
 
     ```mojo
     from std.testing import assert_raises
@@ -548,8 +563,19 @@ struct assert_raises:
     # This will let the underlying error propagate, failing the test
     with assert_raises(contains="Some"):
         raise Error("OtherError")
+
+    # This will strictly compare the error type and contents
+    with assert_raises(error=IoError("error reading input stream"):
+      raise IoError("error reading input stream")
+
+    # This will strictly compare the error type only
+    with assert_raises[IoError]():
+      raise IoError("error reading input stream")
     ```
     """
+
+    var error: Optional[Self.T]
+    """If present, check that the error type is equal to this error."""
 
     var message_contains: Optional[String]
     """If present, check that the error message contains this literal string."""
@@ -565,6 +591,7 @@ struct assert_raises:
             location: The location of the error (defaults to `call_location`).
         """
         self.message_contains = None
+        self.error = None
         self.call_location = location.or_else(call_location())
 
     @inline(.always)
@@ -582,6 +609,24 @@ struct assert_raises:
             location: The location of the error (defaults to `call_location`).
         """
         self.message_contains = contains
+        self.error = None
+        self.call_location = location.or_else(call_location())
+
+    @inline(.always)
+    def __init__(
+        out self,
+        *,
+        var error: Self.T,
+        location: Optional[SourceLocation] = None,
+    ) where conforms_to(Self.T, Movable):
+        """Construct a context manager matching specific errors.
+
+        Args:
+            error: The test will only pass if the error is an instnace of Self.T.
+            location: The location of the error (defaults to `call_location`).
+        """
+        self.message_contains = None
+        self.error = error^
         self.call_location = location.or_else(call_location())
 
     def __enter__(self):
@@ -596,7 +641,7 @@ struct assert_raises:
         """
         raise Error("AssertionError: Didn't raise at ", self.call_location)
 
-    def __exit__[E: AnyType](self, error: E) raises -> Bool:
+    def __exit__[CaughtError: AnyType](self, error: CaughtError) raises -> Bool:
         """Exit the context manager with an error.
 
         Works with `Error` and any custom `Writable` error type. When
@@ -604,22 +649,44 @@ struct assert_raises:
         it can be converted to a string for matching.
 
         Parameters:
-            E: The error type.
+            CaughtError: The error type.
 
         Args:
             error: The error raised.
 
         Raises:
-            Error: If `contains` is set and the error message doesn't
-                include the expected string, or if `contains` is set
-                but the error type is not `Writable`.
+            Error:
+                1. If `contains` is set and the error message doesn't
+                  include the expected string, or if `contains` is set
+                  but the error type is not `Writable`.
+                2. If `error` is set and the caught error type does
+                  not match the expected error, or if the error message
+                  does not equal.
+                3. If only T passed, then we perform only strict type
+                   checking and ignore error contents
 
         Returns:
             True if the error was successfully caught and matched.
         """
-        guard case .Some(message_contains) = self.message_contains else:
-            return True
+
         comptime assert conforms_to(
-            E, Writable
+            CaughtError, Writable
         ), "assert_raises(contains=...) requires a Writable error type"
-        return message_contains in String(error)
+
+        # assert_raises(error=error-instance())
+        if case .Some(_err) = self.error:
+            # if the specified error type matches the caught error instantiate
+            # the caught error and compare error contents to the specified error
+            comptime if Self.T == CaughtError:
+                return _err == rebind[Self.T](error)
+            else:
+                # if they don't match, then just compare the type
+                return Self.T == _AnyError
+        # assert_raises(contains="...")
+        elif case .Some(message_contains) = self.message_contains:
+            # if not error type is provided, then first lets check if a message was passed
+            # if not, like in `assert_raises():` case, we just return True.
+            return message_contains in String(error)
+        else:
+            # `assert_raises()` matches anything; `assert_raises[T]()` matches T.
+            return Self.T == CaughtError or Self.T == _AnyError
