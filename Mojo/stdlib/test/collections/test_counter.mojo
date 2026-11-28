@@ -320,47 +320,83 @@ def test_most_common_clamps() raises:
 #     assert_true(c1.__ne__(c2))
 
 
-# def test_lt_le_gt_and_ge() raises:
-#     var c1 = Counter[String]()
-#     c1["a"] = 1
-#     c1["b"] = 2
-#     c1["d"] = 0
+def test_lt_le_gt_and_ge() raises:
+    var c1 = Counter[String]()
+    c1["a"] = 1
+    c1["b"] = 2
+    c1["d"] = 0
 
-#     var c2 = Counter[String]()
-#     c2["a"] = 1
-#     c2["b"] = 2
-#     c2["c"] = 0
+    var c2 = Counter[String]()
+    c2["a"] = 1
+    c2["b"] = 2
+    c2["c"] = 0
 
-#     assert_false(c1.lt(c2))
-#     assert_false(c2.lt(c1))
-#     assert_true(c1.le(c2))
-#     assert_true(c2.le(c1))
-#     assert_false(c1.gt(c2))
-#     assert_false(c2.gt(c1))
-#     assert_true(c1.ge(c2))
-#     assert_true(c2.ge(c1))
+    assert_false(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_true(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_false(c2.gt(c1))
+    assert_true(c1.ge(c2))
+    assert_true(c2.ge(c1))
 
-#     c2["a"] = 2
-#     assert_false(c1.lt(c2))
-#     assert_false(c2.lt(c1))
-#     assert_true(c1.le(c2))
-#     assert_false(c2.le(c1))
-#     assert_false(c1.gt(c2))
-#     assert_false(c2.gt(c1))
-#     assert_false(c1.ge(c2))
-#     assert_true(c2.ge(c1))
+    c2["a"] = 2
+    assert_true(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_false(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_true(c2.gt(c1))
+    assert_false(c1.ge(c2))
+    assert_true(c2.ge(c1))
 
-#     c2["b"] = 3
-#     c2["c"] = 1
-#     c2["d"] = 1
-#     assert_true(c1.lt(c2))
-#     assert_false(c2.lt(c1))
-#     assert_true(c1.le(c2))
-#     assert_false(c2.le(c1))
-#     assert_false(c1.gt(c2))
-#     assert_true(c2.gt(c1))
-#     assert_false(c1.ge(c2))
-#     assert_true(c2.ge(c1))
+    c2["b"] = 3
+    c2["c"] = 1
+    c2["d"] = 1
+    assert_true(c1.lt(c2))
+    assert_false(c2.lt(c1))
+    assert_true(c1.le(c2))
+    assert_false(c2.le(c1))
+    assert_false(c1.gt(c2))
+    assert_true(c2.gt(c1))
+    assert_false(c1.ge(c2))
+    assert_true(c2.ge(c1))
+
+
+def test_lt_le_gt_and_ge_treat_missing_counts_as_zero() raises:
+    # A counter with no entries is not less than another empty counter.
+    var empty = Counter[String]()
+    var zero = Counter[String]()
+    zero["a"] = 0
+    assert_false(empty.lt(empty))
+    assert_false(empty.lt(zero))
+    assert_false(zero.lt(empty))
+    assert_true(empty.le(zero))
+    assert_true(zero.le(empty))
+    assert_false(empty.gt(zero))
+    assert_false(zero.gt(empty))
+    assert_true(empty.ge(zero))
+    assert_true(zero.ge(empty))
+
+    # Equal counters are not proper subsets or supersets of each other.
+    var c1 = Counter[String]()
+    c1["a"] = 1
+    var c2 = Counter[String]()
+    c2["a"] = 1
+    c2["b"] = 0
+    assert_false(c1.lt(c2))
+    assert_false(c1.gt(c2))
+    assert_true(c1.le(c2))
+    assert_true(c1.ge(c2))
+
+    # A strict subset is `lt`, and the reverse is `gt`.
+    var c3 = Counter[String]()
+    c3["a"] = 1
+    c3["b"] = 1
+    assert_true(c1.lt(c3))
+    assert_false(c3.lt(c1))
+    assert_false(c1.gt(c3))
+    assert_true(c3.gt(c1))
 
 
 # def test_elements() raises:

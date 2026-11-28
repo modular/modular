@@ -400,7 +400,12 @@ struct Counter[
         return True
 
     def lt(self, other: Self) -> Bool:
-        """Check if all counts are less than those in the other `Counter`.
+        """Check if this `Counter` is a proper sub-multiset of the other
+        `Counter`.
+
+        This is `True` when every count in this `Counter` is less than or equal
+        to the corresponding count in the other `Counter`, and the two
+        `Counter`s are not equal. Missing counts are treated as zero.
 
         Note that since we check that _all_ counts satisfy the condition, this
         comparison does not make `Counter`s totally ordered.
@@ -409,29 +414,32 @@ struct Counter[
             other: The other `Counter` to compare to.
 
         Returns:
-            `True` if all counts are less than in the other `Counter`, `False`
-            otherwise.
+            `True` if this `Counter` is a proper sub-multiset of the other
+            `Counter`, `False` otherwise.
 
         Example:
 
         ```mojo
         from std.collections import Counter
 
-        var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
-        var other = Counter[Int].fromkeys([1, 2, 3], 3)
+        var counter = Counter[Int]([1, 2, 3])
+        var other = Counter[Int]([1, 1, 2, 2, 3])
         print(counter.lt(other)) # output: True
         counter[1] += 1
+        counter[2] += 1
         print(counter.lt(other)) # output: False
         ```
         """
 
-        for e in self.keys():
-            if self.get(e, 0) >= other.get(e, 0):
-                return False
-        return True
+        return self.le(other) and self != other
 
     def gt(self, other: Self) -> Bool:
-        """Check if all counts are greater than those in the other `Counter`.
+        """Check if this `Counter` is a proper super-multiset of the other
+        `Counter`.
+
+        This is `True` when every count in this `Counter` is greater than or
+        equal to the corresponding count in the other `Counter`, and the two
+        `Counter`s are not equal. Missing counts are treated as zero.
 
         Note that since we check that _all_ counts satisfy the condition, this
         comparison does not make `Counter`s totally ordered.
@@ -440,18 +448,19 @@ struct Counter[
             other: The other `Counter` to compare to.
 
         Returns:
-            `True` if all counts are greater than in the other `Counter`,
-            `False` otherwise.
+            `True` if this `Counter` is a proper super-multiset of the other
+            `Counter`, `False` otherwise.
 
         Example:
 
         ```mojo
         from std.collections import Counter
 
-        var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
-        var other = Counter[Int].fromkeys([1, 2, 3], 3)
+        var counter = Counter[Int]([1, 2, 3])
+        var other = Counter[Int]([1, 1, 2, 2, 3])
         print(other.gt(counter)) # output: True
         counter[1] += 1
+        counter[2] += 1
         print(other.gt(counter)) # output: False
         ```
         """
