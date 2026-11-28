@@ -665,9 +665,6 @@ class BlockManager:
                 "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
             )
 
-        # Update metrics.
-        self._metrics.input_tokens += ctx.tokens.active_length
-
         # Determine number of new blocks to allocate.
         num_new_blocks = self.num_blocks_to_allocate(
             ctx,
@@ -701,6 +698,10 @@ class BlockManager:
         for _ in range(num_new_blocks):
             new_block = self.allocate_device_block(replica_idx)
             current_blocks.append(new_block)
+
+        # Update metrics once the blocks are allocated: a request that hit
+        # InsufficientBlocksError is retried and would be counted again.
+        self._metrics.input_tokens += ctx.tokens.active_length
 
     @traced
     def num_blocks_to_allocate(
