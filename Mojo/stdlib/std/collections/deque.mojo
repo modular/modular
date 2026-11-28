@@ -197,16 +197,14 @@ struct Deque[ElementType: Movable](
         """
         var args_length = len(values)
 
-        var capacity: Int
-        if args_length < self.default_capacity:
-            capacity = self.default_capacity
-        else:
-            capacity = args_length
-
         # Initialize storage directly (rather than delegating to the
         # keyword constructor, which requires `Deinitable`) so the
         # variadic constructor works for any `Movable` element type.
-        var deque_capacity = next_power_of_two(capacity)
+        # Reserve one extra slot: a full buffer would leave `_tail == _head`,
+        # which reads as an empty deque.
+        var deque_capacity = next_power_of_two(
+            max(args_length + 1, Self.default_capacity)
+        )
         self._capacity = deque_capacity
         self._data = alloc(
             Layout[Self.ElementType](length=deque_capacity)
