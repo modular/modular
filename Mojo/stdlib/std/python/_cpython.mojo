@@ -84,14 +84,22 @@ comptime PyCFunctionWithKeywords = def(
 
 # `METH_FASTCALL` ("vectorcall") signature. CPython hands the callee a raw
 # C array of borrowed `PyObject*` plus `nargs`, skipping the tuple-packing
-# step that `METH_VARARGS` requires. The args pointer is `PyObject *const *`
-# in CPython and is guaranteed non-null by the vectorcall protocol (PEP
-# 590); we therefore model it as a plain `Pointer` rather than an
-# `Optional[Pointer]`. The pointer is owned by CPython, so the origin
-# is `MutUntrackedOrigin`.
+# step that `METH_VARARGS` requires.
 # ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunctionFast
 comptime PyCFunctionFast = def(
     PyObjectPtr, Pointer[PyObjectPtr, MutUntrackedOrigin], Py_ssize_t
+) thin abi("C") -> PyObjectPtr
+
+# CPython passes positional values followed by keyword values in args. nargs
+# counts only positional values. kwnames is a borrowed tuple of keyword names
+# or NULL, and args may be NULL when there are no arguments. Its slots are
+# read-only (`PyObject *const *`).
+# ref: https://docs.python.org/3/c-api/structures.html#c.PyCFunctionFastWithKeywords
+comptime PyCFunctionFastWithKeywords = def(
+    PyObjectPtr,
+    Optional[Pointer[PyObjectPtr, ImmUntrackedOrigin]],
+    Py_ssize_t,
+    PyObjectPtr,
 ) thin abi("C") -> PyObjectPtr
 
 # Flag passed to newmethodobject
@@ -414,6 +422,36 @@ struct PyMethodDef(Defaultable, ImplicitlyCopyable):
             docstring: The docstring for the function.
         """
         var flags = c_int(METH_FASTCALL | (METH_STATIC if static_method else 0))
+        return PyMethodDef(
+            func_name.as_c_string_span(),
+            _fn_ptr_as_opaque(func),
+            flags,
+            docstring.as_c_string_span(),
+        )
+
+    @staticmethod
+    def function[
+        static_method: Bool = False
+    ](
+        func: PyCFunctionFastWithKeywords,
+        func_name: StaticString,
+        docstring: StaticString = StaticString(),
+    ) -> Self:
+        """Create a method definition for a fastcall callback with keywords.
+
+        Parameters:
+            static_method: Whether to register a static method.
+
+        Args:
+            func: The callback to register.
+            func_name: The name exposed to Python.
+            docstring: The Python docstring.
+        """
+        var flags = c_int(
+            METH_FASTCALL
+            | METH_KEYWORDS
+            | (METH_STATIC if static_method else 0)
+        )
         return PyMethodDef(
             func_name.as_c_string_span(),
             _fn_ptr_as_opaque(func),

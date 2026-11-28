@@ -14,8 +14,8 @@
 from std.os import abort
 
 from std.python import Python, PythonObject
-from std.python._cpython import PyObjectPtr
-from std.python.bindings import PythonModuleBuilder
+from std.python._cpython import PyObjectPtr, Py_ssize_t
+from std.python.bindings import PythonModuleBuilder, raise_python_exception
 
 
 @export
@@ -37,10 +37,16 @@ def PyInit_mojo_module() abi("C") -> PythonObject:
             docstring="Count the provided arguments and keyword arguments",
         )
 
+        b.def_py_c_function(fastcall_args, "fastcall_args")
+
         # Test def_py_c_method
         _ = (
             b.add_type[TestCounter]("TestCounter")
             .def_init_defaultable[TestCounter]()
+            .def_py_c_method(fastcall_args, "fastcall_args")
+            .def_py_c_method[static_method=True](
+                fastcall_args, "static_fastcall_args"
+            )
             .def_py_c_method(
                 counter_count_args,
                 "count_args",
@@ -92,6 +98,32 @@ def mojo_count_args_with_kwargs(
         cpy.PyObject_Length(kwargs) if kwargs else 0
     )
     return cpy.PyLong_FromSsize_t(count)
+
+
+def fastcall_args(
+    py_self: PyObjectPtr,
+    args: Optional[Pointer[PyObjectPtr, ImmUntrackedOrigin]],
+    nargs: Py_ssize_t,
+    kwnames: PyObjectPtr,
+) abi("C") -> PyObjectPtr:
+    """Return the arguments as CPython passed them to the callback."""
+    try:
+        var receiver = PythonObject(
+            from_borrowed=py_self
+        ) if py_self else Python.none()
+        var names = PythonObject(
+            from_borrowed=kwnames
+        ) if kwnames else Python.tuple()
+        var values = List[PythonObject]()
+        for i in range(nargs + len(names)):
+            values.append(
+                PythonObject(from_borrowed=args.value()[unsafe_offset=i])
+            )
+        return Python.tuple(
+            receiver, PythonObject(nargs), names, Python.list(values)
+        ).steal_data()
+    except e:
+        return raise_python_exception(e)
 
 
 struct TestCounter(Defaultable, ImplicitlyCopyable, Writable):
