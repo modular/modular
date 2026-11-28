@@ -1289,6 +1289,24 @@ struct SIMD[dtype: DType, length: SIMDLength](
             mlir_value=__mlir_op.`pop.div`(self._mlir_value, rhs._mlir_value)
         )
 
+    @always_inline
+    def _signed_div_overflow_mask(self, divisor: Self) -> Self._Mask:
+        """Returns a mask of the lanes where `self // divisor` overflows.
+
+        Only signed integral types can overflow, in the lanes where `self` is
+        the minimum value and `divisor` is `-1`. Other types get all-false.
+
+        Args:
+            divisor: The value to divide with.
+
+        Returns:
+            A mask that is true in the lanes that overflow.
+        """
+        comptime if Self.dtype.is_integral() and Self.dtype.is_signed():
+            return self.eq(Self(Scalar[Self.dtype].MIN)) & divisor.eq(Self(-1))
+        else:
+            return Self._Mask(fill=False)
+
     @inline(.nodebug)
     def __floordiv__(self, rhs: Self) -> Self:
         """Returns the division of self and rhs rounded down to the nearest
@@ -1308,7 +1326,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
         var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
             0
         )
-        var safe_divisor = is_zero_mask.select(Self(1), rhs)
+        var is_overflow = self._signed_div_overflow_mask(rhs)
+        var safe_divisor = (is_zero_mask | is_overflow).select(Self(1), rhs)
 
         var floordiv = Self(
             mlir_value=__mlir_op.`pop.floordiv`(
@@ -1332,7 +1351,8 @@ struct SIMD[dtype: DType, length: SIMDLength](
         var is_zero_mask = Self._Mask(fill=Self.dtype.is_integral()) and rhs.eq(
             0
         )
-        var safe_divisor = is_zero_mask.select(Self(1), rhs)
+        var is_overflow = self._signed_div_overflow_mask(rhs)
+        var safe_divisor = (is_zero_mask | is_overflow).select(Self(1), rhs)
 
         comptime if Self.dtype.is_unsigned():
             var rem = Self(
@@ -1364,7 +1384,10 @@ struct SIMD[dtype: DType, length: SIMDLength](
             `Tuple(self // denominator, self % denominator)`.
         """
         var is_zero_mask = denominator.eq(0)
-        var safe_denominator = is_zero_mask.select(Self(1), denominator)
+        var is_overflow = self._signed_div_overflow_mask(denominator)
+        var safe_denominator = (is_zero_mask | is_overflow).select(
+            Self(1), denominator
+        )
 
         comptime if Self.dtype.is_unsigned():
             var div = self // safe_denominator
